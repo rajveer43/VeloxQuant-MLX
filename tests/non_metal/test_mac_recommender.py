@@ -7,8 +7,12 @@ from pathlib import Path
 
 import pytest
 
+# Repo-root tests/ so pytest does not import veloxquant_mlx/__init__.py (needs mlx).
 _MOD_PATH = (
-    Path(__file__).resolve().parents[2] / "tools" / "mac_recommender.py"
+    Path(__file__).resolve().parents[2]
+    / "veloxquant_mlx"
+    / "tools"
+    / "mac_recommender.py"
 )
 _SPEC = importlib.util.spec_from_file_location("mac_recommender", _MOD_PATH)
 assert _SPEC and _SPEC.loader

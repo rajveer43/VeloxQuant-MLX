@@ -16,9 +16,9 @@ jobs:
           python-version: "3.12"
       - name: Install pytest only
         run: pip install pytest
-      # Run from the tools test dir so pytest does not import the
-      # veloxquant_mlx package (which requires mlx / Apple Silicon).
-      # The test loads mac_recommender.py via importlib by file path.
+      # Keep tests under repo-root tests/non_metal/ so pytest does not
+      # walk into veloxquant_mlx/ (package __init__ imports mlx).
       - name: Run Mac recommender unit tests (no MLX)
-        working-directory: veloxquant_mlx/tests/tools
-        run: python -m pytest test_mac_recommender.py -q --noconftest --rootdir=.
+        run: >
+          python -m pytest tests/non_metal/test_mac_recommender.py -q
+          --noconftest --import-mode=importlib -c /dev/null -o addopts=

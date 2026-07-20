@@ -7,7 +7,7 @@ generation and Metal kernel parity tests need a real Mac GPU.
 
 | Suite | Where | Notes |
 | --- | --- | --- |
-| Pure Python unit tests (no Metal) | Linux CI or macOS CI | Examples: `tests/tools/test_mac_recommender.py`, many quantizer math tests |
+| Pure Python unit tests (no Metal) | Linux CI or macOS CI | Examples: `tests/non_metal/test_mac_recommender.py`, many quantizer math tests |
 | Metal parity / kernel tests | Apple Silicon only | Skip or mark `metal` on headless/Linux runners |
 | End-to-end generation benches | Local macOS | Scripts under `benchmark_scripts/` and `scripts/validate_kv_memory.py` |
 
