@@ -102,16 +102,8 @@ pip install VeloxQuant-MLX
 
 **Requirements:** Apple Silicon M1+, Python ≥ 3.11, MLX ≥ 0.18, NumPy ≥ 1.26.
 
-<details>
-<summary>Install from source</summary>
-
-```bash
-git clone https://github.com/rajveer43/VeloxQuant-MLX
-cd VeloxQuant-MLX
-pip install -e ".[dev]"
-```
-
-</details>
+Full install guide (source install, conda/miniforge, Metal troubleshooting,
+verifying the install): [installation guide](https://veloxquant-mlx.netlify.app/docs/getting-started/installation).
 
 ---
 

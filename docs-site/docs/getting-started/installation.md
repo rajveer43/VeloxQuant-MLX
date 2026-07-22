@@ -45,7 +45,7 @@ The `[dev]` extra installs SciPy (for codebook training) and the full test suite
 
 ```python
 import veloxquant_mlx
-print(veloxquant_mlx.__version__)   # e.g. 0.9.0
+print(veloxquant_mlx.__version__)   # should print the version you just installed
 
 import mlx.core as mx
 print(mx.default_device())           # Device(gpu, 0)
@@ -104,13 +104,23 @@ python -c "import mlx.core as mx; mx.fast.metal_kernel"
 
 ### `ArtifactNotFoundError` on first run
 
-Some algorithms (VecInfer, SpectralQuant) require precomputed calibration artifacts. Run:
+Some algorithms (VecInfer, SpectralQuant) require calibration artifacts before
+first use. There is no single `precompute --method ... --model ...` command —
+each method calibrates differently:
 
-```bash
-python -m veloxquant_mlx precompute --method vecinfer --model <path-to-model>
-```
+- **VecInfer** — calibrate smooth factors and train a codebook from your
+  model's own key/value activations (`calibrate_smooth_factors`,
+  `train_codebook`).
+- **SpectralQuant** — calibrate per-layer rotation matrices
+  (`calibrate_spectral_rotation`, cached to disk by model name).
+- **Zero-calibration methods** (TurboQuant, QJL, PolarQuant) can precompute
+  their analytical codebooks/rotation matrices ahead of time with:
+  ```bash
+  python -m veloxquant_mlx precompute --head_dim 128 --bits 1 2 3 4 --jl_dim 128 --output_dir ./artifacts/
+  ```
 
-See the [Calibration Guide](../guides/calibration) for details.
+See the [Calibration Guide](../guides/calibration) for the full, verified
+walkthrough of each method's real calibration flow.
 
 ## Next steps
 
