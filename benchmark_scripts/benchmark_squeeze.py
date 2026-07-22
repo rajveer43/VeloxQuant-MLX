@@ -145,7 +145,7 @@ def main() -> None:
             f"{row['compression_ratio']:>5.2f}x  {row['latency_ms_all_layers']:>8.1f}"
         )
 
-    out_path = Path(__file__).parent / "squeeze_benchmark_results.json"
+    out_path = Path(__file__).parent.parent / "figures" / "squeeze" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nResults saved to {out_path}")
 

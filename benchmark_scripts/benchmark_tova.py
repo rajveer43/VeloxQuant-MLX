@@ -97,7 +97,7 @@ def main() -> None:
             f"{row['latency_ms_mean']:>9.3f}  {row['latency_ms_min']:>7.3f}"
         )
 
-    out_path = Path(__file__).parent / "tova_benchmark_results.json"
+    out_path = Path(__file__).parent.parent / "figures" / "tova" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nResults saved to {out_path}")
 

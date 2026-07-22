@@ -139,7 +139,7 @@ All claims trace to passing tests in
   not a per-seed guarantee.
 
 The offline harness in `benchmark_scripts/benchmark_keyformer.py` (results in
-`benchmark_scripts/keyformer_benchmark_results.json`) sweeps sequence length
+`figures/keyformer/results.json`) sweeps sequence length
 (256/512) and budget (32/64) across `tau ∈ {0, 2, 6}`, an H2O cross-check, and
 random eviction, under two data regimes:
 

@@ -213,7 +213,7 @@ def main() -> None:
         print(f"{row['seq_len']:>4} {row['budget']:>6} {row['geometry']:>22}  "
               f"{row['anomaly_retention_nestedkv']:>10.4f}  {row['anomaly_retention_h2o']:>6.4f}")
 
-    out_path = Path(__file__).parent / "nestedkv_benchmark_results.json"
+    out_path = Path(__file__).parent.parent / "figures" / "nestedkv" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nResults saved to {out_path}")
 

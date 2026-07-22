@@ -139,7 +139,7 @@ The offline harness in `benchmark_scripts/benchmark_pyramidkv.py` sweeps
 `(n_layers, seq_len, avg_budget, beta)`, building a full per-layer pyramid against a
 mock model and reporting the schedule, per-layer kept tokens, and compression ratio —
 **synthetic, not model-level.** Results are committed in
-`benchmark_scripts/pyramidkv_benchmark_results.json` (24 configurations, run on Apple
+`figures/pyramidkv/results.json` (24 configurations, run on Apple
 Silicon). They confirm the design end-to-end: `beta=1.0` produces a flat schedule
 (every layer identical, == uniform H2O); `beta>1.0` produces a strictly decreasing
 budget with the early-layer cache retaining more tokens than the deep-layer cache; and

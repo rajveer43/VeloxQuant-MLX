@@ -126,7 +126,7 @@ All claims trace to passing tests in
 The offline harness in `benchmark_scripts/benchmark_tova.py` sweeps
 `(seq_len, budget, n_sink)` and reports latency and compression ratio —
 **synthetic, not model-level.** Results are committed in
-`benchmark_scripts/tova_benchmark_results.json` (28 configurations, run on Apple
+`figures/tova/results.json` (28 configurations, run on Apple
 Silicon). Across every configuration the measured compression ratio equals
 `seq_len / budget` exactly (e.g. 2048 tokens at budget 64 → 32×), confirming the
 eviction logic end-to-end. The latencies reflect the O(S²) cost of the

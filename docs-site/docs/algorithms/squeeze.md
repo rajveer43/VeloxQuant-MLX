@@ -184,7 +184,7 @@ The offline harness in `benchmark_scripts/benchmark_squeeze.py` sweeps
 cache set against a mock model whose layers grow more concentrated with depth, and
 reporting measured concentration, the resolved schedule, per-layer kept tokens, and
 compression ratio — **synthetic, not model-level.** Results are committed in
-`benchmark_scripts/squeeze_benchmark_results.json` (run on Apple Silicon). They
+`figures/squeeze/results.json` (run on Apple Silicon). They
 confirm the design end-to-end: `strength=0.0` produces uniform budgets (== H2O);
 `strength>0` reallocates so the broad early layer retains more tokens than the
 concentrated deep layer; and the schedule mean matches `avg_budget`. The wall-clock

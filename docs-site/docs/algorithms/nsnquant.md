@@ -162,7 +162,7 @@ All claims trace to passing tests in
   the fallback cache
 
 The offline harness in `benchmark_scripts/benchmark_nsn.py` (results in
-`benchmark_scripts/nsn_benchmark_results.json`) sweeps sequence length,
+`figures/nsnquant/results.json`) sweeps sequence length,
 channel-bias strength, and bit-width against a no-NSN ablation and a KIVI
 2-bit baseline at a matched residual window:
 

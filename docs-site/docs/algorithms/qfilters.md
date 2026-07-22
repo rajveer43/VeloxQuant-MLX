@@ -136,7 +136,7 @@ All claims trace to passing tests in
   margin (the anisotropy is the paper's claim, constructed here explicitly)
 
 The offline harness in `benchmark_scripts/benchmark_qfilters.py` (results in
-`benchmark_scripts/qfilters_benchmark_results.json`) sweeps sequence length
+`figures/qfilters/results.json`) sweeps sequence length
 (256–1024) and budget (64/128) across sign±1, best-of-sign, KNorm-adapted,
 H2O-adapted and random arms under two data regimes:
 

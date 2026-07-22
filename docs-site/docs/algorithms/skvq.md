@@ -137,7 +137,7 @@ All claims trace to passing tests in
   guard; `for_model` wiring
 
 The offline harness in `benchmark_scripts/benchmark_skvq.py` (results in
-`benchmark_scripts/skvq_benchmark_results.json`) sweeps sequence length
+`figures/skvq/results.json`) sweeps sequence length
 (512/1024) × bits (2/4) × regime, with ablation arms (reorder off, clip
 off, both off) and the repo's KIVI as reference, at matched
 bits/group/window:

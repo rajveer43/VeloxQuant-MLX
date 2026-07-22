@@ -246,7 +246,7 @@ def main() -> None:
               f"{row['mse_svdq_fixed_split']:>10.6f}  {row['cos_kvtc']:>9.5f}  "
               f"{row['entropy_coding_gain']:>9.4f}")
 
-    out_path = Path(__file__).parent / "kvtc_benchmark_results.json"
+    out_path = Path(__file__).parent.parent / "figures" / "kvtc" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nResults saved to {out_path}")
 

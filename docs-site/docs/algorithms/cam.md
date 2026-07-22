@@ -137,7 +137,7 @@ The offline harness in `benchmark_scripts/benchmark_cam.py` sweeps
 **output perturbation** — the cosine distance between the compressed cache's
 attention output and the full-cache output over random probe queries (lower is
 better) — against the token-level H2O baseline (`drop`). Results are committed in
-`benchmark_scripts/cam_benchmark_results.json` (Apple Silicon). The measured
+`figures/cam/results.json` (Apple Silicon). The measured
 finding: **`sim_weighted` merging reduces perturbation versus dropping, and the
 gain grows with compression ratio.** At the most aggressive setting (`seq=1024,
 budget=64`, 16×) it cuts perturbation from **0.955 → 0.708** (gain **+0.247**);

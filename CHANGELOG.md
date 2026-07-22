@@ -2,11 +2,6 @@
 
 All notable changes to **VeloxQuant-MLX** are documented here.
 
-> Detailed release notes for 0.10.0–0.14.0 (SVDq, Kitty, AdaKV-proxy, XQuant,
-> KVQuant-NUQ) live in the docs-site changelog
-> (`docs-site/docs/changelog.md`). The entries below cover the latest releases
-> and the original 0.9.0 baseline.
-
 ## [0.41.0] — 2026-07-20
 
 ### Added

@@ -170,7 +170,7 @@ loop — no prefill-only phase, unlike [SnapKV](../algorithms/snapkv)):
 ## Benchmark — honestly reported, including the surprising part
 
 `benchmark_scripts/benchmark_curdkv.py` (results in
-`benchmark_scripts/curdkv_benchmark_results.json`) sweeps sequence length
+`figures/curdkv/results.json`) sweeps sequence length
 (40/80) and token budget (6/8) across `geometry ∈
 {planted_value_divergence, correlated}`, comparing CurDKV-adapted against
 H2O at the **same matched token budget**, reporting **class-2

@@ -1,0 +1,24 @@
+name: commitlint
+
+# Enforces Conventional Commits on every PR, since the release workflow
+# (.github/workflows/release.yml) parses commit prefixes (feat:/fix:/etc.)
+# to decide the next version bump. A PR with no conventional commit in it
+# would otherwise silently fail to trigger a release later.
+
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Lint PR commits against Conventional Commits
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: .commitlintrc.json
+          failOnWarnings: false

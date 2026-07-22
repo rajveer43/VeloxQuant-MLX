@@ -221,7 +221,7 @@ def main() -> None:
               f"{row['always_exact_rope_mse']:>12.6f}  {row['a2ats_assignment_mse']:>12.6f}  "
               f"{row['plain_vq_mse']:>10.6f}")
 
-    out_path = Path(__file__).parent / "a2ats_benchmark_results.json"
+    out_path = Path(__file__).parent.parent / "figures" / "a2ats" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nResults saved to {out_path}")
 

@@ -200,7 +200,7 @@ def main() -> None:
         print(f"{row['seq_len']:>4} {row['budget']:>6} {row['geometry']:>26}  "
               f"{row['class2_retention_curdkv']:>13.4f}  {row['class2_retention_h2o']:>10.4f}")
 
-    out_path = Path(__file__).parent / "curdkv_benchmark_results.json"
+    out_path = Path(__file__).parent.parent / "figures" / "curdkv" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nResults saved to {out_path}")
 

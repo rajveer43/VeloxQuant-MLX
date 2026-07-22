@@ -1,0 +1,85 @@
+name: release
+
+# Automatic version bump on merge to master, driven by Conventional Commits
+# (see CONTRIBUTING.md "Commit conventions"). python-semantic-release parses
+# commits since the last tag to decide whether a release is warranted and
+# at what semver level (feat -> minor, fix/perf -> patch, feat!/BREAKING
+# CHANGE -> major bump-of-minor while major_on_zero=false in pyproject.toml).
+#
+# Runs on macOS because `mlx` (this package's core dependency) only installs
+# on Apple Silicon -- a release gate that cannot import the package it is
+# releasing is not a real gate. This is more expensive per-minute than an
+# ubuntu runner; that cost is accepted deliberately here.
+#
+# The bump commit is tagged `chore(release): ... [skip ci]` so it does not
+# retrigger this same workflow.
+
+on:
+  push:
+    branches: [master]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Guard against the bump commit re-triggering this workflow, and against
+    # running on commits authored by the release bot itself.
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: macos-14
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package + dev/release dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run test suite (release gate)
+        run: python -m pytest veloxquant_mlx/tests -q
+
+      - name: Configure git identity for the release commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Determine next version (dry run)
+        id: version
+        run: |
+          NEXT_VERSION=$(semantic-release version --print 2>/dev/null || echo "")
+          echo "next_version=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: No release needed
+        if: steps.version.outputs.next_version == ''
+        run: echo "No releasable commits since the last tag (docs/chore/test-only). Skipping."
+
+      - name: Bump pyproject.toml/__init__.py and prepend CHANGELOG entry (no commit yet)
+        if: steps.version.outputs.next_version != ''
+        run: semantic-release version --no-commit --no-tag --no-push --no-vcs-release
+
+      - name: Sync README badges (version + live test count)
+        if: steps.version.outputs.next_version != ''
+        run: python scripts/sync_release_badges.py
+
+      - name: Commit, tag, and push the release
+        if: steps.version.outputs.next_version != ''
+        run: |
+          git add pyproject.toml veloxquant_mlx/__init__.py CHANGELOG.md README.md
+          git commit -m "chore(release): ${{ steps.version.outputs.next_version }} [skip ci]"
+          git tag "v${{ steps.version.outputs.next_version }}"
+          git push origin master --follow-tags
+
+      - name: Publish GitHub Release
+        if: steps.version.outputs.next_version != ''
+        run: semantic-release publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

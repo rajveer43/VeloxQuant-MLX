@@ -173,7 +173,7 @@ def main() -> None:
             f"{row['knorm_ms']:>8.1f}  {row['h2o_ms']:>8.1f}"
         )
 
-    out_path = Path(__file__).parent / "knorm_benchmark_results.json"
+    out_path = Path(__file__).parent.parent / "figures" / "knorm" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nResults saved to {out_path}")
 

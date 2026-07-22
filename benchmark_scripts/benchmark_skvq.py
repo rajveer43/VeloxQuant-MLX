@@ -218,7 +218,7 @@ def main() -> None:
               f"{row['pert_skvq_noclip']:>9.5f} {row['pert_skvq_plain']:>9.5f} "
               f"{row['pert_kivi']:>9.5f}   pert")
 
-    out_path = Path(__file__).parent / "skvq_benchmark_results.json"
+    out_path = Path(__file__).parent.parent / "figures" / "skvq" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nResults saved to {out_path}")
 

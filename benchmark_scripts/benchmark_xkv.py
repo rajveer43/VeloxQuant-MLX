@@ -199,7 +199,7 @@ def main() -> None:
             f"{row['latency_ms']:>7.1f}"
         )
 
-    out_path = Path(__file__).parent / "xkv_benchmark_results.json"
+    out_path = Path(__file__).parent.parent / "figures" / "xkv" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nResults saved to {out_path}")
 

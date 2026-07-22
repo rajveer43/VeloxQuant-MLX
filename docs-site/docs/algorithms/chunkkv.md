@@ -155,7 +155,7 @@ All claims trace to passing tests in
 The offline harness in `benchmark_scripts/benchmark_chunkkv.py` sweeps
 `(seq_len, budget, chunk_size, score_mode)` on synthetic fp16 K/V and compares
 each config to a token-level H2O baseline at the same budget. Results are committed
-in `benchmark_scripts/chunkkv_benchmark_results.json` (run on Apple Silicon). The
+in `figures/chunkkv/results.json` (run on Apple Silicon). The
 **measured** facts:
 
 - **`chunk_size=1` reproduces H2O exactly** — identical compression and survivors.

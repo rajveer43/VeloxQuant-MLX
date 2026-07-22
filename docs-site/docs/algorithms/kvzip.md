@@ -150,7 +150,7 @@ All claims trace to passing tests in
   where it shows no advantage.
 
 The offline harness in `benchmark_scripts/benchmark_kvzip.py` (results in
-`benchmark_scripts/kvzip_benchmark_results.json`) sweeps sequence length
+`figures/kvzip/results.json`) sweeps sequence length
 (256/512) and budget (32/64) across `probe ∈ {latest, context}`, an H2O cumulative
 cross-check, and random eviction, under two data regimes:
 

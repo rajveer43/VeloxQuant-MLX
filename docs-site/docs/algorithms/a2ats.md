@@ -161,7 +161,7 @@ alike — runs:
 ## Benchmark — honestly reported, including the parts that didn't win
 
 `benchmark_scripts/benchmark_a2ats.py` (results in
-`benchmark_scripts/a2ats_benchmark_results.json`) sweeps sequence length
+`figures/a2ats/results.json`) sweeps sequence length
 (200/400) across two geometries, comparing windowed vs. always-exact RoPE
 reconstruction, and query-aware vs. plain nearest-centroid VQ assignment,
 all at the same codebook/sub_dim:

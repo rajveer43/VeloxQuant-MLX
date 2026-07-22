@@ -233,7 +233,7 @@ def main() -> None:
               f"{rcells}  {row['retain_h2o']:>8.3f}  "
               f"{row['pert_context']:>8.5f}  {row['pert_h2o']:>8.5f}  {row['pert_random']:>8.5f}")
 
-    out_path = Path(__file__).parent / "kvzip_benchmark_results.json"
+    out_path = Path(__file__).parent.parent / "figures" / "kvzip" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nResults saved to {out_path}")
 

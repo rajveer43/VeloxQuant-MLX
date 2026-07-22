@@ -176,7 +176,7 @@ def main() -> None:
         print(f"{row['seq_len']:>4} {row['geometry']:>20}  {row['amc_mse']:>10.6f}  "
               f"{row['uniform_mse']:>12.6f}  {row['amc_avg_bytes_per_token']:>10.2f}")
 
-    out_path = Path(__file__).parent / "amc_benchmark_results.json"
+    out_path = Path(__file__).parent.parent / "figures" / "amc" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nResults saved to {out_path}")
 

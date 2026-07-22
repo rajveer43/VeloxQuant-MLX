@@ -161,7 +161,7 @@ def main() -> None:
             f"{row['latency_ms']:>7.1f}"
         )
 
-    out_path = Path(__file__).parent / "chunkkv_benchmark_results.json"
+    out_path = Path(__file__).parent.parent / "figures" / "chunkkv" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nResults saved to {out_path}")
 

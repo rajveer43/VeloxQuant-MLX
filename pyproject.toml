@@ -47,6 +47,7 @@ dev = [
     "psutil>=5.9",
     "build>=1.2",
     "twine>=5.0",
+    "python-semantic-release>=9.15",
 ]
 
 [project.urls]
@@ -73,3 +74,29 @@ filterwarnings = ["ignore::DeprecationWarning"]
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+version_variables = ["veloxquant_mlx/__init__.py:__version__"]
+build_command = false
+commit_parser = "conventional"
+commit_message = "chore(release): {version} [skip ci]"
+tag_format = "v{version}"
+major_on_zero = false
+
+[tool.semantic_release.branches.main]
+match = "master"
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"
+exclude_commit_patterns = [
+    "^chore\\(release\\):",
+]
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["feat", "fix", "perf", "refactor", "docs", "chore", "test", "build", "ci", "style"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]

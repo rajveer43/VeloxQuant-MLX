@@ -116,14 +116,35 @@ A new method typically consists of:
 - tests, and
 - a benchmark script emitting `figures/<method>/<model>/results.json`.
 
-See `paper/NEW_METHOD_SURVEY.md` for an example of how a method is scoped and
-chosen before implementation.
+See `paper/research/surveys/` for examples of how a method is scoped and
+chosen before implementation (the highest-numbered `NEW_METHOD_SURVEY_V*.md`
+is the most current).
 
 ## Commit conventions
 
-Use short imperative subject lines (`Add sink cache`, `Fix dtype mismatch in
-KIVI path`). Reference the relevant issue number when one exists (`Closes #12`).
-Avoid commits that mix unrelated changes.
+This repo uses [Conventional Commits](https://www.conventionalcommits.org/)
+and version numbers are bumped automatically from commit messages on merge
+to `master` (see `.github/workflows/release.yml`) — so the prefix you use
+has a real effect, not just a style preference.
+
+Every commit (or, if a PR is squash-merged, the squash-merge title) must
+start with one of:
+
+| Prefix | Effect | Example |
+| --- | --- | --- |
+| `feat(scope): ...` | Minor version bump | `feat(kitty): dynamic channel-wise mixed-precision` |
+| `fix(scope): ...` | Patch version bump | `fix(cache): bounds-check fraction configs` |
+| `feat!: ...` or a `BREAKING CHANGE:` footer | Major version bump | `feat!: rename KVCacheConfig.bits to bit_width_inlier` |
+| `docs: ...`, `chore: ...`, `test: ...`, `refactor: ...` | No version bump | `docs: fix broken link in README` |
+
+`scope` is optional but encouraged — use the method name (`kitty`, `xquant`,
+`cache`, `metal`, `docs-site`, …) so the changelog groups related changes.
+A commit-lint check runs on every PR (`.github/workflows/commitlint.yml`)
+and will fail the PR if no commit matches this pattern.
+
+Reference the relevant issue number when one exists (`Closes #12`). Avoid
+commits that mix unrelated changes — each commit/PR should map to one
+semver-meaningful change so the automated changelog entry stays accurate.
 
 ## Code of conduct
 

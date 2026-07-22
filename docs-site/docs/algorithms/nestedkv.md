@@ -167,7 +167,7 @@ never evicted (see honesty crux, point 2).
 ## Benchmark — honestly reported, including the part that didn't work
 
 `benchmark_scripts/benchmark_nestedkv.py` (results in
-`benchmark_scripts/nestedkv_benchmark_results.json`) sweeps sequence length
+`figures/nestedkv/results.json`) sweeps sequence length
 (320/512) and token budget (16/24) across three geometries, each isolating
 one of NestedKV's three scales via a single planted anomalous token, and
 compares NestedKV-adapted against H2O at the **same matched token budget**,

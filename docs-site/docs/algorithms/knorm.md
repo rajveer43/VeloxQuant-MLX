@@ -135,7 +135,7 @@ All claims trace to passing tests in
 - Budget enforcement, byte accounting, determinism, `for_model` wiring
 
 The offline harness in `benchmark_scripts/benchmark_knorm.py` (results in
-`benchmark_scripts/knorm_benchmark_results.json`) sweeps sequence length
+`figures/knorm/results.json`) sweeps sequence length
 (256–1024) and budget (64/128) across four arms — keep-low, keep-high,
 random eviction, H2O-adapted — under two data regimes:
 

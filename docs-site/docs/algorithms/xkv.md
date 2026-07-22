@@ -174,7 +174,7 @@ All claims trace to passing tests in
 - Determinism
 
 The offline harness in `benchmark_scripts/benchmark_xkv.py` (results in
-`benchmark_scripts/xkv_benchmark_results.json`) sweeps group size (2–4) and a
+`figures/xkv/results.json`) sweeps group size (2–4) and a
 synthetic "shared fraction" knob against an independent-per-layer-SVD
 baseline at matched rank:
 

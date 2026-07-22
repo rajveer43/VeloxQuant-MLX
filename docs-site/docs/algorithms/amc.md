@@ -201,7 +201,7 @@ proportionally for other `head_dim`):
 ## Benchmark — honestly reported, including the part that didn't work
 
 `benchmark_scripts/benchmark_amc.py` (results in
-`benchmark_scripts/amc_benchmark_results.json`) sweeps sequence length
+`figures/amc/results.json`) sweeps sequence length
 (200/400) across two geometries and compares AMC's tiered compression
 against a **matched-average-byte-budget uniform baseline** (fixed rank+bits
 for every token, sized to AMC's own average byte cost), measuring

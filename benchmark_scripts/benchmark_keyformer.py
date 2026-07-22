@@ -211,7 +211,7 @@ def main() -> None:
         print(f"{row['seq_len']:>4} {row['budget']:>4} {row['geometry']:>11}  "
               f"{pcells}  {scells}  {row['pert_h2o']:>8.5f}  {row['pert_random']:>8.5f}")
 
-    out_path = Path(__file__).parent / "keyformer_benchmark_results.json"
+    out_path = Path(__file__).parent.parent / "figures" / "keyformer" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nResults saved to {out_path}")
 

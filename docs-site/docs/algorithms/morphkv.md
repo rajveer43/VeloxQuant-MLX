@@ -141,7 +141,7 @@ All claims trace to passing tests in
   advantage.
 
 The offline harness in `benchmark_scripts/benchmark_morphkv.py` (results in
-`benchmark_scripts/morphkv_benchmark_results.json`) sweeps sequence length
+`figures/morphkv/results.json`) sweeps sequence length
 (256/512) and budget (32/64) across `window ∈ {1, 8, 32}`, an H2O cumulative
 cross-check, and random eviction, under two data regimes:
 

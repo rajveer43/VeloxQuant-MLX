@@ -154,7 +154,7 @@ reported honestly, not oversold (the same discipline as
 [MorphKV](../algorithms/morphkv)'s stable control).
 
 `benchmark_scripts/benchmark_kvtc.py` (results in
-`benchmark_scripts/kvtc_benchmark_results.json`) sweeps sequence length
+`figures/kvtc/results.json`) sweeps sequence length
 (128/256) and total bit budget (64/128) across `geometry ∈ {skewed_variance,
 flat}`, three arms (KVTC-DP, fixed-uniform, SVDq-fixed-split) at the exact
 same matched budget:
