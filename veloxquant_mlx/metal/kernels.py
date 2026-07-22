@@ -51,6 +51,9 @@ from veloxquant_mlx.metal._rabitq_encode import (
 from veloxquant_mlx.metal._rabitq_values import (
     rabitq_pack_values,
 )
+from veloxquant_mlx.metal._rabitq_prefill import (
+    rabitq_prefill_attend,
+)
 
 __all__ = [
     "vecinfer_dequant_metal",
@@ -70,4 +73,5 @@ __all__ = [
     "rabitq_fused_attend",
     "rabitq_encode",
     "rabitq_pack_values",
+    "rabitq_prefill_attend",
 ]

@@ -11,22 +11,19 @@ PolarQuant uses **recursive polar coordinate decomposition** to represent keys a
 
 ## How it works
 
-1. **Polar decomposition** — Each key vector `k` is decomposed recursively. At each step, the angle `θᵢ = arccos(kᵢ / ‖k[i:]‖)` is computed and quantized as a binary value (above or below the equator).
+1. **Rotation** — Each key vector is first rotated by a random orthogonal matrix (decorrelates dimensions before the polar transform).
 
-2. **Recursive encoding** — The remaining vector after projecting out the first angle is processed by the same decomposition recursively until `head_dim` angles are encoded. Each angle is 1 bit.
+2. **Recursive polar decomposition** — The rotated vector is decomposed level by level into angles; each level's angles are quantized against a per-level codebook (`n_levels` codebooks total, sized `2**b` each).
 
-3. **Geometric reconstruction** — Decoding reconstructs the original direction by composing the angles in reverse order. The norm is stored separately at full precision.
+3. **Geometric reconstruction** — Decoding reconstructs the original direction by composing the quantized angles in reverse order. The final radius (norm) is stored separately.
 
 ## Key properties
 
 | Property | Value |
 |---|---|
 | Calibration | None |
-| Key bits | 1 per angle (= 1 bit/dim effectively) |
-| Value bits | 2–4 |
-| Compression | 8× (keys) |
-| Best for | Models with spherical key geometry |
-| Metal kernel | `turboquant_scalar_quantize` for norm |
+| Bit-width | `b` bits per level, `n_levels` levels total |
+| Best for | Models with spherical/normalized key geometry |
 
 ## Quickstart
 
@@ -37,8 +34,8 @@ from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
 model, tokenizer = mlx_lm.load("mlx-community/Phi-3-mini-4k-instruct-4bit")
 
 config = KVCacheConfig(
-    method="polarquant",
-    value_bits=2,
+    method="polar",
+    bit_width_inlier=2,
 )
 cache = KVCacheBuilder.build(model, config)
 
@@ -56,16 +53,13 @@ response = mlx_lm.generate(
 import mlx.core as mx
 from veloxquant_mlx.quantizers.polarquant import PolarQuantizer
 
-quantizer = PolarQuantizer()
+d = 64  # Phi-3 mini head_dim
+quantizer = PolarQuantizer(d=d, b=2, seed=42)
 
-keys = mx.random.normal(shape=(1, 32, 256, 64))  # Phi-3 mini head_dim=64
+keys = mx.array(mx.random.normal(shape=(4, d)))  # [batch, d] — 2D, not 4D
 
 encoded = quantizer.encode(keys)
 decoded = quantizer.decode(encoded)
-
-# Cosine similarity (direction is encoded exactly, norm approximately)
-from veloxquant_mlx import cosine_similarity
-print(f"Cosine sim: {cosine_similarity(keys, decoded):.4f}")
 ```
 
 ## When to use PolarQuant
@@ -73,7 +67,7 @@ print(f"Cosine sim: {cosine_similarity(keys, decoded):.4f}")
 **Use PolarQuant when:**
 - Key vectors are distributed approximately on a hypersphere (unit norm)
 - The model uses normalised attention (Phi-3, Gemma-2 style)
-- You want 1-bit keys without calibration and without the JL approximation
+- You want low-bit keys without calibration and without the JL approximation
 
 **Consider [TurboQuant RVQ](../algorithms/rvq) instead when:**
 - Keys are not spherically distributed (most Llama/Mistral variants)
@@ -81,13 +75,25 @@ print(f"Cosine sim: {cosine_similarity(keys, decoded):.4f}")
 
 ## Configuration reference
 
+`KVCacheConfig` fields (when `method="polar"`) — PolarQuant reuses the shared fields, it has no dedicated `polar_*` config block:
+
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `value_bits` | `int` | `2` | Value quantization bits |
-| `norm_bits` | `int` | `8` | Bits for key norm (stored separately). Higher = more accurate magnitude |
+| `bit_width_inlier` | `int` | `2` | Bits per polar level |
+| `head_dim` | `int` | `128` | Key/value dimension |
+| `seed` | `int` | `42` | Random seed for the rotation matrix |
+
+`PolarQuantizer` constructor:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `d` | `int` | — | Vector dimension (required) |
+| `b` | `int` | `2` | Bits per level |
+| `n_levels` | `int` | (module default) | Number of recursive polar levels |
+| `seed` | `int` | `42` | Random seed |
 
 ## See also
 
-- [CommVQ — polar + RoPE compatibility](../algorithms/commvq)
+- [CommVQ — RoPE compatibility](../algorithms/commvq)
 - [TurboQuant RVQ — better quality for non-spherical keys](../algorithms/rvq)
-- [API — PolarQuantizer](../api/quantizers)
+- [Quantizers API](../api/quantizers)

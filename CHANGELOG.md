@@ -1537,6 +1537,152 @@ implementation)"** — not a faithful port.
 - Quality evidence is unit-test level (synthetic low-rank data); no model-level
   benchmark or downstream-task evaluation has been run.
 
+## [0.14.0] — 2026-06-25
+
+### Added — KVQuant-NUQ: non-uniform quantization + outlier isolation (`method="kvquant"`)
+
+- **`veloxquant_mlx.cache.kvquant_cache.KVQuantKVCache`** — *Inspired by, not
+  a faithful port of,* "KVQuant: Towards 10 Million Context Length LLM
+  Inference with KV Cache Quantization" (arXiv:2401.18079, NeurIPS 2024).
+  Implements the two cache-observable pillars: a non-uniform quantization
+  (NUQ) datatype fit online via Lloyd-Max iterations, plus dense/sparse
+  outlier isolation that carves the top-magnitude elements out to an fp16
+  side-channel. Matches KVQuant's per-channel-keys / per-token-values
+  quantization axis asymmetry (the same axes KIVI uses). Pre-RoPE key
+  quantization (the paper's third pillar) is out of scope — a cache wrapper
+  only sees post-RoPE keys.
+- **`veloxquant_mlx.quantizers.kvquant`** — the NUQ level-fitting and
+  outlier-isolation primitives.
+- **`KVCacheConfig`** — new fields `kvquant_bits` (default 3),
+  `kvquant_outlier_fraction` (default 0.01), `kvquant_group_size` (default
+  32), `kvquant_lloyd_iters` (default 8), `kvquant_refit_interval` (default
+  0 — levels are fit once at prefill and frozen; a positive value re-fits
+  every N decode steps).
+- **Tests** — `veloxquant_mlx/tests/cache/test_kvquant_cache.py` (15 tests
+  at introduction).
+- **Benchmark script** — `benchmark_scripts/benchmark_kvquant.py`.
+
+### Honest scope
+
+- Pre-RoPE key quantization is not implemented (needs a model-forward hook,
+  outside the cache contract).
+- Level fitting is online/zero-calibration, not offline calibration-set
+  fitting as in the paper.
+- Attention-aware sensitivity weighting is not implemented (needs attention
+  scores, which a cache wrapper does not see).
+
+## [0.13.0] — 2026-06-25
+
+### Added — XQuant: cross-layer KV cache reuse (`method="xquant"`)
+
+- **`veloxquant_mlx.cache.xquant_cache.XQuantKVCache`** +
+  **`veloxquant_mlx.cache.xquant_coordinator.XQuantCoordinator`** — *Inspired
+  by* "XQuant: Achieving Ultra-Low Bit KV Cache Quantization with Cross-Layer
+  Compression" (arXiv:2510.11236, EMNLP 2025); faithful to the cross-layer
+  reuse core, adapted at the integration boundary via a shared coordinator
+  rather than a modified attention forward pass. Adjacent layers are paired
+  at build time (`pair_layers`) into an anchor and a reuse role: the anchor
+  quantizes K/V with asymmetric group quantization and publishes its integer
+  codes to the coordinator; the reuse layer fetches the paired anchor's codes
+  for the same token range and fits only its own per-group scale/zero to
+  correct cross-layer drift — never storing a full code tensor of its own.
+  The first method in the suite to exploit *inter-layer* redundancy. Both
+  keys and values are compressed.
+- **`veloxquant_mlx.quantizers.xquant`** — the anchor/reuse quantization
+  primitives.
+- **`KVCacheConfig`** — new fields `xquant_group_size` (default 2, layers per
+  anchor/reuse pair), `xquant_base_bits` (default 2), `xquant_residual_bits`
+  (default 0 — pure reuse), `xquant_group_quant_size` (default 32),
+  `xquant_max_ctx` (default 8192, coordinator per-group token budget).
+- **Tests** — `veloxquant_mlx/tests/cache/test_xquant_cache.py` (16 tests at
+  introduction).
+- **Benchmark script** — `benchmark_scripts/benchmark_xquant.py`.
+
+### Honest scope
+
+- With no coordinator supplied (a single isolated layer), the cache
+  degenerates to a plain anchor — documented as a unit-testing convenience,
+  not the intended deployment shape.
+
+## [0.12.0] — 2026-06-24
+
+### Added — AdaKV-proxy: per-head adaptive bit allocation (`method="adakv"`)
+
+- **`veloxquant_mlx.cache.adakv_cache.AdaKVCache`** — a proxy adaptation of
+  "Ada-KV: Optimizing KV Cache Eviction by Adaptive Budget Allocation for
+  Efficient LLM Inference" (arXiv:2407.11550, 2024), documented as
+  "AdaKV-proxy" rather than a faithful port. Layers on top of KIVI-style
+  group quantization: ranks attention heads by running per-head key-norm
+  variance and solves a per-head bit assignment so the average bits/element
+  across heads hits a configured target, recomputed every step by default.
+  Complements Kitty's per-channel axis with a per-head axis. Key-only;
+  values stay fp16.
+- **`veloxquant_mlx.quantizers.adakv`** — the per-head bit-assignment
+  primitives.
+- **`KVCacheConfig`** — new fields `adakv_target_avg_bits` (default 2.0),
+  `adakv_lo_bit` (default 2), `adakv_mid_bit` (default 3), `adakv_hi_bit`
+  (default 4), `adakv_group_size` (default 32), `adakv_update_interval`
+  (default 1 — the field is wired but the bit assignment is recomputed every
+  step regardless of this value; documented as a future optimisation, not a
+  current behavior).
+- **Tests** — `veloxquant_mlx/tests/cache/test_adakv_cache.py` (14 tests at
+  introduction).
+- **Benchmark script** — `benchmark_scripts/benchmark_adakv.py`.
+
+### Honest scope
+
+- True Ada-KV head-adaptive *eviction* budget (the paper's actual mechanism)
+  is not implemented — it needs softmax attention scores a cache wrapper
+  doesn't see. Cross-layer budget sharing is likewise not implemented.
+
+## [0.11.0] — 2026-06-23
+
+### Added — Kitty: dynamic channel-wise mixed-precision key cache (`method="kitty"`)
+
+- **`veloxquant_mlx.cache.kitty_cache.KittyKVCache`** — *Inspired by, not a
+  faithful port of,* "Kitty: Plug-and-Play Continuous Batching with Dynamic
+  Token Selection" (arXiv:2511.18643, Nov 2025, unreviewed preprint). Ranks
+  key channels by running variance (updated incrementally from prefill
+  accumulators) and routes the top `kitty_hi_fraction` of channels to
+  `kitty_hi_bit`, the rest to `kitty_lo_bit`, via asymmetric group
+  quantization. Zero calibration. Key-only; values stay fp16. Default
+  configuration gives an effective 2.5 bits/element (6.4× key bandwidth
+  reduction).
+- **`veloxquant_mlx.quantizers.kitty`** — the channel-ranking and
+  mixed-precision quantization primitives.
+- **`KVCacheConfig`** — new fields `kitty_hi_fraction` (default 0.25),
+  `kitty_hi_bit` (default 4), `kitty_lo_bit` (default 2), `kitty_group_size`
+  (default 32).
+- **Tests** — `veloxquant_mlx/tests/cache/test_kitty_cache.py` (12 tests at
+  introduction).
+- **Benchmark script** — `benchmark_scripts/benchmark_kitty.py`.
+
+## [0.10.0] — 2026-06-21
+
+### Added — SVDq: sub-2-bit key cache via offline SVD (`method="svdq"`)
+
+- **`veloxquant_mlx.cache.svdq_cache.SVDqKVCache`** — *Inspired by, not a
+  faithful port of,* "SVDq: Singular Value Decomposition-based KV Cache
+  Quantization" (arXiv:2502.15304, Feb 2025, unreviewed preprint). At
+  prefill, computes a truncated SVD of the incoming key batch, stores the
+  right singular vectors and mean key as layer state, and projects keys into
+  that latent space. Latents are mixed-precision group quantized (top-25%
+  of channels by singular value at 4-bit, rest at 2-bit). Decode tokens
+  project into the already-fitted latent space. Key-only — values stay fp16
+  throughout (the source material notes values have weaker low-rank
+  structure). Default configuration gives an effective ~1.25 bits/element.
+- **`veloxquant_mlx.quantizers.svdq`** — the SVD-fitting and latent
+  quantization primitives.
+- **`KVCacheConfig`** — new fields `svdq_rank` (default `None` → energy
+  threshold), `svdq_energy_threshold` (default 0.95), `svdq_hi_bit` (default
+  4), `svdq_lo_bit` (default 2), `svdq_hi_fraction` (default 0.25),
+  `svdq_group_size` (default 32).
+- **Tests** — `veloxquant_mlx/tests/cache/test_svdq_cache.py` (12 tests at
+  introduction).
+- **Benchmark script** — `benchmark_scripts/benchmark_sink.py` (this release's
+  commit also carried the sink-protection work described under
+  [0.9.0](#090--2026-06-12) below).
+
 ## [0.9.0] — 2026-06-12
 
 ### Added — KVSink-adapted sink protection (`method="kivi_sink"`)

@@ -143,18 +143,23 @@ These require a one-time calibration step, but deliver significantly better accu
 
 ## Mixing methods
 
-The `CompositeQuantizer` chains multiple quantizers in sequence:
+`CompositeQuantizer` is not a residual chain — it routes **outlier** and **inlier** channels of the same vector to two different quantizers (e.g. a high-bit quantizer for a few outlier channels, a low-bit one for the rest):
 
 ```python
+import numpy as np
 from veloxquant_mlx.quantizers.composite import CompositeQuantizer
 from veloxquant_mlx.quantizers.turboquant_rvq import TurboQuantRVQ
 from veloxquant_mlx.quantizers.qjl import QJLQuantizer
 
-# RVQ for first-pass compression + QJL residual sketch
-quantizer = CompositeQuantizer([
-    TurboQuantRVQ(bits=1),
-    QJLQuantizer(sketch_dim=64),
-])
+total_dim = 128
+outlier_idx = np.array([3, 17, 42, 88])  # channel indices treated as outliers
+
+quantizer = CompositeQuantizer(
+    outlier_quantizer=TurboQuantRVQ(d=len(outlier_idx), b=4, seed=42),
+    inlier_quantizer=QJLQuantizer(d=total_dim - len(outlier_idx), m=64, seed=42),
+    outlier_idx=outlier_idx,
+    total_dim=total_dim,
+)
 ```
 
 ## Per-model recommendations

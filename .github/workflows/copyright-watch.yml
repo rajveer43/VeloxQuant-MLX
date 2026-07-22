@@ -40,12 +40,11 @@ jobs:
             // names below are unique enough that any hit warrants review.
             const SELF = 'rajveer43/VeloxQuant-MLX';
             const queries = [
-              `"TurboQuantRVQMLXKVCache" -repo:${SELF}`,
-              `"OutlierTokenRVQMLXKVCache" -repo:${SELF}`,
-              `"RateQuantRVQMLXKVCache" -repo:${SELF}`,
-              `"TurboQuantMLXKVCache" -repo:${SELF}`,
+              `"TurboQuantRVQKVCache" -repo:${SELF}`,
+              `"VecInferKVCache" -repo:${SELF}`,
+              `"TurboQuantKVCache" -repo:${SELF}`,
               `"_rvq_quality_synthetic" -repo:${SELF}`,
-              `"allocate_bits_waterfilling" -repo:${SELF}`,
+              `"allocate_bits_ratequant" -repo:${SELF}`,
             ];
 
             let total_hits = 0;

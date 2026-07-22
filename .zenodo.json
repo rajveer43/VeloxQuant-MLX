@@ -1,6 +1,6 @@
 {
   "title": "VeloxQuant-MLX: Fast KV-Cache Quantization for Apple Silicon",
-  "description": "Fast KV-cache quantization for Apple Silicon (MLX) — 37 research-adapted compression methods, from TurboQuant and KIVI to KVzip, with Metal kernels. Compresses the Key/Value cache of mlx_lm models up to 16x with near-lossless quality via a common three-line API.",
+  "description": "Fast KV-cache quantization for Apple Silicon (MLX) — 41 research-adapted compression methods, from TurboQuant and KIVI to A2ATS, with Metal kernels. Compresses the Key/Value cache of mlx_lm models up to 16x with near-lossless quality via a common three-line API.",
   "creators": [
     {
       "name": "Rathod, Rajveer",

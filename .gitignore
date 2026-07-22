@@ -9,6 +9,8 @@ venv/
 .venv/
 *.egg-info/
 dist/
+dist_preview/
+dist_pypi/
 build/
 *.log
 *.sqlite3

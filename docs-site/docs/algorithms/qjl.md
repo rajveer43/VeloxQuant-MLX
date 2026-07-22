@@ -42,8 +42,8 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 
 config = KVCacheConfig(
     method="qjl",
-    sketch_dim=64,   # sketch dimension (m). Larger = better quality, more memory.
-    value_bits=16,
+    jl_dim=64,   # sketch dimension (m). Larger = better quality, more memory.
+                 # Defaults to head_dim if left unset.
 )
 cache = KVCacheBuilder.build(model, config)
 
@@ -61,9 +61,9 @@ response = mlx_lm.generate(
 import mlx.core as mx
 from veloxquant_mlx.quantizers.qjl import QJLQuantizer
 
-quantizer = QJLQuantizer(sketch_dim=64, seed=42)
+quantizer = QJLQuantizer(d=128, m=64, seed=42)
 
-keys = mx.random.normal(shape=(1, 8, 512, 128))
+keys = mx.random.normal(shape=(512, 128))  # [N, D]
 
 encoded = quantizer.encode(keys)
 decoded = quantizer.decode(encoded)  # approximation, not exact reconstruction
@@ -75,37 +75,29 @@ decoded = quantizer.decode(encoded)  # approximation, not exact reconstruction
 
 ## Configuration reference
 
+`KVCacheConfig` field (when `method="qjl"`):
+
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `sketch_dim` | `int` | `64` | Sketch dimension `m`. Must be ≤ `head_dim` |
-| `value_bits` | `int` | `16` | Value quantization bits |
-| `seed` | `int` | `0` | Random seed for projection matrix `A` |
+| `jl_dim` | `Optional[int]` | `None` (→ `head_dim`) | Sketch dimension `m`. Must be ≤ `head_dim` |
+
+`QJLQuantizer` constructor:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `d` | `int` | — | Key vector dimension (required) |
+| `m` | `int` | `128` | Sketch dimension |
+| `b` | `int` | `1` | Bits per sketch dimension |
+| `seed` | `int` | `42` | Random seed for projection matrix `A` |
 
 ## Sketch dimension tradeoffs
 
-| `sketch_dim` | Memory (128-dim keys) | Quality |
+| `jl_dim` (`m`) | Memory (128-dim keys) | Quality |
 |---|---|---|
 | 32 | 0.25 bit/dim | Poor — for large batches only |
 | 64 | 0.5 bit/dim | Acceptable |
 | 128 | 1 bit/dim | Good — matches head_dim |
 | 256 | 2 bits/dim | Excellent but less compression |
-
-## QJL as a residual
-
-QJL can be chained after a primary quantizer to encode the residual:
-
-```python
-from veloxquant_mlx.quantizers.composite import CompositeQuantizer
-from veloxquant_mlx.quantizers.turboquant_rvq import TurboQuantRVQ
-from veloxquant_mlx.quantizers.qjl import QJLQuantizer
-
-quantizer = CompositeQuantizer([
-    TurboQuantRVQ(bits=1),      # first pass
-    QJLQuantizer(sketch_dim=32), # residual sketch
-])
-```
-
-This is similar to how `TurboQuantProd` works internally — see [API docs](../api/quantizers).
 
 ## When to use QJL
 
@@ -122,5 +114,5 @@ This is similar to how `TurboQuantProd` works internally — see [API docs](../a
 
 - [RaBitQ — better 1-bit method with IVF](../algorithms/rabitq)
 - [TurboQuant RVQ — best zero-calibration quality](../algorithms/rvq)
-- [API — QJLQuantizer](../api/quantizers)
-- [Metal API — qjl_encode, qjl_inner_product](../api/metal-api)
+- [Quantizers API](../api/quantizers)
+- [Metal API — `qjl_encode`, `qjl_inner_product`](../api/metal-api)
