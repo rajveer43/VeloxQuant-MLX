@@ -1,0 +1,218 @@
+<!-- Deploy: drag the landing/ folder to netlify.com/drop -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Playground — VeloxQuant-MLX</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=2" />
+  <link rel="shortcut icon" href="assets/favicon.svg?v=2" />
+  <meta name="description" content="Interactive VeloxQuant-MLX playground: pick your Mac chip, RAM, model size and goal to get a recommended KV-cache compression method, explore how much context fits in your RAM, and browse real measured Metal / RaBitQ / KIVI benchmarks — all computed in your browser." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles.css" />
+  <script>
+    // Set the theme before first paint to avoid a flash of the wrong theme.
+    (function () {
+      try {
+        var saved = localStorage.getItem('vq-theme');
+        if (saved === 'light' || saved === 'dark') {
+          document.documentElement.setAttribute('data-theme', saved);
+        }
+      } catch (e) { /* storage unavailable */ }
+    })();
+  </script>
+</head>
+<body>
+
+  <!-- ── NAVIGATION ── -->
+  <nav id="navbar">
+    <a href="index.html#hero" class="nav-logo">VeloxQuant-MLX</a>
+    <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <ul class="nav-links" id="nav-links">
+      <li><a href="index.html#compare">Why This?</a></li>
+      <li><a href="index.html#algorithms">Algorithms</a></li>
+      <li><a href="index.html#metal">Metal Kernels</a></li>
+      <li><a href="playground.html" aria-current="page">Playground</a></li>
+      <li><a href="index.html#benchmarks">Benchmarks</a></li>
+      <li><a href="index.html#install">Install</a></li>
+      <li><a href="/docs/" rel="noopener">Docs</a></li>
+      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
+      <li><a href="https://pypi.org/project/VeloxQuant-MLX/" target="_blank" rel="noopener">PyPI</a></li>
+      <li>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Switch to light theme" title="Toggle light / dark theme">
+          <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
+          <span class="theme-icon theme-icon-moon" aria-hidden="true">☾</span>
+        </button>
+      </li>
+    </ul>
+  </nav>
+
+  <!-- ── PLAYGROUND ── -->
+  <main id="playground">
+    <header class="pg-header">
+      <span class="pg-eyebrow">Interactive · runs in your browser</span>
+      <h1>Feel the power of <span>VeloxQuant-MLX</span></h1>
+      <p class="pg-sub">
+        Dial in your Mac, model and goal — see the recommended compression method,
+        how much more context fits in your RAM, and real measured benchmarks.
+        Every number here is computed live from the same heuristics that ship in
+        <code>veloxquant recommend</code>, or read from committed benchmark data.
+        <strong>Nothing is faked.</strong>
+      </p>
+    </header>
+
+    <!-- Tabs -->
+    <div class="pg-tabs" role="tablist" aria-label="Playground tools">
+      <button class="pg-tab-btn active" data-pgtab="rec" role="tab" aria-selected="true">① Method recommender</button>
+      <button class="pg-tab-btn" data-pgtab="lab" role="tab" aria-selected="false">② Compression lab</button>
+      <button class="pg-tab-btn" data-pgtab="bench" role="tab" aria-selected="false">③ Real benchmarks</button>
+    </div>
+
+    <!-- Shared "your hardware / model shape" controls -->
+    <section class="pg-shared" aria-label="Your setup">
+      <div class="pg-field">
+        <label for="pg-chip">Chip</label>
+        <select id="pg-chip">
+          <option value="M1">M1</option>
+          <option value="M2">M2</option>
+          <option value="M3" selected>M3</option>
+          <option value="M4">M4</option>
+        </select>
+      </div>
+      <div class="pg-field">
+        <label for="pg-ram">Unified RAM</label>
+        <select id="pg-ram">
+          <option value="8">8 GB</option>
+          <option value="16" selected>16 GB</option>
+          <option value="24">24 GB</option>
+          <option value="32">32 GB</option>
+          <option value="36">36 GB</option>
+          <option value="48">48 GB</option>
+          <option value="64">64 GB</option>
+          <option value="128">128 GB</option>
+        </select>
+      </div>
+      <div class="pg-field">
+        <label for="pg-model">Model class</label>
+        <select id="pg-model">
+          <option value="1B">1B</option>
+          <option value="3B">3B</option>
+          <option value="7B" selected>7B</option>
+          <option value="14B">14B</option>
+          <option value="32B">32B</option>
+        </select>
+      </div>
+      <div class="pg-field">
+        <label for="pg-seqlen">Sequence length</label>
+        <input id="pg-seqlen" type="number" min="1" step="256" value="4096" />
+      </div>
+      <div class="pg-field">
+        <label for="pg-layers">Layers</label>
+        <input id="pg-layers" type="number" min="1" step="1" value="32" />
+      </div>
+      <div class="pg-field">
+        <label for="pg-heads">KV heads</label>
+        <input id="pg-heads" type="number" min="1" step="1" value="8" />
+      </div>
+      <div class="pg-field">
+        <label for="pg-headdim">Head dim</label>
+        <input id="pg-headdim" type="number" min="1" step="8" value="128" />
+      </div>
+    </section>
+
+    <!-- Panel 1: Recommender -->
+    <section class="pg-panel active" id="pg-panel-rec" role="tabpanel">
+      <div class="pg-panel-controls">
+        <div class="pg-field">
+          <label for="pg-goal">Goal</label>
+          <select id="pg-goal">
+            <option value="everyday" selected>Everyday (zero-calibration)</option>
+            <option value="max_key_accounting">Max key accounting (~16×)</option>
+            <option value="max_context">Max context (full-KV)</option>
+            <option value="best_quality">Best quality</option>
+            <option value="constant_memory">Constant memory (eviction)</option>
+          </select>
+        </div>
+      </div>
+      <div class="pg-output" id="rec-output"></div>
+    </section>
+
+    <!-- Panel 2: Compression lab -->
+    <section class="pg-panel" id="pg-panel-lab" role="tabpanel">
+      <div class="pg-panel-controls">
+        <div class="pg-field">
+          <label for="pg-cmethod">Method</label>
+          <select id="pg-cmethod">
+            <option value="turboquant_rvq" selected>TurboQuant-RVQ (7.5×)</option>
+            <option value="vecinfer">VecInfer (16×)</option>
+            <option value="rabitq">RaBitQ full-KV (6×)</option>
+            <option value="spectral">SpectralQuant (5.3×)</option>
+            <option value="kivi">KIVI-2bit (4×)</option>
+          </select>
+        </div>
+        <div class="pg-field">
+          <label for="pg-budget">RAM budget for KV</label>
+          <select id="pg-budget">
+            <option value="4">4 GB</option>
+            <option value="8" selected>8 GB</option>
+            <option value="16">16 GB</option>
+            <option value="24">24 GB</option>
+          </select>
+        </div>
+      </div>
+      <div class="pg-output" id="lab-output"></div>
+    </section>
+
+    <!-- Panel 3: Benchmarks -->
+    <section class="pg-panel" id="pg-panel-bench" role="tabpanel">
+      <div class="pg-panel-controls">
+        <div class="pg-field">
+          <label for="pg-bench">Benchmark</label>
+          <select id="pg-bench">
+            <option value="metal" selected>Metal kernel speedup</option>
+            <option value="rabitq">RaBitQ full-KV memory</option>
+            <option value="kivi">KIVI throughput retention</option>
+          </select>
+        </div>
+        <div class="pg-field" id="pg-bench-model-wrap" style="display:none">
+          <label for="pg-bench-model">Model</label>
+          <select id="pg-bench-model">
+            <option value="Llama-3.2-3B-Instruct-4bit">Llama-3.2-3B</option>
+            <option value="Mistral-7B-Instruct-v0.3-4bit">Mistral-7B</option>
+            <option value="Qwen2.5-7B-Instruct-4bit">Qwen2.5-7B</option>
+          </select>
+        </div>
+      </div>
+      <div class="pg-output" id="bench-output"></div>
+    </section>
+
+    <p class="pg-disclaimer">
+      Recommender + compression estimates are transparent heuristics (a direct port of
+      <code>veloxquant_mlx/tools/mac_recommender.py</code>) — they state when resident RAM
+      savings are unlikely. Benchmark charts read measured values committed under
+      <code>figures/</code>. For live numbers on your own machine, run
+      <code>python -m veloxquant_mlx benchmark</code>.
+    </p>
+  </main>
+
+  <!-- ── FOOTER ── -->
+  <footer>
+    <ul class="footer-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
+      <li><a href="https://pypi.org/project/VeloxQuant-MLX/" target="_blank" rel="noopener">PyPI</a></li>
+      <li><a href="/docs/" rel="noopener">Docs</a></li>
+      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
+    </ul>
+    <p class="footer-copy">© 2026 Rajveer Rathod · MIT License</p>
+    <p class="footer-tagline">BUILT FOR APPLE SILICON. ENGINEERED FOR SPEED.</p>
+  </footer>
+
+  <script src="assets/main.js" defer></script>
+  <script src="assets/playground.js" defer></script>
+</body>
+</html>

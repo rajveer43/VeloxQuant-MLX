@@ -1,0 +1,189 @@
+{
+  "_source": "Curated from figures/metal/results.json, figures/RaBitQ/falcon/results.json, figures/kivi/results_summary.json. All values are real measured benchmarks.",
+  "metal_quantize": [
+    {
+      "S": 128,
+      "pure_ms": 3.64,
+      "metal_ms": 0.53,
+      "speedup": 6.91
+    },
+    {
+      "S": 512,
+      "pure_ms": 13.47,
+      "metal_ms": 1.26,
+      "speedup": 10.7
+    },
+    {
+      "S": 1024,
+      "pure_ms": 26.97,
+      "metal_ms": 2.23,
+      "speedup": 12.09
+    },
+    {
+      "S": 2048,
+      "pure_ms": 55.1,
+      "metal_ms": 4.18,
+      "speedup": 13.17
+    },
+    {
+      "S": 4096,
+      "pure_ms": 108.82,
+      "metal_ms": 7.98,
+      "speedup": 13.63
+    },
+    {
+      "S": 8192,
+      "pure_ms": 228.56,
+      "metal_ms": 15.57,
+      "speedup": 14.68
+    }
+  ],
+  "rabitq_falcon_memory": [
+    {
+      "seq_len": 256,
+      "fp16_mb": 29.4,
+      "rabitq_mse4v_mb": 4.9,
+      "ratio": 5.95
+    },
+    {
+      "seq_len": 512,
+      "fp16_mb": 58.7,
+      "rabitq_mse4v_mb": 9.9,
+      "ratio": 5.95
+    },
+    {
+      "seq_len": 1024,
+      "fp16_mb": 117.4,
+      "rabitq_mse4v_mb": 19.7,
+      "ratio": 5.95
+    },
+    {
+      "seq_len": 2048,
+      "fp16_mb": 234.9,
+      "rabitq_mse4v_mb": 39.5,
+      "ratio": 5.95
+    },
+    {
+      "seq_len": 4096,
+      "fp16_mb": 469.8,
+      "rabitq_mse4v_mb": 78.9,
+      "ratio": 5.95
+    }
+  ],
+  "kivi_models": {
+    "Llama-3.2-3B-Instruct-4bit": {
+      "chip": "Apple M4",
+      "ram_gb": 24.0,
+      "rows": [
+        {
+          "config": "fp16-baseline",
+          "tok_s": 16.0,
+          "tok_s_pct": 100,
+          "key_compression": 1.0,
+          "full_kv_compression": 1.0,
+          "peak_mb": 2484
+        },
+        {
+          "config": "KIVI-2bit",
+          "tok_s": 16.3,
+          "tok_s_pct": 102,
+          "key_compression": 5.79,
+          "full_kv_compression": 3.98,
+          "peak_mb": 2600
+        },
+        {
+          "config": "KIVI-3bit",
+          "tok_s": 15.9,
+          "tok_s_pct": 99,
+          "key_compression": 4.34,
+          "full_kv_compression": 3.24,
+          "peak_mb": 2600
+        },
+        {
+          "config": "KIVI-4bit",
+          "tok_s": 16.0,
+          "tok_s_pct": 100,
+          "key_compression": 3.47,
+          "full_kv_compression": 2.73,
+          "peak_mb": 2600
+        }
+      ]
+    },
+    "Mistral-7B-Instruct-v0.3-4bit": {
+      "chip": "Apple M4",
+      "ram_gb": 24.0,
+      "rows": [
+        {
+          "config": "fp16-baseline",
+          "tok_s": 6.5,
+          "tok_s_pct": 100,
+          "key_compression": 1.0,
+          "full_kv_compression": 1.0,
+          "peak_mb": 4664
+        },
+        {
+          "config": "KIVI-2bit",
+          "tok_s": 6.8,
+          "tok_s_pct": 105,
+          "key_compression": 5.76,
+          "full_kv_compression": 4.03,
+          "peak_mb": 4693
+        },
+        {
+          "config": "KIVI-3bit",
+          "tok_s": 6.7,
+          "tok_s_pct": 104,
+          "key_compression": 4.32,
+          "full_kv_compression": 3.27,
+          "peak_mb": 4693
+        },
+        {
+          "config": "KIVI-4bit",
+          "tok_s": 6.7,
+          "tok_s_pct": 104,
+          "key_compression": 3.46,
+          "full_kv_compression": 2.75,
+          "peak_mb": 4693
+        }
+      ]
+    },
+    "Qwen2.5-7B-Instruct-4bit": {
+      "chip": "Apple M4",
+      "ram_gb": 24.0,
+      "rows": [
+        {
+          "config": "fp16-baseline",
+          "tok_s": 7.6,
+          "tok_s_pct": 100,
+          "key_compression": 1.0,
+          "full_kv_compression": 1.0,
+          "peak_mb": 4869
+        },
+        {
+          "config": "KIVI-2bit",
+          "tok_s": 7.6,
+          "tok_s_pct": 100,
+          "key_compression": 5.78,
+          "full_kv_compression": 3.98,
+          "peak_mb": 4845
+        },
+        {
+          "config": "KIVI-3bit",
+          "tok_s": 7.3,
+          "tok_s_pct": 96,
+          "key_compression": 4.34,
+          "full_kv_compression": 3.24,
+          "peak_mb": 4845
+        },
+        {
+          "config": "KIVI-4bit",
+          "tok_s": 7.3,
+          "tok_s_pct": 97,
+          "key_compression": 3.47,
+          "full_kv_compression": 2.73,
+          "peak_mb": 4845
+        }
+      ]
+    }
+  }
+}
