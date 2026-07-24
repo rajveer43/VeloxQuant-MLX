@@ -23,6 +23,19 @@ function estimateKvFp16Mb(nLayers, nKvHeads, headDim, seqLen) {
   return bytes / (1024 ** 2);
 }
 
+// RAM realistically available for the KV cache on the current machine: unified
+// RAM minus 4-bit weights minus the same ~4 GB OS/app reserve recommend() uses
+// for headroomGb below. NOT a new heuristic — mirrors that formula exactly.
+// Floors at MIN_KV_BUDGET_GB so a too-small/negative result stays usable and
+// the lab can explain why (ties into the accounting-vs-resident caveat).
+const OS_RESERVE_GB = 4.0;    // same reserve as headroomGb in recommend()
+const MIN_KV_BUDGET_GB = 0.5; // floor; lab surfaces the "tight" story
+function deriveKvBudgetGb(ramGb, modelClass) {
+  const weightGb = MODEL_WEIGHT_GB_4BIT[modelClass] ?? 0;
+  const free = ramGb - weightGb - OS_RESERVE_GB;
+  return Math.max(MIN_KV_BUDGET_GB, Math.round(free * 10) / 10); // 0.1 GB grid
+}
+
 // Round-half-to-even to match Python's round() used in the reference engine.
 function round2(x) {
   const r = Math.round(x * 100) / 100;
@@ -218,6 +231,7 @@ function applyPreset(id) {
   markActivePreset();
   if (typeof updateAdvancedHint === "function") updateAdvancedHint();
   runRecommender();
+  syncAutoBudget(); // model_class changed: re-derive the budget in auto mode
   runCompressionLab();
 }
 
@@ -244,14 +258,20 @@ function markActivePreset() {
 }
 
 /* ---------- Method catalogue for the compression lab ---------- */
-// ratio = compression factor used for the "fits in RAM" estimate.
-// snippet = the real 3-line API for that method.
+// ratio    = compression factor used for the "fits in RAM" estimate.
+// resident = whether that ratio reflects real resident-RAM savings (full-KV
+//            path) or is key-accounting-only. Mirrors resident_savings_likely
+//            in mac_recommender.py: only the full-KV path (rabitq) frees
+//            resident RAM; the rest keep an fp16 parent cache by default, so
+//            their token estimate is an accounting bound, not a RAM promise.
+// snippet   = the real 3-line API for that method.
 const METHODS = {
   turboquant_rvq: {
     label: "TurboQuant-RVQ (everyday, zero-calibration)",
     short: "TurboQuant-RVQ",
     blurb: "Zero-calibration everyday default.",
     ratio: 7.5,
+    resident: false,
     config: 'KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)',
   },
   vecinfer: {
@@ -259,6 +279,7 @@ const METHODS = {
     short: "VecInfer",
     blurb: "Max key accounting; needs calibration.",
     ratio: 16.0,
+    resident: false,
     config: 'KVCacheConfig(method="vecinfer", key_codebook_bits=8, key_sub_dim=8)',
   },
   rabitq: {
@@ -266,6 +287,7 @@ const METHODS = {
     short: "RaBitQ",
     blurb: "Full-KV compression for long context.",
     ratio: 6.0,
+    resident: true,
     config: 'KVCacheConfig(method="rabitq")',
   },
   spectral: {
@@ -273,6 +295,7 @@ const METHODS = {
     short: "SpectralQuant",
     blurb: "Best reconstruction quality.",
     ratio: 5.3,
+    resident: false,
     config: 'KVCacheConfig(method="spectral", bit_width_inlier=3)',
   },
   kivi: {
@@ -280,6 +303,7 @@ const METHODS = {
     short: "KIVI-2bit",
     blurb: "Per-channel keys, throughput-neutral.",
     ratio: 4.0,
+    resident: false,
     config: 'KVCacheConfig(method="kivi", bit_width_inlier=2)',
   },
 };
@@ -341,6 +365,27 @@ function readSharedShape() {
   };
 }
 
+// Validate the shared shape before it reaches the engine. A blank or
+// non-numeric field parses to NaN; without this guard those NaNs flow into
+// estimateKvFp16Mb and render "NaN MB" / "NaN%" across every card and bar.
+// Throws a clear, field-named message the panels surface as .pg-error —
+// the same failure path runRecommender already uses for the engine's throws.
+const SHAPE_FIELDS = [
+  ["n_layers", "Layers"],
+  ["n_kv_heads", "KV heads"],
+  ["head_dim", "Head dim"],
+  ["seq_len", "Sequence length"],
+];
+function assertValidShape(shape) {
+  for (const [key, label] of SHAPE_FIELDS) {
+    const v = shape[key];
+    if (!Number.isFinite(v) || v < 1) {
+      throw new Error(`${label} must be a whole number ≥ 1.`);
+    }
+  }
+  return shape;
+}
+
 /* Animate a numeric element from its current value up to `to`.
    Purely presentational — the final rendered value is always the real one.
    `fmt` formats the running value; skipped entirely under reduced-motion. */
@@ -388,6 +433,11 @@ const URL_KEYS = {
 
 // Restore setup from ?chip=…&ram=… before first compute. Silently ignores
 // values the control doesn't offer, so a stale link can't break the page.
+// Also resolves the lab budget's auto/manual mode:
+//   autobudget=1        -> auto (re-derive, ignore any stale ?budget=)
+//   autobudget=0         -> manual, use ?budget=
+//   no autobudget, budget present  -> manual (old share links pre-dating Auto)
+//   neither present      -> auto (fresh visit)
 function restoreFromUrl() {
   const params = new URLSearchParams(window.location.search);
   if (![...params.keys()].length) return;
@@ -402,6 +452,11 @@ function restoreFromUrl() {
       el.value = val;
     }
   });
+  if (params.has("autobudget")) {
+    autoBudget = params.get("autobudget") !== "0";
+  } else if (params.has("budget")) {
+    autoBudget = false;
+  }
 }
 
 // Build a shareable URL that restores the current setup on load.
@@ -411,6 +466,7 @@ function buildShareUrl() {
     const el = $(elId);
     if (el && el.value !== "") params.set(qkey, el.value);
   });
+  params.set("autobudget", autoBudget ? "1" : "0");
   return `${window.location.origin}${window.location.pathname}?${params.toString()}`;
 }
 
@@ -530,6 +586,7 @@ function runRecommender() {
 
   let res;
   try {
+    assertValidShape(shape);
     res = recommend(req);
   } catch (e) {
     $("rec-output").innerHTML = `<p class="pg-error">${esc(e.message)}</p>`;
@@ -776,8 +833,58 @@ function selectMethod(key) {
   runCompressionLab();
 }
 
+// Whether the lab budget tracks the machine (true) or the user pinned it (false).
+let autoBudget = true;
+
+// Recompute the derived budget from the current chip/RAM/model and write it,
+// but only while in auto mode — a manual pin is never silently overwritten.
+// Does NOT run the lab itself; every caller ends with its own single
+// runCompressionLab() so RAM/model handlers don't double-render.
+function syncAutoBudget() {
+  if (!autoBudget) return;
+  const ramGb = parseInt($("pg-ram").value, 10);
+  const modelClass = $("pg-model").value;
+  writeBudget(deriveKvBudgetGb(ramGb, modelClass), /* isAuto */ true);
+}
+
+// Write a budget value to the hidden input (source of truth for URL + engine),
+// the visible field, the mode caption, and the Auto toggle's pressed state.
+function writeBudget(gb, isAuto) {
+  autoBudget = isAuto;
+  $("pg-budget").value = String(gb);
+  $("pg-budget-input").value = String(gb);
+  const btn = $("pg-budget-auto");
+  btn.setAttribute("aria-pressed", isAuto ? "true" : "false");
+  btn.classList.toggle("active", isAuto);
+  const src = $("pg-budget-src");
+  src.textContent = isAuto
+    ? `from ${parseInt($("pg-ram").value, 10)} GB Mac · auto`
+    : "manual";
+}
+
+// User edited the number directly → drop to manual and recompute.
+function onBudgetInput() {
+  const gb = parseFloat($("pg-budget-input").value);
+  if (!Number.isFinite(gb) || gb < MIN_KV_BUDGET_GB) return; // ignore mid-edit junk
+  writeBudget(Math.round(gb * 10) / 10, /* isAuto */ false);
+  runCompressionLab();
+}
+
+// "Auto" button → re-link the budget to the selected machine.
+function onBudgetAuto() {
+  autoBudget = true;
+  syncAutoBudget();
+  runCompressionLab();
+}
+
 function runCompressionLab() {
   const shape = readSharedShape();
+  try {
+    assertValidShape(shape);
+  } catch (e) {
+    $("lab-output").innerHTML = `<p class="pg-error">${esc(e.message)}</p>`;
+    return;
+  }
   const methodKey = $("pg-cmethod").value;
   const m = METHODS[methodKey];
   const ratio = m.ratio;
@@ -788,6 +895,10 @@ function runCompressionLab() {
   // "Tokens that now fit in a RAM budget" — linear KV extrapolation, the same
   // framing the README uses for RaBitQ ("~103k tokens at 8 GB").
   const budgetGb = parseFloat($("pg-budget").value);
+  if (!Number.isFinite(budgetGb) || budgetGb < MIN_KV_BUDGET_GB) {
+    $("lab-output").innerHTML = `<p class="pg-error">RAM budget for KV must be a number ≥ ${MIN_KV_BUDGET_GB} GB.</p>`;
+    return;
+  }
   const budgetMb = budgetGb * 1024;
   const perTokenFp16Mb = fp16Mb / shape.seq_len;
   const perTokenCompMb = compMb / shape.seq_len;
@@ -796,6 +907,25 @@ function runCompressionLab() {
 
   const savedPct = Math.round((1 - compMb / fp16Mb) * 100);
   const book = bookScale(tokensComp);
+
+  // Honesty: the token estimate divides fp16 by the *accounting* ratio. Only
+  // the full-KV path (m.resident) actually frees resident RAM by that factor;
+  // for the rest it's an accounting bound (an fp16 parent cache may remain),
+  // mirroring resident_savings_likely in the recommender. Label it either way
+  // so the lab keeps the same "nothing is faked" promise as the recommender.
+  const residentCaveat = m.resident
+    ? `<p class="pg-lab-caveat is-ok">Full-KV path — this ${ratio}× reflects real resident-RAM savings.</p>`
+    : `<p class="pg-lab-caveat is-warn"><strong>Accounting-only:</strong> the ${ratio}× is a key-accounting bound.
+        This method's default path may keep an fp16 parent cache, so resident RAM
+        may not drop by the full factor at short context.</p>`;
+
+  // At the derived floor, weights + OS reserve leave almost nothing for KV —
+  // surface why, using the same framing as the recommender's headroom warning.
+  const budgetFloorCaveat =
+    autoBudget && deriveKvBudgetGb(parseInt($("pg-ram").value, 10), $("pg-model").value) <= MIN_KV_BUDGET_GB
+      ? `<p class="pg-lab-caveat is-warn">On this machine, weights + OS reserve leave little RAM for KV —
+          consider a smaller model, more RAM, or eviction (goal = constant memory).</p>`
+      : "";
 
   // Pattern 1 — headline 2-card stat row: tokens @ fp16 vs with <method>.
   const statRow = renderStatRow(
@@ -823,7 +953,9 @@ function runCompressionLab() {
     ${renderBand("Context that fits", "chart",
       `<p class="pg-book">≈ <strong>${book.pages.toLocaleString()} pages</strong> — about ${book.tangible}
         <span class="pg-approx">approx · ~${TOKENS_PER_PAGE} tokens/page</span></p>
-       <p class="pg-saved">${ratio}× more context in the same RAM budget (KV-only linear estimate).</p>`)}
+       <p class="pg-saved">${ratio}× more context in the same RAM budget (KV-only linear estimate).</p>
+       ${residentCaveat}
+       ${budgetFloorCaveat}`)}
 
     ${renderBand("Memory", "memory",
       renderMemoryBar(round2(fp16Mb), round2(compMb), savedPct, "lab"))}
@@ -1142,7 +1274,9 @@ function updateAdvancedHint() {
   const hint = $("pg-adv-hint");
   if (!hint) return;
   const s = readSharedShape();
-  hint.textContent = `${$("pg-model").value} · ${s.n_layers}L · ${s.n_kv_heads} KV heads · dim ${s.head_dim} · seq ${s.seq_len.toLocaleString()}`;
+  // Show a dash for any field mid-edit (blank/NaN) instead of "NaN".
+  const n = (v) => (Number.isFinite(v) ? v.toLocaleString() : "—");
+  hint.textContent = `${$("pg-model").value} · ${n(s.n_layers)}L · ${n(s.n_kv_heads)} KV heads · dim ${n(s.head_dim)} · seq ${n(s.seq_len)}`;
 }
 
 /* ---------- Wire everything up ---------- */
@@ -1157,18 +1291,33 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   // Setup-bar inputs (chip / RAM / goal) drive the recommender + headline.
-  ["pg-chip", "pg-ram", "pg-goal"].forEach((id) =>
-    $(id).addEventListener("change", runRecommender)
-  );
+  // RAM also feeds the lab budget's auto-derivation (weights/OS don't depend
+  // on chip, so chip intentionally does not trigger a budget re-derive).
+  $("pg-chip").addEventListener("change", runRecommender);
+  $("pg-goal").addEventListener("change", runRecommender);
+  $("pg-ram").addEventListener("change", () => {
+    runRecommender();
+    syncAutoBudget();
+    runCompressionLab();
+  });
   // Shared shape inputs drive both recommender and lab; hand-editing a shape
   // field re-evaluates which preset (if any) still matches, else falls to Custom.
   ["pg-layers", "pg-heads", "pg-headdim", "pg-seqlen"].forEach((id) =>
     $(id).addEventListener("input", recompute)
   );
-  // model_class is both a recommender input and part of a preset's identity.
-  $("pg-model").addEventListener("change", recompute);
-  // Lab budget (method is chosen via cards → selectMethod).
-  $("pg-budget").addEventListener("input", runCompressionLab);
+  // model_class is both a recommender input and part of a preset's identity,
+  // and (via 4-bit weight size) feeds the lab budget's auto-derivation.
+  $("pg-model").addEventListener("change", () => {
+    markActivePreset();
+    updateAdvancedHint();
+    runRecommender();
+    syncAutoBudget();
+    runCompressionLab();
+  });
+  // Lab budget: typing a value pins it to manual; "Auto" re-links it to the
+  // selected machine (method is chosen via cards → selectMethod).
+  $("pg-budget-input").addEventListener("input", onBudgetInput);
+  $("pg-budget-auto").addEventListener("click", onBudgetAuto);
   // Bench inputs — the benchmark itself is a segmented control (wired in
   // renderSegmentedBench → selectBench); the KIVI model stays a <select>.
   $("pg-bench-model").addEventListener("change", runBenchViewer);
@@ -1210,6 +1359,15 @@ document.addEventListener("DOMContentLoaded", () => {
     applyPreset("mistral-7b"); // sensible default that matches the code snippet
   } else {
     selectMethod($("pg-cmethod").value); // re-mark cards from restored method
+  }
+
+  // Reconcile the lab budget UI with whatever mode restoreFromUrl() resolved:
+  // auto re-derives from the (possibly just-restored) chip/RAM/model; manual
+  // uses the ?budget= value restoreFromUrl() already wrote into the hidden input.
+  if (autoBudget) {
+    syncAutoBudget();
+  } else {
+    writeBudget(parseFloat($("pg-budget").value) || MIN_KV_BUDGET_GB, false);
   }
 
   markActivePreset();

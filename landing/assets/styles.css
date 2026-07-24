@@ -2156,7 +2156,32 @@ footer {
   background: rgba(var(--accent-rgb), 0.08);
   box-shadow: 0 0 0 1px var(--accent) inset;
 }
-.pg-field-budget { max-width: 200px; }
+.pg-field-budget { max-width: 260px; }
+.pg-budget-control { display: flex; align-items: center; gap: 0.4rem; }
+.pg-budget-control input[type="number"] { width: 5.5rem; flex: 0 0 auto; }
+.pg-budget-unit { color: var(--muted); font-size: 0.85rem; }
+.pg-budget-auto {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background-color 0.15s;
+}
+.pg-budget-auto.active {
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+.pg-budget-auto:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pg-budget-src { display: block; margin-top: 0.25rem; font-size: 0.72rem; color: var(--muted); }
+@media (max-width: 520px) {
+  .pg-budget-control { flex-wrap: wrap; }
+}
 
 /* Token tiles */
 .pg-result-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem; margin-bottom: 0.9rem; }
@@ -2193,6 +2218,22 @@ footer {
   border-radius: 999px;
   padding: 0.1rem 0.5rem;
 }
+
+/* Accounting-vs-resident caveat under the lab's "context that fits" estimate.
+   Mirrors the recommender's honesty about which ratios free real RAM. */
+.pg-lab-caveat {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--muted);
+  border-left: 3px solid var(--border);
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--surface) 82%, var(--border));
+}
+.pg-lab-caveat.is-warn { border-left-color: var(--pg-warn); }
+.pg-lab-caveat.is-ok { border-left-color: var(--pg-good); }
+.pg-lab-caveat strong { color: var(--text); }
 
 /* Code snippet */
 .pg-snippet { margin-top: 1.1rem; }

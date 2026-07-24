@@ -195,13 +195,18 @@
           <!-- method cards injected by playground.js -->
         </div>
         <div class="pg-field pg-field-budget">
-          <label for="pg-budget">RAM budget for KV</label>
-          <select id="pg-budget">
-            <option value="4">4 GB</option>
-            <option value="8" selected>8 GB</option>
-            <option value="16">16 GB</option>
-            <option value="24">24 GB</option>
-          </select>
+          <label for="pg-budget-input" id="pg-budget-label">RAM budget for KV</label>
+          <!-- Hidden input remains the single source of truth for URL state + engine. -->
+          <input type="hidden" id="pg-budget" value="" />
+          <div class="pg-budget-control">
+            <input id="pg-budget-input" type="number" min="0.5" step="0.5"
+                   inputmode="decimal" aria-describedby="pg-budget-src" />
+            <span class="pg-budget-unit" aria-hidden="true">GB</span>
+            <button type="button" id="pg-budget-auto" class="pg-budget-auto"
+                    aria-pressed="true"
+                    title="Match the RAM free for KV on your selected Mac">Auto</button>
+          </div>
+          <span id="pg-budget-src" class="pg-budget-src" aria-live="polite"></span>
         </div>
       </div>
       <div class="pg-output" id="lab-output" aria-live="polite"></div>
