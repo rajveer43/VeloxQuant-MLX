@@ -116,11 +116,11 @@ _HADAMARD_QUANTIZE_SRC = r"""
 # Kernel factories
 # ---------------------------------------------------------------------------
 
-def _scalar_quantize_kernel(b: int):
-    key = ("scalar_quantize", b)
+def _scalar_quantize_kernel(b: int, dtype: mx.Dtype):
+    key = ("scalar_quantize", b, str(dtype))
     if key not in _cache:
         _cache[key] = mx.fast.metal_kernel(
-            name=f"turboquant_scalar_quantize_b{b}",
+            name=f"turboquant_scalar_quantize_b{b}_{str(dtype).replace('.', '_')}",
             input_names=["x", "centroids"],
             output_names=["indices"],
             source=_SCALAR_QUANTIZE_SRC,
@@ -184,11 +184,18 @@ def turboquant_scalar_quantize(
             f"got {centroids.size}"
         )
     *leading, d = x.shape
-    flat_x    = x.reshape(-1).astype(mx.float32)
+    # Only promote to fp32 if the input isn't already a Metal-native float
+    # type: the kernel body does float(x[elem]) internally (see
+    # _SCALAR_QUANTIZE_SRC), so fp16/fp32 input can be passed straight
+    # through without an extra MLX cast dispatch beforehand.
+    if x.dtype in (mx.float16, mx.float32):
+        flat_x = x.reshape(-1)
+    else:
+        flat_x = x.reshape(-1).astype(mx.float32)
     cents_f32 = centroids.astype(mx.float32)
     N         = flat_x.size
 
-    outputs = _scalar_quantize_kernel(b)(
+    outputs = _scalar_quantize_kernel(b, flat_x.dtype)(
         inputs=[flat_x, cents_f32],
         template=[("B_BITS", b)],
         grid=(N, 1, 1),
