@@ -69,7 +69,7 @@ function initCodeTabs() {
 function initBadgeTyping() {
   const badge = document.getElementById('hero-badge');
   if (!badge) return;
-  const text = "v0.39.0 — A2ATS-adapted windowed RoPE + query-aware retrieval VQ shipped";
+  const text = "v0.41.0 — mlx-vlm vision-language model support shipped";
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     badge.textContent = text;
     return;
@@ -286,44 +286,6 @@ function initCodeBootAnimation() {
   document.querySelectorAll('.code-wrap').forEach(el => codeObserver.observe(el));
 }
 
-// ── ALGORITHM FILTER BAR ──
-function initAlgorithmFilter() {
-  const filterBtns = document.querySelectorAll('.filter-btn[data-filter]');
-  const algoCards = document.querySelectorAll('.algo-grid .algo-card');
-  const catGroups = document.querySelectorAll('.cat-group');
-  const noResults = document.getElementById('algo-no-results');
-
-  filterBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      filterBtns.forEach(b => {
-        b.classList.remove('active');
-        b.setAttribute('aria-pressed', 'false');
-      });
-      btn.classList.add('active');
-      btn.setAttribute('aria-pressed', 'true');
-      const filter = btn.dataset.filter;
-      let visible = 0;
-      algoCards.forEach(card => {
-        if (filter === 'all') {
-          card.classList.remove('hidden-by-filter');
-          visible++;
-        } else {
-          const tags = (card.dataset.tags || '').split(' ');
-          const match = tags.includes(filter);
-          card.classList.toggle('hidden-by-filter', !match);
-          if (match) visible++;
-        }
-      });
-      // Hide a category group whose visible cards all got filtered out.
-      catGroups.forEach(group => {
-        const anyVisible = group.querySelector('.algo-card:not(.hidden-by-filter)');
-        group.classList.toggle('hidden-by-filter', !anyVisible);
-      });
-      if (noResults) noResults.style.display = visible === 0 ? 'block' : 'none';
-    });
-  });
-}
-
 // ── MOBILE HAMBURGER MENU ──
 function initHamburgerMenu() {
   const toggle = document.getElementById('nav-toggle');
@@ -396,7 +358,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initActiveNav();
   initScrollParallax();
   initCodeBootAnimation();
-  initAlgorithmFilter();
   initHamburgerMenu();
   initMagneticButtons();
   initThemeToggle();
