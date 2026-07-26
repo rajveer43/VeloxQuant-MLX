@@ -606,6 +606,10 @@ section {
   gap: 1.5rem;
 }
 
+.explainer-grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .explainer-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1621,7 +1625,8 @@ footer {
   .cat-header { flex-wrap: wrap; }
   .algo-card.vecinfer-card { grid-column: span 1; }
   .install-grid { grid-template-columns: 1fr; }
-  .explainer-grid { grid-template-columns: 1fr; }
+  .explainer-grid,
+  .explainer-grid-3 { grid-template-columns: 1fr; }
   .nav-links { gap: 1rem; }
   h1 { font-size: 2rem; }
   .stat-number { font-size: 2.2rem; }
