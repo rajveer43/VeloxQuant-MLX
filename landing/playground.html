@@ -1,0 +1,267 @@
+<!-- Deploy: drag the landing/ folder to netlify.com/drop -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Playground — VeloxQuant-MLX</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=2" />
+  <link rel="shortcut icon" href="assets/favicon.svg?v=2" />
+  <meta name="description" content="Interactive VeloxQuant-MLX playground: pick your Mac chip, RAM, model size and goal to get a recommended KV-cache compression method, explore how much context fits in your RAM, and browse real measured Metal / RaBitQ / KIVI benchmarks — all computed in your browser." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles.css" />
+  <script>
+    // Set the theme before first paint to avoid a flash of the wrong theme.
+    (function () {
+      try {
+        var saved = localStorage.getItem('vq-theme');
+        if (saved === 'light' || saved === 'dark') {
+          document.documentElement.setAttribute('data-theme', saved);
+        }
+      } catch (e) { /* storage unavailable */ }
+    })();
+  </script>
+</head>
+<body>
+
+  <!-- ── NAVIGATION ── -->
+  <nav id="navbar">
+    <a href="index.html#hero" class="nav-logo">VeloxQuant-MLX</a>
+    <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <ul class="nav-links" id="nav-links">
+      <li><a href="index.html#compare">Why This?</a></li>
+      <li><a href="index.html#algorithms">Algorithms</a></li>
+      <li><a href="index.html#metal">Metal Kernels</a></li>
+      <li><a href="playground.html" aria-current="page">Playground</a></li>
+      <li><a href="index.html#benchmarks">Benchmarks</a></li>
+      <li><a href="index.html#install">Install</a></li>
+      <li><a href="/docs/" rel="noopener">Docs</a></li>
+      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
+      <li><a href="https://pypi.org/project/VeloxQuant-MLX/" target="_blank" rel="noopener">PyPI</a></li>
+      <li>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Switch to light theme" title="Toggle light / dark theme">
+          <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
+          <span class="theme-icon theme-icon-moon" aria-hidden="true">☾</span>
+        </button>
+      </li>
+    </ul>
+  </nav>
+
+  <!-- ── PLAYGROUND ── -->
+  <main id="playground">
+    <header class="pg-header">
+      <span class="pg-eyebrow">Interactive · runs in your browser</span>
+      <h1>Feel the power of <span>VeloxQuant-MLX</span></h1>
+      <p class="pg-sub">
+        Dial in your Mac, model and goal — see the recommended compression method,
+        how much more context fits in your RAM, and real measured benchmarks.
+      </p>
+      <p class="pg-headline" id="pg-headline" aria-live="polite">
+        <!-- animated headline metric injected by playground.js -->
+      </p>
+      <p class="pg-trust">
+        Every number is computed live from the same heuristic that ships in
+        <code>veloxquant recommend</code> — a direct port of
+        <code>mac_recommender.py</code> — or read from committed benchmark data.
+        <strong>Nothing is faked.</strong>
+      </p>
+    </header>
+
+    <!-- ── Persistent "Your setup" control bar (sticky) ── -->
+    <section class="pg-setup" id="pg-setup" aria-label="Your setup">
+      <div class="pg-setup-top">
+        <div class="pg-field pg-field-chip">
+          <label for="pg-chip">Chip</label>
+          <select id="pg-chip">
+            <option value="M1">M1</option>
+            <option value="M2">M2</option>
+            <option value="M3" selected>M3</option>
+            <option value="M4">M4</option>
+          </select>
+        </div>
+        <div class="pg-field pg-field-chip">
+          <label for="pg-ram">Unified RAM</label>
+          <select id="pg-ram">
+            <option value="8">8 GB</option>
+            <option value="16" selected>16 GB</option>
+            <option value="24">24 GB</option>
+            <option value="32">32 GB</option>
+            <option value="36">36 GB</option>
+            <option value="48">48 GB</option>
+            <option value="64">64 GB</option>
+            <option value="128">128 GB</option>
+          </select>
+        </div>
+        <div class="pg-field pg-field-chip">
+          <label for="pg-goal">Goal</label>
+          <select id="pg-goal">
+            <option value="everyday" selected>Everyday (zero-calibration)</option>
+            <option value="max_key_accounting">Max key accounting (~16×)</option>
+            <option value="max_context">Max context (full-KV)</option>
+            <option value="best_quality">Best quality</option>
+            <option value="constant_memory">Constant memory (eviction)</option>
+          </select>
+        </div>
+        <button type="button" class="pg-share-btn" id="pg-share-btn"
+                title="Copy a link that restores this exact setup">
+          <span aria-hidden="true">🔗</span> Copy my setup
+        </button>
+      </div>
+
+      <!-- Model presets — one click fills the shape fields -->
+      <div class="pg-presets" role="group" aria-label="Start from a model">
+        <span class="pg-presets-label">Start from a model</span>
+        <div class="pg-preset-row" id="pg-preset-row">
+          <!-- chips injected by playground.js -->
+        </div>
+      </div>
+
+      <!-- Advanced disclosure — raw architecture fields -->
+      <details class="pg-advanced" id="pg-advanced">
+        <summary>
+          <span class="pg-adv-label">Advanced — architecture shape</span>
+          <span class="pg-adv-hint" id="pg-adv-hint"></span>
+        </summary>
+        <div class="pg-adv-grid">
+          <div class="pg-field">
+            <label for="pg-model">Model class</label>
+            <select id="pg-model">
+              <option value="1B">1B</option>
+              <option value="3B">3B</option>
+              <option value="7B" selected>7B</option>
+              <option value="14B">14B</option>
+              <option value="32B">32B</option>
+            </select>
+          </div>
+          <div class="pg-field">
+            <label for="pg-seqlen">Sequence length</label>
+            <input id="pg-seqlen" type="number" min="1" step="256" value="4096" inputmode="numeric" />
+          </div>
+          <div class="pg-field">
+            <label for="pg-layers">Layers</label>
+            <input id="pg-layers" type="number" min="1" step="1" value="32" inputmode="numeric" />
+          </div>
+          <div class="pg-field">
+            <label for="pg-heads">KV heads</label>
+            <input id="pg-heads" type="number" min="1" step="1" value="8" inputmode="numeric" />
+          </div>
+          <div class="pg-field">
+            <label for="pg-headdim">Head dim</label>
+            <input id="pg-headdim" type="number" min="1" step="8" value="128" inputmode="numeric" />
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <!-- ── Stepper / segmented control ── -->
+    <div class="pg-stepper" role="tablist" aria-label="Playground tools">
+      <button class="pg-step active" data-pgtab="rec" role="tab" id="pg-tab-rec"
+              aria-selected="true" aria-controls="pg-panel-rec">
+        <span class="pg-step-num">1</span>
+        <span class="pg-step-txt"><strong>Recommend</strong><em>a method for your setup</em></span>
+      </button>
+      <button class="pg-step" data-pgtab="lab" role="tab" id="pg-tab-lab"
+              aria-selected="false" aria-controls="pg-panel-lab" tabindex="-1">
+        <span class="pg-step-num">2</span>
+        <span class="pg-step-txt"><strong>Explore</strong><em>context you can fit</em></span>
+      </button>
+      <button class="pg-step" data-pgtab="bench" role="tab" id="pg-tab-bench"
+              aria-selected="false" aria-controls="pg-panel-bench" tabindex="-1">
+        <span class="pg-step-num">3</span>
+        <span class="pg-step-txt"><strong>Verify</strong><em>real measured benchmarks</em></span>
+      </button>
+    </div>
+
+    <!-- Panel 1: Recommender (hero card) -->
+    <section class="pg-panel active" id="pg-panel-rec" role="tabpanel"
+             aria-labelledby="pg-tab-rec" tabindex="0">
+      <div class="pg-output" id="rec-output" aria-live="polite"></div>
+    </section>
+
+    <!-- Panel 2: Compression lab -->
+    <section class="pg-panel" id="pg-panel-lab" role="tabpanel"
+             aria-labelledby="pg-tab-lab" tabindex="0">
+      <div class="pg-lab-controls">
+        <span class="pg-controls-label" id="pg-method-label">Method</span>
+        <!-- Hidden input holds the selected method so URL state, the engine,
+             and the recommender CTA can all read/write one source of truth. -->
+        <input type="hidden" id="pg-cmethod" value="turboquant_rvq" />
+        <div class="pg-method-cards" id="pg-method-cards" role="radiogroup"
+             aria-labelledby="pg-method-label">
+          <!-- method cards injected by playground.js -->
+        </div>
+        <div class="pg-field pg-field-budget">
+          <label for="pg-budget-input" id="pg-budget-label">RAM budget for KV</label>
+          <!-- Hidden input remains the single source of truth for URL state + engine. -->
+          <input type="hidden" id="pg-budget" value="" />
+          <div class="pg-budget-control">
+            <input id="pg-budget-input" type="number" min="0.5" step="0.5"
+                   inputmode="decimal" aria-describedby="pg-budget-src" />
+            <span class="pg-budget-unit" aria-hidden="true">GB</span>
+            <button type="button" id="pg-budget-auto" class="pg-budget-auto"
+                    aria-pressed="true"
+                    title="Match the RAM free for KV on your selected Mac">Auto</button>
+          </div>
+          <span id="pg-budget-src" class="pg-budget-src" aria-live="polite"></span>
+        </div>
+      </div>
+      <div class="pg-output" id="lab-output" aria-live="polite"></div>
+    </section>
+
+    <!-- Panel 3: Benchmarks -->
+    <section class="pg-panel" id="pg-panel-bench" role="tabpanel"
+             aria-labelledby="pg-tab-bench" tabindex="0">
+      <div class="pg-lab-controls">
+        <div class="pg-field pg-field-bench">
+          <label id="pg-bench-label">Benchmark</label>
+          <!-- Hidden input remains the single source of truth (URL state,
+               engine, hero CTA all read/write it); the segmented control
+               below is the accessible view over it. -->
+          <input type="hidden" id="pg-bench" value="metal" />
+          <div class="pg-seg" id="pg-bench-seg" role="radiogroup" aria-labelledby="pg-bench-label">
+            <!-- segmented buttons injected by playground.js -->
+          </div>
+        </div>
+        <div class="pg-field pg-field-bench" id="pg-bench-model-wrap" hidden>
+          <label for="pg-bench-model">Model</label>
+          <select id="pg-bench-model">
+            <option value="Llama-3.2-3B-Instruct-4bit">Llama-3.2-3B</option>
+            <option value="Mistral-7B-Instruct-v0.3-4bit">Mistral-7B</option>
+            <option value="Qwen2.5-7B-Instruct-4bit">Qwen2.5-7B</option>
+          </select>
+        </div>
+      </div>
+      <div class="pg-output" id="bench-output" aria-live="polite"></div>
+    </section>
+
+    <p class="pg-disclaimer">
+      Recommender + compression estimates are transparent heuristics (a direct port of
+      <code>veloxquant_mlx/tools/mac_recommender.py</code>) — they state when resident RAM
+      savings are unlikely. Token counts and the book comparison are linear KV
+      extrapolations, labelled as approximations. Benchmark charts read measured values
+      committed under <code>figures/</code>. For live numbers on your own machine, run
+      <code>python -m veloxquant_mlx benchmark</code>.
+    </p>
+  </main>
+
+  <!-- ── FOOTER ── -->
+  <footer>
+    <ul class="footer-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
+      <li><a href="https://pypi.org/project/VeloxQuant-MLX/" target="_blank" rel="noopener">PyPI</a></li>
+      <li><a href="/docs/" rel="noopener">Docs</a></li>
+      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
+    </ul>
+    <p class="footer-copy">© 2026 Rajveer Rathod · MIT License</p>
+    <p class="footer-tagline">BUILT FOR APPLE SILICON. ENGINEERED FOR SPEED.</p>
+  </footer>
+
+  <script src="assets/main.js" defer></script>
+  <script src="assets/playground.js" defer></script>
+</body>
+</html>
