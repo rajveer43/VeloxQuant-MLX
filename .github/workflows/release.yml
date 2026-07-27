@@ -100,8 +100,17 @@ jobs:
           git add pyproject.toml veloxquant_mlx/__init__.py CHANGELOG.md README.md \
                   landing/index.html landing/assets/main.js
           git commit -m "chore(release): ${{ steps.version.outputs.next_version }} [skip ci]"
-          git tag "v${{ steps.version.outputs.next_version }}"
-          git push origin master --follow-tags
+          # Annotated (-a), not lightweight: `git push --follow-tags` pushes ONLY
+          # annotated tags, so a lightweight tag here is created locally on the
+          # runner and then silently dropped -- the branch lands but the tag never
+          # reaches the remote, and `semantic-release publish` finds nothing to
+          # publish and exits 0. That is exactly how v0.42.0 shipped untagged.
+          git tag -a "v${{ steps.version.outputs.next_version }}" \
+                  -m "v${{ steps.version.outputs.next_version }}"
+          git push origin master
+          # Push the tag explicitly rather than relying on --follow-tags, and fail
+          # the job if it does not land, so a missing tag can never be silent again.
+          git push origin "v${{ steps.version.outputs.next_version }}"
 
       - name: Publish GitHub Release
         if: steps.version.outputs.next_version != ''
