@@ -78,11 +78,20 @@ ignore_missing_imports = true
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = ["veloxquant_mlx/__init__.py:__version__"]
-build_command = false
+# Empty string, not `false`: python-semantic-release >=10 validates this as a
+# string, and a bool raises a pydantic error that `semantic-release version
+# --print` reports on stderr. The release workflow swallows that stderr and
+# falls back to an empty version, so the bad value made every run silently
+# take the "No release needed" branch instead of failing loudly.
+build_command = ""
 commit_parser = "conventional"
 commit_message = "chore(release): {version} [skip ci]"
 tag_format = "v{version}"
+# Both are required to stay on 0.x. `major_on_zero = false` alone only stops a
+# *breaking change* from forcing 1.0.0; without `allow_zero_version` PSR still
+# graduates the project to 1.0.0 on the next release.
 major_on_zero = false
+allow_zero_version = true
 
 [tool.semantic_release.branches.main]
 match = "master"
