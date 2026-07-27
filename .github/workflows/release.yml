@@ -61,7 +61,22 @@ jobs:
       - name: Determine next version (dry run)
         id: version
         run: |
-          NEXT_VERSION=$(semantic-release version --print 2>/dev/null || echo "")
+          # Do NOT discard stderr or swallow the exit code here. PSR exits 2
+          # with "no release will be made" when there is genuinely nothing to
+          # release, but exits non-zero for config/parse errors too. Treating
+          # every failure as "no release" is how a `build_command = false`
+          # config error silently skipped four releases (0.41.0 -> 0.42.0).
+          set +e
+          NEXT_VERSION="$(semantic-release version --print 2>version_err.txt)"
+          STATUS=$?
+          set -e
+          cat version_err.txt
+
+          if [ "$STATUS" -ne 0 ] && ! grep -qi "no release will be made" version_err.txt; then
+            echo "::error::semantic-release failed to compute a version (exit ${STATUS}). See stderr above."
+            exit 1
+          fi
+
           echo "next_version=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: No release needed
@@ -72,14 +87,18 @@ jobs:
         if: steps.version.outputs.next_version != ''
         run: semantic-release version --no-commit --no-tag --no-push --no-vcs-release
 
-      - name: Sync README badges (version + live test count)
+      - name: Sync README badges + landing page (version + live test count)
         if: steps.version.outputs.next_version != ''
         run: python scripts/sync_release_badges.py
 
       - name: Commit, tag, and push the release
         if: steps.version.outputs.next_version != ''
         run: |
-          git add pyproject.toml veloxquant_mlx/__init__.py CHANGELOG.md README.md
+          # landing/ is included because sync_release_badges.py rewrites the
+          # hero pill version and the meta-description/test-count claims there;
+          # omitting it would silently discard that sync every release.
+          git add pyproject.toml veloxquant_mlx/__init__.py CHANGELOG.md README.md \
+                  landing/index.html landing/assets/main.js
           git commit -m "chore(release): ${{ steps.version.outputs.next_version }} [skip ci]"
           git tag "v${{ steps.version.outputs.next_version }}"
           git push origin master --follow-tags

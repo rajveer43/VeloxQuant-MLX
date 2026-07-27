@@ -11,7 +11,40 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ---
 
-## v0.39.1 — Latest
+## v0.42.0 — Latest
+
+### Added
+- **Fused group-affine (KIVI-style) decode + attention Metal kernel.** `scalar_fused_decode_attend` (`veloxquant_mlx/metal/_scalar_attend.py`) runs SDP attention directly over an asymmetric group-min/max quantized cache — the KIVI / SKVQ / Kitty / group-quant family, where K/V are `uint8` codes plus a per-group `(scale, zero)`. It reconstructs `k_hat`/`v_hat` in-register inside a FlashAttention-style online softmax, so no dequantized `K_hat`/`V_hat` reaches DRAM, killing the `dequantize -> DRAM -> SDPA` round-trip the pure-MLX path pays every decode step. Measured on Apple M4 (B=1 H=32 D=128 b=2 g=32 S_q=1): **6.4x at S_kv=512 rising to 12.2x at S_kv=65536**, parity max abs 1.2e-4 (fp32 softmax accumulation — more accurate than the fp16 baseline). See [Metal kernels guide](/docs/guides/metal-kernels) and [Metal API](/docs/api/metal-api).
+- **Mac / RAM method recommender** — `veloxquant_mlx/tools/mac_recommender.py` and the `veloxquant recommend` CLI subcommand pick a method and bit budget from a Mac's unified memory and target model/context.
+- **Interactive landing playground** — a browser-side Compression Lab and benchmark browser at `landing/playground.html`.
+
+### Fixed
+- **Release automation had been silently skipping every release since 0.41.0.** `build_command = false` is rejected by python-semantic-release >=10 (validated as a string), and the workflow discarded the resulting stderr — making a hard config error indistinguishable from "nothing to release". Four merged PRs never produced a tag. Also added `allow_zero_version = true`, without which the next release would have been `1.0.0` rather than `0.42.0` despite no breaking changes.
+- Documented `scalar_fused_decode_attend` and `rabitq_prefill_attend` (the latter shipped in 0.40.x but was never added to the docs site).
+- Install guide: broken `precompute` command corrected; install docs consolidated.
+- Non-Metal CI no longer imports `mlx` through the package `conftest`.
+
+---
+
+## v0.41.0
+
+### Added
+- **mlx-vlm vision-language model support.** `patch_vlm_kv_cache(model, config)` (`veloxquant_mlx/integration/mlx_vlm_patch.py`) wires VeloxQuant caches into mlx-vlm models (Qwen2-VL, LLaVA, …). Verified against mlx-vlm 0.6.5: it overrides `model.language_model.make_cache()` exactly, leaving the batch/session path safe. Caches rebuild fresh on every `generate()`, so repeated generations never leak KV state. Token-eviction methods emit a `UserWarning` since image tokens sit in the prompt prefix. 8 integration tests.
+
+### Fixed
+- Integration guide "Pattern 2" documented a nonexistent `patch_mlx_lm` function with a nonexistent `bits=` kwarg; it now shows the real `patch_model_kv_cache` API.
+- README badges: stale test count and changelog version.
+
+---
+
+## v0.40.0
+
+### Added
+- **Fused RaBitQ asymmetric Metal kernel pipeline** — a fully GPU-resident path for a 1-bit-key / 4-bit-value cache. `rabitq_fused_attend` scores keys from packed sign bits (XOR + popcount) with an online softmax split across 8 SIMD-groups, gathering values from a scalar codebook; measured 1.10–1.78x vs. dequantize+SDPA. `rabitq_encode` fuses rotate + binarize + bit-pack + L1 magnitude in one dispatch (`simd_ballot`), 6x vs. the numpy round-trip at N=32768. `rabitq_pack_values` packs two 4-bit indices per byte, halving value-cache memory with bit-identical outputs. `rabitq_prefill_attend` adds a `simdgroup_matrix`-tiled prefill/cross-attention companion for large `S_q` (multi-turn VLM). 63 new parity tests.
+
+---
+
+## v0.39.1
 
 ### Fixed
 - **VecInfer's fused Metal encode+decode kernels silently dropped most/all tokens.** `vecinfer_encode_decode_metal` and `vecinfer_encode_decode_simple_metal` (`veloxquant_mlx/metal/_vecinfer.py`) dispatch one `D`-wide threadgroup per token, but passed `grid=(n_tokens, 1, 1)` — `mx.fast.metal_kernel`'s `grid` is in **threads**, not threadgroups, so this silently launched only `floor(n_tokens / D)` threadgroups (zero when `n_tokens < D`). Every token past that count kept uninitialized output-buffer contents instead of a real key/value reconstruction or codebook index — affecting every VecInfer Metal-accelerated encode/decode call. Fixed by dispatching `n_tokens * D` threads. `test_vecinfer_fused_sdpa.py` / `test_vecinfer_metal_parity.py` (5 failing tests) now pass.

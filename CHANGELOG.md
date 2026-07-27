@@ -2,6 +2,69 @@
 
 All notable changes to **VeloxQuant-MLX** are documented here.
 
+## [0.42.0] — 2026-07-27
+
+### Added
+
+**Fused group-affine (KIVI-style) decode + attention Metal kernel** —
+`scalar_fused_decode_attend`
+(`veloxquant_mlx/metal/_scalar_attend.py`) runs scaled-dot-product
+attention directly over an asymmetric group-min/max ("affine")
+quantized KV cache: the KIVI / SKVQ / Kitty / group-quant family, where
+keys and values are `uint8` codes plus a per-group `(scale, zero)`
+pair. It reconstructs `k_hat = code*scale + zero` (per-channel groups)
+and `v_hat = code*scale + zero` (per-token groups) in-register inside a
+FlashAttention-style online softmax, so no dequantized `K_hat`/`V_hat`
+is ever materialized in DRAM.
+
+This is the scalar/group-quant analogue of the existing codebook fused
+attends (`_rvq_attend`, `fused_sdpa`, `_rabitq_attend`). It kills the
+`dequantize -> DRAM -> SDPA` round-trip the pure-MLX path pays every
+decode step; the win compounds with context because the fp16 `K_hat`
+grows linearly with `S_kv` while the packed codes stay `16/b` times
+smaller. The kv axis is split flash-decoding style across `nsg`
+SIMD-groups so single-query decode shapes still fill the GPU (`nsg=8`
+tuned on M4), and one compiled kernel serves any `(S_kv, D, g)`.
+
+Measured on Apple M4 (10-core GPU), B=1 H=32 D=128 b=2 g=32 S_q=1, vs.
+dequantize -> MLX SDPA: **6.4x at S_kv=512 rising to 12.2x at
+S_kv=65536**. Parity max abs error 1.2e-4 — the fp32 softmax
+accumulation makes it more accurate than the fp16 baseline it replaces.
+Covered by `veloxquant_mlx/tests/metal/test_scalar_attend.py`.
+
+**Mac / RAM method recommender** — `veloxquant_mlx/tools/mac_recommender.py`
+plus a `veloxquant recommend` CLI subcommand
+(`veloxquant_mlx/cli/recommend.py`) pick a compression method and bit
+budget from a given Mac's unified memory and target model/context.
+
+**Interactive landing playground** (`landing/playground.html`) — a
+browser-side compression explorer with a Compression Lab and a
+benchmark browser, plus a landing page reworked for a general audience.
+
+### Fixed
+
+- **Release automation had been silently skipping every release since
+  0.41.0.** `build_command = false` in `pyproject.toml` is rejected by
+  python-semantic-release >=10 (it validates as a string), and the
+  release workflow discarded the resulting stderr via
+  `2>/dev/null || echo ""` — so a hard config error was indistinguishable
+  from "nothing to release" and four merged PRs never produced a tag.
+  Fixed the value to `""`, and the workflow now fails loudly on any
+  version-computation error it cannot identify as a genuine no-release.
+- **`major_on_zero = false` alone would have released 1.0.0.** On
+  python-semantic-release >=10 staying on `0.x` also requires
+  `allow_zero_version = true`; without it the next release computed
+  `1.0.0` rather than `0.42.0`, despite no breaking changes.
+- Documented `scalar_fused_decode_attend` and `rabitq_prefill_attend`
+  (the latter shipped in 0.40.x but was never added to the docs site) in
+  the Metal kernels guide and the Metal API reference.
+- Install guide: broken `precompute` command corrected; install docs
+  consolidated.
+- Non-Metal CI no longer imports `mlx` through the package `conftest`;
+  recommender tests moved out of the package tree.
+- Release workflow installs `mlx-lm`, without which the test gate could
+  not import the package it was gating.
+
 ## [0.41.0] — 2026-07-20
 
 ### Added

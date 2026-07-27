@@ -69,7 +69,7 @@ function initCodeTabs() {
 function initBadgeTyping() {
   const badge = document.getElementById('hero-badge');
   if (!badge) return;
-  const text = "v0.41.0 — mlx-vlm vision-language model support shipped";
+  const text = "v0.42.0 — fused KIVI-style Metal attention kernel shipped";
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     badge.textContent = text;
     return;

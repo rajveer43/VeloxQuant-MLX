@@ -254,6 +254,23 @@ Measured (Apple M4, D=128 — `scripts/metal_rabitq_attend_bench.py`, `scripts/m
 
 **Honest caveat:** with unpacked (byte-per-index) values the fused attend *loses* at short contexts (0.65× at S_kv=512) — nibble-packing halves value bandwidth and flips that to a small win. Parity vs numpy references is covered by 63 dedicated tests ([`test_rabitq_attend.py`](veloxquant_mlx/tests/metal/test_rabitq_attend.py), [`test_rabitq_encode.py`](veloxquant_mlx/tests/metal/test_rabitq_encode.py), [`test_rabitq_values.py`](veloxquant_mlx/tests/metal/test_rabitq_values.py)), including an end-to-end encode→attend test and bit-exact packed-vs-unpacked equality.
 
+For large `S_q` — the multi-turn VLM case, where a new turn attends over a long compressed image-token history — [`rabitq_prefill_attend`](veloxquant_mlx/metal/_rabitq_prefill.py) is the matmul-shaped companion: both `Q·K̂ᵀ` and `W·V̂` run on 8×8 `simdgroup_matrix` tiles, with keys sign-decoded and values nibble-decoded inside the tile loop. It scores exact dots rather than the Hamming estimate, and is cross-attention only (no causal mask).
+
+### Fused group-affine (KIVI-style) attention — new in 0.42.0
+
+[`scalar_fused_decode_attend`](veloxquant_mlx/metal/_scalar_attend.py) is the scalar/group-quant analogue of the codebook fused attends above — it serves the **KIVI / SKVQ / Kitty / group-quant family**, where K/V are `uint8` codes plus a per-group `(scale, zero)` pair instead of a codebook.
+
+The pure-MLX path reconstructs `code * scale + zero` into a full fp16 tensor, then calls `scaled_dot_product_attention` — a `dequantize → DRAM → SDPA` round-trip paid every decode step. This kernel reconstructs `x_hat` in-register inside a FlashAttention-style online softmax, so no dequantized `K_hat`/`V_hat` ever reaches DRAM. The win compounds with context: the fp16 `K_hat` grows linearly with `S_kv` while the packed codes stay `16/b` times smaller.
+
+Measured (Apple M4 10-core GPU, B=1 H=32 D=128 b=2 g=32 S_q=1) vs. dequantize → MLX SDPA:
+
+| Config | Speedup |
+|---|---|
+| S_kv=512 | **6.4×** |
+| S_kv=65536 | **12.2×** |
+
+The kv axis is split flash-decoding style across `nsg` SIMD-groups so single-query decode shapes still fill the GPU (`nsg=8` tuned on M4), and one compiled kernel serves any `(S_kv, D, g)`. Parity max abs error is `1.2e-4` — the fp32 softmax accumulation makes it *more* accurate than the fp16 baseline it replaces ([`test_scalar_attend.py`](veloxquant_mlx/tests/metal/test_scalar_attend.py)).
+
 ---
 
 ## Benchmark results
@@ -341,7 +358,28 @@ python -m veloxquant_mlx benchmark \
 # End-to-end model benchmarks
 python benchmark_scripts/benchmark_vecinfer.py   # VecInfer 10-model sweep
 python benchmark_scripts/run_outlier_ratequant.py # RateQuant mixed-precision
+
+# Which method should I use on my Mac? (new in 0.42.0)
+python -m veloxquant_mlx recommend \
+    --chip M4 --ram-gb 16 --model-class 7B --goal everyday
 ```
+
+The recommender is accounting-aware — it reports the key compression ratio *and* tells you when resident RAM savings are unlikely, rather than quoting a ratio that won't show up in RSS:
+
+```
+method=turboquant_rvq
+knobs={'bit_width_inlier': 1, 'seed': 42}
+key_accounting_ratio≈7.5x
+resident_savings_likely=False
+kv_fp16_mb≈512.0  kv_compressed_mb_est≈68.27
+rationale: Zero-calibration default. Key accounting ~7.5x at head_dim=128.
+           Default path dequantizes into parent fp16 cache.
+warnings:
+  - Tight RAM with a mid/large model: consider goal=max_context (rabitq)
+    or goal=constant_memory (eviction) for long prompts.
+```
+
+Goals: `everyday`, `max_key_accounting`, `max_context`, `best_quality`, `constant_memory`. Add `--json` for machine-readable output, or `--seq-len` / `--n-layers` / `--n-kv-heads` / `--head-dim` to match a specific model. Also available in the browser via the [Compression Lab](https://veloxquant-mlx.netlify.app/playground.html).
 
 Load precomputed artifacts to skip re-computation at runtime:
 

@@ -161,6 +161,61 @@ Fused rotate + binarize + bit-pack + L1-magnitude in one dispatch; sign packing 
 
 - Returns: `(k_bits [N, D//8] uint8, k_mag [N] fp32)`
 
+### `rabitq_prefill_attend`
+
+`veloxquant_mlx.metal._rabitq_prefill`
+
+```python
+def rabitq_prefill_attend(
+    q: mx.array,        # [B, H, S_q, D]    fp16  — new-turn queries
+    scale: mx.array,    # [1]               fp32  — softmax scale (1/sqrt(D))
+    k_bits: mx.array,   # [B, H, S_kv, D/8] uint8 — packed 1-bit key signs
+    k_mag: mx.array,    # [B, H, S_kv]      fp32  — per-key magnitude
+    k_const: mx.array,  # [B, H, S_kv]      fp32  — additive score bias
+    v_idx: mx.array,    # [B, H, S_kv, D/2] uint8 — nibble-packed value indices
+    v_cents: mx.array,  # [n_cents <= 16]   fp32  — scalar value codebook
+) -> mx.array
+```
+
+Prefill-shaped companion to `rabitq_fused_attend`, for large `S_q` (multi-turn VLM: a new turn attending over compressed image-token history). Both `Q·K̂ᵀ` and `W·V̂` run on 8×8 `simdgroup_matrix` tiles; K is sign-decoded and V nibble-decoded inside the tile loop, so no dequantized K/V is materialized.
+
+Scores are exact dots — `(q · signs·k_mag) * scale + k_const` — not the Hamming estimate the decode kernel uses. **Cross-attention only:** every query row attends over all `S_kv` slots with no causal mask. Values must be nibble-packed (`rabitq_pack_values` format).
+
+- Returns: `[B, H, S_q, D]` fp16 attention output
+
+---
+
+## Group-affine (KIVI-style) attention
+
+`veloxquant_mlx.metal._scalar_attend`
+
+### `scalar_fused_decode_attend`
+
+```python
+def scalar_fused_decode_attend(
+    q: mx.array,        # [B, H, S_q, D]   fp16/fp32 — queries (pre-rotated)
+    k_codes: mx.array,  # [B, H, S_kv, D]  uint8 — key codes
+    k_scale: mx.array,  # [B, H, GK, D]    fp32  — GK = ceil(S_kv/group_size)
+    k_zero: mx.array,   # [B, H, GK, D]    fp32
+    v_codes: mx.array,  # [B, H, S_kv, D]  uint8 — value codes
+    v_scale: mx.array,  # [B, H, S_kv, GV] fp32  — GV = ceil(D/group_size)
+    v_zero: mx.array,   # [B, H, S_kv, GV] fp32
+    group_size: int,
+    scale: float,
+    nsg: int = 4,
+) -> mx.array
+```
+
+Single-dispatch SDP attention directly over an asymmetric group-min/max ("affine") quantized cache — the KIVI / SKVQ / Kitty / group-quant family. Reconstructs `k_hat = k_codes*k_scale + k_zero` (per-channel groups) and `v_hat = v_codes*v_scale + v_zero` (per-token groups) in-register inside a FlashAttention-style online softmax; no fp16 `K_hat`/`V_hat` is written to DRAM.
+
+The kv axis is split across `nsg` SIMD-groups flash-decoding style so single-query decode shapes still fill the GPU (`nsg=8` is tuned on M4). One compiled kernel serves any `(S_kv, D, g)`.
+
+Constraints: `q` must be 4-D, `D ≤ 256`, `1 ≤ nsg ≤ 32`.
+
+Measured on Apple M4 (B=1, H=32, D=128, b=2, g=32, S_q=1) vs. dequantize → MLX SDPA: **6.4× at S_kv=512, rising to 12.2× at S_kv=65536**. Softmax accumulates in fp32, so parity error (`1.2e-4` max abs) is better than the fp16 baseline.
+
+- Returns: `[B, H, S_q, D]` fp16 attention output
+
 ---
 
 ## CommVQ kernels
