@@ -2,41 +2,65 @@
   {
     "seq_len": 200,
     "geometry": "local_recency",
-    "windowed_rope_mse": 0.084507,
-    "always_exact_rope_mse": 0.029866,
+    "windowed_rope_mse": 3.610358,
+    "always_exact_rope_mse": 0.936171,
     "a2ats_assignment_mse": 0.037882,
     "plain_vq_mse": 0.029866,
+    "near_windowed_mse": 0.055636,
+    "near_exact_mse": 0.055637,
+    "far_windowed_mse": 3.919464,
+    "far_exact_mse": 1.012739,
+    "n_near": 16,
+    "n_far": 184,
     "avg_n_retrieved": 40.0,
-    "ms": 4.279
+    "ms": 5.529
   },
   {
     "seq_len": 200,
     "geometry": "long_range_dependent",
-    "windowed_rope_mse": 0.128666,
-    "always_exact_rope_mse": 0.029802,
+    "windowed_rope_mse": 4.40907,
+    "always_exact_rope_mse": 0.950911,
     "a2ats_assignment_mse": 0.036707,
     "plain_vq_mse": 0.029802,
+    "near_windowed_mse": 1.129204,
+    "near_exact_mse": 1.129205,
+    "far_windowed_mse": 4.694275,
+    "far_exact_mse": 0.935407,
+    "n_near": 16,
+    "n_far": 184,
     "avg_n_retrieved": 40.0,
-    "ms": 2.73
+    "ms": 4.406
   },
   {
     "seq_len": 400,
     "geometry": "local_recency",
-    "windowed_rope_mse": 0.101935,
-    "always_exact_rope_mse": 0.037745,
+    "windowed_rope_mse": 4.24855,
+    "always_exact_rope_mse": 1.758471,
     "a2ats_assignment_mse": 0.047989,
     "plain_vq_mse": 0.037745,
+    "near_windowed_mse": 16.442063,
+    "near_exact_mse": 16.442063,
+    "far_windowed_mse": 3.740486,
+    "far_exact_mse": 1.146654,
+    "n_near": 16,
+    "n_far": 384,
     "avg_n_retrieved": 80.0,
-    "ms": 3.886
+    "ms": 4.23
   },
   {
     "seq_len": 400,
     "geometry": "long_range_dependent",
-    "windowed_rope_mse": 0.147237,
-    "always_exact_rope_mse": 0.032288,
+    "windowed_rope_mse": 12.358253,
+    "always_exact_rope_mse": 1.076531,
     "a2ats_assignment_mse": 0.039375,
     "plain_vq_mse": 0.032289,
+    "near_windowed_mse": 1.051839,
+    "near_exact_mse": 1.051839,
+    "far_windowed_mse": 12.829354,
+    "far_exact_mse": 1.07756,
+    "n_near": 16,
+    "n_far": 384,
     "avg_n_retrieved": 80.0,
-    "ms": 3.476
+    "ms": 4.528
   }
 ]

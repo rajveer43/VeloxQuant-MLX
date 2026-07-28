@@ -24,10 +24,18 @@ nearest-centroid for the bulk). No token is ever dropped — a
 compression-only method, not an eviction method (same family framing as
 AMC-adapted).
 
-**Windowed RoPE is applied post-dequantization**, exactly mirroring
-CommVQ-adapted's "quantize pre-RoPE, apply RoPE once at reconstruction" flow,
-except the rotation applied depends on each token's distance from the current
-decode position (see :mod:`veloxquant_mlx.quantizers.a2ats_rope`).
+**Windowed RoPE is applied at fetch time, every step.** The parent buffer
+holds the *pre-RoPE* reconstruction; ``update_and_fetch`` re-applies windowed
+RoPE to the whole accumulated cache against the current decode position on
+each call, so a token's near/far class tracks the advancing query as Eq. (11)
+requires. Baking the rotation in at write time would freeze that class at the
+moment the token was written (:issue:`29`, finding 3).
+
+**Far keys are returned unrotated** (Eq. 12, ``k̃_i = k_i``) — that is what
+makes a shared codebook viable across inputs (§3.1). The constant ``R_b``
+encoding "far" relative position belongs on the *query* side (Eq. 11); since
+this cache never sees the query, it is exposed via :meth:`A2ATSKVCache.far_query_rope`
+for callers that do.
 
 **Offline codebook calibration required** — same footgun class as
 VecInfer-adapted/CommVQ-adapted/Palu-adapted/SVDq-adapted/AMC-adapted: using
@@ -55,10 +63,15 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.allocators.vecinfer import dequantize_vq
 from veloxquant_mlx.quantizers.a2ats import (
+    a2ats_cholesky_factor,
+    a2ats_h_weighted_assignment,
     a2ats_query_aware_assignment,
     a2ats_select_retrieval_set,
 )
-from veloxquant_mlx.quantizers.a2ats_rope import a2ats_apply_windowed_rope
+from veloxquant_mlx.quantizers.a2ats_rope import (
+    a2ats_apply_far_query_rope,
+    a2ats_apply_windowed_rope,
+)
 
 
 class A2ATSKVCache(_MLXKVCache):
@@ -71,7 +84,12 @@ class A2ATSKVCache(_MLXKVCache):
                     and divisible by ``a2ats_sub_dim``.
                 ``a2ats_codebook_bits`` (int, default 8) — codebook size 2^bits.
                 ``a2ats_sub_dim`` (int, default 8) — VQ sub-vector width.
-                ``a2ats_window`` (int, default 128) — trailing exact-RoPE window.
+                ``a2ats_window`` (int, default 128) — trailing exact-RoPE
+                    window ``w``.
+                ``a2ats_b`` (int, default 2048) — constant far-token relative
+                    position ``b`` (Eq. 11), independent of ``w``. The paper's
+                    §5.1 uses ``w=64``, ``b=2048``. Consumed by
+                    :meth:`far_query_rope`, which callers apply to the query.
                 ``a2ats_use_query_aware`` (bool, default True) — paper's primary
                     reported path; off degrades to plain nearest-centroid VQ.
                 ``a2ats_beta`` (float, default 0.5) — query/reconstruction blend,
@@ -95,6 +113,7 @@ class A2ATSKVCache(_MLXKVCache):
         self._sub_dim = int(getattr(config, "a2ats_sub_dim", 8))
         self._bits = int(getattr(config, "a2ats_codebook_bits", 8))
         self._window = int(getattr(config, "a2ats_window", 128))
+        self._b = int(getattr(config, "a2ats_b", 2048))
         self._use_query_aware = bool(getattr(config, "a2ats_use_query_aware", True))
         self._beta = float(getattr(config, "a2ats_beta", 0.5))
         self._retrieval_fraction = float(getattr(config, "a2ats_retrieval_fraction", 0.20))
@@ -134,6 +153,25 @@ class A2ATSKVCache(_MLXKVCache):
 
         self._n_sub = self._head_dim // self._sub_dim
 
+        # Paper Eq. (13)/(14): if a calibrated query second-moment matrix H is
+        # supplied, retrieval-set tokens are assigned by the paper's actual
+        # H-weighted objective (via the Eq. 15-18 Cholesky identity). Without
+        # it, fall back to the cosine blend — a substitute, not Eq. (14); see
+        # a2ats_query_aware_assignment's docstring (:issue:`29`, finding 4).
+        query_h = getattr(config, "a2ats_query_h", None)
+        if query_h is None:
+            self._cholesky_factor = None
+        else:
+            if not isinstance(query_h, mx.array):
+                query_h = mx.array(query_h)
+            if query_h.shape != (self._sub_dim, self._sub_dim):
+                raise ValueError(
+                    "A2ATSKVCache: a2ats_query_h must have shape "
+                    f"({self._sub_dim}, {self._sub_dim}) to match "
+                    f"a2ats_sub_dim={self._sub_dim}, got {tuple(query_h.shape)}."
+                )
+            self._cholesky_factor = a2ats_cholesky_factor(query_h.astype(mx.float32))
+
         # Byte accounting
         self._key_bytes_compressed = 0
         self._value_bytes_compressed = 0
@@ -149,14 +187,18 @@ class A2ATSKVCache(_MLXKVCache):
     # Core per-(batch, head) compression step
     # ------------------------------------------------------------------
     def _quantize_head(self, k_bh: mx.array, positions: mx.array) -> mx.array:
-        """Compress + reconstruct one head's keys ``[S, D]`` with windowed RoPE.
+        """Compress + reconstruct one head's keys ``[S, D]``, **pre-RoPE**.
 
         ``positions`` are this head's absolute token positions (pre-RoPE
         keys are assumed — the cache never sees RoPE applied upstream in
         this repo's convention, matching CommVQ-adapted).
+
+        Windowed RoPE is deliberately *not* applied here. It is applied in
+        :meth:`update_and_fetch` to the whole accumulated cache against the
+        current decode position, so that a token's near/far class tracks the
+        advancing query as Eq. (11) requires — see that method's notes.
         """
         S, D = k_bh.shape
-        query_position = int(positions[-1].item()) if S > 0 else self._next_position
 
         if self._use_query_aware and S > 0:
             proxy_query = k_bh[-1]   # incoming key as query proxy (see module docstring)
@@ -173,13 +215,18 @@ class A2ATSKVCache(_MLXKVCache):
 
                 sub_idx = mx.zeros((S,), dtype=mx.int32)
                 if retrieval_idx.shape[0] > 0:
-                    q_sub = proxy_query[start:end]
-                    ret_assign = a2ats_query_aware_assignment(
-                        mx.take(sub, retrieval_idx, axis=0),
-                        self._codebook,
-                        q_sub,
-                        beta=self._beta,
-                    )
+                    ret_sub = mx.take(sub, retrieval_idx, axis=0)
+                    if self._cholesky_factor is not None:
+                        # Paper Eq. (14), computed exactly via Eq. (17).
+                        ret_assign = a2ats_h_weighted_assignment(
+                            ret_sub, self._codebook, self._cholesky_factor
+                        )
+                    else:
+                        # Cosine-blend substitute — no calibrated H available.
+                        ret_assign = a2ats_query_aware_assignment(
+                            ret_sub, self._codebook, proxy_query[start:end],
+                            beta=self._beta,
+                        )
                     sub_idx = _scatter_1d(sub_idx, retrieval_idx, ret_assign)
                 if bulk_idx.shape[0] > 0:
                     bulk_assign = _nearest_centroid(
@@ -196,16 +243,35 @@ class A2ATSKVCache(_MLXKVCache):
                 idx_parts.append(_nearest_centroid(sub, self._codebook))
             indices = mx.stack(idx_parts, axis=1) if S > 0 else mx.zeros((0, self._n_sub), dtype=mx.int32)
 
-        recon = dequantize_vq(indices, self._codebook).astype(mx.float16)  # [S, D], pre-RoPE
-        return a2ats_apply_windowed_rope(
-            recon, positions, query_position=query_position,
-            window=self._window, base=self._rope_base,
-        )
+        return dequantize_vq(indices, self._codebook).astype(mx.float16)  # [S, D], pre-RoPE
 
     # ------------------------------------------------------------------
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Quantize, store pre-RoPE, and return keys rotated against the
+        *current* decode position.
+
+        The parent :class:`mlx_lm.models.cache.KVCache` concatenates whatever
+        it is handed and never revisits it. Writing rotated keys into it
+        therefore freezes each token's near/far class at the moment it was
+        written — a token classified "near" during prefill keeps its exact
+        rotation forever, even thousands of steps later, which silently
+        defeats the distance gating the method is named for (:issue:`29`,
+        finding 3).
+
+        So the parent buffer holds the **pre-RoPE** reconstruction, and
+        windowed RoPE is re-applied to the full accumulated slice on every
+        call, against ``query_position = self._next_position - 1``. Tokens
+        cross from "near" to "far" as the decode position advances, matching
+        Eq. (11), where ``i`` is the position of the decoding query.
+
+        Cost: the rotation is ``O(total_tokens)`` per step rather than
+        ``O(S)``. That is inherent to honest distance gating under this
+        protocol — the near/far split is a function of the current query, so
+        it cannot be precomputed. Far tokens are returned unrotated (Eq. 12),
+        so only the ``window``-sized near slice does nontrivial work.
+        """
         B, H, S, D = keys.shape
         positions = mx.arange(self._next_position, self._next_position + S)
 
@@ -236,7 +302,44 @@ class A2ATSKVCache(_MLXKVCache):
 
         self._account_bytes(B, H, S, D)
         self._next_position += S
-        return super().update_and_fetch(k_out, v_out)
+
+        # Store the PRE-RoPE reconstruction in the parent buffer, then rotate
+        # the whole accumulated slice below. See this method's docstring for
+        # why the rotation cannot be baked in at write time.
+        k_all, v_all = super().update_and_fetch(k_out, v_out)
+
+        # Eq. (11)'s near/far split is relative to the *current* decoding
+        # query i, which advances every step — so it must be recomputed here,
+        # against the full cache, on every call.
+        query_position = self._next_position - 1
+        total = k_all.shape[2]
+        all_positions = mx.arange(total)
+        k_rot = a2ats_apply_windowed_rope(
+            k_all.reshape(-1, D),
+            mx.broadcast_to(all_positions[None, None, :], (B, H, total)).reshape(-1),
+            query_position=query_position,
+            window=self._window,
+            base=self._rope_base,
+        ).reshape(B, H, total, D)
+
+        return k_rot, v_all
+
+    def far_query_rope(self, query: mx.array) -> mx.array:
+        """Apply the paper's constant far-token rotation ``R_b`` to a query.
+
+        WRoPE splits into two halves: far **keys** stay unrotated (Eq. 12,
+        handled in :meth:`update_and_fetch`), and the constant ``R_b`` that
+        encodes "far" relative position rides on the **query** instead
+        (Eq. 11, ``u_ij = q_i R_b k_j^T``). This method is the query-side
+        half, using this cache's configured ``a2ats_b``.
+
+        It is exposed rather than applied internally because
+        ``update_and_fetch`` never receives the query — the mlx_lm cache
+        protocol passes only keys and values (see the module docstring).
+        A caller with real query access applies this before scoring far
+        tokens; the proxy-query paths inside this cache cannot.
+        """
+        return a2ats_apply_far_query_rope(query, b=self._b, base=self._rope_base)
 
     def _account_bytes(self, B: int, H: int, S: int, D: int) -> None:
         bits_per_tok = self._n_sub * self._bits

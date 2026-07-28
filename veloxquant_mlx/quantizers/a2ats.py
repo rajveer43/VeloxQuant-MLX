@@ -21,22 +21,29 @@ paper's own retrieval step additionally drops non-retrieved tokens outright is
 a question for the cache wrapper layer, not this module — this module exposes
 the *split*, the cache wrapper decides what to do with each half.
 
-**Query-aware codebook assignment** (this module's other primitive) reuses
-the same blend shape as
-:func:`veloxquant_mlx.quantizers.amc.amc_query_aware_saliency` — a weighted
-sum of a magnitude/reconstruction-quality term and a query-cosine-similarity
-term, including the same zero-norm-guard style (also shared with NestedKV-
-adapted's ``_cosine_anomaly`` and CurDKV-adapted's leverage-score guards) —
-applied here to *codebook centroid selection* rather than *tier assignment*:
-instead of picking the nearest centroid by reconstruction error alone (plain
-nearest-centroid VQ, e.g. :func:`veloxquant_mlx.allocators.vecinfer.quantize_vq`),
-A2ATS-adapted also rewards centroids whose direction is more aligned with the
-current query, so retrieval-relevant tokens are quantized against centroids
-that (all else equal) yield an inner product estimate closer to the query
-direction.
+**Query-aware codebook assignment** comes in two forms here:
+
+1. :func:`a2ats_h_weighted_assignment` — **the paper's actual objective**
+   (Eq. 13/14): minimize ``(k̃ − c) H (k̃ − c)ᵀ`` where ``H = E[q̃ᵀq̃]`` is the
+   query second-moment matrix. Computed exactly via the Eq. (15)-(18)
+   Cholesky identity, which turns the ``H``-weighted form into a plain
+   Euclidean distance in the space ``z = k̃L``. Requires a calibrated ``H``
+   (see :func:`a2ats_query_second_moment`), so it is available on paths with
+   offline calibration.
+2. :func:`a2ats_query_aware_assignment` — a cosine blend between
+   reconstruction error and query-centroid alignment, reusing the shape of
+   :func:`veloxquant_mlx.quantizers.amc.amc_query_aware_saliency`. This is a
+   **substitute** for Eq. (14), not an implementation of it: the cosine term
+   is a constant per-centroid bias rather than a per-token coupling. Retained
+   for the decode path, where only a single proxy query is available and no
+   calibrated ``H`` exists. See its docstring for the precise differences
+   (:issue:`29`, finding 4).
 
 Public API:
-  a2ats_query_aware_assignment — query-aware nearest-centroid selection
+  a2ats_query_second_moment    — calibrate H = E[qᵀq] (Eq. 10)
+  a2ats_cholesky_factor        — L with H = L Lᵀ (Eq. 15)
+  a2ats_h_weighted_assignment  — the paper's Eq. (14) assignment
+  a2ats_query_aware_assignment — cosine-blend substitute (decode path)
   a2ats_select_retrieval_set   — split token indices into retrieval / bulk sets
 """
 from __future__ import annotations
@@ -45,8 +52,100 @@ import math
 from typing import Tuple
 
 import mlx.core as mx
+import numpy as np
 
 from veloxquant_mlx.dsa.heap import MaxHeap
+
+
+def a2ats_query_second_moment(queries: mx.array, ridge: float = 1e-4) -> mx.array:
+    """Second-moment matrix ``H = E[q^T q]`` of a set of query states (Eq. 10).
+
+    This is the object the paper's §3.2 is about: the query-aware and plain-VQ
+    objectives coincide **only if ``H ∝ I``**, and Figure 2 shows it is not —
+    that non-diagonal structure is the paper's contribution.
+
+    Args:
+        queries: ``[M, d]`` post-PE query states, collected offline on a
+            representative dataset (paper §4.2's calibration step).
+        ridge: Added to the diagonal so ``H`` is positive *definite* rather
+            than merely semi-definite, which Cholesky (Eq. 15) requires.
+            Needed whenever ``M < d`` or the queries are rank-deficient.
+
+    Returns:
+        ``[d, d]`` float32 positive-definite second-moment matrix.
+    """
+    q32 = queries.astype(mx.float32)
+    if q32.ndim == 1:
+        q32 = q32[None, :]
+    m, d = q32.shape
+    h = (q32.T @ q32) / float(max(m, 1))
+    return h + ridge * mx.eye(d, dtype=mx.float32)
+
+
+def a2ats_cholesky_factor(h: mx.array) -> mx.array:
+    """Lower-triangular Cholesky factor ``L`` with ``H = L Lᵀ`` (Eq. 15).
+
+    Eq. (16)-(18) use ``L`` to map the ``H``-weighted objective into a plain
+    Euclidean one on ``z = k̃L``, which is what lets conventional k-means++
+    build the codebook. Implemented directly (no ``mx.linalg.cholesky``
+    dependency) for the small ``d`` values this repo's sub-vector VQ uses.
+
+    Args:
+        h: ``[d, d]`` symmetric positive-definite matrix.
+
+    Returns:
+        ``[d, d]`` float32 lower-triangular ``L``.
+    """
+    a = np.array(h.astype(mx.float32), copy=True).astype(np.float64)
+    d = a.shape[0]
+    ell = np.zeros((d, d), dtype=np.float64)
+    for i in range(d):
+        for j in range(i + 1):
+            s = a[i, j] - float(ell[i, :j] @ ell[j, :j])
+            if i == j:
+                ell[i, j] = math.sqrt(max(s, 1e-12))
+            else:
+                ell[i, j] = s / ell[j, j]
+    return mx.array(ell.astype(np.float32))
+
+
+def a2ats_h_weighted_assignment(
+    x: mx.array,
+    codebook: mx.array,
+    cholesky_factor: mx.array,
+) -> mx.array:
+    """The paper's query-aware assignment, Eq. (14)/(17).
+
+    ``f'(k̃; C) = argmin_j (k̃ − c_j) H (k̃ − c_j)ᵀ``
+
+    Implemented via the Eq. (17) identity — with ``H = L Lᵀ``, the
+    ``H``-weighted quadratic form is a plain squared Euclidean distance in
+    the transformed space ``z = k̃L``:
+
+        ``(k̃ − c_j) H (k̃ − c_j)ᵀ = (k̃L − c_jL)(k̃L − c_jL)ᵀ``
+
+    So this is exact, not an approximation: it computes the paper's
+    objective, just in the coordinates where it is cheap.
+
+    Unlike the cosine blend in :func:`a2ats_query_aware_assignment`, the
+    ``H`` term couples ``k̃`` and the query distribution **per token** —
+    it is not a constant per-centroid bias added to every row.
+
+    Args:
+        x: ``[N, d]`` sub-vectors to quantize.
+        codebook: ``[K, d]`` centroids, in the original (untransformed) space.
+        cholesky_factor: ``[d, d]`` ``L`` from :func:`a2ats_cholesky_factor`.
+
+    Returns:
+        ``[N]`` int32 assigned centroid indices.
+    """
+    if x.shape[0] == 0:
+        return mx.zeros((0,), dtype=mx.int32)
+    ell = cholesky_factor.astype(mx.float32)
+    z = x.astype(mx.float32) @ ell            # [N, d]
+    cz = codebook.astype(mx.float32) @ ell    # [K, d]
+    diff = z[:, None, :] - cz[None, :, :]     # [N, K, d]
+    return mx.argmin(mx.sum(diff * diff, axis=-1), axis=-1).astype(mx.int32)
 
 
 def a2ats_query_aware_assignment(
@@ -55,7 +154,8 @@ def a2ats_query_aware_assignment(
     query: mx.array,
     beta: float = 0.5,
 ) -> mx.array:
-    """Query-aware nearest-centroid assignment.
+    """Cosine-blend query-aware assignment — a *substitute* for Eq. (14),
+    not an implementation of it.
 
     ``score(c) = beta * (-||x - c||^2 normalized) + (1 - beta) * cosine_similarity(query, c)``
 
@@ -64,6 +164,23 @@ def a2ats_query_aware_assignment(
     ``beta=1.0`` reduces to plain nearest-centroid VQ (equivalent to
     :func:`veloxquant_mlx.allocators.vecinfer.quantize_vq`); ``beta=0.0`` is
     pure query-direction alignment, ignoring reconstruction quality entirely.
+
+    .. warning::
+       **This is not the paper's estimator.** Paper Eq. (13)/(14) minimizes an
+       ``H``-weighted quadratic form, where ``H = E[q̃ᵀq̃]`` is the query
+       second-moment matrix; §3.2's entire argument is that ``H ∦ I``. Two
+       concrete differences:
+
+       - ``cos_sim`` here depends only on ``(codebook, query)``, so it adds an
+         **identical per-centroid bias to every row of ``x``**. Eq. (14)
+         couples ``k̃`` and ``H`` per token.
+       - ``err_term`` is normalized per-row by ``max_err``, making ``beta``
+         scale-dependent: the same ``beta`` means different things for
+         different key magnitudes. ``H``-weighting has no such sensitivity.
+
+       Use :func:`a2ats_h_weighted_assignment` for the paper's actual
+       objective. This function is retained for the single-query decode path,
+       where no calibrated ``H`` is available (see :issue:`29`, finding 4).
 
     Args:
         x: ``[N, d]`` sub-vectors to quantize (``d`` == ``codebook.shape[-1]``).
@@ -159,6 +276,9 @@ def a2ats_select_retrieval_set(
 
 
 __all__ = [
+    "a2ats_query_second_moment",
+    "a2ats_cholesky_factor",
+    "a2ats_h_weighted_assignment",
     "a2ats_query_aware_assignment",
     "a2ats_select_retrieval_set",
 ]

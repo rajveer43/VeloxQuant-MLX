@@ -167,3 +167,110 @@ def test_retrieval_set_deterministic() -> None:
     r2, b2 = a2ats_select_retrieval_set(keys, query, retrieval_fraction=0.25)
     assert np.array_equal(np.array(r1), np.array(r2))
     assert np.array_equal(np.array(b1), np.array(b2))
+
+
+# ---------------------------------------------------------------------------
+# H-weighted assignment — the paper's actual Eq. (13)/(14) objective
+# (:issue:`29`, finding 4)
+# ---------------------------------------------------------------------------
+
+def test_second_moment_is_symmetric_positive_definite() -> None:
+    """``H = E[qᵀq]`` plus a ridge must be SPD — Cholesky (Eq. 15) requires
+    definite, not merely semi-definite, which matters when M < d."""
+    from veloxquant_mlx.quantizers.a2ats import a2ats_query_second_moment
+
+    q = mx.array(np.random.default_rng(0).standard_normal((3, 8)).astype(np.float32))
+    h = np.array(a2ats_query_second_moment(q))   # M=3 < d=8: rank-deficient
+    assert np.allclose(h, h.T, atol=1e-5)
+    assert np.all(np.linalg.eigvalsh(h) > 0)
+
+
+def test_cholesky_factor_reconstructs_h() -> None:
+    """Eq. (15): ``H = L Lᵀ``, with ``L`` lower-triangular."""
+    from veloxquant_mlx.quantizers.a2ats import (
+        a2ats_cholesky_factor, a2ats_query_second_moment,
+    )
+
+    q = mx.array(np.random.default_rng(1).standard_normal((50, 6)).astype(np.float32))
+    h = a2ats_query_second_moment(q)
+    ell = a2ats_cholesky_factor(h)
+    assert np.allclose(np.array(ell), np.tril(np.array(ell)), atol=1e-6)
+    assert np.allclose(np.array(ell @ ell.T), np.array(h), atol=1e-4)
+
+
+def test_h_weighted_assignment_matches_bruteforce_eq14() -> None:
+    """The Eq. (17) transform is an identity, not an approximation: assigning
+    in ``z = k̃L`` space must equal minimizing ``(k̃ − c) H (k̃ − c)ᵀ``
+    directly."""
+    from veloxquant_mlx.quantizers.a2ats import (
+        a2ats_cholesky_factor, a2ats_h_weighted_assignment,
+        a2ats_query_second_moment,
+    )
+
+    rng = np.random.default_rng(2)
+    q = mx.array(rng.standard_normal((60, 4)).astype(np.float32))
+    h = a2ats_query_second_moment(q)
+    ell = a2ats_cholesky_factor(h)
+    x = mx.array(rng.standard_normal((25, 4)).astype(np.float32))
+    cb = mx.array(rng.standard_normal((16, 4)).astype(np.float32))
+
+    got = np.array(a2ats_h_weighted_assignment(x, cb, ell))
+
+    xn, cbn, hn = np.array(x), np.array(cb), np.array(h)
+    want = [
+        int(np.argmin(np.einsum("kd,de,ke->k", xn[i] - cbn, hn, xn[i] - cbn)))
+        for i in range(xn.shape[0])
+    ]
+    assert np.array_equal(got, np.array(want))
+
+
+def test_h_identity_reduces_to_plain_nearest_centroid() -> None:
+    """§3.2's premise: the query-aware and plain-VQ objectives coincide
+    exactly when ``H ∝ I``. This pins that reduction."""
+    from veloxquant_mlx.quantizers.a2ats import (
+        a2ats_cholesky_factor, a2ats_h_weighted_assignment,
+    )
+
+    rng = np.random.default_rng(3)
+    x = mx.array(rng.standard_normal((20, 4)).astype(np.float32))
+    cb = mx.array(rng.standard_normal((16, 4)).astype(np.float32))
+    ell = a2ats_cholesky_factor(mx.eye(4))
+
+    got = np.array(a2ats_h_weighted_assignment(x, cb, ell))
+    xn, cbn = np.array(x), np.array(cb)
+    want = np.argmin(((xn[:, None, :] - cbn[None, :, :]) ** 2).sum(-1), axis=-1)
+    assert np.array_equal(got, want)
+
+
+def test_h_weighted_assignment_empty_input() -> None:
+    from veloxquant_mlx.quantizers.a2ats import (
+        a2ats_cholesky_factor, a2ats_h_weighted_assignment,
+    )
+
+    out = a2ats_h_weighted_assignment(
+        mx.zeros((0, 4)), mx.ones((8, 4)), a2ats_cholesky_factor(mx.eye(4))
+    )
+    assert out.shape == (0,)
+    assert out.dtype == mx.int32
+
+
+def test_h_weighted_differs_from_plain_vq_under_anisotropic_h() -> None:
+    """The whole point of Eq. (14): when ``H`` is strongly non-diagonal, the
+    paper's assignment must actually diverge from plain nearest-centroid —
+    otherwise §3.2's contribution would be vacuous."""
+    from veloxquant_mlx.quantizers.a2ats import (
+        a2ats_cholesky_factor, a2ats_h_weighted_assignment,
+    )
+
+    # Heavily anisotropic: dimension 0 matters ~100x more than dimension 1.
+    h = mx.array(np.array([[100.0, 0.0], [0.0, 1.0]], dtype=np.float32))
+    ell = a2ats_cholesky_factor(h)
+    x = mx.array(np.array([[1.0, 0.0]], dtype=np.float32))
+    # c0 is closer in plain L2 (0.16 vs 0.5625); c1 is closer once dim 0 is
+    # weighted 100x (16.0 vs 0.5625) — the assignment flips.
+    cb = mx.array(np.array([[0.6, 0.0], [1.0, 0.75]], dtype=np.float32))
+
+    plain = int(np.argmin(((np.array(x)[:, None, :] - np.array(cb)[None, :, :]) ** 2).sum(-1)[0]))
+    weighted = int(np.array(a2ats_h_weighted_assignment(x, cb, ell))[0])
+    assert plain == 0
+    assert weighted == 1

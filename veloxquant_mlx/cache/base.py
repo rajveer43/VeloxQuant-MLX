@@ -237,11 +237,13 @@ class KVCacheConfig:
     # --- A2ATS-adapted configuration (windowed RoPE + query-aware VQ) --
     a2ats_codebook_bits: int = 8          # codebook size 2^bits
     a2ats_sub_dim: int = 8                # VQ sub-vector width
-    a2ats_window: int = 128               # trailing exact-RoPE window (positions)
+    a2ats_window: int = 128               # trailing exact-RoPE window w (positions)
+    a2ats_b: int = 2048                   # constant far-token relative position b (Eq. 11); independent of w
     a2ats_use_query_aware: bool = True    # paper's primary reported path (default ON)
     a2ats_beta: float = 0.5               # query/reconstruction blend, in [0, 1]
     a2ats_retrieval_fraction: float = 0.20  # fraction of tokens routed to query-aware assignment
     a2ats_rope_base: float = 10000.0      # RoPE frequency base
+    a2ats_query_h: Any = None             # [sub_dim, sub_dim] query second-moment H (Eq. 10); enables the paper's Eq. 14 assignment
     a2ats_codebook: Any = None            # mx.array | np.ndarray | None (random init if absent)
     # --- KVSink-adapted sink protection (method="kivi_sink") -----------
     n_sink_tokens: int = 5             # top-k high-key-norm tokens kept fp16

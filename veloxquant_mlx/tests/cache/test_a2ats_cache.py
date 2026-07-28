@@ -264,3 +264,97 @@ def test_single_token_prefill() -> None:
     mx.eval(ko, vo)
     assert ko.shape == (1, 2, 1, 32)
     assert not bool(mx.any(mx.isnan(ko)).item())
+
+
+# ---------------------------------------------------------------------------
+# Distance gating tracks the advancing decode position (:issue:`29`, finding 3)
+#
+# Coverage gap: nothing asserted that a token's near/far class follows the
+# decode position. That gap is why the frozen-rotation bug went unnoticed —
+# the parent KVCache concatenates whatever it is handed and never revisits it,
+# so writing rotated keys froze each token's class at write time.
+# ---------------------------------------------------------------------------
+
+def test_token_rotation_updates_as_decode_position_advances() -> None:
+    """A token classified "near" at prefill must lose its exact rotation once
+    the decode position moves past the window.
+
+    Paper Eq. (11) makes near/far a function of the *current* decoding query
+    ``i``, which advances every step.
+    """
+    cache = _make(a2ats_window=4, a2ats_use_query_aware=False)
+    k, v = _rand_kv(B=1, H=1, S=6, seed=5)
+    k_prefill, _ = cache.update_and_fetch(k, v)
+    tok5_near = np.array(k_prefill[0, 0, 5]).astype(np.float32)
+
+    for i in range(10):
+        k1, v1 = _rand_kv(B=1, H=1, S=1, seed=100 + i)
+        k_now, _ = cache.update_and_fetch(k1, v1)
+
+    tok5_far = np.array(k_now[0, 0, 5]).astype(np.float32)
+    # Position 5 was distance 0 at prefill (near/exact); it is now 10 steps
+    # back, well outside window=4, so it must have become far/unrotated.
+    assert not np.allclose(tok5_near, tok5_far, atol=1e-2)
+
+
+def test_far_tokens_in_cache_are_unrotated() -> None:
+    """Eq. (12) end-to-end through the cache: once a token is outside the
+    window, its stored key is returned in the pre-RoPE frame — so two tokens
+    with the same underlying key content are position-independent."""
+    cache = _make(a2ats_window=2, a2ats_use_query_aware=False)
+    k, v = _rand_kv(B=1, H=1, S=8, seed=6)
+    k_out, _ = cache.update_and_fetch(k, v)
+
+    # Far rows (distance >= 2 from query_position=7) must be position-free:
+    # re-fetching after more decode steps leaves them untouched.
+    far_before = np.array(k_out[0, 0, :5]).astype(np.float32)
+    for i in range(3):
+        k1, v1 = _rand_kv(B=1, H=1, S=1, seed=200 + i)
+        k_now, _ = cache.update_and_fetch(k1, v1)
+    far_after = np.array(k_now[0, 0, :5]).astype(np.float32)
+    assert np.allclose(far_before, far_after, atol=1e-2)
+
+
+def test_cache_length_grows_across_prefill_and_decode() -> None:
+    """The per-step re-rotation must not disturb normal cache accumulation."""
+    cache = _make(a2ats_window=4)
+    k, v = _rand_kv(B=1, H=2, S=6, seed=7)
+    k_out, v_out = cache.update_and_fetch(k, v)
+    assert k_out.shape == (1, 2, 6, 32)
+    for step in range(1, 4):
+        k1, v1 = _rand_kv(B=1, H=2, S=1, seed=300 + step)
+        k_out, v_out = cache.update_and_fetch(k1, v1)
+        assert k_out.shape == (1, 2, 6 + step, 32)
+        assert v_out.shape == (1, 2, 6 + step, 32)
+
+
+# ---------------------------------------------------------------------------
+# H-weighted assignment wiring (:issue:`29`, finding 4)
+# ---------------------------------------------------------------------------
+
+def test_query_h_enables_paper_assignment_path() -> None:
+    """Supplying a calibrated ``a2ats_query_h`` switches the retrieval set to
+    the paper's Eq. (14) objective instead of the cosine-blend substitute."""
+    from veloxquant_mlx.quantizers.a2ats import a2ats_query_second_moment
+
+    h = a2ats_query_second_moment(mx.array(
+        np.random.default_rng(0).standard_normal((40, 8)).astype(np.float32)
+    ))
+    cache = _make(a2ats_query_h=h)
+    assert cache._cholesky_factor is not None
+    k, v = _rand_kv(B=1, H=2, S=8, seed=8)
+    k_out, v_out = cache.update_and_fetch(k, v)
+    assert k_out.shape == (1, 2, 8, 32)
+    assert not bool(mx.any(mx.isnan(k_out)).item())
+
+
+def test_query_h_absent_falls_back_to_cosine_blend() -> None:
+    cache = _make()
+    assert cache._cholesky_factor is None
+
+
+def test_query_h_shape_is_validated() -> None:
+    """``H`` is a per-sub-vector matrix — a head_dim-sized one is a config
+    error, not something to silently broadcast."""
+    with pytest.raises(ValueError, match="a2ats_query_h must have shape"):
+        _make(a2ats_query_h=np.eye(32, dtype=np.float32))

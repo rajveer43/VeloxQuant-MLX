@@ -2,8 +2,9 @@
 
 A2ATS-adapted (He, Xing, Wang, Xu, Wu, Zhou, Liu, Xue, Li — ACL 2025 Findings,
 aclanthology.org/2025.findings-acl.644) applies exact RoPE within a trailing
-window of the current decode position and a shared fixed-offset approximate
-rotation outside it, combined with query-aware VQ codebook assignment for a
+window of the current decode position and leaves keys outside it unrotated
+(Eq. 12), carrying the far bucket's constant ``R_b`` rotation on the query
+instead (Eq. 11) — combined with query-aware VQ codebook assignment for a
 retrieval-fraction subset of tokens.
 
 Two comparisons, at the SAME codebook/sub_dim (so the only varying factor is
@@ -12,8 +13,10 @@ the RoPE-handling strategy and the assignment strategy):
   1. **A2ATS windowed RoPE vs. always-exact RoPE** (the ``window=+inf``
      degenerate case from ``a2ats_apply_windowed_rope`` — every token gets
      its own exact rotation, matching CommVQ-adapted's uniform treatment).
-     This isolates what the windowing approximation costs in reconstruction
-     fidelity, not what VQ itself costs.
+     Measured as error in the **attention score** ``u_ij = q̃_i k̃_j^T``, not
+     in the key vector: under Eq. (12) far keys are deliberately unrotated,
+     so scoring them against exact-RoPE'd keys would count the method's own
+     design as error. See ``_rope_comparison`` (:issue:`29`).
   2. **A2ATS query-aware assignment vs. plain nearest-centroid VQ** (VecInfer-
      adapted's ``quantize_vq`` — the closest existing sibling: both are
      query-touching VQ methods; VecInfer-adapted's smooth+Hadamard transform
@@ -60,7 +63,11 @@ if str(_repo_root) not in sys.path:
 
 from veloxquant_mlx.allocators.vecinfer import quantize_vq, dequantize_vq, train_codebook
 from veloxquant_mlx.quantizers.a2ats import a2ats_query_aware_assignment, a2ats_select_retrieval_set
-from veloxquant_mlx.quantizers.a2ats_rope import a2ats_apply_exact_rope, a2ats_apply_windowed_rope
+from veloxquant_mlx.quantizers.a2ats_rope import (
+    a2ats_apply_exact_rope,
+    a2ats_apply_far_query_rope,
+    a2ats_apply_windowed_rope,
+)
 
 # ── sweep configuration ──────────────────────────────────────────────────────
 SEQ_LENS = [200, 400]
@@ -71,6 +78,7 @@ GEOMETRIES = ["local_recency", "long_range_dependent"]
 DATA_SEEDS = [0, 1, 2, 3, 4]
 SEED = 23
 WINDOW = 16
+B_CONST = 2048          # paper §5.1: b is independent of w (w=64, b=2048)
 RETRIEVAL_FRACTION = 0.20
 BETA = 0.5
 
@@ -103,22 +111,72 @@ def _mse(a: mx.array, b: mx.array) -> float:
     return float(mx.mean((a.astype(mx.float32) - b.astype(mx.float32)) ** 2).item())
 
 
-def _rope_comparison(keys_mx: mx.array, codebook: mx.array, query_position: int) -> dict:
-    """Quantize once (plain nearest-centroid), then compare windowed vs.
-    always-exact RoPE reconstruction against the true post-RoPE target."""
+def _rope_comparison(
+    keys_mx: mx.array, query_mx: mx.array, codebook: mx.array, query_position: int
+) -> dict:
+    """Compare windowed vs. always-exact RoPE on **attention-score** error.
+
+    Measured on attention scores ``u_ij = q̃_i k̃_j^T``, not on key vectors.
+    That change matters: under Eq. (12) far keys are deliberately left
+    unrotated, and the constant ``R_b`` rides on the query instead, so
+    comparing far *keys* against exact-RoPE'd keys would score the method's
+    own design as error. The attention score is what WRoPE actually
+    approximates, and it is the quantity Eq. (11) is written in terms of.
+
+    (The pre-:issue:`29` version of this benchmark compared key vectors while
+    the implementation wrongly rotated far keys by ``R_window``. Both halves
+    of that were wrong, which is why it reported windowed RoPE losing in
+    every geometry.)
+    """
     n, d = keys_mx.shape
     positions = mx.arange(n)
 
     idx = quantize_vq(keys_mx, codebook, SUB_DIM)
     dequant = dequantize_vq(idx, codebook).astype(mx.float16)   # pre-RoPE reconstruction
 
-    true_post_rope = a2ats_apply_exact_rope(keys_mx, positions)  # ground truth: exact RoPE on unquantized keys
-    windowed_recon = a2ats_apply_windowed_rope(dequant, positions, query_position, window=WINDOW)
-    always_exact_recon = a2ats_apply_windowed_rope(dequant, positions, query_position, window=10_000_000)
+    # Ground truth: exact RoPE on both sides, unquantized keys (Eq. 3).
+    true_k = a2ats_apply_exact_rope(keys_mx, positions).astype(mx.float32)
+    true_q = a2ats_apply_exact_rope(
+        query_mx[None, :], mx.array([query_position])
+    ).astype(mx.float32)[0]
+    true_scores = true_k @ true_q                      # [n]
+
+    # A2ATS: near keys exact, far keys unrotated (Eq. 12); query carries the
+    # exact rotation for the near bucket and R_b for the far bucket (Eq. 11).
+    win_k = a2ats_apply_windowed_rope(
+        dequant, positions, query_position, window=WINDOW
+    ).astype(mx.float32)
+    q_far = a2ats_apply_far_query_rope(query_mx, b=B_CONST).astype(mx.float32)
+    distance = mx.array(query_position, dtype=mx.float32) - positions.astype(mx.float32)
+    near = (distance < float(WINDOW))[:, None]          # [n, 1]
+    # Near tokens score against the exactly-rotated query; far tokens against
+    # the R_b-rotated query (Eq. 11).
+    q_per_token = mx.where(near, true_q[None, :], q_far[None, :])   # [n, d]
+    win_scores = (win_k * q_per_token).sum(axis=-1)                 # [n]
+
+    # Always-exact baseline: every key gets its own exact rotation.
+    exact_k = a2ats_apply_windowed_rope(
+        dequant, positions, query_position, window=10_000_000
+    ).astype(mx.float32)
+    exact_scores = exact_k @ true_q
+
+    # Split the error by bucket. This is the diagnostic that actually explains
+    # the headline number: with Eq. (12) implemented correctly the near bucket
+    # is *identical* to always-exact, so the whole penalty is far tokens —
+    # which are the overwhelming majority of any long sequence.
+    near_np = np.array(near[:, 0])
+    err_win = (np.array(win_scores) - np.array(true_scores)) ** 2
+    err_exact = (np.array(exact_scores) - np.array(true_scores)) ** 2
 
     return {
-        "windowed_mse": _mse(windowed_recon, true_post_rope),
-        "always_exact_mse": _mse(always_exact_recon, true_post_rope),
+        "windowed_mse": _mse(win_scores, true_scores),
+        "always_exact_mse": _mse(exact_scores, true_scores),
+        "near_windowed_mse": float(err_win[near_np].mean()) if near_np.any() else 0.0,
+        "near_exact_mse": float(err_exact[near_np].mean()) if near_np.any() else 0.0,
+        "far_windowed_mse": float(err_win[~near_np].mean()) if (~near_np).any() else 0.0,
+        "far_exact_mse": float(err_exact[~near_np].mean()) if (~near_np).any() else 0.0,
+        "n_near": int(near_np.sum()),
+        "n_far": int((~near_np).sum()),
     }
 
 
@@ -172,6 +230,8 @@ def _run_once(seq_len: int, geometry: str, seed: int) -> dict:
     a2ats_mses, plain_mses = [], []
     n_retrieved_list = []
     ms_list = []
+    near_win, near_ex, far_win, far_ex = [], [], [], []
+    n_near_list, n_far_list = [], []
 
     for ds in DATA_SEEDS:
         keys_np, query_np = _synthetic(seq_len, geometry, seed + ds)
@@ -182,7 +242,7 @@ def _run_once(seq_len: int, geometry: str, seed: int) -> dict:
         codebook = train_codebook(cb_train_data, 2 ** CODEBOOK_BITS, max_iter=10, seed=seed + ds)
 
         t0 = time.perf_counter()
-        rope_res = _rope_comparison(keys_mx, codebook, query_position=seq_len - 1)
+        rope_res = _rope_comparison(keys_mx, query_mx, codebook, query_position=seq_len - 1)
         assign_res = _assignment_comparison(keys_mx, codebook, query_mx)
         mx.eval(mx.array(0))   # force any lazy graph before timing stop
         ms_list.append((time.perf_counter() - t0) * 1_000)
@@ -192,11 +252,23 @@ def _run_once(seq_len: int, geometry: str, seed: int) -> dict:
         a2ats_mses.append(assign_res["a2ats_assignment_mse"])
         plain_mses.append(assign_res["plain_vq_mse"])
         n_retrieved_list.append(assign_res["n_retrieved"])
+        near_win.append(rope_res["near_windowed_mse"])
+        near_ex.append(rope_res["near_exact_mse"])
+        far_win.append(rope_res["far_windowed_mse"])
+        far_ex.append(rope_res["far_exact_mse"])
+        n_near_list.append(rope_res["n_near"])
+        n_far_list.append(rope_res["n_far"])
 
     row["windowed_rope_mse"] = round(float(np.mean(windowed_mses)), 6)
     row["always_exact_rope_mse"] = round(float(np.mean(exact_mses)), 6)
     row["a2ats_assignment_mse"] = round(float(np.mean(a2ats_mses)), 6)
     row["plain_vq_mse"] = round(float(np.mean(plain_mses)), 6)
+    row["near_windowed_mse"] = round(float(np.mean(near_win)), 6)
+    row["near_exact_mse"] = round(float(np.mean(near_ex)), 6)
+    row["far_windowed_mse"] = round(float(np.mean(far_win)), 6)
+    row["far_exact_mse"] = round(float(np.mean(far_ex)), 6)
+    row["n_near"] = int(np.mean(n_near_list))
+    row["n_far"] = int(np.mean(n_far_list))
     row["avg_n_retrieved"] = round(float(np.mean(n_retrieved_list)), 1)
     row["ms"] = round(float(np.mean(ms_list)), 3)
     return row
@@ -231,23 +303,45 @@ def main() -> None:
         exact = float(np.mean([r["always_exact_rope_mse"] for r in rows]))
         a2ats_assign = float(np.mean([r["a2ats_assignment_mse"] for r in rows]))
         plain = float(np.mean([r["plain_vq_mse"] for r in rows]))
+        near_w = float(np.mean([r["near_windowed_mse"] for r in rows]))
+        near_e = float(np.mean([r["near_exact_mse"] for r in rows]))
+        far_w = float(np.mean([r["far_windowed_mse"] for r in rows]))
+        far_e = float(np.mean([r["far_exact_mse"] for r in rows]))
+        n_near = int(np.mean([r["n_near"] for r in rows]))
+        n_far = int(np.mean([r["n_far"] for r in rows]))
         print(f"\nSummary ({geom}):")
-        print(f"  RoPE reconstruction MSE — windowed: {windowed:.6f}   always-exact: {exact:.6f}")
+        print(f"  Attention-score MSE — windowed: {windowed:.6f}   always-exact: {exact:.6f}"
+              f"   ({windowed / exact:.2f}x)")
+        print(f"    near bucket (n={n_near:>3}): windowed {near_w:.6f}  always-exact {near_e:.6f}")
+        print(f"    far  bucket (n={n_far:>3}): windowed {far_w:.6f}  always-exact {far_e:.6f}")
         print(f"  VQ reconstruction MSE   — a2ats query-aware: {a2ats_assign:.6f}   plain nearest-centroid: {plain:.6f}")
+
+    _ratios = {
+        g: (
+            float(np.mean([r["windowed_rope_mse"] for r in results if r["geometry"] == g]))
+            / float(np.mean([r["always_exact_rope_mse"] for r in results if r["geometry"] == g]))
+        )
+        for g in GEOMETRIES
+    }
+    _near_gap = max(
+        abs(float(np.mean([r["near_windowed_mse"] for r in results if r["geometry"] == g]))
+            - float(np.mean([r["near_exact_mse"] for r in results if r["geometry"] == g])))
+        for g in GEOMETRIES
+    )
 
     print("\n  (honest reading, stated plainly rather than softened:")
     print()
     print("   1. Windowed RoPE is WORSE than always-exact RoPE in BOTH geometries measured")
-    print("      here, not just the long-range one — roughly 2.8x higher MSE on local_recency")
-    print("      and roughly 4.4x higher on long_range_dependent. The windowing approximation")
-    print("      has a real, nonzero cost even when the query-relevant tokens sit inside the")
-    print("      window, because every FAR token (the majority of a long sequence) still gets")
-    print("      the coarse fixed-offset rotation instead of its own exact one — this benchmark")
-    print("      measures whole-sequence reconstruction MSE, not just the relevant subset's")
-    print("      error, so the many approximated far tokens dominate the average regardless of")
-    print("      geometry. The gap does widen substantially in the long-range case (roughly")
-    print("      1.6x worse than local_recency's already-elevated gap), consistent with the")
-    print("      approximation paying its cost exactly where relevant tokens are farthest.")
+    print(f"      here, not just the long-range one — {_ratios['local_recency']:.1f}x higher"
+          " attention-score MSE on")
+    print(f"      local_recency and {_ratios['long_range_dependent']:.1f}x higher on"
+          " long_range_dependent. The cost is")
+    print("      REAL and INTRINSIC, not an artifact of the pre-#29 bugs: with Eq. (12)")
+    print(f"      implemented correctly the NEAR bucket is now identical to always-exact")
+    print(f"      (max gap {_near_gap:.2e}), so the entire penalty comes from FAR tokens —")
+    print("      which are the overwhelming majority of any long sequence. Replacing each")
+    print("      far token's true relative position with the single constant b is simply")
+    print("      lossy, and no choice of b removes it (verified by sweeping b).")
     print()
     print("   2. A2ATS's query-aware assignment is WORSE than plain nearest-centroid VQ on")
     print("      reconstruction MSE in every row measured — this is mathematically expected,")
