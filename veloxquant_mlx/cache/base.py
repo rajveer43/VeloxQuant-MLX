@@ -76,12 +76,17 @@ class KVCacheConfig:
     kitty_lo_bit: int = 2                 # bits for low-variance channels
     kitty_group_size: int = 32            # group size for channel quantization
     # --- AdaKV-proxy configuration (per-head adaptive bit allocation) ----
-    adakv_target_avg_bits: float = 2.0    # global average bits/element target
+    # NOTE: target must lie strictly inside (lo_bit, hi_bit) for per-head
+    # adaptation to be possible at all — at either endpoint the budget forces a
+    # uniform allocation (equivalent to plain KIVI). Default 2.5, not 2.0.
+    adakv_target_avg_bits: float = 2.5    # global average bits/element target
     adakv_lo_bit: int = 2                 # minimum bits any head can get
     adakv_mid_bit: int = 3                # middle tier (set == hi for a 2-tier set)
     adakv_hi_bit: int = 4                 # maximum bits any head can get
     adakv_group_size: int = 32            # group size for per-head quantization
     adakv_update_interval: int = 1        # recompute allocation every N tokens (1 = every step)
+    adakv_importance: str = "norm_variance"  # "norm_variance" | "attention_entropy"
+    adakv_obs_window: int = 32            # obs-window size for attention_entropy
     # --- XQuant configuration (cross-layer KV cache reuse) ---------------
     xquant_group_size: int = 2            # layers per anchor/reuse group (2 = pairs)
     xquant_base_bits: int = 2             # anchor quantizer bit-width

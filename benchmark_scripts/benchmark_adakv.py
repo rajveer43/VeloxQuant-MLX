@@ -149,9 +149,15 @@ def main() -> None:
         ("kivi_2bit", "kivi", {"bit_width_inlier": 2, "kivi_group_size": 32}),
         ("kitty_2_5bit", "kitty",
          {"kitty_hi_fraction": 0.25, "kitty_hi_bit": 4, "kitty_lo_bit": 2}),
-        ("adakv_2_0bit", "adakv", {"adakv_target_avg_bits": 2.0}),
+        # Targets are swept inside the *adaptive* range (lo_bit, hi_bit) =
+        # (2, 4). A target of exactly 2.0 or 4.0 forces a uniform allocation
+        # (see issue #31) and would measure plain KIVI under an AdaKV label.
+        ("adakv_2_25bit", "adakv", {"adakv_target_avg_bits": 2.25}),
         ("adakv_2_5bit", "adakv", {"adakv_target_avg_bits": 2.5}),
         ("adakv_3_0bit", "adakv", {"adakv_target_avg_bits": 3.0}),
+        # Same budget, the paper's importance criterion instead of the default.
+        ("adakv_2_5bit_entropy", "adakv",
+         {"adakv_target_avg_bits": 2.5, "adakv_importance": "attention_entropy"}),
     ]
 
     all_results = []
