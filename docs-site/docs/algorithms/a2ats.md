@@ -7,39 +7,66 @@ slug: /algorithms/a2ats
 
 # A2ATS-adapted
 
-A2ATS-adapted compresses the KV cache with vector quantization, and skips the
-position-encoding work for tokens far behind the one you're currently
-generating. Recent tokens are handled exactly; distant ones get a cheap
-approximation. It suits long contexts where the tokens that matter are usually
-nearby — chat histories, code completion, running summaries.
+## The problem this solves
 
-:::warning[Needs a calibration pass]
-Like [VecInfer](../algorithms/vecinfer), [CommVQ-adapted](../algorithms/commvq),
-and [Palu](../algorithms/palu), this method needs a codebook trained on
-representative data. Without one it falls back to a random codebook that exists
-only so the plumbing tests can run, and quality will be poor. See
-[Calibration](#calibration-one-time-setup).
-:::
+As a language model writes, it keeps notes on every word it has already seen so
+it doesn't have to reread them. Those notes are the **KV cache**, and they grow
+with the conversation. A long chat can spend more memory on the cache than on
+the model itself.
 
-:::note[Memory, not speed]
-On Apple Silicon the win is memory footprint rather than decode throughput. The
-paper's speedup numbers assume a fused CUDA kernel this port doesn't have — the
-same disclaimer as every VQ-family method here.
-:::
+There are two ways to shrink it. You can throw old notes away, or you can write
+every note in shorthand. A2ATS-adapted does the second: it keeps every token,
+stored more cheaply.
 
-:::danger[The savings are modelled, not yet realised in RAM]
-`compression_ratio` reports what the quantized codes *would* cost. It is not
-the resident memory of your process. `update_and_fetch` dequantizes each token
-back to fp16 and stores that in the parent buffer, because the near/far split
-has to be recomputed against the live decode position every step
-([How it works](#how-it-works), step 4). So today the cache holds fp16 and the
-counters describe a saving the storage layer doesn't take yet.
+It saves in two places:
 
-What you do get is a faithful measurement of the accuracy cost and the
-achievable footprint of this configuration. Treat the numbers as sizing for a
-codes-resident backend, not as RAM you'll see in Activity Monitor. If you need
-an actual reduction in resident memory right now, use
-[VecInfer](../algorithms/vecinfer) or [TurboQuant RVQ](../algorithms/rvq).
+- **Shorthand instead of full notes.** Rather than storing each token's numbers
+  exactly, it stores the nearest entry from a shared lookup table of common
+  patterns — like writing "see pattern #57" instead of copying out 128 numbers.
+  That table is the **codebook**, and you have to build it in advance from your
+  own data. This is the tradeoff: the shorthand is close to the original, not
+  identical.
+- **Less bookkeeping for old tokens.** Models track *where* each word sits in
+  the sentence. A2ATS does that exactly for recent tokens and approximates it
+  for older ones, on the bet that what matters most is usually what was said
+  recently.
+
+That bet is the whole method. It pays off for chat histories, code completion,
+and running summaries. It works against you when the answer is buried far back
+in a long document.
+
+## Before you start
+
+Three things are worth knowing up front, because they decide whether this is
+the right pick.
+
+**You have to run a calibration step first.** The codebook has to be built from
+a sample of your own model's data. It's a one-time offline job covered in
+[Calibration](#calibration-one-time-setup), but you can't skip it. Without it
+the code falls back to a random table that exists only so the tests can run,
+and your output will be visibly bad. If you want something that works with no
+setup, use [TurboQuant RVQ](../algorithms/rvq) instead.
+
+**It won't make generation faster.** The speedups in the original paper come
+from a custom GPU kernel written for NVIDIA hardware that this project doesn't
+have. On Apple Silicon you're trading a little accuracy for a smaller cache,
+not for speed. Expect decode to get slightly *slower* as context grows.
+
+:::danger[And right now it won't shrink your actual memory use either]
+This is the one people get caught by. The page reports a compression ratio, and
+the number is real arithmetic — but it describes how small the data *could* be,
+not how much memory your process actually uses.
+
+The reason: after compressing each token, the code immediately expands it back
+to full size before storing it, because the "recent vs. old" bookkeeping has to
+be redone every single step against your current position. So the cache in
+memory still holds full-size data.
+
+That makes this useful for **measuring** what the technique would cost you in
+accuracy and what footprint it could reach — real numbers you can plan
+with — but not yet for saving RAM today. If you need your memory use to drop
+now, use [VecInfer](../algorithms/vecinfer) or
+[TurboQuant RVQ](../algorithms/rvq).
 :::
 
 ## Quick start
@@ -78,53 +105,71 @@ response = mlx_lm.generate(
 )
 ```
 
-The defaults for everything else are the paper's own values, and are reasonable
-starting points.
+You only need to set two things yourself: `head_dim`, which comes from the
+model, and `a2ats_codebook`, which comes from calibration. Everything else
+defaults to the values the original paper used, and those are sensible to start
+with.
 
-`head_dim` must be even and divisible by `a2ats_sub_dim` (default `8`); both
-are checked when the cache is built, so a wrong value fails immediately rather
-than silently degrading. `head_dim=128` satisfies this, as does `64`.
+One rule about `head_dim`: it has to be an even number, and divisible by
+`a2ats_sub_dim` (which defaults to `8`). `128` and `64` both work. If you get
+it wrong the code raises an error immediately instead of quietly producing bad
+output, so you'll know.
 
 ## Should you use this?
 
-Good fit:
+**It's a good fit if** your model mostly needs recent context — conversations,
+iterative editing, working on the file that's currently open — and you're able
+to run that one-time calibration job.
 
-- Long contexts where relevant tokens are usually recent — conversations,
-  iterative editing, code in the current file
-- You can run a one-time offline calibration pass
-- Memory is your constraint, not latency
+**Look elsewhere if:**
 
-Poor fit:
+- **You need to find things buried far back**, like "what did the contract say
+  on page 3". This is exactly where the approximation hurts most. In our
+  testing, that kind of workload had roughly **8x** more error than a version
+  doing all the work exactly, versus about **3x** when the useful information
+  was nearby.
+- **You can't run calibration** → [TurboQuant RVQ](../algorithms/rvq) needs
+  none.
+- **You want accuracy that doesn't depend on distance** →
+  [VecInfer](../algorithms/vecinfer) and
+  [CommVQ-adapted](../algorithms/commvq) treat every position the same way.
 
-- Genuine long-range lookups, such as retrieval over a large document or "what
-  did the contract say on page 3". The approximation costs the most exactly
-  there: our benchmark measures 8.3x higher attention-score error in that
-  geometry, versus 2.9x for the local case.
-- You can't calibrate. Try [TurboQuant RVQ](../algorithms/rvq), which needs no
-  calibration.
-- You want uniform accuracy regardless of distance.
-  [VecInfer](../algorithms/vecinfer) and [CommVQ-adapted](../algorithms/commvq)
-  apply exact position encoding everywhere.
+### The one setting worth tuning: `a2ats_window`
 
-### Tuning `a2ats_window`
+This is how many recent tokens get exact treatment. Tokens inside the window
+are handled with *no* approximation at all — bit-for-bit identical to not using
+this method. Everything older gets the cheap path.
 
-This is the main dial. Tokens inside the window are handled exactly, bit-identical
-to never approximating at all, so the window is the fraction of your context
-you're paying full price for.
+So the window is the slice of your conversation you're paying full price for.
 
-| `a2ats_window` | Effect |
+| `a2ats_window` | What happens |
 |---|---|
-| Larger (e.g. 512) | More accuracy, less savings |
-| Smaller (e.g. 64) | More savings, more error on tokens that fall outside |
-| `>= context length` | Degrades to always-exact — no approximation at all |
-| `<= 0` | Everything approximated (not recommended) |
+| Larger (say 512) | Better accuracy, smaller savings |
+| Smaller (say 64) | Bigger savings, more error on older tokens |
+| Bigger than your context | Nothing is approximated at all |
+| `0` or less | Everything is approximated (don't do this) |
 
-If you know roughly how far back your queries reach, set the window to cover it.
+Rule of thumb: if you know roughly how far back your model needs to look, set
+the window to cover that.
 
 ## Calibration (one-time setup)
 
-Train a codebook on a representative sample of your model's key activations and
-persist it:
+This is the step you can't skip. You're building the lookup table of common
+patterns — the codebook — that the shorthand refers to.
+
+The idea is simple: run a batch of text through your model that looks like what
+you'll actually use it for, watch the numbers it produces internally, and find
+the few hundred most representative patterns. Save those. From then on, every
+token gets stored as "the closest one of these."
+
+You do this once and reuse the saved file forever, as long as you keep using
+the same model.
+
+:::warning[The example below uses random numbers as a placeholder]
+`keys_calib` here is filled with random data so the snippet runs on its own. A
+codebook built from random numbers is worthless. Replace it with real values
+collected from your model on text that resembles your actual workload.
+:::
 
 ```python
 import numpy as np
@@ -187,29 +232,35 @@ config = KVCacheConfig(method="a2ats", head_dim=128, a2ats_use_query_aware=False
 
 ## Configuration reference
 
-`KVCacheConfig` fields (when `method="a2ats"`):
+Most people set the first three and leave the rest alone.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `head_dim` | `int` | **Required.** Must be even and divisible by `a2ats_sub_dim` |
-| `a2ats_window` | `int` | Recent-token window given exact position encoding. Default `128` |
-| `a2ats_b` | `int` | Stand-in distance used for tokens outside the window. Default `2048` |
-| `a2ats_codebook` | `mx.array \| np.ndarray \| None` | Trained codebook. Random if `None` (testing only) |
-| `a2ats_codebook_bits` | `int` | Codebook size = `2**bits`. Default `8` |
-| `a2ats_sub_dim` | `int` | Sub-vector width. Default `8` |
-| `a2ats_use_query_aware` | `bool` | Query-aware assignment for the retrieval subset. Default `True` |
-| `a2ats_query_h` | `mx.array \| np.ndarray \| None` | Query second-moment matrix, shape `[sub_dim, sub_dim]`. Enables the paper's exact objective |
-| `a2ats_beta` | `float` | Query/reconstruction blend in `[0, 1]`, used only in the fallback path. Default `0.5` |
-| `a2ats_retrieval_fraction` | `float` | Fraction of tokens routed to query-aware assignment, in `[0, 1]`. Default `0.20` |
-| `a2ats_rope_base` | `float` | Position-encoding frequency base. Default `10000.0` |
+**The ones you'll actually touch:**
 
-Single-layer, no coordinator: `for_model` returns one `A2ATSKVCache` per
-attention layer. There is no `.bits` attribute; the cache stores and returns
-fp16 K/V directly.
+| Setting | What it does |
+|---|---|
+| `head_dim` | **Required.** Comes from your model. Must be even, and divisible by `a2ats_sub_dim` |
+| `a2ats_codebook` | Your calibrated lookup table. Leave it out and you get a random one that produces garbage |
+| `a2ats_window` | How many recent tokens get exact treatment. Default `128` |
 
-## Measuring compression
+**The ones you can safely ignore at first:**
 
-Every cache exposes running counters:
+| Setting | What it does |
+|---|---|
+| `a2ats_sub_dim` | How many numbers get bundled into one lookup. Default `8` |
+| `a2ats_codebook_bits` | Lookup table size, as `2**bits` entries. Default `8` |
+| `a2ats_use_query_aware` | Whether to favor tokens the model is likely hunting for. Default `True` |
+| `a2ats_query_h` | Optional extra calibration that upgrades the above from approximate to exact. Must be `sub_dim × sub_dim` |
+| `a2ats_beta` | Balance between accuracy and relevance, `0` to `1`. Only used when `a2ats_query_h` is absent. Default `0.5` |
+| `a2ats_retrieval_fraction` | What share of tokens get the special treatment, `0` to `1`. Default `0.20` |
+| `a2ats_b` | Stand-in distance used for old tokens. Default `2048` |
+| `a2ats_rope_base` | Position-tracking frequency. Match your model's if you change it. Default `10000.0` |
+
+You get one cache per layer of the model, and `KVCacheBuilder.for_model` builds
+them all for you.
+
+## Checking how much you saved
+
+The cache keeps a running tally you can print at any time:
 
 ```python
 cache = caches[0]
@@ -219,172 +270,185 @@ print(f"codebook overhead: {cache.codebook_bytes / 1024:.1f} KB")
 print(f"tokens seen: {cache.tokens_seen}")
 ```
 
-| Property | Meaning |
+Remember these describe how small the data *could* be, not your actual memory
+use — see the [warning at the top](#before-you-start).
+
+| What you can read | What it tells you |
 |---|---|
-| `compression_ratio` | fp16 bytes ÷ code bytes, for keys and values together |
-| `compressed_key_bytes` / `compressed_value_bytes` | What the codes occupy |
-| `fp16_key_bytes` / `fp16_value_bytes` | What fp16 would have cost |
-| `codebook_bytes` | One-time codebook overhead, amortized across tokens |
-| `assigned_avg_bits` | Effective bits per element, excluding codebook |
-| `tokens_seen` / `tokens_retrieved` | Cumulative counts, for observability |
+| `compression_ratio` | How many times smaller the compressed form is |
+| `compressed_key_bytes` / `compressed_value_bytes` | Size in compressed form |
+| `fp16_key_bytes` / `fp16_value_bytes` | Size without any compression |
+| `codebook_bytes` | Size of the lookup table itself |
+| `assigned_avg_bits` | Bits spent per number stored |
+| `tokens_seen` / `tokens_retrieved` | How many tokens have gone through |
 
-All of these are modelled sizes, not resident memory — see the callout at the
-top of the page.
+### What you get with the defaults
 
-### What the defaults give you
+The compression is decided entirely by your settings, not by your data, so you
+can work it out before running anything. Two settings control it: `sub_dim`
+(how many numbers get bundled into one lookup) and `bits` (how big the lookup
+table is).
 
-Compression is fixed by your configuration, not by the data, so you can compute
-it up front: each token costs `head_dim / a2ats_sub_dim` indices of
-`a2ats_codebook_bits` each, which works out to
-`assigned_avg_bits = a2ats_codebook_bits / a2ats_sub_dim`. Keys and values are
-accounted identically.
-
-| `a2ats_sub_dim` | `a2ats_codebook_bits` | Bits/element | vs fp16 | Codebook |
+| `a2ats_sub_dim` | `a2ats_codebook_bits` | Bits per number | Smaller by | Table size |
 |---|---|---:|---:|---:|
 | `8` (default) | `8` (default) | 1.00 | 16x | 4 KB |
 | `4` | `8` | 2.00 | 8x | 2 KB |
 | `8` | `4` | 0.50 | 32x | 0.25 KB |
 
-The codebook is a fixed cost, stored fp16 as `2**bits × sub_dim` entries. It's
-per cache and independent of context length, so it amortizes to nothing on any
-real sequence. Higher ratios mean coarser centroids and more reconstruction
-error, so raising `sub_dim` past the default trades quality for footprint.
+Out of the box you're storing about one bit per number instead of sixteen.
+
+The lookup table itself is a one-off cost that doesn't grow with your
+conversation, so on any real workload it rounds to nothing. And the pattern in
+that table is the usual one: bigger compression means rougher approximation, so
+pushing past the defaults buys space with quality.
 
 ## Troubleshooting
 
-**`head_dim=... must be even`** — RoPE rotates dimensions in pairs. Read
-`head_dim` off the model config rather than hardcoding it.
+**"head_dim must be even"** — `head_dim` has to come from your model, and the
+method needs an even number. Don't hardcode it; read it from the model config
+like the [Quick start](#quick-start) does.
 
-**`head_dim=... not divisible by a2ats_sub_dim`** — the head dimension is split
-into equal sub-vectors. With the default `a2ats_sub_dim=8`, `head_dim` must be a
-multiple of 8. Either fix `head_dim` or pick a `sub_dim` that divides it.
+**"head_dim not divisible by a2ats_sub_dim"** — these two numbers have to
+divide evenly. `a2ats_sub_dim` defaults to `8`, so `head_dim` needs to be a
+multiple of 8. Either you've got the wrong `head_dim`, or you changed `sub_dim`
+to something that doesn't fit.
 
-**Codebook shape errors, or output quality far worse than expected** — the
-`sub_dim` and `bits` you calibrated with must match the config you run with. A
-codebook trained at `sub_dim=8` is not usable at `sub_dim=4`. If you didn't pass
-`a2ats_codebook` at all, you're on the random fallback and output will look
-broken; that path exists only so shape tests can run.
+**The output is gibberish, or a codebook shape error** — almost always a
+calibration mismatch. The `sub_dim` and `bits` you used when *building* the
+codebook must be the same ones you use when *running*. A codebook built with
+`sub_dim=8` won't work with `sub_dim=4`. And if you didn't pass
+`a2ats_codebook` at all, you're on the random fallback, which produces
+nonsense by design.
 
-**`a2ats_query_h` rejected for its shape** — it must be `[sub_dim, sub_dim]`,
-matching your configured `a2ats_sub_dim`.
+**"a2ats_query_h must have shape..."** — this optional matrix has to be square,
+sized to match your `a2ats_sub_dim`. With the default of 8, it needs to be 8×8.
 
-**Output is fine but you see no memory savings** — expected today. See the
-callout at the top of the page.
+**Everything works but memory use didn't drop** — expected. See the
+[warning at the top](#before-you-start).
 
-**Decode feels slower as context grows** — also expected: the windowed
-re-rotation is an `O(total_tokens)` pass per step. See the last limitation
-below.
+**It's slower than not using it** — also expected, and it gets more noticeable
+as context grows. See [Limitations](#limitations).
 
 ## Limitations
 
-Worth reading before you deploy this.
+Read this before you rely on it for anything real.
 
-**The windowing approximation costs accuracy.** Our benchmark shows it in both
-geometries tested: 2.9x higher attention-score error when relevant tokens are
-nearby, 8.3x when they're far. Tokens inside the window are exact; everything
-outside pays. See [Benchmark](#benchmark) for the full numbers.
+**The approximation genuinely costs you accuracy.** This isn't free. In our
+tests, older tokens came out meaningfully less accurate — roughly 3x more error
+when the useful context was nearby, and 8x when it was far away. Recent tokens
+inside the window are perfect; everything older pays. The
+[Benchmark](#benchmark) has the exact numbers.
 
-**The cache can't see your real queries.** The mlx_lm cache protocol only hands
-`update_and_fetch` keys and values, so "query-aware" here uses the incoming key
-vector as a stand-in. This is the same approximation category as
-[AMC-adapted](../algorithms/amc), [H2O](../algorithms/h2o), and
-[SnapKV](../algorithms/snapkv), so it isn't a new problem, but it does mean the
-query-awareness is weaker than the paper's.
+**"Query-aware" here is weaker than it sounds.** The method is supposed to pay
+extra attention to tokens your model is actually looking for. But the plumbing
+in mlx_lm never tells the cache what the model is looking for — it only hands
+over the tokens being stored. So the code substitutes a rough stand-in. Several
+other methods here ([AMC-adapted](../algorithms/amc),
+[H2O](../algorithms/h2o), [SnapKV](../algorithms/snapkv)) have the same
+limitation, so it's a known gap rather than a flaw unique to this one.
 
-**Without `a2ats_query_h`, query-aware assignment is a simplification.** The
-paper minimizes a query-second-moment-weighted objective. That is implemented
-exactly, but only runs when you supply `a2ats_query_h`. Otherwise a
-cosine-similarity blend runs instead, which differs in two ways: its query term
-applies the same bias to every token rather than coupling per token, and
-`a2ats_beta` becomes sensitive to the scale of your key vectors.
+**There's a better and a worse version of that feature, and you get the worse
+one by default.** If you supply the optional `a2ats_query_h` (see
+[query-aware calibration](#optional-query-aware-calibration)) you get the exact
+method from the paper. Without it you get a rough approximation, and one of its
+knobs, `a2ats_beta`, becomes sensitive to the scale of your data — meaning a
+value that works on one model may not transfer to another.
 
-**Query-aware assignment trades reconstruction accuracy for relevance.**
-`a2ats_beta=1.0` is exactly plain quantization; anything lower deliberately
-moves away from the lowest-reconstruction-error choice. Our benchmark shows
-query-aware assignment with higher reconstruction error in every row, which is
-expected rather than a bug. The intended payoff is retrieval quality, and an
-offline reconstruction benchmark can't measure that. Don't read those rows as
-"query-aware is worse".
+**Don't panic if query-awareness looks "worse" in the numbers.** It deliberately
+picks entries that aren't the closest match, in exchange for being more useful
+for the tokens the model actually cares about. So a pure accuracy-of-reconstruction
+measurement will always make it look slightly worse. That's the trade working as
+designed, not a bug — but it does mean our offline benchmark can't show you the
+upside.
 
-**Nothing is dropped.** Every token is quantized and kept. The retrieval
-fraction only changes which centroid a token is matched against. This is a
-compression method, not an eviction method.
+**It never throws anything away.** Every token is kept. Some other methods on
+this site work by deleting old tokens; this one doesn't. If you were hoping for
+eviction, that's [H2O](../algorithms/h2o) or [SnapKV](../algorithms/snapkv).
 
-**Per-step cost is proportional to total context, not new tokens.** Whether a
-token counts as near or far depends on where you are now, so it can't be
-precomputed once and frozen. Each decode step re-derives it across the whole
-cache. Distant tokens skip the expensive path, so the constant is small, but the
-pass itself is `O(total_tokens)`.
+**It gets slower as your conversation gets longer.** Whether a token counts as
+"recent" depends on where you are right now, which changes with every word
+generated. So the work can't be done once and cached — each step redoes it
+across the entire history. The per-token cost is small, but it scales with total
+conversation length, not with what you just added.
 
-**Not validated on a trained model.** Our benchmark is offline and synthetic.
-The paper's retrieval-accuracy and throughput numbers come from real
-long-context workloads this repo doesn't have.
+**None of this has been tested on a real model.** Our benchmark is synthetic —
+it runs the math on generated data without loading a language model. The claims
+about real-world quality come from the original paper, on hardware and workloads
+this project hasn't reproduced. Treat the accuracy numbers as directional.
 
 ## Benchmark
 
-`benchmark_scripts/benchmark_a2ats.py` (results in `figures/a2ats/results.json`)
-sweeps sequence length across two geometries. Error is measured on attention
-scores, which is what the approximation actually affects.
+We tested two situations: one where the useful information is recent
+(`local_recency`), and one where it's far back (`long_range_dependent`). Lower
+numbers are better, and the "Ratio" column is what matters — how many times
+worse this method is than doing everything exactly.
 
-| Geometry | Tokens measured | Windowed | Always-exact | Ratio |
+The window was deliberately set very small (16 tokens) here to make the effect
+visible.
+
+| Situation | Which tokens | This method | Exact | How much worse |
 |---|---|---:|---:|---:|
-| `local_recency` | overall | 3.929 | 1.347 | **2.9x** |
-| | inside window (16) | 8.248850 | 8.248850 | **1.000000x** |
-| | outside window | 3.830 | 1.080 | 3.5x |
-| `long_range_dependent` | overall | 8.384 | 1.014 | **8.3x** |
-| | inside window (16) | 1.090521 | 1.090522 | **1.000001x** |
-| | outside window | 8.762 | 1.006 | 8.7x |
+| Useful info nearby | all of them | 3.929 | 1.347 | **2.9x** |
+| | recent ones | 8.248850 | 8.248850 | **identical** |
+| | older ones | 3.830 | 1.080 | 3.5x |
+| Useful info far back | all of them | 8.384 | 1.014 | **8.3x** |
+| | recent ones | 1.090521 | 1.090522 | **identical** |
+| | older ones | 8.762 | 1.006 | 8.7x |
 
-The "inside window" rows are identical to always-exact, to a maximum difference
-of `5e-07`, so the window really is exact. All the error comes from outside it,
-and in a long sequence that's most of your tokens: roughly 92% at 200 tokens and
-96% at 400. That's the trade you're making.
+Two things to take from this.
 
-The gap isn't a tunable set badly. Sweeping `a2ats_b` from 8 to 2048 never
-closes it — collapsing every distant token's true position into one stand-in
-value is simply lossy.
+**Recent tokens really are untouched.** Those rows match the exact version to
+seven decimal places. The promise that the window is lossless holds up.
 
-The benchmark is deterministic in all non-timing fields, verified by diffing two
-runs. It's offline-synthetic and loads no model, so it does not reproduce the
-paper's retrieval-accuracy or throughput numbers.
+**The catch is that "recent" is a small slice.** With a 16-token window, about
+92% of a 200-token conversation counts as old, and 96% at 400 tokens. All the
+error lives there. This is why the window setting matters so much: it's
+literally the fraction of your conversation that stays perfect.
+
+Also worth knowing: this gap isn't something you can tune away. We swept the
+`a2ats_b` setting across its whole useful range and it never closed. Squashing
+every old token's real position into one shared stand-in loses information, and
+no amount of knob-turning gets it back.
+
+The benchmark produces identical results across runs, and it doesn't load a
+language model — so it isn't a reproduction of the original paper's real-world
+quality or speed claims.
 
 ## How it works
 
-Each call to `update_and_fetch` runs:
+If you want to know what happens under the hood, each time a batch of tokens
+comes in:
 
-1. **Retrieval-set split** (query-aware path only) — the top
-   `a2ats_retrieval_fraction` of tokens by proxy-query similarity, selected via
-   [`dsa.MaxHeap`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/veloxquant_mlx/dsa/heap.py)
-   top-k, the same pattern [AMC-adapted](../algorithms/amc) uses.
-2. **Codebook assignment** — the retrieval set gets query-aware assignment (the
-   paper's exact objective with `a2ats_query_h`, otherwise the cosine blend);
-   everything else gets plain nearest-centroid, identical to
-   [VecInfer](../algorithms/vecinfer)'s `quantize_vq`.
-3. **Dequantization** reconstructs the key from its centroid. This is what gets
-   stored, before any position encoding.
-4. **Windowed position encoding, re-applied every step** across the whole cache
-   against the current position. Tokens within `a2ats_window` get exact encoding
-   at their own position; tokens outside are returned unencoded, with the
-   constant stand-in rotation belonging on the query side instead (exposed as
-   `A2ATSKVCache.far_query_rope`, since the cache never sees the query).
-5. **Values** take a plain nearest-centroid path: no position encoding, since
-   values are never position-rotated, and no retrieval preference. This is the
-   same choice [ZipCache-adapted](../algorithms/zipcache) and
-   [Palu](../algorithms/palu) make.
+1. **Pick out the important ones.** A fraction of the tokens (20% by default)
+   are flagged as likely to matter, and get more careful treatment in the next
+   step.
+2. **Look everything up in the table.** Each token is matched to the closest
+   entry in your codebook. The flagged ones from step 1 use a smarter matching
+   rule that weighs what the model tends to search for; the rest just take the
+   nearest match.
+3. **Store the looked-up version.** From here on, the cache holds the
+   approximation rather than the original.
+4. **Redo the position bookkeeping, every step.** Recent tokens get their real
+   positions. Older ones get left alone, with the correction applied elsewhere.
+   This has to happen fresh each time because "recent" keeps changing as you
+   generate.
+5. **Values take the simple path.** The second half of each cache entry skips
+   the position handling entirely — it never needed it — and skips the
+   importance sorting too.
 
-## Where it sits
+## How it compares
 
-| Method | Position-encoding handling | Query-aware | Selection axis |
-|---|---|:---:|---|
-| [VecInfer](../algorithms/vecinfer) | None — smooth + Hadamard only | No | Codebook only |
-| [CommVQ-adapted](../algorithms/commvq) | Codebook-constrained, uniform | No | Codebook only |
-| **A2ATS-adapted** | **Distance-gated: exact nearby, approximate far** | **Yes (subset)** | **Codebook + retrieval split** |
+| Method | How it handles positions | Focuses on likely-needed tokens? |
+|---|---|:---:|
+| [VecInfer](../algorithms/vecinfer) | Doesn't touch them | No |
+| [CommVQ-adapted](../algorithms/commvq) | Builds the handling into the lookup table, same for every token | No |
+| **A2ATS-adapted** | **Exact for recent, approximate for old** | **Yes, for a subset** |
 
-[CommVQ-adapted](../algorithms/commvq) solves position encoding by constraining
-what the codebook can represent, treating every position uniformly.
-A2ATS-adapted instead changes when exact encoding is paid for, gated by
-distance. That's a different axis, and in principle composable with CommVQ's
-approach, though we haven't attempted it.
+[CommVQ-adapted](../algorithms/commvq) attacks the same problem from a
+different angle: it constrains what the lookup table can represent so positions
+work out automatically, treating every token the same. A2ATS instead varies the
+effort by how old the token is. In principle you could combine the two ideas,
+though nobody here has tried.
 
 ## For contributors — paper fidelity
 
