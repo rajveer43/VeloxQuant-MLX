@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Control Panel — VeloxQuant-MLX</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="panel.css" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('vq-theme');
+        document.documentElement.setAttribute('data-theme', saved === 'dark' ? 'dark' : 'light');
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+</head>
+<body>
+
+<nav id="navbar">
+  <span class="nav-logo">VeloxQuant-MLX</span>
+  <span class="nav-tag">Control Panel</span>
+  <div class="nav-spacer"></div>
+  <span class="nav-version" id="nav-version"></span>
+  <button class="theme-toggle" id="theme-toggle" aria-label="Toggle light / dark theme" title="Toggle light / dark theme">
+    <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
+    <span class="theme-icon theme-icon-moon" aria-hidden="true">☾</span>
+  </button>
+</nav>
+
+<main class="panel">
+
+  <!-- ── Header / lifecycle ── -->
+  <header class="pnl-header">
+    <div class="pnl-header-left">
+      <span class="status-pill" id="status-pill" data-state="stopped">
+        <span class="status-dot"></span><span id="status-text">Stopped</span>
+      </span>
+      <p class="pnl-sub" id="status-detail">Pick a model and press Start Server.</p>
+    </div>
+    <button type="button" class="btn btn-filled" id="primary-btn">Start Server</button>
+  </header>
+
+  <div class="banner banner-warn" id="accounting-banner">
+    <strong>Accounting-only.</strong> Caches store dequantized fp16, so byte counters
+    measure compression fidelity — <em>not</em> runtime memory saved. Don't read these
+    numbers as RSS reduction.
+    <a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/27" target="_blank" rel="noopener">issue&nbsp;#27</a>
+  </div>
+
+  <div class="banner banner-error" id="error-banner" hidden></div>
+
+  <div class="pnl-grid">
+
+    <!-- ── Left column ── -->
+    <div class="pnl-col">
+
+      <section class="card">
+        <h2>Model</h2>
+        <div class="field">
+          <label for="f-model">Model id or local path</label>
+          <input type="text" id="f-model" list="model-suggestions"
+                 placeholder="mlx-community/Llama-3.2-1B-Instruct-4bit" />
+          <datalist id="model-suggestions"></datalist>
+          <p class="hint">Required. Any MLX model id or a path on disk.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>KV compression</h2>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-method">Method</label>
+            <select id="f-method"></select>
+          </div>
+          <div class="field field-narrow">
+            <label for="f-bits">Bits</label>
+            <input type="number" id="f-bits" min="1" max="8" step="1" value="2" />
+          </div>
+        </div>
+        <div class="method-info" id="method-info"></div>
+      </section>
+
+      <section class="card">
+        <h2>Network</h2>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-host">Listen address</label>
+            <select id="f-host">
+              <option value="127.0.0.1">127.0.0.1 — this Mac only</option>
+              <option value="0.0.0.0">0.0.0.0 — local network</option>
+            </select>
+          </div>
+          <div class="field field-narrow">
+            <label for="f-port">Port</label>
+            <input type="number" id="f-port" min="1" max="65535" value="8000" />
+          </div>
+        </div>
+        <p class="hint" id="host-warning" hidden>
+          ⚠ 0.0.0.0 exposes the server to your local network with no authentication.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>Default generation</h2>
+        <div class="field-row">
+          <div class="field field-narrow">
+            <label for="f-max-tokens">Max tokens</label>
+            <input type="number" id="f-max-tokens" min="1" value="512" />
+          </div>
+          <div class="field field-narrow">
+            <label for="f-temp">Temperature</label>
+            <input type="number" id="f-temp" min="0" max="2" step="0.1" value="0" />
+          </div>
+          <div class="field field-narrow">
+            <label for="f-top-p">Top-p</label>
+            <input type="number" id="f-top-p" min="0" max="1" step="0.05" value="1" />
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ── Right column ── -->
+    <div class="pnl-col">
+
+      <section class="card" id="endpoints-card">
+        <h2>API endpoints</h2>
+        <p class="hint" id="endpoints-empty">Available once the server is running.</p>
+        <ul class="endpoint-list" id="endpoint-list"></ul>
+      </section>
+
+      <section class="card card-grow">
+        <div class="card-head">
+          <h2>Server log</h2>
+          <div class="card-head-actions">
+            <button type="button" class="btn btn-ghost" id="copy-log">Copy</button>
+            <button type="button" class="btn btn-ghost" id="clear-log">Clear</button>
+          </div>
+        </div>
+        <pre class="log" id="log"><span class="log-empty">No output yet.</span></pre>
+      </section>
+
+    </div>
+  </div>
+
+  <footer class="pnl-foot">
+    Methods and support tiers come from <code>veloxquant methods --json</code>.
+    Endpoints are shown only if the running server reports them.
+  </footer>
+
+</main>
+
+<script src="panel.js"></script>
+</body>
+</html>

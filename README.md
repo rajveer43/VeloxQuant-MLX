@@ -110,6 +110,30 @@ verifying the install): [installation guide](https://veloxquant-mlx.netlify.app/
 
 ## Quickstart
 
+### No Python? Start here — the control panel
+
+```bash
+veloxquant panel
+```
+
+Opens a local web UI at `http://127.0.0.1:7860`: pick a model and compression
+method, press **Start Server**, and point any OpenAI-compatible client
+(Claude Code, Cursor, the OpenAI SDK) at the URL it gives you.
+
+Under the hood it runs `veloxquant serve`, which you can also use directly:
+
+```bash
+veloxquant methods --servable-only        # what can be served
+veloxquant serve --model mlx-community/Llama-3.2-1B-Instruct-4bit \
+                 --method turboquant_rvq --bits 2 --port 8000
+```
+
+> Compression is currently **accounting-only** — byte counters measure
+> compression fidelity, not runtime memory saved. See
+> [#27](https://github.com/rajveer43/VeloxQuant-MLX/issues/27).
+
+Full guide: [docs/control-panel.md](docs/control-panel.md)
+
 ### RVQ 1-bit — 7.5× compression, no calibration (recommended default)
 
 ```python
