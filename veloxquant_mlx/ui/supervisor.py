@@ -106,6 +106,7 @@ class ServerSupervisor:
 
             method = (config.get("method") or "").strip()
             self._assert_servable(method)
+            self._assert_valid_overrides(method, config.get("overrides") or {})
 
             cmd = self._build_command(config, model, method)
 
@@ -192,6 +193,12 @@ class ServerSupervisor:
         ]
         if config.get("seed") is not None:
             cmd += ["--seed", str(int(config["seed"]))]
+
+        # Method-specific knobs travel as repeated --set FIELD=VALUE, so the
+        # panel and the CLI share one validation path rather than two.
+        for name, value in sorted((config.get("overrides") or {}).items()):
+            cmd += ["--set", f"{name}={'' if value is None else value}"]
+
         return cmd
 
     def _assert_servable(self, method: str) -> None:
@@ -212,6 +219,43 @@ class ServerSupervisor:
                 f"{method!r} cannot be served: "
                 f"{info.unsupported_reason or 'unsupported'}"
             )
+
+    def _assert_valid_overrides(
+        self, method: str, overrides: Dict[str, Any]
+    ) -> None:
+        """Reject knobs that don't belong to this method, or won't parse.
+
+        Catching it here turns a subprocess that dies a second after Start into
+        an immediate, field-named message in the UI.
+        """
+        if not overrides:
+            return
+
+        from veloxquant_mlx.cache.registry import describe_field, get_method
+
+        allowed = set(get_method(method).config_fields)
+        for name, value in overrides.items():
+            if name not in allowed:
+                raise ValueError(
+                    f"{name!r} is not a setting for {method!r}; "
+                    f"valid: {', '.join(sorted(allowed)) or 'none'}"
+                )
+
+            schema = describe_field(name)
+            if value is None or value == "":
+                if not schema["optional"]:
+                    raise ValueError(f"{name!r} requires a value")
+                continue
+
+            try:
+                if schema["type"] == "int":
+                    int(value)
+                elif schema["type"] == "float":
+                    float(value)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"{name!r} expects {schema['type']}, got {value!r}"
+                ) from None
 
     def _pump(self, pipe: Any, stream: str) -> None:
         try:

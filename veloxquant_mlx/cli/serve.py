@@ -73,7 +73,62 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--top-p", type=float, default=1.0, help="Default nucleus sampling p (default: 1.0).",
     )
+    parser.add_argument(
+        "--set", action="append", default=[], metavar="FIELD=VALUE",
+        help="Method-specific KVCacheConfig field, repeatable "
+             "(e.g. --set kivi_group_size=64). Run 'veloxquant methods --json' "
+             "to see which fields apply to a method.",
+    )
     return parser
+
+
+def parse_overrides(pairs: List[str]) -> Dict[str, Any]:
+    """Turn ``FIELD=VALUE`` strings into typed ``KVCacheConfig`` kwargs.
+
+    Types come from the dataclass via the registry, so a value that the config
+    would reject is refused here — with the field name in the message — instead
+    of surfacing as an opaque failure deep in cache construction.
+    """
+    import dataclasses
+
+    from veloxquant_mlx.cache.base import KVCacheConfig
+    from veloxquant_mlx.cache.registry import describe_field
+
+    valid = {f.name for f in dataclasses.fields(KVCacheConfig)}
+    overrides: Dict[str, Any] = {}
+
+    for pair in pairs:
+        if "=" not in pair:
+            raise SystemExit(f"error: --set expects FIELD=VALUE, got {pair!r}")
+
+        name, _, raw = pair.partition("=")
+        name, raw = name.strip(), raw.strip()
+
+        if name not in valid:
+            raise SystemExit(f"error: unknown config field {name!r}")
+        if name in ("method", "store", "observers", "dtype"):
+            raise SystemExit(f"error: {name!r} cannot be set with --set")
+
+        schema = describe_field(name)
+        if raw == "" and schema["optional"]:
+            overrides[name] = None
+            continue
+
+        try:
+            if schema["type"] == "int":
+                overrides[name] = int(raw)
+            elif schema["type"] == "float":
+                overrides[name] = float(raw)
+            elif schema["type"] == "bool":
+                overrides[name] = raw.lower() in ("1", "true", "yes", "on")
+            else:
+                overrides[name] = raw
+        except ValueError:
+            raise SystemExit(
+                f"error: {name!r} expects {schema['type']}, got {raw!r}"
+            ) from None
+
+    return overrides
 
 
 def validate_method(method: str) -> None:
@@ -108,8 +163,13 @@ def _warn(message: str) -> None:
 def build_config(args: argparse.Namespace) -> Any:
     from veloxquant_mlx.cache import KVCacheConfig
 
+    overrides = parse_overrides(getattr(args, "set", []) or [])
+    if overrides:
+        rendered = ", ".join(f"{k}={v!r}" for k, v in sorted(overrides.items()))
+        _warn(f"method overrides: {rendered}")
+
     return KVCacheConfig(
-        method=args.method, bit_width_inlier=args.bits, seed=args.seed,
+        method=args.method, bit_width_inlier=args.bits, seed=args.seed, **overrides,
     )
 
 

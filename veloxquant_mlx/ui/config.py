@@ -16,6 +16,8 @@ DEFAULTS: Dict[str, Any] = {
     "max_tokens": 512,
     "temp": 0.0,
     "top_p": 1.0,
+    # Method-specific KVCacheConfig knobs, e.g. {"kivi_group_size": 64}.
+    "overrides": {},
 }
 
 #: Only these keys are persisted. An allowlist rather than a blocklist so a

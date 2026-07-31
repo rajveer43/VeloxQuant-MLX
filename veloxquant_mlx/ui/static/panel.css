@@ -93,8 +93,41 @@ code, pre, .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace
 :root[data-theme="light"] .theme-icon-sun  { display: inline; }
 :root[data-theme="light"] .theme-icon-moon { display: none; }
 
+/* ── Shell / sidebar ───────────────────────────────────── */
+.shell { display: flex; align-items: flex-start; }
+
+.sidebar {
+  position: sticky; top: 56px;
+  flex: 0 0 190px; padding: 1.5rem 0.75rem;
+  display: flex; flex-direction: column; gap: 0.2rem;
+  border-right: 1px solid var(--border);
+  min-height: calc(100vh - 56px);
+}
+.side-link {
+  text-align: left; padding: 0.5rem 0.8rem; border-radius: 8px;
+  background: transparent; border: 1px solid transparent;
+  color: var(--muted); font-family: inherit; font-size: 0.88rem;
+  font-weight: 600; cursor: pointer;
+}
+.side-link:hover { color: var(--text); background: var(--surface); }
+.side-link.is-active {
+  color: var(--accent); background: rgba(var(--accent-rgb),0.10);
+  border-color: rgba(var(--accent-rgb),0.28);
+}
+@media (max-width: 760px) {
+  .shell { flex-direction: column; }
+  .sidebar {
+    position: static; flex: none; width: 100%; min-height: 0;
+    flex-direction: row; border-right: none; border-bottom: 1px solid var(--border);
+  }
+}
+
+.view { display: none; }
+.view.is-active { display: block; }
+.view-title { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; }
+
 /* ── Layout ────────────────────────────────────────────── */
-.panel { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.5rem 3rem; }
+.panel { flex: 1; min-width: 0; max-width: 1180px; padding: 1.75rem 1.5rem 3rem; }
 
 .pnl-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -254,6 +287,124 @@ code, pre, .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace
 }
 .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
 .copy-btn.copied { color: var(--ok); border-color: var(--ok); }
+
+/* ── Provenance tags ───────────────────────────────────────
+   Every number in this UI must say where it came from. These
+   two tags are the vocabulary; see docs/control-panel.md.    */
+.prov {
+  display: inline-block; padding: 0.1rem 0.45rem; border-radius: 999px;
+  font-size: 0.64rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; vertical-align: middle;
+}
+.prov-measured { color: var(--ok); background: var(--ok-bg); border: 1px solid var(--ok); }
+.prov-estimate { color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn); }
+
+/* ── Memory card ───────────────────────────────────────── */
+.mem-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border);
+}
+.mem-row:last-child { border-bottom: none; }
+.mem-label { font-size: 0.8rem; color: var(--muted); }
+.mem-value { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; font-weight: 500; }
+/* Absent data is stated, never rendered as 0 — a zero here would read
+   as "no memory used", which is a different claim entirely. */
+.mem-value.is-absent {
+  font-family: inherit; font-size: 0.78rem; font-style: italic; color: var(--muted);
+}
+.mem-note { font-size: 0.72rem; color: var(--muted); margin-top: 0.6rem; }
+
+/* ── Method knobs ──────────────────────────────────────── */
+.knobs { margin-top: 0.9rem; }
+.knobs:empty { display: none; }
+.knobs-head {
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.55rem;
+}
+.knob-grid { display: flex; flex-wrap: wrap; gap: 0.7rem; }
+.knob { flex: 1 1 140px; min-width: 0; }
+.knob label { font-size: 0.74rem; }
+.knob .hint { font-size: 0.7rem; }
+
+/* ── Methods view ──────────────────────────────────────── */
+.method-toolbar {
+  display: flex; align-items: center; gap: 0.75rem;
+  flex-wrap: wrap; margin-bottom: 1rem;
+}
+.method-toolbar input[type="search"] {
+  flex: 1 1 220px; padding: 0.5rem 0.7rem;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  font-family: inherit; font-size: 0.86rem;
+}
+.method-toolbar input[type="search"]:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.15);
+}
+.chips { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+.chip {
+  padding: 0.35rem 0.7rem; border-radius: 999px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--muted); font-family: inherit; font-size: 0.78rem; font-weight: 600;
+}
+.chip:hover { color: var(--text); }
+.chip.is-active {
+  color: var(--accent); background: rgba(var(--accent-rgb),0.10);
+  border-color: rgba(var(--accent-rgb),0.35);
+}
+.toggle { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; color: var(--muted); }
+
+.method-layout {
+  display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 1rem; align-items: start;
+}
+@media (max-width: 1000px) { .method-layout { grid-template-columns: 1fr; } }
+
+.method-table-wrap {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: auto; box-shadow: var(--shadow);
+  max-height: 640px;
+}
+.method-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+.method-table thead th {
+  position: sticky; top: 0; background: var(--surface); z-index: 1;
+  text-align: left; padding: 0.6rem 0.8rem;
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.method-table td { padding: 0.55rem 0.8rem; border-bottom: 1px solid var(--border); }
+.method-table tbody tr { cursor: pointer; }
+.method-table tbody tr:hover { background: rgba(var(--accent-rgb),0.05); }
+.method-table tbody tr.is-selected { background: rgba(var(--accent-rgb),0.10); }
+.method-table tbody tr.is-unsupported { opacity: 0.62; }
+.method-name { font-family: 'JetBrains Mono', monospace; font-weight: 500; }
+.method-empty { padding: 1.5rem; text-align: center; color: var(--muted); font-size: 0.85rem; }
+
+.tier { font-size: 0.74rem; font-weight: 600; }
+.tier-ok { color: var(--warn); }
+.tier-no { color: var(--err); }
+.cov { font-size: 0.74rem; color: var(--muted); }
+.cov-none { font-style: italic; }
+
+.method-detail { position: sticky; top: 72px; }
+.method-detail h3 {
+  font-family: 'JetBrains Mono', monospace; font-size: 1rem;
+  font-weight: 600; margin-bottom: 0.5rem;
+}
+.detail-row { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.5rem; }
+.detail-blurb { font-size: 0.86rem; margin: 0.6rem 0; }
+.detail-actions { margin-top: 0.9rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.detail-link { font-size: 0.8rem; color: var(--accent); text-decoration: none; }
+.detail-link:hover { text-decoration: underline; }
+
+/* ── About ─────────────────────────────────────────────── */
+.about-p { font-size: 0.87rem; margin-bottom: 0.7rem; }
+.about-p:last-child { margin-bottom: 0; }
+.about-p code { background: var(--code-bg); padding: 0.1rem 0.35rem; border-radius: 5px; font-size: 0.82rem; }
+.link-list { list-style: none; display: flex; flex-direction: column; gap: 0.4rem; }
+.link-list a { color: var(--accent); text-decoration: none; font-size: 0.86rem; }
+.link-list a:hover { text-decoration: underline; }
 
 /* ── Log ───────────────────────────────────────────────── */
 .log {

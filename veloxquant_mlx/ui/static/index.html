@@ -33,128 +33,240 @@
   </button>
 </nav>
 
-<main class="panel">
+<div class="shell">
 
-  <!-- ── Header / lifecycle ── -->
-  <header class="pnl-header">
-    <div class="pnl-header-left">
-      <span class="status-pill" id="status-pill" data-state="stopped">
-        <span class="status-dot"></span><span id="status-text">Stopped</span>
-      </span>
-      <p class="pnl-sub" id="status-detail">Pick a model and press Start Server.</p>
-    </div>
-    <button type="button" class="btn btn-filled" id="primary-btn">Start Server</button>
-  </header>
+  <aside class="sidebar">
+    <button type="button" class="side-link is-active" data-view="server">Server</button>
+    <button type="button" class="side-link" data-view="methods">Methods</button>
+    <button type="button" class="side-link" data-view="about">About</button>
+  </aside>
 
-  <div class="banner banner-warn" id="accounting-banner">
-    <strong>Accounting-only.</strong> Caches store dequantized fp16, so byte counters
-    measure compression fidelity — <em>not</em> runtime memory saved. Don't read these
-    numbers as RSS reduction.
-    <a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/27" target="_blank" rel="noopener">issue&nbsp;#27</a>
-  </div>
+  <main class="panel">
 
-  <div class="banner banner-error" id="error-banner" hidden></div>
+    <!-- ══ SERVER VIEW ══ -->
+    <section class="view is-active" id="view-server">
 
-  <div class="pnl-grid">
-
-    <!-- ── Left column ── -->
-    <div class="pnl-col">
-
-      <section class="card">
-        <h2>Model</h2>
-        <div class="field">
-          <label for="f-model">Model id or local path</label>
-          <input type="text" id="f-model" list="model-suggestions"
-                 placeholder="mlx-community/Llama-3.2-1B-Instruct-4bit" />
-          <datalist id="model-suggestions"></datalist>
-          <p class="hint">Required. Any MLX model id or a path on disk.</p>
+      <header class="pnl-header">
+        <div class="pnl-header-left">
+          <span class="status-pill" id="status-pill" data-state="stopped">
+            <span class="status-dot"></span><span id="status-text">Stopped</span>
+          </span>
+          <p class="pnl-sub" id="status-detail">Pick a model and press Start Server.</p>
         </div>
-      </section>
+        <button type="button" class="btn btn-filled" id="primary-btn">Start Server</button>
+      </header>
 
-      <section class="card">
-        <h2>KV compression</h2>
-        <div class="field-row">
-          <div class="field">
-            <label for="f-method">Method</label>
-            <select id="f-method"></select>
-          </div>
-          <div class="field field-narrow">
-            <label for="f-bits">Bits</label>
-            <input type="number" id="f-bits" min="1" max="8" step="1" value="2" />
-          </div>
-        </div>
-        <div class="method-info" id="method-info"></div>
-      </section>
+      <div class="banner banner-warn">
+        <strong>Accounting-only.</strong> Caches store dequantized fp16, so byte counters
+        measure compression fidelity — <em>not</em> runtime memory saved. Don't read them
+        as RSS reduction.
+        <a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/27" target="_blank" rel="noopener">issue&nbsp;#27</a>
+      </div>
 
-      <section class="card">
-        <h2>Network</h2>
-        <div class="field-row">
-          <div class="field">
-            <label for="f-host">Listen address</label>
-            <select id="f-host">
-              <option value="127.0.0.1">127.0.0.1 — this Mac only</option>
-              <option value="0.0.0.0">0.0.0.0 — local network</option>
-            </select>
-          </div>
-          <div class="field field-narrow">
-            <label for="f-port">Port</label>
-            <input type="number" id="f-port" min="1" max="65535" value="8000" />
-          </div>
+      <div class="banner banner-error" id="error-banner" hidden></div>
+
+      <div class="pnl-grid">
+        <div class="pnl-col">
+
+          <section class="card">
+            <h2>Model</h2>
+            <div class="field">
+              <label for="f-model">Model id or local path</label>
+              <input type="text" id="f-model" list="model-suggestions"
+                     placeholder="mlx-community/Llama-3.2-1B-Instruct-4bit" />
+              <datalist id="model-suggestions"></datalist>
+              <p class="hint" id="model-hint">Required. Any MLX model id or a path on disk.</p>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <h2>KV compression</h2>
+              <div class="card-head-actions">
+                <button type="button" class="btn btn-ghost" id="browse-methods">Browse all</button>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="f-method">Method</label>
+                <select id="f-method"></select>
+              </div>
+              <div class="field field-narrow">
+                <label for="f-bits">Bits</label>
+                <input type="number" id="f-bits" min="1" max="8" step="1" value="2" />
+              </div>
+            </div>
+            <div class="method-info" id="method-info"></div>
+            <div class="knobs" id="knobs"></div>
+          </section>
+
+          <section class="card">
+            <h2>Network</h2>
+            <div class="field-row">
+              <div class="field">
+                <label for="f-host">Listen address</label>
+                <select id="f-host">
+                  <option value="127.0.0.1">127.0.0.1 — this Mac only</option>
+                  <option value="0.0.0.0">0.0.0.0 — local network</option>
+                </select>
+              </div>
+              <div class="field field-narrow">
+                <label for="f-port">Port</label>
+                <input type="number" id="f-port" min="1" max="65535" value="8000" />
+              </div>
+            </div>
+            <p class="hint" id="host-warning" hidden>
+              ⚠ 0.0.0.0 exposes the server to your local network with no authentication.
+            </p>
+          </section>
+
+          <section class="card">
+            <h2>Default generation</h2>
+            <div class="field-row">
+              <div class="field field-narrow">
+                <label for="f-max-tokens">Max tokens</label>
+                <input type="number" id="f-max-tokens" min="1" value="512" />
+              </div>
+              <div class="field field-narrow">
+                <label for="f-temp">Temperature</label>
+                <input type="number" id="f-temp" min="0" max="2" step="0.1" value="0" />
+              </div>
+              <div class="field field-narrow">
+                <label for="f-top-p">Top-p</label>
+                <input type="number" id="f-top-p" min="0" max="1" step="0.05" value="1" />
+              </div>
+            </div>
+          </section>
+
         </div>
-        <p class="hint" id="host-warning" hidden>
-          ⚠ 0.0.0.0 exposes the server to your local network with no authentication.
+
+        <div class="pnl-col">
+
+          <section class="card">
+            <h2>API endpoints</h2>
+            <p class="hint" id="endpoints-empty">Available once the server is running.</p>
+            <ul class="endpoint-list" id="endpoint-list"></ul>
+          </section>
+
+          <section class="card" id="memory-card">
+            <div class="card-head">
+              <h2>Memory</h2>
+              <span class="prov prov-measured" id="memory-prov" hidden>measured</span>
+            </div>
+            <div id="memory-body">
+              <p class="hint">Available once the server is running.</p>
+            </div>
+          </section>
+
+          <section class="card card-grow">
+            <div class="card-head">
+              <h2>Server log</h2>
+              <div class="card-head-actions">
+                <button type="button" class="btn btn-ghost" id="copy-log">Copy</button>
+                <button type="button" class="btn btn-ghost" id="clear-log">Clear</button>
+              </div>
+            </div>
+            <pre class="log" id="log"><span class="log-empty">No output yet.</span></pre>
+          </section>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ METHODS VIEW ══ -->
+    <section class="view" id="view-methods">
+      <header class="pnl-header">
+        <div class="pnl-header-left">
+          <h1 class="view-title">Methods</h1>
+          <p class="pnl-sub" id="methods-summary"></p>
+        </div>
+      </header>
+
+      <div class="banner banner-warn">
+        <strong>Support tiers are probed, not declared.</strong> Each method is
+        exercised against the <code>mlx_lm</code> serving contract at runtime, so
+        this list reflects what actually works in this build.
+      </div>
+
+      <div class="method-toolbar">
+        <input type="search" id="method-search" placeholder="Search methods…" />
+        <div class="chips" id="family-chips">
+          <button type="button" class="chip is-active" data-family="">All</button>
+          <button type="button" class="chip" data-family="quantization">Quantization</button>
+          <button type="button" class="chip" data-family="eviction">Eviction</button>
+          <button type="button" class="chip" data-family="hybrid">Hybrid</button>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="servable-only" /> Servable only
+        </label>
+      </div>
+
+      <div class="method-layout">
+        <div class="method-table-wrap">
+          <table class="method-table">
+            <thead>
+              <tr><th>Method</th><th>Family</th><th>Serving</th><th>Telemetry</th></tr>
+            </thead>
+            <tbody id="method-rows"></tbody>
+          </table>
+        </div>
+        <aside class="method-detail card" id="method-detail">
+          <p class="hint">Select a method to see details.</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ══ ABOUT VIEW ══ -->
+    <section class="view" id="view-about">
+      <header class="pnl-header">
+        <div class="pnl-header-left">
+          <h1 class="view-title">About</h1>
+          <p class="pnl-sub">VeloxQuant-MLX control panel</p>
+        </div>
+      </header>
+
+      <div class="card">
+        <h2>What this is</h2>
+        <p class="about-p">
+          A local front-end for <code>veloxquant serve</code>. It spawns the same command
+          you could type yourself and reports what that process announces — it never runs
+          inference in its own process.
         </p>
-      </section>
+      </div>
 
-      <section class="card">
-        <h2>Default generation</h2>
-        <div class="field-row">
-          <div class="field field-narrow">
-            <label for="f-max-tokens">Max tokens</label>
-            <input type="number" id="f-max-tokens" min="1" value="512" />
-          </div>
-          <div class="field field-narrow">
-            <label for="f-temp">Temperature</label>
-            <input type="number" id="f-temp" min="0" max="2" step="0.1" value="0" />
-          </div>
-          <div class="field field-narrow">
-            <label for="f-top-p">Top-p</label>
-            <input type="number" id="f-top-p" min="0" max="1" step="0.05" value="1" />
-          </div>
-        </div>
-      </section>
+      <div class="card">
+        <h2>How to read the numbers</h2>
+        <p class="about-p">
+          <span class="prov prov-measured">measured</span>
+          comes from the running process — <code>psutil</code> RSS and MLX's own memory
+          counters. These are facts.
+        </p>
+        <p class="about-p">
+          <span class="prov prov-estimate">estimate</span>
+          comes from the cache's byte counters. Compression is currently
+          <strong>accounting-only</strong>: caches store dequantized fp16, so these
+          measure compression fidelity, not memory saved. The two are not comparable.
+        </p>
+        <p class="about-p">
+          Telemetry coverage is uneven. Of the servable methods, some report keys and
+          values, some report keys only, and eviction methods report no byte counters at
+          all — they drop tokens rather than compress bytes. The Methods tab shows which
+          applies. Where nothing is reported, this panel says so rather than showing zero.
+        </p>
+      </div>
 
-    </div>
+      <div class="card">
+        <h2>Links</h2>
+        <ul class="link-list">
+          <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub repository</a></li>
+          <li><a href="https://veloxquant-mlx.netlify.app/" target="_blank" rel="noopener">Documentation site</a></li>
+          <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/27" target="_blank" rel="noopener">#27 — accounting-only compression</a></li>
+        </ul>
+      </div>
+    </section>
 
-    <!-- ── Right column ── -->
-    <div class="pnl-col">
-
-      <section class="card" id="endpoints-card">
-        <h2>API endpoints</h2>
-        <p class="hint" id="endpoints-empty">Available once the server is running.</p>
-        <ul class="endpoint-list" id="endpoint-list"></ul>
-      </section>
-
-      <section class="card card-grow">
-        <div class="card-head">
-          <h2>Server log</h2>
-          <div class="card-head-actions">
-            <button type="button" class="btn btn-ghost" id="copy-log">Copy</button>
-            <button type="button" class="btn btn-ghost" id="clear-log">Clear</button>
-          </div>
-        </div>
-        <pre class="log" id="log"><span class="log-empty">No output yet.</span></pre>
-      </section>
-
-    </div>
-  </div>
-
-  <footer class="pnl-foot">
-    Methods and support tiers come from <code>veloxquant methods --json</code>.
-    Endpoints are shown only if the running server reports them.
-  </footer>
-
-</main>
+  </main>
+</div>
 
 <script src="panel.js"></script>
 </body>

@@ -114,6 +114,19 @@ class PanelHandler(BaseHTTPRequestHandler):
             self._send_json(load_config())
             return
 
+        if route == "/api/models":
+            from veloxquant_mlx.ui.models import local_models
+
+            self._send_json({"models": local_models()})
+            return
+
+        if route == "/api/memory":
+            from veloxquant_mlx.ui.memory import memory_report
+
+            status = self.supervisor.status()
+            self._send_json(memory_report(pid=status.get("pid")))
+            return
+
         self._send_static(route)
 
     def do_POST(self) -> None:  # noqa: N802

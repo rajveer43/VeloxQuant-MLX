@@ -26,7 +26,7 @@ import copy
 import typing
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 __all__ = [
     "ServeTier",
@@ -36,6 +36,9 @@ __all__ = [
     "list_methods",
     "get_method",
     "probe_serve_tier",
+    "describe_field",
+    "telemetry_coverage",
+    "TelemetryCoverage",
     "DEFAULT_SERVE_METHOD",
 ]
 
@@ -81,6 +84,32 @@ class MethodFamily(str, Enum):
     HYBRID = "hybrid"
 
 
+class TelemetryCoverage(str, Enum):
+    """Which byte counters a method actually reports.
+
+    Coverage is uneven across the catalog: of 35 servable methods, 13 report
+    keys and values, 5 report keys only (including the serve default
+    ``turboquant_rvq``), and 17 — every eviction method — report none.
+
+    A UI that assumes uniform coverage would render blanks or zeros for half
+    the catalog and read as "no compression". This enum lets the UI say
+    "not reported" instead, and lets a key-only ratio be labelled as such
+    rather than passed off as whole-cache.
+    """
+
+    KEYS_AND_VALUES = "keys_and_values"
+    KEYS_ONLY = "keys_only"
+    NONE = "none"
+
+    @property
+    def label(self) -> str:
+        return {
+            TelemetryCoverage.KEYS_AND_VALUES: "keys and values",
+            TelemetryCoverage.KEYS_ONLY: "keys only",
+            TelemetryCoverage.NONE: "not reported",
+        }[self]
+
+
 @dataclass(frozen=True)
 class MethodInfo:
     """Everything a UI needs to present one method."""
@@ -92,6 +121,7 @@ class MethodInfo:
     config_fields: List[str] = field(default_factory=list)
     paper_deviation: Optional[str] = None
     unsupported_reason: Optional[str] = None
+    coverage: TelemetryCoverage = TelemetryCoverage.NONE
 
     @property
     def docs_url(self) -> str:
@@ -101,6 +131,16 @@ class MethodInfo:
     def is_adapted(self) -> bool:
         """True when our implementation knowingly departs from the paper."""
         return self.paper_deviation is not None
+
+    @property
+    def field_schema(self) -> List[Dict[str, Any]]:
+        """Type and default for each knob, derived from ``KVCacheConfig``.
+
+        The UI renders inputs from this rather than from a hand-written table,
+        so a field whose type or default changes cannot leave the panel
+        submitting a value the config will reject.
+        """
+        return [describe_field(name) for name in self.config_fields]
 
     def to_dict(self) -> Dict[str, Any]:
         """JSON-serializable form, consumed by ``veloxquant methods --json``."""
@@ -112,6 +152,9 @@ class MethodInfo:
             "is_servable": self.serve_tier.is_servable,
             "blurb": self.blurb,
             "config_fields": list(self.config_fields),
+            "field_schema": self.field_schema,
+            "coverage": self.coverage.value,
+            "coverage_label": self.coverage.label,
             "paper_deviation": self.paper_deviation,
             "is_adapted": self.is_adapted,
             "unsupported_reason": self.unsupported_reason,
@@ -264,6 +307,67 @@ _TIER_CACHE: Dict[str, "ServeTier"] = {}
 _UNSUPPORTED_REASON: Dict[str, str] = {}
 
 
+#: Human-readable hints for knobs whose names don't explain themselves.
+_FIELD_HELP: Dict[str, str] = {
+    "bit_width_inlier": "Bits per element for the main quantizer.",
+    "seed": "Random seed for rotations / sketches.",
+    "jl_dim": "Johnson-Lindenstrauss projection dimension.",
+    "kivi_group_size": "Tokens per min/max quantization group.",
+    "svdq_rank": "Latent rank; blank uses the energy threshold instead.",
+    "svdq_energy_threshold": "Fraction of singular-value energy to retain.",
+    "palu_rank": "Latent rank; blank uses the energy threshold instead.",
+    "palu_energy_threshold": "Fraction of singular-value energy to retain.",
+    "adakv_target_avg_bits": "Global average bits/element budget.",
+    "kvquant_outlier_fraction": "Top-magnitude fraction kept in fp16.",
+    "residual_length": "Recent tokens kept uncompressed.",
+}
+
+
+def describe_field(name: str) -> Dict[str, Any]:
+    """Describe one ``KVCacheConfig`` field for form rendering.
+
+    Reads the dataclass rather than a parallel table: types and defaults stay
+    correct by construction. ``Optional[int]`` becomes a nullable int so the UI
+    can offer a genuinely empty input, which is meaningful for fields like
+    ``svdq_rank`` where blank selects a different code path.
+    """
+    import dataclasses
+
+    from veloxquant_mlx.cache import base as _base
+    from veloxquant_mlx.cache.base import KVCacheConfig
+
+    hints = typing.get_type_hints(KVCacheConfig, globalns=vars(_base))
+    fields = {f.name: f for f in dataclasses.fields(KVCacheConfig)}
+
+    if name not in fields:
+        return {"name": name, "type": "unknown", "default": None,
+                "optional": True, "help": None}
+
+    annotation = hints[name]
+    optional = False
+    origin = typing.get_origin(annotation)
+    if origin is Union:
+        args = [a for a in typing.get_args(annotation) if a is not type(None)]
+        optional = len(args) != len(typing.get_args(annotation))
+        annotation = args[0] if args else annotation
+
+    kind = {int: "int", float: "float", bool: "bool", str: "str"}.get(
+        annotation, "unknown"
+    )
+
+    default = fields[name].default
+    if default is dataclasses.MISSING:
+        default = None
+
+    return {
+        "name": name,
+        "type": kind,
+        "default": default,
+        "optional": optional,
+        "help": _FIELD_HELP.get(name),
+    }
+
+
 def all_method_names() -> List[str]:
     """Every method name ``KVCacheConfig`` accepts, straight from its ``Literal``.
 
@@ -353,6 +457,44 @@ def _run_probe(method: str) -> tuple["ServeTier", Optional[str]]:
     return ServeTier.ACCOUNTING_ONLY, None
 
 
+_COVERAGE_CACHE: Dict[str, "TelemetryCoverage"] = {}
+
+
+def telemetry_coverage(method: str) -> "TelemetryCoverage":
+    """Probe which byte counters a method exposes on a live cache.
+
+    Probed rather than declared, for the same reason serve tier is: a counter
+    added or removed from a cache must change what the UI promises, without
+    anyone remembering to update a table.
+    """
+    if method in _COVERAGE_CACHE:
+        return _COVERAGE_CACHE[method]
+
+    coverage = TelemetryCoverage.NONE
+    try:
+        import mlx.core as mx
+
+        from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
+
+        cache = KVCacheFactory.create(
+            KVCacheConfig(method=method, head_dim=128, bit_width_inlier=2, seed=42)
+        )
+        keys = mx.random.normal((1, 8, 8, 128)).astype(mx.float16)
+        cache.update_and_fetch(keys, keys)
+
+        has_keys = hasattr(cache, "compressed_key_bytes")
+        has_values = hasattr(cache, "compressed_value_bytes")
+        if has_keys and has_values:
+            coverage = TelemetryCoverage.KEYS_AND_VALUES
+        elif has_keys:
+            coverage = TelemetryCoverage.KEYS_ONLY
+    except Exception:
+        coverage = TelemetryCoverage.NONE
+
+    _COVERAGE_CACHE[method] = coverage
+    return coverage
+
+
 def get_method(name: str) -> MethodInfo:
     """Look up one method, probing its serve tier on first access."""
     if name not in all_method_names():
@@ -369,6 +511,11 @@ def get_method(name: str) -> MethodInfo:
         config_fields=_CONFIG_FIELDS.get(name, list(_GENERIC_FIELDS)),
         paper_deviation=_PAPER_DEVIATION.get(name),
         unsupported_reason=_UNSUPPORTED_REASON.get(name),
+        # Only meaningful for methods that actually run; a crash-tier cache
+        # never reports anything.
+        coverage=(
+            telemetry_coverage(name) if tier.is_servable else TelemetryCoverage.NONE
+        ),
     )
 
 

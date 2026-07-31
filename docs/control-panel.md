@@ -106,6 +106,38 @@ server is exactly where users assume a memory claim without reading caveats. See
 [#27](https://github.com/rajveer43/VeloxQuant-MLX/issues/27) for the full
 analysis and the plan to make storage genuinely compressed.
 
+### Reading the numbers
+
+Every figure in the panel is tagged with where it came from:
+
+| Tag | Meaning |
+|---|---|
+| **measured** | Read from the running process. A fact. |
+| **estimate** | Cache byte counters. Accounting-only — see above. |
+
+They are **not comparable**, and the panel says so: measured RSS will not fall
+as compression ratios rise, because no memory is actually saved yet.
+
+MLX's own memory counters are deliberately *not* shown. They are process-local,
+so querying them from the panel would describe the panel rather than the server
+— true, but misleading beside the server's RSS. They become available with
+`/v1/kv/stats` ([#27](https://github.com/rajveer43/VeloxQuant-MLX/issues/27)).
+
+### Telemetry coverage
+
+Byte counters are uneven across the catalog, so the Methods tab states which
+case applies per method:
+
+| Coverage | Count | Shown as |
+|---|---|---|
+| Keys and values | 13 | full ratio |
+| Keys only | 5 | ratio labelled **keys only** — never as whole-cache |
+| Not reported | 17 | *"not reported"*, never `0` |
+
+The 17 are the eviction methods: they drop tokens rather than compress bytes, so
+a byte ratio would not be meaningful. Note the serve default,
+`turboquant_rvq`, is **keys only**.
+
 ### Method support tiers
 
 Derived by probing each cache at runtime, never hand-maintained:
@@ -154,11 +186,36 @@ you could type yourself, and reports what that process announces.
 | Method | Route | Purpose |
 |---|---|---|
 | `GET` | `/api/status` | State, ready payload, version, last error |
-| `GET` | `/api/methods` | Method catalog with tiers |
+| `GET` | `/api/methods` | Catalog with tiers, coverage, field schema |
+| `GET` | `/api/models` | Models already in the local HF cache |
+| `GET` | `/api/memory` | Measured process memory |
 | `GET` | `/api/logs?since=N` | Incremental log lines |
 | `GET`/`POST` | `/api/config` | Persisted settings |
 | `POST` | `/api/start` | Start a server |
 | `POST` | `/api/stop` | Stop it, freeing the port |
+
+### Views
+
+`Server` · `Methods` · `About`, deep-linkable via `#server`, `#methods`,
+`#about`.
+
+The **Methods** tab lists every method with family filters, search, serve tier,
+telemetry coverage, paper-deviation notes and a docs link. Unsupported methods
+stay listed and disabled with their reason — never hidden.
+
+### Method-specific settings
+
+Knobs are derived from `KVCacheConfig` itself — names, types, defaults and
+optionality — so the form cannot drift from what the config accepts. Selecting
+KIVI shows `kivi_group_size`; SVDq shows `svdq_rank` and friends. Values reach
+the server as repeated `--set FIELD=VALUE`, which works on the CLI too:
+
+```bash
+veloxquant serve --model <id> --method kivi --bits 2 --set kivi_group_size=64
+```
+
+Validation runs in the panel *and* the CLI, so an invalid knob is refused
+immediately with the field named, rather than dying in the subprocess.
 
 ### Lifecycle
 
@@ -183,14 +240,18 @@ claims. Each maps to a test.
 
 1. **No silent fp16 fallback.** Unsupported methods fail at Start with a
    readable reason.
-2. **Byte figures are labelled.** Accounting-only never renders as memory saved;
-   RSS is never shown, because it is not measured.
+2. **Byte figures are labelled.** Accounting-only never renders as memory saved.
 3. **Method lists come from the registry probe**, never a literal "41".
 4. **Endpoints are advertised only if the backend reports them.** `/health` and
    `/metrics` do not appear, because `mlx_lm.server` does not serve them.
 5. **The launcher default differs from the library default**, and says so.
 6. **Config locks while running**, so the UI cannot describe a server that is
    not what is running.
+7. **Every number states its provenance** — *measured* or *estimate* — in the
+   UI, not only in docs.
+8. **Absent telemetry says so.** A method without counters shows "not reported",
+   never `0` or a blank that reads as zero.
+9. **Key-only ratios are labelled key-only**, never presented as whole-cache.
 
 ---
 
