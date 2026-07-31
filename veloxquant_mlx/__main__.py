@@ -7,7 +7,7 @@ import sys
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: veloxquant {precompute|benchmark|recommend}")
+        print("Usage: veloxquant {precompute|benchmark|recommend|methods|serve}")
         sys.exit(1)
 
     command = sys.argv[1]
@@ -26,8 +26,19 @@ def main() -> None:
         from veloxquant_mlx.cli.recommend import main as _main
 
         _main()
+    elif command == "methods":
+        from veloxquant_mlx.cli.methods import main as _main
+
+        _main()
+    elif command == "serve":
+        from veloxquant_mlx.cli.serve import main as _main
+
+        _main()
     else:
-        print(f"Unknown command: {command!r}. Choices: precompute, benchmark, recommend")
+        print(
+            f"Unknown command: {command!r}. "
+            "Choices: precompute, benchmark, recommend, methods, serve"
+        )
         sys.exit(1)
 
 

@@ -27,22 +27,30 @@ registry built first** — it must not hardcode a marketing list of "41 methods"
 
 ### Q1 — Web UI vs native macOS first?
 
-**Decision: local web UI (Python backend + single-page frontend), shipped as an
-optional `[ui]` extra.**
+**Decision: native macOS app (SwiftUI), managing a Python subprocess.**
 
-Rationale:
+Phases 0 and 1 are identical under either choice — they are Python either way —
+so this decision only governs Phase 2.
 
-- The panel's whole job is managing a Python subprocess and polling HTTP. A
-  SwiftUI app would still shell out to the same Python process, so it buys
-  fidelity of *feel* at the cost of a second toolchain, a second release
-  pipeline, and code signing — none of which move the "under 5 minutes" success
-  criterion.
-- Everything ships through the existing PyPI release flow. No notarization.
-- A Tauri/SwiftUI shell can wrap this later without rewriting the control plane,
-  because the control plane is an HTTP API, not UI code.
+Going native also *removes* a component rather than adding one. A web panel needs
+a localhost control-plane HTTP server whose only purpose is letting a browser
+spawn processes; that is both extra code and the most uncomfortable security
+surface in the design. SwiftUI calls `Process` directly, so there is no control
+API, no browser-can-spawn-processes problem, and no `[ui]` extra on PyPI.
 
-Cost accepted: it will look like a local web app, not a Mac app. That is the
-right trade for MVP; revisit after #34–#36 land and there is real usage.
+Costs accepted, in order of how much they matter:
+
+1. **Python discovery.** The app must find an interpreter with `veloxquant_mlx`
+   and `mlx_lm` installed. This is the main source of "it doesn't work on my
+   machine" and does not exist in the web version, which already runs inside the
+   right interpreter. Mitigation: first-run picker that validates by import.
+2. **Distribution.** Unsigned `.app` bundles are quarantined by Gatekeeper.
+   Proper signing/notarization needs a paid Apple Developer account; without one,
+   distribution is "build from source in Xcode," which is a worse first-run story
+   than `pip install`. **Open — see §5.**
+3. Two release pipelines, on separate cadences.
+
+Toolchain verified present: Xcode 26.3, Swift 6.2.4, macOS 26.5.
 
 ### Q2 — Bundle a Hugging Face model list, or require a local path/id?
 
@@ -91,55 +99,81 @@ launcher's default must be an explicitly chosen serve-tier method
 
 ## 3. Implementation sequence
 
-### Phase 0 — Method registry (new, unlisted prerequisite)
+### Phase 0 — Method registry — **shipped**
 
-`veloxquant_mlx/cache/registry.py`: one exported mapping of method name →
-`{class, family (quant/eviction/hybrid), serve_tier, blurb, docs_url,
-relevant_config_fields, paper_deviation_note}`.
+[`veloxquant_mlx/cache/registry.py`](../veloxquant_mlx/cache/registry.py) maps
+method name → `{family, serve_tier, blurb, docs_url, config_fields,
+paper_deviation}`. Method names are read from `KVCacheConfig`'s own `Literal`,
+so declaring a cache registers it.
 
-Serve-tier is *derived by probe*, not hand-maintained: a method is `serves` if it
-subclasses `mlx_lm.models.cache.KVCache`, passes `can_trim_prompt_cache`, and
-survives `deepcopy`. A test asserts the derived counts match #27's 35/5 split, so
-drift fails CI instead of misleading the UI.
+Serve tier is *derived by probe*, never declared: a method serves only if it
+subclasses `mlx_lm`'s `KVCache`, survives a live `update_and_fetch`, passes
+`can_trim_prompt_cache`, and survives `deepcopy`.
 
-Unblocks: #35 entirely, #34's method dropdown, #27's docs matrix.
+Probing confirmed #27's matrix exactly — **35 servable, 5 crashing**
+(`turboquant_prod`, `turboquant_mse`, `polar`, `qjl`, `spectral`), all five for
+the same reason: they do not subclass `mlx_lm`'s `KVCache` and so inherit
+neither `update_and_fetch` nor `is_trimmable`.
 
-### Phase 1 — `veloxquant serve` (#27 option (a))
+`veloxquant methods [--json]` exposes this. The `--json` form is the contract
+the Swift app decodes, so tier logic lives in Python only.
 
-`veloxquant_mlx/cli/serve.py`, registered in `__main__.py`:
+### Phase 1 — `veloxquant serve` — **shipped**
+
+[`veloxquant_mlx/cli/serve.py`](../veloxquant_mlx/cli/serve.py):
 
 ```
-veloxquant serve --model <id|path> --method turboquant_rvq --bits 1 \
+veloxquant serve --model <id|path> --method turboquant_rvq --bits 2 \
                  --host 127.0.0.1 --port 8000
 ```
 
-Loads the model, applies `patch_model_kv_cache`, hands off to `mlx_lm.server`.
-Roughly the ~10 lines #27 predicts, plus the honesty rules:
+Verified end-to-end against `mlx-community/Llama-3.2-1B-Instruct-4bit`:
+`/v1/chat/completions` and `/v1/completions` both generate correctly through a
+real `TurboQuantRVQKVCache`, on `turboquant_rvq` and `kivi`.
 
-- Validate method against the registry **before** loading the model; exit
-  non-zero with a readable message on a crash-tier method. No fp16 fallback,
-  silent or otherwise.
-- Print the accounting-only warning to stderr on every start.
-- Emit a machine-readable ready line on stdout (`VELOXQUANT_READY {json}`) so the
-  panel can distinguish "starting" from "running" without racing the health poll.
+Honesty rules, each covered by a test:
 
-### Phase 2 — Control plane + panel MVP (#34)
+- Crash-tier and unknown methods exit non-zero **before** the model loads. No
+  fp16 fallback.
+- Accounting-only warning on stderr at every start, and in the ready handshake.
+- `VELOXQUANT_READY {json}` on stdout once the cache is wired, so the panel can
+  distinguish "starting" from "running" without racing a health poll.
+- Requests naming a different model are refused, not silently served by the
+  pinned one — otherwise the panel would display a method the response did not use.
 
-`veloxquant_mlx/ui/` behind a `[ui]` extra, launched by `veloxquant panel`:
+**#27's "~10 lines" estimate was optimistic**, for three reasons found only by
+running it:
 
-- Supervisor: spawn/terminate the Phase 1 subprocess, capture stdout/stderr into
-  a ring buffer, expose lifecycle state (`stopped|starting|running|error`).
-- Control API: `POST /api/server/start`, `POST /api/server/stop`,
-  `GET /api/server/status`, `GET /api/config`, `PUT /api/config`.
-- Frontend: status pill, Start/Stop, host/port, copyable `/v1` and `/health`
-  endpoints, model bind, generation knobs. Endpoints are rendered from what the
-  backend reports — `/metrics` and an Anthropic base URL appear only if actually
-  served.
-- Config persisted to `~/.veloxquant/panel.json`.
+1. `ModelProvider` reads ~23 fields off `cli_args`. Hand-listing them breaks
+   whenever upstream adds an option, so we harvest mlx_lm's own parser defaults
+   and override only our flags.
+2. **MLX arrays are bound to the thread that created them.** Loading the model on
+   the main thread and generating on mlx_lm's worker fails with
+   `There is no Stream(gpu, N) in current thread.` Upstream avoids this by
+   calling `load_default()` inside `_generate`; we hook `_load` to land on that
+   same thread.
+3. `is_batchable` is computed at the end of `_load`. Overriding the load without
+   recomputing it silently routes every request down the unbatched path, which
+   generates on the HTTP thread with no stream scope — the same crash by a
+   different route.
 
-The control plane binds `127.0.0.1` only, always — separate from the *inference*
-server's host setting, which may be `0.0.0.0`. Exposing the process-spawning API
-on a LAN is not a user-configurable option.
+None of these are visible without a live model, which is why the launcher could
+not have been signed off from reading the code.
+
+### Phase 2 — SwiftUI control panel (#34) — next
+
+`VeloxQuantPanel.app`, macOS 14+, no third-party dependencies:
+
+- `ServerController` (`@Observable`) — owns `Process` + `Pipe`, lifecycle
+  `stopped | starting | running | error`, flips to `running` on `VELOXQUANT_READY`.
+- `PythonEnvironment` — locates and validates an interpreter (`import
+  veloxquant_mlx`) before enabling Start.
+- `MethodCatalog` — shells `veloxquant methods --json`; no method metadata in Swift.
+- UI — sidebar (Server / Methods / Logs / About), status pill, Start/Stop,
+  host/port, copy-buttons, generation knobs. `UserDefaults` + `NSPasteboard`.
+
+Endpoints are rendered from the handshake, so the panel cannot advertise
+`/health` or `/metrics` — `mlx_lm.server` does not serve them.
 
 ### Phase 3 — Method panel (#35)
 
@@ -175,9 +209,11 @@ memory claim without reading caveats. Each maps to a test.
 
 | Risk | Mitigation |
 |---|---|
-| #27 chooses (d)-first, invalidating Phase 1 | Phase 1 is ~10 lines and Phase 2 talks to it over a process boundary; (d) changes what stats say, not the launcher's shape. |
-| Registry probe drifts from #27's matrix | CI test asserts the 35/5 split; drift fails the build. |
-| `[ui]` extra bloats the core install | Frontend is dependency-free static assets; the extra adds only the control-plane HTTP dep. Core `pip install VeloxQuant-MLX` is unchanged. |
+| **No Apple Developer account → Gatekeeper quarantine** | **Open question.** Without signing, MVP distribution is "build from source", which undercuts the 5-minute goal for non-developers. Decide before Phase 2 ships, not at release. |
+| Panel can't find the user's Python | `PythonEnvironment` validates by import and remembers the choice; Start stays disabled until an interpreter resolves. |
+| mlx_lm changes its server internals | We hook `_load` and harvest its parser rather than copying its arg list; `test_serve_cli.py` fails loudly if either stops working. |
+| #27 chooses (d)-first, invalidating Phase 1 | Phase 1 talks to the app over a process boundary; (d) changes what the stats *say*, not the launcher's shape. |
+| Registry probe drifts from #27's matrix | `test_registry.py` asserts the 35/5 split and that no method claims `HONEST_BYTES`; drift fails the build. |
 | Panel is mistaken for a memory-savings demo | §4 banners; docs link it as "run VeloxQuant without Python", not "save memory". |
 
 ---
