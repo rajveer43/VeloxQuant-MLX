@@ -270,6 +270,27 @@ def test_api_memory(panel):
     assert body["process"]["rss_bytes"] is None  # nothing running
 
 
+def test_methods_cli_states_coverage():
+    """The human-readable CLI must carry the same caveats as the panel.
+
+    Without this, `veloxquant methods` reads as if every method reports byte
+    counters — the exact confusion rules 8 and 9 exist to prevent.
+    """
+    import subprocess
+    import sys
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "veloxquant_mlx", "methods", "--servable-only"],
+        capture_output=True, text=True, timeout=300,
+    )
+    assert proc.returncode == 0, proc.stderr
+
+    assert "telemetry: not reported" in proc.stdout
+    assert "telemetry: keys and values" in proc.stdout
+    assert "'not reported' is not zero" in proc.stdout
+    assert "not a whole-cache ratio" in proc.stdout
+
+
 def test_api_methods_exposes_schema_and_coverage(panel):
     base, _ = panel
     methods = _get(base, "/api/methods")["methods"]

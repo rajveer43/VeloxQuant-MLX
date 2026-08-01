@@ -14,6 +14,7 @@ from veloxquant_mlx.cache.registry import (
     DEFAULT_SERVE_METHOD,
     MethodFamily,
     ServeTier,
+    TelemetryCoverage,
     list_methods,
 )
 
@@ -71,6 +72,8 @@ def main() -> None:
         adapted = "  [adapted]" if info.is_adapted else ""
         print(f"{mark}{info.name:<18} {info.family.value:<13} {info.serve_tier.label}{adapted}")
         print(f"    {info.blurb}")
+        if info.serve_tier.is_servable:
+            print(f"    telemetry: {info.coverage.label}")
         if info.unsupported_reason:
             print(f"    reason: {info.unsupported_reason}")
         if info.paper_deviation:
@@ -81,6 +84,19 @@ def main() -> None:
         print(
             "Note: servable methods are accounting-only — byte counters measure "
             "compression\nfidelity, not runtime memory saved. See issue #27."
+        )
+
+    # Same honesty as the panel: coverage is uneven, and a reader who assumes
+    # otherwise will read a key-only ratio as whole-cache, or silence as zero.
+    keys_only = [i for i in servable if i.coverage is TelemetryCoverage.KEYS_ONLY]
+    unreported = [i for i in servable if i.coverage is TelemetryCoverage.NONE]
+    if keys_only or unreported:
+        print(
+            f"\nTelemetry coverage varies: {len(servable) - len(keys_only) - len(unreported)} "
+            f"report keys and values, {len(keys_only)} keys only, "
+            f"{len(unreported)} none.\nA 'keys only' ratio is not a whole-cache "
+            "ratio, and 'not reported' is not zero —\neviction methods drop "
+            "tokens rather than compress bytes."
         )
 
 
