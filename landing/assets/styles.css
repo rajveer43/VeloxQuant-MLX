@@ -3,6 +3,32 @@
    Zero-build static CSS — served as-is by Netlify (cp -r landing/* dist/)
    ============================================================ */
 
+/* ── SELF-HOSTED FONTS ──
+   Latin-subset variable woff2, served from our own origin. Replaces two
+   render-blocking preconnects to Google Fonts — on a page whose pitch is
+   efficiency, third-party font hops were the wrong default. Both files are
+   variable, so one file covers every weight we use. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('fonts/inter-var.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                 U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                 U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('fonts/jetbrains-mono-var.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                 U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                 U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
@@ -20,6 +46,24 @@
   --nav-bg:    rgba(8,8,15,0.75);
   --grid-line: rgba(0,212,255,0.04);
   --radius:    12px;
+
+  /* Semantic colour roles. Three colours, three fixed meanings — purple used
+     to mark both "our column" and "16x" interchangeably, which made neither
+     legible. Use these, not the raw --accent/--purple, for anything meaning-
+     bearing:
+       accent (cyan)  = VeloxQuant-MLX identity / the recommended path
+       max   (purple) = maximum compression specifically
+       caution (amber)= a tradeoff, a cost, or a known failure case */
+  --max:        #a78bfa;
+  --max-strong: #7c3aed;
+  --max-bg:     rgba(124,58,237,0.08);
+  --caution:     #f59e0b;
+  --caution-text:#fbbf24;
+  --caution-bg:  rgba(245,158,11,0.09);
+  --caution-bd:  rgba(245,158,11,0.28);
+  --good:        #22c55e;
+  --good-bg:     rgba(34,197,94,0.09);
+  --good-bd:     rgba(34,197,94,0.28);
 }
 
 /* Light theme — applied when the OS prefers light, or when the user
@@ -29,9 +73,9 @@
     --bg:        #f7f8fb;
     --surface:   #ffffff;
     --border:    #e2e5ec;
-    --accent:    #0284c7;
-    --accent-rgb: 2,132,199;
-    --accent-hover: #309ad1;
+    --accent:    #0369a1;
+    --accent-rgb: 3,105,161;
+    --accent-hover: #0284c7;
     --purple:    #6d28d9;
     --text:      #14141f;
     --muted:     #5b6270;
@@ -39,16 +83,37 @@
     --code-text: #1f2430;
     --nav-bg:    rgba(247,248,251,0.8);
     --grid-line: rgba(2,132,199,0.06);
+    /* Semantic roles, darkened for contrast on a white surface. */
+    --max:        #6d28d9;
+    --max-strong: #5b21b6;
+    --max-bg:     rgba(109,40,217,0.07);
+    --caution:     #b45309;
+    --caution-text:#92400e;
+    --caution-bg:  rgba(180,83,9,0.08);
+    --caution-bd:  rgba(180,83,9,0.25);
+    --good:        #15803d;
+    --good-bg:     rgba(21,128,61,0.08);
+    --good-bd:     rgba(21,128,61,0.25);
   }
 }
 
 :root[data-theme="light"] {
+  --max:        #6d28d9;
+  --max-strong: #5b21b6;
+  --max-bg:     rgba(109,40,217,0.07);
+  --caution:     #b45309;
+  --caution-text:#92400e;
+  --caution-bg:  rgba(180,83,9,0.08);
+  --caution-bd:  rgba(180,83,9,0.25);
+  --good:        #15803d;
+  --good-bg:     rgba(21,128,61,0.08);
+  --good-bd:     rgba(21,128,61,0.25);
   --bg:        #f7f8fb;
   --surface:   #ffffff;
   --border:    #e2e5ec;
-  --accent:    #0284c7;
-  --accent-rgb: 2,132,199;
-  --accent-hover: #309ad1;
+  --accent:    #0369a1;
+  --accent-rgb: 3,105,161;
+  --accent-hover: #0284c7;
   --purple:    #6d28d9;
   --text:      #14141f;
   --muted:     #5b6270;
@@ -59,6 +124,16 @@
 }
 
 :root[data-theme="dark"] {
+  --max:        #a78bfa;
+  --max-strong: #7c3aed;
+  --max-bg:     rgba(124,58,237,0.08);
+  --caution:     #f59e0b;
+  --caution-text:#fbbf24;
+  --caution-bg:  rgba(245,158,11,0.09);
+  --caution-bd:  rgba(245,158,11,0.28);
+  --good:        #22c55e;
+  --good-bg:     rgba(34,197,94,0.09);
+  --good-bd:     rgba(34,197,94,0.28);
   --bg:        #08080f;
   --surface:   #12121e;
   --border:    #1e1e35;
@@ -2581,4 +2656,489 @@ footer {
   .pg-seg-btn { flex: 1; text-align: center; padding: 0.5rem 0.4rem; }
   .pg-row { flex-wrap: wrap; align-items: flex-start; }
   .pg-row-val { overflow-x: auto; }
+}
+
+/* ============================================================
+   REDESIGN LAYER
+   Components added by the consumer-facing redesign: hero memory bars,
+   qualifier cards, inline calculator, method picker, quality-cost and
+   limitations sections. Built on the semantic colour roles declared in
+   :root (--max / --caution / --good), never on raw hex.
+   ============================================================ */
+
+/* ── Shared: inline code ──
+   Replaces ~40 repeated inline style= attributes that each re-declared the
+   same mono font stack. */
+code.inline {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9em;
+  color: var(--code-text);
+  background: var(--code-bg);
+  padding: 0.12em 0.36em;
+  border-radius: 5px;
+}
+code.inline.plain { background: none; padding: 0; }
+code.inline.max { color: var(--max); }
+.t-accent { color: var(--accent); }
+.t-max    { color: var(--max); }
+.t-strong { color: var(--text); font-weight: 600; }
+.t-caution{ color: var(--caution-text); }
+
+/* ── Hero memory bars ──
+   The hero's only visual. Replaces the matrix canvas, aurora blobs and
+   particles: one honest chart that IS the product claim. */
+.hero-viz {
+  width: 100%;
+  max-width: 680px;
+  margin: 2.2rem auto 0;
+  padding: 1.15rem 1.25rem 1rem;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: left;
+  backdrop-filter: blur(8px);
+}
+.hero-viz-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.hero-viz-head b { color: var(--text); font-weight: 600; text-transform: none; letter-spacing: 0; font-size: 0.82rem; }
+.viz-row {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.28rem 0;
+}
+.viz-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.viz-row.is-fp16 .viz-label { color: var(--text); }
+.viz-track {
+  position: relative;
+  height: 20px;
+  background: color-mix(in srgb, var(--border) 55%, transparent);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.viz-bar {
+  height: 100%;
+  border-radius: 4px;
+  width: 0;
+  transform-origin: left center;
+  transition: width 900ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.viz-bar.b-fp16 { background: linear-gradient(90deg, var(--caution), color-mix(in srgb, var(--caution) 65%, transparent)); }
+.viz-bar.b-rvq  { background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, transparent)); }
+.viz-bar.b-max  { background: linear-gradient(90deg, var(--max-strong), var(--max)); }
+.viz-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--text);
+  white-space: nowrap;
+  min-width: 8.5rem;
+  text-align: right;
+}
+.viz-val .viz-x { color: var(--muted); margin-left: 0.4rem; }
+.viz-row.is-fp16 .viz-val { color: var(--caution-text); }
+.hero-viz-foot {
+  margin-top: 0.85rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.76rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.hero-viz-foot .verdict-bad  { color: var(--caution-text); font-weight: 600; }
+.hero-viz-foot .verdict-good { color: var(--accent); font-weight: 600; }
+
+/* ── Disqualifier strip ── */
+.qual-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-top: 1.4rem;
+}
+.qual-chip {
+  font-size: 0.73rem;
+  font-family: 'JetBrains Mono', monospace;
+  padding: 0.28rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+}
+.qual-chip.yes { border-color: var(--good-bd); color: var(--good); }
+.qual-chip.no  { border-color: var(--caution-bd); color: var(--caution-text); }
+
+/* ── "Is this you?" cards ── */
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+.scenario-card {
+  display: block;
+  padding: 1.15rem 1.2rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+.scenario-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.scenario-quote {
+  font-size: 0.97rem;
+  color: var(--text);
+  line-height: 1.5;
+  margin-bottom: 0.6rem;
+}
+.scenario-quote::before { content: '\201C'; }
+.scenario-quote::after  { content: '\201D'; }
+.scenario-answer {
+  font-size: 0.82rem;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ── Inline calculator ── */
+.calc-shell {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.calc-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.1rem;
+  padding: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.calc-field { display: flex; flex-direction: column; gap: 0.4rem; }
+.calc-field label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.calc-field select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+  width: 100%;
+}
+.calc-field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.calc-range-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+  color: var(--accent);
+  font-weight: 500;
+}
+.calc-field input[type="range"] { width: 100%; accent-color: var(--accent); }
+.calc-out { padding: 1.25rem; }
+.calc-verdict {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  margin-bottom: 1.1rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.calc-verdict.bad  { border-color: var(--caution-bd); background: var(--caution-bg); }
+.calc-verdict.good { border-color: var(--good-bd);    background: var(--good-bg); }
+.calc-rows { display: flex; flex-direction: column; gap: 0.5rem; }
+.calc-row {
+  display: grid;
+  grid-template-columns: 9.5rem 1fr auto auto;
+  align-items: center;
+  gap: 0.7rem;
+}
+.calc-row-name { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--muted); }
+.calc-row.rec .calc-row-name { color: var(--accent); font-weight: 500; }
+.calc-row-size {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+  text-align: right;
+  min-width: 5.5rem;
+  color: var(--text);
+}
+.calc-row-fit { font-size: 0.78rem; min-width: 6.5rem; text-align: right; }
+.calc-row-fit.y { color: var(--good); }
+.calc-row-fit.n { color: var(--caution-text); }
+.calc-note {
+  margin-top: 1rem;
+  font-size: 0.76rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.calc-cta { margin-top: 1.1rem; display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
+.calc-nojs { padding: 1.25rem; font-size: 0.86rem; color: var(--muted); }
+
+/* ── Method picker (decision tree) ── */
+.picker-list { display: flex; flex-direction: column; gap: 0.55rem; }
+.picker-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.95rem 1.1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--border);
+}
+.picker-row.is-default { border-left-color: var(--accent); }
+.picker-row.is-max     { border-left-color: var(--max-strong); }
+.picker-goal { font-size: 0.93rem; color: var(--text); }
+.picker-goal small { display: block; color: var(--muted); font-size: 0.79rem; margin-top: 0.2rem; }
+.picker-pick {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+  color: var(--accent);
+  text-align: right;
+  white-space: nowrap;
+}
+.picker-row.is-max .picker-pick { color: var(--max); }
+.picker-pick small { display: block; color: var(--muted); font-size: 0.74rem; margin-top: 0.2rem; }
+
+/* ── Quality cost + limitations ── */
+.cost-pending {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.85em;
+}
+.limits-list { list-style: none; display: flex; flex-direction: column; gap: 0.7rem; }
+.limits-list li {
+  position: relative;
+  padding-left: 1.6rem;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.limits-list li::before {
+  content: '\2715';
+  position: absolute;
+  left: 0;
+  top: 0.05rem;
+  color: var(--caution);
+  font-size: 0.85rem;
+}
+.limits-list li strong { color: var(--text); font-weight: 600; }
+
+/* ── Proof of maintenance ── */
+.proof-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.9rem;
+}
+.proof-item {
+  display: block;
+  padding: 1rem 1.1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  transition: border-color 160ms ease;
+}
+.proof-item:hover { border-color: var(--accent); }
+.proof-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.15rem;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+.proof-label { font-size: 0.78rem; color: var(--muted); }
+
+/* ── Benchmark outlier callouts ── */
+.outlier-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+}
+.outlier {
+  padding: 1rem 1.15rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.outlier.win  { border-color: var(--good-bd);    background: var(--good-bg); }
+.outlier.loss { border-color: var(--caution-bd); background: var(--caution-bg); }
+.outlier-tag {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+}
+.outlier.win  .outlier-tag { color: var(--good); }
+.outlier.loss .outlier-tag { color: var(--caution-text); }
+.outlier strong { color: var(--text); }
+
+/* ── Diff-formatted quickstart ── */
+pre .diff-add {
+  display: block;
+  background: var(--good-bg);
+  border-left: 2px solid var(--good);
+  margin-left: -1.25rem;
+  padding-left: calc(1.25rem - 2px);
+}
+pre .diff-ctx { display: block; opacity: 0.6; }
+
+/* ── Collapsible detail (comparison / raw benchmark numbers) ── */
+.reveal { margin-top: 1rem; }
+.reveal > summary {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.84rem;
+  color: var(--accent);
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  list-style: none;
+  user-select: none;
+}
+.reveal > summary::-webkit-details-marker { display: none; }
+.reveal > summary::after { content: '\25BE'; font-size: 0.7em; }
+.reveal[open] > summary::after { content: '\25B4'; }
+.reveal > summary:hover { border-color: var(--accent); }
+.reveal > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.reveal-body { margin-top: 1rem; }
+
+/* ── Reproduce line ── */
+.repro {
+  margin-top: 1rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--muted);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.repro b { color: var(--code-text); font-weight: 500; }
+
+/* ── Footer grouping ── */
+.footer-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1.75rem;
+  text-align: left;
+  max-width: 780px;
+  margin: 0 auto 2rem;
+}
+.footer-group h3 {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 0.7rem;
+  font-weight: 600;
+}
+.footer-group ul { list-style: none; display: flex; flex-direction: column; gap: 0.45rem; }
+.footer-group a { color: var(--text); text-decoration: none; font-size: 0.87rem; opacity: 0.85; }
+.footer-group a:hover { color: var(--accent); opacity: 1; }
+
+/* ── Responsive ── */
+@media (max-width: 720px) {
+  .viz-row { grid-template-columns: 6.5rem 1fr; grid-template-areas: 'label track' 'val val'; }
+  .viz-val { grid-area: val; text-align: left; min-width: 0; padding-left: 0.1rem; }
+  .calc-row { grid-template-columns: 1fr auto; }
+  .calc-row-fit { grid-column: 2; }
+  .picker-row { grid-template-columns: 1fr; }
+  .picker-pick { text-align: left; }
+  .repro { white-space: normal; }
+}
+
+/* Tables that must transpose to cards rather than scroll horizontally. */
+@media (max-width: 768px) {
+  table.stacked thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  table.stacked tr {
+    display: block;
+    margin-bottom: 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.75rem;
+    background: var(--surface);
+  }
+  table.stacked td {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    border: 0;
+    padding: 0.35rem 0;
+    text-align: right;
+  }
+  table.stacked td::before {
+    content: attr(data-th);
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    text-align: left;
+    flex-shrink: 0;
+  }
+  table.stacked td:first-child {
+    justify-content: flex-start;
+    font-weight: 600;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0.35rem;
+    padding-bottom: 0.45rem;
+  }
+  table.stacked td:first-child::before { content: none; }
+}
+
+/* Screen-reader-only text — used for <caption> on data tables, which need an
+   accessible name but no visible one. */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Table cell marking a measured regression / caution result. Pairs with the
+   existing .td-winner and .td-highlight. */
+.td-caution { color: var(--caution-text); font-weight: 500; }
+
+/* Legacy anchor targets: zero-size jump points that keep old inbound links
+   (README badges, PyPI, published blog posts) landing somewhere sensible
+   after the redesign renamed sections. Offset for the fixed navbar. */
+.anchor-alias {
+  display: block;
+  height: 0;
+  scroll-margin-top: 90px;
 }
