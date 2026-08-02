@@ -38,6 +38,15 @@
   --accent:    #00d4ff;
   --accent-rgb: 0,212,255;
   --accent-hover: #33ddff;
+  --on-accent: #08080f;
+  /* Syntax palette — Catppuccin Mocha, for the dark code background. */
+  --syn-kw: #cba6f7;
+  --syn-fn: #89dceb;
+  --syn-st: #a6e3a1;
+  --syn-cm: #868ba1;
+  --syn-nu: #fab387;
+  --syn-op: #89dceb;
+  --syn-at: #f38ba8;
   --purple:    #7c3aed;
   --text:      #e2e8f0;
   --muted:     #94a3b8;
@@ -75,7 +84,16 @@
     --border:    #e2e5ec;
     --accent:    #0369a1;
     --accent-rgb: 3,105,161;
-    --accent-hover: #0284c7;
+    --accent-hover: #0577ad;
+    --on-accent: #ffffff;
+    /* Syntax palette — Latte-derived, darkened to clear 4.5:1 on --code-bg. */
+    --syn-kw: #8839ef;
+    --syn-fn: #145ff5;
+    --syn-st: #307820;
+    --syn-cm: #676a7f;
+    --syn-nu: #d20f39;
+    --syn-op: #12747a;
+    --syn-at: #d20f39;
     --purple:    #6d28d9;
     --text:      #14141f;
     --muted:     #5b6270;
@@ -113,7 +131,16 @@
   --border:    #e2e5ec;
   --accent:    #0369a1;
   --accent-rgb: 3,105,161;
-  --accent-hover: #0284c7;
+  --accent-hover: #0577ad;
+  --on-accent: #ffffff;
+  /* Syntax palette — Latte-derived, darkened to clear 4.5:1 on --code-bg. */
+  --syn-kw: #8839ef;
+  --syn-fn: #145ff5;
+  --syn-st: #307820;
+  --syn-cm: #676a7f;
+  --syn-nu: #d20f39;
+  --syn-op: #12747a;
+  --syn-at: #d20f39;
   --purple:    #6d28d9;
   --text:      #14141f;
   --muted:     #5b6270;
@@ -140,6 +167,15 @@
   --accent:    #00d4ff;
   --accent-rgb: 0,212,255;
   --accent-hover: #33ddff;
+  --on-accent: #08080f;
+  /* Syntax palette — Catppuccin Mocha, for the dark code background. */
+  --syn-kw: #cba6f7;
+  --syn-fn: #89dceb;
+  --syn-st: #a6e3a1;
+  --syn-cm: #868ba1;
+  --syn-nu: #fab387;
+  --syn-op: #89dceb;
+  --syn-at: #f38ba8;
   --purple:    #7c3aed;
   --text:      #e2e8f0;
   --muted:     #94a3b8;
@@ -492,9 +528,12 @@ h1 span::after {
               color 0.2s ease;
 }
 
+/* Text colour is a token, not a hardcoded dark: the light theme's accent is a
+   deep blue, against which #08080f scored 3.36:1 (below AA). Each theme picks
+   the on-accent colour that actually contrasts with its own accent. */
 .btn-filled {
   background: var(--accent);
-  color: #08080f;
+  color: var(--on-accent);
   border: 1px solid var(--accent);
 }
 
@@ -1160,7 +1199,7 @@ pre {
   -webkit-overflow-scrolling: touch;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.875rem;
-  line-height: 1.75;
+  line-height: 1.6;
   color: var(--code-text);
 }
 
@@ -1176,14 +1215,18 @@ pre {
   margin-left: 1px;
 }
 
-.kw  { color: #cba6f7; }
-.fn  { color: #89dceb; }
-.st  { color: #a6e3a1; }
-.cm  { color: #585b70; font-style: italic; }
-.nu  { color: #fab387; }
-.op  { color: #89dceb; }
+/* Syntax colours come from tokens so each theme gets a palette built for its
+   own background. The dark values (Catppuccin Mocha) were previously hardcoded
+   and scored 1.3–2.0:1 on the light code background — effectively unreadable.
+   Both sets now clear 4.5:1 against their own --code-bg. */
+.kw  { color: var(--syn-kw); }
+.fn  { color: var(--syn-fn); }
+.st  { color: var(--syn-st); }
+.cm  { color: var(--syn-cm); font-style: italic; }
+.nu  { color: var(--syn-nu); }
+.op  { color: var(--syn-op); }
 .id  { color: var(--code-text); }
-.at  { color: #f38ba8; }
+.at  { color: var(--syn-at); }
 
 /* ===== BENCHMARK TABLE ===== */
 .table-wrap {
@@ -1672,7 +1715,8 @@ footer {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-  .aurora-blob, #matrix-canvas { display: none; }
+  .aurora-blob, #matrix-canvas, .particles-container { display: none; }
+  .viz-bar { transition: none !important; }
   .new-pill { animation: none; }
   .card-details-body { animation: none; }
   .algo-card.vecinfer-card::before { transition: none; }
@@ -2679,54 +2723,31 @@ code.inline {
 }
 code.inline.plain { background: none; padding: 0; }
 code.inline.max { color: var(--max); }
+
+/* Inline code inside a button must take the button's own text colour — the
+   default --code-text scored 1.22:1 against the filled button's cyan, which
+   is effectively invisible. Inherit instead, so both button variants stay
+   legible in both themes. */
+.btn code.inline {
+  color: inherit;
+  background: none;
+  padding: 0;
+  font-weight: 600;
+}
 .t-accent { color: var(--accent); }
 .t-max    { color: var(--max); }
 .t-strong { color: var(--text); font-weight: 600; }
 .t-caution{ color: var(--caution-text); }
 
-/* ── Hero memory bars ──
-   The hero's only visual. Replaces the matrix canvas, aurora blobs and
-   particles: one honest chart that IS the product claim. */
-.hero-viz {
-  width: 100%;
-  max-width: 680px;
-  margin: 2.2rem auto 0;
-  padding: 1.15rem 1.25rem 1rem;
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  text-align: left;
-  backdrop-filter: blur(8px);
-}
-.hero-viz-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 1rem;
-  margin-bottom: 0.9rem;
-  font-size: 0.74rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.hero-viz-head b { color: var(--text); font-weight: 600; text-transform: none; letter-spacing: 0; font-size: 0.82rem; }
-.viz-row {
-  display: grid;
-  grid-template-columns: 8.5rem 1fr auto;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.28rem 0;
-}
-.viz-label {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.78rem;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.viz-row.is-fp16 .viz-label { color: var(--text); }
+
+/* ── Memory bars (calculator) ── */
+
+
+
+/* Both are <span>s, so they must be blockified explicitly — width/height do
+   not apply to inline boxes, which collapsed the bars to nothing. */
 .viz-track {
+  display: block;
   position: relative;
   height: 20px;
   background: color-mix(in srgb, var(--border) 55%, transparent);
@@ -2734,55 +2755,18 @@ code.inline.max { color: var(--max); }
   overflow: hidden;
 }
 .viz-bar {
+  display: block;
   height: 100%;
+  min-width: 3px;
   border-radius: 4px;
   width: 0;
-  transform-origin: left center;
   transition: width 900ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .viz-bar.b-fp16 { background: linear-gradient(90deg, var(--caution), color-mix(in srgb, var(--caution) 65%, transparent)); }
 .viz-bar.b-rvq  { background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, transparent)); }
 .viz-bar.b-max  { background: linear-gradient(90deg, var(--max-strong), var(--max)); }
-.viz-val {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.8rem;
-  color: var(--text);
-  white-space: nowrap;
-  min-width: 8.5rem;
-  text-align: right;
-}
-.viz-val .viz-x { color: var(--muted); margin-left: 0.4rem; }
-.viz-row.is-fp16 .viz-val { color: var(--caution-text); }
-.hero-viz-foot {
-  margin-top: 0.85rem;
-  padding-top: 0.7rem;
-  border-top: 1px solid var(--border);
-  font-size: 0.76rem;
-  color: var(--muted);
-  line-height: 1.5;
-}
-.hero-viz-foot .verdict-bad  { color: var(--caution-text); font-weight: 600; }
-.hero-viz-foot .verdict-good { color: var(--accent); font-weight: 600; }
 
-/* ── Disqualifier strip ── */
-.qual-strip {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.45rem;
-  margin-top: 1.4rem;
-}
-.qual-chip {
-  font-size: 0.73rem;
-  font-family: 'JetBrains Mono', monospace;
-  padding: 0.28rem 0.6rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--muted);
-  background: color-mix(in srgb, var(--surface) 60%, transparent);
-}
-.qual-chip.yes { border-color: var(--good-bd); color: var(--good); }
-.qual-chip.no  { border-color: var(--caution-bd); color: var(--caution-text); }
+
 
 /* ── "Is this you?" cards ── */
 .scenario-grid {
@@ -2921,29 +2905,12 @@ code.inline.max { color: var(--max); }
 .picker-row.is-max .picker-pick { color: var(--max); }
 .picker-pick small { display: block; color: var(--muted); font-size: 0.74rem; margin-top: 0.2rem; }
 
-/* ── Quality cost + limitations ── */
+/* ── Quality cost ── */
 .cost-pending {
   color: var(--muted);
   font-style: italic;
   font-size: 0.85em;
 }
-.limits-list { list-style: none; display: flex; flex-direction: column; gap: 0.7rem; }
-.limits-list li {
-  position: relative;
-  padding-left: 1.6rem;
-  font-size: 0.92rem;
-  line-height: 1.6;
-  color: var(--muted);
-}
-.limits-list li::before {
-  content: '\2715';
-  position: absolute;
-  left: 0;
-  top: 0.05rem;
-  color: var(--caution);
-  font-size: 0.85rem;
-}
-.limits-list li strong { color: var(--text); font-weight: 600; }
 
 /* ── Proof of maintenance ── */
 .proof-row {
@@ -3000,14 +2967,22 @@ code.inline.max { color: var(--max); }
 .outlier strong { color: var(--text); }
 
 /* ── Diff-formatted quickstart ── */
-pre .diff-add {
+/* Each diff line is its own block, so the <pre> source carries no newlines
+   between them — a newline after a block-level span renders as a second,
+   empty line box and doubled the spacing. min-height keeps whitespace-only
+   spacer lines from collapsing now that there is no text node to size them. */
+pre .diff-add,
+pre .diff-ctx {
   display: block;
+  min-height: 1.6em;
+}
+pre .diff-add {
   background: var(--good-bg);
   border-left: 2px solid var(--good);
-  margin-left: -1.25rem;
-  padding-left: calc(1.25rem - 2px);
+  margin-left: -1.5rem;
+  padding-left: calc(1.5rem - 2px);
 }
-pre .diff-ctx { display: block; opacity: 0.6; }
+pre .diff-ctx { opacity: 0.75; }
 
 /* ── Collapsible detail (comparison / raw benchmark numbers) ── */
 .reveal { margin-top: 1rem; }
@@ -3069,8 +3044,6 @@ pre .diff-ctx { display: block; opacity: 0.6; }
 
 /* ── Responsive ── */
 @media (max-width: 720px) {
-  .viz-row { grid-template-columns: 6.5rem 1fr; grid-template-areas: 'label track' 'val val'; }
-  .viz-val { grid-area: val; text-align: left; min-width: 0; padding-left: 0.1rem; }
   .calc-row { grid-template-columns: 1fr auto; }
   .calc-row-fit { grid-column: 2; }
   .picker-row { grid-template-columns: 1fr; }

@@ -2,13 +2,20 @@
 // VeloxQuant-MLX landing page behavior
 // Zero-build static JS — served as-is by Netlify (cp -r landing/* dist/)
 //
-// Deliberately small. The decorative layer this file used to carry (matrix
-// rain canvas, aurora parallax, floating particles, magnetic buttons, stat
-// counters, code type-on) was removed in the consumer redesign: six
-// simultaneous animation systems cost real battery on the Apple Silicon
-// laptops this project targets, and read as marketing over substance. What
-// remains is behaviour a visitor actually uses.
+// The atmospheric layer (matrix rain, aurora blobs, particles, magnetic
+// buttons, badge typing) is what gives the hero its character, so it stays.
+// Every effect is gated on prefers-reduced-motion, and the two heaviest —
+// the canvas and the scroll parallax — are additionally skipped on narrow /
+// touch viewports where they cost battery for no visible benefit.
 // ============================================================
+
+function hexToRgba(hex, alpha) {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.length === 3 ? h[0] + h[0] : h.slice(0, 2), 16);
+  const g = parseInt(h.length === 3 ? h[1] + h[1] : h.slice(2, 4), 16);
+  const b = parseInt(h.length === 3 ? h[2] + h[2] : h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 // ── COPY-TO-CLIPBOARD ──
 function copyText(text, btn) {
@@ -64,65 +71,137 @@ function initCodeTabs() {
   });
 }
 
-// ── HERO MEMORY BARS ──
-// The hero's only visual. Numbers are computed by VQCalc from the same math
-// the calculator and playground use — never hand-written into the markup, so
-// they cannot drift from the rest of the page.
-const HERO_SCENARIO = { presetId: 'llama31-8b', seqLen: 65536, ramGb: 16 };
+// ── HERO BADGE TYPING ANIMATION ──
+function initBadgeTyping() {
+  const badge = document.getElementById('hero-badge');
+  if (!badge) return;
+  const text = badge.dataset.text || badge.textContent.trim();
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    badge.textContent = text;
+    return;
+  }
+  let i = 0;
+  badge.textContent = '';
+  const cursor = document.createElement('span');
+  cursor.className = 'badge-cursor';
+  badge.appendChild(cursor);
 
-function initHeroViz() {
-  const host = document.getElementById('hero-viz-rows');
-  if (!host || typeof VQCalc === 'undefined') return;
+  const interval = setInterval(() => {
+    badge.insertBefore(document.createTextNode(text[i]), cursor);
+    i++;
+    if (i >= text.length) {
+      clearInterval(interval);
+      setTimeout(() => cursor.remove(), 1500);
+    }
+  }, 35);
+}
 
-  const preset = VQCalc.MODEL_PRESETS.find(p => p.id === HERO_SCENARIO.presetId);
-  if (!preset) return;
+// ── HERO MATRIX-RAIN CANVAS ──
+// Decorative only; skipped for reduced-motion and on narrow/touch viewports
+// where it costs battery for no visible benefit (the canvas covers the hero,
+// which is mostly obscured by content on small screens anyway).
+function initMatrixRain() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (window.matchMedia('(max-width: 640px)').matches) return;
 
-  const res = VQCalc.computeRows(preset, HERO_SCENARIO.seqLen, HERO_SCENARIO.ramGb);
-  const fp16 = res.rows[0];
+  const canvas = document.getElementById('matrix-canvas');
+  const hero = document.getElementById('hero');
+  if (!canvas || !hero) return;
+  const ctx = canvas.getContext('2d');
+  const chars = '01ABCDEFx+=<>[]{}∑∫ΔΩπ';
+  const fontSize = 13;
+  let cols, drops;
 
-  // Only the headline three: fp16 baseline, the everyday default, and the
-  // maximum-compression path. The rest live in the calculator.
-  const show = ['fp16', 'turboquant_rvq', 'vecinfer'];
-  const rows = show.map(id => res.rows.find(r => r.id === id)).filter(Boolean);
+  function resize() {
+    canvas.width = hero.offsetWidth;
+    canvas.height = hero.offsetHeight;
+    cols = Math.floor(canvas.width / fontSize);
+    drops = Array.from({ length: cols }, () => Math.random() * -50);
+  }
 
-  const barClass = { fp16: 'b-fp16', turboquant_rvq: 'b-rvq', vecinfer: 'b-max' };
+  resize();
+  new ResizeObserver(resize).observe(hero);
 
-  host.innerHTML = rows.map(r => {
-    const pct = Math.max(1.5, (r.mb / fp16.mb) * 100);
-    const ratio = r.id === 'fp16' ? '' : `<span class="viz-x">${r.ratio}×</span>`;
-    return `
-      <div class="viz-row${r.id === 'fp16' ? ' is-fp16' : ''}">
-        <span class="viz-label">${r.name}</span>
-        <span class="viz-track">
-          <span class="viz-bar ${barClass[r.id]}" data-pct="${pct}"></span>
-        </span>
-        <span class="viz-val">${VQCalc.formatMb(r.mb)}${ratio}</span>
-      </div>`;
-  }).join('');
+  function themeColors() {
+    const styles = getComputedStyle(document.documentElement);
+    return {
+      bg: styles.getPropertyValue('--bg').trim() || '#08080f',
+      accent: styles.getPropertyValue('--accent').trim() || '#00d4ff',
+    };
+  }
 
-  // Fill the bars. One transition on load, skipped under reduced motion.
-  const bars = host.querySelectorAll('.viz-bar');
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduce) {
-    bars.forEach(b => { b.style.transition = 'none'; b.style.width = b.dataset.pct + '%'; });
-  } else {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        bars.forEach(b => { b.style.width = b.dataset.pct + '%'; });
-      });
+  function draw() {
+    const { bg, accent } = themeColors();
+    ctx.fillStyle = hexToRgba(bg, 0.05);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = accent;
+    ctx.font = fontSize + 'px JetBrains Mono, monospace';
+    for (let i = 0; i < cols; i++) {
+      const ch = chars[Math.floor(Math.random() * chars.length)];
+      ctx.fillText(ch, i * fontSize, drops[i] * fontSize);
+      if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+      drops[i] += 0.4;
+    }
+  }
+
+  // rAF-driven at a throttled ~16fps rather than a bare setInterval, so the
+  // browser pauses it in background tabs instead of animating off-screen.
+  let last = 0;
+  let stopped = false;
+  function frame(now) {
+    if (stopped) return;
+    if (now - last >= 60) { draw(); last = now; }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // Stop entirely once the hero scrolls out of view.
+  const vis = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting && stopped) { stopped = false; requestAnimationFrame(frame); }
+      else if (!e.isIntersecting) { stopped = true; }
     });
-  }
+  }, { threshold: 0 });
+  vis.observe(hero);
+}
 
-  const foot = document.getElementById('hero-viz-foot');
-  if (foot) {
-    const rvq = res.rows.find(r => r.id === 'turboquant_rvq');
-    foot.innerHTML =
-      `On a ${HERO_SCENARIO.ramGb} GB Mac about ${res.budgetGb} GB is left for the KV cache ` +
-      `after 4-bit weights and the OS. fp16 needs ${VQCalc.formatMb(fp16.mb)} — ` +
-      `<span class="verdict-bad">it doesn't fit</span>. ` +
-      `RVQ-1bit needs ${VQCalc.formatMb(rvq.mb)} — ` +
-      `<span class="verdict-good">it does</span>.`;
-  }
+// ── HERO SCROLL PARALLAX (aurora blobs) ──
+function initScrollParallax() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const heroEl = document.getElementById('hero');
+  if (!heroEl) return;
+  const auroraContainer = heroEl.querySelector('.aurora-container');
+  if (!auroraContainer) return;
+
+  // Write the transform inside rAF so a fast scroll can't queue up layout
+  // work on every single scroll event.
+  let ticking = false;
+  window.addEventListener('scroll', () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      ticking = false;
+      const heroH = heroEl.offsetHeight;
+      if (window.scrollY > heroH) return;
+      auroraContainer.style.transform = `translateY(${(window.scrollY / heroH) * 60}px)`;
+    });
+  }, { passive: true });
+}
+
+// ── MAGNETIC BUTTONS (desktop hover only — mousemove never fires on touch) ──
+function initMagneticButtons() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelectorAll('.btn').forEach(btn => {
+    btn.addEventListener('mousemove', e => {
+      const rect = btn.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dx = (e.clientX - cx) / (rect.width / 2);
+      const dy = (e.clientY - cy) / (rect.height / 2);
+      btn.style.transform = `translate(${dx * 7}px, ${dy * 5}px)`;
+    });
+    btn.addEventListener('mouseleave', () => { btn.style.transform = ''; });
+  });
 }
 
 // ── INLINE MEMORY CALCULATOR ──
@@ -251,12 +330,109 @@ function initCalculator() {
   ctxRange.addEventListener('input', render);
 }
 
-// ── SCROLL FADE-IN ──
+// ── CODE BLOCK "TERMINAL BOOT" TYPE-ON EFFECT ──
+// Only ever applied to blocks that opt in with data-boot: the quickstart diff
+// is meant to be copied, and making someone wait for it to type is hostile.
+function bootCode(preEl) {
+  if (preEl.dataset.booted) return;
+  preEl.dataset.booted = 'true';
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  const original = preEl.innerHTML;
+  preEl.innerHTML = '';
+
+  const tmp = document.createElement('div');
+  tmp.innerHTML = original;
+
+  const cursor = document.createElement('span');
+  cursor.className = 'code-cursor-blink';
+  preEl.appendChild(cursor);
+
+  const nodes = Array.from(tmp.childNodes);
+  let nodeIdx = 0;
+  let charIdx = 0;
+  let delay = 0;
+
+  function nextTick() {
+    if (nodeIdx >= nodes.length) { cursor.remove(); return; }
+    const node = nodes[nodeIdx];
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent;
+      if (charIdx < text.length) {
+        preEl.insertBefore(document.createTextNode(text[charIdx]), cursor);
+        charIdx++;
+        delay = 12;
+      } else {
+        nodeIdx++; charIdx = 0; delay = 0;
+      }
+    } else {
+      preEl.insertBefore(node.cloneNode(true), cursor);
+      nodeIdx++; charIdx = 0; delay = 18;
+    }
+    setTimeout(nextTick, delay);
+  }
+
+  setTimeout(nextTick, 120);
+}
+
+function initCodeBootAnimation() {
+  const targets = document.querySelectorAll('.code-wrap[data-boot]');
+  if (!targets.length) return;
+  const codeObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const pre = entry.target.querySelector('pre');
+        if (pre) bootCode(pre);
+        codeObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.25 });
+  targets.forEach(el => codeObserver.observe(el));
+}
+
+// ── STAT NUMBER COUNTER ──
+function animateCounter(element, target, suffix) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    element.textContent = target + suffix;
+    element.classList.add('counting');
+    return;
+  }
+  const steps = 50;
+  const duration = 900;
+  let i = 0;
+  const interval = setInterval(() => {
+    i++;
+    const progress = i / steps;
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const val = target * eased;
+    const disp = Number.isInteger(target) ? Math.round(val) : parseFloat(val.toFixed(1));
+    element.textContent = disp + suffix;
+    if (i >= steps) {
+      element.textContent = target + suffix;
+      element.classList.add('counting');
+      clearInterval(interval);
+    }
+  }, duration / steps);
+}
+
+// ── SCROLL FADE-IN (+ triggers stat counters) ──
 function initScrollFadeIn() {
   const observer = new IntersectionObserver((entries) => {
     entries.forEach((entry, i) => {
       if (entry.isIntersecting) {
-        setTimeout(() => entry.target.classList.add('visible'), i * 60);
+        setTimeout(() => {
+          entry.target.classList.add('visible');
+          if (entry.target.classList.contains('proof-item')) {
+            const val = entry.target.querySelector('[data-count]');
+            if (val && !val.dataset.animated) {
+              val.dataset.animated = 'true';
+              const raw = val.textContent.trim();
+              const num = parseFloat(raw.replace(/[^\d.]/g, ''));
+              const suffix = raw.replace(/[\d.,\s]/g, '');
+              if (!isNaN(num)) animateCounter(val, num, suffix);
+            }
+          }
+        }, i * 60);
         observer.unobserve(entry.target);
       }
     });
@@ -331,7 +507,11 @@ function initThemeToggle() {
 document.addEventListener('DOMContentLoaded', () => {
   initCopyButtons();
   initCodeTabs();
-  initHeroViz();
+  initBadgeTyping();
+  initMatrixRain();
+  initScrollParallax();
+  initMagneticButtons();
+  initCodeBootAnimation();
   initCalculator();
   initScrollFadeIn();
   initActiveNav();

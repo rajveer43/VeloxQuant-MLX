@@ -88,8 +88,21 @@
 
   <!-- ── §1 HERO ── -->
   <section id="hero">
+    <canvas id="matrix-canvas" aria-hidden="true"></canvas>
+    <div class="aurora-container" aria-hidden="true">
+      <div class="aurora-blob aurora-blob-1"></div>
+      <div class="aurora-blob aurora-blob-2"></div>
+      <div class="aurora-blob aurora-blob-3"></div>
+    </div>
+    <div class="particles-container" aria-hidden="true">
+      <div class="particle"></div>
+      <div class="particle"></div>
+      <div class="particle"></div>
+      <div class="particle"></div>
+      <div class="particle"></div>
+    </div>
     <div class="hero-content">
-      <div class="badge">v0.42.1 — fused KIVI-style Metal attention kernel</div>
+      <div class="badge" id="hero-badge" data-text="v0.42.1 — fused KIVI-style Metal attention kernel shipped">v0.42.1 — fused KIVI-style Metal attention kernel shipped</div>
 
       <h1>Your Mac runs out of memory<br>before it runs out of <span>context</span></h1>
 
@@ -99,35 +112,14 @@
         <strong class="t-max">three lines of code</strong>. Apple Silicon only.
       </p>
 
-      <!-- The hero's only visual: real numbers from VQCalc, not decoration. -->
-      <div class="hero-viz">
-        <div class="hero-viz-head">
-          <span>KV cache in RAM</span>
-          <b>Llama-3.1-8B · 64k context</b>
-        </div>
-        <div id="hero-viz-rows">
-          <!-- Static fallback; replaced with computed values on load. -->
-          <div class="viz-row is-fp16">
-            <span class="viz-label">fp16 (no compression)</span>
-            <span class="viz-track"><span class="viz-bar b-fp16" style="width:100%"></span></span>
-            <span class="viz-val">8.00 GB</span>
-          </div>
-          <div class="viz-row">
-            <span class="viz-label">RVQ-1bit</span>
-            <span class="viz-track"><span class="viz-bar b-rvq" style="width:13.3%"></span></span>
-            <span class="viz-val">1.07 GB<span class="viz-x">7.5×</span></span>
-          </div>
-          <div class="viz-row">
-            <span class="viz-label">VecInfer-1bit</span>
-            <span class="viz-track"><span class="viz-bar b-max" style="width:6.25%"></span></span>
-            <span class="viz-val">512 MB<span class="viz-x">16×</span></span>
-          </div>
-        </div>
-        <p class="hero-viz-foot" id="hero-viz-foot">
-          On a 16 GB Mac about 7.5 GB is left for the KV cache after 4-bit weights and the OS.
-          fp16 needs 8.00 GB — <span class="verdict-bad">it doesn't fit</span>.
-          RVQ-1bit needs 1.07 GB — <span class="verdict-good">it does</span>.
-        </p>
+      <!-- Pills carry the measurement conditions, not bare adjectives: the old
+           "Near-identical quality" was unverifiable, so each claim now names
+           the model or shape it was measured on. -->
+      <div class="hero-pills">
+        <span class="hero-pill">Up to 16× smaller cache</span>
+        <span class="hero-pill">3-line setup</span>
+        <span class="hero-pill">100% fp16 tok/s @ 16× — Qwen2.5-7B</span>
+        <span class="hero-pill">Apple Silicon only</span>
       </div>
 
       <div class="install-block" id="hero-install" title="Click to copy">
@@ -138,18 +130,29 @@
 
       <div class="cta-row">
         <a href="#calculator" class="btn btn-filled">Check your own model <span data-icon>→</span></a>
+        <a href="playground.html" class="btn btn-outline">Try the playground <span data-icon>▶</span></a>
         <a href="#quickstart" class="btn btn-outline">See the 3 lines <span data-icon>↓</span></a>
       </div>
 
+      <p class="hero-tertiary">
+        <a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a>
+        <span>·</span>
+        <a href="https://pypi.org/project/VeloxQuant-MLX/" target="_blank" rel="noopener">PyPI</a>
+        <span>·</span>
+        <a href="/docs/">Docs</a>
+      </p>
+
       <!-- Qualify and disqualify in one row. Saying who this is NOT for is
            a trust signal, not a lost conversion. -->
-      <div class="qual-strip">
-        <span class="qual-chip yes">Apple Silicon M1+</span>
-        <span class="qual-chip yes">Python 3.11+</span>
-        <span class="qual-chip yes">mlx_lm &amp; mlx-vlm</span>
-        <span class="qual-chip yes">MIT</span>
-        <span class="qual-chip no">not for CUDA / x86</span>
-      </div>
+      <p class="hero-meta">
+        MIT License
+        <span>·</span>
+        Python 3.11+
+        <span>·</span>
+        Apple Silicon M1+
+        <span>·</span>
+        mlx_lm &amp; mlx-vlm
+      </p>
     </div>
   </section>
 
@@ -276,20 +279,7 @@
           <span class="code-lang">python — RVQ 1-bit · 7.5× compression · no calibration</span>
           <button class="code-copy" data-target="code-rvq">Copy</button>
         </div>
-        <pre id="code-rvq"><span class="diff-ctx">  <span class="kw">import</span> <span class="id">mlx_lm</span></span>
-<span class="diff-add">+ <span class="kw">from</span> <span class="id">veloxquant_mlx</span> <span class="kw">import</span> <span class="fn">KVCacheBuilder</span><span class="op">,</span> <span class="fn">KVCacheConfig</span></span>
-<span class="diff-ctx">  </span>
-<span class="diff-ctx">  <span class="id">model</span><span class="op">,</span> <span class="id">tokenizer</span> <span class="op">=</span> <span class="id">mlx_lm</span><span class="op">.</span><span class="fn">load</span><span class="op">(</span><span class="st">"mlx-community/Llama-3.1-8B-Instruct-4bit"</span><span class="op">)</span></span>
-<span class="diff-ctx">  </span>
-<span class="diff-add">+ <span class="id">config</span> <span class="op">=</span> <span class="fn">KVCacheConfig</span><span class="op">(</span><span class="at">method</span><span class="op">=</span><span class="st">"turboquant_rvq"</span><span class="op">,</span> <span class="at">bit_width_inlier</span><span class="op">=</span><span class="nu">1</span><span class="op">,</span> <span class="at">seed</span><span class="op">=</span><span class="nu">42</span><span class="op">)</span></span>
-<span class="diff-add">+ <span class="id">caches</span> <span class="op">=</span> <span class="fn">KVCacheBuilder</span><span class="op">.</span><span class="fn">for_model</span><span class="op">(</span><span class="id">model</span><span class="op">,</span> <span class="id">config</span><span class="op">)</span></span>
-<span class="diff-ctx">  </span>
-<span class="diff-ctx">  <span class="id">response</span> <span class="op">=</span> <span class="id">mlx_lm</span><span class="op">.</span><span class="fn">generate</span><span class="op">(</span></span>
-<span class="diff-ctx">      <span class="id">model</span><span class="op">,</span> <span class="id">tokenizer</span><span class="op">,</span></span>
-<span class="diff-ctx">      <span class="at">prompt</span><span class="op">=</span><span class="st">"Write a 5,000-word analysis of the RLHF literature."</span><span class="op">,</span></span>
-<span class="diff-ctx">      <span class="at">max_tokens</span><span class="op">=</span><span class="nu">5000</span><span class="op">,</span></span>
-<span class="diff-add">+     <span class="at">prompt_cache</span><span class="op">=</span><span class="id">caches</span><span class="op">,</span></span>
-<span class="diff-ctx">  <span class="op">)</span></span></pre>
+        <pre id="code-rvq"><span class="diff-ctx">  <span class="kw">import</span> <span class="id">mlx_lm</span></span><span class="diff-add">+ <span class="kw">from</span> <span class="id">veloxquant_mlx</span> <span class="kw">import</span> <span class="fn">KVCacheBuilder</span><span class="op">,</span> <span class="fn">KVCacheConfig</span></span><span class="diff-ctx">  </span><span class="diff-ctx">  <span class="id">model</span><span class="op">,</span> <span class="id">tokenizer</span> <span class="op">=</span> <span class="id">mlx_lm</span><span class="op">.</span><span class="fn">load</span><span class="op">(</span><span class="st">"mlx-community/Llama-3.1-8B-Instruct-4bit"</span><span class="op">)</span></span><span class="diff-ctx">  </span><span class="diff-add">+ <span class="id">config</span> <span class="op">=</span> <span class="fn">KVCacheConfig</span><span class="op">(</span><span class="at">method</span><span class="op">=</span><span class="st">"turboquant_rvq"</span><span class="op">,</span> <span class="at">bit_width_inlier</span><span class="op">=</span><span class="nu">1</span><span class="op">,</span> <span class="at">seed</span><span class="op">=</span><span class="nu">42</span><span class="op">)</span></span><span class="diff-add">+ <span class="id">caches</span> <span class="op">=</span> <span class="fn">KVCacheBuilder</span><span class="op">.</span><span class="fn">for_model</span><span class="op">(</span><span class="id">model</span><span class="op">,</span> <span class="id">config</span><span class="op">)</span></span><span class="diff-ctx">  </span><span class="diff-ctx">  <span class="id">response</span> <span class="op">=</span> <span class="id">mlx_lm</span><span class="op">.</span><span class="fn">generate</span><span class="op">(</span></span><span class="diff-ctx">      <span class="id">model</span><span class="op">,</span> <span class="id">tokenizer</span><span class="op">,</span></span><span class="diff-ctx">      <span class="at">prompt</span><span class="op">=</span><span class="st">"Write a 5,000-word analysis of the RLHF literature."</span><span class="op">,</span></span><span class="diff-ctx">      <span class="at">max_tokens</span><span class="op">=</span><span class="nu">5000</span><span class="op">,</span></span><span class="diff-add">+     <span class="at">prompt_cache</span><span class="op">=</span><span class="id">caches</span><span class="op">,</span></span><span class="diff-ctx">  <span class="op">)</span></span></pre>
       </div>
     </div>
 
@@ -819,29 +809,6 @@
 
   <div class="divider"></div>
 
-  <!-- ── §10 LIMITATIONS ── -->
-  <section id="limitations">
-    <div class="section-head-center">
-      <p class="section-label">Before you adopt it</p>
-      <h2 class="section-title">Limitations &amp; non-goals</h2>
-      <p class="section-desc">The things worth knowing before you build on this.</p>
-    </div>
-    <div class="explainer-card fade-in">
-      <ul class="limits-list">
-        <li><strong>Apple Silicon only.</strong> No CUDA, no x86, no Linux, no Windows. Not on the roadmap.</li>
-        <li><strong>Requires <code class="inline">mlx_lm</code>.</strong> This is a library on top of it, not a standalone runtime or server.</li>
-        <li><strong>Not integrated with oMLX serving</strong> today, even though both build on <code class="inline">mlx_lm</code>.</li>
-        <li><strong>No head-to-head throughput numbers vs llama.cpp's KV quantization.</strong> Different runtime, different hardware paths — the honest comparison today is architectural.</li>
-        <li><strong>Most key-accounting methods keep an fp16 parent cache</strong> on the default path, so their ratio is an accounting bound rather than a guaranteed drop in resident RAM. Use <code class="inline">rabitq</code> for real resident savings.</li>
-        <li><strong>"-adapted" methods deviate from their source papers.</strong> Every deviation is documented per-method — no silent approximations.</li>
-        <li><strong>Quality at 1-bit is workload-dependent.</strong> Validate on your own task; perplexity benchmarks are not published yet.</li>
-        <li><strong>head_dim &lt; 128 degrades badly.</strong> The codebook approximation breaks down on small models like SmolLM2-135M.</li>
-      </ul>
-    </div>
-  </section>
-
-  <div class="divider"></div>
-
   <!-- ── §11 PROOF OF MAINTENANCE ── -->
   <section id="proof">
     <div class="section-head-center">
@@ -850,7 +817,7 @@
     </div>
     <div class="proof-row">
       <a class="proof-item fade-in" href="https://github.com/rajveer43/VeloxQuant-MLX/actions" target="_blank" rel="noopener">
-        <div class="proof-val">1484 / 1484</div>
+        <div class="proof-val"><span data-count>1484</span> / 1484</div>
         <div class="proof-label">tests passing in CI</div>
       </a>
       <a class="proof-item fade-in" href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md" target="_blank" rel="noopener">
@@ -862,7 +829,7 @@
         <div class="proof-label">10.5281/zenodo.20647294 — citable</div>
       </a>
       <a class="proof-item fade-in" href="https://github.com/rajveer43/VeloxQuant-MLX/tree/master/benchmark_scripts" target="_blank" rel="noopener">
-        <div class="proof-val">12 models</div>
+        <div class="proof-val"><span data-count>12</span> models</div>
         <div class="proof-label">validated end-to-end</div>
       </a>
     </div>
