@@ -95,10 +95,13 @@ class QJLEncoder:
                 - norm:  fp16 array of shape (batch,).
         """
         import mlx.core as mx
+
         # Accumulate S·k in float32 to avoid fp16 rounding in the projection
-        Sk = k.astype(mx.float32) @ self._S.astype(mx.float32).T   # (batch, m)
+        Sk = k.astype(mx.float32) @ self._S.astype(mx.float32).T  # (batch, m)
         signs = mx.sign(Sk).astype(mx.int8)
-        norm = mx.sqrt(mx.sum(k.astype(mx.float32) * k.astype(mx.float32), axis=-1)).astype(mx.float16)
+        norm = mx.sqrt(mx.sum(k.astype(mx.float32) * k.astype(mx.float32), axis=-1)).astype(
+            mx.float16
+        )
         return signs, norm
 
     def estimate_ip(self, q: Any, signs: Any, norm: Any) -> Any:
@@ -115,10 +118,11 @@ class QJLEncoder:
             Estimated inner products, shape (n,), fp16.
         """
         import mlx.core as mx
+
         q_flat = q.reshape(1, -1) if q.ndim == 1 else q  # (1, d)
         # Accumulate S·q and the final dot in float32 to reduce rounding bias
         Sq = q_flat.astype(mx.float32) @ self._S.astype(mx.float32).T  # (1, m)
-        ip = (signs.astype(mx.float32) @ Sq.T).squeeze(-1)             # (n,)
+        ip = (signs.astype(mx.float32) @ Sq.T).squeeze(-1)  # (n,)
         scale = self._SCALE / self._m
         return (scale * norm.astype(mx.float32) * ip).astype(mx.float16)
 

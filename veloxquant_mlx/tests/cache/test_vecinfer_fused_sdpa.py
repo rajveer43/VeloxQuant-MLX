@@ -10,6 +10,7 @@ These tests skip cleanly when Metal is unavailable.  They cover:
 * long-sequence correctness (S_kv = 4096)
 * mlx_lm dispatcher patch idempotence
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -65,12 +66,12 @@ def _build_cache(
 
 
 def _reference_sdpa(
-    q: mx.array,                 # [B, H_q, S_q, D]   fp16
-    k_indices: mx.array,         # [B, H_kv, S_kv, n_sub]
+    q: mx.array,  # [B, H_q, S_q, D]   fp16
+    k_indices: mx.array,  # [B, H_kv, S_kv, n_sub]
     k_codebook: mx.array,
     v_indices: mx.array,
     v_codebook: mx.array,
-    smooth: mx.array,            # may be None for identity smooth
+    smooth: mx.array,  # may be None for identity smooth
     H: mx.array,
     scale: float,
     causal: bool = True,
@@ -116,18 +117,26 @@ def _reference_sdpa(
 def _populate_cache_with_random_kv(cache, B, H_kv, S, D, seed=42):
     """Feed S tokens through update_and_fetch so the cache holds indices."""
     rng = np.random.default_rng(seed)
-    keys = mx.array(rng.standard_normal((B, H_kv, S, D)).astype(np.float32) * 0.3).astype(mx.float16)
-    vals = mx.array(rng.standard_normal((B, H_kv, S, D)).astype(np.float32) * 0.3).astype(mx.float16)
+    keys = mx.array(rng.standard_normal((B, H_kv, S, D)).astype(np.float32) * 0.3).astype(
+        mx.float16
+    )
+    vals = mx.array(rng.standard_normal((B, H_kv, S, D)).astype(np.float32) * 0.3).astype(
+        mx.float16
+    )
     cache.update_and_fetch(keys, vals)
     return keys, vals
 
 
 def _run_and_compare(
-    cache, q, *, causal, sliding_window, scale,
+    cache,
+    q,
+    *,
+    causal,
+    sliding_window,
+    scale,
 ):
     """Compute fused output and pure-MLX reference; return (out_fused, max_diff)."""
-    out_fused = cache.fused_sdpa(q, scale=scale, causal=causal,
-                                  sliding_window=sliding_window)
+    out_fused = cache.fused_sdpa(q, scale=scale, causal=causal, sliding_window=sliding_window)
 
     # Slice the live portion of the cache's ring buffer for the reference
     # path (the buffer is pre-allocated to fused_sdpa_max_ctx).
@@ -148,8 +157,7 @@ def _run_and_compare(
         sliding_window=sliding_window,
     )
     mx.eval(out_fused, out_ref)
-    diff = float(mx.max(mx.abs(out_fused.astype(mx.float32)
-                                - out_ref.astype(mx.float32))).item())
+    diff = float(mx.max(mx.abs(out_fused.astype(mx.float32) - out_ref.astype(mx.float32))).item())
     return out_fused, diff
 
 
@@ -182,8 +190,10 @@ def test_fused_sdpa_matches_reference_causal() -> None:
     c = _build_cache(fused_sdpa=True)
     B, H_kv, S, D = 1, 4, 64, 128
     _populate_cache_with_random_kv(c, B, H_kv, S, D)
-    q = mx.array(np.random.default_rng(7).standard_normal((B, 16, 1, D)).astype(np.float32) * 0.2).astype(mx.float16)
-    _, diff = _run_and_compare(c, q, causal=True, sliding_window=0, scale=1.0 / D ** 0.5)
+    q = mx.array(
+        np.random.default_rng(7).standard_normal((B, 16, 1, D)).astype(np.float32) * 0.2
+    ).astype(mx.float16)
+    _, diff = _run_and_compare(c, q, causal=True, sliding_window=0, scale=1.0 / D**0.5)
     assert diff < 1e-2, f"causal fused vs ref max diff = {diff:.3e}"
 
 
@@ -191,8 +201,10 @@ def test_fused_sdpa_matches_reference_non_causal() -> None:
     c = _build_cache(fused_sdpa=True)
     B, H_kv, S, D = 1, 4, 64, 128
     _populate_cache_with_random_kv(c, B, H_kv, S, D)
-    q = mx.array(np.random.default_rng(8).standard_normal((B, 16, 1, D)).astype(np.float32) * 0.2).astype(mx.float16)
-    _, diff = _run_and_compare(c, q, causal=False, sliding_window=0, scale=1.0 / D ** 0.5)
+    q = mx.array(
+        np.random.default_rng(8).standard_normal((B, 16, 1, D)).astype(np.float32) * 0.2
+    ).astype(mx.float16)
+    _, diff = _run_and_compare(c, q, causal=False, sliding_window=0, scale=1.0 / D**0.5)
     assert diff < 1e-2, f"non-causal fused vs ref max diff = {diff:.3e}"
 
 
@@ -200,8 +212,10 @@ def test_fused_sdpa_matches_reference_sliding_window() -> None:
     c = _build_cache(fused_sdpa=True)
     B, H_kv, S, D = 1, 4, 256, 128
     _populate_cache_with_random_kv(c, B, H_kv, S, D)
-    q = mx.array(np.random.default_rng(9).standard_normal((B, 16, 1, D)).astype(np.float32) * 0.2).astype(mx.float16)
-    _, diff = _run_and_compare(c, q, causal=True, sliding_window=64, scale=1.0 / D ** 0.5)
+    q = mx.array(
+        np.random.default_rng(9).standard_normal((B, 16, 1, D)).astype(np.float32) * 0.2
+    ).astype(mx.float16)
+    _, diff = _run_and_compare(c, q, causal=True, sliding_window=64, scale=1.0 / D**0.5)
     assert diff < 1e-2, f"sliding-window fused vs ref max diff = {diff:.3e}"
 
 
@@ -210,8 +224,10 @@ def test_fused_sdpa_gqa_broadcast() -> None:
     c = _build_cache(fused_sdpa=True)
     B, H_kv, S, D = 1, 8, 64, 128
     _populate_cache_with_random_kv(c, B, H_kv, S, D)
-    q = mx.array(np.random.default_rng(10).standard_normal((B, 32, 1, D)).astype(np.float32) * 0.2).astype(mx.float16)
-    _, diff = _run_and_compare(c, q, causal=True, sliding_window=0, scale=1.0 / D ** 0.5)
+    q = mx.array(
+        np.random.default_rng(10).standard_normal((B, 32, 1, D)).astype(np.float32) * 0.2
+    ).astype(mx.float16)
+    _, diff = _run_and_compare(c, q, causal=True, sliding_window=0, scale=1.0 / D**0.5)
     assert diff < 1e-2, f"GQA fused vs ref max diff = {diff:.3e}"
 
 
@@ -221,8 +237,10 @@ def test_fused_sdpa_handles_short_seq() -> None:
         c = _build_cache(fused_sdpa=True)
         B, H_kv, D = 1, 4, 128
         _populate_cache_with_random_kv(c, B, H_kv, S, D)
-        q = mx.array(np.random.default_rng(11 + S).standard_normal((B, 16, 1, D)).astype(np.float32) * 0.2).astype(mx.float16)
-        _, diff = _run_and_compare(c, q, causal=True, sliding_window=0, scale=1.0 / D ** 0.5)
+        q = mx.array(
+            np.random.default_rng(11 + S).standard_normal((B, 16, 1, D)).astype(np.float32) * 0.2
+        ).astype(mx.float16)
+        _, diff = _run_and_compare(c, q, causal=True, sliding_window=0, scale=1.0 / D**0.5)
         assert diff < 1e-2, f"S_kv={S}: max diff {diff:.3e}"
 
 
@@ -231,17 +249,22 @@ def test_fused_sdpa_long_seq() -> None:
     c = _build_cache(fused_sdpa=True)
     B, H_kv, S, D = 1, 8, 4096, 128
     _populate_cache_with_random_kv(c, B, H_kv, S, D)
-    q = mx.array(np.random.default_rng(13).standard_normal((B, 32, 1, D)).astype(np.float32) * 0.2).astype(mx.float16)
-    _, diff = _run_and_compare(c, q, causal=True, sliding_window=0, scale=1.0 / D ** 0.5)
+    q = mx.array(
+        np.random.default_rng(13).standard_normal((B, 32, 1, D)).astype(np.float32) * 0.2
+    ).astype(mx.float16)
+    _, diff = _run_and_compare(c, q, causal=True, sliding_window=0, scale=1.0 / D**0.5)
     assert diff < 1e-2, f"long-seq fused vs ref max diff = {diff:.3e}"
 
 
 def test_dispatcher_patch_is_idempotent_and_reversible() -> None:
     """Calling patch twice is fine; unpatch restores the original."""
     from veloxquant_mlx.metal.fused_sdpa import (
-        patch_mlx_lm_for_fused_sdpa, unpatch_mlx_lm, is_patched,
+        patch_mlx_lm_for_fused_sdpa,
+        unpatch_mlx_lm,
+        is_patched,
     )
     import mlx_lm.models.base as _base
+
     original = _base.scaled_dot_product_attention
 
     patch_mlx_lm_for_fused_sdpa()

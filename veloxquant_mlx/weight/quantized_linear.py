@@ -8,7 +8,11 @@ import mlx.nn as nn
 import numpy as np
 
 from veloxquant_mlx.codebooks.base import CodebookFactory
-from veloxquant_mlx.math.rotation import is_hadamard_compatible, make_hadamard_diagonal, make_rotation_matrix
+from veloxquant_mlx.math.rotation import (
+    is_hadamard_compatible,
+    make_hadamard_diagonal,
+    make_rotation_matrix,
+)
 from veloxquant_mlx.preconditioners.rotation import HadamardPreconditioner, RotationPreconditioner
 
 
@@ -66,7 +70,7 @@ class QuantizedLinear(nn.Module):
         # Lloyd-Max codebook for N(0, 1/sqrt(in)) — valid for unit-norm rotated rows
         distribution = "gaussian" if in_features >= 64 else "beta"
         self._codebook = CodebookFactory.create(distribution, b=bits, d=in_features)
-        self._centroids: mx.array = self._codebook.centroids_mx()   # (2^bits,) fp16
+        self._centroids: mx.array = self._codebook.centroids_mx()  # (2^bits,) fp16
 
         # Filled by quantize_weights()
         self._w_indices: mx.array = mx.zeros((out_features, in_features), dtype=mx.uint8)
@@ -82,21 +86,21 @@ class QuantizedLinear(nn.Module):
             weight: Shape (out_features, in_features), fp16 or fp32.
             bias: Optional shape (out_features,).
         """
-        w = weight.astype(mx.float32)   # (out, in)
+        w = weight.astype(mx.float32)  # (out, in)
 
         # 1. Per-row L2 normalization — makes all rows unit-norm
-        norms = mx.linalg.norm(w, axis=-1, keepdims=True)          # (out, 1)
+        norms = mx.linalg.norm(w, axis=-1, keepdims=True)  # (out, 1)
         safe_norms = mx.where(norms < 1e-8, mx.ones_like(norms), norms)
-        w_norm = w / safe_norms                                      # (out, in), unit-norm rows
+        w_norm = w / safe_norms  # (out, in), unit-norm rows
 
         # 2. Rotate
-        w_rot = self._preconditioner.apply(w_norm)                  # (out, in)
+        w_rot = self._preconditioner.apply(w_norm)  # (out, in)
 
         # 3. Quantize via argmin over Lloyd-Max codebook
-        c = self._centroids.astype(mx.float32)                      # (k,)
-        dists = mx.abs(w_rot[:, :, None] - c[None, None, :])        # (out, in, k)
+        c = self._centroids.astype(mx.float32)  # (k,)
+        dists = mx.abs(w_rot[:, :, None] - c[None, None, :])  # (out, in, k)
         self._w_indices = mx.argmin(dists, axis=-1).astype(mx.uint8)
-        self._w_norms = safe_norms                                   # (out, 1)
+        self._w_norms = safe_norms  # (out, 1)
 
         if bias is not None:
             self._bias = bias.astype(mx.float16)
@@ -113,13 +117,11 @@ class QuantizedLinear(nn.Module):
             Output of shape (..., out_features).
         """
         # 1. Dequantize + unrotate → unit-norm rows
-        w_rot_hat = self._centroids[self._w_indices]                # (out, in) fp16
-        w_unit = self._preconditioner.apply_inverse(
-            w_rot_hat.astype(mx.float32)
-        )                                                           # (out, in) fp32
+        w_rot_hat = self._centroids[self._w_indices]  # (out, in) fp16
+        w_unit = self._preconditioner.apply_inverse(w_rot_hat.astype(mx.float32))  # (out, in) fp32
 
         # 2. Rescale rows by their original norms
-        w_hat = (w_unit * self._w_norms).astype(mx.float16)        # (out, in) fp16
+        w_hat = (w_unit * self._w_norms).astype(mx.float16)  # (out, in) fp16
 
         # 3. Linear projection
         out = x.astype(mx.float16) @ w_hat.T
@@ -131,7 +133,7 @@ class QuantizedLinear(nn.Module):
     def memory_bytes(self) -> int:
         """Compressed storage: indices + norms (excludes codebook, shared)."""
         idx_bytes = math.ceil(self._out * self._in * self._bits / 8)
-        norm_bytes = self._out * 4   # float32 per row
+        norm_bytes = self._out * 4  # float32 per row
         return idx_bytes + norm_bytes
 
     @property

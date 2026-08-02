@@ -6,6 +6,7 @@ path (``use_metal_kernels=False``) within fp16 quantization tolerance.
 
 The tests skip cleanly on systems where Metal is unavailable.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx

@@ -33,6 +33,7 @@ tova_get_kv        — extract current (keys, values) arrays
 tova_fp16_bytes    — bytes stored in current state
 full_tova_fp16_bytes — hypothetical cost without eviction
 """
+
 from __future__ import annotations
 
 import math
@@ -97,13 +98,13 @@ def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
         [n] softmax weights summing to ~1.
     """
     scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
-    logits = (keys @ query_proxy) * scale   # [n]
+    logits = (keys @ query_proxy) * scale  # [n]
     return mx.softmax(logits, axis=-1)
 
 
 def tova_update(
     state: TovaState,
-    new_keys: mx.array,    # [S, D] fp16
+    new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
 ) -> TovaState:
     """Absorb S new tokens into state, evicting the lowest current-step-weight token if over budget.
@@ -129,7 +130,7 @@ def tova_update(
     S = new_keys.shape[0]
 
     for i in range(S):
-        k_i = new_keys[i]    # [D]
+        k_i = new_keys[i]  # [D]
         v_i = new_values[i]  # [D]
 
         if state.keys is None:
@@ -143,7 +144,7 @@ def tova_update(
             continue
 
         # --- append new token ----------------------------------------------
-        keys_cat   = mx.concatenate([state.keys,   k_i[None].astype(mx.float16)], axis=0)
+        keys_cat = mx.concatenate([state.keys, k_i[None].astype(mx.float16)], axis=0)
         values_cat = mx.concatenate([state.values, v_i[None].astype(mx.float16)], axis=0)
 
         n_total = keys_cat.shape[0]
@@ -152,7 +153,7 @@ def tova_update(
             # Current-step attention weights of the new key over ALL rows.
             weights = _attention_scores(
                 k_i.astype(mx.float32), keys_cat.astype(mx.float32)
-            )   # [n_total]
+            )  # [n_total]
 
             # Build eviction-protected weight view: sinks get +inf.
             n_sink_eff = min(state.n_sink, n_total)
@@ -164,7 +165,7 @@ def tova_update(
 
             evict_idx = int(mx.argmin(protected).item())
             keep_indices = [j for j in range(n_total) if j != evict_idx]
-            keys_cat   = keys_cat[keep_indices]
+            keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
 
         state = TovaState(
@@ -193,12 +194,12 @@ def tova_fp16_bytes(state: TovaState) -> int:
     if state.keys is None:
         return 0
     n, D = state.keys.shape
-    return n * D * 2 * 2   # K + V, 2 bytes each
+    return n * D * 2 * 2  # K + V, 2 bytes each
 
 
 def full_tova_fp16_bytes(tokens_seen: int, head_dim: int) -> int:
     """Hypothetical fp16 K + V bytes if all ``tokens_seen`` were stored."""
-    return tokens_seen * head_dim * 2 * 2   # K + V, 2 bytes each
+    return tokens_seen * head_dim * 2 * 2  # K + V, 2 bytes each
 
 
 __all__ = [

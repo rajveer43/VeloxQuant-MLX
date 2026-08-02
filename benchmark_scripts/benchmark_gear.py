@@ -21,6 +21,7 @@ Usage::
     PYTHONPATH=. python benchmark_scripts/benchmark_gear.py
     PYTHONPATH=. python benchmark_scripts/benchmark_gear.py --seq 256 --heads 8 --dim 128
 """
+
 from __future__ import annotations
 
 import argparse
@@ -65,9 +66,7 @@ def run(seq: int, heads: int, dim: int, signal_rank: int) -> dict:
         {"name": "gear_4bit_r4_sp0.2", "bits": 4, "rank": 4, "sparse": 0.002},
     ]
     n_out = max(1, int(seq * dim * 0.003))
-    heads_data = [
-        _synth_head(seq, dim, signal_rank, n_out, seed=h) for h in range(heads)
-    ]
+    heads_data = [_synth_head(seq, dim, signal_rank, n_out, seed=h) for h in range(heads)]
     fp16_bytes = seq * dim * 2
 
     results = []
@@ -76,36 +75,52 @@ def run(seq: int, heads: int, dim: int, signal_rank: int) -> dict:
         err_base_sq = err_after_sq = 0.0
         t0 = time.perf_counter()
         for X in heads_data:
-            st = gear_compress(X, bits=cfg["bits"], rank=cfg["rank"],
-                               sparse_frac=cfg["sparse"], group_size=32)
+            st = gear_compress(
+                X, bits=cfg["bits"], rank=cfg["rank"], sparse_frac=cfg["sparse"], group_size=32
+            )
             rec = gear_reconstruct(st)
             base_rec = cachegen_quant_dequant(X, cfg["bits"], 32)
             mse_gear += _mse(rec, X)
             mse_base += _mse(base_rec, X)
             comp += gear_bytes(st)
             base += base_only_bytes(st)
-            err_base_sq += float(mx.sum((X.astype(mx.float32) - base_rec.astype(mx.float32)) ** 2).item())
-            err_after_sq += float(mx.sum((X.astype(mx.float32) - rec.astype(mx.float32)) ** 2).item())
+            err_base_sq += float(
+                mx.sum((X.astype(mx.float32) - base_rec.astype(mx.float32)) ** 2).item()
+            )
+            err_after_sq += float(
+                mx.sum((X.astype(mx.float32) - rec.astype(mx.float32)) ** 2).item()
+            )
         mx.eval()
         elapsed = time.perf_counter() - t0
 
-        results.append({
-            "config": cfg["name"],
-            "bits": cfg["bits"], "rank": cfg["rank"], "sparse_fraction": cfg["sparse"],
-            "mse_gear": mse_gear / heads,
-            "mse_base_only": mse_base / heads,
-            "mse_improvement_pct": round(100 * (1 - (mse_gear / mse_base)), 2) if mse_base else 0.0,
-            "stored_bytes_gear": int(comp),
-            "stored_bytes_base_only": int(base),
-            "stored_bytes_fp16": int(fp16_bytes * heads),
-            "effective_bits": round(16.0 * comp / (fp16_bytes * heads), 3),
-            "error_recovery_ratio": round(1 - err_after_sq / err_base_sq, 4) if err_base_sq else 0.0,
-            "compress_reconstruct_sec_per_head": round(elapsed / heads, 5),
-        })
+        results.append(
+            {
+                "config": cfg["name"],
+                "bits": cfg["bits"],
+                "rank": cfg["rank"],
+                "sparse_fraction": cfg["sparse"],
+                "mse_gear": mse_gear / heads,
+                "mse_base_only": mse_base / heads,
+                "mse_improvement_pct": round(100 * (1 - (mse_gear / mse_base)), 2)
+                if mse_base
+                else 0.0,
+                "stored_bytes_gear": int(comp),
+                "stored_bytes_base_only": int(base),
+                "stored_bytes_fp16": int(fp16_bytes * heads),
+                "effective_bits": round(16.0 * comp / (fp16_bytes * heads), 3),
+                "error_recovery_ratio": round(1 - err_after_sq / err_base_sq, 4)
+                if err_base_sq
+                else 0.0,
+                "compress_reconstruct_sec_per_head": round(elapsed / heads, 5),
+            }
+        )
     return {
         "harness": "offline-synthetic (no model loaded)",
         "platform": platform.platform(),
-        "seq": seq, "heads": heads, "dim": dim, "signal_rank": signal_rank,
+        "seq": seq,
+        "heads": heads,
+        "dim": dim,
+        "signal_rank": signal_rank,
         "results": results,
     }
 

@@ -1,4 +1,5 @@
 """Mac chip + RAM method recommender (pure heuristics, no MLX required)."""
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -59,15 +60,13 @@ def estimate_kv_fp16_mb(
 ) -> float:
     """Full K+V fp16 cache size in megabytes."""
     bytes_ = 2 * n_layers * n_kv_heads * head_dim * seq_len * 2
-    return bytes_ / (1024 ** 2)
+    return bytes_ / (1024**2)
 
 
 def recommend(req: RecommendRequest) -> RecommendResult:
     """Return a transparent method recommendation for Apple Silicon."""
     if req.ram_gb not in ALLOWED_RAM_GB:
-        raise ValueError(
-            f"ram_gb must be one of {ALLOWED_RAM_GB}, got {req.ram_gb}"
-        )
+        raise ValueError(f"ram_gb must be one of {ALLOWED_RAM_GB}, got {req.ram_gb}")
     if req.seq_len < 1:
         raise ValueError("seq_len must be >= 1")
 
@@ -82,9 +81,7 @@ def recommend(req: RecommendRequest) -> RecommendResult:
             "Prefer a smaller model, eviction, or full-KV compression."
         )
 
-    kv_fp16 = estimate_kv_fp16_mb(
-        req.n_layers, req.n_kv_heads, req.head_dim, req.seq_len
-    )
+    kv_fp16 = estimate_kv_fp16_mb(req.n_layers, req.n_kv_heads, req.head_dim, req.seq_len)
 
     # Tiny-model Metal overhead warning (chip generation does not remove this)
     if req.model_class == "1B":

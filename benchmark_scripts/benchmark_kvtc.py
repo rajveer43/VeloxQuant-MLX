@@ -52,6 +52,7 @@ Usage
 
 Prints tables and saves a JSON summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -78,11 +79,11 @@ from veloxquant_mlx.quantizers.kvtc import (
 
 # ── sweep configuration ──────────────────────────────────────────────────────
 SEQ_LENS = [128, 256]
-BIT_BUDGETS = [64, 128]        # total bits across all min(S, D) components
+BIT_BUDGETS = [64, 128]  # total bits across all min(S, D) components
 GEOMETRIES = ["skewed_variance", "flat"]
 HEAD_DIM = 32
-R_TRUE = 6                     # planted rank for skewed_variance geometry
-DATA_SEEDS = [0, 1, 2, 3, 4]    # average over data realizations (no RNG in method)
+R_TRUE = 6  # planted rank for skewed_variance geometry
+DATA_SEEDS = [0, 1, 2, 3, 4]  # average over data realizations (no RNG in method)
 SEED = 13
 
 
@@ -139,7 +140,9 @@ def _fixed_uniform_reconstruction(x: mx.array, total_bit_budget: int) -> mx.arra
     return x_hat.astype(mx.float16)
 
 
-def _svdq_fixed_split_reconstruction(x: mx.array, total_bit_budget: int, hi_fraction=0.25) -> mx.array:
+def _svdq_fixed_split_reconstruction(
+    x: mx.array, total_bit_budget: int, hi_fraction=0.25
+) -> mx.array:
     """SVDq-style fixed top-25%/75% split at the SAME matched total bit
     budget (hi_bit = 2 * lo_bit, SVDq's ratio, chosen as the largest integer
     pair that fits the budget without exceeding it).
@@ -226,14 +229,20 @@ def _run_once(S: int, budget: int, geometry: str, seed: int) -> dict:
 
 
 def main() -> None:
-    print("KVTC-adapted local-PCA + DP-optimal bit allocation + entropy coding — offline synthetic benchmark")
+    print(
+        "KVTC-adapted local-PCA + DP-optimal bit allocation + entropy coding — offline synthetic benchmark"
+    )
     print(f"  head_dim={HEAD_DIM}  r_true={R_TRUE}  data_seeds={DATA_SEEDS}")
     print("  (mse = reconstruction MSE at matched total bit budget; lower = better)")
     print("  (cos = reconstruction cosine similarity; higher = better)")
-    print("  (entropy_coding_gain = pre_entropy_bytes / kvtc_fp16_bytes; realized, not Shannon bound)")
+    print(
+        "  (entropy_coding_gain = pre_entropy_bytes / kvtc_fp16_bytes; realized, not Shannon bound)"
+    )
     print()
-    header = (f"{'seq':>4} {'budget':>6} {'geometry':>16}  {'mse_kvtc':>10}  "
-              f"{'mse_uniform':>11}  {'mse_split':>10}  {'cos_kvtc':>9}  {'ent_gain':>9}")
+    header = (
+        f"{'seq':>4} {'budget':>6} {'geometry':>16}  {'mse_kvtc':>10}  "
+        f"{'mse_uniform':>11}  {'mse_split':>10}  {'cos_kvtc':>9}  {'ent_gain':>9}"
+    )
     print(header)
     print("-" * len(header))
 
@@ -241,10 +250,12 @@ def main() -> None:
     for S, budget, geometry in product(SEQ_LENS, BIT_BUDGETS, GEOMETRIES):
         row = _run_once(S, budget, geometry, seed=SEED + S)
         results.append(row)
-        print(f"{row['seq_len']:>4} {row['budget']:>6} {row['geometry']:>16}  "
-              f"{row['mse_kvtc']:>10.6f}  {row['mse_fixed_uniform']:>11.6f}  "
-              f"{row['mse_svdq_fixed_split']:>10.6f}  {row['cos_kvtc']:>9.5f}  "
-              f"{row['entropy_coding_gain']:>9.4f}")
+        print(
+            f"{row['seq_len']:>4} {row['budget']:>6} {row['geometry']:>16}  "
+            f"{row['mse_kvtc']:>10.6f}  {row['mse_fixed_uniform']:>11.6f}  "
+            f"{row['mse_svdq_fixed_split']:>10.6f}  {row['cos_kvtc']:>9.5f}  "
+            f"{row['entropy_coding_gain']:>9.4f}"
+        )
 
     out_path = Path(__file__).parent.parent / "figures" / "kvtc" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
@@ -257,8 +268,10 @@ def main() -> None:
         split_mse = float(np.mean([r["mse_svdq_fixed_split"] for r in rows]))
         ent_gain = float(np.mean([r["entropy_coding_gain"] for r in rows]))
         print(f"\nSummary ({geom}):")
-        print(f"  mean MSE — KVTC(DP): {kvtc_mse:.6f}   fixed-uniform: {uni_mse:.6f}   "
-              f"SVDq-fixed-split: {split_mse:.6f}   entropy-coding gain: {ent_gain:.4f}")
+        print(
+            f"  mean MSE — KVTC(DP): {kvtc_mse:.6f}   fixed-uniform: {uni_mse:.6f}   "
+            f"SVDq-fixed-split: {split_mse:.6f}   entropy-coding gain: {ent_gain:.4f}"
+        )
 
     print("\n  (honest reading: the clean, defensible observable is RECONSTRUCTION MSE/COSINE")
     print("   AT A MATCHED TOTAL BIT BUDGET. Under skewed_variance (a planted low-rank-ish")

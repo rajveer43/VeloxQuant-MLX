@@ -48,13 +48,9 @@ class CodebookFactory:
         from veloxquant_mlx.codebooks.scalar_codebook import ScalarCodebook
 
         if b < 1 or b > 8:
-            raise QuantizerConfigError(
-                f"CodebookFactory: b must be in [1, 8], got {b}"
-            )
+            raise QuantizerConfigError(f"CodebookFactory: b must be in [1, 8], got {b}")
         if d < 1:
-            raise QuantizerConfigError(
-                f"CodebookFactory: d must be >= 1, got {d}"
-            )
+            raise QuantizerConfigError(f"CodebookFactory: d must be >= 1, got {d}")
 
         # Map distribution to registry key + constructor args
         if distribution == "gaussian":
@@ -65,6 +61,7 @@ class CodebookFactory:
             strategy = CodebookRegistry.get(strategy_key)()
         elif distribution == "polar_level":
             from veloxquant_mlx.codebooks.strategies import PolarAngleSamplingStrategy
+
             strategy = PolarAngleSamplingStrategy(level=polar_level)
         elif distribution == "uniform":
             strategy_key = "uniform"

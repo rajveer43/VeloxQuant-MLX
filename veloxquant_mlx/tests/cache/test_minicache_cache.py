@@ -5,6 +5,7 @@ per-layer magnitudes, retaining high-divergence token pairs. These tests cover
 role assignment via the builder, the shared-coordinator merge path, the
 retention set, byte accounting, and the degenerate (no-coordinator) passthrough.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -50,8 +51,7 @@ def _kv(S, H=4, D=64, seed=0):
 
 
 def _build(n=8, **cfg):
-    base = dict(method="minicache", head_dim=64, minicache_start_frac=0.5,
-                minicache_group_size=2)
+    base = dict(method="minicache", head_dim=64, minicache_start_frac=0.5, minicache_group_size=2)
     base.update(cfg)
     return KVCacheBuilder.for_model(_Model(n), KVCacheConfig(**base))
 
@@ -60,10 +60,11 @@ def _build(n=8, **cfg):
 # Role assignment
 # ------------------------------------------------------------------
 
+
 def test_factory_degenerate_is_primary() -> None:
     c = KVCacheFactory.create(KVCacheConfig(method="minicache", head_dim=64))
     assert isinstance(c, MiniCacheKVCache)
-    assert c.role == "primary"   # no coordinator → degenerate primary
+    assert c.role == "primary"  # no coordinator → degenerate primary
 
 
 def test_for_model_assigns_primary_and_merge() -> None:
@@ -85,6 +86,7 @@ def test_early_layers_never_merged() -> None:
 # Shapes through a forward pass (primaries before merges)
 # ------------------------------------------------------------------
 
+
 def test_forward_pass_shapes_preserved() -> None:
     caches = _build(8)
     K, V = _kv(32)
@@ -98,6 +100,7 @@ def test_forward_pass_shapes_preserved() -> None:
 # ------------------------------------------------------------------
 # Merge quality: similar layers reconstruct well
 # ------------------------------------------------------------------
+
 
 def test_merge_layer_reconstructs_similar_primary() -> None:
     """When primary and merge layers are near-identical, the merge reconstructs
@@ -114,7 +117,9 @@ def test_merge_layer_reconstructs_similar_primary() -> None:
     rng = np.random.default_rng(0)
     base = rng.standard_normal((1, 4, 16, 64)).astype(np.float32)
     Kp = mx.array(base.astype(np.float16))
-    Km = mx.array((base + rng.standard_normal(base.shape).astype(np.float32) * 0.02).astype(np.float16))
+    Km = mx.array(
+        (base + rng.standard_normal(base.shape).astype(np.float32) * 0.02).astype(np.float16)
+    )
     V = mx.zeros((1, 4, 16, 64), dtype=mx.float16)
 
     primary.update_and_fetch(Kp, V)
@@ -127,6 +132,7 @@ def test_merge_layer_reconstructs_similar_primary() -> None:
 # ------------------------------------------------------------------
 # Retention: dissimilar token pairs kept unmerged
 # ------------------------------------------------------------------
+
 
 def test_dissimilar_tokens_retained() -> None:
     caches = _build(4, minicache_start_frac=0.0, minicache_retention_threshold=0.95)
@@ -155,6 +161,7 @@ def test_dissimilar_tokens_retained() -> None:
 # Byte accounting: merge layer compresses
 # ------------------------------------------------------------------
 
+
 def test_merge_layer_compresses() -> None:
     caches = _build(8)
     K, V = _kv(32, seed=2)
@@ -179,6 +186,7 @@ def test_n_retained_plus_merged_equals_total() -> None:
 # Degenerate passthrough is lossless
 # ------------------------------------------------------------------
 
+
 def test_degenerate_passthrough_lossless() -> None:
     c = KVCacheFactory.create(KVCacheConfig(method="minicache", head_dim=64))
     K, V = _kv(16, seed=5)
@@ -190,6 +198,7 @@ def test_degenerate_passthrough_lossless() -> None:
 # ------------------------------------------------------------------
 # Coordinator
 # ------------------------------------------------------------------
+
 
 def test_coordinator_max_ctx_guard() -> None:
     coord = MiniCacheCoordinator(max_ctx=8)

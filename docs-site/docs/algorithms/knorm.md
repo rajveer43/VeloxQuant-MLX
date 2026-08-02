@@ -56,10 +56,10 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="knorm",
     head_dim=128,
-    knorm_budget=512,   # max tokens kept (incl. sinks)
-    knorm_n_sink=4,     # leading positions never evicted
-    knorm_recent=0,     # trailing protected window (0 = paper-faithful)
-    knorm_keep="low",   # "low" = paper finding; "high" = inverted ablation
+    knorm_budget=512,  # max tokens kept (incl. sinks)
+    knorm_n_sink=4,  # leading positions never evicted
+    knorm_recent=0,  # trailing protected window (0 = paper-faithful)
+    knorm_keep="low",  # "low" = paper finding; "high" = inverted ablation
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

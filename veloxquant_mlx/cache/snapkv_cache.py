@@ -27,6 +27,7 @@ Byte accounting:
     eviction_ratio                           — full_fp16 / kept_fp16 (> 1 = savings)
     tokens_kept / tokens_total              — diagnostic token counters
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -74,12 +75,11 @@ class SnapKVKVCache(_MLXKVCache):
         self._tokens_total = 0
 
     # ------------------------------------------------------------------
-    def _evict_head(
-        self, keys: mx.array, values: mx.array
-    ) -> tuple[mx.array, mx.array, int]:
+    def _evict_head(self, keys: mx.array, values: mx.array) -> tuple[mx.array, mx.array, int]:
         """Evict ``[S, D]`` K/V for one head → ``([n_kept, D], [n_kept, D], n_kept)``."""
         state = snapkv_compress(
-            keys, values,
+            keys,
+            values,
             budget=self._budget,
             obs_window=self._obs_window,
             n_sink=self._n_sink,

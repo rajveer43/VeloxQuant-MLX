@@ -6,6 +6,7 @@ AMC-adapted (arXiv:2607.10109, no verified venue) assigns each token a tier
 masking + quantization. Unlike every eviction method in this repo, no token
 is ever dropped. All data is synthetic.
 """
+
 from __future__ import annotations
 
 import math
@@ -41,6 +42,7 @@ def _mat(rows, seed=0):
 # Saliency — Eq. 1-2
 # ---------------------------------------------------------------------------
 
+
 def test_saliency_matches_l1_norm_definition() -> None:
     x = mx.array(np.array([[1.0, -1.0, 1.0, -1.0], [0.1, 0.1, 0.1, 0.1]], dtype=np.float32))
     s = amc_saliency(x)
@@ -59,11 +61,11 @@ def test_query_aware_saliency_downweights_high_magnitude_irrelevant_tokens() -> 
     # Token 1: moderate magnitude, key parallel to query (relevant).
     d = 8
     x = np.zeros((2, d), dtype=np.float32)
-    x[0, :] = 0.9   # high |x| (within [0, 1] so clamping doesn't erase the gap)
-    x[1, :] = 0.3   # moderate |x|
+    x[0, :] = 0.9  # high |x| (within [0, 1] so clamping doesn't erase the gap)
+    x[1, :] = 0.3  # moderate |x|
     keys = np.zeros((2, d), dtype=np.float32)
-    keys[0, 0] = 1.0            # orthogonal-ish to query below
-    keys[1, :] = 1.0            # parallel to query
+    keys[0, 0] = 1.0  # orthogonal-ish to query below
+    keys[1, :] = 1.0  # parallel to query
     query = np.ones(d, dtype=np.float32)
 
     x_mx = mx.array(x)
@@ -95,6 +97,7 @@ def test_query_aware_saliency_guards_zero_norm_key() -> None:
 # Tier assignment
 # ---------------------------------------------------------------------------
 
+
 def test_tier_assignment_respects_percentiles() -> None:
     n = 1000
     rng = np.random.default_rng(9)
@@ -110,7 +113,9 @@ def test_tier_assignment_respects_percentiles() -> None:
 
 def test_high_tier_tokens_survive_full_precision() -> None:
     # Construct clearly separated saliency values.
-    saliency = mx.array(np.array([0.9, 0.85, 0.5, 0.5, 0.5, 0.1, 0.05, 0.05, 0.05, 0.05], dtype=np.float32))
+    saliency = mx.array(
+        np.array([0.9, 0.85, 0.5, 0.5, 0.5, 0.1, 0.05, 0.05, 0.05, 0.05], dtype=np.float32)
+    )
     tiers = amc_assign_tiers(saliency, k_high=0.20, k_mid=0.30)
     # Top-2 (indices 0, 1) must be HIGH.
     assert tiers[0] == HIGH
@@ -136,6 +141,7 @@ def test_tier_assignment_single_token() -> None:
 # ---------------------------------------------------------------------------
 # Rank masking — Eq. 6
 # ---------------------------------------------------------------------------
+
 
 def test_rank_mask_zeros_tail_channels() -> None:
     x = mx.array(np.ones((2, 8), dtype=np.float32))
@@ -167,6 +173,7 @@ def test_rank_mask_zero_rank_zeros_everything() -> None:
 # Quantization — Eq. 7
 # ---------------------------------------------------------------------------
 
+
 def test_quantize_tier_16bit_is_passthrough_fp16() -> None:
     x = mx.array(np.array([[1.5, -2.5]], dtype=np.float32))
     out = amc_quantize_tier(x, bits=16)
@@ -193,12 +200,16 @@ def test_quantize_tier_output_shape_preserved() -> None:
 # Closed-loop adaptive thresholds — Eq. 4-5
 # ---------------------------------------------------------------------------
 
+
 def test_adaptive_thresholds_widen_on_high_variance_sequences() -> None:
     state = init_amc_threshold_state(window_size=32, calib_variance=0.01)
     high_var_saliency = mx.array(np.array([0.0, 1.0, 0.0, 1.0, 0.0, 1.0], dtype=np.float32))
     tau_h, tau_l, state = amc_adaptive_thresholds(
-        tau_high_base=0.8, tau_low_base=0.5, state=state,
-        new_saliency_values=high_var_saliency, gamma=0.1,
+        tau_high_base=0.8,
+        tau_low_base=0.5,
+        state=state,
+        new_saliency_values=high_var_saliency,
+        gamma=0.1,
     )
     # High variance vs. tiny calib variance -> ratio >> 1 -> ln(ratio) > 0
     # -> thresholds depressed (lower than base).
@@ -210,8 +221,11 @@ def test_adaptive_thresholds_narrow_on_low_variance_sequences() -> None:
     state = init_amc_threshold_state(window_size=32, calib_variance=1.0)
     low_var_saliency = mx.array(np.array([0.5, 0.5001, 0.4999, 0.5, 0.5, 0.5001], dtype=np.float32))
     tau_h, tau_l, state = amc_adaptive_thresholds(
-        tau_high_base=0.8, tau_low_base=0.5, state=state,
-        new_saliency_values=low_var_saliency, gamma=0.1,
+        tau_high_base=0.8,
+        tau_low_base=0.5,
+        state=state,
+        new_saliency_values=low_var_saliency,
+        gamma=0.1,
     )
     # Very low variance vs. calib variance 1.0 -> ratio << 1 -> ln(ratio) < 0
     # -> thresholds raised (higher than base).
@@ -223,8 +237,11 @@ def test_adaptive_thresholds_guard_degenerate_zero_variance() -> None:
     state = init_amc_threshold_state(window_size=8, calib_variance=1e-10)
     zero_var = mx.array(np.array([0.5, 0.5, 0.5], dtype=np.float32))
     tau_h, tau_l, state = amc_adaptive_thresholds(
-        tau_high_base=0.8, tau_low_base=0.5, state=state,
-        new_saliency_values=zero_var, gamma=0.1,
+        tau_high_base=0.8,
+        tau_low_base=0.5,
+        state=state,
+        new_saliency_values=zero_var,
+        gamma=0.1,
     )
     assert not math.isnan(tau_h)
     assert not math.isinf(tau_h)
@@ -236,8 +253,11 @@ def test_adaptive_thresholds_single_value_no_crash() -> None:
     state = init_amc_threshold_state(window_size=8, calib_variance=1.0)
     single = mx.array(np.array([0.5], dtype=np.float32))
     tau_h, tau_l, state = amc_adaptive_thresholds(
-        tau_high_base=0.8, tau_low_base=0.5, state=state,
-        new_saliency_values=single, gamma=0.1,
+        tau_high_base=0.8,
+        tau_low_base=0.5,
+        state=state,
+        new_saliency_values=single,
+        gamma=0.1,
     )
     assert tau_h == pytest.approx(0.8)  # < 2 samples in window -> no adjustment yet
     assert tau_l == pytest.approx(0.5)
@@ -246,6 +266,7 @@ def test_adaptive_thresholds_single_value_no_crash() -> None:
 # ---------------------------------------------------------------------------
 # Bit-packing (Low tier, dsa.BitPackBuffer)
 # ---------------------------------------------------------------------------
+
 
 def test_bitpack_roundtrip_low_tier() -> None:
     from veloxquant_mlx.dsa.bit_pack import BitPackBuffer
@@ -262,6 +283,7 @@ def test_bitpack_roundtrip_low_tier() -> None:
 # ---------------------------------------------------------------------------
 # Byte accounting
 # ---------------------------------------------------------------------------
+
 
 def test_amc_fp16_bytes_all_high_tier_equals_full_rank() -> None:
     # All-HIGH tier at D=128 uses full rank 128 @ 16-bit == fp16 full cost.

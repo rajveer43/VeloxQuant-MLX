@@ -1,4 +1,5 @@
 """CLI: recommend a KV-cache method for a Mac chip + RAM + model size."""
+
 from __future__ import annotations
 
 import argparse
@@ -106,7 +107,9 @@ def main(argv: list[str] | None = None) -> None:
     print(f"  knobs={rec['knobs']}")
     print(f"  key_accounting_ratio≈{rec['key_accounting_ratio']}x")
     print(f"  resident_savings_likely={rec['resident_savings_likely']}")
-    print(f"  kv_fp16_mb≈{rec['kv_fp16_mb']}  kv_compressed_mb_est≈{rec['kv_compressed_mb_estimate']}")
+    print(
+        f"  kv_fp16_mb≈{rec['kv_fp16_mb']}  kv_compressed_mb_est≈{rec['kv_compressed_mb_estimate']}"
+    )
     print(f"  rationale: {rec['rationale']}")
     if rec["warnings"]:
         print("  warnings:")

@@ -3,6 +3,7 @@
 Covers the pure maths in ``veloxquant_mlx.quantizers.palu``: head grouping,
 group-head SVD, projection, and reconstruction — independent of the cache.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -21,6 +22,7 @@ from veloxquant_mlx.quantizers.palu import (
 # ------------------------------------------------------------------
 # head_group_bounds
 # ------------------------------------------------------------------
+
 
 def test_head_group_bounds_even() -> None:
     assert head_group_bounds(8, 4) == [(0, 2), (2, 4), (4, 6), (6, 8)]
@@ -52,6 +54,7 @@ def test_head_group_bounds_cover_all_heads() -> None:
 # ------------------------------------------------------------------
 # group_head_svd
 # ------------------------------------------------------------------
+
 
 def test_group_head_svd_shapes_explicit_rank() -> None:
     rng = np.random.default_rng(0)
@@ -94,6 +97,7 @@ def test_group_head_svd_recovers_low_rank_subspace() -> None:
 # project / reconstruct round-trip
 # ------------------------------------------------------------------
 
+
 def test_project_reconstruct_roundtrip_shapes() -> None:
     rng = np.random.default_rng(3)
     x = mx.array(rng.standard_normal((50, 64)).astype(np.float32))
@@ -108,6 +112,7 @@ def test_project_reconstruct_roundtrip_shapes() -> None:
 # ------------------------------------------------------------------
 # quantize_latent
 # ------------------------------------------------------------------
+
 
 def test_quantize_latent_runs_and_shapes() -> None:
     rng = np.random.default_rng(4)

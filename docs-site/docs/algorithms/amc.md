@@ -120,11 +120,11 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="amc",
     head_dim=128,
-    amc_k_high=0.20,              # top percentile -> High tier (rank 128, 16-bit)
-    amc_k_mid=0.30,                # next percentile -> Mid tier (rank 43, 8-bit)
+    amc_k_high=0.20,  # top percentile -> High tier (rank 128, 16-bit)
+    amc_k_mid=0.30,  # next percentile -> Mid tier (rank 43, 8-bit)
     # remaining 50% -> Low tier (rank 8, 4-bit)
     amc_use_query_saliency=False,  # opt-in: Eq. 3 query-aware blend
-    amc_adaptive_thresholds=False, # opt-in: Eq. 4-5 closed-loop threshold adjustment
+    amc_adaptive_thresholds=False,  # opt-in: Eq. 4-5 closed-loop threshold adjustment
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches
@@ -137,11 +137,11 @@ config = KVCacheConfig(
     method="amc",
     head_dim=128,
     amc_use_query_saliency=True,
-    amc_query_alpha=0.5,            # Eq. 3 balance coefficient
+    amc_query_alpha=0.5,  # Eq. 3 balance coefficient
     amc_adaptive_thresholds=True,
-    amc_threshold_window=64,        # trailing window for variance tracking
-    amc_gamma=0.1,                  # threshold attenuation factor
-    amc_calib_variance=0.05,        # REQUIRED when amc_adaptive_thresholds=True
+    amc_threshold_window=64,  # trailing window for variance tracking
+    amc_gamma=0.1,  # threshold attenuation factor
+    amc_calib_variance=0.05,  # REQUIRED when amc_adaptive_thresholds=True
 )
 ```
 

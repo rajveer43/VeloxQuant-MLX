@@ -29,6 +29,7 @@ What is NOT implemented (documented):
     - Offline calibration-set level fitting (we fit online; zero calibration).
     - Attention-aware sensitivity weighting (needs attention scores).
 """
+
 from __future__ import annotations
 
 import math
@@ -67,8 +68,8 @@ class KVQuantKVCache(_MLXKVCache):
 
         # Frozen levels fit at prefill: keys per-channel [H, L, D],
         # values per-token use levels [H, L, D] in transposed space.
-        self._key_levels: Optional[list] = None     # list over heads of [L, D]
-        self._value_levels: Optional[list] = None    # list over heads of [L, D] (channel-as-sample)
+        self._key_levels: Optional[list] = None  # list over heads of [L, D]
+        self._value_levels: Optional[list] = None  # list over heads of [L, D] (channel-as-sample)
         self._n_tokens: int = 0
         self._outlier_count: int = 0
 
@@ -94,7 +95,7 @@ class KVQuantKVCache(_MLXKVCache):
 
     def _quant_values_head(self, v_sd: mx.array, levels: Optional[mx.array]):
         """Values: per-token NUQ on [S, D] → transpose so tokens are columns."""
-        v_ds = v_sd.T                       # [D, S]: now each column is one token
+        v_ds = v_sd.T  # [D, S]: now each column is one token
         ds = split_dense_sparse(v_ds, self._outlier_fraction)
         if levels is None:
             levels = fit_nuq_levels(ds.inliers, self._bits, self._lloyd_iters)
@@ -102,7 +103,7 @@ class KVQuantKVCache(_MLXKVCache):
         recon = dequant_nuq(codes, levels).astype(mx.float32)
         recon = mx.where(ds.outlier_mask, ds.outlier_vals, recon)
         self._outlier_count += int(mx.sum(ds.outlier_mask).item())
-        return recon.astype(mx.float16).T, levels   # back to [S, D]
+        return recon.astype(mx.float16).T, levels  # back to [S, D]
 
     def _apply(self, keys: mx.array, values: mx.array):
         B, H, S, D = keys.shape
@@ -110,12 +111,12 @@ class KVQuantKVCache(_MLXKVCache):
         # freeze. Values use per-token levels (one set per token) → inherently
         # re-fit every call; they are never frozen across steps.
         is_prefill = self._key_levels is None
-        refit_keys = (
-            is_prefill
-            or (self._refit_interval > 0 and self._n_tokens > 0
-                and (self._n_tokens % self._refit_interval == 0))
+        refit_keys = is_prefill or (
+            self._refit_interval > 0
+            and self._n_tokens > 0
+            and (self._n_tokens % self._refit_interval == 0)
         )
-        key_levels = None if refit_keys else self._key_levels   # list[H] of [L, D] or None
+        key_levels = None if refit_keys else self._key_levels  # list[H] of [L, D] or None
 
         k_out_b, v_out_b = [], []
         new_klev = [None] * H
@@ -123,19 +124,19 @@ class KVQuantKVCache(_MLXKVCache):
             k_h, v_h = [], []
             for h in range(H):
                 # Share frozen key levels across batch; fit once on (b==0) when refitting.
-                kl = (key_levels[h] if key_levels is not None
-                      else (new_klev[h] if b > 0 else None))
+                kl = key_levels[h] if key_levels is not None else (new_klev[h] if b > 0 else None)
                 kq, klev = self._quant_keys_head(keys[b, h], kl)
-                vq, vlev = self._quant_values_head(values[b, h], None)   # values: always fresh
+                vq, vlev = self._quant_values_head(values[b, h], None)  # values: always fresh
                 new_klev[h] = klev
                 last_vlev = vlev
-                k_h.append(kq); v_h.append(vq)
+                k_h.append(kq)
+                v_h.append(vq)
             k_out_b.append(mx.stack(k_h, axis=0))
             v_out_b.append(mx.stack(v_h, axis=0))
 
         if refit_keys:
             self._key_levels = new_klev
-        self._value_levels = [last_vlev]   # most-recent per-token levels (introspection)
+        self._value_levels = [last_vlev]  # most-recent per-token levels (introspection)
 
         return mx.stack(k_out_b, axis=0), mx.stack(v_out_b, axis=0)
 
@@ -154,8 +155,8 @@ class KVQuantKVCache(_MLXKVCache):
         # Codes: bits per element. Level table: L fp16 per channel (keys) / per
         # token (values). Outlier side-channel: fp16 value + ~index bits.
         code_bytes = math.ceil(S * D * self._bits / 8)
-        key_table_bytes = L * D * 2                  # per-channel table
-        val_table_bytes = L * S * 2                  # per-token table
+        key_table_bytes = L * D * 2  # per-channel table
+        val_table_bytes = L * S * 2  # per-token table
         idx_bits = max(1, math.ceil(math.log2(max(2, S * D))))
         n_out = max(0, int(round(S * D * self._outlier_fraction)))
         outlier_bytes = n_out * (2 + math.ceil(idx_bits / 8))

@@ -75,8 +75,8 @@ class CompositeQuantizer(Quantizer):
         """
         import mlx.core as mx
 
-        x_out = self._outlier_q.decode(ev.outlier_encoded)   # (batch, n_out)
-        x_in = self._inlier_q.decode(ev.inlier_encoded)      # (batch, n_in)
+        x_out = self._outlier_q.decode(ev.outlier_encoded)  # (batch, n_out)
+        x_in = self._inlier_q.decode(ev.inlier_encoded)  # (batch, n_in)
 
         batch = x_out.shape[0]
         out_np = np.zeros((batch, self._d), dtype=np.float32)

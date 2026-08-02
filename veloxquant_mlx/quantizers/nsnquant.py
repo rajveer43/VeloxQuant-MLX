@@ -46,6 +46,7 @@ rationale):
   * 4-bit double quantization of the NSN metadata — ``s1``/``s2``/``o`` are
     stored fp16 and counted honestly in the byte accounting.
 """
+
 from __future__ import annotations
 
 import math
@@ -66,6 +67,7 @@ _CODEBOOK_CACHE: dict[tuple[int, int, int, str], np.ndarray] = {}
 # ----------------------------------------------------------------------
 # NSN transform
 # ----------------------------------------------------------------------
+
 
 def nsn_transform(x: mx.array) -> tuple[mx.array, mx.array, mx.array, mx.array]:
     """Apply the Normalize-Shift-Normalize transform to a chunk of tokens.
@@ -103,22 +105,20 @@ def nsn_transform(x: mx.array) -> tuple[mx.array, mx.array, mx.array, mx.array]:
     )
 
 
-def nsn_inverse(
-    x_nsn: mx.array, s1: mx.array, o: mx.array, s2: mx.array
-) -> mx.array:
+def nsn_inverse(x_nsn: mx.array, s1: mx.array, o: mx.array, s2: mx.array) -> mx.array:
     """Restore a chunk from its NSN form: ``x_hat = s1 * (s2 * x_nsn + o)``.
 
     Exact (to fp16 metadata precision) when ``x_nsn`` is unquantized.
     """
-    return (
-        s1.astype(mx.float32)
-        * (s2.astype(mx.float32) * x_nsn.astype(mx.float32) + o.astype(mx.float32))
+    return s1.astype(mx.float32) * (
+        s2.astype(mx.float32) * x_nsn.astype(mx.float32) + o.astype(mx.float32)
     )
 
 
 # ----------------------------------------------------------------------
 # Universal codebook (offline, synthetic Gaussian — calibration-free)
 # ----------------------------------------------------------------------
+
 
 def build_universal_codebook(
     codebook_size: int = 256,
@@ -175,9 +175,7 @@ def build_universal_codebook(
         assign = np.empty(n_samples, dtype=np.int64)
         for start in range(0, n_samples, chunk):
             block = samples[start : start + chunk]
-            assign[start : start + block.shape[0]] = np.argmax(
-                block @ centroids.T, axis=1
-            )
+            assign[start : start + block.shape[0]] = np.argmax(block @ centroids.T, axis=1)
         # Mean of members, then re-project to the unit sphere (spherical
         # k-means update). Empty clusters are re-seeded deterministically.
         for c in range(codebook_size):
@@ -198,11 +196,11 @@ def build_universal_codebook(
 # Subvector VQ encode / decode
 # ----------------------------------------------------------------------
 
+
 def _check_subvector_dim(d: int, subvector_dim: int) -> None:
     if d % subvector_dim != 0:
         raise ValueError(
-            f"nsnquant: last dim {d} must be divisible by "
-            f"subvector_dim {subvector_dim}"
+            f"nsnquant: last dim {d} must be divisible by subvector_dim {subvector_dim}"
         )
 
 
@@ -241,9 +239,9 @@ def vq_encode(
         mags = mx.abs(sub)
         idx = mx.argmax(mags @ cb.T, axis=-1).astype(mx.uint8)
         pow2 = mx.array((1 << np.arange(sub_d, dtype=np.uint32)).astype(np.uint32))
-        signs = mx.sum(
-            (sub >= 0).astype(mx.uint32) * pow2, axis=-1
-        ).astype(mx.uint8 if sub_d <= 8 else mx.uint32)
+        signs = mx.sum((sub >= 0).astype(mx.uint32) * pow2, axis=-1).astype(
+            mx.uint8 if sub_d <= 8 else mx.uint32
+        )
         return {"idx": idx, "signs": signs, "d": d, "sub_d": sub_d, "bits": 2}
 
     idx = mx.argmax(sub @ cb.T, axis=-1).astype(mx.uint8)
@@ -264,9 +262,7 @@ def vq_decode(encoded: dict, codebook: np.ndarray) -> mx.array:
     sub_hat = cb[idx.astype(mx.int32)]  # (..., T, d/sub_d, sub_d)
     if bits == 2:
         pow2 = mx.array((1 << np.arange(sub_d, dtype=np.uint32)).astype(np.uint32))
-        sign_bits = (
-            encoded["signs"].astype(mx.uint32)[..., None] // pow2
-        ) % 2
+        sign_bits = (encoded["signs"].astype(mx.uint32)[..., None] // pow2) % 2
         sub_hat = sub_hat * (2.0 * sign_bits.astype(mx.float32) - 1.0)
 
     x_hat = sub_hat.reshape(sub_hat.shape[:-2] + (d,))
@@ -277,6 +273,7 @@ def vq_decode(encoded: dict, codebook: np.ndarray) -> mx.array:
 # ----------------------------------------------------------------------
 # Hadamard wrappers
 # ----------------------------------------------------------------------
+
 
 def hadamard_forward(x: mx.array) -> mx.array:
     """Plain (sign-free) normalized Hadamard rotation on the last axis.

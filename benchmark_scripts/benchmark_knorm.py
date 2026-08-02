@@ -29,6 +29,7 @@ Usage
 
 Prints tables and saves a JSON summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -48,13 +49,13 @@ if str(_repo_root) not in sys.path:
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
 # ── sweep configuration ──────────────────────────────────────────────────────
-SEQ_LENS   = [256, 512, 1024]
-BUDGETS    = [64, 128]
+SEQ_LENS = [256, 512, 1024]
+BUDGETS = [64, 128]
 GEOMETRIES = ["paper_like", "isotropic"]
-HEAD_DIM   = 64
-N_SINK     = 4
-N_PROBES   = 32
-SEED       = 7
+HEAD_DIM = 64
+N_SINK = 4
+N_PROBES = 32
+SEED = 7
 
 
 def _synthetic(S: int, geometry: str, seed: int, budget: int = 0):
@@ -116,10 +117,14 @@ def _run_cache(method_cfg: dict, k: np.ndarray, v: np.ndarray):
 def _random_evict(k: np.ndarray, v: np.ndarray, budget: int, seed: int):
     rng = np.random.default_rng(seed)
     S = k.shape[0]
-    keep = np.sort(np.concatenate([
-        np.arange(min(N_SINK, S)),
-        N_SINK + rng.choice(S - N_SINK, size=budget - N_SINK, replace=False),
-    ]))
+    keep = np.sort(
+        np.concatenate(
+            [
+                np.arange(min(N_SINK, S)),
+                N_SINK + rng.choice(S - N_SINK, size=budget - N_SINK, replace=False),
+            ]
+        )
+    )
     return mx.array(k[keep]), mx.array(v[keep])
 
 
@@ -129,26 +134,25 @@ def _run_once(S: int, budget: int, geometry: str, seed: int) -> dict:
     full_k, full_v = mx.array(k), mx.array(v)
 
     klo, vlo, ms_lo = _run_cache(
-        dict(method="knorm", knorm_budget=budget, knorm_n_sink=N_SINK,
-             knorm_keep="low"), k, v)
+        dict(method="knorm", knorm_budget=budget, knorm_n_sink=N_SINK, knorm_keep="low"), k, v
+    )
     khi, vhi, _ = _run_cache(
-        dict(method="knorm", knorm_budget=budget, knorm_n_sink=N_SINK,
-             knorm_keep="high"), k, v)
-    kh2o, vh2o, ms_h2o = _run_cache(
-        dict(method="h2o", h2o_budget=budget, h2o_n_sink=N_SINK), k, v)
+        dict(method="knorm", knorm_budget=budget, knorm_n_sink=N_SINK, knorm_keep="high"), k, v
+    )
+    kh2o, vh2o, ms_h2o = _run_cache(dict(method="h2o", h2o_budget=budget, h2o_n_sink=N_SINK), k, v)
     krnd, vrnd = _random_evict(k, v, budget, seed + 99)
 
     return {
-        "seq_len":            S,
-        "budget":             budget,
-        "geometry":           geometry,
-        "pert_keep_low":      round(_perturbation(qq, full_k, full_v, klo, vlo), 5),
-        "pert_keep_high":     round(_perturbation(qq, full_k, full_v, khi, vhi), 5),
-        "pert_random":        round(_perturbation(qq, full_k, full_v, krnd, vrnd), 5),
-        "pert_h2o":           round(_perturbation(qq, full_k, full_v, kh2o, vh2o), 5),
-        "compression_ratio":  round(S / budget, 2),
-        "knorm_ms":           round(ms_lo, 2),
-        "h2o_ms":             round(ms_h2o, 2),
+        "seq_len": S,
+        "budget": budget,
+        "geometry": geometry,
+        "pert_keep_low": round(_perturbation(qq, full_k, full_v, klo, vlo), 5),
+        "pert_keep_high": round(_perturbation(qq, full_k, full_v, khi, vhi), 5),
+        "pert_random": round(_perturbation(qq, full_k, full_v, krnd, vrnd), 5),
+        "pert_h2o": round(_perturbation(qq, full_k, full_v, kh2o, vh2o), 5),
+        "compression_ratio": round(S / budget, 2),
+        "knorm_ms": round(ms_lo, 2),
+        "h2o_ms": round(ms_h2o, 2),
     }
 
 
@@ -157,8 +161,10 @@ def main() -> None:
     print(f"  head_dim={HEAD_DIM}  n_sink={N_SINK}  probes={N_PROBES}")
     print("  (perturbation = 1 - cosine of probe attention output vs full cache; lower = better)")
     print()
-    header = (f"{'seq':>5}  {'budget':>6}  {'geometry':>10}  {'keep_low':>9}  "
-              f"{'keep_high':>9}  {'random':>8}  {'h2o':>8}  {'knorm_ms':>8}  {'h2o_ms':>8}")
+    header = (
+        f"{'seq':>5}  {'budget':>6}  {'geometry':>10}  {'keep_low':>9}  "
+        f"{'keep_high':>9}  {'random':>8}  {'h2o':>8}  {'knorm_ms':>8}  {'h2o_ms':>8}"
+    )
     print(header)
     print("-" * len(header))
 

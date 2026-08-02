@@ -13,6 +13,7 @@ centroids onto this constraint.
 Public API:
   CommVQQuantizer — encode / decode / estimate_inner_product
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -29,13 +30,16 @@ from veloxquant_mlx.core.registry import QuantizerRegistry
 # RoPE helpers (pure NumPy, used during EM training only)
 # ---------------------------------------------------------------------------
 
-def _rope_cos_sin_np(seq_len: int, head_dim: int, base: float = 10000.0) -> tuple[np.ndarray, np.ndarray]:
+
+def _rope_cos_sin_np(
+    seq_len: int, head_dim: int, base: float = 10000.0
+) -> tuple[np.ndarray, np.ndarray]:
     """Compute RoPE cos/sin tables [seq_len, head_dim//2] in float32."""
     half = head_dim // 2
     inv_freq = 1.0 / (base ** (np.arange(0, half, dtype=np.float32) / half))
     positions = np.arange(seq_len, dtype=np.float32)
-    angles = np.outer(positions, inv_freq)          # [seq_len, half]
-    return np.cos(angles), np.sin(angles)           # [seq_len, half]
+    angles = np.outer(positions, inv_freq)  # [seq_len, half]
+    return np.cos(angles), np.sin(angles)  # [seq_len, half]
 
 
 def _apply_rope_np(x: np.ndarray, cos: np.ndarray, sin: np.ndarray) -> np.ndarray:
@@ -51,6 +55,7 @@ def _apply_rope_np(x: np.ndarray, cos: np.ndarray, sin: np.ndarray) -> np.ndarra
 # ---------------------------------------------------------------------------
 # RoPE-commutativity projection (the key contribution of CommVQ)
 # ---------------------------------------------------------------------------
+
 
 def _project_commuting_np(centroids: np.ndarray) -> np.ndarray:
     """Project centroids onto the RoPE-commuting subspace.
@@ -110,7 +115,7 @@ def _project_commuting_np(centroids: np.ndarray) -> np.ndarray:
         # Only symmetrize if both have the same sign (typical for trained
         # centroids); otherwise leave them to avoid destroying structure.
         same_sign = (a * b) >= 0
-        c[:, 2 * i]     = np.where(same_sign, mean_val, a)
+        c[:, 2 * i] = np.where(same_sign, mean_val, a)
         c[:, 2 * i + 1] = np.where(same_sign, mean_val, b)
     return c
 
@@ -119,8 +124,9 @@ def _project_commuting_np(centroids: np.ndarray) -> np.ndarray:
 # EM training for one sub-codebook
 # ---------------------------------------------------------------------------
 
+
 def _train_sub_codebook(
-    data: np.ndarray,       # [N, sub_dim] float32, pre-RoPE sub-vectors
+    data: np.ndarray,  # [N, sub_dim] float32, pre-RoPE sub-vectors
     n_centroids: int,
     n_iters: int = 50,
     seed: int = 42,
@@ -146,7 +152,7 @@ def _train_sub_codebook(
         for start in range(0, N, chunk):
             end = min(start + chunk, N)
             diff = data[start:end, None, :] - centroids[None, :, :]  # [c, K, sub_dim]
-            dists = np.sum(diff ** 2, axis=-1)                         # [c, K]
+            dists = np.sum(diff**2, axis=-1)  # [c, K]
             assignments[start:end] = np.argmin(dists, axis=-1)
 
         # M-step: update centroids as mean of assigned vectors
@@ -174,6 +180,7 @@ def _train_sub_codebook(
 # CommVQ Quantizer
 # ---------------------------------------------------------------------------
 
+
 @QuantizerRegistry.register("comm_vq")
 class CommVQQuantizer(Quantizer):
     """RoPE-commutative additive codebook VQ for KV cache keys.
@@ -199,7 +206,7 @@ class CommVQQuantizer(Quantizer):
         d: int,
         b: int = 8,
         n_codebooks: int = 4,
-        m: Optional[int] = None,        # unused, kept for QuantizerFactory compat
+        m: Optional[int] = None,  # unused, kept for QuantizerFactory compat
         seed: int = 42,
         store: Any = None,
         rope_base: float = 10000.0,
@@ -216,7 +223,7 @@ class CommVQQuantizer(Quantizer):
         self._d = d
         self._b = b
         self._n_cb = n_codebooks
-        self._cb_size = 1 << b          # 2^b
+        self._cb_size = 1 << b  # 2^b
         self._sub_dim = d // n_codebooks
         self._seed = seed
         self._rope_base = rope_base
@@ -264,7 +271,7 @@ class CommVQQuantizer(Quantizer):
 
         for cb_i in range(self._n_cb):
             start = cb_i * self._sub_dim
-            end   = start + self._sub_dim
+            end = start + self._sub_dim
             sub_data = residual[:, start:end]
 
             cb = _train_sub_codebook(
@@ -277,8 +284,8 @@ class CommVQQuantizer(Quantizer):
             codebooks[cb_i] = cb
 
             # Compute residual for next stage
-            diffs = sub_data[:, None, :] - cb[None, :, :]         # [N, K, sub_dim]
-            nearest = np.argmin(np.sum(diffs ** 2, axis=-1), axis=-1)  # [N]
+            diffs = sub_data[:, None, :] - cb[None, :, :]  # [N, K, sub_dim]
+            nearest = np.argmin(np.sum(diffs**2, axis=-1), axis=-1)  # [N]
             residual[:, start:end] -= cb[nearest]
 
         self._codebooks = codebooks
@@ -300,11 +307,9 @@ class CommVQQuantizer(Quantizer):
     def _get_rope_tables(self, seq_len: int) -> tuple[mx.array, mx.array]:
         """Return (cos, sin) tables [seq_len, d//2] fp16."""
         half = self._d // 2
-        inv_freq = 1.0 / (self._rope_base ** (
-            mx.arange(0, half, dtype=mx.float32) / half
-        ))
+        inv_freq = 1.0 / (self._rope_base ** (mx.arange(0, half, dtype=mx.float32) / half))
         positions = mx.arange(seq_len, dtype=mx.float32)
-        angles = mx.outer(positions, inv_freq)           # [seq_len, half]
+        angles = mx.outer(positions, inv_freq)  # [seq_len, half]
         cos = mx.cos(angles).astype(mx.float16)
         sin = mx.sin(angles).astype(mx.float16)
         mx.eval(cos, sin)
@@ -320,29 +325,32 @@ class CommVQQuantizer(Quantizer):
         N = x.shape[0]
         indices = mx.zeros((N, self._n_cb), dtype=mx.uint8)
         residual = x.astype(mx.float32)
-        cb_mx = self._codebooks_mx.astype(mx.float32)   # [n_cb, K, sub_dim]
+        cb_mx = self._codebooks_mx.astype(mx.float32)  # [n_cb, K, sub_dim]
 
         idx_list = []
         for cb_i in range(self._n_cb):
             start = cb_i * self._sub_dim
-            end   = start + self._sub_dim
-            sub_r = residual[:, start:end]               # [N, sub_dim]
-            cb    = cb_mx[cb_i]                          # [K, sub_dim]
+            end = start + self._sub_dim
+            sub_r = residual[:, start:end]  # [N, sub_dim]
+            cb = cb_mx[cb_i]  # [K, sub_dim]
             # [N, K] distances
-            diff  = sub_r[:, None, :] - cb[None, :, :]  # [N, K, sub_dim]
-            dists = mx.sum(diff * diff, axis=-1)         # [N, K]
-            best  = mx.argmin(dists, axis=-1)            # [N]
+            diff = sub_r[:, None, :] - cb[None, :, :]  # [N, K, sub_dim]
+            dists = mx.sum(diff * diff, axis=-1)  # [N, K]
+            best = mx.argmin(dists, axis=-1)  # [N]
             idx_list.append(best.astype(mx.uint8))
 
             # Update residual
-            recon = mx.take(cb, best, axis=0)            # [N, sub_dim]
-            residual = mx.concatenate([
-                residual[:, :start],
-                residual[:, start:end] - recon,
-                residual[:, end:],
-            ], axis=1)
+            recon = mx.take(cb, best, axis=0)  # [N, sub_dim]
+            residual = mx.concatenate(
+                [
+                    residual[:, :start],
+                    residual[:, start:end] - recon,
+                    residual[:, end:],
+                ],
+                axis=1,
+            )
 
-        indices = mx.stack(idx_list, axis=1)             # [N, n_cb]
+        indices = mx.stack(idx_list, axis=1)  # [N, n_cb]
         mx.eval(indices)
         return indices
 
@@ -351,26 +359,26 @@ class CommVQQuantizer(Quantizer):
         self._require_trained()
         N = indices.shape[0]
         parts = []
-        cb_mx = self._codebooks_mx                       # [n_cb, K, sub_dim] fp16
+        cb_mx = self._codebooks_mx  # [n_cb, K, sub_dim] fp16
 
         for cb_i in range(self._n_cb):
-            cb   = cb_mx[cb_i]                           # [K, sub_dim]
-            idxs = indices[:, cb_i].astype(mx.uint32)   # [N]
-            part = mx.take(cb, idxs, axis=0)             # [N, sub_dim]
+            cb = cb_mx[cb_i]  # [K, sub_dim]
+            idxs = indices[:, cb_i].astype(mx.uint32)  # [N]
+            part = mx.take(cb, idxs, axis=0)  # [N, sub_dim]
             parts.append(part)
 
-        x_hat = mx.concatenate(parts, axis=1)            # [N, D]
+        x_hat = mx.concatenate(parts, axis=1)  # [N, D]
         return x_hat.astype(mx.float16)
 
     def _apply_rope_mlx(self, x: mx.array, positions: mx.array) -> mx.array:
         """Apply RoPE to x [N, D] at the given integer positions [N]."""
         half = self._d // 2
-        inv_freq = (1.0 / (self._rope_base ** (
-            mx.arange(0, half, dtype=mx.float32) / half
-        ))).astype(mx.float32)                            # [half]
+        inv_freq = (
+            1.0 / (self._rope_base ** (mx.arange(0, half, dtype=mx.float32) / half))
+        ).astype(mx.float32)  # [half]
         angles = positions[:, None].astype(mx.float32) * inv_freq[None, :]  # [N, half]
-        cos = mx.cos(angles).astype(mx.float16)           # [N, half]
-        sin = mx.sin(angles).astype(mx.float16)           # [N, half]
+        cos = mx.cos(angles).astype(mx.float16)  # [N, half]
+        sin = mx.sin(angles).astype(mx.float16)  # [N, half]
 
         x1 = x[:, :half]
         x2 = x[:, half:]
@@ -409,7 +417,7 @@ class CommVQQuantizer(Quantizer):
             batch_size=N,
             dim=self._d,
             indices=indices,
-            norm=positions.astype(mx.float32),   # repurpose norm field for positions
+            norm=positions.astype(mx.float32),  # repurpose norm field for positions
         )
 
     def decode(self, ev: EncodedVector) -> Any:
@@ -443,7 +451,7 @@ class CommVQQuantizer(Quantizer):
             [N] fp16 estimated inner products.
         """
         q_flat = q.reshape(-1).astype(mx.float32)
-        k_hat  = self.decode(ev).astype(mx.float32)     # [N, D]
+        k_hat = self.decode(ev).astype(mx.float32)  # [N, D]
         return (k_hat @ q_flat).astype(mx.float16)
 
     # ------------------------------------------------------------------
@@ -457,8 +465,8 @@ class CommVQQuantizer(Quantizer):
     @property
     def compression_ratio(self) -> float:
         """Memory compression vs fp16 storage."""
-        fp16_bytes  = self._d * 2
-        comm_bytes  = self._n_cb * 1        # n_cb uint8 indices
+        fp16_bytes = self._d * 2
+        comm_bytes = self._n_cb * 1  # n_cb uint8 indices
         return fp16_bytes / comm_bytes
 
     def __repr__(self) -> str:

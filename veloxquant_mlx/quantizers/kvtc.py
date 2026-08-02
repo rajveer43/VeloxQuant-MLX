@@ -71,6 +71,7 @@ Decompress (``kvtc_decompress``): entropy-decode, dequantize each surviving
 component, zero-fill dropped components, un-project
 (``latents @ V.T + mean``), return ``[S, D]``.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -189,7 +190,7 @@ def kvtc_compress(
     mx.eval(L)
 
     s_np = np.asarray(s_vals.tolist(), dtype=np.float64)
-    variances = (s_np ** 2) / max(S, 1)  # per-component sample variance
+    variances = (s_np**2) / max(S, 1)  # per-component sample variance
 
     bit_alloc = dp_allocate_bits(variances, total_bit_budget, bit_choices=bit_choices, beta=beta)
 
@@ -244,7 +245,7 @@ def kvtc_decompress(artifact: KVTCArtifact) -> mx.array:
 
     L_np = np.zeros((S, r), dtype=np.float64)
     for k, i in enumerate(artifact.survived_idx):
-        codes = flat_codes[k * S:(k + 1) * S]
+        codes = flat_codes[k * S : (k + 1) * S]
         lo = artifact.quant_min[k]
         scale = artifact.quant_scale[k]
         L_np[:, i] = codes.astype(np.float64) * scale + lo

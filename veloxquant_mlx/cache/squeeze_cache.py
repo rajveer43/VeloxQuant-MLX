@@ -51,6 +51,7 @@ Byte accounting:
     layer_budget       — this layer's resolved (or fallback) budget (diagnostic)
     concentration      — this layer's measured concentration score (diagnostic)
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -104,8 +105,8 @@ class SqueezeAttentionCache(_MLXKVCache):
 
         self._layer_id = layer_id
         self._coordinator = coordinator
-        self._rebudgeted = False        # has the resolved budget been applied?
-        self._reported = False          # has concentration been reported?
+        self._rebudgeted = False  # has the resolved budget been applied?
+        self._reported = False  # has concentration been reported?
         self._concentration: float = 0.0
 
         self._head_dim: int = 0
@@ -124,10 +125,7 @@ class SqueezeAttentionCache(_MLXKVCache):
             self._B = B
             self._H = H
             self._head_dim = D
-            self._states = [
-                init_squeeze_state(self._n_sink, self._budget, D)
-                for _ in range(B * H)
-            ]
+            self._states = [init_squeeze_state(self._n_sink, self._budget, D) for _ in range(B * H)]
 
     def _head_idx(self, b: int, h: int) -> int:
         return b * self._H + h
@@ -169,9 +167,9 @@ class SqueezeAttentionCache(_MLXKVCache):
         else:
             protected = st.scores
 
-        order = mx.argsort(protected)          # ascending: lowest score first
-        keep = order[n - budget:]              # top-`budget` scores
-        keep_sorted = mx.sort(keep)            # preserve positional order
+        order = mx.argsort(protected)  # ascending: lowest score first
+        keep = order[n - budget :]  # top-`budget` scores
+        keep_sorted = mx.sort(keep)  # preserve positional order
         keep_idx = [int(x.item()) for x in keep_sorted]
         return SqueezeState(
             keys=st.keys[keep_idx],
@@ -227,7 +225,7 @@ class SqueezeAttentionCache(_MLXKVCache):
         if not self._rebudgeted:
             self._report_and_rebudget(keys)
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2   # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
         k_out_b, v_out_b = [], []
@@ -243,12 +241,12 @@ class SqueezeAttentionCache(_MLXKVCache):
                 )
                 self._states[idx] = st
                 k_h, v_h = squeeze_get_kv(st)
-                k_out_h.append(k_h)    # [n_kept, D]
+                k_out_h.append(k_h)  # [n_kept, D]
                 v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))   # [H, n_kept, D]
+            k_out_b.append(mx.stack(k_out_h, axis=0))  # [H, n_kept, D]
             v_out_b.append(mx.stack(v_out_h, axis=0))
 
-        K_out = mx.stack(k_out_b, axis=0)   # [B, H, n_kept, D]
+        K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_kept, D]
         V_out = mx.stack(v_out_b, axis=0)
 
         # Byte accounting: sum across all head states.

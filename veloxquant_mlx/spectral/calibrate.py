@@ -7,6 +7,7 @@ The paper uses 100 calibration sequences from WikiText-2 (~15 seconds on
 one GPU). We support both real-model calibration and a fast synthetic path
 for unit tests.
 """
+
 from __future__ import annotations
 
 import os
@@ -15,7 +16,10 @@ from typing import Any
 
 import numpy as np
 
-from veloxquant_mlx.spectral.participation_ratio import compute_participation_ratio, compute_spectral_gap
+from veloxquant_mlx.spectral.participation_ratio import (
+    compute_participation_ratio,
+    compute_spectral_gap,
+)
 
 _CACHE_ROOT = Path(os.environ.get("VELOXQUANT_CACHE_DIR", Path.home() / ".cache" / "veloxquant"))
 
@@ -23,6 +27,7 @@ _CACHE_ROOT = Path(os.environ.get("VELOXQUANT_CACHE_DIR", Path.home() / ".cache"
 # ---------------------------------------------------------------------------
 # Disk cache helpers
 # ---------------------------------------------------------------------------
+
 
 def _rotation_path(model_name: str) -> Path:
     safe = model_name.replace("/", "_").replace("\\", "_")
@@ -90,6 +95,7 @@ def save_rotations(
 # Core calibration
 # ---------------------------------------------------------------------------
 
+
 def _svd_rotation(X: np.ndarray) -> tuple[np.ndarray, np.ndarray, int]:
     """PCA via SVD: returns (U, eigenvalues_descending, d_s).
 
@@ -103,7 +109,7 @@ def _svd_rotation(X: np.ndarray) -> tuple[np.ndarray, np.ndarray, int]:
     # SVD of data matrix: X = U_data S V^T → Cov = V diag(S²/n) V^T
     # We want columns of V sorted by descending S² (eigenvalue).
     _, s, Vt = np.linalg.svd(X, full_matrices=True)
-    eigenvalues = (s ** 2 / n).astype(np.float64)
+    eigenvalues = (s**2 / n).astype(np.float64)
     # Pad eigenvalues to d if X has fewer samples than dims
     d = Vt.shape[0]
     if len(eigenvalues) < d:
@@ -150,7 +156,7 @@ def collect_kv_vectors_mlx(
 
         def __init__(self, layer_idx: int, inner: Any | None = None):
             self.layer_idx = layer_idx
-            self._inner = inner   # real cache (e.g. RotatingKVCache) or None
+            self._inner = inner  # real cache (e.g. RotatingKVCache) or None
             self.keys = None
             self.values = None
             self.offset = 0

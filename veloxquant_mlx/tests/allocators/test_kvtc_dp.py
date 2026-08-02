@@ -6,6 +6,7 @@ probe="latest"==TOVA collapses), budget respected exactly / local optimality
 against a brute-force reference on small n, monotonicity (higher variance
 never gets fewer bits), can-assign-exactly-0, and determinism (no RNG).
 """
+
 from __future__ import annotations
 
 import itertools
@@ -59,11 +60,23 @@ def test_budget_zero_gives_all_zero_bits():
 # ---------------------------------------------------------------------------
 # uniform-variance collapse — THE pinned reduction
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("n,budget", [
-    (5, 0), (5, 1), (5, 4), (5, 5), (5, 6), (5, 11), (5, 17),
-    (7, 0), (7, 13), (7, 7 * 8),
-    (1, 3), (1, 0),
-])
+@pytest.mark.parametrize(
+    "n,budget",
+    [
+        (5, 0),
+        (5, 1),
+        (5, 4),
+        (5, 5),
+        (5, 6),
+        (5, 11),
+        (5, 17),
+        (7, 0),
+        (7, 13),
+        (7, 7 * 8),
+        (1, 3),
+        (1, 0),
+    ],
+)
 def test_uniform_variance_collapses_to_floor_plus_remainder(n, budget):
     """With equal variances and a CONTIGUOUS bit_choices range, the DP-optimal
     allocation is exactly floor(budget/n) per component, with the remainder
@@ -82,6 +95,7 @@ def test_uniform_variance_collapses_to_floor_plus_remainder(n, budget):
 def test_uniform_variance_collapse_matches_naive_uniform_splitter_helper():
     """Same claim, phrased as an explicit comparison against a hand-written
     'naive uniform splitter' rather than an inline expected array."""
+
     def naive_uniform_split(n: int, budget: int) -> np.ndarray:
         base, rem = divmod(budget, n)
         return np.array([base + 1 if i < rem else base for i in range(n)])
@@ -106,7 +120,9 @@ def test_budget_never_exceeded():
         assert all(b in DEFAULT_BIT_CHOICES for b in bits.tolist())
 
 
-def _brute_force_optimum(v: np.ndarray, budget: int, choices: tuple[int, ...], beta: float) -> float:
+def _brute_force_optimum(
+    v: np.ndarray, budget: int, choices: tuple[int, ...], beta: float
+) -> float:
     """Exhaustive search over all bit assignments for small n — returns the
     minimum achievable total distortion (not the argmin allocation, since
     ties make the allocation itself non-unique; the DP is checked against

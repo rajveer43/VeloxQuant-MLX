@@ -60,6 +60,7 @@ keyformer_get_kv      — extract current (keys, values) arrays
 keyformer_fp16_bytes  — bytes stored in current state
 full_keyformer_fp16_bytes — hypothetical cost without eviction
 """
+
 from __future__ import annotations
 
 import math
@@ -124,9 +125,16 @@ def init_keyformer_state(
             f"budget ({budget}) — no evictable positions remain"
         )
     return KeyformerState(
-        keys=None, values=None, scores=None, gumbel=None, pos=0,
-        n_sink=n_sink, budget=budget, recent=recent,
-        tau=float(tau), seed=int(seed),
+        keys=None,
+        values=None,
+        scores=None,
+        gumbel=None,
+        pos=0,
+        n_sink=n_sink,
+        budget=budget,
+        recent=recent,
+        tau=float(tau),
+        seed=int(seed),
     )
 
 
@@ -141,7 +149,7 @@ def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
         [n] softmax weights summing to ~1.
     """
     scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
-    logits = (keys @ query_proxy) * scale   # [n]
+    logits = (keys @ query_proxy) * scale  # [n]
     return mx.softmax(logits, axis=-1)
 
 
@@ -153,13 +161,13 @@ def _gumbel_at(seed: int, pos: int) -> mx.array:
     chunked. Gumbel via inverse-CDF: -log(-log(U)), U ~ Uniform(0,1).
     """
     key = mx.random.key(seed * 1_000_003 + pos)
-    u = mx.random.uniform(low=1e-9, high=1.0, key=key)   # avoid log(0)
+    u = mx.random.uniform(low=1e-9, high=1.0, key=key)  # avoid log(0)
     return -mx.log(-mx.log(u))
 
 
 def keyformer_update(
     state: KeyformerState,
-    new_keys: mx.array,    # [S, D] fp16
+    new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
 ) -> KeyformerState:
     """Absorb S new tokens, evicting the lowest Gumbel-regularized token if over budget.
@@ -178,7 +186,7 @@ def keyformer_update(
     S = int(new_keys.shape[0])
 
     for i in range(S):
-        k_i = new_keys[i].astype(mx.float16)    # [D]
+        k_i = new_keys[i].astype(mx.float16)  # [D]
         v_i = new_values[i].astype(mx.float16)  # [D]
         g_i = _gumbel_at(state.seed, state.pos)  # frozen noise for this position
 
@@ -189,17 +197,20 @@ def keyformer_update(
                 scores=mx.ones((1,), dtype=mx.float32),
                 gumbel=g_i[None],
                 pos=state.pos + 1,
-                n_sink=state.n_sink, budget=state.budget, recent=state.recent,
-                tau=state.tau, seed=state.seed,
+                n_sink=state.n_sink,
+                budget=state.budget,
+                recent=state.recent,
+                tau=state.tau,
+                seed=state.seed,
             )
             continue
 
         # --- accumulate proxy attention over stored keys -------------------
         attn = _attention_scores(k_i.astype(mx.float32), state.keys.astype(mx.float32))
-        updated_scores = state.scores + attn   # [n_kept]
+        updated_scores = state.scores + attn  # [n_kept]
 
         # --- append new token (score 0; begins accumulating next step) -----
-        keys_cat   = mx.concatenate([state.keys,   k_i[None]], axis=0)
+        keys_cat = mx.concatenate([state.keys, k_i[None]], axis=0)
         values_cat = mx.concatenate([state.values, v_i[None]], axis=0)
         scores_cat = mx.concatenate([updated_scores, mx.zeros((1,), dtype=mx.float32)], axis=0)
         gumbel_cat = mx.concatenate([state.gumbel, g_i[None]], axis=0)
@@ -218,12 +229,12 @@ def keyformer_update(
             if state.recent > 0:
                 r_eff = min(state.recent, n_total - n_sink_eff)
                 if r_eff > 0:
-                    protect[n_total - r_eff:] = float("inf")
+                    protect[n_total - r_eff :] = float("inf")
             sel = sel + protect
 
             evict_idx = int(mx.argmin(sel).item())
             keep = [j for j in range(n_total) if j != evict_idx]
-            keys_cat   = keys_cat[keep]
+            keys_cat = keys_cat[keep]
             values_cat = values_cat[keep]
             scores_cat = scores_cat[keep]
             gumbel_cat = gumbel_cat[keep]
@@ -234,8 +245,11 @@ def keyformer_update(
             scores=scores_cat,
             gumbel=gumbel_cat,
             pos=state.pos + 1,
-            n_sink=state.n_sink, budget=state.budget, recent=state.recent,
-            tau=state.tau, seed=state.seed,
+            n_sink=state.n_sink,
+            budget=state.budget,
+            recent=state.recent,
+            tau=state.tau,
+            seed=state.seed,
         )
 
     return state
@@ -262,7 +276,7 @@ def keyformer_fp16_bytes(state: KeyformerState) -> int:
     if state.keys is None:
         return 0
     n, D = state.keys.shape
-    return n * D * 2 * 2   # K + V, 2 bytes each
+    return n * D * 2 * 2  # K + V, 2 bytes each
 
 
 def full_keyformer_fp16_bytes(tokens_seen: int, head_dim: int) -> int:

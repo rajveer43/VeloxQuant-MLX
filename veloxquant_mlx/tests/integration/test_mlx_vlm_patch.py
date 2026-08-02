@@ -8,6 +8,7 @@ per call (no KV state leaking between generations), warns on
 token-eviction methods, and — when mlx-vlm is installed — that the real
 ``make_prompt_cache`` actually returns our caches.
 """
+
 from __future__ import annotations
 
 import warnings
@@ -23,8 +24,7 @@ from veloxquant_mlx.integration.mlx_vlm_patch import patch_vlm_kv_cache
 def _make_language_model(n_layers: int, n_heads: int, head_dim: int) -> SimpleNamespace:
     hidden_size = n_heads * head_dim
     layers = [
-        SimpleNamespace(self_attn=SimpleNamespace(head_dim=head_dim))
-        for _ in range(n_layers)
+        SimpleNamespace(self_attn=SimpleNamespace(head_dim=head_dim)) for _ in range(n_layers)
     ]
     args = SimpleNamespace(hidden_size=hidden_size, num_attention_heads=n_heads)
     return SimpleNamespace(layers=layers, args=args)

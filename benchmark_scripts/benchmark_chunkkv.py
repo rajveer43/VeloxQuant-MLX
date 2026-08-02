@@ -24,6 +24,7 @@ Usage
 Prints a table and saves a JSON summary. Wall-clock is dominated by the O(S^2)
 pure-Python eviction loop (a prefill worst case), not a per-decode-step cost.
 """
+
 from __future__ import annotations
 
 import json
@@ -39,13 +40,13 @@ from veloxquant_mlx.cache.chunkkv_cache import ChunkKVCache
 from veloxquant_mlx.cache.h2o_cache import H2OKVCache
 
 # ── sweep configuration ──────────────────────────────────────────────────────
-SEQ_LENS    = [256, 512, 1024]
-BUDGETS     = [64, 128]
+SEQ_LENS = [256, 512, 1024]
+BUDGETS = [64, 128]
 CHUNK_SIZES = [1, 4, 8, 16]
 SCORE_MODES = ["attn_mass", "key_norm"]
-N_HEADS     = 8
-HEAD_DIM    = 128
-N_SINK      = 4
+N_HEADS = 8
+HEAD_DIM = 128
+N_SINK = 4
 
 
 def _synthetic_kv(S: int, seed: int = 0):
@@ -80,7 +81,7 @@ def _coherence(kept_keys: mx.array, ref_keys: mx.array) -> float:
     n_kept = int(kept_keys.shape[0])
     if n_kept <= 1:
         return 1.0
-    ref = np.asarray(ref_keys.astype(mx.float32), dtype=np.float32)   # [S, D]
+    ref = np.asarray(ref_keys.astype(mx.float32), dtype=np.float32)  # [S, D]
     kept = np.asarray(kept_keys.astype(mx.float32), dtype=np.float32)  # [n, D]
     # Match each kept row to its original index (exact fp16 rows → nearest).
     pos = []
@@ -96,11 +97,14 @@ def _coherence(kept_keys: mx.array, ref_keys: mx.array) -> float:
 
 def _run_once(seq_len, budget, chunk_size, score_mode) -> dict:
     K, V = _synthetic_kv(seq_len, seed=chunk_size + budget)
-    ref_keys = K[0, 0]   # [S, D] for position recovery (head 0)
+    ref_keys = K[0, 0]  # [S, D] for position recovery (head 0)
 
     cfg = KVCacheConfig(
-        method="chunkkv", head_dim=HEAD_DIM, chunkkv_budget=budget,
-        chunkkv_chunk_size=chunk_size, chunkkv_n_sink=N_SINK,
+        method="chunkkv",
+        head_dim=HEAD_DIM,
+        chunkkv_budget=budget,
+        chunkkv_chunk_size=chunk_size,
+        chunkkv_n_sink=N_SINK,
         chunkkv_score=score_mode,
     )
     cache = ChunkKVCache(cfg)
@@ -113,23 +117,24 @@ def _run_once(seq_len, budget, chunk_size, score_mode) -> dict:
 
     # Token-level H2O baseline at the same budget (attn_mass only — H2O has no
     # key_norm mode; we compare against it for both to show the chunk delta).
-    h2o = H2OKVCache(KVCacheConfig(
-        method="h2o", head_dim=HEAD_DIM, h2o_budget=budget, h2o_n_sink=N_SINK))
+    h2o = H2OKVCache(
+        KVCacheConfig(method="h2o", head_dim=HEAD_DIM, h2o_budget=budget, h2o_n_sink=N_SINK)
+    )
     Kh, Vh = h2o.update_and_fetch(K, V)
     mx.eval(Kh, Vh)
     coh_h2o = _coherence(h2o._states[0].keys, ref_keys)
 
     return {
-        "seq_len":           seq_len,
-        "budget":            budget,
-        "chunk_size":        chunk_size,
-        "score_mode":        score_mode,
-        "tokens_kept":       cache.tokens_kept,
+        "seq_len": seq_len,
+        "budget": budget,
+        "chunk_size": chunk_size,
+        "score_mode": score_mode,
+        "tokens_kept": cache.tokens_kept,
         "compression_ratio": round(cache.compression_ratio, 3),
-        "coherence":         round(coh, 3),
-        "coherence_h2o":     round(coh_h2o, 3),
-        "coherence_gain":    round(coh - coh_h2o, 3),
-        "latency_ms":        round(latency_ms, 2),
+        "coherence": round(coh, 3),
+        "coherence_h2o": round(coh_h2o, 3),
+        "coherence_gain": round(coh - coh_h2o, 3),
+        "latency_ms": round(latency_ms, 2),
     }
 
 
@@ -139,9 +144,11 @@ def main() -> None:
     print("  (coherence = contiguity of survivors; H2O = token-level baseline)")
     print("  (chunk_size=1 + attn_mass == H2O by construction)")
     print()
-    header = (f"{'seq':>5}  {'budget':>6}  {'chunk':>5}  {'score':>10}  "
-              f"{'kept':>5}  {'ratio':>6}  {'coher':>6}  {'coh_h2o':>7}  "
-              f"{'gain':>6}  {'ms':>7}")
+    header = (
+        f"{'seq':>5}  {'budget':>6}  {'chunk':>5}  {'score':>10}  "
+        f"{'kept':>5}  {'ratio':>6}  {'coher':>6}  {'coh_h2o':>7}  "
+        f"{'gain':>6}  {'ms':>7}"
+    )
     print(header)
     print("-" * len(header))
 

@@ -6,6 +6,7 @@ resolved-budget lookup) and the end-to-end KVCacheBuilder.for_model path (shared
 coordinator, data-driven per-layer budgets, broad layer keeps more than
 concentrated, strength=0 uniform). All data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -25,6 +26,7 @@ def _kv(B, H, S, D, seed=0):
 
 
 # ----- mock model ------------------------------------------------------
+
 
 class _MockAttn:
     def __init__(self, hd):
@@ -56,6 +58,7 @@ def _prefill_concentration(li, n_layers, B, H, S, D, seed=0):
 # Single-layer cache (no coordinator → uniform fallback)
 # ======================================================================
 
+
 def test_single_cache_uses_fallback_budget():
     cfg = KVCacheConfig(method="squeeze", head_dim=16, squeeze_budget=32, squeeze_n_sink=4)
     cache = SqueezeAttentionCache(cfg)
@@ -72,8 +75,9 @@ def test_single_cache_enforces_budget():
 
 
 def test_single_cache_resolved_override():
-    cfg = KVCacheConfig(method="squeeze", head_dim=16, squeeze_budget=64,
-                        squeeze_resolved_budget=10)
+    cfg = KVCacheConfig(
+        method="squeeze", head_dim=16, squeeze_budget=64, squeeze_resolved_budget=10
+    )
     cache = SqueezeAttentionCache(cfg)
     assert cache.layer_budget == 10
 
@@ -110,6 +114,7 @@ def test_output_shapes_batch_and_heads():
 # SqueezeCoordinator
 # ======================================================================
 
+
 def test_coordinator_not_finalized_until_all_report():
     coord = SqueezeCoordinator(n_layers=3, avg_budget=100, n_sink=4, strength=1.0)
     coord.report_concentration(0, 0.1)
@@ -123,9 +128,9 @@ def test_coordinator_not_finalized_until_all_report():
 
 def test_coordinator_resolves_budgets():
     coord = SqueezeCoordinator(n_layers=3, avg_budget=100, n_sink=4, strength=1.0)
-    coord.report_concentration(0, 0.1)   # broad → more
+    coord.report_concentration(0, 0.1)  # broad → more
     coord.report_concentration(1, 0.5)
-    coord.report_concentration(2, 0.9)   # concentrated → less
+    coord.report_concentration(2, 0.9)  # concentrated → less
     assert coord.resolved_budget(0) > coord.resolved_budget(2)
 
 
@@ -135,7 +140,7 @@ def test_coordinator_report_idempotent():
     coord.report_concentration(0, 0.1)
     coord.report_concentration(1, 0.9)
     b_before = coord.resolved_budget(0)
-    coord.report_concentration(0, 0.99)   # ignored — already finalised
+    coord.report_concentration(0, 0.99)  # ignored — already finalised
     assert coord.resolved_budget(0) == b_before
 
 
@@ -161,10 +166,16 @@ def test_coordinator_reset():
 # for_model — end-to-end
 # ======================================================================
 
+
 def _build_and_run(n_layers, hd, strength, avg_budget=32, n_sink=4):
     model = _MockModel(n_layers, hd)
-    cfg = KVCacheConfig(method="squeeze", head_dim=hd, squeeze_budget=avg_budget,
-                        squeeze_n_sink=n_sink, squeeze_strength=strength)
+    cfg = KVCacheConfig(
+        method="squeeze",
+        head_dim=hd,
+        squeeze_budget=avg_budget,
+        squeeze_n_sink=n_sink,
+        squeeze_strength=strength,
+    )
     caches = KVCacheBuilder.for_model(model, cfg)
     B, H, S = 1, 2, 48
     # prefill (all layers report)

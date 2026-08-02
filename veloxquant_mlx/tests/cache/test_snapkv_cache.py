@@ -7,6 +7,7 @@ accumulation, output dtype, byte accounting, keep_rate, no-eviction short-seq
 edge case, n_sink=0 edge case, decode-only path, determinism, and for_model
 config propagation. All data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -19,8 +20,11 @@ from veloxquant_mlx.cache.snapkv_cache import SnapKVKVCache
 
 def _make(**cfg):
     base = dict(
-        method="snapkv", head_dim=128,
-        snap_budget=16, snap_obs_window=8, snap_n_sink=2,
+        method="snapkv",
+        head_dim=128,
+        snap_budget=16,
+        snap_obs_window=8,
+        snap_n_sink=2,
     )
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
@@ -37,6 +41,7 @@ def _rand_kv(S: int = 64, H: int = 2, D: int = 128, seed: int = 0):
 # Factory and interface
 # ---------------------------------------------------------------------------
 
+
 def test_factory_dispatch() -> None:
     assert isinstance(_make(), SnapKVKVCache)
 
@@ -51,6 +56,7 @@ def test_no_bits_attribute() -> None:
 # ---------------------------------------------------------------------------
 # Shape and dtype
 # ---------------------------------------------------------------------------
+
 
 def test_prefill_output_shape_evicted() -> None:
     """After prefill, seq dim should be min(budget, S)."""
@@ -83,11 +89,12 @@ def test_no_eviction_short_seq() -> None:
 # Decode accumulation
 # ---------------------------------------------------------------------------
 
+
 def test_decode_accumulation() -> None:
     """Decode tokens grow the seq dim by 1 each call."""
     c = _make(snap_budget=16, snap_obs_window=8, snap_n_sink=2)
     k, v = _rand_kv(S=64)
-    c.update_and_fetch(k, v)   # prefill → 16 tokens kept
+    c.update_and_fetch(k, v)  # prefill → 16 tokens kept
     for i in range(4):
         k1, v1 = _rand_kv(S=1, seed=100 + i)
         ko, vo = c.update_and_fetch(k1, v1)
@@ -97,6 +104,7 @@ def test_decode_accumulation() -> None:
 # ---------------------------------------------------------------------------
 # Byte accounting
 # ---------------------------------------------------------------------------
+
 
 def test_byte_ordering_eviction_ratio_gt_1() -> None:
     """After prefill with budget < S, eviction_ratio > 1."""
@@ -125,6 +133,7 @@ def test_keep_rate_no_eviction() -> None:
 # Edge cases
 # ---------------------------------------------------------------------------
 
+
 def test_n_sink_zero() -> None:
     """n_sink=0 runs without error."""
     c = _make(snap_n_sink=0, snap_budget=16)
@@ -146,6 +155,7 @@ def test_decode_only_no_eviction() -> None:
 # Determinism
 # ---------------------------------------------------------------------------
 
+
 def test_deterministic() -> None:
     k, v = _rand_kv(S=64)
     c1, c2 = _make(), _make()
@@ -158,6 +168,7 @@ def test_deterministic() -> None:
 # ---------------------------------------------------------------------------
 # for_model construction
 # ---------------------------------------------------------------------------
+
 
 def test_build_via_for_model_propagates_config() -> None:
     from veloxquant_mlx.cache.base import KVCacheBuilder
@@ -172,8 +183,11 @@ def test_build_via_for_model_propagates_config() -> None:
         layers = [_Layer(), _Layer()]
 
     cfg = KVCacheConfig(
-        method="snapkv", head_dim=128,
-        snap_budget=32, snap_obs_window=16, snap_n_sink=3,
+        method="snapkv",
+        head_dim=128,
+        snap_budget=32,
+        snap_obs_window=16,
+        snap_n_sink=3,
     )
     caches = KVCacheBuilder.for_model(_Model(), cfg)
     assert all(isinstance(c, SnapKVKVCache) for c in caches)

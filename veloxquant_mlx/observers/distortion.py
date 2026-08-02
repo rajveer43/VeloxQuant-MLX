@@ -83,7 +83,7 @@ class DistortionObserver(QuantizationObserver):
         x_orig = np.asarray(x_orig, dtype=np.float64)
         x_recon = np.asarray(x_recon, dtype=np.float64)
         diff = x_orig - x_recon
-        self._mse_sum += float(np.sum(diff ** 2, axis=-1).mean())
+        self._mse_sum += float(np.sum(diff**2, axis=-1).mean())
         self._n += 1
 
         if self._query is not None:
@@ -157,8 +157,11 @@ class DistortionObserver(QuantizationObserver):
         if self._n > 0:
             current_report = self.report()
             ax.semilogy(
-                [self._b], [current_report.empirical_mse], "bo", markersize=8,
-                label=f"Empirical (b={self._b}, n={self._n})"
+                [self._b],
+                [current_report.empirical_mse],
+                "bo",
+                markersize=8,
+                label=f"Empirical (b={self._b}, n={self._n})",
             )
         ax.set_xlabel("Bit-width b")
         ax.set_ylabel("MSE Distortion D_mse")

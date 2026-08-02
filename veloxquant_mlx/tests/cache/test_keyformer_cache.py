@@ -4,6 +4,7 @@ Covers: factory dispatch, config propagation, budget invariant across B/H,
 byte-accounting properties, prefill/decode both valid, tau=0 determinism,
 construction guards, and no leftover .bits attribute.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -91,7 +92,7 @@ def test_byte_accounting():
     for i in range(60):
         k, v = _kv(1, 2, 1, 32, seed=i)
         cache.update_and_fetch(k, v)
-    assert cache.tokens_seen == 60 * 2          # B*H*S summed
+    assert cache.tokens_seen == 60 * 2  # B*H*S summed
     assert cache.keyformer_kept_bytes > 0
     assert cache.full_seq_bytes > cache.keyformer_kept_bytes
     assert cache.compression_ratio > 1.0
@@ -115,7 +116,7 @@ def test_prefill_and_decode_both_within_budget():
 
     dc = _make(keyformer_budget=10, keyformer_n_sink=2, keyformer_tau=1.0)
     for t in range(40):
-        Kd, _ = dc.update_and_fetch(k_all[:, :, t:t + 1], v_all[:, :, t:t + 1])
+        Kd, _ = dc.update_and_fetch(k_all[:, :, t : t + 1], v_all[:, :, t : t + 1])
 
     assert Kp.shape[2] <= 10 and Kd.shape[2] <= 10
 
@@ -127,9 +128,10 @@ def test_tau_zero_seed_invariant_at_cache_level():
     ks = [_kv(1, 2, 1, 16, seed=i) for i in range(35)]
 
     def run(seed):
-        cache = _make(keyformer_budget=10, keyformer_n_sink=2,
-                      keyformer_tau=0.0, keyformer_seed=seed)
-        for (k, v) in ks:
+        cache = _make(
+            keyformer_budget=10, keyformer_n_sink=2, keyformer_tau=0.0, keyformer_seed=seed
+        )
+        for k, v in ks:
             K, _ = cache.update_and_fetch(k, v)
         return K
 

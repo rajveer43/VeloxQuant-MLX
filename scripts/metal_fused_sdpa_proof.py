@@ -26,6 +26,7 @@ Fused path (the new kernel):
 Hard requirement: max-abs-diff < 1e-2 vs reference.  Test fails → kernel
 is wrong; do not proceed to Step 2 integration.
 """
+
 from __future__ import annotations
 
 import time
@@ -215,9 +216,14 @@ def _get_kernel(n_centroids: int):
         _kernel_cache[n_centroids] = mx.fast.metal_kernel(
             name=f"vecinfer_fused_sdpa_c{n_centroids}",
             input_names=[
-                "q", "k_indices", "k_codebook",
-                "v_indices", "v_codebook",
-                "params", "scale_arr", "slide_arr",
+                "q",
+                "k_indices",
+                "k_codebook",
+                "v_indices",
+                "v_codebook",
+                "params",
+                "scale_arr",
+                "slide_arr",
             ],
             output_names=["out"],
             source=src,
@@ -227,11 +233,11 @@ def _get_kernel(n_centroids: int):
 
 
 def metal_fused_sdpa(
-    q_tilde: mx.array,           # [B, H_q, S_q, D] fp32 — already transformed
-    k_indices: mx.array,         # [B, H_kv, S_kv, n_sub] int32 / uint32
-    k_codebook: mx.array,        # [n_centroids, sub_dim] fp32
-    v_indices: mx.array,         # [B, H_kv, S_kv, n_sub_v] int32 / uint32
-    v_codebook: mx.array,        # [n_centroids_v, sub_dim_v] fp32
+    q_tilde: mx.array,  # [B, H_q, S_q, D] fp32 — already transformed
+    k_indices: mx.array,  # [B, H_kv, S_kv, n_sub] int32 / uint32
+    k_codebook: mx.array,  # [n_centroids, sub_dim] fp32
+    v_indices: mx.array,  # [B, H_kv, S_kv, n_sub_v] int32 / uint32
+    v_codebook: mx.array,  # [n_centroids_v, sub_dim_v] fp32
     scale: float,
     causal: bool = True,
     sliding_window: int = 0,
@@ -249,8 +255,8 @@ def metal_fused_sdpa(
     assert B == B2, f"batch mismatch q={B} k={B2}"
     assert H_kv == H_kv2
     assert S_kv == S_kv2
-    assert D == n_sub * sub_dim, f"D={D} != n_sub*sub_dim={n_sub*sub_dim}"
-    assert D == n_sub_v * sub_dim_v, f"D={D} != n_sub_v*sub_dim_v={n_sub_v*sub_dim_v}"
+    assert D == n_sub * sub_dim, f"D={D} != n_sub*sub_dim={n_sub * sub_dim}"
+    assert D == n_sub_v * sub_dim_v, f"D={D} != n_sub_v*sub_dim_v={n_sub_v * sub_dim_v}"
     if n_sub > 16:
         raise ValueError(f"Fused SDPA: n_sub<=16 only, got {n_sub}")
     if n_centroids != n_centroids_v:
@@ -267,8 +273,10 @@ def metal_fused_sdpa(
     v_cb = v_codebook.astype(mx.float32)
 
     flags = 0
-    if causal: flags |= 1
-    if sliding_window and sliding_window > 0: flags |= 2
+    if causal:
+        flags |= 1
+    if sliding_window and sliding_window > 0:
+        flags |= 2
 
     params = mx.array(
         [H_q, H_kv, S_q, S_kv, D, n_sub, sub_dim, n_sub_v, sub_dim_v, flags],
@@ -280,8 +288,7 @@ def metal_fused_sdpa(
     kernel = _get_kernel(n_centroids)
 
     outputs = kernel(
-        inputs=[q_flat, k_idx_flat, k_cb, v_idx_flat, v_cb,
-                params, scale_arr, slide_arr],
+        inputs=[q_flat, k_idx_flat, k_cb, v_idx_flat, v_cb, params, scale_arr, slide_arr],
         output_shapes=[(B * H_q * S_q, D)],
         output_dtypes=[mx.float32],
         grid=(B * H_q, S_q, 1),
@@ -294,13 +301,13 @@ def metal_fused_sdpa(
 # Pure-MLX reference: dequantize K and V, run standard SDPA
 # ===========================================================================
 def reference_sdpa(
-    q: mx.array,            # [B, H_q, S_q, D] fp16   -- *untransformed* queries
-    k_indices: mx.array,    # [B, H_kv, S_kv, n_sub]
-    k_codebook: mx.array,   # [n_centroids, sub_dim]
-    smooth: mx.array,       # [H_kv, D] or [D] fp32
-    H: mx.array,            # [D, D] fp32
-    v_indices: mx.array,    # [B, H_kv, S_kv, n_sub_v]
-    v_codebook: mx.array,   # [n_centroids_v, sub_dim_v]
+    q: mx.array,  # [B, H_q, S_q, D] fp16   -- *untransformed* queries
+    k_indices: mx.array,  # [B, H_kv, S_kv, n_sub]
+    k_codebook: mx.array,  # [n_centroids, sub_dim]
+    smooth: mx.array,  # [H_kv, D] or [D] fp32
+    H: mx.array,  # [D, D] fp32
+    v_indices: mx.array,  # [B, H_kv, S_kv, n_sub_v]
+    v_codebook: mx.array,  # [n_centroids_v, sub_dim_v]
     scale: float,
     causal: bool = True,
     sliding_window: int = 0,
@@ -361,8 +368,15 @@ def reference_sdpa(
 # Test harness
 # ===========================================================================
 def _make_test_inputs(
-    B: int, H_q: int, H_kv: int, S_q: int, S_kv: int, D: int,
-    sub_dim: int, n_centroids: int, seed: int = 42,
+    B: int,
+    H_q: int,
+    H_kv: int,
+    S_q: int,
+    S_kv: int,
+    D: int,
+    sub_dim: int,
+    n_centroids: int,
+    seed: int = 42,
 ) -> dict:
     """Generate a consistent test fixture: random queries, calibrated codebook,
     and indices computed by quantizing random key vectors against the codebook.
@@ -400,8 +414,17 @@ def _make_test_inputs(
         "smooth": mx.array(smooth_np.astype(np.float32)),
         "H": walsh_hadamard_matrix(D, dtype=mx.float32),
         "scale": 1.0 / float(D) ** 0.5,
-        "shape": dict(B=B, H_q=H_q, H_kv=H_kv, S_q=S_q, S_kv=S_kv, D=D,
-                      sub_dim=sub_dim, n_sub=n_sub, n_centroids=n_centroids),
+        "shape": dict(
+            B=B,
+            H_q=H_q,
+            H_kv=H_kv,
+            S_q=S_q,
+            S_kv=S_kv,
+            D=D,
+            sub_dim=sub_dim,
+            n_sub=n_sub,
+            n_centroids=n_centroids,
+        ),
     }
 
 
@@ -420,19 +443,29 @@ def correctness(fixture: dict, *, causal: bool, sliding_window: int = 0) -> Tupl
 
     # Reference: full SDPA on dequantized K_hat / V_hat
     out_ref = reference_sdpa(
-        q=q, k_indices=k_idx, k_codebook=cb, smooth=smooth, H=H,
-        v_indices=v_idx, v_codebook=cb, scale=scale,
-        causal=causal, sliding_window=sliding_window,
+        q=q,
+        k_indices=k_idx,
+        k_codebook=cb,
+        smooth=smooth,
+        H=H,
+        v_indices=v_idx,
+        v_codebook=cb,
+        scale=scale,
+        causal=causal,
+        sliding_window=sliding_window,
     )
 
     # Fused: queries must be transformed first (smooth then Hadamard)
     q_tilde = apply_dual_transform_queries(q.astype(mx.float32), smooth, H)
     out_metal = metal_fused_sdpa(
         q_tilde=q_tilde,
-        k_indices=k_idx, k_codebook=cb,
-        v_indices=v_idx, v_codebook=cb,
+        k_indices=k_idx,
+        k_codebook=cb,
+        v_indices=v_idx,
+        v_codebook=cb,
         scale=scale,
-        causal=causal, sliding_window=sliding_window,
+        causal=causal,
+        sliding_window=sliding_window,
     )
     mx.eval(out_ref, out_metal)
     diff = _max_abs_diff(out_ref, out_metal)
@@ -452,28 +485,56 @@ def benchmark(fixture: dict, iters: int = 30, warmup: int = 3) -> dict:
 
     # Warmup both paths
     for _ in range(warmup):
-        a = reference_sdpa(q=q, k_indices=k_idx, k_codebook=cb, smooth=smooth, H=H,
-                           v_indices=v_idx, v_codebook=cb, scale=scale, causal=True)
-        b = metal_fused_sdpa(q_tilde=q_tilde,
-                             k_indices=k_idx, k_codebook=cb,
-                             v_indices=v_idx, v_codebook=cb,
-                             scale=scale, causal=True)
+        a = reference_sdpa(
+            q=q,
+            k_indices=k_idx,
+            k_codebook=cb,
+            smooth=smooth,
+            H=H,
+            v_indices=v_idx,
+            v_codebook=cb,
+            scale=scale,
+            causal=True,
+        )
+        b = metal_fused_sdpa(
+            q_tilde=q_tilde,
+            k_indices=k_idx,
+            k_codebook=cb,
+            v_indices=v_idx,
+            v_codebook=cb,
+            scale=scale,
+            causal=True,
+        )
         mx.eval(a, b)
 
     times_ref, times_met = [], []
     for _ in range(iters):
         t0 = time.perf_counter()
-        a = reference_sdpa(q=q, k_indices=k_idx, k_codebook=cb, smooth=smooth, H=H,
-                           v_indices=v_idx, v_codebook=cb, scale=scale, causal=True)
+        a = reference_sdpa(
+            q=q,
+            k_indices=k_idx,
+            k_codebook=cb,
+            smooth=smooth,
+            H=H,
+            v_indices=v_idx,
+            v_codebook=cb,
+            scale=scale,
+            causal=True,
+        )
         mx.eval(a)
         times_ref.append(time.perf_counter() - t0)
 
     for _ in range(iters):
         t0 = time.perf_counter()
-        b = metal_fused_sdpa(q_tilde=q_tilde,
-                             k_indices=k_idx, k_codebook=cb,
-                             v_indices=v_idx, v_codebook=cb,
-                             scale=scale, causal=True)
+        b = metal_fused_sdpa(
+            q_tilde=q_tilde,
+            k_indices=k_idx,
+            k_codebook=cb,
+            v_indices=v_idx,
+            v_codebook=cb,
+            scale=scale,
+            causal=True,
+        )
         mx.eval(b)
         times_met.append(time.perf_counter() - t0)
 
@@ -495,20 +556,23 @@ def main() -> int:
 
     # The realistic shape from the prompt
     fixture = _make_test_inputs(
-        B=1, H_q=32, H_kv=8, S_q=1, S_kv=2048, D=128,
-        sub_dim=8, n_centroids=256,
+        B=1,
+        H_q=32,
+        H_kv=8,
+        S_q=1,
+        S_kv=2048,
+        D=128,
+        sub_dim=8,
+        n_centroids=256,
     )
 
     print("\n=== Correctness ===")
     ok_c, diff_c = correctness(fixture, causal=True)
-    print(f"  causal=True, sliding=0  → max|diff|={diff_c:.4e}  "
-          f"{'OK' if ok_c else 'FAIL'}")
+    print(f"  causal=True, sliding=0  → max|diff|={diff_c:.4e}  {'OK' if ok_c else 'FAIL'}")
     ok_n, diff_n = correctness(fixture, causal=False)
-    print(f"  causal=False             → max|diff|={diff_n:.4e}  "
-          f"{'OK' if ok_n else 'FAIL'}")
+    print(f"  causal=False             → max|diff|={diff_n:.4e}  {'OK' if ok_n else 'FAIL'}")
     ok_w, diff_w = correctness(fixture, causal=True, sliding_window=128)
-    print(f"  causal=True, sliding=128 → max|diff|={diff_w:.4e}  "
-          f"{'OK' if ok_w else 'FAIL'}")
+    print(f"  causal=True, sliding=128 → max|diff|={diff_w:.4e}  {'OK' if ok_w else 'FAIL'}")
 
     all_ok = ok_c and ok_n and ok_w
     if not all_ok:

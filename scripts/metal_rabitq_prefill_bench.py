@@ -16,6 +16,7 @@ score math, so this compares dispatch cost, not output parity.
 
 Usage: python scripts/metal_rabitq_prefill_bench.py
 """
+
 from __future__ import annotations
 
 import time
@@ -45,8 +46,10 @@ def _bench(fn, n_warmup: int = N_WARMUP, n_iter: int = N_ITER) -> float:
 def main() -> None:
     rng = np.random.default_rng(42)
     print(f"[bench] rabitq_prefill_attend — VLM turn-2 shapes, B={B} H={H} D={D}")
-    print(f"{'S_q':>5} {'S_kv':>6} | {'prefill (ms)':>12} | {'decode-k (ms)':>13} | "
-          f"{'baseline (ms)':>13} | {'vs base':>7}")
+    print(
+        f"{'S_q':>5} {'S_kv':>6} | {'prefill (ms)':>12} | {'decode-k (ms)':>13} | "
+        f"{'baseline (ms)':>13} | {'vs base':>7}"
+    )
     print("-" * 66)
 
     for S_q, S_kv in ((256, 2048), (256, 8192), (1024, 8192)):
@@ -59,21 +62,15 @@ def main() -> None:
         v_cents = mx.array(np.sort(rng.standard_normal(16)).astype(np.float32))
         v_packed = rabitq_pack_values(v_idx)
         # decode-kernel inputs (per-query scale in place of the scalar)
-        q_scale = mx.array(
-            np.full((B, H, S_q), 1.0 / np.sqrt(D), dtype=np.float32)
-        )
+        q_scale = mx.array(np.full((B, H, S_q), 1.0 / np.sqrt(D), dtype=np.float32))
         shifts = mx.arange(8, dtype=mx.uint8)
         mx.eval(q, scale, k_bits, k_mag, k_const, v_idx, v_cents, v_packed, q_scale)
 
         def prefill():
-            return rabitq_prefill_attend(
-                q, scale, k_bits, k_mag, k_const, v_packed, v_cents
-            )
+            return rabitq_prefill_attend(q, scale, k_bits, k_mag, k_const, v_packed, v_cents)
 
         def decode_k():
-            return rabitq_fused_attend(
-                q, q_scale, k_bits, k_mag, k_const, v_packed, v_cents
-            )
+            return rabitq_fused_attend(q, q_scale, k_bits, k_mag, k_const, v_packed, v_cents)
 
         def baseline():
             bits = (k_bits[..., None] >> shifts) & 1
@@ -90,8 +87,9 @@ def main() -> None:
         t_p = _bench(prefill)
         t_d = _bench(decode_k)
         t_b = _bench(baseline)
-        print(f"{S_q:>5} {S_kv:>6} | {t_p:>12.3f} | {t_d:>13.3f} | "
-              f"{t_b:>13.3f} | {t_b / t_p:>6.2f}x")
+        print(
+            f"{S_q:>5} {S_kv:>6} | {t_p:>12.3f} | {t_d:>13.3f} | {t_b:>13.3f} | {t_b / t_p:>6.2f}x"
+        )
 
 
 if __name__ == "__main__":

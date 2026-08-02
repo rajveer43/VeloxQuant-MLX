@@ -27,8 +27,8 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
 
 config = KVCacheConfig(
-    method="turboquant_rvq",   # zero-calibration 1-bit RVQ
-    bits=1,                    # 1-bit keys, 2-bit values (default)
+    method="turboquant_rvq",  # zero-calibration 1-bit RVQ
+    bits=1,  # 1-bit keys, 2-bit values (default)
 )
 
 # Build per-layer cache matching the model architecture
@@ -45,7 +45,7 @@ response = mlx_lm.generate(
     tokenizer,
     prompt=prompt,
     max_tokens=512,
-    kv_cache=cache,            # drop-in replacement for the default cache
+    kv_cache=cache,  # drop-in replacement for the default cache
     verbose=True,
 )
 
@@ -61,9 +61,7 @@ observer = MemoryObserver()
 observer.attach(cache)
 
 # Run a longer generation to see the savings
-response = mlx_lm.generate(
-    model, tokenizer, prompt=prompt, max_tokens=2048, kv_cache=cache
-)
+response = mlx_lm.generate(model, tokenizer, prompt=prompt, max_tokens=2048, kv_cache=cache)
 
 report = observer.report()
 print(f"Peak compressed memory : {report.peak_compressed_mb:.1f} MB")
@@ -99,16 +97,16 @@ observer.attach(cache)
 
 # Generate
 prompt = "Write a short story about a robot learning to paint."
-response = mlx_lm.generate(
-    model, tokenizer, prompt=prompt, max_tokens=1024, kv_cache=cache
-)
+response = mlx_lm.generate(model, tokenizer, prompt=prompt, max_tokens=1024, kv_cache=cache)
 print(response)
 
 # Print stats
 report = observer.report()
-print(f"\nMemory: {report.peak_compressed_mb:.1f} MB "
-      f"(vs {report.peak_fp16_mb:.1f} MB fp16, "
-      f"{report.compression_ratio:.1f}× compression)")
+print(
+    f"\nMemory: {report.peak_compressed_mb:.1f} MB "
+    f"(vs {report.peak_fp16_mb:.1f} MB fp16, "
+    f"{report.compression_ratio:.1f}× compression)"
+)
 ```
 
 ## What just happened?

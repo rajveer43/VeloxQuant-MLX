@@ -4,6 +4,7 @@ Covers mlx_lm protocol shape/dtype preservation, the fp16 residual window
 (recent tokens kept exact), byte accounting, and the no-``.bits``-leak
 invariant that keeps mlx_lm's SDPA on the standard fp16 path.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -22,8 +23,9 @@ def _kv(B, H, S, D, seed=0):
 
 
 def _make(method_kw=None, **cfg):
-    base = dict(method="kivi", head_dim=128, bit_width_inlier=2,
-                residual_length=16, kivi_group_size=32)
+    base = dict(
+        method="kivi", head_dim=128, bit_width_inlier=2, residual_length=16, kivi_group_size=32
+    )
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 
@@ -54,7 +56,7 @@ def test_no_bits_leak() -> None:
 def test_residual_window_kept_fp16() -> None:
     """When S <= residual_length the whole block passes through untouched."""
     cache = _make(residual_length=64)
-    k, v = _kv(1, 2, 32, 128, seed=1)   # S=32 < residual 64
+    k, v = _kv(1, 2, 32, 128, seed=1)  # S=32 < residual 64
     ko, vo = cache.update_and_fetch(k, v)
     mx.eval(ko, vo)
     # Exact passthrough: output equals input bit-for-bit.
@@ -66,7 +68,7 @@ def test_residual_window_kept_fp16() -> None:
 def test_quantizes_aged_tokens() -> None:
     """When S > residual_length the oldest (S - r) tokens are quantized."""
     cache = _make(residual_length=16)
-    k, v = _kv(1, 2, 80, 128, seed=2)    # 64 quantized, 16 residual
+    k, v = _kv(1, 2, 80, 128, seed=2)  # 64 quantized, 16 residual
     ko, vo = cache.update_and_fetch(k, v)
     mx.eval(ko, vo)
     ko_np, k_np = np.array(ko), np.array(k)
@@ -84,8 +86,9 @@ def test_compression_ratio_below_fp16() -> None:
     k, v = _kv(1, 4, 256, 128, seed=3)
     ko, vo = cache.update_and_fetch(k, v)
     mx.eval(ko, vo)
-    total_comp = (cache.compressed_key_bytes + cache.compressed_value_bytes
-                  + cache.residual_fp16_bytes)
+    total_comp = (
+        cache.compressed_key_bytes + cache.compressed_value_bytes + cache.residual_fp16_bytes
+    )
     total_fp16 = cache.fp16_key_bytes + cache.fp16_value_bytes
     ratio = total_fp16 / total_comp
     assert ratio > 1.5, f"end-to-end ratio {ratio:.2f} not better than fp16"

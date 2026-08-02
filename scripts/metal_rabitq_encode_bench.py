@@ -14,6 +14,7 @@ representation (packed sign bits + L1/D magnitude) from raw fp16 keys:
 
 Usage: python scripts/metal_rabitq_encode_bench.py
 """
+
 from __future__ import annotations
 
 import time
@@ -50,8 +51,10 @@ def main() -> None:
     bit_weights = mx.array((1 << np.arange(8)).astype(np.uint8))
 
     print(f"[bench] rabitq_encode vs MLX-ops vs numpy round-trip — D={D}")
-    print(f"{'N':>6} | {'fused (ms)':>10} | {'mlx (ms)':>9} | {'numpy (ms)':>10} | "
-          f"{'vs mlx':>7} | {'vs numpy':>8}")
+    print(
+        f"{'N':>6} | {'fused (ms)':>10} | {'mlx (ms)':>9} | {'numpy (ms)':>10} | "
+        f"{'vs mlx':>7} | {'vs numpy':>8}"
+    )
     print("-" * 66)
 
     for N in (1024, 8192, 32768):
@@ -72,22 +75,22 @@ def main() -> None:
             return packed, mag
 
         def numpy_path():
-            y = mx.hadamard_transform(
-                mx.array(keys_np * diag_np[None, :]), scale=scale
-            )
+            y = mx.hadamard_transform(mx.array(keys_np * diag_np[None, :]), scale=scale)
             mx.eval(y)
             y_np = np.array(y, dtype=np.float32)
-            packed = np.packbits(
-                (y_np >= 0).astype(np.uint8), axis=1, bitorder="little"
-            )[:, : D // 8]
+            packed = np.packbits((y_np >= 0).astype(np.uint8), axis=1, bitorder="little")[
+                :, : D // 8
+            ]
             mag = np.abs(y_np).sum(axis=1) / D
             return packed, mag
 
         t_fused = _bench(fused)
         t_mlx = _bench(mlx_ops)
         t_np = _bench(numpy_path)
-        print(f"{N:>6} | {t_fused:>10.3f} | {t_mlx:>9.3f} | {t_np:>10.3f} | "
-              f"{t_mlx / t_fused:>6.2f}x | {t_np / t_fused:>7.2f}x")
+        print(
+            f"{N:>6} | {t_fused:>10.3f} | {t_mlx:>9.3f} | {t_np:>10.3f} | "
+            f"{t_mlx / t_fused:>6.2f}x | {t_np / t_fused:>7.2f}x"
+        )
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ TurboQuantMSE, TurboQuantRVQ, and the Hadamard preconditioner:
   - :func:`turboquant_hadamard_quantize` — fused Walsh-Hadamard + quantize in
     one threadgroup-local dispatch; eliminates the intermediate fp16 buffer.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -160,6 +161,7 @@ def _hadamard_quantize_kernel(D: int, b: int):
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def turboquant_scalar_quantize(
     x: mx.array,
     centroids: mx.array,
@@ -193,7 +195,7 @@ def turboquant_scalar_quantize(
     else:
         flat_x = x.reshape(-1).astype(mx.float32)
     cents_f32 = centroids.astype(mx.float32)
-    N         = flat_x.size
+    N = flat_x.size
 
     outputs = _scalar_quantize_kernel(b, flat_x.dtype)(
         inputs=[flat_x, cents_f32],
@@ -219,9 +221,9 @@ def turboquant_scalar_dequantize(
     Returns:
         ``[..., d]`` fp16 reconstructed values.
     """
-    flat_idx  = indices.reshape(-1).astype(mx.uint8)
+    flat_idx = indices.reshape(-1).astype(mx.uint8)
     cents_f32 = centroids.astype(mx.float32)
-    N         = flat_idx.size
+    N = flat_idx.size
 
     outputs = _scalar_dequantize_kernel()(
         inputs=[flat_idx, cents_f32],

@@ -64,6 +64,7 @@ Usage
 
 Prints tables and saves a JSON summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -87,11 +88,11 @@ from veloxquant_mlx.quantizers.curdkv import (
 from veloxquant_mlx.quantizers.h2o import h2o_get_kv, h2o_update, init_h2o_state
 
 # ── sweep configuration ──────────────────────────────────────────────────────
-SEQ_LENS = [40, 80]               # total tokens (n_classes_each * 2)
-BUDGETS = [6, 8]                 # eviction budget
+SEQ_LENS = [40, 80]  # total tokens (n_classes_each * 2)
+BUDGETS = [6, 8]  # eviction budget
 GEOMETRIES = ["planted_value_divergence", "correlated"]
 HEAD_DIM = 24
-DATA_SEEDS = [0, 1, 2, 3, 4]      # average over data realizations (no RNG in either method)
+DATA_SEEDS = [0, 1, 2, 3, 4]  # average over data realizations (no RNG in either method)
 SEED = 13
 
 
@@ -116,8 +117,12 @@ def _synthetic(n_each: int, geometry: str, seed: int):
         # should largely agree on which tokens matter.
         importance1 = rng.uniform(3.0, 5.0, size=n_each)
         importance2 = rng.uniform(0.05, 0.3, size=n_each)
-        class1_keys = importance1[:, None] * base_direction[None, :] + 0.02 * rng.standard_normal((n_each, HEAD_DIM))
-        class2_keys = importance2[:, None] * base_direction[None, :] + 0.02 * rng.standard_normal((n_each, HEAD_DIM))
+        class1_keys = importance1[:, None] * base_direction[None, :] + 0.02 * rng.standard_normal(
+            (n_each, HEAD_DIM)
+        )
+        class2_keys = importance2[:, None] * base_direction[None, :] + 0.02 * rng.standard_normal(
+            (n_each, HEAD_DIM)
+        )
         class1_values = importance1[:, None] * rng.standard_normal((n_each, HEAD_DIM))
         class2_values = importance2[:, None] * rng.standard_normal((n_each, HEAD_DIM))
 
@@ -138,7 +143,9 @@ def _synthetic(n_each: int, geometry: str, seed: int):
     return keys, values, class1_keys, class2_keys
 
 
-def _class2_retention_rate(kept_keys: np.ndarray, class1_keys: np.ndarray, class2_keys: np.ndarray) -> float:
+def _class2_retention_rate(
+    kept_keys: np.ndarray, class1_keys: np.ndarray, class2_keys: np.ndarray
+) -> float:
     """Fraction of kept rows nearest (by L2 distance) to a class-2 source key."""
     if kept_keys.shape[0] == 0:
         return 0.0
@@ -172,7 +179,9 @@ def _run_once(seq_len: int, budget: int, geometry: str, seed: int) -> dict:
         st_h = h2o_update(st_h, mx.array(keys), mx.array(values))
         ko_h, _ = h2o_get_kv(st_h)
 
-        curdkv_rates.append(_class2_retention_rate(np.array(ko_c.tolist()), class1_keys, class2_keys))
+        curdkv_rates.append(
+            _class2_retention_rate(np.array(ko_c.tolist()), class1_keys, class2_keys)
+        )
         h2o_rates.append(_class2_retention_rate(np.array(ko_h.tolist()), class1_keys, class2_keys))
 
     row["class2_retention_curdkv"] = round(float(np.mean(curdkv_rates)), 4)
@@ -188,8 +197,7 @@ def main() -> None:
     print("  (class2_retention = fraction of kept tokens nearest a class-2, value-irrelevant")
     print("   source key; lower = better at deprioritizing value-irrelevant tokens)")
     print()
-    header = (f"{'seq':>4} {'budget':>6} {'geometry':>26}  "
-              f"{'class2_curdkv':>13}  {'class2_h2o':>10}")
+    header = f"{'seq':>4} {'budget':>6} {'geometry':>26}  {'class2_curdkv':>13}  {'class2_h2o':>10}"
     print(header)
     print("-" * len(header))
 
@@ -197,8 +205,10 @@ def main() -> None:
     for seq_len, budget, geometry in product(SEQ_LENS, BUDGETS, GEOMETRIES):
         row = _run_once(seq_len, budget, geometry, seed=SEED + seq_len)
         results.append(row)
-        print(f"{row['seq_len']:>4} {row['budget']:>6} {row['geometry']:>26}  "
-              f"{row['class2_retention_curdkv']:>13.4f}  {row['class2_retention_h2o']:>10.4f}")
+        print(
+            f"{row['seq_len']:>4} {row['budget']:>6} {row['geometry']:>26}  "
+            f"{row['class2_retention_curdkv']:>13.4f}  {row['class2_retention_h2o']:>10.4f}"
+        )
 
     out_path = Path(__file__).parent.parent / "figures" / "curdkv" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
@@ -209,7 +219,9 @@ def main() -> None:
         curdkv_rate = float(np.mean([r["class2_retention_curdkv"] for r in rows]))
         h2o_rate = float(np.mean([r["class2_retention_h2o"] for r in rows]))
         print(f"\nSummary ({geom}):")
-        print(f"  mean class-2 (value-irrelevant) retention — CurDKV: {curdkv_rate:.4f}   H2O: {h2o_rate:.4f}")
+        print(
+            f"  mean class-2 (value-irrelevant) retention — CurDKV: {curdkv_rate:.4f}   H2O: {h2o_rate:.4f}"
+        )
 
     print("\n  (honest reading: the clean, ALWAYS-TRUE claim is planted_value_divergence — two")
     print("   tokens with IDENTICAL keys and DIVERGENT values get different CurDKV leverage")

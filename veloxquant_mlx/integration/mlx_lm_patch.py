@@ -14,6 +14,7 @@ Usage::
     from mlx_lm import generate
     response = generate(model, tokenizer, prompt="...", max_tokens=200)
 """
+
 from __future__ import annotations
 
 from typing import Any, List

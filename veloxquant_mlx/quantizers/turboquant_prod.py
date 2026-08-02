@@ -9,7 +9,12 @@ from veloxquant_mlx.core.abstractions import ArtifactStore, Quantizer
 from veloxquant_mlx.core.constants import SQRT_PI_OVER_2
 from veloxquant_mlx.core.context import EncodedVector
 from veloxquant_mlx.core.registry import QuantizerRegistry
-from veloxquant_mlx.math.rotation import is_hadamard_compatible, make_hadamard_diagonal, make_jl_matrix, make_rotation_matrix
+from veloxquant_mlx.math.rotation import (
+    is_hadamard_compatible,
+    make_hadamard_diagonal,
+    make_jl_matrix,
+    make_rotation_matrix,
+)
 from veloxquant_mlx.preconditioners.jl_sketch import QJLEncoder
 from veloxquant_mlx.preconditioners.rotation import HadamardPreconditioner, RotationPreconditioner
 
@@ -89,16 +94,21 @@ class TurboQuantProd(Quantizer):
         # MSE codebook at (b-1) bits
         distribution = "gaussian" if d >= 64 else "beta"
         dist_key = distribution
-        if store is not None and store.exists("codebook", distribution=dist_key, b=self._b_mse, d=d):
+        if store is not None and store.exists(
+            "codebook", distribution=dist_key, b=self._b_mse, d=d
+        ):
             cb_np = np.array(store.load_codebook(dist_key, b=self._b_mse, d=d), dtype=np.float32)
             from veloxquant_mlx.codebooks.scalar_codebook import ScalarCodebook
+
             self._codebook = ScalarCodebook(cb_np)
         else:
             self._codebook = CodebookFactory.create(distribution, b=self._b_mse, d=d)
             if store is not None:
                 store.save_codebook(
                     self._codebook.centroids_numpy(),  # type: ignore[attr-defined]
-                    distribution=dist_key, b=self._b_mse, d=d,
+                    distribution=dist_key,
+                    b=self._b_mse,
+                    d=d,
                 )
 
         # Optionally wrap the MSE codebook in an AdaptiveScalarCodebook that
@@ -106,8 +116,12 @@ class TurboQuantProd(Quantizer):
         self._use_adaptive_codebook = bool(use_adaptive_codebook)
         if self._use_adaptive_codebook:
             from veloxquant_mlx.codebooks.adaptive_codebook import AdaptiveScalarCodebook
+
             self._codebook = AdaptiveScalarCodebook(  # type: ignore[assignment]
-                b=self._b_mse, d=d, n_calib=n_calib, default_codebook=self._codebook,  # type: ignore[arg-type]
+                b=self._b_mse,
+                d=d,
+                n_calib=n_calib,
+                default_codebook=self._codebook,  # type: ignore[arg-type]
             )
 
         # JL matrix for residual QJL — Gaussian JL allows m > d
@@ -192,9 +206,7 @@ class TurboQuantProd(Quantizer):
         x_hat_mse = self._rotation.apply_inverse(y_hat)
 
         scale = SQRT_PI_OVER_2 / self._m_eff
-        x_hat_qjl = ev.residual_norm[:, None] * scale * (
-            ev.signs.astype(mx.float16) @ self._qjl._S
-        )
+        x_hat_qjl = ev.residual_norm[:, None] * scale * (ev.signs.astype(mx.float16) @ self._qjl._S)
         return x_hat_mse + x_hat_qjl
 
     def estimate_inner_product(self, q: Any, ev: EncodedVector) -> Any:

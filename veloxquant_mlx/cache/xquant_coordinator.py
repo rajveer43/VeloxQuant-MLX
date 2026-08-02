@@ -16,6 +16,7 @@ offset. A per-group token budget (``max_ctx``) bounds memory; exceeding it raise
 Single-threaded by construction (mlx generate is sequential), so a plain
 dict-of-segments needs no locking.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -33,8 +34,8 @@ class _Segment:
     def __init__(self, token_start: int, n_tokens: int, codes: mx.array, params: GroupParams):
         self.token_start = token_start
         self.n_tokens = n_tokens
-        self.codes = codes        # [B, H, n_groups, group_size, D] fp32 codes
-        self.params = params      # anchor GroupParams (per (B,H) not stored here; see cache)
+        self.codes = codes  # [B, H, n_groups, group_size, D] fp32 codes
+        self.params = params  # anchor GroupParams (per (B,H) not stored here; see cache)
 
 
 class XQuantCoordinator:

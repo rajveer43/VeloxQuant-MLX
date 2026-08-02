@@ -10,6 +10,7 @@ where scale = ||qhat - c||_1 / D (precomputed once per query-cluster pair).
 Public API:
   - :func:`rabitq_hamming_score`
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -49,6 +50,7 @@ _HAMMING_SCORE_SRC = r"""
 # Kernel factory
 # ---------------------------------------------------------------------------
 
+
 def _hamming_kernel(n_bytes: int):
     key = ("rabitq_hamming", n_bytes)
     if key not in _cache:
@@ -66,11 +68,12 @@ def _hamming_kernel(n_bytes: int):
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def rabitq_hamming_score(
-    qbits: mx.array,   # [D//8] uint8 — packed query bits
-    bits: mx.array,    # [N, D//8] uint8 — packed candidate bits
-    Cx: mx.array,      # [N] float32 — per-candidate constant
-    scale: mx.array,   # [1] float32 — ||qhat-c||_1 / D
+    qbits: mx.array,  # [D//8] uint8 — packed query bits
+    bits: mx.array,  # [N, D//8] uint8 — packed candidate bits
+    Cx: mx.array,  # [N] float32 — per-candidate constant
+    scale: mx.array,  # [1] float32 — ||qhat-c||_1 / D
 ) -> mx.array:
     """Compute RaBitQ approximate distances for N candidates.
 
@@ -94,8 +97,8 @@ def rabitq_hamming_score(
         )
 
     qbits_ = qbits.astype(mx.uint8)
-    bits_  = bits.reshape(-1).astype(mx.uint8)
-    Cx_    = Cx.astype(mx.float32)
+    bits_ = bits.reshape(-1).astype(mx.uint8)
+    Cx_ = Cx.astype(mx.float32)
     scale_ = scale.reshape(1).astype(mx.float32)
 
     outputs = _hamming_kernel(n_bytes)(

@@ -32,6 +32,7 @@ The eviction happens **once at prefill** (``S > 1``). Decode tokens
 This module holds the pure, side-effect-free numerics: observation-window
 attention scoring, top-k selection, and byte accounting.
 """
+
 from __future__ import annotations
 
 import math
@@ -50,6 +51,7 @@ class SnapKVState(NamedTuple):
         n_original:   int — total prefill token count before eviction.
         n_kept:       int — number of retained tokens (≤ n_original).
     """
+
     kept_keys: mx.array
     kept_values: mx.array
     kept_indices: mx.array
@@ -81,11 +83,11 @@ def obs_window_attention_scores(
     S, D = keys.shape
     w = min(max(obs_window, 1), S)
     k32 = keys.astype(mx.float32)
-    q_proxy = k32[-w:]                          # [w, D]
+    q_proxy = k32[-w:]  # [w, D]
     scale = math.sqrt(D)
-    logits = (q_proxy @ k32.T) / scale          # [w, S]
-    attn = mx.softmax(logits, axis=-1)          # [w, S] — each row sums to 1
-    scores = mx.mean(attn, axis=0)              # [S]
+    logits = (q_proxy @ k32.T) / scale  # [w, S]
+    attn = mx.softmax(logits, axis=-1)  # [w, S] — each row sums to 1
+    scores = mx.mean(attn, axis=0)  # [S]
     return scores.astype(mx.float32)
 
 
@@ -178,7 +180,7 @@ def snapkv_fp16_bytes(state: SnapKVState) -> int:
     Both K and V are fp16 (2 bytes/element). Only the kept rows are stored.
     """
     D = int(state.kept_keys.shape[1])
-    return int(state.n_kept * D * 2 * 2)   # K + V, fp16
+    return int(state.n_kept * D * 2 * 2)  # K + V, fp16
 
 
 def full_fp16_bytes(n: int, d: int) -> int:

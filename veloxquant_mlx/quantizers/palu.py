@@ -51,6 +51,7 @@ Adaptation notes:
   - PALU's fused low-rank-reconstruction attention CUDA kernel is *not* ported:
     we reconstruct fp16 then call MLX SDPA.  Documented as a known simplification.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -104,8 +105,8 @@ def group_head_svd(
           singular_values — ``[r]`` fp32, descending (for mixed-bit ranking)
     """
     G, S, D = x_group.shape
-    x = x_group.astype(mx.float32).reshape(G * S, D)   # stack heads along tokens
-    mu = mx.mean(x, axis=0)                            # [D]
+    x = x_group.astype(mx.float32).reshape(G * S, D)  # stack heads along tokens
+    mu = mx.mean(x, axis=0)  # [D]
     x_centered = x - mu[None, :]
 
     U, s_vals, Vt = mx.linalg.svd(x_centered, stream=mx.cpu)
@@ -125,8 +126,8 @@ def group_head_svd(
                     break
     rank = max(1, min(int(rank), int(s_vals.shape[0]), D))
 
-    V = Vt[:rank, :].T          # [D, r]
-    s_r = s_vals[:rank]         # [r]
+    V = Vt[:rank, :].T  # [D, r]
+    s_r = s_vals[:rank]  # [r]
     return V, mu, s_r
 
 

@@ -43,6 +43,7 @@ Usage
 
 Prints tables and saves a JSON summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -173,8 +174,10 @@ def main() -> None:
     for seq_len, geometry in product(SEQ_LENS, GEOMETRIES):
         row = _run_once(seq_len, geometry, seed=SEED + seq_len)
         results.append(row)
-        print(f"{row['seq_len']:>4} {row['geometry']:>20}  {row['amc_mse']:>10.6f}  "
-              f"{row['uniform_mse']:>12.6f}  {row['amc_avg_bytes_per_token']:>10.2f}")
+        print(
+            f"{row['seq_len']:>4} {row['geometry']:>20}  {row['amc_mse']:>10.6f}  "
+            f"{row['uniform_mse']:>12.6f}  {row['amc_avg_bytes_per_token']:>10.2f}"
+        )
 
     out_path = Path(__file__).parent.parent / "figures" / "amc" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
@@ -185,7 +188,9 @@ def main() -> None:
         amc_mse = float(np.mean([r["amc_mse"] for r in rows]))
         uniform_mse = float(np.mean([r["uniform_mse"] for r in rows]))
         print(f"\nSummary ({geom}):")
-        print(f"  mean MSE at matched byte budget — AMC: {amc_mse:.6f}   Uniform: {uniform_mse:.6f}")
+        print(
+            f"  mean MSE at matched byte budget — AMC: {amc_mse:.6f}   Uniform: {uniform_mse:.6f}"
+        )
 
     print("\n  (honest reading: on sparse_outlier, AMC's saliency tiering concentrates rank+bits")
     print("   on the large-magnitude outlier tokens, which dominate MSE if compressed hard — AMC")

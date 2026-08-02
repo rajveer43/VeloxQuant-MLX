@@ -5,6 +5,7 @@ the tau=0 == H2O-adapted collapse (the honest ablation), Gumbel determinism/
 reproducibility, and the "late riser" mechanism (Gumbel rescues a token that a
 deterministic scorer would prune early).
 """
+
 from __future__ import annotations
 
 import math
@@ -128,11 +129,11 @@ def test_get_kv_placeholder_before_update():
 def test_gumbel_deterministic_per_position():
     a = float(_gumbel_at(0, 5).item())
     b = float(_gumbel_at(0, 5).item())
-    assert a == b                      # same (seed,pos) -> same value
+    assert a == b  # same (seed,pos) -> same value
     c = float(_gumbel_at(0, 6).item())
-    assert a != c                      # different pos -> different value
+    assert a != c  # different pos -> different value
     d = float(_gumbel_at(1, 5).item())
-    assert a != d                      # different seed -> different value
+    assert a != d  # different seed -> different value
 
 
 def test_run_is_reproducible():
@@ -142,6 +143,7 @@ def test_run_is_reproducible():
             k, v = _rand_kv(1, 16, seed=i)
             st = keyformer_update(st, k, v)
         return keyformer_get_kv(st)[0]
+
     assert bool(mx.all(run() == run()).item())
 
 
@@ -153,7 +155,7 @@ def test_tau_zero_matches_h2o():
 
     kf = init_keyformer_state(n_sink=4, budget=12, head_dim=16, tau=0.0, seed=7)
     h2o = init_h2o_state(n_sink=4, budget=12, head_dim=16)
-    for (k, v) in ks:
+    for k, v in ks:
         kf = keyformer_update(kf, k, v)
         h2o = h2o_update(h2o, k, v)
 
@@ -169,7 +171,7 @@ def test_tau_zero_is_seed_invariant():
 
     def run(seed):
         st = init_keyformer_state(n_sink=2, budget=10, head_dim=16, tau=0.0, seed=seed)
-        for (k, v) in ks:
+        for k, v in ks:
             st = keyformer_update(st, k, v)
         return keyformer_get_kv(st)[0]
 
@@ -182,7 +184,7 @@ def test_positive_tau_can_change_kept_set():
 
     def run(tau, seed):
         st = init_keyformer_state(n_sink=2, budget=10, head_dim=16, tau=tau, seed=seed)
-        for (k, v) in ks:
+        for k, v in ks:
             st = keyformer_update(st, k, v)
         return keyformer_get_kv(st)[0]
 
@@ -209,16 +211,19 @@ def test_gumbel_rescues_late_riser():
     """
     D = 16
     rng = np.random.default_rng(0)
-    planted = np.zeros(D, dtype=np.float16); planted[0] = 3.0   # unique axis
+    planted = np.zeros(D, dtype=np.float16)
+    planted[0] = 3.0  # unique axis
 
     def build_stream(seed):
         r = np.random.default_rng(seed)
         # early filler orthogonal to planted axis (components 1..D-1 only)
-        early = r.standard_normal((20, D)).astype(np.float16); early[:, 0] = 0.0
+        early = r.standard_normal((20, D)).astype(np.float16)
+        early[:, 0] = 0.0
         # the planted token inserted early (position ~2)
         stream = [early[0], early[1], planted] + list(early[2:])
         # later burst aligned with planted axis -> would attend to it
-        burst = np.zeros((6, D), dtype=np.float16); burst[:, 0] = 3.0
+        burst = np.zeros((6, D), dtype=np.float16)
+        burst[:, 0] = 3.0
         stream += list(burst)
         return [mx.array(x[None]) for x in stream]
 
@@ -229,7 +234,7 @@ def test_gumbel_rescues_late_riser():
             st = keyformer_update(st, k, k)  # value == key for simplicity
         K, _ = keyformer_get_kv(st)
         # planted survived if any kept row matches the planted axis strongly
-        proj = (K.astype(mx.float32) @ mx.array(planted.astype(np.float32)))
+        proj = K.astype(mx.float32) @ mx.array(planted.astype(np.float32))
         return bool((mx.max(proj) > 6.0).item())
 
     seeds = range(40)

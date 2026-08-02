@@ -1,4 +1,5 @@
 """Tests for the VecInfer algorithmic primitives."""
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -48,8 +49,9 @@ def test_dual_transform_preserves_inner_product() -> None:
     for h in range(n_heads):
         orig = np.asarray(q[0, h] @ K[:, h].T)
         transformed = np.asarray(q_tilde[0, h] @ K_tilde[:, h].T)
-        assert np.allclose(orig, transformed, atol=1e-3), \
+        assert np.allclose(orig, transformed, atol=1e-3), (
             f"head {h}: max diff {np.max(np.abs(orig - transformed))}"
+        )
 
 
 def test_calibrate_smooth_factors_shape() -> None:
@@ -94,8 +96,9 @@ def test_train_codebook_converges() -> None:
     d2 = np.einsum("ijk,ijk->ij", diff, diff)
     rand_inertia = np.min(d2, axis=1).sum()
 
-    assert trained_inertia < rand_inertia, \
+    assert trained_inertia < rand_inertia, (
         f"trained {trained_inertia:.2f} should be < random {rand_inertia:.2f}"
+    )
 
 
 def test_quantize_dequantize_roundtrip_error_decreases_with_b() -> None:
@@ -108,7 +111,7 @@ def test_quantize_dequantize_roundtrip_error_decreases_with_b() -> None:
 
     errors = []
     for b in (4, 6, 8):
-        cb = train_codebook(train_x, n_centroids=2 ** b, max_iter=20, seed=0)
+        cb = train_codebook(train_x, n_centroids=2**b, max_iter=20, seed=0)
         idx = quantize_vq(x, cb, sub_dim)
         recon = dequantize_vq(idx, cb)
         mse = float(mx.mean((recon - x) ** 2))
@@ -133,12 +136,11 @@ def test_compute_query_lut_matches_explicit_dot() -> None:
     lut = compute_query_lut(q, cb, sub_dim)  # [n_sub, n_centroids]
     lut_np = np.asarray(lut)
     idx_np = np.asarray(idx)  # [5, n_sub]
-    via_lut = np.array([
-        sum(lut_np[s, idx_np[t, s]] for s in range(D // sub_dim))
-        for t in range(5)
-    ], dtype=np.float32)
-    assert np.allclose(explicit, via_lut, atol=1e-4), \
-        f"explicit {explicit} vs lut {via_lut}"
+    via_lut = np.array(
+        [sum(lut_np[s, idx_np[t, s]] for s in range(D // sub_dim)) for t in range(5)],
+        dtype=np.float32,
+    )
+    assert np.allclose(explicit, via_lut, atol=1e-4), f"explicit {explicit} vs lut {via_lut}"
 
 
 def test_dual_transform_with_1d_smooth() -> None:

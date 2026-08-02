@@ -37,8 +37,8 @@ inner_cache = KVCacheFactory.create(config)
 cache = SlidingWindowKVCache(inner_cache, window_size=2048)
 
 # Token-by-token insertion (the interface this cache implements)
-cache.append_key(key_vector)     # shape (d,), fp16
-cache.append_value(value_vector) # shape (d,), fp16 — triggers eviction if window is full
+cache.append_key(key_vector)  # shape (d,), fp16
+cache.append_value(value_vector)  # shape (d,), fp16 — triggers eviction if window is full
 
 output = cache.attend(query_vector)  # delegates to the inner cache
 ```
@@ -60,9 +60,9 @@ output = cache.attend(query_vector)  # delegates to the inner cache
 There is no `eviction_stats()` method or eviction-count tracking beyond what `repr()` shows via `total_seen`.
 
 ```python
-print(len(cache))            # tokens currently held (<= window_size)
+print(len(cache))  # tokens currently held (<= window_size)
 print(cache.memory_bytes())  # bytes used by the inner cache
-print(cache)                 # SlidingWindowKVCache(window=2048, n_stored=2048, total_seen=5000)
+print(cache)  # SlidingWindowKVCache(window=2048, n_stored=2048, total_seen=5000)
 ```
 
 ## Configuration reference

@@ -10,6 +10,7 @@ Run from repo root:
 
     PYTHONPATH=. python scripts/metal_end_to_end_smoke.py
 """
+
 from __future__ import annotations
 
 import time
@@ -72,8 +73,11 @@ def _run_one(model, tokenizer, use_metal: bool) -> tuple[str, float, int]:
 
     t0 = time.perf_counter()
     response = mlx_lm.generate(
-        model, tokenizer, prompt=prompt_txt,
-        max_tokens=MAX_TOKENS, verbose=False,
+        model,
+        tokenizer,
+        prompt=prompt_txt,
+        max_tokens=MAX_TOKENS,
+        verbose=False,
         prompt_cache=caches,
     )
     elapsed = time.perf_counter() - t0
@@ -93,12 +97,12 @@ def main() -> int:
 
     print("\n=== Pure-MLX path ===")
     r_pure, t_pure, n_pure = _run_one(model, tokenizer, use_metal=False)
-    print(f"  {n_pure} tokens in {t_pure:.2f}s ({n_pure/max(t_pure,1e-6):.1f} tok/s)")
+    print(f"  {n_pure} tokens in {t_pure:.2f}s ({n_pure / max(t_pure, 1e-6):.1f} tok/s)")
     print(f"  preview: {r_pure[:140]!r}...")
 
     print("\n=== Metal path ===")
     r_metal, t_metal, n_metal = _run_one(model, tokenizer, use_metal=True)
-    print(f"  {n_metal} tokens in {t_metal:.2f}s ({n_metal/max(t_metal,1e-6):.1f} tok/s)")
+    print(f"  {n_metal} tokens in {t_metal:.2f}s ({n_metal / max(t_metal, 1e-6):.1f} tok/s)")
     print(f"  preview: {r_metal[:140]!r}...")
 
     print("\n=== Comparison ===")
@@ -108,8 +112,10 @@ def main() -> int:
     if r_pure != r_metal:
         # Index-level fp16 ambiguity may cause different sampling — that's
         # expected.  As long as both produce coherent text, the path works.
-        print(f"  (note: divergence is expected on fp16 due to nearest-tie "
-              f"resolution; both paths produce valid output)")
+        print(
+            f"  (note: divergence is expected on fp16 due to nearest-tie "
+            f"resolution; both paths produce valid output)"
+        )
     return 0
 
 

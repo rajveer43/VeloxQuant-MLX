@@ -27,6 +27,7 @@ This module holds the pure numerics. The cross-layer coordination (which layer
 pairs with which, who writes the shared direction) is handled by
 :class:`~veloxquant_mlx.cache.minicache_coordinator.MiniCacheCoordinator`.
 """
+
 from __future__ import annotations
 
 from typing import NamedTuple
@@ -97,7 +98,7 @@ def slerp(d0: mx.array, d1: mx.array, t: float = 0.5) -> mx.array:
     """
     dot = mx.sum(d0 * d1, axis=-1, keepdims=True)
     dot = mx.clip(dot, -1.0, 1.0)
-    omega = mx.arccos(dot)                       # [..., 1]
+    omega = mx.arccos(dot)  # [..., 1]
     sin_omega = mx.sin(omega)
     near = sin_omega < 1e-6
     # SLERP coefficients
@@ -122,6 +123,7 @@ class MergeResult(NamedTuple):
         full_primary / full_merge: [S, D] full vectors for retained tokens
             (only meaningful where ``retained`` is True; elsewhere ignored).
     """
+
     shared_dir: mx.array
     mag_primary: mx.array
     mag_merge: mx.array
@@ -149,9 +151,9 @@ def merge_pair(
     """
     mag_p, dir_p = to_mag_dir(x_primary)
     mag_m, dir_m = to_mag_dir(x_merge)
-    cos = mx.sum(dir_p * dir_m, axis=-1, keepdims=True)   # [S, 1]
-    retained = (cos < retention_threshold).reshape(-1)    # [S]
-    shared = slerp(dir_p, dir_m, t=t)                     # [S, D]
+    cos = mx.sum(dir_p * dir_m, axis=-1, keepdims=True)  # [S, 1]
+    retained = (cos < retention_threshold).reshape(-1)  # [S]
+    shared = slerp(dir_p, dir_m, t=t)  # [S, D]
     return MergeResult(
         shared_dir=shared,
         mag_primary=mag_p,
@@ -181,8 +183,8 @@ def reconstruct_layer(res: MergeResult, which: str) -> mx.array:
         mag, full = res.mag_merge, res.full_merge
     else:
         raise ValueError(f"reconstruct_layer: which must be primary|merge, got {which!r}")
-    merged = (mag * res.shared_dir).astype(mx.float16)            # [S, D]
-    mask = res.retained.reshape(-1, 1)                            # [S, 1]
+    merged = (mag * res.shared_dir).astype(mx.float16)  # [S, D]
+    mask = res.retained.reshape(-1, 1)  # [S, 1]
     return mx.where(mask, full.astype(mx.float16), merged)
 
 

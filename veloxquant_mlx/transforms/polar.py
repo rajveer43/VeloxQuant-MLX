@@ -58,7 +58,7 @@ class RecursivePolarTransform(Transform):
         import mlx.core as mx
 
         batch, d = x.shape[0], x.shape[1]
-        if d % (2 ** self._n_levels) != 0:
+        if d % (2**self._n_levels) != 0:
             raise ValueError(
                 f"RecursivePolarTransform: d={d} must be divisible by "
                 f"2^n_levels=2^{self._n_levels}={2**self._n_levels}"
@@ -124,14 +124,14 @@ class RecursivePolarTransform(Transform):
                 # r has more dims: it was not fully squeezed
                 pass
 
-            x_comp = r_f32 * mx.cos(theta)   # (batch, n_pairs)
-            y_comp = r_f32 * mx.sin(theta)   # (batch, n_pairs)
+            x_comp = r_f32 * mx.cos(theta)  # (batch, n_pairs)
+            y_comp = r_f32 * mx.sin(theta)  # (batch, n_pairs)
 
             # Interleave: [x0, y0, x1, y1, ...]
             batch = x_comp.shape[0]
             n_pairs = x_comp.shape[1]
             interleaved = mx.stack([x_comp, y_comp], axis=2)  # (batch, n_pairs, 2)
-            r = interleaved.reshape(batch, n_pairs * 2)       # (batch, 2*n_pairs)
+            r = interleaved.reshape(batch, n_pairs * 2)  # (batch, 2*n_pairs)
 
         return r.astype(dtype)
 

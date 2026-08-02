@@ -9,6 +9,7 @@ Until ``results_streaming_llm.json`` is committed with Apple Silicon hardware
 numbers from an actual model forward pass, no throughput or perplexity figures
 are claimed.
 """
+
 from __future__ import annotations
 
 import json
@@ -27,9 +28,7 @@ from veloxquant_mlx.quantizers.streaming_llm import (
 )
 
 
-def _high_attention_outlier_kv(
-    S: int, D: int, seed: int = 42
-) -> tuple[mx.array, mx.array]:
+def _high_attention_outlier_kv(S: int, D: int, seed: int = 42) -> tuple[mx.array, mx.array]:
     """Synthetic K/V with a few high-norm tokens (realistic sink-like structure)."""
     rng = np.random.default_rng(seed)
     k = rng.standard_normal((S, D)).astype(np.float32)
@@ -57,16 +56,18 @@ def _benchmark_single(
         ko, vo = stream_get_kv(w)
         kept_bytes = stream_fp16_bytes(w)
         full_bytes = full_stream_fp16_bytes(seq_len, D)
-        results_per_head.append({
-            "n_in_window": w.n_sink + w.n_recent,
-            "n_sink": w.n_sink,
-            "n_recent": w.n_recent,
-            "tokens_seen": w.tokens_seen,
-            "kept_bytes": kept_bytes,
-            "full_bytes": full_bytes,
-            "ratio": full_bytes / max(kept_bytes, 1),
-            "out_shape": list(ko.shape),
-        })
+        results_per_head.append(
+            {
+                "n_in_window": w.n_sink + w.n_recent,
+                "n_sink": w.n_sink,
+                "n_recent": w.n_recent,
+                "tokens_seen": w.tokens_seen,
+                "kept_bytes": kept_bytes,
+                "full_bytes": full_bytes,
+                "ratio": full_bytes / max(kept_bytes, 1),
+                "out_shape": list(ko.shape),
+            }
+        )
     dt_ms = (time.perf_counter() - t0) * 1000 / n_heads
 
     avg = lambda key: sum(r[key] for r in results_per_head) / n_heads
@@ -98,8 +99,11 @@ def main() -> None:
     for seq_len in seq_lens:
         for window_size in window_sizes:
             r = _benchmark_single(
-                seq_len=seq_len, D=D, n_sink=n_sink,
-                window_size=window_size, n_heads=n_heads,
+                seq_len=seq_len,
+                D=D,
+                n_sink=n_sink,
+                window_size=window_size,
+                n_heads=n_heads,
             )
             rows.append(r)
             print(
@@ -110,10 +114,15 @@ def main() -> None:
             )
 
     out = Path(__file__).parent / "results_streaming_llm.json"
-    out.write_text(json.dumps({
-        "note": "SYNTHETIC offline benchmark — NOT YET RUN on dedicated Apple Silicon hardware",
-        "results": rows,
-    }, indent=2))
+    out.write_text(
+        json.dumps(
+            {
+                "note": "SYNTHETIC offline benchmark — NOT YET RUN on dedicated Apple Silicon hardware",
+                "results": rows,
+            },
+            indent=2,
+        )
+    )
     print(f"\nWrote {out}")
 
 

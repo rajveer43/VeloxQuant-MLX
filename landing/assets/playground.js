@@ -12,38 +12,18 @@
    Keep parity with mac_recommender.py — see verify script in the PR.
    ============================================================ */
 
-/* ---------- Engine: ported verbatim from mac_recommender.py ---------- */
+/* ---------- Engine: shared with the landing calculator ----------
+   The sizing math lives in assets/calc.js (window.VQCalc) so this page and
+   the landing-page calculator can never disagree about a number. calc.js is
+   itself the port of mac_recommender.py — keep parity there, not here. */
 
-const ALLOWED_RAM_GB = [8, 16, 24, 32, 36, 48, 64, 128];
-const MODEL_WEIGHT_GB_4BIT = { "1B": 0.8, "3B": 2.0, "7B": 4.5, "14B": 8.0, "32B": 18.0 };
-
-// Full K+V fp16 cache size in megabytes (port of estimate_kv_fp16_mb).
-function estimateKvFp16Mb(nLayers, nKvHeads, headDim, seqLen) {
-  const bytes = 2 * nLayers * nKvHeads * headDim * seqLen * 2;
-  return bytes / (1024 ** 2);
-}
-
-// RAM realistically available for the KV cache on the current machine: unified
-// RAM minus 4-bit weights minus the same ~4 GB OS/app reserve recommend() uses
-// for headroomGb below. NOT a new heuristic — mirrors that formula exactly.
-// Floors at MIN_KV_BUDGET_GB so a too-small/negative result stays usable and
-// the lab can explain why (ties into the accounting-vs-resident caveat).
-const OS_RESERVE_GB = 4.0;    // same reserve as headroomGb in recommend()
-const MIN_KV_BUDGET_GB = 0.5; // floor; lab surfaces the "tight" story
-function deriveKvBudgetGb(ramGb, modelClass) {
-  const weightGb = MODEL_WEIGHT_GB_4BIT[modelClass] ?? 0;
-  const free = ramGb - weightGb - OS_RESERVE_GB;
-  return Math.max(MIN_KV_BUDGET_GB, Math.round(free * 10) / 10); // 0.1 GB grid
-}
-
-// Round-half-to-even to match Python's round() used in the reference engine.
-function round2(x) {
-  const r = Math.round(x * 100) / 100;
-  // JS Math.round is half-up; Python is banker's rounding. The reference
-  // values here never land exactly on a .xx5 boundary at 2 dp for realistic
-  // inputs, so half-up is equivalent in practice. Kept explicit for clarity.
-  return r;
-}
+const ALLOWED_RAM_GB = VQCalc.ALLOWED_RAM_GB;
+const MODEL_WEIGHT_GB_4BIT = VQCalc.MODEL_WEIGHT_GB_4BIT;
+const OS_RESERVE_GB = VQCalc.OS_RESERVE_GB;
+const MIN_KV_BUDGET_GB = VQCalc.MIN_KV_BUDGET_GB;
+const estimateKvFp16Mb = VQCalc.estimateKvFp16Mb;
+const deriveKvBudgetGb = VQCalc.deriveKvBudgetGb;
+const round2 = VQCalc.round2;
 
 // 1:1 port of recommend(req). Returns the same fields as RecommendResult.to_dict().
 function recommend(req) {

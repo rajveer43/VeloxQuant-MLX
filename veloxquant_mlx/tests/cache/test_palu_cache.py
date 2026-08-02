@@ -6,6 +6,7 @@ These tests assert that latent-storage property explicitly, plus the usual
 projection-correctness, decode-accumulation, byte-accounting, and determinism
 checks.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -20,7 +21,7 @@ def _make(**cfg):
     base = dict(
         method="palu",
         head_dim=64,
-        palu_rank=16,             # explicit rank for deterministic tests
+        palu_rank=16,  # explicit rank for deterministic tests
         palu_n_head_groups=2,
         palu_hi_bit=4,
         palu_lo_bit=2,
@@ -42,6 +43,7 @@ def _rand_kv(S=128, H=4, D=64, seed=0):
 # Factory and interface
 # ------------------------------------------------------------------
 
+
 def test_factory_dispatch() -> None:
     c = _make()
     assert isinstance(c, PALUKVCache)
@@ -57,6 +59,7 @@ def test_no_bits_attribute() -> None:
 # ------------------------------------------------------------------
 # Group-head SVD fit
 # ------------------------------------------------------------------
+
 
 def test_group_projections_stored_after_prefill() -> None:
     c = _make(palu_rank=16, palu_n_head_groups=2)
@@ -86,6 +89,7 @@ def test_output_shape_preserved() -> None:
 # THE differentiator: latent storage stays [S, r], never [S, D]
 # ------------------------------------------------------------------
 
+
 def test_storage_is_latent_not_full_fp16() -> None:
     """The cache must store [S, r] latents, not [S, D] fp16 keys/values."""
     c = _make(head_dim=64, palu_rank=16)
@@ -94,7 +98,7 @@ def test_storage_is_latent_not_full_fp16() -> None:
     # Per-head latent buffers hold the latent dimension r, not D.
     assert c._keys_lr._latents is not None
     assert c._vals_lr._latents is not None
-    assert c._keys_lr._latents[0].shape[-1] == 16   # r, not 64
+    assert c._keys_lr._latents[0].shape[-1] == 16  # r, not 64
     assert c._vals_lr._latents[0].shape[-1] == 16
     # The parent fp16 ring buffer is bypassed — it never gets populated.
     assert c.keys is None and c.values is None
@@ -103,6 +107,7 @@ def test_storage_is_latent_not_full_fp16() -> None:
 # ------------------------------------------------------------------
 # Reconstruction quality on low-rank data — both K and V
 # ------------------------------------------------------------------
+
 
 def test_reconstruction_lower_mse_than_raw_2bit_both_tensors() -> None:
     """PALU beats naive 2-bit on low-rank data for BOTH keys and values."""
@@ -140,6 +145,7 @@ def test_reconstruction_lower_mse_than_raw_2bit_both_tensors() -> None:
 # Decode accumulation
 # ------------------------------------------------------------------
 
+
 def test_decode_after_prefill() -> None:
     c = _make(palu_rank=16)
     K_pre, V_pre = _rand_kv(S=32, H=4, D=64, seed=0)
@@ -159,6 +165,7 @@ def test_decode_after_prefill() -> None:
 # ------------------------------------------------------------------
 # Byte accounting — BOTH tensors compress (unlike SVDq's fp16 values)
 # ------------------------------------------------------------------
+
 
 def test_both_tensors_compressed() -> None:
     c = _make(palu_rank=16)
@@ -182,6 +189,7 @@ def test_low_rank_only_values_still_compress() -> None:
 # Effective bit-width
 # ------------------------------------------------------------------
 
+
 def test_assigned_avg_bits_sub_2() -> None:
     """Low-rank + mixed-bit gives a deeply sub-2-bit effective rate."""
     c = _make(head_dim=128, palu_rank=32)
@@ -194,6 +202,7 @@ def test_assigned_avg_bits_sub_2() -> None:
 # Energy-threshold rank selection
 # ------------------------------------------------------------------
 
+
 def test_energy_threshold_rank_selection() -> None:
     c = _make(palu_rank=None, palu_energy_threshold=0.90, head_dim=64)
     K, V = _rand_kv(S=128, H=4, D=64)
@@ -204,6 +213,7 @@ def test_energy_threshold_rank_selection() -> None:
 # ------------------------------------------------------------------
 # Head grouping
 # ------------------------------------------------------------------
+
 
 def test_single_group_vs_multi_group() -> None:
     """1 group → one shared projection; 4 groups → four projections."""
@@ -220,6 +230,7 @@ def test_single_group_vs_multi_group() -> None:
 # Determinism
 # ------------------------------------------------------------------
 
+
 def test_determinism() -> None:
     K, V = _rand_kv(S=64, H=4, D=64, seed=7)
     c1, c2 = _make(), _make()
@@ -233,6 +244,7 @@ def test_determinism() -> None:
 # ---------------------------------------------------------------------------
 # Config validation — palu_hi_fraction must be in [0, 1]
 # ---------------------------------------------------------------------------
+
 
 def test_hi_fraction_above_one_rejected() -> None:
     with pytest.raises(ValueError, match="palu_hi_fraction"):

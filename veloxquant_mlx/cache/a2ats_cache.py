@@ -45,6 +45,7 @@ Byte accounting:
     fp16_key_bytes / fp16_value_bytes             — hypothetical full-rank cost
     compression_ratio                              — fp16 / compressed (K + V)
 """
+
 from __future__ import annotations
 
 import math
@@ -102,8 +103,7 @@ class A2ATSKVCache(_MLXKVCache):
 
         if self._head_dim % 2 != 0:
             raise ValueError(
-                f"A2ATSKVCache: head_dim={self._head_dim} must be even "
-                "(required by RoPE)."
+                f"A2ATSKVCache: head_dim={self._head_dim} must be even (required by RoPE)."
             )
         if self._head_dim % self._sub_dim != 0:
             raise ValueError(
@@ -111,16 +111,14 @@ class A2ATSKVCache(_MLXKVCache):
                 f"a2ats_sub_dim={self._sub_dim}."
             )
         if not 0.0 <= self._beta <= 1.0:
-            raise ValueError(
-                f"A2ATSKVCache: a2ats_beta must be in [0, 1], got {self._beta}"
-            )
+            raise ValueError(f"A2ATSKVCache: a2ats_beta must be in [0, 1], got {self._beta}")
         if not 0.0 <= self._retrieval_fraction <= 1.0:
             raise ValueError(
                 "A2ATSKVCache: a2ats_retrieval_fraction must be in [0, 1], "
                 f"got {self._retrieval_fraction}"
             )
 
-        n_cb = 2 ** self._bits
+        n_cb = 2**self._bits
         seed = int(getattr(config, "seed", 42))
         codebook = getattr(config, "a2ats_codebook", None)
         if codebook is None:
@@ -159,7 +157,7 @@ class A2ATSKVCache(_MLXKVCache):
         query_position = int(positions[-1].item()) if S > 0 else self._next_position
 
         if self._use_query_aware and S > 0:
-            proxy_query = k_bh[-1]   # incoming key as query proxy (see module docstring)
+            proxy_query = k_bh[-1]  # incoming key as query proxy (see module docstring)
             retrieval_idx, bulk_idx = a2ats_select_retrieval_set(
                 k_bh, proxy_query, retrieval_fraction=self._retrieval_fraction
             )
@@ -182,24 +180,27 @@ class A2ATSKVCache(_MLXKVCache):
                     )
                     sub_idx = _scatter_1d(sub_idx, retrieval_idx, ret_assign)
                 if bulk_idx.shape[0] > 0:
-                    bulk_assign = _nearest_centroid(
-                        mx.take(sub, bulk_idx, axis=0), self._codebook
-                    )
+                    bulk_assign = _nearest_centroid(mx.take(sub, bulk_idx, axis=0), self._codebook)
                     sub_idx = _scatter_1d(sub_idx, bulk_idx, bulk_assign)
                 idx_parts.append(sub_idx)
-            indices = mx.stack(idx_parts, axis=1)   # [S, n_sub]
+            indices = mx.stack(idx_parts, axis=1)  # [S, n_sub]
         else:
             k_reshaped = k_bh.reshape(S, self._n_sub, self._sub_dim) if S > 0 else k_bh
             idx_parts = []
             for sub_i in range(self._n_sub):
-                sub = k_bh[:, sub_i * self._sub_dim:(sub_i + 1) * self._sub_dim]
+                sub = k_bh[:, sub_i * self._sub_dim : (sub_i + 1) * self._sub_dim]
                 idx_parts.append(_nearest_centroid(sub, self._codebook))
-            indices = mx.stack(idx_parts, axis=1) if S > 0 else mx.zeros((0, self._n_sub), dtype=mx.int32)
+            indices = (
+                mx.stack(idx_parts, axis=1) if S > 0 else mx.zeros((0, self._n_sub), dtype=mx.int32)
+            )
 
         recon = dequantize_vq(indices, self._codebook).astype(mx.float16)  # [S, D], pre-RoPE
         return a2ats_apply_windowed_rope(
-            recon, positions, query_position=query_position,
-            window=self._window, base=self._rope_base,
+            recon,
+            positions,
+            query_position=query_position,
+            window=self._window,
+            base=self._rope_base,
         )
 
     # ------------------------------------------------------------------
@@ -215,7 +216,7 @@ class A2ATSKVCache(_MLXKVCache):
             for h in range(H):
                 per_head.append(self._quantize_head(keys[b, h], positions))
             out_heads_k.append(mx.stack(per_head, axis=0))
-        k_out = mx.stack(out_heads_k, axis=0)   # [B, H, S, D]
+        k_out = mx.stack(out_heads_k, axis=0)  # [B, H, S, D]
 
         # Values: plain nearest-centroid VQ, no RoPE (values are never
         # position-rotated), no retrieval-set preferential assignment —
@@ -228,9 +229,13 @@ class A2ATSKVCache(_MLXKVCache):
         v_reshaped = v32.reshape(-1, D)
         idx_parts = []
         for sub_i in range(self._n_sub):
-            sub = v_reshaped[:, sub_i * self._sub_dim:(sub_i + 1) * self._sub_dim]
+            sub = v_reshaped[:, sub_i * self._sub_dim : (sub_i + 1) * self._sub_dim]
             idx_parts.append(_nearest_centroid(sub, self._codebook))
-        v_indices = mx.stack(idx_parts, axis=1) if v_reshaped.shape[0] > 0 else mx.zeros((0, self._n_sub), dtype=mx.int32)
+        v_indices = (
+            mx.stack(idx_parts, axis=1)
+            if v_reshaped.shape[0] > 0
+            else mx.zeros((0, self._n_sub), dtype=mx.int32)
+        )
         v_hat = dequantize_vq(v_indices, self._codebook).astype(mx.float16)
         v_out = v_hat.reshape(v_flat_shape)
 
@@ -268,7 +273,7 @@ class A2ATSKVCache(_MLXKVCache):
 
     @property
     def codebook_bytes(self) -> int:
-        return (2 ** self._bits) * self._sub_dim * 2   # fp16 storage
+        return (2**self._bits) * self._sub_dim * 2  # fp16 storage
 
     @property
     def compression_ratio(self) -> float:

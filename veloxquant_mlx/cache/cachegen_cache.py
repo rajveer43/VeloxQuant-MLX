@@ -20,6 +20,7 @@ Byte accounting:
     fixed_width_key_bytes / fixed_width_value_bytes — naive packed baseline
     fp16_key_bytes / fp16_value_bytes — uncompressed cost for the ratio
 """
+
 from __future__ import annotations
 
 from typing import Any

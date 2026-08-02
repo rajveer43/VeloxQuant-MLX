@@ -63,6 +63,7 @@ comparison.
 a modest, honestly-reported secondary effect on synthetic Gaussian-like
 data — see the module docstring in ``quantizers/_entropy_coding.py``).
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -216,9 +217,7 @@ class KVTCKVCache(_MLXKVCache):
         self._beta = float(getattr(config, "kvtc_beta", DEFAULT_BETA))
 
         if self._bit_budget < 0:
-            raise ValueError(
-                f"KVTCKVCache: kvtc_bit_budget must be >= 0, got {self._bit_budget!r}"
-            )
+            raise ValueError(f"KVTCKVCache: kvtc_bit_budget must be >= 0, got {self._bit_budget!r}")
 
         self._keys_states: list[_TensorKVTC] = []
         self._vals_states: list[_TensorKVTC] = []
@@ -233,12 +232,10 @@ class KVTCKVCache(_MLXKVCache):
         if not self._keys_states:
             self._B, self._H = B, H
             self._keys_states = [
-                _TensorKVTC(self._bit_budget, self._bit_choices, self._beta)
-                for _ in range(B * H)
+                _TensorKVTC(self._bit_budget, self._bit_choices, self._beta) for _ in range(B * H)
             ]
             self._vals_states = [
-                _TensorKVTC(self._bit_budget, self._bit_choices, self._beta)
-                for _ in range(B * H)
+                _TensorKVTC(self._bit_budget, self._bit_choices, self._beta) for _ in range(B * H)
             ]
 
     def _idx(self, b: int, h: int) -> int:
@@ -301,17 +298,15 @@ class KVTCKVCache(_MLXKVCache):
         """Realized total stored bytes (K + V, all heads/batches), including
         the entropy-coded payload, code table, projection basis, and quant
         params — never the pre-entropy-coding size."""
-        return (
-            sum(s.stored_bytes for s in self._keys_states)
-            + sum(s.stored_bytes for s in self._vals_states)
+        return sum(s.stored_bytes for s in self._keys_states) + sum(
+            s.stored_bytes for s in self._vals_states
         )
 
     @property
     def pre_entropy_bytes(self) -> int:
         """Fixed-width (pre-entropy-coding) size, K + V, all heads/batches."""
-        return (
-            sum(s.pre_entropy_bytes for s in self._keys_states)
-            + sum(s.pre_entropy_bytes for s in self._vals_states)
+        return sum(s.pre_entropy_bytes for s in self._keys_states) + sum(
+            s.pre_entropy_bytes for s in self._vals_states
         )
 
     @property

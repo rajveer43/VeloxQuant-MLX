@@ -6,6 +6,7 @@ base-quant-alone on low-rank+outlier data), the degenerate modes (pure low-rank,
 pure sparse, base-only), residual-SVD recovery, sparse selection, byte
 accounting, and determinism. All data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -46,6 +47,7 @@ def _lowrank_plus_outliers(N=128, D=128, r=6, n_out=20, seed=0):
 # Core claim
 # ------------------------------------------------------------------
 
+
 def test_gear_beats_base_quant() -> None:
     """GEAR reconstruction MSE strictly below base-quant-alone on its ideal data."""
     X = _lowrank_plus_outliers()
@@ -81,6 +83,7 @@ def test_base_only_equals_group_quant() -> None:
 # ------------------------------------------------------------------
 # Component correctness
 # ------------------------------------------------------------------
+
 
 def test_residual_lowrank_recovers_known_rank() -> None:
     """A genuinely rank-r residual is recovered by the low-rank term to < eps."""
@@ -119,6 +122,7 @@ def test_sparse_zero_frac_returns_none() -> None:
 # Byte accounting
 # ------------------------------------------------------------------
 
+
 def test_byte_accounting_ordering() -> None:
     """base_only <= gear_bytes <= fp16 at a realistic head dim with low rank."""
     X = _lowrank_plus_outliers(N=128, D=128, r=6)
@@ -140,6 +144,7 @@ def test_gear_bytes_components_sum() -> None:
 # ------------------------------------------------------------------
 # Robustness
 # ------------------------------------------------------------------
+
 
 def test_deterministic() -> None:
     X = _lowrank_plus_outliers()

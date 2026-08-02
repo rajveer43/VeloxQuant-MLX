@@ -31,6 +31,7 @@ Unlike :func:`patch_model_kv_cache` (which returns one persistent cache
 list), ``make_cache`` here builds a *fresh* cache list on every call, so
 repeated ``generate()`` calls never leak KV state between generations.
 """
+
 from __future__ import annotations
 
 import warnings
@@ -41,10 +42,22 @@ from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig
 # Methods that drop or merge tokens to stay within budget. On multimodal
 # prompts the image tokens sit in the prompt prefix and can be evicted
 # like any other token — quality on vision inputs is unvalidated.
-_EVICTION_METHODS = frozenset({
-    "snapkv", "streaming_llm", "h2o", "tova", "pyramidkv", "chunkkv",
-    "cam", "keyformer", "morphkv", "kvzip", "squeeze", "qfilters",
-})
+_EVICTION_METHODS = frozenset(
+    {
+        "snapkv",
+        "streaming_llm",
+        "h2o",
+        "tova",
+        "pyramidkv",
+        "chunkkv",
+        "cam",
+        "keyformer",
+        "morphkv",
+        "kvzip",
+        "squeeze",
+        "qfilters",
+    }
+)
 
 
 def patch_vlm_kv_cache(model: Any, config: KVCacheConfig) -> List[Any]:

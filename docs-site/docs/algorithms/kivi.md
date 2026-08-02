@@ -55,9 +55,9 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 
 config = KVCacheConfig(
     method="kivi",
-    bit_width_inlier=2,      # KIVI default
-    kivi_group_size=32,      # min/max group size
-    residual_length=32,      # recent tokens kept in fp16
+    bit_width_inlier=2,  # KIVI default
+    kivi_group_size=32,  # min/max group size
+    residual_length=32,  # recent tokens kept in fp16
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

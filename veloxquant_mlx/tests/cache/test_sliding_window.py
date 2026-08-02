@@ -1,4 +1,5 @@
 """Tests for SlidingWindowKVCache."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -8,13 +9,8 @@ import pytest
 @pytest.fixture
 def base_cache():
     from veloxquant_mlx.cache.base import KVCacheBuilder
-    return (
-        KVCacheBuilder()
-        .with_method("qjl")
-        .with_head_dim(64)
-        .with_jl_dim(64)
-        .build()
-    )
+
+    return KVCacheBuilder().with_method("qjl").with_head_dim(64).with_jl_dim(64).build()
 
 
 def test_sliding_window_evicts(base_cache) -> None:
@@ -52,12 +48,6 @@ def test_sliding_window_invalid_size() -> None:
     from veloxquant_mlx.cache.base import KVCacheBuilder
     from veloxquant_mlx.cache.sliding_window_cache import SlidingWindowKVCache
 
-    cache = (
-        KVCacheBuilder()
-        .with_method("qjl")
-        .with_head_dim(64)
-        .with_jl_dim(64)
-        .build()
-    )
+    cache = KVCacheBuilder().with_method("qjl").with_head_dim(64).with_jl_dim(64).build()
     with pytest.raises(ValueError):
         SlidingWindowKVCache(cache, window_size=0)

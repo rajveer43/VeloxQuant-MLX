@@ -18,6 +18,7 @@
   15. group_size=3 (1 anchor -> 2 reusers) pairing + reconstruction
   16. Determinism
 """
+
 from __future__ import annotations
 
 import pytest
@@ -82,7 +83,7 @@ class _MockModel:
 def test_factory_dispatch():
     cache = KVCacheFactory.create(_cfg())
     assert isinstance(cache, XQuantKVCache)
-    assert cache.role == "anchor"   # no coordinator → degenerate anchor
+    assert cache.role == "anchor"  # no coordinator → degenerate anchor
 
 
 # ---------------------------------------------------------------------------
@@ -94,9 +95,12 @@ def test_for_model_pairing():
     assert len(caches) == 6
     roles = [(c.role, c.group_id) for c in caches]
     assert roles == [
-        ("anchor", 0), ("reuse", 0),
-        ("anchor", 1), ("reuse", 1),
-        ("anchor", 2), ("reuse", 2),
+        ("anchor", 0),
+        ("reuse", 0),
+        ("anchor", 1),
+        ("reuse", 1),
+        ("anchor", 2),
+        ("reuse", 2),
     ]
     # All share one coordinator instance
     coords = {id(c._coord) for c in caches}
@@ -112,11 +116,9 @@ def test_coordinator_round_trip():
     coord.register_anchor(0, token_start=0, n_tokens=16, codes=codes, params=params)
     seg = coord.fetch_anchor(0, 0)
     assert seg is not None
-    np.testing.assert_array_equal(
-        np.array(seg.codes.tolist()), np.array(codes.tolist())
-    )
+    np.testing.assert_array_equal(np.array(seg.codes.tolist()), np.array(codes.tolist()))
     assert coord.published_tokens(0) == 16
-    assert coord.fetch_anchor(0, 999) is None   # missing offset
+    assert coord.fetch_anchor(0, 999) is None  # missing offset
 
 
 # ---------------------------------------------------------------------------
@@ -137,12 +139,14 @@ def test_anchor_shape_prefill_decode():
 def test_reuse_shape_prefill_decode():
     coord = XQuantCoordinator()
     a, r = _pair(coord)
-    k = _rand(1, 2, 32, 64); v = _rand(1, 2, 32, 64, seed=1)
+    k = _rand(1, 2, 32, 64)
+    v = _rand(1, 2, 32, 64, seed=1)
     a.update_and_fetch(k, v)
     ko, vo = r.update_and_fetch(k, v)
     assert ko.shape == (1, 2, 32, 64) and vo.shape == (1, 2, 32, 64)
     # decode step
-    kd = _rand(1, 2, 1, 64, seed=5); vd = _rand(1, 2, 1, 64, seed=6)
+    kd = _rand(1, 2, 1, 64, seed=5)
+    vd = _rand(1, 2, 1, 64, seed=6)
     a.update_and_fetch(kd, vd)
     ko2, _ = r.update_and_fetch(kd, vd)
     assert ko2.shape == (1, 2, 33, 64)
@@ -154,7 +158,8 @@ def test_reuse_shape_prefill_decode():
 def test_values_reconstructed():
     coord = XQuantCoordinator()
     a, r = _pair(coord)
-    k = _rand(1, 2, 32, 64); v = _rand(1, 2, 32, 64, seed=1)
+    k = _rand(1, 2, 32, 64)
+    v = _rand(1, 2, 32, 64, seed=1)
     a.update_and_fetch(k, v)
     _, vo = r.update_and_fetch(k, v)
     assert vo.shape == v.shape
@@ -171,7 +176,7 @@ def test_reuse_residual0_within_tolerance():
     base = rng.standard_normal((1, 2, 64, 64)).astype(np.float32)
     k = mx.array(base.astype(np.float16))
     a.update_and_fetch(k, k)
-    ko, _ = r.update_and_fetch(k, k)   # identical layer → reuse is essentially own quant
+    ko, _ = r.update_and_fetch(k, k)  # identical layer → reuse is essentially own quant
     self_q = _group_quant_dequant(k[0, 0], 2, 32)
     mse_reuse = _mse(ko[0, 0], k[0, 0])
     mse_self = _mse(self_q, k[0, 0])
@@ -251,7 +256,8 @@ def test_uncorrelated_residual_recovers():
 def test_byte_accounting_reuse_less_than_anchor():
     coord = XQuantCoordinator()
     a, r = _pair(coord)
-    k = _rand(1, 2, 64, 64); v = _rand(1, 2, 64, 64, seed=1)
+    k = _rand(1, 2, 64, 64)
+    v = _rand(1, 2, 64, 64, seed=1)
     a.update_and_fetch(k, v)
     r.update_and_fetch(k, v)
     assert r.compressed_key_bytes < a.compressed_key_bytes
@@ -264,7 +270,8 @@ def test_byte_accounting_reuse_less_than_anchor():
 def test_effective_pair_bits_below_base():
     coord = XQuantCoordinator()
     a, r = _pair(coord, base_bits=2, residual_bits=0)
-    k = _rand(1, 2, 64, 64); v = _rand(1, 2, 64, 64, seed=1)
+    k = _rand(1, 2, 64, 64)
+    v = _rand(1, 2, 64, 64, seed=1)
     a.update_and_fetch(k, v)
     r.update_and_fetch(k, v)
     assert r.effective_pair_bits < 2.0, f"reuse effective bits {r.effective_pair_bits}"
@@ -294,7 +301,7 @@ def test_decode_synchronization():
 def test_coordinator_budget_raises():
     coord = XQuantCoordinator(max_ctx=16)
     a, _ = _pair(coord)
-    a.update_and_fetch(_rand(1, 2, 16, 64), _rand(1, 2, 16, 64, seed=1))   # fills budget
+    a.update_and_fetch(_rand(1, 2, 16, 64), _rand(1, 2, 16, 64, seed=1))  # fills budget
     with pytest.raises(RuntimeError, match="max_ctx"):
         a.update_and_fetch(_rand(1, 2, 1, 64, seed=2), _rand(1, 2, 1, 64, seed=3))
 
@@ -304,16 +311,21 @@ def test_coordinator_budget_raises():
 # ---------------------------------------------------------------------------
 def test_group_size_three():
     assert pair_layers(6, 3) == [
-        ("anchor", 0), ("reuse", 0), ("reuse", 0),
-        ("anchor", 1), ("reuse", 1), ("reuse", 1),
+        ("anchor", 0),
+        ("reuse", 0),
+        ("reuse", 0),
+        ("anchor", 1),
+        ("reuse", 1),
+        ("reuse", 1),
     ]
     model = _MockModel(n_layers=6, head_dim=64)
     caches = KVCacheBuilder.for_model(model, _cfg(xquant_group_size=3))
     # one anchor feeds two reusers in group 0
-    k = _rand(1, 2, 32, 64); v = _rand(1, 2, 32, 64, seed=1)
-    out0, _ = caches[0].update_and_fetch(k, v)   # anchor
-    out1, _ = caches[1].update_and_fetch(k, v)   # reuse
-    out2, _ = caches[2].update_and_fetch(k, v)   # reuse
+    k = _rand(1, 2, 32, 64)
+    v = _rand(1, 2, 32, 64, seed=1)
+    out0, _ = caches[0].update_and_fetch(k, v)  # anchor
+    out1, _ = caches[1].update_and_fetch(k, v)  # reuse
+    out2, _ = caches[2].update_and_fetch(k, v)  # reuse
     assert out0.shape == out1.shape == out2.shape == (1, 2, 32, 64)
     assert caches[1].role == "reuse" and caches[2].role == "reuse"
 
@@ -322,7 +334,8 @@ def test_group_size_three():
 # Test 16 — determinism
 # ---------------------------------------------------------------------------
 def test_determinism():
-    k = _rand(1, 2, 32, 64, seed=77); v = _rand(1, 2, 32, 64, seed=88)
+    k = _rand(1, 2, 32, 64, seed=77)
+    v = _rand(1, 2, 32, 64, seed=88)
 
     def run():
         coord = XQuantCoordinator()

@@ -1,4 +1,5 @@
 """Tests for RaBitQQuantizer — 1-bit IVF random orthogonal quantization."""
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -12,6 +13,7 @@ from veloxquant_mlx.quantizers.rabitq import RaBitQQuantizer
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_quantizer(d: int = 64, nlist: int = 16, nprobe: int = 4) -> RaBitQQuantizer:
     q = RaBitQQuantizer(d=d, nlist=nlist, nprobe=nprobe, seed=42)
     rng = np.random.default_rng(0)
@@ -23,6 +25,7 @@ def _make_quantizer(d: int = 64, nlist: int = 16, nprobe: int = 4) -> RaBitQQuan
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 def test_trained_flag() -> None:
     q = RaBitQQuantizer(d=64, nlist=8)
@@ -82,10 +85,10 @@ def test_inner_product_shape() -> None:
     d = 64
     q = _make_quantizer(d=d)
     N = 20
-    keys  = mx.array(np.random.randn(N, d).astype(np.float16))
+    keys = mx.array(np.random.randn(N, d).astype(np.float16))
     query = mx.array(np.random.randn(d).astype(np.float16))
-    ev    = q.encode(keys)
-    ips   = q.estimate_inner_product(query, ev)
+    ev = q.encode(keys)
+    ips = q.estimate_inner_product(query, ev)
     mx.eval(ips)
     assert ips.shape == (N,), f"IP shape: {ips.shape}"
 
@@ -94,9 +97,9 @@ def test_search_returns_top_k() -> None:
     d = 64
     q = _make_quantizer(d=d, nlist=16, nprobe=4)
     N = 128
-    keys  = mx.array(np.random.randn(N, d).astype(np.float16))
+    keys = mx.array(np.random.randn(N, d).astype(np.float16))
     query = mx.array(np.random.randn(d).astype(np.float16))
-    ev    = q.encode(keys)
+    ev = q.encode(keys)
     top_k = 10
     result = q.search(query, ev, top_k=top_k)
     mx.eval(result)
@@ -110,13 +113,13 @@ def test_search_recall_gaussian() -> None:
     probes only 25% of the corpus; recall above chance (0.01) confirms the
     approximate distance is working directionally.
     """
-    d     = 128
-    N     = 512
+    d = 128
+    N = 512
     top_k = 10
-    rng   = np.random.default_rng(7)
+    rng = np.random.default_rng(7)
 
     corpus_np = rng.standard_normal((N, d)).astype(np.float16)
-    query_np  = rng.standard_normal(d).astype(np.float16)
+    query_np = rng.standard_normal(d).astype(np.float16)
 
     q = RaBitQQuantizer(d=d, nlist=32, nprobe=8, rerank=64, seed=0)
     q.fit(mx.array(corpus_np), max_samples=512)
@@ -126,11 +129,11 @@ def test_search_recall_gaussian() -> None:
     mx.eval(result)
 
     # Ground truth: L2 distance (RaBitQ approximates L2, not dot product)
-    corpus_f32   = corpus_np.astype(np.float32)
-    query_f32    = query_np.astype(np.float32)
-    l2_dists     = np.sum((corpus_f32 - query_f32[None, :]) ** 2, axis=1)
-    true_top_k   = set(np.argsort(l2_dists)[:top_k].tolist())
-    result_set   = set(np.array(result).tolist())
+    corpus_f32 = corpus_np.astype(np.float32)
+    query_f32 = query_np.astype(np.float32)
+    l2_dists = np.sum((corpus_f32 - query_f32[None, :]) ** 2, axis=1)
+    true_top_k = set(np.argsort(l2_dists)[:top_k].tolist())
+    result_set = set(np.array(result).tolist())
 
     recall = len(true_top_k & result_set) / top_k
     assert recall >= 0.1, f"Recall@{top_k} too low: {recall:.2f}"
@@ -142,7 +145,7 @@ def test_various_d(d: int) -> None:
     data = mx.array(np.random.randn(256, d).astype(np.float16))
     q.fit(data, max_samples=256)
 
-    x  = mx.array(np.random.randn(8, d).astype(np.float16))
+    x = mx.array(np.random.randn(8, d).astype(np.float16))
     ev = q.encode(x)
     out = q.decode(ev)
     mx.eval(out)
@@ -153,15 +156,15 @@ def test_hamming_kernel_direct() -> None:
     """Smoke test the Metal Hamming kernel directly."""
     from veloxquant_mlx.metal._rabitq import rabitq_hamming_score
 
-    D      = 64
-    N      = 32
+    D = 64
+    N = 32
     n_bytes = D // 8
 
-    rng    = np.random.default_rng(99)
-    qbits  = mx.array(rng.integers(0, 256, size=(n_bytes,), dtype=np.uint8))
-    bits   = mx.array(rng.integers(0, 256, size=(N, n_bytes), dtype=np.uint8))
-    Cx     = mx.array(rng.standard_normal(N).astype(np.float32))
-    scale  = mx.array([0.5], dtype=mx.float32)
+    rng = np.random.default_rng(99)
+    qbits = mx.array(rng.integers(0, 256, size=(n_bytes,), dtype=np.uint8))
+    bits = mx.array(rng.integers(0, 256, size=(N, n_bytes), dtype=np.uint8))
+    Cx = mx.array(rng.standard_normal(N).astype(np.float32))
+    scale = mx.array([0.5], dtype=mx.float32)
 
     scores = rabitq_hamming_score(qbits, bits, Cx, scale)
     mx.eval(scores)

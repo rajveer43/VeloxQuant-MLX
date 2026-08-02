@@ -22,6 +22,7 @@ State is keyed by ``(group_id, token_start)`` so a merge layer fetches exactly
 the segment its paired primary wrote for the same step. Single-threaded by
 construction (mlx generate is sequential).
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -37,7 +38,7 @@ class _PrimaryWrite:
     def __init__(self, token_start: int, n_tokens: int, keys: mx.array, values: mx.array):
         self.token_start = token_start
         self.n_tokens = n_tokens
-        self.keys = keys        # [B, H, S, D] fp16 — the primary layer's true KV
+        self.keys = keys  # [B, H, S, D] fp16 — the primary layer's true KV
         self.values = values
 
 
@@ -59,8 +60,12 @@ class MiniCacheCoordinator:
         self._published_tokens.clear()
 
     def publish_primary(
-        self, group_id: int, token_start: int, n_tokens: int,
-        keys: mx.array, values: mx.array,
+        self,
+        group_id: int,
+        token_start: int,
+        n_tokens: int,
+        keys: mx.array,
+        values: mx.array,
     ) -> None:
         """Primary layer stores its true KV for a token range."""
         published = self._published_tokens.get(group_id, 0)

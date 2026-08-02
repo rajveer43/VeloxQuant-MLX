@@ -22,6 +22,8 @@ All Metal kernels require macOS on an M-series chip. On unsupported hardware, Ve
 | `metal/_rabitq_attend.py` | `rabitq_fused_attend` | RaBitQ asymmetric attention (1-bit keys + 4-bit values) |
 | `metal/_rabitq_encode.py` | `rabitq_encode` | RaBitQ encode (rotate + binarize + pack + magnitude) |
 | `metal/_rabitq_values.py` | `rabitq_pack_values` | Nibble packing for 4-bit value indices |
+| `metal/_rabitq_prefill.py` | `rabitq_prefill_attend` | RaBitQ prefill/cross-attention on `simdgroup_matrix` tiles |
+| `metal/_scalar_attend.py` | `scalar_fused_decode_attend` | Group-affine (KIVI / SKVQ / Kitty) decode + attention |
 | `metal/_comm_vq.py` | `comm_vq_decode_metal` | CommVQ RoPE |
 | `metal/_scalar_quant.py` | `turboquant_scalar_quantize`, `turboquant_scalar_dequantize`, `turboquant_hadamard_quantize` | TurboQuant RVQ |
 | `metal/_rvq_attend.py` | `turboquant_fused_rvq_decode_attend` | RVQ + attention fusion |
@@ -101,9 +103,9 @@ ok = supports_shape(batch=1, heads=8, seq_len=4096, head_dim=128)
 if ok:
     attn_output = metal_fused_sdpa(
         queries=q,
-        encoded_keys=encoded_k,   # compressed format from VecInfer
+        encoded_keys=encoded_k,  # compressed format from VecInfer
         values=v,
-        scale=1.0 / (head_dim ** 0.5),
+        scale=1.0 / (head_dim**0.5),
     )
 ```
 
@@ -120,21 +122,69 @@ import mlx.core as mx
 from veloxquant_mlx.metal.kernels import rabitq_encode, rabitq_fused_attend
 
 # Encode: [N, D] fp16 keys -> packed bits + per-vector magnitude
-k_bits_flat, k_mag_flat = rabitq_encode(keys, diag)   # [N, D//8] uint8, [N] fp32
+k_bits_flat, k_mag_flat = rabitq_encode(keys, diag)  # [N, D//8] uint8, [N] fp32
 
 # Attend: score packed keys, gather 4-bit values — single dispatch
 out = rabitq_fused_attend(
-    q,        # [B, H, S_q, D]    fp16, pre-rotated
+    q,  # [B, H, S_q, D]    fp16, pre-rotated
     q_scale,  # [B, H, S_q]       fp32, e.g. L1(q)/D (fold in 1/sqrt(D))
-    k_bits,   # [B, H, S_kv, D/8] uint8 packed sign bits
-    k_mag,    # [B, H, S_kv]      fp32 per-key magnitude
+    k_bits,  # [B, H, S_kv, D/8] uint8 packed sign bits
+    k_mag,  # [B, H, S_kv]      fp32 per-key magnitude
     k_const,  # [B, H, S_kv]      fp32 additive bias (zeros for centroid-free)
-    v_idx,    # [B, H, S_kv, D]   uint8 value codebook indices
+    v_idx,  # [B, H, S_kv, D]   uint8 value codebook indices
     v_cents,  # [16]              fp32 scalar value codebook
-)                                 # -> [B, H, S_q, D] fp16
+)  # -> [B, H, S_q, D] fp16
 ```
 
 The score per slot is `(D − 2·ham) · q_scale · k_mag + k_const`, the sign-bit estimate of `⟨q, k⟩`. Parity is verified against a numpy reference in `veloxquant_mlx/tests/metal/test_rabitq_attend.py` and `test_rabitq_encode.py`, including an end-to-end encode→attend test.
+
+### Prefill / cross-attention
+
+`rabitq_fused_attend` is decode-shaped: one query per threadgroup, scalar dot products. When `S_q` is large — the multi-turn VLM case, where a new turn attends over a long compressed image-token history — that layout leaves the matrix pipeline idle. `rabitq_prefill_attend` is the matmul-shaped companion: both `Q·K̂ᵀ` and `W·V̂` run on 8×8 `simdgroup_matrix` tiles, with keys sign-decoded and values nibble-decoded inside the tile loop.
+
+Two differences from the decode kernel matter in practice:
+
+- Scores are **exact dots** against sign-decoded keys (`(q · signs·k_mag)·scale + k_const`), not the Hamming estimate.
+- It is **cross-attention only** — every query row attends over all `S_kv` slots with no causal mask. New-token self-attention belongs on the fp16 path.
+
+Values must be nibble-packed (the `rabitq_pack_values` format).
+
+## Fused group-affine (KIVI-style) attention
+
+`scalar_fused_decode_attend` is the scalar/group-quant analogue of the codebook fused attends above — it serves the **KIVI / SKVQ / Kitty / group-quant family**, where keys and values are stored as `uint8` codes plus a per-group `(scale, zero)` pair rather than a codebook.
+
+The pure-MLX path for these methods reconstructs `code * scale + zero` into a full fp16 tensor and then calls `scaled_dot_product_attention`, paying a `dequantize → DRAM → SDPA` round-trip every decode step. This kernel reconstructs `x_hat` in-register inside a FlashAttention-style online softmax, so no dequantized `K_hat`/`V_hat` ever reaches DRAM. The win compounds with context: the fp16 `K_hat` grows linearly with `S_kv` while the packed codes stay `16/b` times smaller.
+
+Note the two grouping axes are different — keys group along tokens (per-channel), values along channels (per-token), matching KIVI's layout:
+
+```python
+import mlx.core as mx
+from veloxquant_mlx.metal.kernels import scalar_fused_decode_attend
+
+out = scalar_fused_decode_attend(
+    q,  # [B, H, S_q, D]    fp16 queries (pre-rotated)
+    k_codes,  # [B, H, S_kv, D]   uint8  key codes
+    k_scale,  # [B, H, GK, D]     fp32   GK = ceil(S_kv / group_size)
+    k_zero,  # [B, H, GK, D]     fp32
+    v_codes,  # [B, H, S_kv, D]   uint8  value codes
+    v_scale,  # [B, H, S_kv, GV]  fp32   GV = ceil(D / group_size)
+    v_zero,  # [B, H, S_kv, GV]  fp32
+    group_size=32,
+    scale=1.0 / (D**0.5),
+    nsg=8,  # SIMD-groups splitting the kv axis; 8 is tuned for M4
+)  # -> [B, H, S_q, D] fp16
+```
+
+One compiled kernel serves any `(S_kv, D, g)` — the group counts are read from the passed shapes. `D` must be ≤ 256 and `nsg` in `1..32`.
+
+Measured on Apple M4 (10-core GPU), `B=1 H=32 D=128 b=2 g=32 S_q=1`, versus dequantize → MLX SDPA:
+
+| `S_kv` | Speedup |
+|---|---|
+| 512 | 6.4× |
+| 65536 | 12.2× |
+
+Parity max abs error is `1.2e-4` against the reference — the kernel accumulates its softmax in fp32, so it is *more* accurate than the fp16 baseline it replaces. See `veloxquant_mlx/tests/metal/test_scalar_attend.py`.
 
 ## Bit packing
 

@@ -19,6 +19,7 @@ Usage::
     PYTHONPATH=. python benchmark_scripts/benchmark_zipcache.py
     PYTHONPATH=. python benchmark_scripts/benchmark_zipcache.py --seq 512 --heads 4 --dim 128
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,6 +43,7 @@ from veloxquant_mlx.quantizers.zipcache import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _rand_kv(S: int, D: int, seed: int = 0) -> mx.array:
     rng = np.random.default_rng(seed)
     return mx.array(rng.standard_normal((S, D)).astype(np.float32))
@@ -60,8 +62,9 @@ def _mse(a: mx.array, b: mx.array) -> float:
     return float(mx.mean((a.astype(mx.float32) - b.astype(mx.float32)) ** 2).item())
 
 
-def _benchmark_one(x: mx.array, hi_bits: int, lo_bits: int, hi_fraction: float,
-                   group_size: int, n_rep: int = 10) -> dict:
+def _benchmark_one(
+    x: mx.array, hi_bits: int, lo_bits: int, hi_fraction: float, group_size: int, n_rep: int = 10
+) -> dict:
     S, D = x.shape
     # Warmup
     for _ in range(2):
@@ -117,6 +120,7 @@ def _benchmark_one(x: mx.array, hi_bits: int, lo_bits: int, hi_fraction: float,
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="ZipCache-adapted offline benchmark")
     parser.add_argument("--seq", type=int, default=128, help="Sequence length")
@@ -134,8 +138,10 @@ def main() -> None:
 
     results = []
     print(f"\nZipCache-adapted offline benchmark  (NOT YET RUN on dedicated hardware)\n")
-    print(f"{'S':>6}  {'hi_frac':>8}  {'eff_bits':>9}  {'comp_ratio':>10}  "
-          f"{'MSE_zip':>12}  {'MSE_lo':>12}  {'ms/head':>9}")
+    print(
+        f"{'S':>6}  {'hi_frac':>8}  {'eff_bits':>9}  {'comp_ratio':>10}  "
+        f"{'MSE_zip':>12}  {'MSE_lo':>12}  {'ms/head':>9}"
+    )
     print("-" * 80)
 
     for S in seq_lens:
@@ -145,16 +151,18 @@ def main() -> None:
             x = _high_norm_outlier_kv(S, D, seed=42, n_outliers=n_out)
             r = _benchmark_one(x, hi_bits, lo_bits, hi_frac, group_size, args.n_rep)
             results.append(r)
-            print(f"{S:>6}  {hi_frac:>8.2f}  {r['effective_bits']:>9.3f}  "
-                  f"{r['compression_ratio_vs_fp16']:>10.3f}  "
-                  f"{r['mse_zipcache']:>12.6f}  {r['mse_uniform_lo']:>12.6f}  "
-                  f"{r['ms_per_head']:>9.4f}")
+            print(
+                f"{S:>6}  {hi_frac:>8.2f}  {r['effective_bits']:>9.3f}  "
+                f"{r['compression_ratio_vs_fp16']:>10.3f}  "
+                f"{r['mse_zipcache']:>12.6f}  {r['mse_uniform_lo']:>12.6f}  "
+                f"{r['ms_per_head']:>9.4f}"
+            )
 
     out_path = Path(__file__).parent / "results_zipcache.json"
     summary = {
         "note": "NOT YET RUN on dedicated Apple Silicon hardware. "
-                "Numbers above are from the development machine at benchmark-script execution time. "
-                "Do not cite in paper until hardware results are committed.",
+        "Numbers above are from the development machine at benchmark-script execution time. "
+        "Do not cite in paper until hardware results are committed.",
         "hardware": platform.node(),
         "platform": platform.platform(),
         "results": results,

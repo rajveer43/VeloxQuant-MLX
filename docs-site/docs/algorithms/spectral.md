@@ -83,8 +83,8 @@ from veloxquant_mlx.spectral.calibrate import load_cached_rotations
 config = KVCacheConfig(
     method="spectral",
     bit_width_inlier=3,
-    spectral_key_d_eff=4,     # signal dimensions for keys
-    spectral_val_d_eff=50,    # signal dimensions for values
+    spectral_key_d_eff=4,  # signal dimensions for keys
+    spectral_val_d_eff=50,  # signal dimensions for values
     spectral_apply_qjl=True,  # apply QJL sign-sketch on signal dims
 )
 cache = KVCacheBuilder.build(model, config)
@@ -96,7 +96,8 @@ if rotations is not None:
     cache.calibrate(rotations[0])  # per-layer; repeat per transformer layer
 
 response = mlx_lm.generate(
-    model, tokenizer,
+    model,
+    tokenizer,
     prompt="Write a comprehensive essay on the history of mathematics.",
     max_tokens=2000,
     kv_cache=cache,

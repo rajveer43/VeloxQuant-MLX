@@ -36,7 +36,7 @@ class LloydMaxGaussianStrategy(CodebookStrategy):
         sigma = 1.0 / math.sqrt(d)
         support = (-self._support_sigma_factor * sigma, self._support_sigma_factor * sigma)
         pdf_fn = lambda x: gaussian_pdf(x, sigma=sigma)
-        centroids, _ = lloyd_max(pdf_fn, support, n_levels=2 ** b)
+        centroids, _ = lloyd_max(pdf_fn, support, n_levels=2**b)
         return centroids.astype(np.float64)
 
     def __repr__(self) -> str:
@@ -66,7 +66,7 @@ class LloydMaxBetaStrategy(CodebookStrategy):
         """
         support = (-1.0 + 1e-6, 1.0 - 1e-6)
         pdf_fn = lambda x: beta_pdf(x, d)
-        centroids, _ = lloyd_max(pdf_fn, support, n_levels=2 ** b)
+        centroids, _ = lloyd_max(pdf_fn, support, n_levels=2**b)
         return centroids.astype(np.float64)
 
     def __repr__(self) -> str:
@@ -102,7 +102,7 @@ class PolarAngleSamplingStrategy(CodebookStrategy):
         else:
             support = (1e-6, math.pi / 2 - 1e-6)
         pdf_fn = lambda x: polar_angle_pdf(x, self.level)
-        centroids, _ = lloyd_max(pdf_fn, support, n_levels=2 ** b)
+        centroids, _ = lloyd_max(pdf_fn, support, n_levels=2**b)
         return centroids.astype(np.float64)
 
     def __repr__(self) -> str:
@@ -135,11 +135,9 @@ class UniformStrategy(CodebookStrategy):
         Returns:
             Sorted centroid array of shape (2^b,), float64.
         """
-        k = 2 ** b
+        k = 2**b
         step = (self._hi - self._lo) / k
-        return np.array(
-            [self._lo + (i + 0.5) * step for i in range(k)], dtype=np.float64
-        )
+        return np.array([self._lo + (i + 0.5) * step for i in range(k)], dtype=np.float64)
 
     def __repr__(self) -> str:
         return f"UniformStrategy(lo={self._lo}, hi={self._hi})"

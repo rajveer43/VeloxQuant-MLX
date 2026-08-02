@@ -1,4 +1,5 @@
 """Tests for QJLQuantizer: unbiasedness and distortion bounds."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -14,6 +15,7 @@ def qjl_quantizer():
 
 def test_qjl_encode_shape(qjl_quantizer) -> None:
     import mlx.core as mx
+
     x = mx.array(np.random.randn(4, 64).astype(np.float16))
     ev = qjl_quantizer.encode(x)
     assert ev.signs.shape == (4, 64)
@@ -22,6 +24,7 @@ def test_qjl_encode_shape(qjl_quantizer) -> None:
 
 def test_qjl_signs_are_pm1(qjl_quantizer) -> None:
     import mlx.core as mx
+
     x = mx.array(np.random.randn(10, 64).astype(np.float16))
     ev = qjl_quantizer.encode(x)
     signs_np = np.array(ev.signs)
@@ -46,9 +49,9 @@ def test_qjl_unbiasedness(qjl_quantizer) -> None:
         k_i = rng.standard_normal(d).astype(np.float32)
         true_ip = float(np.dot(q_i, k_i))
         ev = qjl_quantizer.encode(mx.array(k_i[None].astype(np.float16)))
-        est = float(qjl_quantizer.estimate_inner_product(
-            mx.array(q_i.astype(np.float16)), ev
-        ).item())
+        est = float(
+            qjl_quantizer.estimate_inner_product(mx.array(q_i.astype(np.float16)), ev).item()
+        )
         errors.append(est - true_ip)
 
     mean_err = float(np.mean(errors))
@@ -61,6 +64,7 @@ def test_qjl_unbiasedness(qjl_quantizer) -> None:
 
 def test_qjl_ip_estimation_shape(qjl_quantizer) -> None:
     import mlx.core as mx
+
     n_keys = 20
     x = mx.array(np.random.randn(n_keys, 64).astype(np.float16))
     q = mx.array(np.random.randn(64).astype(np.float16))

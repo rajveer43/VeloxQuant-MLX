@@ -31,12 +31,13 @@ class ScalarCodebook(Codebook):
             )
         self._k = len(centroids)
         self._b = int(np.log2(self._k))
-        if 2 ** self._b != self._k:
+        if 2**self._b != self._k:
             raise CodebookDimensionMismatch(
                 f"ScalarCodebook: number of centroids must be a power of 2, got {self._k}"
             )
 
         import mlx.core as mx
+
         # Centroids must be sorted for searchsorted-based quantize.
         sort_idx = np.argsort(centroids)
         centroids = centroids[sort_idx]
@@ -72,13 +73,14 @@ class ScalarCodebook(Codebook):
             Index array of shape (batch, d), dtype uint8.
         """
         import mlx.core as mx
+
         # Boundary-sum quantize: count how many boundaries y exceeds.
         # That count is exactly the centroid index. Drops the abs() and argmin()
         # kernels of the prior path; still uses (batch, d, k-1) broadcast but
         # over k-1 boundaries instead of k centroids, and with cheaper (>) op.
         # Output is identical to the broadcast argmin in exact arithmetic; fp16
         # tie-breaking on a boundary may flip to the other side.
-        cmp = (y[:, :, None] > self._boundaries_mx[None, None, :])
+        cmp = y[:, :, None] > self._boundaries_mx[None, None, :]
         return mx.sum(cmp.astype(mx.uint8), axis=-1).astype(mx.uint8)
 
     def dequantize(self, idx: Any) -> Any:
@@ -91,6 +93,7 @@ class ScalarCodebook(Codebook):
             Centroid values of shape (batch, d), fp16.
         """
         import mlx.core as mx
+
         return self._centroids_mx[idx]
 
     def nearest_numpy(self, value: float) -> int:

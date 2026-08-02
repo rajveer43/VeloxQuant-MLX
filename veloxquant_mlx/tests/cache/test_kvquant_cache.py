@@ -17,6 +17,7 @@
   14. Per-channel (key) vs per-token (value) axis correctness
   15. Determinism (end-to-end)
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -81,7 +82,7 @@ def test_values_reconstructed():
     _, vo = cache.update_and_fetch(_laplace(1, 2, 64, 64), v)
     assert vo.shape == v.shape
     assert bool(mx.all(mx.isfinite(vo)).item())
-    assert _mse(vo, v) < 0.5   # 4-bit NUQ on unit-scale Laplacian is tight
+    assert _mse(vo, v) < 0.5  # 4-bit NUQ on unit-scale Laplacian is tight
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +130,7 @@ def test_split_selects_top_k():
     # One column, clear outliers at known positions.
     col = np.array([0.1, 0.2, 9.0, 0.3, -8.0, 0.1, 0.2, 0.05], dtype=np.float32)
     x = mx.array(col.reshape(-1, 1))
-    ds = split_dense_sparse(x, outlier_fraction=0.25)   # top 2 of 8
+    ds = split_dense_sparse(x, outlier_fraction=0.25)  # top 2 of 8
     mask = np.array(ds.outlier_mask.tolist()).reshape(-1).astype(bool)
     assert mask[2] and mask[4], f"expected positions 2,4 flagged, got {np.where(mask)[0]}"
     assert mask.sum() == 2
@@ -224,7 +225,8 @@ def test_key_value_axes():
 # Test 15 — determinism end-to-end
 # ---------------------------------------------------------------------------
 def test_determinism():
-    k = _laplace(1, 2, 64, 64, seed=77); v = _laplace(1, 2, 64, 64, seed=88)
+    k = _laplace(1, 2, 64, 64, seed=77)
+    v = _laplace(1, 2, 64, 64, seed=88)
 
     def run():
         c = KVQuantKVCache(_cfg())

@@ -67,9 +67,9 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="chunkkv",
     head_dim=128,
-    chunkkv_budget=512,       # max tokens kept per layer (sinks included)
-    chunkkv_chunk_size=8,     # eviction granularity C; 1 == H2O bit-for-bit
-    chunkkv_n_sink=4,         # initial positions never evicted (attention sinks)
+    chunkkv_budget=512,  # max tokens kept per layer (sinks included)
+    chunkkv_chunk_size=8,  # eviction granularity C; 1 == H2O bit-for-bit
+    chunkkv_n_sink=4,  # initial positions never evicted (attention sinks)
     chunkkv_score="attn_mass",  # "attn_mass" (H2O scorer) | "key_norm"
 )
 caches = KVCacheBuilder.for_model(model, config)

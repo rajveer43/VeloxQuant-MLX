@@ -23,6 +23,7 @@ the paper's method. The per-head dimension of the paper's allocator is
 not implemented here because mlx_lm's cache is per-layer, not per-head;
 adding per-head would require a larger restructuring of the cache layout.
 """
+
 from __future__ import annotations
 
 import math
@@ -37,6 +38,7 @@ from veloxquant_mlx.quantizers.turboquant_rvq import TurboQuantRVQ
 
 # ── Sensitivity calibration ─────────────────────────────────────────────────
 
+
 class _SensitivityProbeCache(_MLXKVCache):
     """KV cache that records mean-squared per-token key L2 norm.
 
@@ -48,13 +50,13 @@ class _SensitivityProbeCache(_MLXKVCache):
     def __init__(self) -> None:
         super().__init__()
         self._norm_sq_sum = 0.0
-        self._n_tokens    = 0
+        self._n_tokens = 0
 
     def update_and_fetch(self, keys, values):
         k_flat = keys.reshape(-1, keys.shape[-1]).astype(mx.float32)
         norms_sq = mx.sum(k_flat * k_flat, axis=-1)
         self._norm_sq_sum += float(mx.sum(norms_sq))
-        self._n_tokens    += int(k_flat.shape[0])
+        self._n_tokens += int(k_flat.shape[0])
         return super().update_and_fetch(keys, values)
 
     @property
@@ -99,9 +101,7 @@ def calibrate_layer_sensitivities(
     if prompts is None:
         prompts = list(_DEFAULT_CALIB_PROMPTS)
 
-    layers = getattr(model, "layers", None) or getattr(
-        getattr(model, "model", None), "layers", []
-    )
+    layers = getattr(model, "layers", None) or getattr(getattr(model, "model", None), "layers", [])
     n_layers = len(layers)
     probes = [_SensitivityProbeCache() for _ in range(n_layers)]
 
@@ -115,7 +115,7 @@ def calibrate_layer_sensitivities(
         toks_mx = mx.array(toks).reshape(1, -1)
         _ = model(toks_mx, cache=probes)
         if verbose:
-            print(f"  [calib] {i+1}/{len(prompts)} (len={len(toks)})")
+            print(f"  [calib] {i + 1}/{len(prompts)} (len={len(toks)})")
 
     if original is not None:
         model.make_cache = original
@@ -125,6 +125,7 @@ def calibrate_layer_sensitivities(
 
 
 # ── Distortion curve fitting (optional — most users can skip) ──────────────
+
 
 def fit_distortion_curve(
     head_dim: int,
@@ -141,27 +142,27 @@ def fit_distortion_curve(
         :func:`allocate_bits_ratequant` and skip the fit.
     """
     rng = np.random.default_rng(seed)
-    x_raw  = rng.standard_normal((n_samples, head_dim)).astype(np.float32)
+    x_raw = rng.standard_normal((n_samples, head_dim)).astype(np.float32)
     x_unit = x_raw / np.linalg.norm(x_raw, axis=1, keepdims=True)
-    x_mx   = mx.array(x_unit.astype(np.float16))
+    x_mx = mx.array(x_unit.astype(np.float16))
 
     mses = []
     for b in bit_choices:
-        q     = TurboQuantRVQ(d=head_dim, b=b, seed=seed, use_hadamard=True)
-        ev    = q.encode(x_mx)
+        q = TurboQuantRVQ(d=head_dim, b=b, seed=seed, use_hadamard=True)
+        ev = q.encode(x_mx)
         x_hat = q.decode(ev)
-        mse   = float(mx.mean((x_mx - x_hat) ** 2))
+        mse = float(mx.mean((x_mx - x_hat) ** 2))
         mses.append(max(mse, 1e-8))
 
     log_d = np.log(np.array(mses))
-    A     = np.stack([np.ones(len(bit_choices)),
-                      -np.array(bit_choices, dtype=float)], axis=1)
+    A = np.stack([np.ones(len(bit_choices)), -np.array(bit_choices, dtype=float)], axis=1)
     coef, *_ = np.linalg.lstsq(A, log_d, rcond=None)
     log_alpha, log_beta = coef
     return float(np.exp(log_alpha)), float(np.exp(log_beta))
 
 
 # ── Theorem 2: closed-form reverse waterfilling ─────────────────────────────
+
 
 def allocate_bits_ratequant(
     sensitivities,
@@ -201,7 +202,7 @@ def allocate_bits_ratequant(
         raise ValueError("bit_choices must be non-empty.")
 
     N = w.size
-    log_w     = np.log(w)
+    log_w = np.log(w)
     log_w_bar = float(log_w.mean())
     b_continuous = target_avg_bits + (log_w - log_w_bar) / max(np.log(beta), 1e-6)
 
@@ -209,13 +210,12 @@ def allocate_bits_ratequant(
     b_clamped = np.clip(b_continuous, b_min, b_max)
     alloc = [int(round(b)) for b in b_clamped]
 
-    target_total  = int(round(target_avg_bits * N))
+    target_total = int(round(target_avg_bits * N))
     current_total = sum(alloc)
 
     # Greedy re-balance to hit exact integer budget
     while current_total < target_total:
-        deficits = [(b_continuous[i] - alloc[i], i)
-                    for i in range(N) if alloc[i] < b_max]
+        deficits = [(b_continuous[i] - alloc[i], i) for i in range(N) if alloc[i] < b_max]
         if not deficits:
             break
         _, i = max(deficits)
@@ -223,8 +223,7 @@ def allocate_bits_ratequant(
         current_total += 1
 
     while current_total > target_total:
-        surplus = [(alloc[i] - b_continuous[i], i)
-                   for i in range(N) if alloc[i] > b_min]
+        surplus = [(alloc[i] - b_continuous[i], i) for i in range(N) if alloc[i] > b_min]
         if not surplus:
             break
         _, i = max(surplus)
