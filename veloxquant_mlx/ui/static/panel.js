@@ -163,7 +163,7 @@ async function loadMethods() {
       opt.value = m.name;
       // Unsupported methods stay visible but unselectable — hiding five of
       // forty would misrepresent the catalog.
-      opt.textContent = m.is_servable ? m.name : `${m.name} — unsupported`;
+      opt.textContent = m.is_servable ? m.name : `${m.name} — not available yet`;
       opt.disabled = !m.is_servable;
       group.appendChild(opt);
     }
@@ -173,7 +173,7 @@ async function loadMethods() {
 
   const servable = METHODS.filter((m) => m.is_servable).length;
   $('methods-summary').textContent =
-    `${METHODS.length} methods · ${servable} servable · ${METHODS.length - servable} unsupported`;
+    `${METHODS.length} methods · ${servable} ready to use · ${METHODS.length - servable} coming soon`;
 
   onMethodChange();
   renderMethodTable();
@@ -185,19 +185,19 @@ function onMethodChange(knobValues) {
   if (!info) { box.innerHTML = ''; return; }
 
   const tierBadge = info.is_servable
-    ? '<span class="badge badge-accounting">accounting-only</span>'
-    : '<span class="badge badge-unsupported">unsupported</span>';
+    ? '<span class="badge badge-accounting">available</span>'
+    : '<span class="badge badge-unsupported">not available yet</span>';
 
   let html = `<div class="blurb"><span class="badge badge-family">${info.family}</span>${tierBadge}</div>`
     + `<div class="blurb">${escapeHtml(info.blurb)}</div>`;
 
   if (info.unsupported_reason) {
-    html += `<div class="deviation"><strong>Cannot serve.</strong> ${escapeHtml(info.unsupported_reason)}</div>`;
+    html += `<div class="deviation"><strong>Can't use this one yet.</strong> ${escapeHtml(info.unsupported_reason)}</div>`;
   }
   if (info.paper_deviation) {
-    html += `<div class="deviation"><strong>Adapted.</strong> ${escapeHtml(info.paper_deviation)}</div>`;
+    html += `<div class="deviation"><strong>Good to know:</strong> ${escapeHtml(info.paper_deviation)}</div>`;
   }
-  html += `<div class="hint">Telemetry: ${escapeHtml(info.coverage_label)}</div>`;
+  html += `<div class="hint">${escapeHtml(info.coverage_label)}</div>`;
 
   box.innerHTML = html;
   renderKnobs(knobValues || {});
@@ -227,7 +227,7 @@ function renderMethodTable() {
   body.innerHTML = rows.map((m) => `
     <tr data-method="${escapeHtml(m.name)}"
         class="${m.is_servable ? '' : 'is-unsupported'} ${m.name === selectedMethod ? 'is-selected' : ''}">
-      <td><span class="method-name">${escapeHtml(m.name)}</span>${m.is_adapted ? ' <span class="badge badge-family">adapted</span>' : ''}</td>
+      <td><span class="method-name">${escapeHtml(m.name)}</span>${m.is_adapted ? ' <span class="badge badge-family">modified</span>' : ''}</td>
       <td>${escapeHtml(m.family)}</td>
       <td class="${m.is_servable ? 'tier tier-ok' : 'tier tier-no'}">${escapeHtml(m.serve_tier_label)}</td>
       <td class="cov ${m.coverage === 'none' ? 'cov-none' : ''}">${escapeHtml(m.coverage_label)}</td>
@@ -252,23 +252,23 @@ function selectMethodDetail(name) {
     <p class="detail-blurb">${escapeHtml(m.blurb)}</p>`;
 
   if (m.unsupported_reason) {
-    html += `<div class="deviation"><strong>Cannot serve.</strong> ${escapeHtml(m.unsupported_reason)}</div>`;
+    html += `<div class="deviation"><strong>Not available yet.</strong> ${escapeHtml(m.unsupported_reason)}</div>`;
   }
   if (m.paper_deviation) {
-    html += `<div class="deviation"><strong>Adapted from the paper.</strong> ${escapeHtml(m.paper_deviation)}</div>`;
+    html += `<div class="deviation"><strong>Good to know:</strong> ${escapeHtml(m.paper_deviation)}</div>`;
   }
 
   // Coverage is spelled out because "not reported" and "zero compression"
   // look identical in a UI that only prints numbers.
   const covText = {
-    keys_and_values: 'Reports compressed vs fp16 bytes for keys and values.',
-    keys_only: 'Reports byte counters for <strong>keys only</strong> — not a whole-cache ratio.',
-    none: 'Reports no byte counters. Eviction methods drop tokens rather than compress bytes, so a compression ratio would not be meaningful.',
+    keys_and_values: 'Shows a compression estimate for the full conversation cache.',
+    keys_only: 'Shows a compression estimate for <strong>part</strong> of the conversation cache, not the whole thing.',
+    none: "Doesn't show a compression number — this method works by trimming older parts of the conversation instead.",
   }[m.coverage] || '';
-  html += `<div class="detail-row"><strong>Telemetry:</strong> ${covText}</div>`;
+  html += `<div class="detail-row">${covText}</div>`;
 
   if (m.config_fields && m.config_fields.length) {
-    html += `<div class="detail-row"><strong>Settings:</strong> <code>${m.config_fields.join('</code>, <code>')}</code></div>`;
+    html += `<div class="detail-row"><strong>Advanced settings:</strong> <code>${m.config_fields.join('</code>, <code>')}</code></div>`;
   }
 
   html += `<div class="detail-actions">`;
@@ -347,9 +347,8 @@ function renderMemory(report) {
   };
 
   body.innerHTML =
-      row('Server process (RSS)', humanBytes(report.process.rss_bytes), report.process.unavailable_reason)
-    + row('MLX active', humanBytes(report.mlx.active_bytes), report.mlx.unavailable_reason)
-    + row('MLX peak', humanBytes(report.mlx.peak_bytes), report.mlx.unavailable_reason)
+      row('Memory in use', humanBytes(report.process.rss_bytes), report.process.unavailable_reason)
+    + row('Peak memory used', humanBytes(report.mlx.peak_bytes), report.mlx.unavailable_reason)
     + `<p class="mem-note">${escapeHtml(report.note)}</p>`;
 }
 
@@ -492,7 +491,14 @@ $('primary-btn').addEventListener('click', async () => {
 
   try {
     if (state === 'running' || state === 'starting') {
-      await api('/api/stop', { method: 'POST' });
+      try {
+        await api('/api/stop', { method: 'POST' });
+      } catch (e) {
+        setState('error', 'Could not stop the server.');
+        showError(e.message);
+        await tick();
+        return;
+      }
       logCount = 0;
       $('log').innerHTML = '<span class="log-empty">No output yet.</span>';
       setState('stopped', 'Pick a model and press Start Server.');

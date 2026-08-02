@@ -13,6 +13,12 @@ This guide gets you from a fresh install to compressed LLM inference in five min
 Complete [Installation](../getting-started/installation) first. You need `mlx_lm` installed (`pip install mlx-lm`) and a model downloaded locally (e.g. `mlx-community/Llama-3.2-3B-Instruct-4bit`).
 :::
 
+:::tip[No Python? Start here instead]
+`veloxquant panel` runs a local Start/Stop web UI and OpenAI-compatible server
+— pick a model and method, no code required. See the
+[Control Panel guide](../guides/control-panel).
+:::
+
 ## Step 1 — Load a model
 
 ```python

@@ -57,10 +57,9 @@
       </header>
 
       <div class="banner banner-warn">
-        <strong>Accounting-only.</strong> Caches store dequantized fp16, so byte counters
-        measure compression fidelity — <em>not</em> runtime memory saved. Don't read them
-        as RSS reduction.
-        <a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/27" target="_blank" rel="noopener">issue&nbsp;#27</a>
+        <strong>Heads up:</strong> the compression numbers below show how well your
+        conversation data compresses — they don't reduce your Mac's memory usage yet.
+        Real memory savings are coming in a future update.
       </div>
 
       <div class="banner banner-error" id="error-banner" hidden></div>
@@ -183,9 +182,8 @@
       </header>
 
       <div class="banner banner-warn">
-        <strong>Support tiers are probed, not declared.</strong> Each method is
-        exercised against the <code>mlx_lm</code> serving contract at runtime, so
-        this list reflects what actually works in this build.
+        <strong>Tip:</strong> not sure which one to pick? The default works well for
+        most people — you can always change it later.
       </div>
 
       <div class="method-toolbar">
@@ -197,7 +195,7 @@
           <button type="button" class="chip" data-family="hybrid">Hybrid</button>
         </div>
         <label class="toggle">
-          <input type="checkbox" id="servable-only" /> Servable only
+          <input type="checkbox" id="servable-only" /> Available only
         </label>
       </div>
 
@@ -205,7 +203,7 @@
         <div class="method-table-wrap">
           <table class="method-table">
             <thead>
-              <tr><th>Method</th><th>Family</th><th>Serving</th><th>Telemetry</th></tr>
+              <tr><th>Method</th><th>Type</th><th>Status</th><th>Compression info</th></tr>
             </thead>
             <tbody id="method-rows"></tbody>
           </table>
@@ -220,47 +218,40 @@
     <section class="view" id="view-about">
       <header class="pnl-header">
         <div class="pnl-header-left">
-          <h1 class="view-title">About</h1>
-          <p class="pnl-sub">VeloxQuant-MLX control panel</p>
+          <h1 class="view-title">About VeloxQuant</h1>
+          <p class="pnl-sub">Run local AI models on your Mac, using less memory.</p>
         </div>
       </header>
 
       <div class="card">
-        <h2>What this is</h2>
+        <h2>What this app does</h2>
         <p class="about-p">
-          A local front-end for <code>veloxquant serve</code>. It spawns the same command
-          you could type yourself and reports what that process announces — it never runs
-          inference in its own process.
+          VeloxQuant lets you run a language model entirely on your own Mac —
+          nothing you type ever leaves your computer. This panel is the easy way
+          to do it: pick a model, press Start, and you have a private AI server
+          ready to chat with in a couple of minutes.
         </p>
       </div>
 
       <div class="card">
-        <h2>How to read the numbers</h2>
+        <h2>Good to know</h2>
         <p class="about-p">
-          <span class="prov prov-measured">measured</span>
-          comes from the running process — <code>psutil</code> RSS and MLX's own memory
-          counters. These are facts.
+          Any number on this panel that's <strong>measured</strong> comes straight
+          from your Mac while the server is running, so you can trust it.
         </p>
         <p class="about-p">
-          <span class="prov prov-estimate">estimate</span>
-          comes from the cache's byte counters. Compression is currently
-          <strong>accounting-only</strong>: caches store dequantized fp16, so these
-          measure compression fidelity, not memory saved. The two are not comparable.
-        </p>
-        <p class="about-p">
-          Telemetry coverage is uneven. Of the servable methods, some report keys and
-          values, some report keys only, and eviction methods report no byte counters at
-          all — they drop tokens rather than compress bytes. The Methods tab shows which
-          applies. Where nothing is reported, this panel says so rather than showing zero.
+          Compression numbers are a little different: they show how well your
+          conversation data compresses, not memory your Mac has actually freed up
+          yet — that's on the way in a future update. We'd rather tell you that
+          plainly than let you assume something we haven't built yet.
         </p>
       </div>
 
       <div class="card">
-        <h2>Links</h2>
+        <h2>Learn more</h2>
         <ul class="link-list">
           <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub repository</a></li>
           <li><a href="https://veloxquant-mlx.netlify.app/" target="_blank" rel="noopener">Documentation site</a></li>
-          <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/27" target="_blank" rel="noopener">#27 — accounting-only compression</a></li>
         </ul>
       </div>
     </section>

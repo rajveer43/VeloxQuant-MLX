@@ -144,7 +144,12 @@ class PanelHandler(BaseHTTPRequestHandler):
             return
 
         if route == "/api/stop":
-            self._send_json(self.supervisor.stop())
+            try:
+                status = self.supervisor.stop()
+            except Exception as exc:  # noqa: BLE001 - never leak a raw 500 to the UI
+                self._send_json({"error": str(exc)}, status=500)
+                return
+            self._send_json(status)
             return
 
         if route == "/api/config":

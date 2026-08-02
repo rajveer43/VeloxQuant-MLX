@@ -70,9 +70,9 @@ class ServeTier(str, Enum):
     @property
     def label(self) -> str:
         return {
-            ServeTier.HONEST_BYTES: "serves",
-            ServeTier.ACCOUNTING_ONLY: "accounting-only",
-            ServeTier.CRASHES: "unsupported",
+            ServeTier.HONEST_BYTES: "available",
+            ServeTier.ACCOUNTING_ONLY: "available",
+            ServeTier.CRASHES: "not available yet",
         }[self]
 
 
@@ -104,9 +104,9 @@ class TelemetryCoverage(str, Enum):
     @property
     def label(self) -> str:
         return {
-            TelemetryCoverage.KEYS_AND_VALUES: "keys and values",
-            TelemetryCoverage.KEYS_ONLY: "keys only",
-            TelemetryCoverage.NONE: "not reported",
+            TelemetryCoverage.KEYS_AND_VALUES: "full estimate",
+            TelemetryCoverage.KEYS_ONLY: "partial estimate",
+            TelemetryCoverage.NONE: "no estimate",
         }[self]
 
 

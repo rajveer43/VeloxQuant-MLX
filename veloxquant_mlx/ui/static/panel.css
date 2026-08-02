@@ -399,7 +399,10 @@ code, pre, .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace
 .detail-link:hover { text-decoration: underline; }
 
 /* ── About ─────────────────────────────────────────────── */
-.about-p { font-size: 0.87rem; margin-bottom: 0.7rem; }
+#view-about { max-width: 640px; }
+#view-about .card { margin-bottom: 1rem; }
+#view-about .card:last-child { margin-bottom: 0; }
+.about-p { font-size: 0.92rem; line-height: 1.55; margin-bottom: 0.7rem; }
 .about-p:last-child { margin-bottom: 0; }
 .about-p code { background: var(--code-bg); padding: 0.1rem 0.35rem; border-radius: 5px; font-size: 0.82rem; }
 .link-list { list-style: none; display: flex; flex-direction: column; gap: 0.4rem; }

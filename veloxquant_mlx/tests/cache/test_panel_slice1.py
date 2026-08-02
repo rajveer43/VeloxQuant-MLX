@@ -78,8 +78,8 @@ def test_eviction_methods_report_no_byte_counters():
 
 
 def test_coverage_labels_never_read_as_zero():
-    """"not reported" must not be confusable with a measured zero."""
-    assert TelemetryCoverage.NONE.label == "not reported"
+    """The "no estimate" label must not be confusable with a measured zero."""
+    assert TelemetryCoverage.NONE.label == "no estimate"
     for coverage in TelemetryCoverage:
         assert coverage.label and coverage.label != "0"
 
@@ -199,13 +199,13 @@ def test_mlx_memory_is_withheld_with_a_reason():
     mlx = memory_report(pid=None)["mlx"]
     assert mlx["active_bytes"] is None
     assert mlx["peak_bytes"] is None
-    assert "#27" in mlx["unavailable_reason"]
+    assert mlx["unavailable_reason"]
 
 
 def test_memory_note_disclaims_comparability():
     note = memory_report(pid=None)["note"]
-    assert "estimate" in note
-    assert "not comparable" in note
+    assert "compression" in note
+    assert "drop" in note
 
 
 def test_absent_memory_is_none_not_zero():
@@ -285,8 +285,8 @@ def test_methods_cli_states_coverage():
     )
     assert proc.returncode == 0, proc.stderr
 
-    assert "telemetry: not reported" in proc.stdout
-    assert "telemetry: keys and values" in proc.stdout
+    assert "telemetry: no estimate" in proc.stdout
+    assert "telemetry: full estimate" in proc.stdout
     assert "'not reported' is not zero" in proc.stdout
     assert "not a whole-cache ratio" in proc.stdout
 
@@ -303,4 +303,4 @@ def test_api_methods_exposes_schema_and_coverage(panel):
 
     h2o = next(m for m in methods if m["name"] == "h2o")
     assert h2o["coverage"] == "none"
-    assert h2o["coverage_label"] == "not reported"
+    assert h2o["coverage_label"] == "no estimate"

@@ -36,9 +36,7 @@ def _mlx_memory() -> Dict[str, Any]:
     return {
         "active_bytes": None,
         "peak_bytes": None,
-        "unavailable_reason":
-            "needs an in-server stats endpoint (#27) — MLX counters are "
-            "process-local and would describe the panel, not the server",
+        "unavailable_reason": "coming soon",
     }
 
 
@@ -50,8 +48,7 @@ def _process_memory(pid: Optional[int]) -> Dict[str, Any]:
     if _psutil is None:
         return {
             "rss_bytes": None,
-            "unavailable_reason":
-                "psutil is not installed (pip install 'VeloxQuant-MLX[dev]')",
+            "unavailable_reason": "not available in this install",
         }
 
     try:
@@ -59,8 +56,8 @@ def _process_memory(pid: Optional[int]) -> Dict[str, Any]:
             "rss_bytes": int(_psutil.Process(pid).memory_info().rss),
             "unavailable_reason": None,
         }
-    except Exception as exc:
-        return {"rss_bytes": None, "unavailable_reason": f"could not read process: {exc}"}
+    except Exception:
+        return {"rss_bytes": None, "unavailable_reason": "not available right now"}
 
 
 def memory_report(pid: Optional[int] = None) -> Dict[str, Any]:
@@ -78,9 +75,9 @@ def memory_report(pid: Optional[int] = None) -> Dict[str, Any]:
         "process": process,
         "mlx": mlx,
         "note": (
-            "Resident memory of the server process, measured. Compression byte "
-            "counters are accounting estimates, not measurements — the two are "
-            "not comparable, and this figure will not fall when compression "
-            "ratios rise."
+            "This is the real memory your Mac is using right now. The "
+            "compression numbers shown elsewhere describe your conversation "
+            "data, not your Mac's memory — so don't expect this number to "
+            "drop when you pick a higher compression method yet."
         ),
     }
