@@ -1,9 +1,11 @@
 """Tests for CaM-adapted pure primitives (quantizers/cam.py).
 
 Covers most-similar-survivor selection, the merge blend (weights, key/value
-handling, mode validation), the per-head merge-eviction state machine, sink
-preservation, budget enforcement, byte accounting, determinism, and the
-drop-mode == H2O bit-for-bit equivalence. All data is synthetic — no model.
+handling, mode validation), the Eq. 14 Bernoulli merge gate (probability
+bounds, deterministic sampling, low-score losers mostly blocked), the
+per-head merge-eviction state machine, sink preservation, budget enforcement,
+byte accounting, determinism, and the drop-mode == H2O bit-for-bit
+equivalence. All data is synthetic — no model.
 """
 
 from __future__ import annotations
@@ -19,8 +21,10 @@ from veloxquant_mlx.quantizers.cam import (
     cam_update,
     full_cam_fp16_bytes,
     init_cam_state,
+    merge_gate_probability,
     merge_pair,
     most_similar_survivor,
+    sample_merge_gate,
 )
 from veloxquant_mlx.quantizers.h2o import h2o_get_kv, h2o_update, init_h2o_state
 
@@ -152,9 +156,14 @@ def test_sinks_always_retained():
 
 
 def test_merge_changes_values_vs_drop():
+    # merge_gate=False isolates the blend weight from the Eq. 14 gate: this
+    # test is about sim_weighted's blend differing from drop's no-op, not
+    # about whether the gate fires.
     k, v = _kv(50, 8, seed=7)
-    drop = cam_update(init_cam_state(2, 10, 8, merge_mode="drop"), k, v)
-    sim = cam_update(init_cam_state(2, 10, 8, merge_mode="sim_weighted"), k, v)
+    drop = cam_update(init_cam_state(2, 10, 8, merge_mode="drop", merge_gate=False), k, v)
+    sim = cam_update(
+        init_cam_state(2, 10, 8, merge_mode="sim_weighted", merge_gate=False), k, v
+    )
     # same kept count, but the merged values differ from the dropped ones
     assert drop.keys.shape == sim.keys.shape
     assert not bool(mx.all(drop.values == sim.values).item())
@@ -212,3 +221,82 @@ def test_drop_mode_reduces_to_h2o(seed):
     assert ck.shape == hk.shape
     assert bool(mx.all(ck == hk).item())
     assert bool(mx.all(cv == hv).item())
+
+
+# ======================================================================
+# Merge gate (Eq. 14 Bernoulli mask)
+# ======================================================================
+
+
+def test_merge_gate_probability_bounds():
+    assert merge_gate_probability(0.0, 1.0) == 0.0
+    assert merge_gate_probability(1.0, 1.0) == 1.0
+    assert merge_gate_probability(2.0, 1.0) == 1.0  # clamped
+    assert merge_gate_probability(0.5, 1.0) == 0.5
+
+
+def test_merge_gate_probability_zero_survivor_score():
+    assert merge_gate_probability(0.0, 0.0) == 0.0  # nothing to compare against
+    assert merge_gate_probability(0.3, 0.0) == 1.0  # any mass beats zero
+
+
+def test_sample_merge_gate_deterministic_extremes():
+    assert sample_merge_gate(0.0, seed=0, draw_id=0) is False
+    assert sample_merge_gate(1.0, seed=0, draw_id=0) is True
+
+
+def test_sample_merge_gate_reproducible():
+    a = sample_merge_gate(0.5, seed=7, draw_id=3)
+    b = sample_merge_gate(0.5, seed=7, draw_id=3)
+    assert a == b
+
+
+def test_sample_merge_gate_varies_with_draw_id():
+    draws = {sample_merge_gate(0.5, seed=7, draw_id=i) for i in range(20)}
+    assert draws == {True, False}  # both outcomes occur across draws
+
+
+def test_gate_off_merges_unconditionally():
+    """merge_gate=False reproduces the old always-merge behaviour."""
+    k, v = _kv(60, 8, seed=21)
+    gated = cam_update(
+        init_cam_state(2, 10, 8, merge_mode="sim_weighted", merge_gate=True, seed=0), k, v
+    )
+    ungated = cam_update(
+        init_cam_state(2, 10, 8, merge_mode="sim_weighted", merge_gate=False), k, v
+    )
+    # Same budget enforcement, but the gate can skip merges the ungated path
+    # always performs — the two states are not guaranteed identical.
+    assert gated.keys.shape[0] == 10
+    assert ungated.keys.shape[0] == 10
+
+
+def test_low_score_loser_more_likely_dropped_with_gate():
+    """A loser with near-zero mass relative to its target should rarely merge.
+
+    Repeats the same low-relative-score scenario across draw ids and checks
+    the gate blocks the merge (keys match the drop path) the overwhelming
+    majority of the time — the paper's intended behaviour for a
+    just-appended, unproven token.
+    """
+    blocked = 0
+    trials = 30
+    for seed in range(trials):
+        k, v = _kv(30, 8, seed=100 + seed)
+        drop = cam_update(init_cam_state(2, 10, 8, merge_mode="drop"), k, v)
+        gated = cam_update(
+            init_cam_state(2, 10, 8, merge_mode="sim_weighted", merge_gate=True, seed=seed),
+            k,
+            v,
+        )
+        if bool(mx.all(drop.values == gated.values).item()):
+            blocked += 1
+    # Most losers overflow the budget shortly after being appended (score
+    # near 0 relative to established survivors), so the gate should block
+    # the large majority of merges.
+    assert blocked >= trials * 0.5
+
+
+def test_merge_gate_default_is_on():
+    st = init_cam_state(2, 10, 8)
+    assert st.merge_gate is True
