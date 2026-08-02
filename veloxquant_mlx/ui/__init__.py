@@ -1,4 +1,5 @@
 """Local web control panel for VeloxQuant-MLX (#33 / #34)."""
+
 from __future__ import annotations
 
 __all__ = ["serve_panel"]

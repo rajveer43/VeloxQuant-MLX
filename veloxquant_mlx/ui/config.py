@@ -1,4 +1,5 @@
 """Persisted panel settings (#34: remember network + last-used model)."""
+
 from __future__ import annotations
 
 import json

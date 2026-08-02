@@ -5,6 +5,7 @@ the catalog (13 keys+values / 5 keys-only / 17 none). A UI that assumed uniform
 coverage would render zeros for half the methods, which reads as "no
 compression" — a claim nobody measured.
 """
+
 from __future__ import annotations
 
 import json
@@ -99,8 +100,11 @@ def test_coverage_is_memoized():
 
 def test_describe_field_reads_types_from_the_dataclass():
     assert describe_field("kivi_group_size") == {
-        "name": "kivi_group_size", "type": "int", "default": 32,
-        "optional": False, "help": "Tokens per min/max quantization group.",
+        "name": "kivi_group_size",
+        "type": "int",
+        "default": 32,
+        "optional": False,
+        "help": "Tokens per min/max quantization group.",
     }
 
     rank = describe_field("svdq_rank")
@@ -135,9 +139,7 @@ def test_parse_overrides_blank_clears_optional_field():
     assert parse_overrides(["svdq_rank="]) == {"svdq_rank": None}
 
 
-@pytest.mark.parametrize(
-    "bad", ["nope=1", "kivi_group_size=abc", "noequals", "method=kivi"]
-)
+@pytest.mark.parametrize("bad", ["nope=1", "kivi_group_size=abc", "noequals", "method=kivi"])
 def test_parse_overrides_rejects_bad_input(bad):
     with pytest.raises(SystemExit):
         parse_overrides([bad])
@@ -146,19 +148,25 @@ def test_parse_overrides_rejects_bad_input(bad):
 def test_supervisor_rejects_knobs_from_another_method():
     supervisor = ServerSupervisor()
     with pytest.raises(ValueError, match="not a setting for"):
-        supervisor.start({
-            "model": "x/y", "method": "kivi",
-            "overrides": {"svdq_rank": 8},
-        })
+        supervisor.start(
+            {
+                "model": "x/y",
+                "method": "kivi",
+                "overrides": {"svdq_rank": 8},
+            }
+        )
 
 
 def test_supervisor_rejects_unparseable_knob():
     supervisor = ServerSupervisor()
     with pytest.raises(ValueError, match="expects int"):
-        supervisor.start({
-            "model": "x/y", "method": "kivi",
-            "overrides": {"kivi_group_size": "wide"},
-        })
+        supervisor.start(
+            {
+                "model": "x/y",
+                "method": "kivi",
+                "overrides": {"kivi_group_size": "wide"},
+            }
+        )
 
 
 def test_overrides_reach_the_command_line():
@@ -215,9 +223,11 @@ def test_absent_memory_is_none_not_zero():
     a legitimate measurement.
     """
     report = memory_report(pid=None)
-    for value in (report["process"]["rss_bytes"],
-                  report["mlx"]["active_bytes"],
-                  report["mlx"]["peak_bytes"]):
+    for value in (
+        report["process"]["rss_bytes"],
+        report["mlx"]["active_bytes"],
+        report["mlx"]["peak_bytes"],
+    ):
         assert value is None
 
 
@@ -251,7 +261,7 @@ def test_model_filter(repo_id, expected):
 def test_human_size():
     assert _human_size(512) == "512 B"
     assert _human_size(1536) == "1.5 KB"
-    assert _human_size(5 * 1024 ** 3) == "5.0 GB"
+    assert _human_size(5 * 1024**3) == "5.0 GB"
 
 
 # --- control API ----------------------------------------------------------
@@ -281,7 +291,9 @@ def test_methods_cli_states_coverage():
 
     proc = subprocess.run(
         [sys.executable, "-m", "veloxquant_mlx", "methods", "--servable-only"],
-        capture_output=True, text=True, timeout=300,
+        capture_output=True,
+        text=True,
+        timeout=300,
     )
     assert proc.returncode == 0, proc.stderr
 
@@ -298,7 +310,8 @@ def test_api_methods_exposes_schema_and_coverage(panel):
     kivi = next(m for m in methods if m["name"] == "kivi")
     assert kivi["coverage"] == "keys_and_values"
     assert [f["name"] for f in kivi["field_schema"]] == [
-        "bit_width_inlier", "kivi_group_size",
+        "bit_width_inlier",
+        "kivi_group_size",
     ]
 
     h2o = next(m for m in methods if m["name"] == "h2o")

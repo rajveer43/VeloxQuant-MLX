@@ -20,6 +20,7 @@ Usage::
     if not info.serve_tier.is_servable:
         raise SystemExit(info.unsupported_reason)
 """
+
 from __future__ import annotations
 
 import copy
@@ -273,27 +274,44 @@ _CONFIG_FIELDS: Dict[str, List[str]] = {
     "turboquant_prod": ["bit_width_inlier", "seed"],
     "turboquant_mse": ["bit_width_inlier", "seed"],
     "vecinfer": [
-        "key_sub_dim", "value_sub_dim", "key_codebook_bits",
-        "value_codebook_bits", "residual_length",
+        "key_sub_dim",
+        "value_sub_dim",
+        "key_codebook_bits",
+        "value_codebook_bits",
+        "residual_length",
     ],
     "kivi": ["bit_width_inlier", "kivi_group_size"],
     "kivi_sink": ["bit_width_inlier", "kivi_group_size"],
     "svdq": [
-        "svdq_rank", "svdq_energy_threshold", "svdq_hi_bit",
-        "svdq_lo_bit", "svdq_hi_fraction", "svdq_group_size",
+        "svdq_rank",
+        "svdq_energy_threshold",
+        "svdq_hi_bit",
+        "svdq_lo_bit",
+        "svdq_hi_fraction",
+        "svdq_group_size",
     ],
     "kitty": ["kitty_hi_fraction", "kitty_hi_bit", "kitty_lo_bit", "kitty_group_size"],
     "adakv": [
-        "adakv_target_avg_bits", "adakv_lo_bit", "adakv_mid_bit",
-        "adakv_hi_bit", "adakv_group_size", "adakv_update_interval",
+        "adakv_target_avg_bits",
+        "adakv_lo_bit",
+        "adakv_mid_bit",
+        "adakv_hi_bit",
+        "adakv_group_size",
+        "adakv_update_interval",
     ],
     "xquant": [
-        "xquant_group_size", "xquant_base_bits",
-        "xquant_residual_bits", "xquant_group_quant_size", "xquant_max_ctx",
+        "xquant_group_size",
+        "xquant_base_bits",
+        "xquant_residual_bits",
+        "xquant_group_quant_size",
+        "xquant_max_ctx",
     ],
     "kvquant": [
-        "kvquant_bits", "kvquant_outlier_fraction", "kvquant_group_size",
-        "kvquant_lloyd_iters", "kvquant_refit_interval",
+        "kvquant_bits",
+        "kvquant_outlier_fraction",
+        "kvquant_group_size",
+        "kvquant_lloyd_iters",
+        "kvquant_refit_interval",
     ],
     "palu": ["palu_rank", "palu_energy_threshold"],
     "qjl": ["jl_dim", "seed"],
@@ -340,8 +358,7 @@ def describe_field(name: str) -> Dict[str, Any]:
     fields = {f.name: f for f in dataclasses.fields(KVCacheConfig)}
 
     if name not in fields:
-        return {"name": name, "type": "unknown", "default": None,
-                "optional": True, "help": None}
+        return {"name": name, "type": "unknown", "default": None, "optional": True, "help": None}
 
     annotation = hints[name]
     optional = False
@@ -351,9 +368,7 @@ def describe_field(name: str) -> Dict[str, Any]:
         optional = len(args) != len(typing.get_args(annotation))
         annotation = args[0] if args else annotation
 
-    kind = {int: "int", float: "float", bool: "bool", str: "str"}.get(
-        annotation, "unknown"
-    )
+    kind = {int: "int", float: "float", bool: "bool", str: "str"}.get(annotation, "unknown")
 
     default = fields[name].default
     if default is dataclasses.MISSING:
@@ -498,9 +513,7 @@ def telemetry_coverage(method: str) -> "TelemetryCoverage":
 def get_method(name: str) -> MethodInfo:
     """Look up one method, probing its serve tier on first access."""
     if name not in all_method_names():
-        raise KeyError(
-            f"unknown method {name!r}. Known methods: {', '.join(all_method_names())}"
-        )
+        raise KeyError(f"unknown method {name!r}. Known methods: {', '.join(all_method_names())}")
 
     tier = probe_serve_tier(name)
     return MethodInfo(
@@ -513,9 +526,7 @@ def get_method(name: str) -> MethodInfo:
         unsupported_reason=_UNSUPPORTED_REASON.get(name),
         # Only meaningful for methods that actually run; a crash-tier cache
         # never reports anything.
-        coverage=(
-            telemetry_coverage(name) if tier.is_servable else TelemetryCoverage.NONE
-        ),
+        coverage=(telemetry_coverage(name) if tier.is_servable else TelemetryCoverage.NONE),
     )
 
 

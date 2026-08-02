@@ -16,6 +16,7 @@ longer than the ten lines #27 predicted:
 * There is no fp16 fallback, silent or otherwise. A method that cannot serve
   stops the process.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,42 +43,59 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="veloxquant serve",
         description="Serve an MLX model over an OpenAI-compatible API with a "
-                    "VeloxQuant-compressed KV cache.",
+        "VeloxQuant-compressed KV cache.",
     )
     parser.add_argument(
-        "--model", required=True,
+        "--model",
+        required=True,
         help="Hugging Face model id (e.g. mlx-community/...) or local path.",
     )
     parser.add_argument(
-        "--method", default=DEFAULT_SERVE_METHOD,
+        "--method",
+        default=DEFAULT_SERVE_METHOD,
         help=f"KV-cache method (default: {DEFAULT_SERVE_METHOD}). "
-             "Run 'veloxquant methods' to list options.",
+        "Run 'veloxquant methods' to list options.",
     )
     parser.add_argument(
-        "--bits", type=int, default=2,
+        "--bits",
+        type=int,
+        default=2,
         help="Inlier bit width for the cache (default: 2).",
     )
     parser.add_argument("--host", default="127.0.0.1", help="Listen address (default: 127.0.0.1).")
     parser.add_argument("--port", type=int, default=8000, help="Listen port (default: 8000).")
     parser.add_argument("--seed", type=int, default=42, help="Quantizer seed (default: 42).")
     parser.add_argument(
-        "--adapter-path", default=None, help="Optional LoRA adapter path passed to mlx_lm.",
+        "--adapter-path",
+        default=None,
+        help="Optional LoRA adapter path passed to mlx_lm.",
     )
     parser.add_argument(
-        "--max-tokens", type=int, default=512,
+        "--max-tokens",
+        type=int,
+        default=512,
         help="Default max tokens per completion (default: 512).",
     )
     parser.add_argument(
-        "--temp", type=float, default=0.0, help="Default sampling temperature (default: 0.0).",
+        "--temp",
+        type=float,
+        default=0.0,
+        help="Default sampling temperature (default: 0.0).",
     )
     parser.add_argument(
-        "--top-p", type=float, default=1.0, help="Default nucleus sampling p (default: 1.0).",
+        "--top-p",
+        type=float,
+        default=1.0,
+        help="Default nucleus sampling p (default: 1.0).",
     )
     parser.add_argument(
-        "--set", action="append", default=[], metavar="FIELD=VALUE",
+        "--set",
+        action="append",
+        default=[],
+        metavar="FIELD=VALUE",
         help="Method-specific KVCacheConfig field, repeatable "
-             "(e.g. --set kivi_group_size=64). Run 'veloxquant methods --json' "
-             "to see which fields apply to a method.",
+        "(e.g. --set kivi_group_size=64). Run 'veloxquant methods --json' "
+        "to see which fields apply to a method.",
     )
     return parser
 
@@ -124,9 +142,7 @@ def parse_overrides(pairs: List[str]) -> Dict[str, Any]:
             else:
                 overrides[name] = raw
         except ValueError:
-            raise SystemExit(
-                f"error: {name!r} expects {schema['type']}, got {raw!r}"
-            ) from None
+            raise SystemExit(f"error: {name!r} expects {schema['type']}, got {raw!r}") from None
 
     return overrides
 
@@ -169,7 +185,10 @@ def build_config(args: argparse.Namespace) -> Any:
         _warn(f"method overrides: {rendered}")
 
     return KVCacheConfig(
-        method=args.method, bit_width_inlier=args.bits, seed=args.seed, **overrides,
+        method=args.method,
+        bit_width_inlier=args.bits,
+        seed=args.seed,
+        **overrides,
     )
 
 
@@ -272,10 +291,9 @@ def _capture_mlx_parser(server_module: Any) -> argparse.ArgumentParser:
     def _abort(*a: Any, **kw: Any):
         raise _StopParsing
 
-    shim = types.SimpleNamespace(**{
-        name: getattr(argparse, name) for name in dir(argparse)
-        if not name.startswith("__")
-    })
+    shim = types.SimpleNamespace(
+        **{name: getattr(argparse, name) for name in dir(argparse) if not name.startswith("__")}
+    )
     shim.ArgumentParser = _factory
 
     original = server_module.argparse
@@ -346,19 +364,14 @@ def run_server(args: argparse.Namespace) -> None:
             # which generates on the HTTP thread with no stream scope.
             from mlx_lm.models.cache import make_prompt_cache
 
-            self.is_batchable = all(
-                hasattr(c, "merge") for c in make_prompt_cache(self.model)
-            )
+            self.is_batchable = all(hasattr(c, "merge") for c in make_prompt_cache(self.model))
             if not self.is_batchable:
                 _warn(
                     f"method {args.method!r} has no merge(); serving unbatched "
                     "(slower, one request at a time)."
                 )
 
-            _warn(
-                f"wired {n_layers} layer cache(s) with "
-                f"method={args.method!r} bits={args.bits}"
-            )
+            _warn(f"wired {n_layers} layer cache(s) with method={args.method!r} bits={args.bits}")
             if not state["announced"]:
                 emit_ready(args, n_layers)
                 state["announced"] = True

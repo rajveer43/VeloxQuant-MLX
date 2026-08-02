@@ -3,6 +3,7 @@
 These cover everything up to the model load. Actually starting a server needs
 model weights, so that path is exercised manually rather than in CI.
 """
+
 from __future__ import annotations
 
 import json
@@ -49,7 +50,7 @@ def test_ready_handshake_shape(capsys):
     line = capsys.readouterr().out.strip()
     assert line.startswith(serve_cli.READY_PREFIX)
 
-    payload = json.loads(line[len(serve_cli.READY_PREFIX):])
+    payload = json.loads(line[len(serve_cli.READY_PREFIX) :])
     assert payload["method"] == "kivi"
     assert payload["bits"] == 3
     assert payload["layer_caches"] == 16
@@ -70,7 +71,7 @@ def test_ready_handshake_advertises_only_real_endpoints(capsys):
     serve_cli.emit_ready(args, n_caches=1)
 
     line = capsys.readouterr().out.strip()
-    payload = json.loads(line[len(serve_cli.READY_PREFIX):])
+    payload = json.loads(line[len(serve_cli.READY_PREFIX) :])
 
     assert "health" not in payload["endpoints"]
     assert "metrics" not in payload["endpoints"]

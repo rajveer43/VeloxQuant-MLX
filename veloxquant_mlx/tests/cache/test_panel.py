@@ -3,6 +3,7 @@
 Covers everything that does not need model weights: refusal rules, config
 persistence, the static-file guard, and failure diagnosis.
 """
+
 from __future__ import annotations
 
 import json
@@ -89,14 +90,28 @@ def test_stop_is_idempotent():
 def test_command_carries_every_setting():
     supervisor = ServerSupervisor()
     cmd = supervisor._build_command(
-        {"bits": 3, "host": "0.0.0.0", "port": 9001,
-         "max_tokens": 64, "temp": 0.7, "top_p": 0.9, "seed": 7},
-        "some/model", "kivi",
+        {
+            "bits": 3,
+            "host": "0.0.0.0",
+            "port": 9001,
+            "max_tokens": 64,
+            "temp": 0.7,
+            "top_p": 0.9,
+            "seed": 7,
+        },
+        "some/model",
+        "kivi",
     )
     joined = " ".join(cmd)
     assert "veloxquant_mlx serve" in joined
-    for expected in ("--method kivi", "--bits 3", "--host 0.0.0.0",
-                     "--port 9001", "--max-tokens 64", "--seed 7"):
+    for expected in (
+        "--method kivi",
+        "--bits 3",
+        "--host 0.0.0.0",
+        "--port 9001",
+        "--max-tokens 64",
+        "--seed 7",
+    ):
         assert expected in joined
 
 
@@ -112,8 +127,12 @@ def test_ready_handshake_promotes_to_running():
 
     supervisor = ServerSupervisor()
     supervisor._state = "starting"
-    payload = {"method": "kivi", "bits": 2, "layer_caches": 16,
-               "endpoints": {"openai_base_url": "http://127.0.0.1:8000/v1"}}
+    payload = {
+        "method": "kivi",
+        "bits": 2,
+        "layer_caches": 16,
+        "endpoints": {"openai_base_url": "http://127.0.0.1:8000/v1"},
+    }
     supervisor._on_ready(READY_PREFIX + json.dumps(payload))
 
     assert supervisor._state == "running"

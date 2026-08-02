@@ -1,4 +1,5 @@
 """``veloxquant panel`` — launch the local web control panel (#34)."""
+
 from __future__ import annotations
 
 import argparse
@@ -10,12 +11,16 @@ def build_parser() -> argparse.ArgumentParser:
         description="Start the VeloxQuant control panel in your browser.",
     )
     parser.add_argument(
-        "--port", type=int, default=7860,
+        "--port",
+        type=int,
+        default=7860,
         help="Port for the panel itself (default: 7860). Always bound to "
-             "127.0.0.1 — this API spawns processes and is never exposed.",
+        "127.0.0.1 — this API spawns processes and is never exposed.",
     )
     parser.add_argument(
-        "--no-browser", action="store_true", help="Do not open a browser window.",
+        "--no-browser",
+        action="store_true",
+        help="Do not open a browser window.",
     )
     return parser
 

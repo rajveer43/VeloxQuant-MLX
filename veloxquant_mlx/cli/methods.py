@@ -4,6 +4,7 @@ The ``--json`` form is the contract the macOS control panel decodes, so the
 method list and serve-tier logic live in Python only and never get duplicated
 in Swift.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -25,15 +26,19 @@ def build_parser() -> argparse.ArgumentParser:
         description="List KV-cache methods with their serving support tier.",
     )
     parser.add_argument(
-        "--json", action="store_true",
+        "--json",
+        action="store_true",
         help="Emit machine-readable JSON (consumed by the control panel).",
     )
     parser.add_argument(
-        "--servable-only", action="store_true",
+        "--servable-only",
+        action="store_true",
         help="Hide methods that cannot be served.",
     )
     parser.add_argument(
-        "--family", choices=[f.value for f in MethodFamily], default=None,
+        "--family",
+        choices=[f.value for f in MethodFamily],
+        default=None,
         help="Filter by method family.",
     )
     return parser

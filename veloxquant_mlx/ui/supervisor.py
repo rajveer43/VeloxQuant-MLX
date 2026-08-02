@@ -6,6 +6,7 @@ The panel never runs inference in its own process. It spawns the same
 UI cannot advertise an endpoint or a compression mode the backend did not
 actually announce.
 """
+
 from __future__ import annotations
 
 import json
@@ -177,19 +178,28 @@ class ServerSupervisor:
 
     # --- internals --------------------------------------------------------
 
-    def _build_command(
-        self, config: Dict[str, Any], model: str, method: str
-    ) -> List[str]:
+    def _build_command(self, config: Dict[str, Any], model: str, method: str) -> List[str]:
         cmd = [
-            sys.executable, "-m", "veloxquant_mlx", "serve",
-            "--model", model,
-            "--method", method,
-            "--bits", str(int(config.get("bits", 2))),
-            "--host", str(config.get("host", "127.0.0.1")),
-            "--port", str(int(config.get("port", 8000))),
-            "--max-tokens", str(int(config.get("max_tokens", 512))),
-            "--temp", str(float(config.get("temp", 0.0))),
-            "--top-p", str(float(config.get("top_p", 1.0))),
+            sys.executable,
+            "-m",
+            "veloxquant_mlx",
+            "serve",
+            "--model",
+            model,
+            "--method",
+            method,
+            "--bits",
+            str(int(config.get("bits", 2))),
+            "--host",
+            str(config.get("host", "127.0.0.1")),
+            "--port",
+            str(int(config.get("port", 8000))),
+            "--max-tokens",
+            str(int(config.get("max_tokens", 512))),
+            "--temp",
+            str(float(config.get("temp", 0.0))),
+            "--top-p",
+            str(float(config.get("top_p", 1.0))),
         ]
         if config.get("seed") is not None:
             cmd += ["--seed", str(int(config["seed"]))]
@@ -216,13 +226,10 @@ class ServerSupervisor:
 
         if not info.serve_tier.is_servable:
             raise ValueError(
-                f"{method!r} cannot be served: "
-                f"{info.unsupported_reason or 'unsupported'}"
+                f"{method!r} cannot be served: {info.unsupported_reason or 'unsupported'}"
             )
 
-    def _assert_valid_overrides(
-        self, method: str, overrides: Dict[str, Any]
-    ) -> None:
+    def _assert_valid_overrides(self, method: str, overrides: Dict[str, Any]) -> None:
         """Reject knobs that don't belong to this method, or won't parse.
 
         Catching it here turns a subprocess that dies a second after Start into
@@ -253,9 +260,7 @@ class ServerSupervisor:
                 elif schema["type"] == "float":
                     float(value)
             except (TypeError, ValueError):
-                raise ValueError(
-                    f"{name!r} expects {schema['type']}, got {value!r}"
-                ) from None
+                raise ValueError(f"{name!r} expects {schema['type']}, got {value!r}") from None
 
     def _pump(self, pipe: Any, stream: str) -> None:
         try:
@@ -282,7 +287,7 @@ class ServerSupervisor:
 
     def _on_ready(self, line: str) -> None:
         try:
-            payload = json.loads(line[len(READY_PREFIX):])
+            payload = json.loads(line[len(READY_PREFIX) :])
         except json.JSONDecodeError:
             self._log("panel", "received a malformed ready handshake")
             return
@@ -311,9 +316,8 @@ class ServerSupervisor:
         self._proc = None
         if self._state == "starting":
             reason = self._diagnose()
-            self._error = (
-                f"server exited with code {code} before becoming ready"
-                + (f": {reason}" if reason else ".")
+            self._error = f"server exited with code {code} before becoming ready" + (
+                f": {reason}" if reason else "."
             )
             self._state = "error"
         else:
@@ -337,12 +341,10 @@ class ServerSupervisor:
         signatures = [
             ("address already in use", f"port {port} is already in use"),
             ("errno 48", f"port {port} is already in use"),
-            ("can't assign requested address",
-             f"cannot bind {self._config.get('host')!r}"),
+            ("can't assign requested address", f"cannot bind {self._config.get('host')!r}"),
             ("cannot be served", "the selected method cannot be served"),
             ("repository not found", "model not found on Hugging Face"),
-            ("does not appear to have a file named",
-             "the model path is missing required files"),
+            ("does not appear to have a file named", "the model path is missing required files"),
             ("no such file or directory", "model path does not exist"),
             ("out of memory", "ran out of memory loading the model"),
             ("metal::malloc", "ran out of GPU memory loading the model"),
@@ -355,7 +357,7 @@ class ServerSupervisor:
         # Prefer a real exception line ("ValueError: ...") over stack frames.
         for line in reversed(stderr):
             text = line.strip()
-            if text.startswith(("File \"", "Traceback", "  ")) or not text:
+            if text.startswith(('File "', "Traceback", "  ")) or not text:
                 continue
             return text[:200]
         return None

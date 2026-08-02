@@ -4,6 +4,7 @@ Surfaces what is already on disk — it never downloads. #33 lists a download
 manager as an explicit non-goal, and this stays on the right side of that line:
 it is autocomplete for the free-text field, not a hub.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -11,7 +12,14 @@ from typing import Any, Dict, List
 #: Repos that are cached but are not MLX text models we can serve. Filtering
 #: these out keeps the picker from suggesting a model that will fail at load.
 _EXCLUDE_MARKERS = (
-    "clip", "bge", "bert", "whisper", "embed", "rerank", "vae", "sentence-transformers",
+    "clip",
+    "bge",
+    "bert",
+    "whisper",
+    "embed",
+    "rerank",
+    "vae",
+    "sentence-transformers",
 )
 
 
@@ -49,12 +57,14 @@ def local_models() -> List[Dict[str, Any]]:
         if not _looks_servable(repo.repo_id):
             continue
 
-        models.append({
-            "repo_id": repo.repo_id,
-            "size_bytes": int(repo.size_on_disk),
-            "size_label": _human_size(repo.size_on_disk),
-            "is_mlx": "mlx-community/" in repo.repo_id.lower(),
-        })
+        models.append(
+            {
+                "repo_id": repo.repo_id,
+                "size_bytes": int(repo.size_on_disk),
+                "size_label": _human_size(repo.size_on_disk),
+                "is_mlx": "mlx-community/" in repo.repo_id.lower(),
+            }
+        )
 
     models.sort(key=lambda m: (not m["is_mlx"], -m["size_bytes"]))
     return models

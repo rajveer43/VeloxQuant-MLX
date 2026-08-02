@@ -9,6 +9,7 @@ Every value carries ``source: "measured"``. Anything unavailable is reported as
 ``None`` with a reason, never as ``0`` — a zero in a memory panel reads as
 "nothing used", which would be a fresh lie in place of a missing number.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, Optional

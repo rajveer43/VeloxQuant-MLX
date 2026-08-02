@@ -7,6 +7,7 @@ Security: this API spawns processes, so it binds loopback unconditionally.
 That is deliberately *not* configurable, and is separate from the inference
 server's own ``--host``, which the user may set to ``0.0.0.0``.
 """
+
 from __future__ import annotations
 
 import json
@@ -85,11 +86,13 @@ class PanelHandler(BaseHTTPRequestHandler):
                 list_methods,
             )
 
-            self._send_json({
-                "default_serve_method": DEFAULT_SERVE_METHOD,
-                "accounting_only": True,
-                "methods": [i.to_dict() for i in list_methods()],
-            })
+            self._send_json(
+                {
+                    "default_serve_method": DEFAULT_SERVE_METHOD,
+                    "accounting_only": True,
+                    "methods": [i.to_dict() for i in list_methods()],
+                }
+            )
             return
 
         if route == "/api/status":

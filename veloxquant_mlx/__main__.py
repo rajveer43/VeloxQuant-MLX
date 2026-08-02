@@ -36,6 +36,7 @@ def main() -> None:
         _main()
     elif command == "panel":
         from veloxquant_mlx.cli.panel import main as _main
+
         _main()
     else:
         print(

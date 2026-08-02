@@ -5,6 +5,7 @@ the control panel offers and which ones ``veloxquant serve`` refuses, so a
 cache silently changing base class must fail the build rather than quietly
 change what the UI promises.
 """
+
 from __future__ import annotations
 
 import json
@@ -116,7 +117,7 @@ def test_servable_methods_sort_first():
 
 
 def test_adapted_methods_carry_deviation_notes():
-    """"-adapted" is an honesty claim; keep it attached to a real explanation."""
+    """ "-adapted" is an honesty claim; keep it attached to a real explanation."""
     for name in ("adakv", "a2ats"):
         info = get_method(name)
         assert info.is_adapted
@@ -134,7 +135,9 @@ def test_methods_cli_json_contract():
     """The macOS panel decodes this; breaking its shape breaks the app."""
     proc = subprocess.run(
         [sys.executable, "-m", "veloxquant_mlx", "methods", "--json"],
-        capture_output=True, text=True, timeout=300,
+        capture_output=True,
+        text=True,
+        timeout=300,
     )
     assert proc.returncode == 0, proc.stderr
 
