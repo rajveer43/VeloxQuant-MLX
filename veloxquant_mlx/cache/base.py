@@ -196,6 +196,7 @@ class KVCacheConfig:
     chunkkv_score: str = (
         "attn_mass"  # chunk-importance proxy: "attn_mass" (H2O scorer) | "key_norm"
     )
+    chunkkv_reuse_layers: int = 1  # Algorithm 2: layers per reuse block; 1 = disabled
     # --- CaM-adapted configuration (cache merging — merge evicted tokens, not drop) ---
     cam_budget: int = 512  # max tokens kept per layer (sinks included)
     cam_n_sink: int = 4  # initial positions protected from eviction (attention sinks)
@@ -820,6 +821,10 @@ class KVCacheBuilder:
         if config.method == "xkv":
             return KVCacheBuilder._build_xkv(layers, args, config, _FallbackCache)
 
+        # --- ChunkKV: layer-wise index reuse needs a shared coordinator -------
+        if config.method == "chunkkv" and config.chunkkv_reuse_layers > 1:
+            return KVCacheBuilder._build_chunkkv(layers, args, config, _FallbackCache)
+
         caches = []
         attn_idx = 0  # index into b_spec, advances only for attention layers
         for i, layer in enumerate(layers):
@@ -1121,6 +1126,58 @@ class KVCacheBuilder:
                 store=config.store,
             )
             caches.append(SqueezeAttentionCache(layer_cfg, layer_id=i, coordinator=coordinator))
+        return caches
+
+    @staticmethod
+    def _build_chunkkv(layers, args, config: "KVCacheConfig", fallback_cls) -> list:
+        """Build per-layer ChunkKV caches sharing a layer-wise index-reuse coordinator.
+
+        Implements the paper's Algorithm 2: attention-bearing layers are grouped
+        into consecutive blocks of ``chunkkv_reuse_layers``; the leader of each
+        block runs its own eviction and publishes the kept-token positions every
+        step, and the remaining layers in the block reuse those positions instead
+        of scoring and evicting independently. Layer ids passed to the coordinator
+        are indices into the attention-bearing layer sequence (0, 1, 2, ...), not
+        raw model layer indices, so blocks are contiguous even when non-attention
+        layers are interleaved.
+        """
+        from veloxquant_mlx.cache.chunkkv_cache import ChunkKVCache
+        from veloxquant_mlx.cache.chunkkv_coordinator import ChunkKVIndexReuseCoordinator
+
+        def _head_dim(layer):
+            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+            if attn is None:
+                return None
+            hd = getattr(attn, "head_dim", None)
+            if hd is None and args is not None:
+                hd = getattr(args, "head_dim", None) or (
+                    args.hidden_size // args.num_attention_heads
+                )
+            return hd
+
+        attn_layer_idx = [i for i, L in enumerate(layers) if _head_dim(L) is not None]
+        coordinator = ChunkKVIndexReuseCoordinator(
+            n_layers=len(attn_layer_idx),
+            reuse_layers=config.chunkkv_reuse_layers,
+        )
+
+        caches = []
+        attn_pos = 0  # 0-based index among attention-bearing layers only
+        for i, layer in enumerate(layers):
+            hd = _head_dim(layer)
+            if hd is None:
+                caches.append(fallback_cls())
+                continue
+            layer_cfg = dataclasses_replace(
+                config,
+                head_dim=hd,
+                seed=config.seed + i,
+                store=config.store,
+            )
+            caches.append(
+                ChunkKVCache(layer_cfg, layer_id=attn_pos, coordinator=coordinator)
+            )
+            attn_pos += 1
         return caches
 
     def __repr__(self) -> str:
