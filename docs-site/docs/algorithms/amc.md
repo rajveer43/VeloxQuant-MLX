@@ -64,7 +64,7 @@ config = KVCacheConfig(
     method="amc",
     head_dim=128,
     amc_k_high=0.20,  # top percentile -> High tier (rank 128, 16-bit)
-    amc_k_mid=0.30,   # next percentile -> Mid tier (rank 43, 8-bit)
+    amc_k_mid=0.30,  # next percentile -> Mid tier (rank 43, 8-bit)
     # remaining 50% -> Low tier (rank 8, 4-bit)
 )
 caches = KVCacheBuilder.for_model(model, config)
@@ -86,12 +86,12 @@ proxy for importance (e.g. repetitive punctuation spiking the raw score):
 config = KVCacheConfig(
     method="amc",
     head_dim=128,
-    amc_use_query_saliency=True,   # blend magnitude with query relevance
-    amc_query_alpha=0.5,           # 1.0 = pure magnitude, 0.0 = pure relevance
+    amc_use_query_saliency=True,  # blend magnitude with query relevance
+    amc_query_alpha=0.5,  # 1.0 = pure magnitude, 0.0 = pure relevance
     amc_adaptive_thresholds=True,  # widen/narrow tiers with sequence complexity
     amc_threshold_window=64,
     amc_gamma=0.1,
-    amc_calib_variance=0.05,       # REQUIRED when amc_adaptive_thresholds=True
+    amc_calib_variance=0.05,  # REQUIRED when amc_adaptive_thresholds=True
 )
 ```
 
