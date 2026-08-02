@@ -1,4 +1,5 @@
 """Shared low-level quantization helpers used by multiple quantizers."""
+
 from __future__ import annotations
 
 from typing import Optional

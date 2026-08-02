@@ -1,4 +1,5 @@
 """Tests for PolarQuantizer: reconstruction error and angle distribution."""
+
 from __future__ import annotations
 
 import math

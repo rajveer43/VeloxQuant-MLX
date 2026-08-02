@@ -9,6 +9,7 @@ Usage::
         --seed 42 \\
         --output_dir ./artifacts/
 """
+
 from __future__ import annotations
 
 import argparse
@@ -77,6 +78,7 @@ def precompute(
 
     # Polar angle codebooks per level
     import math
+
     n_levels = 4
     for level in range(1, n_levels + 1):
         for b in bits:

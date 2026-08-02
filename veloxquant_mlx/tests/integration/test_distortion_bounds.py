@@ -3,6 +3,7 @@
 Verifies that empirical MSE and IP distortion fall within theoretical bounds
 for b = 1, 2, 3, 4 across both TurboQuantMSE and TurboQuantProd.
 """
+
 from __future__ import annotations
 
 import math
@@ -41,9 +42,7 @@ def test_turboquant_mse_within_bounds(b: int) -> None:
     mse = float(mx.mean(mx.sum((X_mx - X_hat) ** 2, axis=-1)).item())
     # Scalar Lloyd-Max at b=2,3,4 achieves D/4^(-b) ≈ 1.88, 2.21, 2.43 —
     # a 2.5× ceiling covers all cases with a small safety margin.
-    assert mse <= upper * 2.5, (
-        f"b={b}: empirical MSE={mse:.6f} > upper bound {upper:.6f} × 2.5"
-    )
+    assert mse <= upper * 2.5, f"b={b}: empirical MSE={mse:.6f} > upper bound {upper:.6f} × 2.5"
     assert mse >= lower * 0.5, (
         f"b={b}: empirical MSE={mse:.8f} below lower bound × 0.5 (suspicious)"
     )

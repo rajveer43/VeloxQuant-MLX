@@ -41,6 +41,7 @@ Usage
 
 Prints tables and saves a JSON summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -60,15 +61,15 @@ if str(_repo_root) not in sys.path:
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
 # ── sweep configuration ──────────────────────────────────────────────────────
-SEQ_LENS   = [256, 512]
-BUDGETS    = [32, 64]
+SEQ_LENS = [256, 512]
+BUDGETS = [32, 64]
 GEOMETRIES = ["topic_shift", "stable"]
-WINDOWS    = [1, 8, 32]             # window=1 == latest-token (TOVA-adapted) reference
-HEAD_DIM   = 32
-N_SINK     = 2
-N_PROBES   = 16
-DATA_SEEDS = [0, 1, 2, 3, 4]        # average over data realizations (no RNG in method)
-SEED       = 11
+WINDOWS = [1, 8, 32]  # window=1 == latest-token (TOVA-adapted) reference
+HEAD_DIM = 32
+N_SINK = 2
+N_PROBES = 16
+DATA_SEEDS = [0, 1, 2, 3, 4]  # average over data realizations (no RNG in method)
+SEED = 11
 
 
 def _synthetic(S: int, geometry: str, seed: int):
@@ -79,8 +80,10 @@ def _synthetic(S: int, geometry: str, seed: int):
     tokens is what minimizes probe perturbation under a topic shift.
     """
     rng = np.random.default_rng(seed)
-    axis_a = np.zeros(HEAD_DIM, dtype=np.float32); axis_a[0] = 1.0
-    axis_b = np.zeros(HEAD_DIM, dtype=np.float32); axis_b[1] = 1.0
+    axis_a = np.zeros(HEAD_DIM, dtype=np.float32)
+    axis_a[0] = 1.0
+    axis_b = np.zeros(HEAD_DIM, dtype=np.float32)
+    axis_b[1] = 1.0
     v = rng.standard_normal((S, HEAD_DIM)).astype(np.float32)
 
     k = rng.standard_normal((S, HEAD_DIM)).astype(np.float32) * 0.3
@@ -140,10 +143,14 @@ def _run_cache(method_cfg: dict, k: np.ndarray, v: np.ndarray):
 def _random_evict(k: np.ndarray, v: np.ndarray, budget: int, seed: int):
     rng = np.random.default_rng(seed)
     S = k.shape[0]
-    keep = np.sort(np.concatenate([
-        np.arange(min(N_SINK, S)),
-        N_SINK + rng.choice(S - N_SINK, size=budget - N_SINK, replace=False),
-    ]))
+    keep = np.sort(
+        np.concatenate(
+            [
+                np.arange(min(N_SINK, S)),
+                N_SINK + rng.choice(S - N_SINK, size=budget - N_SINK, replace=False),
+            ]
+        )
+    )
     return mx.array(k[keep]), mx.array(v[keep])
 
 
@@ -161,9 +168,9 @@ def _relevant_retention(kept_k: mx.array, axis: np.ndarray) -> float:
 
 def _run_once(S: int, budget: int, geometry: str, seed: int) -> dict:
     row = {
-        "seq_len":           S,
-        "budget":            budget,
-        "geometry":          geometry,
+        "seq_len": S,
+        "budget": budget,
+        "geometry": geometry,
         "compression_ratio": round(S / budget, 2),
     }
 
@@ -174,9 +181,15 @@ def _run_once(S: int, budget: int, geometry: str, seed: int) -> dict:
             k, v, q, axis = _synthetic(S, geometry, seed + ds)
             qq, full_k, full_v = mx.array(q), mx.array(k), mx.array(v)
             kk, vv, ms = _run_cache(
-                dict(method="morphkv", morphkv_budget=budget,
-                     morphkv_n_sink=N_SINK, morphkv_window=min(window, budget - N_SINK - 1)),
-                k, v)
+                dict(
+                    method="morphkv",
+                    morphkv_budget=budget,
+                    morphkv_n_sink=N_SINK,
+                    morphkv_window=min(window, budget - N_SINK - 1),
+                ),
+                k,
+                v,
+            )
             perts.append(_perturbation(qq, full_k, full_v, kk, vv))
             rets.append(_relevant_retention(kk, axis))
             mss.append(ms)
@@ -190,8 +203,7 @@ def _run_once(S: int, budget: int, geometry: str, seed: int) -> dict:
     for ds in DATA_SEEDS:
         k, v, q, axis = _synthetic(S, geometry, seed + ds)
         qq, full_k, full_v = mx.array(q), mx.array(k), mx.array(v)
-        kh, vh, _ = _run_cache(
-            dict(method="h2o", h2o_budget=budget, h2o_n_sink=N_SINK), k, v)
+        kh, vh, _ = _run_cache(dict(method="h2o", h2o_budget=budget, h2o_n_sink=N_SINK), k, v)
         h_perts.append(_perturbation(qq, full_k, full_v, kh, vh))
         h_rets.append(_relevant_retention(kh, axis))
     row["pert_h2o"] = round(float(np.mean(h_perts)), 5)
@@ -216,9 +228,11 @@ def main() -> None:
     print("  (perturbation = 1 - cosine of probe attention output vs full cache; lower = better)")
     print("  (window=1 == latest-token / TOVA-adapted reference)")
     print()
-    retcols = "  ".join(f"{('ret_w'+str(w)):>8}" for w in WINDOWS)
-    header = (f"{'seq':>4} {'bud':>4} {'geometry':>12}  {retcols}  "
-              f"{'ret_h2o':>8}  {'p_wmax':>8}  {'p_h2o':>8}  {'p_rand':>8}")
+    retcols = "  ".join(f"{('ret_w' + str(w)):>8}" for w in WINDOWS)
+    header = (
+        f"{'seq':>4} {'bud':>4} {'geometry':>12}  {retcols}  "
+        f"{'ret_h2o':>8}  {'p_wmax':>8}  {'p_h2o':>8}  {'p_rand':>8}"
+    )
     print(header)
     print("-" * len(header))
 
@@ -228,9 +242,11 @@ def main() -> None:
         results.append(row)
         rcells = "  ".join(f"{row[f'retain_w{w}']:>8.3f}" for w in WINDOWS)
         wmax = max(WINDOWS)
-        print(f"{row['seq_len']:>4} {row['budget']:>4} {row['geometry']:>12}  "
-              f"{rcells}  {row['retain_h2o']:>8.3f}  "
-              f"{row[f'pert_w{wmax}']:>8.5f}  {row['pert_h2o']:>8.5f}  {row['pert_random']:>8.5f}")
+        print(
+            f"{row['seq_len']:>4} {row['budget']:>4} {row['geometry']:>12}  "
+            f"{rcells}  {row['retain_h2o']:>8.3f}  "
+            f"{row[f'pert_w{wmax}']:>8.5f}  {row['pert_h2o']:>8.5f}  {row['pert_random']:>8.5f}"
+        )
 
     out_path = Path(__file__).parent.parent / "figures" / "morphkv" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
@@ -243,8 +259,10 @@ def main() -> None:
         w1_ret = np.mean([r["retain_w1"] for r in rows])
         h2o_ret = np.mean([r["retain_h2o"] for r in rows])
         print(f"\nSummary ({geom}):")
-        print(f"  recent-relevant retention — MorphKV(w={wmax}): {morph_ret:.3f}   "
-              f"latest-token(w=1): {w1_ret:.3f}   H2O cumulative: {h2o_ret:.3f}")
+        print(
+            f"  recent-relevant retention — MorphKV(w={wmax}): {morph_ret:.3f}   "
+            f"latest-token(w=1): {w1_ret:.3f}   H2O cumulative: {h2o_ret:.3f}"
+        )
 
     print("\n  (honest reading: the clean, defensible observable is RECENT-RELEVANT")
     print("   RETENTION. Under a topic shift, cumulative H2O scoring keeps stale early")

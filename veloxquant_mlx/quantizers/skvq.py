@@ -48,6 +48,7 @@ Public API:
   clipped_group_quant, clipped_group_dequant, skvq_round_trip,
   skvq_compressed_bytes, skvq_fp16_bytes, DEFAULT_ALPHA_GRID
 """
+
 from __future__ import annotations
 
 import math
@@ -134,25 +135,23 @@ def clipped_group_quant(
 
     x32 = x.astype(mx.float32)
     if pad:
-        x32 = mx.concatenate(
-            [x32, mx.broadcast_to(x32[:, -1:], (n, pad))], axis=1
-        )
-    xg = x32.reshape(n, n_groups, gs)                      # [N, G, gs]
+        x32 = mx.concatenate([x32, mx.broadcast_to(x32[:, -1:], (n, pad))], axis=1)
+    xg = x32.reshape(n, n_groups, gs)  # [N, G, gs]
 
-    gmin = mx.min(xg, axis=-1, keepdims=True)              # [N, G, 1]
+    gmin = mx.min(xg, axis=-1, keepdims=True)  # [N, G, 1]
     gmax = mx.max(xg, axis=-1, keepdims=True)
     mid = (gmax + gmin) * 0.5
     rng = gmax - gmin
     levels = (1 << int(bits)) - 1
 
     a = mx.array(list(alphas), dtype=mx.float32).reshape(-1, 1, 1, 1)  # [A,1,1,1]
-    lo_a = mid[None] - a * rng[None] * 0.5                 # [A, N, G, 1]
+    lo_a = mid[None] - a * rng[None] * 0.5  # [A, N, G, 1]
     scale_a = mx.maximum(a * rng[None] / levels, _EPS)
     codes_a = mx.clip(mx.round((xg[None] - lo_a) / scale_a), 0, levels)
     recon_a = codes_a * scale_a + lo_a
     err_a = mx.mean(mx.square(recon_a - xg[None]), axis=-1)  # [A, N, G]
 
-    best = mx.argmin(err_a, axis=0)                        # [N, G]
+    best = mx.argmin(err_a, axis=0)  # [N, G]
     idx_c = mx.broadcast_to(best[None, :, :, None], (1, n, n_groups, gs))
     codes = mx.take_along_axis(codes_a, idx_c, axis=0)[0]  # [N, G, gs]
     idx_p = best[None, :, :, None]

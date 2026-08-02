@@ -16,6 +16,7 @@
   13. hi_fraction=1.0 degrades to uniform hi_bit (all channels hi)
   14. Determinism — identical inputs produce identical outputs
 """
+
 from __future__ import annotations
 
 import pytest
@@ -160,6 +161,7 @@ def test_kitty_better_mse_than_uniform_2bit_on_high_variance_data():
     k_kitty = quantize_mixed_channels(keys, hi_idx, lo_idx, hi_bit=4, lo_bit=2, group_size=32)
 
     from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
+
     k_uniform = _group_quant_dequant(keys, b=2, group_size=32)
 
     orig = np.array(data)
@@ -212,7 +214,9 @@ def test_decode_after_prefill_accumulates():
         v_dec = _values(B=1, H=2, S=1, D=64, seed=300 + step)
         k_out, v_out = cache.update_and_fetch(k_dec, v_dec)
         expected_S = 20 + step + 1
-        assert k_out.shape[2] == expected_S, f"Step {step}: expected S={expected_S}, got {k_out.shape[2]}"
+        assert k_out.shape[2] == expected_S, (
+            f"Step {step}: expected S={expected_S}, got {k_out.shape[2]}"
+        )
         assert v_out.shape[2] == expected_S
 
 
@@ -267,6 +271,7 @@ def test_hi_fraction_one_all_hi_bit():
     k_out, _ = cache.update_and_fetch(k, v)
 
     from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
+
     k_ref = _group_quant_dequant(k[0, 0], b=4, group_size=32)
 
     out_np = np.array(k_out[0, 0].tolist())
@@ -287,17 +292,14 @@ def test_determinism():
     cache2 = KittyKVCache(_make_cfg())
     k_out2, v_out2 = cache2.update_and_fetch(k, v)
 
-    np.testing.assert_array_equal(
-        np.array(k_out1.tolist()), np.array(k_out2.tolist())
-    )
-    np.testing.assert_array_equal(
-        np.array(v_out1.tolist()), np.array(v_out2.tolist())
-    )
+    np.testing.assert_array_equal(np.array(k_out1.tolist()), np.array(k_out2.tolist()))
+    np.testing.assert_array_equal(np.array(v_out1.tolist()), np.array(v_out2.tolist()))
 
 
 # ---------------------------------------------------------------------------
 # Config validation — kitty_hi_fraction must be in [0, 1]
 # ---------------------------------------------------------------------------
+
 
 def test_hi_fraction_above_one_rejected() -> None:
     """kitty_hi_fraction > 1.0 makes n_hi > D, so n_lo = D - n_hi goes

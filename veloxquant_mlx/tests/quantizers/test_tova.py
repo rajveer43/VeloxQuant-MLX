@@ -9,6 +9,7 @@ protection, budget enforcement, memorylessness), tova_get_kv (shape, dtype,
 empty state), byte accounting, and edge cases (n_sink=0, budget boundary).
 All data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -35,6 +36,7 @@ def _rand_kv(S: int, D: int = 32, seed: int = 0):
 # ---------------------------------------------------------------------------
 # init_tova_state
 # ---------------------------------------------------------------------------
+
 
 def test_init_state_fields() -> None:
     st = init_tova_state(n_sink=4, budget=16, head_dim=64)
@@ -72,6 +74,7 @@ def test_init_state_rejects_n_sink_above_budget() -> None:
 # tova_get_kv — empty state
 # ---------------------------------------------------------------------------
 
+
 def test_get_kv_empty_returns_zero_rows() -> None:
     st = init_tova_state(n_sink=4, budget=16, head_dim=32)
     k, v = tova_get_kv(st)
@@ -82,6 +85,7 @@ def test_get_kv_empty_returns_zero_rows() -> None:
 # ---------------------------------------------------------------------------
 # tova_update — basic absorption
 # ---------------------------------------------------------------------------
+
 
 def test_single_token_absorbed() -> None:
     """First token bootstraps state with one row."""
@@ -119,6 +123,7 @@ def test_output_dtype_fp16() -> None:
 # tova_update — eviction when over budget
 # ---------------------------------------------------------------------------
 
+
 def test_budget_never_exceeded() -> None:
     """After many tokens, kept count never exceeds budget."""
     D = 32
@@ -154,6 +159,7 @@ def test_keys_values_length_match() -> None:
 # ---------------------------------------------------------------------------
 # tova_update — sink protection
 # ---------------------------------------------------------------------------
+
 
 def test_sinks_never_evicted() -> None:
     """First n_sink tokens are always present in the output."""
@@ -192,6 +198,7 @@ def test_n_sink_zero_allows_all_evictions() -> None:
 # tova_update — memorylessness (the H2O contrast)
 # ---------------------------------------------------------------------------
 
+
 def test_no_scores_carried_across_steps() -> None:
     """State never grows a cumulative-score field across updates."""
     D = 16
@@ -217,16 +224,16 @@ def test_eviction_uses_current_step_only() -> None:
 
     e0 = mx.zeros((D,), dtype=mx.float16)
     e0_list = e0.tolist()
-    e0_list[0] = 5.0                       # token 0: points along axis 0
+    e0_list[0] = 5.0  # token 0: points along axis 0
     tok0 = mx.array(e0_list, dtype=mx.float16)
 
     e1_list = [0.0] * D
-    e1_list[1] = 5.0                       # token 1: points along axis 1
+    e1_list[1] = 5.0  # token 1: points along axis 1
     tok1 = mx.array(e1_list, dtype=mx.float16)
 
     k = mx.stack([tok0, tok1], axis=0)
     v = mx.stack([tok0, tok1], axis=0)
-    st = tova_update(st, k, v)             # cache = [tok0, tok1]
+    st = tova_update(st, k, v)  # cache = [tok0, tok1]
 
     # Third token identical to tok1 → proxy query aligns with axis 1.
     st = tova_update(st, tok1[None], tok1[None])
@@ -241,6 +248,7 @@ def test_eviction_uses_current_step_only() -> None:
 # ---------------------------------------------------------------------------
 # Byte accounting
 # ---------------------------------------------------------------------------
+
 
 def test_tova_fp16_bytes_formula() -> None:
     """tova_fp16_bytes = n_kept * D * 4 (K + V, fp16)."""
@@ -266,6 +274,7 @@ def test_full_tova_fp16_bytes_formula() -> None:
 # ---------------------------------------------------------------------------
 # Multi-step decode stress
 # ---------------------------------------------------------------------------
+
 
 def test_30_step_stress_budget_constant() -> None:
     """30 single-token decode steps — budget never exceeded."""

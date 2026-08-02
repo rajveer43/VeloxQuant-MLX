@@ -128,8 +128,8 @@ One thread per output byte. `B_BITS` is a **template parameter** — a compile-t
 The dispatch:
 
 ```python
-grid=(n_bytes, 1, 1),
-threadgroup=(min(256, n_bytes), 1, 1),
+grid = ((n_bytes, 1, 1),)
+threadgroup = ((min(256, n_bytes), 1, 1),)
 ```
 
 ### Results

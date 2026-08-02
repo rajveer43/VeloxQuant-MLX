@@ -1,4 +1,5 @@
 """Entry point: python -m veloxquant_mlx precompute"""
+
 from __future__ import annotations
 
 import argparse

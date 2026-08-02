@@ -52,6 +52,7 @@ Byte accounting:
     tokens_seen         — total token positions ever passed to update_and_fetch
     tokens_kept         — tokens currently in the first (B=0, H=0) head's cache
 """
+
 from __future__ import annotations
 
 from typing import Any

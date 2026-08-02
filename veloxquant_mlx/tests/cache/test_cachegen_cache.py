@@ -5,6 +5,7 @@ contribution is the entropy-coded *byte accounting*. These tests cover the
 lossless-reconstruction property, the token-locality entropy win, the
 never-worse-than-fixed-width cap, and the usual factory/shape/accounting checks.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -41,6 +42,7 @@ def _corr_kv(S=128, H=2, D=64, seed=0):
 # Factory and interface
 # ------------------------------------------------------------------
 
+
 def test_factory_dispatch() -> None:
     assert isinstance(_make(), CacheGenKVCache)
 
@@ -65,8 +67,10 @@ def test_output_shape_preserved() -> None:
 # Reconstruction is exactly plain group quant (lossless over codes)
 # ------------------------------------------------------------------
 
+
 def test_reconstruction_matches_group_quant() -> None:
     from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
+
     K, V = _rand_kv(S=64, H=1, D=64, seed=3)
     c = _make()
     ko, _ = c.update_and_fetch(K, V)
@@ -80,9 +84,14 @@ def test_reconstruction_matches_group_quant() -> None:
 # Token-locality entropy win
 # ------------------------------------------------------------------
 
+
 def test_delta_lowers_entropy_on_correlated_data() -> None:
     from veloxquant_mlx.quantizers.cachegen import (
-        quantize_to_codes, token_delta, symbol_entropy_bits)
+        quantize_to_codes,
+        token_delta,
+        symbol_entropy_bits,
+    )
+
     K, _ = _corr_kv(S=128, H=1, D=64)
     st = quantize_to_codes(K[0, 0], bits=4, group_size=32)
     flat = st.codes.reshape(-1, 64)[:128]
@@ -103,6 +112,7 @@ def test_entropy_savings_positive_on_correlated_data() -> None:
 # Never-worse-than-fixed-width cap (incompressible data)
 # ------------------------------------------------------------------
 
+
 def test_savings_never_negative_on_random_data() -> None:
     c = _make()
     K, V = _rand_kv(S=64, H=2, D=64)
@@ -114,6 +124,7 @@ def test_savings_never_negative_on_random_data() -> None:
 # ------------------------------------------------------------------
 # Byte accounting ordering
 # ------------------------------------------------------------------
+
 
 def test_byte_accounting_ordering() -> None:
     c = _make()
@@ -140,6 +151,7 @@ def test_use_delta_false_path() -> None:
 # ------------------------------------------------------------------
 # Decode + determinism
 # ------------------------------------------------------------------
+
 
 def test_decode_after_prefill() -> None:
     c = _make()

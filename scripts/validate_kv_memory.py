@@ -22,6 +22,7 @@ Usage
         --model mlx-community/Llama-3.2-3B-Instruct-4bit \\
         --max-tokens 128
 """
+
 from __future__ import annotations
 
 import argparse
@@ -52,10 +53,10 @@ def _peak_mb() -> float:
     import mlx.core as mx
 
     try:
-        return float(mx.get_peak_memory()) / (1024 ** 2)
+        return float(mx.get_peak_memory()) / (1024**2)
     except Exception:
         try:
-            return float(mx.metal.get_peak_memory()) / (1024 ** 2)
+            return float(mx.metal.get_peak_memory()) / (1024**2)
         except Exception:
             return float("nan")
 
@@ -91,9 +92,7 @@ def _model_head_info(model) -> tuple:
         n_kv = getattr(attn, "n_kv_heads", None) or getattr(
             args, "num_key_value_heads", getattr(args, "num_attention_heads", 1)
         )
-        n_heads = getattr(attn, "n_heads", None) or getattr(
-            args, "num_attention_heads", n_kv
-        )
+        n_heads = getattr(attn, "n_heads", None) or getattr(args, "num_attention_heads", n_kv)
         break
     return head_dim, n_kv, n_heads, len(layers)
 
@@ -136,13 +135,13 @@ def _byte_stats(caches: list) -> dict[str, Any]:
     return {
         "fp16_key_bytes": key_f,
         "compressed_key_bytes": key_c,
-        "fp16_key_mb": round(key_f / (1024 ** 2), 3),
-        "compressed_key_mb": round(key_c / (1024 ** 2), 3),
+        "fp16_key_mb": round(key_f / (1024**2), 3),
+        "compressed_key_mb": round(key_c / (1024**2), 3),
         "key_compression": key_ratio,
         "fp16_value_bytes": val_f,
         "compressed_value_bytes": val_c,
-        "fp16_value_mb": round(val_f / (1024 ** 2), 3),
-        "compressed_value_mb": round(val_c / (1024 ** 2), 3),
+        "fp16_value_mb": round(val_f / (1024**2), 3),
+        "compressed_value_mb": round(val_c / (1024**2), 3),
         "value_compression": val_ratio,
         "residual_fp16_bytes": residual,
         "full_kv_compression": full_kv_ratio,
@@ -184,10 +183,7 @@ def _vecinfer_artifacts(
         train_codebook,
     )
 
-    sig = (
-        f"hd{head_dim}_h{n_heads}_kb{key_bits}_vb{value_bits}"
-        f"_ks{key_sub_dim}_vs{value_sub_dim}"
-    )
+    sig = f"hd{head_dim}_h{n_heads}_kb{key_bits}_vb{value_bits}_ks{key_sub_dim}_vs{value_sub_dim}"
     path = cache_dir / f"{sig}.npz"
     if path.exists():
         data = np.load(path)
@@ -204,8 +200,8 @@ def _vecinfer_artifacts(
     k_subs = mx.array(np.asarray(K).reshape(-1, key_sub_dim))
     v_subs = mx.array(np.asarray(V).reshape(-1, value_sub_dim))
     n_train = min(8000, k_subs.shape[0])
-    key_cb = train_codebook(k_subs[:n_train], 2 ** key_bits, max_iter=15, seed=seed)
-    val_cb = train_codebook(v_subs[:n_train], 2 ** value_bits, max_iter=15, seed=seed + 1)
+    key_cb = train_codebook(k_subs[:n_train], 2**key_bits, max_iter=15, seed=seed)
+    val_cb = train_codebook(v_subs[:n_train], 2**value_bits, max_iter=15, seed=seed + 1)
     cache_dir.mkdir(parents=True, exist_ok=True)
     np.savez(
         path,
@@ -370,11 +366,9 @@ def _hardware_info() -> dict[str, Any]:
         brand = subprocess.check_output(
             ["sysctl", "-n", "machdep.cpu.brand_string"], text=True
         ).strip()
-        mem = int(
-            subprocess.check_output(["sysctl", "-n", "hw.memsize"], text=True).strip()
-        )
+        mem = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"], text=True).strip())
         info["chip"] = brand
-        info["unified_ram_gb"] = round(mem / (1024 ** 3), 1)
+        info["unified_ram_gb"] = round(mem / (1024**3), 1)
     except Exception:
         pass
     try:
@@ -429,8 +423,7 @@ def main() -> int:
     model, tokenizer = load(model_id)
     head_dim, n_kv, n_heads, n_layers = _model_head_info(model)
     print(
-        f"  head_dim={head_dim} n_kv_heads={n_kv} n_q_heads={n_heads} "
-        f"n_layers={n_layers}",
+        f"  head_dim={head_dim} n_kv_heads={n_kv} n_q_heads={n_heads} n_layers={n_layers}",
         flush=True,
     )
 
@@ -439,15 +432,11 @@ def main() -> int:
         ("RVQ-1bit", lambda: _build_rvq(model, 1)),
     ]
     if not args.skip_vecinfer:
-        configs.append(
-            ("VecInfer-1bit", lambda: _build_vecinfer_1bit(model, model_stem))
-        )
+        configs.append(("VecInfer-1bit", lambda: _build_vecinfer_1bit(model, model_stem)))
 
     results = []
     for label, builder in configs:
-        results.append(
-            _run_one(model, tokenizer, label, builder, args.max_tokens, prompt)
-        )
+        results.append(_run_one(model, tokenizer, label, builder, args.max_tokens, prompt))
         mx.clear_cache()
 
     payload = {

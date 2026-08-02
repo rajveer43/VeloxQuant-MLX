@@ -22,9 +22,9 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="cachegen",
     head_dim=128,
-    cachegen_bits=4,            # base group-quant bit-width
+    cachegen_bits=4,  # base group-quant bit-width
     cachegen_group_size=32,
-    cachegen_use_delta=True,    # token-delta transform before entropy coding
+    cachegen_use_delta=True,  # token-delta transform before entropy coding
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

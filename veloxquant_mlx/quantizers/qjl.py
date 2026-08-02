@@ -68,6 +68,7 @@ class QJLQuantizer(Quantizer):
             EncodedVector with signs and norm populated.
         """
         import mlx.core as mx
+
         if x.ndim == 1:
             x = x[None]
         signs, norm = self._encoder.encode_key(x)
@@ -91,6 +92,7 @@ class QJLQuantizer(Quantizer):
             Approximate array of shape (batch, d), fp16.
         """
         import mlx.core as mx
+
         scale = SQRT_PI_OVER_2 / self._m
         x_hat = ev.norm[:, None] * scale * (ev.signs.astype(mx.float16) @ self._encoder._S)
         return x_hat

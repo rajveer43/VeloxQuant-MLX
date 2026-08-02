@@ -67,7 +67,9 @@ def water_fill_bits(
         # Find newly capped dims
         newly_capped = active & (proposed >= max_bits)
         bits[newly_capped] = max_bits
-        remaining_budget -= int((bits * newly_capped).sum()) - int((bits * ~active * newly_capped).sum())
+        remaining_budget -= int((bits * newly_capped).sum()) - int(
+            (bits * ~active * newly_capped).sum()
+        )
 
         # Recompute remaining budget from scratch
         bits = np.where(newly_capped, max_bits, bits)

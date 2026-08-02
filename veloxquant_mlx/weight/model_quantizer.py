@@ -164,7 +164,7 @@ def compression_report(model: nn.Module) -> dict:
     ratio = total_fp16 / total_compressed if total_compressed > 0 else 0.0
     return {
         "n_layers": n_layers,
-        "total_compressed_mb": total_compressed / 1024 ** 2,
-        "total_fp16_mb": total_fp16 / 1024 ** 2,
+        "total_compressed_mb": total_compressed / 1024**2,
+        "total_fp16_mb": total_fp16 / 1024**2,
         "compression_ratio": ratio,
     }

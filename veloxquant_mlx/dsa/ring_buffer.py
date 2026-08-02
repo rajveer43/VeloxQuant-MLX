@@ -28,8 +28,8 @@ class RingBuffer(Generic[T]):
             raise ValueError(f"RingBuffer capacity must be >= 1, got {capacity}")
         self._capacity: int = capacity
         self._data: List[Optional[T]] = [None] * capacity
-        self._head: int = 0   # index of oldest element
-        self._size: int = 0   # current number of elements
+        self._head: int = 0  # index of oldest element
+        self._size: int = 0  # current number of elements
 
     # ------------------------------------------------------------------
     # Mutation
@@ -81,9 +81,7 @@ class RingBuffer(Generic[T]):
         if idx < 0:
             idx = self._size + idx
         if idx < 0 or idx >= self._size:
-            raise IndexError(
-                f"RingBuffer index {idx} out of range for size {self._size}"
-            )
+            raise IndexError(f"RingBuffer index {idx} out of range for size {self._size}")
         physical = (self._head + idx) % self._capacity
         return self._data[physical]  # type: ignore[return-value]
 
@@ -130,7 +128,4 @@ class RingBuffer(Generic[T]):
         return mx.stack(elements, axis=0)
 
     def __repr__(self) -> str:
-        return (
-            f"RingBuffer(capacity={self._capacity}, size={self._size}, "
-            f"head={self._head})"
-        )
+        return f"RingBuffer(capacity={self._capacity}, size={self._size}, head={self._head})"

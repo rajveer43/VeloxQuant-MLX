@@ -19,6 +19,7 @@ Usage:
     python scripts/run_spectral_quant_eval.py --model Qwen/Qwen2.5-0.5B
     python scripts/run_spectral_quant_eval.py --model mlx-community/Qwen2.5-0.5B-Instruct-4bit
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,6 +29,7 @@ import time
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -49,6 +51,7 @@ CALIB_TEXT = (
 # Metric helpers
 # ---------------------------------------------------------------------------
 
+
 def cosine_sim_mean(orig: np.ndarray, recon: np.ndarray) -> float:
     a = orig / (np.linalg.norm(orig, axis=1, keepdims=True) + 1e-8)
     b = recon / (np.linalg.norm(recon, axis=1, keepdims=True) + 1e-8)
@@ -57,6 +60,7 @@ def cosine_sim_mean(orig: np.ndarray, recon: np.ndarray) -> float:
 
 def encode_decode_cosim(x_np: np.ndarray, sq) -> float:
     import mlx.core as mx
+
     x = mx.array(x_np, dtype=mx.float16)
     ev = sq.encode(x)
     x_hat = np.array(sq.decode(ev), dtype=np.float32)
@@ -67,9 +71,15 @@ def encode_decode_cosim(x_np: np.ndarray, sq) -> float:
 # Figure generators
 # ---------------------------------------------------------------------------
 
-def fig_eigenvalue_spectrum(key_ev: np.ndarray, val_ev: np.ndarray,
-                             key_ds: int, val_ds: int,
-                             save_path: Path, title: str = "") -> None:
+
+def fig_eigenvalue_spectrum(
+    key_ev: np.ndarray,
+    val_ev: np.ndarray,
+    key_ds: int,
+    val_ds: int,
+    save_path: Path,
+    title: str = "",
+) -> None:
     fig, (ax_k, ax_v) = plt.subplots(1, 2, figsize=(12, 4))
     for ax, ev, ds, label, color in [
         (ax_k, key_ev, key_ds, "Keys", "#2196F3"),
@@ -77,8 +87,7 @@ def fig_eigenvalue_spectrum(key_ev: np.ndarray, val_ev: np.ndarray,
     ]:
         d = len(ev)
         ax.semilogy(np.arange(1, d + 1), np.clip(ev, 1e-12, None), color=color, lw=1.5)
-        ax.axvline(x=ds, color="gray", ls="--", lw=1,
-                   label=f"d_s = {ds} (d_eff = {ds})")
+        ax.axvline(x=ds, color="gray", ls="--", lw=1, label=f"d_s = {ds} (d_eff = {ds})")
         ax.set_xlabel("Eigenvalue rank")
         ax.set_ylabel("Eigenvalue (log scale)")
         ax.set_title(f"{label} spectrum — {title}" if title else f"{label} spectrum")
@@ -90,17 +99,32 @@ def fig_eigenvalue_spectrum(key_ev: np.ndarray, val_ev: np.ndarray,
     print(f"  Saved: {save_path.name}")
 
 
-def fig_participation_ratio_by_layer(key_d_effs: list[float], val_d_effs: list[float],
-                                      save_path: Path, title: str = "") -> None:
+def fig_participation_ratio_by_layer(
+    key_d_effs: list[float], val_d_effs: list[float], save_path: Path, title: str = ""
+) -> None:
     fig, ax = plt.subplots(figsize=(10, 4))
     layers = np.arange(len(key_d_effs))
-    ax.plot(layers, key_d_effs, "o-", color="#2196F3", label=f"Keys d_eff (mean={np.mean(key_d_effs):.1f})")
-    ax.plot(layers, val_d_effs, "s--", color="#FF5722", label=f"Values d_eff (mean={np.mean(val_d_effs):.1f})")
+    ax.plot(
+        layers,
+        key_d_effs,
+        "o-",
+        color="#2196F3",
+        label=f"Keys d_eff (mean={np.mean(key_d_effs):.1f})",
+    )
+    ax.plot(
+        layers,
+        val_d_effs,
+        "s--",
+        color="#FF5722",
+        label=f"Values d_eff (mean={np.mean(val_d_effs):.1f})",
+    )
     ax.axhline(y=4, color="#2196F3", ls=":", alpha=0.5, lw=1, label="paper: keys ≈ 4")
     ax.axhline(y=50, color="#FF5722", ls=":", alpha=0.5, lw=1, label="paper: values ≈ 50")
     ax.set_xlabel("Layer index")
     ax.set_ylabel("Effective dimensionality d_eff")
-    ax.set_title(f"Participation ratio per layer — {title}" if title else "Participation ratio per layer")
+    ax.set_title(
+        f"Participation ratio per layer — {title}" if title else "Participation ratio per layer"
+    )
     ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
@@ -109,8 +133,9 @@ def fig_participation_ratio_by_layer(key_d_effs: list[float], val_d_effs: list[f
     print(f"  Saved: {save_path.name}")
 
 
-def fig_cosine_similarity_comparison(results: dict[str, float],
-                                      save_path: Path, title: str = "") -> None:
+def fig_cosine_similarity_comparison(
+    results: dict[str, float], save_path: Path, title: str = ""
+) -> None:
     fig, ax = plt.subplots(figsize=(9, 4))
     methods = list(results.keys())
     values = [results[m] for m in methods]
@@ -134,13 +159,37 @@ def fig_pareto_front(configs: list[dict], save_path: Path, title: str = "") -> N
         color = "#2196F3" if c.get("is_spectral") else "#FF9800"
         marker = "o" if c.get("is_spectral") else "s"
         ax.scatter(c["compression_ratio"], c["cos_sim"], color=color, marker=marker, s=60, zorder=3)
-        ax.annotate(c["name"], (c["compression_ratio"], c["cos_sim"]),
-                    textcoords="offset points", xytext=(4, 2), fontsize=6)
+        ax.annotate(
+            c["name"],
+            (c["compression_ratio"], c["cos_sim"]),
+            textcoords="offset points",
+            xytext=(4, 2),
+            fontsize=6,
+        )
     from matplotlib.lines import Line2D
-    ax.legend(handles=[
-        Line2D([0], [0], marker="o", color="w", markerfacecolor="#2196F3", ms=8, label="SpectralQuant"),
-        Line2D([0], [0], marker="s", color="w", markerfacecolor="#FF9800", ms=8, label="TurboQuant-style"),
-    ])
+
+    ax.legend(
+        handles=[
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="w",
+                markerfacecolor="#2196F3",
+                ms=8,
+                label="SpectralQuant",
+            ),
+            Line2D(
+                [0],
+                [0],
+                marker="s",
+                color="w",
+                markerfacecolor="#FF9800",
+                ms=8,
+                label="TurboQuant-style",
+            ),
+        ]
+    )
     ax.set_xlabel("Compression ratio (×)")
     ax.set_ylabel("Mean cosine similarity")
     ax.set_title(f"Quality–compression Pareto front — {title}" if title else "Pareto front")
@@ -151,14 +200,25 @@ def fig_pareto_front(configs: list[dict], save_path: Path, title: str = "") -> N
     print(f"  Saved: {save_path.name}")
 
 
-def fig_memory_comparison(context_lengths: list[int],
-                           mem_fp16: list[float], mem_spectral: list[float],
-                           mem_turbo: list[float],
-                           save_path: Path, title: str = "") -> None:
+def fig_memory_comparison(
+    context_lengths: list[int],
+    mem_fp16: list[float],
+    mem_spectral: list[float],
+    mem_turbo: list[float],
+    save_path: Path,
+    title: str = "",
+) -> None:
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(context_lengths, mem_fp16, "k-", lw=2, label="FP16 (no compression)")
     ax.plot(context_lengths, mem_turbo, "s--", color="#FF9800", lw=1.5, label="TurboQuant (5.02×)")
-    ax.plot(context_lengths, mem_spectral, "o-", color="#2196F3", lw=1.5, label="SpectralQuant SQ_noQJL_v3 (5.95×)")
+    ax.plot(
+        context_lengths,
+        mem_spectral,
+        "o-",
+        color="#2196F3",
+        lw=1.5,
+        label="SpectralQuant SQ_noQJL_v3 (5.95×)",
+    )
     ax.set_xlabel("Context length (tokens)")
     ax.set_ylabel("KV cache memory (MB)")
     ax.set_title(f"KV cache memory — {title}" if title else "KV cache memory")
@@ -170,16 +230,22 @@ def fig_memory_comparison(context_lengths: list[int],
     print(f"  Saved: {save_path.name}")
 
 
-def fig_key_vs_value_reconstruction(ranks: list[int],
-                                     key_cosims: list[float], val_cosims: list[float],
-                                     save_path: Path, title: str = "") -> None:
+def fig_key_vs_value_reconstruction(
+    ranks: list[int],
+    key_cosims: list[float],
+    val_cosims: list[float],
+    save_path: Path,
+    title: str = "",
+) -> None:
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(ranks, key_cosims, "o-", color="#2196F3", lw=1.5, label="Keys")
     ax.plot(ranks, val_cosims, "s--", color="#FF5722", lw=1.5, label="Values")
     ax.axhline(y=0.84, color="gray", ls=":", lw=1, label="TurboQuant ref (0.84)")
     ax.set_xlabel("Truncation rank k")
     ax.set_ylabel("Mean cosine similarity")
-    ax.set_title(f"Reconstruction at rank-k truncation — {title}" if title else "Rank-k reconstruction")
+    ax.set_title(
+        f"Reconstruction at rank-k truncation — {title}" if title else "Rank-k reconstruction"
+    )
     ax.legend()
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
@@ -191,6 +257,7 @@ def fig_key_vs_value_reconstruction(ranks: list[int],
 # ---------------------------------------------------------------------------
 # Eval kernels
 # ---------------------------------------------------------------------------
+
 
 def run_eval_on_vectors(
     key_data: np.ndarray,
@@ -210,28 +277,35 @@ def run_eval_on_vectors(
     print(f"  key data shape: {key_data.shape},  val data shape: {val_data.shape}")
 
     # --- 1. Eigenvalue spectrum ---
-    fig_eigenvalue_spectrum(key_ev, val_ev, key_ds, val_ds,
-                             out_dir / "eigenvalue_spectrum.png", title=model_tag)
+    fig_eigenvalue_spectrum(
+        key_ev, val_ev, key_ds, val_ds, out_dir / "eigenvalue_spectrum.png", title=model_tag
+    )
 
     # --- 2. Cosine similarity comparison (all ablation configs) ---
     # Matches Table 4 of the paper
     ablation_configs = [
-        ("SpectralQuant SQ_noQJL_v3",     key_U, key_ds, False),
-        ("SpectralQuant + QJL (signal)",   key_U, key_ds, True),
-        ("Random rot, no QJL",             None,  key_ds, False),
+        ("SpectralQuant SQ_noQJL_v3", key_U, key_ds, False),
+        ("SpectralQuant + QJL (signal)", key_U, key_ds, True),
+        ("Random rot, no QJL", None, key_ds, False),
         ("Random rot + QJL (TurboQuant-like)", None, 128, True),
     ]
     cosim_results: dict[str, float] = {}
     for label, rotation, d_s, apply_qjl in ablation_configs:
         sq = SpectralQuantizer(
-            d=key_data.shape[1], b_signal=3, b_noise=3,
-            rotation=rotation, d_s=d_s, apply_qjl=apply_qjl,
+            d=key_data.shape[1],
+            b_signal=3,
+            b_noise=3,
+            rotation=rotation,
+            d_s=d_s,
+            apply_qjl=apply_qjl,
         )
         cs = encode_decode_cosim(key_data, sq)
         cosim_results[label] = cs
         ratio = sq.compression_ratio()
         print(f"  {label}: cosim={cs:.4f}, ratio={ratio:.2f}×")
-    fig_cosine_similarity_comparison(cosim_results, out_dir / "cosine_similarity_vs_turbo.png", title=model_tag)
+    fig_cosine_similarity_comparison(
+        cosim_results, out_dir / "cosine_similarity_vs_turbo.png", title=model_tag
+    )
 
     # --- 3. Pareto front ---
     pareto = []
@@ -242,15 +316,24 @@ def run_eval_on_vectors(
                 (False, None, 128),
             ]:
                 sq = SpectralQuantizer(
-                    d=key_data.shape[1], b_signal=b, b_noise=b,
-                    rotation=rotation, d_s=d_s, apply_qjl=apply_qjl,
+                    d=key_data.shape[1],
+                    b_signal=b,
+                    b_noise=b,
+                    rotation=rotation,
+                    d_s=d_s,
+                    apply_qjl=apply_qjl,
                 )
                 cs = encode_decode_cosim(key_data, sq)
                 tag = "SQ" if is_sq else "TQ"
                 qjl = "+QJL" if apply_qjl else ""
-                pareto.append({"name": f"{tag}-b{b}{qjl}", "cos_sim": cs,
-                                "compression_ratio": sq.compression_ratio(),
-                                "is_spectral": is_sq})
+                pareto.append(
+                    {
+                        "name": f"{tag}-b{b}{qjl}",
+                        "cos_sim": cs,
+                        "compression_ratio": sq.compression_ratio(),
+                        "is_spectral": is_sq,
+                    }
+                )
     fig_pareto_front(pareto, out_dir / "pareto_front.png", title=model_tag)
 
     # --- 4. Memory comparison ---
@@ -268,26 +351,38 @@ def run_eval_on_vectors(
         mem_fp16.append(n * fp16_bits / 8 / 1e6)
         mem_turbo.append(n * tq_bits / 8 / 1e6)
         mem_spectral.append(n * sq_bits / 8 / 1e6)
-    fig_memory_comparison(ctx_lengths, mem_fp16, mem_spectral, mem_turbo,
-                          out_dir / "memory_comparison.png", title=model_tag)
+    fig_memory_comparison(
+        ctx_lengths,
+        mem_fp16,
+        mem_spectral,
+        mem_turbo,
+        out_dir / "memory_comparison.png",
+        title=model_tag,
+    )
 
     # --- 5. Key vs value reconstruction at rank k ---
     d = key_data.shape[1]
     ranks = [1, 2, 4, 8, 16, 32, 48, 64, 96, d]
     key_cosims_r, val_cosims_r = [], []
     for rank in ranks:
+
         def _truncated(data, U_mat, r):
-            y = data @ U_mat                   # (N, d): rotate
+            y = data @ U_mat  # (N, d): rotate
             y_trunc = y.copy()
-            y_trunc[:, r:] = 0.0              # zero noise dims
-            return y_trunc @ U_mat.T           # inverse rotate
+            y_trunc[:, r:] = 0.0  # zero noise dims
+            return y_trunc @ U_mat.T  # inverse rotate
+
         k_hat = _truncated(key_data, key_U.T, rank)  # U^T rotates, U^T.T = U inverts
         v_hat = _truncated(val_data, val_U.T, rank)
         key_cosims_r.append(cosine_sim_mean(key_data, k_hat))
         val_cosims_r.append(cosine_sim_mean(val_data, v_hat))
-    fig_key_vs_value_reconstruction(ranks, key_cosims_r, val_cosims_r,
-                                     out_dir / "key_vs_value_reconstruction.png",
-                                     title=model_tag)
+    fig_key_vs_value_reconstruction(
+        ranks,
+        key_cosims_r,
+        val_cosims_r,
+        out_dir / "key_vs_value_reconstruction.png",
+        title=model_tag,
+    )
 
     print(f"\n  ✓ Figures saved to: {out_dir}/")
 
@@ -310,7 +405,8 @@ def run_model_eval_layers(
 
     if key_d_effs:
         fig_participation_ratio_by_layer(
-            key_d_effs, val_d_effs,
+            key_d_effs,
+            val_d_effs,
             out_dir / "participation_ratio_by_layer.png",
             title=model_tag,
         )
@@ -321,6 +417,7 @@ def run_model_eval_layers(
 # ---------------------------------------------------------------------------
 # Synthetic evaluation
 # ---------------------------------------------------------------------------
+
 
 def run_synthetic_eval(model_name: str = "synthetic", d: int = 128, n: int = 512):
     from veloxquant_mlx.spectral.calibrate import calibrate_from_vectors
@@ -334,36 +431,43 @@ def run_synthetic_eval(model_name: str = "synthetic", d: int = 128, n: int = 512
 
     # Keys: rank-4 (matches paper Table 1: d_eff ≈ 4)
     basis_k, _ = np.linalg.qr(rng.standard_normal((d, 4)).astype(np.float32))
-    key_data = (rng.standard_normal((n, 4)).astype(np.float32) @ basis_k.T
-                + rng.standard_normal((n, d)).astype(np.float32) * 0.05)
+    key_data = (
+        rng.standard_normal((n, 4)).astype(np.float32) @ basis_k.T
+        + rng.standard_normal((n, d)).astype(np.float32) * 0.05
+    )
     key_data /= np.linalg.norm(key_data, axis=1, keepdims=True) + 1e-8
 
     # Values: rank-50 (matches paper: d_eff ≈ 50)
     basis_v, _ = np.linalg.qr(rng.standard_normal((d, 50)).astype(np.float32))
-    val_data = (rng.standard_normal((n, 50)).astype(np.float32) @ basis_v.T
-                + rng.standard_normal((n, d)).astype(np.float32) * 0.05)
+    val_data = (
+        rng.standard_normal((n, 50)).astype(np.float32) @ basis_v.T
+        + rng.standard_normal((n, d)).astype(np.float32) * 0.05
+    )
     val_data /= np.linalg.norm(val_data, axis=1, keepdims=True) + 1e-8
 
     print(f"  Calibrating on {n} synthetic vectors...")
     t0 = time.time()
-    rotations = calibrate_from_vectors({0: key_data}, {0: val_data}, model_name=f"{model_name}_layer0")
-    print(f"  Calibration done in {time.time()-t0:.1f}s")
+    rotations = calibrate_from_vectors(
+        {0: key_data}, {0: val_data}, model_name=f"{model_name}_layer0"
+    )
+    print(f"  Calibration done in {time.time() - t0:.1f}s")
 
     key_U, val_U, key_ev, val_ev, key_ds, val_ds = rotations[0]
 
     # Per-layer PR (synthetic: replicate across 16 mock layers)
     key_d_effs = [compute_participation_ratio(key_data)] * 16
     val_d_effs = [compute_participation_ratio(val_data)] * 16
-    fig_participation_ratio_by_layer(key_d_effs, val_d_effs,
-                                      out_dir / "participation_ratio_by_layer.png",
-                                      title=model_name)
+    fig_participation_ratio_by_layer(
+        key_d_effs, val_d_effs, out_dir / "participation_ratio_by_layer.png", title=model_name
+    )
 
-    run_eval_on_vectors(key_data, val_data, key_U, val_U,
-                        key_ds, val_ds, key_ev, val_ev,
-                        out_dir, model_name)
+    run_eval_on_vectors(
+        key_data, val_data, key_U, val_U, key_ds, val_ds, key_ev, val_ev, out_dir, model_name
+    )
 
-    generate_benchmark_figures(key_data, val_data, key_U, val_U,
-                               key_ds, val_ds, out_dir, model_name)
+    generate_benchmark_figures(
+        key_data, val_data, key_U, val_U, key_ds, val_ds, out_dir, model_name
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -373,26 +477,27 @@ def run_synthetic_eval(model_name: str = "synthetic", d: int = 128, n: int = 512
 # Known mlx-community converted models that work with mlx_lm
 MLX_MODEL_ALIASES: dict[str, str] = {
     # bare names → mlx-community equivalents
-    "gemma-4":             "mlx-community/gemma-4-e4b-it-4bit",
-    "gemma4":              "mlx-community/gemma-4-e4b-it-4bit",
+    "gemma-4": "mlx-community/gemma-4-e4b-it-4bit",
+    "gemma4": "mlx-community/gemma-4-e4b-it-4bit",
     "google/gemma-4-E4B-it": "mlx-community/gemma-4-e4b-it-4bit",
-    "gemma-3-4b":          "mlx-community/gemma-3-4b-it-4bit",
-    "gemma3":              "mlx-community/gemma-3-4b-it-4bit",
-    "qwen2.5-0.5b":        "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
-    "qwen3-4b":            "mlx-community/Qwen3-4B-4bit",
-    "qwen3-8b":            "mlx-community/Qwen3-8B-4bit",
-    "llama3.1-8b":         "mlx-community/Llama-3.1-8B-Instruct-4bit",
-    "llama3.2-1b":         "mlx-community/Llama-3.2-1B-Instruct-4bit",
-    "llama3.2-3b":         "mlx-community/Llama-3.2-3B-Instruct-4bit",
-    "mistral7b":           "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
-    "falcon3-7b":          "mlx-community/Falcon3-7B-Instruct-4bit",
-    "phi4":                "mlx-community/Phi-4-4bit",
+    "gemma-3-4b": "mlx-community/gemma-3-4b-it-4bit",
+    "gemma3": "mlx-community/gemma-3-4b-it-4bit",
+    "qwen2.5-0.5b": "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+    "qwen3-4b": "mlx-community/Qwen3-4B-4bit",
+    "qwen3-8b": "mlx-community/Qwen3-8B-4bit",
+    "llama3.1-8b": "mlx-community/Llama-3.1-8B-Instruct-4bit",
+    "llama3.2-1b": "mlx-community/Llama-3.2-1B-Instruct-4bit",
+    "llama3.2-3b": "mlx-community/Llama-3.2-3B-Instruct-4bit",
+    "mistral7b": "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+    "falcon3-7b": "mlx-community/Falcon3-7B-Instruct-4bit",
+    "phi4": "mlx-community/Phi-4-4bit",
 }
 
 
 def _mlx_lm_version() -> str:
     try:
         import mlx_lm
+
         return getattr(mlx_lm, "__version__", "unknown")
     except Exception:
         return "unknown"
@@ -404,7 +509,11 @@ def _resolve_model_name(model_name: str) -> str:
     if resolved != model_name:
         print(f"  Resolved '{model_name}' → '{resolved}' (mlx-community converted)")
     # Warn if it looks like a raw HF model (not already an mlx-community model)
-    if "/" in resolved and not resolved.startswith("mlx-community/") and not resolved.startswith("mlx-"):
+    if (
+        "/" in resolved
+        and not resolved.startswith("mlx-community/")
+        and not resolved.startswith("mlx-")
+    ):
         print(f"\n  WARNING: '{resolved}' may not be an mlx-converted model.")
         print(f"  Raw HuggingFace models often fail to load with mlx_lm.")
         print(f"  Try one of these instead:")
@@ -417,13 +526,16 @@ def _resolve_model_name(model_name: str) -> str:
 def _load_model_safe(model_name: str):
     """Load mlx_lm model with clear error on weight mismatch."""
     from mlx_lm import load
+
     try:
         return load(model_name)
     except ValueError as e:
         err = str(e)
         if "parameters not in model" in err or "not in model" in err:
-            print(f"\n  ERROR: Model weight mismatch — mlx_lm {_mlx_lm_version()} "
-                  f"does not support this model version.")
+            print(
+                f"\n  ERROR: Model weight mismatch — mlx_lm {_mlx_lm_version()} "
+                f"does not support this model version."
+            )
             print(f"  Detail: {err[:300]}")
             print(f"\n  Fix: use an mlx-community converted model, e.g.:")
             for mlx_name in sorted(set(MLX_MODEL_ALIASES.values())):
@@ -438,6 +550,7 @@ def _model_geometry(model) -> tuple[int, int, int]:
     Handles plain dataclass args (standard models) and dict-like text_config
     (multimodal models like Gemma 4).
     """
+
     def _get(cfg, *keys, default=None):
         for k in keys:
             v = cfg[k] if isinstance(cfg, dict) and k in cfg else getattr(cfg, k, None)
@@ -470,9 +583,16 @@ class SpectralQuantMLXKVCache:
     and compressed_key_bytes for compression ratio reporting.
     """
 
-    def __init__(self, head_dim: int, n_kv_heads: int, bits: int,
-                 rotation: np.ndarray | None, d_s: int,
-                 apply_qjl: bool = False, seed: int = 42) -> None:
+    def __init__(
+        self,
+        head_dim: int,
+        n_kv_heads: int,
+        bits: int,
+        rotation: np.ndarray | None,
+        d_s: int,
+        apply_qjl: bool = False,
+        seed: int = 42,
+    ) -> None:
         import mlx.core as mx
         from mlx_lm.models.cache import KVCache as _MLXKVCache
         from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
@@ -483,9 +603,13 @@ class SpectralQuantMLXKVCache:
         self._d_s = d_s
         self._apply_qjl = apply_qjl
         self._quantizer = SpectralQuantizer(
-            d=head_dim, b_signal=bits, b_noise=bits,
-            rotation=rotation, d_s=d_s,
-            apply_qjl=apply_qjl, seed=seed,
+            d=head_dim,
+            b_signal=bits,
+            b_noise=bits,
+            rotation=rotation,
+            d_s=d_s,
+            apply_qjl=apply_qjl,
+            seed=seed,
         )
         self._inner = _MLXKVCache()
         self.fp16_key_bytes = 0
@@ -493,6 +617,7 @@ class SpectralQuantMLXKVCache:
 
     def update_and_fetch(self, keys, values):
         import mlx.core as mx
+
         B, H, S, D = keys.shape
         kdtype = keys.dtype
         k_flat = keys.reshape(-1, D)
@@ -505,7 +630,7 @@ class SpectralQuantMLXKVCache:
         k_dequant = (k_hat_u.astype(kdtype) * safe).reshape(B, H, S, D)
 
         # Track bytes — bits per element × elements / 8 + 2 fp16 scales per vector
-        bits_per_vec = self._hd * self._bits + 32   # signal+noise bits + 2×fp16 scale
+        bits_per_vec = self._hd * self._bits + 32  # signal+noise bits + 2×fp16 scale
         if self._apply_qjl and hasattr(self._quantizer, "_jl_dim"):
             bits_per_vec += self._quantizer._jl_dim + 16
         n_vecs = B * H * S
@@ -521,8 +646,7 @@ class SpectralQuantMLXKVCache:
         return getattr(self._inner, name)
 
 
-def _run_generation(model, tokenizer, cache_factory, label: str,
-                    max_tokens: int = 200) -> dict:
+def _run_generation(model, tokenizer, cache_factory, label: str, max_tokens: int = 200) -> dict:
     """Run mlx_lm.generate with a cache factory, return benchmark metrics."""
     import mlx.core as mx
     import mlx_lm
@@ -534,7 +658,8 @@ def _run_generation(model, tokenizer, cache_factory, label: str,
     try:
         messages = [{"role": "user", "content": PROMPT}]
         prompt_txt = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True)
+            messages, tokenize=False, add_generation_prompt=True
+        )
     except Exception:
         prompt_txt = PROMPT
 
@@ -542,17 +667,19 @@ def _run_generation(model, tokenizer, cache_factory, label: str,
     original_make_cache = model.make_cache
 
     if cache_factory is not None:
+
         def _patched_make_cache(*_, **__):
             caches = cache_factory()
-            injected.extend(c for c in caches
-                            if hasattr(c, "fp16_key_bytes"))
+            injected.extend(c for c in caches if hasattr(c, "fp16_key_bytes"))
             return caches
+
         model.make_cache = _patched_make_cache
 
     mx.metal.clear_cache() if hasattr(mx.metal, "clear_cache") else None
     t0 = time.perf_counter()
-    response = mlx_lm.generate(model, tokenizer, prompt=prompt_txt,
-                               max_tokens=max_tokens, verbose=False)
+    response = mlx_lm.generate(
+        model, tokenizer, prompt=prompt_txt, max_tokens=max_tokens, verbose=False
+    )
     elapsed = time.perf_counter() - t0
     model.make_cache = original_make_cache
 
@@ -564,9 +691,11 @@ def _run_generation(model, tokenizer, cache_factory, label: str,
     comp_bytes = sum(c.compressed_key_bytes for c in injected)
     ratio = fp16_bytes / comp_bytes if comp_bytes > 0 else 1.0
 
-    print(f"  [{label}]  {toks} tokens  {elapsed:.1f}s  "
-          f"({tps:.1f} tok/s)  ratio={ratio:.2f}×  "
-          f"prefill={prefill_toks} toks")
+    print(
+        f"  [{label}]  {toks} tokens  {elapsed:.1f}s  "
+        f"({tps:.1f} tok/s)  ratio={ratio:.2f}×  "
+        f"prefill={prefill_toks} toks"
+    )
     return {
         "label": label,
         "tps": tps,
@@ -594,6 +723,7 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
     model, tokenizer = _load_model_safe(model_name)
 
     import mlx.core as mx
+
     head_dim, n_kv_heads, n_layers = _model_geometry(model)
     print(f"  {n_layers} layers · head_dim={head_dim} · kv_heads={n_kv_heads}")
 
@@ -603,9 +733,13 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
     print(f"  Running calibration on {len(tokens)} tokens...")
     t0 = time.time()
     from veloxquant_mlx.spectral.calibrate import calibrate_spectral_rotation
+
     rotations = calibrate_spectral_rotation(
-        model, tokens_mx, n_tokens=n_tokens,
-        model_name=model_name, force_recompute=True,
+        model,
+        tokens_mx,
+        n_tokens=n_tokens,
+        model_name=model_name,
+        force_recompute=True,
     )
     calib_elapsed = time.time() - t0
     print(f"  Calibration done in {calib_elapsed:.1f}s across {len(rotations)} layers")
@@ -617,6 +751,7 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
 
     # ── Dated output folder ───────────────────────────────────────────────
     from datetime import date
+
     today = date.today().isoformat()
     model_tag = model_name.replace("/", "_")
     out_dir = ROOT / "figures" / today / f"spectral_quant_{model_tag}"
@@ -653,9 +788,13 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
                 else:
                     rotation, d_s = None, max(4, D // 32)
                 self._quantizer = _SQ(
-                    d=D, b_signal=bits, b_noise=bits,
-                    rotation=rotation, d_s=d_s,
-                    apply_qjl=_apply_qjl, seed=self._seed,
+                    d=D,
+                    b_signal=bits,
+                    b_noise=bits,
+                    rotation=rotation,
+                    d_s=d_s,
+                    apply_qjl=_apply_qjl,
+                    seed=self._seed,
                 )
                 self._D = D
 
@@ -665,8 +804,9 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
                     self._init_quantizer(D)
                 kdtype = keys.dtype
                 k_flat = keys.reshape(-1, D)
-                norms = mx.linalg.norm(k_flat.astype(mx.float32),
-                                       axis=-1, keepdims=True).astype(kdtype)
+                norms = mx.linalg.norm(k_flat.astype(mx.float32), axis=-1, keepdims=True).astype(
+                    kdtype
+                )
                 safe = mx.maximum(norms, mx.array(1e-4, dtype=kdtype))
                 k_unit = (k_flat / safe).astype(mx.float16)
                 ev = self._quantizer.encode(k_unit)
@@ -682,8 +822,9 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
                     raise AttributeError(name)
                 return getattr(self._inner, name)
 
-        return [_SQWrapper(inner=real_caches[i], layer_idx=i, seed=i)
-                for i in range(len(real_caches))]
+        return [
+            _SQWrapper(inner=real_caches[i], layer_idx=i, seed=i) for i in range(len(real_caches))
+        ]
 
     def _make_tq_caches():
         """Build TurboQuant caches wrapping the model's own real cache objects."""
@@ -704,13 +845,13 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
                 B, H, S, D = keys.shape
                 if self._q is None or self._D != D:
                     m = min(D, 64)
-                    self._q = TurboQuantProd(d=D, b=bits, m=m,
-                                             seed=self._seed, use_hadamard=True)
+                    self._q = TurboQuantProd(d=D, b=bits, m=m, seed=self._seed, use_hadamard=True)
                     self._D = D
                 kdtype = keys.dtype
                 k_flat = keys.reshape(-1, D)
-                norms = mx.linalg.norm(k_flat.astype(mx.float32),
-                                       axis=-1, keepdims=True).astype(kdtype)
+                norms = mx.linalg.norm(k_flat.astype(mx.float32), axis=-1, keepdims=True).astype(
+                    kdtype
+                )
                 safe = mx.maximum(norms, mx.array(1e-4, dtype=kdtype))
                 k_unit = (k_flat / safe).astype(mx.float16)
                 ev = self._q.encode(k_unit)
@@ -728,27 +869,25 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
                     raise AttributeError(name)
                 return getattr(self._inner, name)
 
-        return [_TQWrapper(inner=real_caches[i], seed=i)
-                for i in range(len(real_caches))]
+        return [_TQWrapper(inner=real_caches[i], seed=i) for i in range(len(real_caches))]
 
     print(f"\n  Running generation benchmarks ({max_gen_tokens} tokens each)...")
     results = {}
-    results["fp16"]       = _run_generation(model, tokenizer, None,
-                                            "fp16 baseline", max_gen_tokens)
-    results["tq3"]        = _run_generation(model, tokenizer,
-                                            _make_tq_caches,
-                                            "TurboQuant 3-bit", max_gen_tokens)
-    results["sq_noqjl"]   = _run_generation(model, tokenizer,
-                                            lambda: _make_sq_caches(False),
-                                            "SpectralQuant noQJL", max_gen_tokens)
-    results["sq_qjl"]     = _run_generation(model, tokenizer,
-                                            lambda: _make_sq_caches(True),
-                                            "SpectralQuant +QJL", max_gen_tokens)
+    results["fp16"] = _run_generation(model, tokenizer, None, "fp16 baseline", max_gen_tokens)
+    results["tq3"] = _run_generation(
+        model, tokenizer, _make_tq_caches, "TurboQuant 3-bit", max_gen_tokens
+    )
+    results["sq_noqjl"] = _run_generation(
+        model, tokenizer, lambda: _make_sq_caches(False), "SpectralQuant noQJL", max_gen_tokens
+    )
+    results["sq_qjl"] = _run_generation(
+        model, tokenizer, lambda: _make_sq_caches(True), "SpectralQuant +QJL", max_gen_tokens
+    )
 
     # ── Summary table ─────────────────────────────────────────────────────
-    print(f"\n  {'='*68}")
+    print(f"\n  {'=' * 68}")
     print(f"  {'Config':<25} {'TPS':>7} {'Prefill':>8} {'Ratio':>7} {'Cosim':>7}")
-    print(f"  {'-'*68}")
+    print(f"  {'-' * 68}")
 
     # Use median-layer rotation for cosim
     mid_layer = layer_ids[len(layer_ids) // 2]
@@ -761,7 +900,7 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
     key_data /= np.linalg.norm(key_data, axis=1, keepdims=True) + 1e-8
 
     val_coords = rng.standard_normal((512, min(val_ds, d))).astype(np.float32)
-    val_data = val_coords @ val_U[:, :min(val_ds, d)].T
+    val_data = val_coords @ val_U[:, : min(val_ds, d)].T
     val_data += rng.standard_normal((512, d)).astype(np.float32) * 0.05
     val_data /= np.linalg.norm(val_data, axis=1, keepdims=True) + 1e-8
 
@@ -769,12 +908,14 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
     from veloxquant_mlx.quantizers.turboquant_prod import TurboQuantProd
 
     def _cosim_sq(rotation, d_s, apply_qjl):
-        sq = SpectralQuantizer(d=d, b_signal=bits, b_noise=bits,
-                               rotation=rotation, d_s=d_s, apply_qjl=apply_qjl)
+        sq = SpectralQuantizer(
+            d=d, b_signal=bits, b_noise=bits, rotation=rotation, d_s=d_s, apply_qjl=apply_qjl
+        )
         return encode_decode_cosim(key_data, sq)
 
     def _cosim_tq():
         import mlx.core as mx
+
         tq = TurboQuantProd(d=d, b=bits, m=min(d, 64), seed=0, use_hadamard=True)
         x = mx.array(key_data, dtype=mx.float16)
         ev = tq.encode(x)
@@ -782,34 +923,46 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
         return cosine_sim_mean(key_data, x_hat)
 
     cosims = {
-        "fp16":     1.0,
-        "tq3":      _cosim_tq(),
+        "fp16": 1.0,
+        "tq3": _cosim_tq(),
         "sq_noqjl": _cosim_sq(key_U, key_ds, False),
-        "sq_qjl":   _cosim_sq(key_U, key_ds, True),
+        "sq_qjl": _cosim_sq(key_U, key_ds, True),
     }
 
-    for key, cfg_label in [("fp16", "fp16 baseline"),
-                            ("tq3",  "TurboQuant 3-bit"),
-                            ("sq_noqjl", "SpectralQuant noQJL"),
-                            ("sq_qjl",   "SpectralQuant +QJL")]:
+    for key, cfg_label in [
+        ("fp16", "fp16 baseline"),
+        ("tq3", "TurboQuant 3-bit"),
+        ("sq_noqjl", "SpectralQuant noQJL"),
+        ("sq_qjl", "SpectralQuant +QJL"),
+    ]:
         r = results[key]
         cs = cosims[key]
-        print(f"  {cfg_label:<25} {r['tps']:>7.1f} {r['prefill_toks']:>8} "
-              f"  {r['ratio']:>5.2f}×  {cs:>6.4f}")
-    print(f"  {'='*68}")
+        print(
+            f"  {cfg_label:<25} {r['tps']:>7.1f} {r['prefill_toks']:>8} "
+            f"  {r['ratio']:>5.2f}×  {cs:>6.4f}"
+        )
+    print(f"  {'=' * 68}")
 
     # ── Spectrum & quality figures ────────────────────────────────────────
     run_model_eval_layers(rotations, model_tag, out_dir=out_dir)
-    run_eval_on_vectors(key_data, val_data, key_U, val_U,
-                        key_ds, val_ds, key_ev, val_ev,
-                        out_dir, model_tag)
+    run_eval_on_vectors(
+        key_data, val_data, key_U, val_U, key_ds, val_ds, key_ev, val_ev, out_dir, model_tag
+    )
 
     # ── Benchmark figures with real TPS ──────────────────────────────────
     generate_benchmark_figures(
-        key_data, val_data, key_U, val_U, key_ds, val_ds,
-        out_dir, model_tag,
-        n_layers=n_layers, n_kv_heads=n_kv_heads,
-        bench_results=results, cosims=cosims,
+        key_data,
+        val_data,
+        key_U,
+        val_U,
+        key_ds,
+        val_ds,
+        out_dir,
+        model_tag,
+        n_layers=n_layers,
+        n_kv_heads=n_kv_heads,
+        bench_results=results,
+        cosims=cosims,
     )
 
     # ── Table 1 ───────────────────────────────────────────────────────────
@@ -817,7 +970,7 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
     print(f"  {'Layer':<6} {'key d_eff':>10} {'val d_eff':>10} {'key d_s/d':>10}")
     for li in layer_ids[:10]:
         e = rotations[li]
-        print(f"  {li:<6} {e[4]:>10} {e[5]:>10} {e[4]/e[0].shape[0]*100:>9.1f}%")
+        print(f"  {li:<6} {e[4]:>10} {e[5]:>10} {e[4] / e[0].shape[0] * 100:>9.1f}%")
     if len(layer_ids) > 10:
         print(f"  ... ({len(layer_ids)} layers total)")
     print(f"\n  All figures saved to: {out_dir}/")
@@ -826,6 +979,7 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
 # ---------------------------------------------------------------------------
 # Benchmark-style 6-figure report (mirrors figures/2026-05-16/gemma4 format)
 # ---------------------------------------------------------------------------
+
 
 def generate_benchmark_figures(
     key_data: np.ndarray,
@@ -847,6 +1001,7 @@ def generate_benchmark_figures(
 
     try:
         import seaborn as sns
+
         sns.set_style("whitegrid")
     except ImportError:
         pass
@@ -855,28 +1010,29 @@ def generate_benchmark_figures(
     d = key_data.shape[1]
 
     PALETTE = {
-        "fp16":    "#607D8B",
-        "tq3":     "#FF9800",
+        "fp16": "#607D8B",
+        "tq3": "#FF9800",
         "sq_noqjl": "#2196F3",
-        "sq_qjl":  "#9C27B0",
+        "sq_qjl": "#9C27B0",
     }
     configs_lbl = ["fp16\nbaseline", "TQ\n3-bit", "SQ noQJL\n(primary)", "SQ +QJL\n(signal)"]
     colors = [PALETTE["fp16"], PALETTE["tq3"], PALETTE["sq_noqjl"], PALETTE["sq_qjl"]]
 
     # ── Quality metrics (use real bench data when available) ────────────────
     def _cosim_for_sq(rotation, d_s, apply_qjl):
-        sq = SpectralQuantizer(d=d, b_signal=3, b_noise=3,
-                               rotation=rotation, d_s=d_s, apply_qjl=apply_qjl)
+        sq = SpectralQuantizer(
+            d=d, b_signal=3, b_noise=3, rotation=rotation, d_s=d_s, apply_qjl=apply_qjl
+        )
         return encode_decode_cosim(key_data, sq), sq.compression_ratio()
 
     if cosims is not None:
-        cs_fp16     = cosims.get("fp16", 1.0)
-        cs_tq3      = cosims.get("tq3", 0.0)
+        cs_fp16 = cosims.get("fp16", 1.0)
+        cs_tq3 = cosims.get("tq3", 0.0)
         cs_sq_noqjl = cosims.get("sq_noqjl", 0.0)
-        cs_sq_qjl   = cosims.get("sq_qjl", 0.0)
-        _, ratio_tq3      = _cosim_for_sq(None,  d,      True)
+        cs_sq_qjl = cosims.get("sq_qjl", 0.0)
+        _, ratio_tq3 = _cosim_for_sq(None, d, True)
         _, ratio_sq_noqjl = _cosim_for_sq(key_U, key_ds, False)
-        _, ratio_sq_qjl   = _cosim_for_sq(key_U, key_ds, True)
+        _, ratio_sq_qjl = _cosim_for_sq(key_U, key_ds, True)
     else:
         cs_fp16 = 1.0
         cs_tq3, ratio_tq3 = _cosim_for_sq(None, d, True)
@@ -885,19 +1041,22 @@ def generate_benchmark_figures(
 
     # Real compression ratios from actual byte counts when available
     if bench_results is not None:
-        ratio_tq3      = bench_results.get("tq3",      {}).get("ratio", ratio_tq3)
+        ratio_tq3 = bench_results.get("tq3", {}).get("ratio", ratio_tq3)
         ratio_sq_noqjl = bench_results.get("sq_noqjl", {}).get("ratio", ratio_sq_noqjl)
-        ratio_sq_qjl   = bench_results.get("sq_qjl",   {}).get("ratio", ratio_sq_qjl)
+        ratio_sq_qjl = bench_results.get("sq_qjl", {}).get("ratio", ratio_sq_qjl)
 
     compress = [1.0, ratio_tq3, ratio_sq_noqjl, ratio_sq_qjl]
     cosims_list = [cs_fp16, cs_tq3, cs_sq_noqjl, cs_sq_qjl]
 
     # Real TPS from generation benchmark (0 when running synthetic-only)
     if bench_results is not None:
-        tps_list = [bench_results.get(k, {}).get("tps", 0.0)
-                    for k in ("fp16", "tq3", "sq_noqjl", "sq_qjl")]
-        prefill_list = [bench_results.get(k, {}).get("prefill_toks", 0)
-                        for k in ("fp16", "tq3", "sq_noqjl", "sq_qjl")]
+        tps_list = [
+            bench_results.get(k, {}).get("tps", 0.0) for k in ("fp16", "tq3", "sq_noqjl", "sq_qjl")
+        ]
+        prefill_list = [
+            bench_results.get(k, {}).get("prefill_toks", 0)
+            for k in ("fp16", "tq3", "sq_noqjl", "sq_qjl")
+        ]
         has_tps = True
     else:
         tps_list = [0.0] * 4
@@ -916,32 +1075,37 @@ def generate_benchmark_figures(
         per_vec_bytes = (d * 2) / ratio  # fp16 bytes / ratio
         return tokens * n_layers * n_kv_heads * per_vec_bytes * 2  # key+val
 
-    mem_fp16   = fp16_full / 1e6
-    mem_tq3    = np.array([_sq_bytes(t, ratio_tq3)    for t in token_counts]) / 1e6
-    mem_sq     = np.array([_sq_bytes(t, ratio_sq_noqjl) for t in token_counts]) / 1e6
+    mem_fp16 = fp16_full / 1e6
+    mem_tq3 = np.array([_sq_bytes(t, ratio_tq3) for t in token_counts]) / 1e6
+    mem_sq = np.array([_sq_bytes(t, ratio_sq_noqjl) for t in token_counts]) / 1e6
 
     # ── Bit-width quality sweep ──────────────────────────────────────────────
     bit_range = [2, 3, 4]
     coss_sq, coss_tq = [], []
     for b in bit_range:
-        sq_s = SpectralQuantizer(d=d, b_signal=b, b_noise=b, rotation=key_U, d_s=key_ds, apply_qjl=False)
+        sq_s = SpectralQuantizer(
+            d=d, b_signal=b, b_noise=b, rotation=key_U, d_s=key_ds, apply_qjl=False
+        )
         sq_t = SpectralQuantizer(d=d, b_signal=b, b_noise=b, rotation=None, d_s=d, apply_qjl=True)
         coss_sq.append(encode_decode_cosim(key_data, sq_s))
         coss_tq.append(encode_decode_cosim(key_data, sq_t))
 
     # ── Attention distortion ─────────────────────────────────────────────────
     import mlx.core as mx
+
     rng_attn = np.random.default_rng(7)
     N_k = 32
-    q_np  = rng_attn.standard_normal(d).astype(np.float32); q_np /= np.linalg.norm(q_np)
-    k_np  = rng_attn.standard_normal((N_k, d)).astype(np.float32)
+    q_np = rng_attn.standard_normal(d).astype(np.float32)
+    q_np /= np.linalg.norm(q_np)
+    k_np = rng_attn.standard_normal((N_k, d)).astype(np.float32)
     k_unit = k_np / (np.linalg.norm(k_np, axis=1, keepdims=True) + 1e-8)
     scores_fp16 = k_unit @ q_np
     sm_fp16 = np.exp(scores_fp16) / np.sum(np.exp(scores_fp16))
 
     def _softmax_scores(rotation, d_s, apply_qjl):
-        sq = SpectralQuantizer(d=d, b_signal=3, b_noise=3,
-                               rotation=rotation, d_s=d_s, apply_qjl=apply_qjl)
+        sq = SpectralQuantizer(
+            d=d, b_signal=3, b_noise=3, rotation=rotation, d_s=d_s, apply_qjl=apply_qjl
+        )
         k_mx = mx.array(k_unit, dtype=mx.float16)
         ev = sq.encode(k_mx)
         k_hat = np.array(sq.decode(ev), dtype=np.float32)
@@ -949,9 +1113,9 @@ def generate_benchmark_figures(
         scores = k_hat @ q_np
         return np.exp(scores) / np.sum(np.exp(scores))
 
-    sm_tq3    = _softmax_scores(None, d, True)
+    sm_tq3 = _softmax_scores(None, d, True)
     sm_sq_nqjl = _softmax_scores(key_U, key_ds, False)
-    sm_sq_qjl  = _softmax_scores(key_U, key_ds, True)
+    sm_sq_qjl = _softmax_scores(key_U, key_ds, True)
 
     def _mse_cos(sm):
         mse = float(np.mean((sm - sm_fp16) ** 2))
@@ -962,31 +1126,60 @@ def generate_benchmark_figures(
     def _bar(ax, vals, ylabel, title, hline=None, fmt=".2f"):
         bars = ax.bar(configs_lbl, vals, color=colors, edgecolor="white", lw=1.2)
         for bar, v in zip(bars, vals):
-            ax.text(bar.get_x() + bar.get_width() / 2,
-                    v + max(vals) * 0.02, f"{v:{fmt}}",
-                    ha="center", fontsize=10, fontweight="bold")
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                v + max(vals) * 0.02,
+                f"{v:{fmt}}",
+                ha="center",
+                fontsize=10,
+                fontweight="bold",
+            )
         if hline is not None:
             ax.axhline(hline, color="grey", ls="--", lw=1, alpha=0.7)
         ax.set_ylabel(ylabel)
         ax.set_title(title, fontsize=11, fontweight="bold")
         ax.set_ylim(0, max(vals) * 1.3)
 
-    to_mb = lambda b: b / 1024 ** 2  # noqa: E731
+    to_mb = lambda b: b / 1024**2  # noqa: E731
 
     # ── Fig 1: Benchmark summary ─────────────────────────────────────────────
     fig1, axes = plt.subplots(2, 2, figsize=(14, 10))
     fig1.suptitle(
         f"SpectralQuant KV Cache — {model_label}\nApple Silicon · head_dim={d}",
-        fontsize=14, fontweight="bold", y=1.01,
+        fontsize=14,
+        fontweight="bold",
+        y=1.01,
     )
-    _bar(axes[0, 0], compress, "Compression Ratio (×)", "Key Compression Ratio", hline=1.0, fmt=".2f")
-    _bar(axes[0, 1], cosims_list, "Mean Cosine Similarity", "Reconstruction Quality (cosine sim)", fmt=".4f")
+    _bar(
+        axes[0, 0], compress, "Compression Ratio (×)", "Key Compression Ratio", hline=1.0, fmt=".2f"
+    )
+    _bar(
+        axes[0, 1],
+        cosims_list,
+        "Mean Cosine Similarity",
+        "Reconstruction Quality (cosine sim)",
+        fmt=".4f",
+    )
     if has_tps and max(tps_list) > 0:
-        _bar(axes[1, 0], tps_list, "Tokens / second", "Generation Throughput (tok/s)",
-             hline=tps_list[0], fmt=".1f")
+        _bar(
+            axes[1, 0],
+            tps_list,
+            "Tokens / second",
+            "Generation Throughput (tok/s)",
+            hline=tps_list[0],
+            fmt=".1f",
+        )
     else:
-        mem_at_4k = [float(_sq_bytes(4096, r) / 1e6) for r in [1.0, ratio_tq3, ratio_sq_noqjl, ratio_sq_qjl]]
-        _bar(axes[1, 0], mem_at_4k, "Memory (MB)", "KV Cache Memory @ 4K context (key+val)", fmt=".1f")
+        mem_at_4k = [
+            float(_sq_bytes(4096, r) / 1e6) for r in [1.0, ratio_tq3, ratio_sq_noqjl, ratio_sq_qjl]
+        ]
+        _bar(
+            axes[1, 0],
+            mem_at_4k,
+            "Memory (MB)",
+            "KV Cache Memory @ 4K context (key+val)",
+            fmt=".1f",
+        )
     key_mb = [d * 2 / r / 1024 for r in [1.0, ratio_tq3, ratio_sq_noqjl, ratio_sq_qjl]]
     _bar(axes[1, 1], key_mb, "Bytes / key vector (KB)", "Per-vector Key Cache Size", fmt=".4f")
     fig1.tight_layout()
@@ -996,25 +1189,68 @@ def generate_benchmark_figures(
 
     # ── Fig 2: Quality vs bits ───────────────────────────────────────────────
     fig2, (ax_l, ax_r) = plt.subplots(1, 2, figsize=(14, 6))
-    fig2.suptitle(f"Quality vs Bits — {model_label} (head_dim={d})",
-                  fontsize=14, fontweight="bold")
-    ax_l.plot(bit_range, coss_sq, color=PALETTE["sq_noqjl"], marker="o", lw=2.2, ms=7, label="SpectralQuant (no QJL)")
-    ax_l.plot(bit_range, coss_tq, color=PALETTE["tq3"],      marker="s", lw=2.2, ms=7, label="TurboQuant-like (full QJL)")
-    ax_l.axhline(0.90, color="green",  ls="--", lw=1.5, alpha=0.7, label="0.90 near-lossless")
+    fig2.suptitle(f"Quality vs Bits — {model_label} (head_dim={d})", fontsize=14, fontweight="bold")
+    ax_l.plot(
+        bit_range,
+        coss_sq,
+        color=PALETTE["sq_noqjl"],
+        marker="o",
+        lw=2.2,
+        ms=7,
+        label="SpectralQuant (no QJL)",
+    )
+    ax_l.plot(
+        bit_range,
+        coss_tq,
+        color=PALETTE["tq3"],
+        marker="s",
+        lw=2.2,
+        ms=7,
+        label="TurboQuant-like (full QJL)",
+    )
+    ax_l.axhline(0.90, color="green", ls="--", lw=1.5, alpha=0.7, label="0.90 near-lossless")
     ax_l.axhline(0.80, color="orange", ls="--", lw=1.5, alpha=0.7, label="0.80 degraded")
-    ax_l.set_xlabel("Bit-width"); ax_l.set_ylabel("Cosine Similarity")
+    ax_l.set_xlabel("Bit-width")
+    ax_l.set_ylabel("Cosine Similarity")
     ax_l.set_title("Cosine Similarity vs Bit-width", fontsize=12, fontweight="bold")
-    ax_l.set_xticks(bit_range); ax_l.set_ylim(0.4, 1.05); ax_l.legend(fontsize=9)
+    ax_l.set_xticks(bit_range)
+    ax_l.set_ylim(0.4, 1.05)
+    ax_l.legend(fontsize=9)
     ax_l.grid(True, alpha=0.3)
-    ratios_sq = [SpectralQuantizer(d=d, b_signal=b, b_noise=b, d_s=key_ds, apply_qjl=False).compression_ratio()
-                 for b in bit_range]
-    ratios_tq = [SpectralQuantizer(d=d, b_signal=b, b_noise=b, d_s=d, apply_qjl=True).compression_ratio()
-                 for b in bit_range]
-    ax_r.plot(bit_range, ratios_sq, color=PALETTE["sq_noqjl"], marker="o", lw=2.2, ms=7, label="SpectralQuant")
-    ax_r.plot(bit_range, ratios_tq, color=PALETTE["tq3"],      marker="s", lw=2.2, ms=7, label="TurboQuant-like")
-    ax_r.set_xlabel("Bit-width"); ax_r.set_ylabel("Compression Ratio (×)")
+    ratios_sq = [
+        SpectralQuantizer(
+            d=d, b_signal=b, b_noise=b, d_s=key_ds, apply_qjl=False
+        ).compression_ratio()
+        for b in bit_range
+    ]
+    ratios_tq = [
+        SpectralQuantizer(d=d, b_signal=b, b_noise=b, d_s=d, apply_qjl=True).compression_ratio()
+        for b in bit_range
+    ]
+    ax_r.plot(
+        bit_range,
+        ratios_sq,
+        color=PALETTE["sq_noqjl"],
+        marker="o",
+        lw=2.2,
+        ms=7,
+        label="SpectralQuant",
+    )
+    ax_r.plot(
+        bit_range,
+        ratios_tq,
+        color=PALETTE["tq3"],
+        marker="s",
+        lw=2.2,
+        ms=7,
+        label="TurboQuant-like",
+    )
+    ax_r.set_xlabel("Bit-width")
+    ax_r.set_ylabel("Compression Ratio (×)")
     ax_r.set_title("Compression Ratio vs Bit-width", fontsize=12, fontweight="bold")
-    ax_r.set_xticks(bit_range); ax_r.legend(fontsize=9); ax_r.grid(True, alpha=0.3)
+    ax_r.set_xticks(bit_range)
+    ax_r.legend(fontsize=9)
+    ax_r.grid(True, alpha=0.3)
     fig2.tight_layout()
     fig2.savefig(out_dir / "fig2_quality_vs_bits.png", dpi=150, bbox_inches="tight")
     plt.close(fig2)
@@ -1022,29 +1258,60 @@ def generate_benchmark_figures(
 
     # ── Fig 3: Memory at scale ───────────────────────────────────────────────
     fig3, (ax_a, ax_b2) = plt.subplots(1, 2, figsize=(14, 6))
-    fig3.suptitle(f"KV Cache Memory at Scale — {model_label}\n"
-                  f"({n_layers} layers, head_dim={d}, kv_heads={n_kv_heads})",
-                  fontsize=13, fontweight="bold")
-    ax_a.plot(token_counts, mem_fp16, color=PALETTE["fp16"],    lw=2.5, marker="o", ms=5, label="fp16 K+V")
-    ax_a.plot(token_counts, mem_tq3,  color=PALETTE["tq3"],     lw=2.5, marker="s", ms=5, label="TQ 3-bit keys+vals")
-    ax_a.plot(token_counts, mem_sq,   color=PALETTE["sq_noqjl"],lw=2.5, marker="^", ms=5, label="SQ noQJL keys+vals")
+    fig3.suptitle(
+        f"KV Cache Memory at Scale — {model_label}\n"
+        f"({n_layers} layers, head_dim={d}, kv_heads={n_kv_heads})",
+        fontsize=13,
+        fontweight="bold",
+    )
+    ax_a.plot(
+        token_counts, mem_fp16, color=PALETTE["fp16"], lw=2.5, marker="o", ms=5, label="fp16 K+V"
+    )
+    ax_a.plot(
+        token_counts,
+        mem_tq3,
+        color=PALETTE["tq3"],
+        lw=2.5,
+        marker="s",
+        ms=5,
+        label="TQ 3-bit keys+vals",
+    )
+    ax_a.plot(
+        token_counts,
+        mem_sq,
+        color=PALETTE["sq_noqjl"],
+        lw=2.5,
+        marker="^",
+        ms=5,
+        label="SQ noQJL keys+vals",
+    )
     ax_a.set_xscale("log", base=2)
     ax_a.set_xticks(token_counts)
-    ax_a.set_xticklabels([f"{t//1024}K" if t >= 1024 else str(t) for t in token_counts], fontsize=9)
-    ax_a.set_xlabel("Context length"); ax_a.set_ylabel("Memory (MB)")
+    ax_a.set_xticklabels(
+        [f"{t // 1024}K" if t >= 1024 else str(t) for t in token_counts], fontsize=9
+    )
+    ax_a.set_xlabel("Context length")
+    ax_a.set_ylabel("Memory (MB)")
     ax_a.set_title("Absolute Memory", fontsize=12, fontweight="bold")
-    ax_a.legend(fontsize=9); ax_a.grid(True, alpha=0.3)
+    ax_a.legend(fontsize=9)
+    ax_a.grid(True, alpha=0.3)
     r_tq = fp16_full / (np.array([_sq_bytes(t, ratio_tq3) for t in token_counts]))
     r_sq = fp16_full / (np.array([_sq_bytes(t, ratio_sq_noqjl) for t in token_counts]))
-    ax_b2.plot(token_counts, r_tq, color=PALETTE["tq3"],      lw=2.5, marker="s", ms=5, label="TQ 3-bit")
-    ax_b2.plot(token_counts, r_sq, color=PALETTE["sq_noqjl"], lw=2.5, marker="^", ms=5, label="SQ noQJL")
+    ax_b2.plot(token_counts, r_tq, color=PALETTE["tq3"], lw=2.5, marker="s", ms=5, label="TQ 3-bit")
+    ax_b2.plot(
+        token_counts, r_sq, color=PALETTE["sq_noqjl"], lw=2.5, marker="^", ms=5, label="SQ noQJL"
+    )
     ax_b2.axhline(1.0, color="grey", ls="--", lw=1, alpha=0.6)
     ax_b2.set_xscale("log", base=2)
     ax_b2.set_xticks(token_counts)
-    ax_b2.set_xticklabels([f"{t//1024}K" if t >= 1024 else str(t) for t in token_counts], fontsize=9)
-    ax_b2.set_xlabel("Context length"); ax_b2.set_ylabel("Compression vs fp16")
+    ax_b2.set_xticklabels(
+        [f"{t // 1024}K" if t >= 1024 else str(t) for t in token_counts], fontsize=9
+    )
+    ax_b2.set_xlabel("Context length")
+    ax_b2.set_ylabel("Compression vs fp16")
     ax_b2.set_title("Compression Ratio vs Context", fontsize=12, fontweight="bold")
-    ax_b2.legend(fontsize=9); ax_b2.grid(True, alpha=0.3)
+    ax_b2.legend(fontsize=9)
+    ax_b2.grid(True, alpha=0.3)
     fig3.tight_layout()
     fig3.savefig(out_dir / "fig3_memory_at_scale.png", dpi=150, bbox_inches="tight")
     plt.close(fig3)
@@ -1052,24 +1319,34 @@ def generate_benchmark_figures(
 
     # ── Fig 4: Attention distortion ──────────────────────────────────────────
     attn_configs = [
-        (sm_fp16,    f"fp16 Baseline (reference)",                    PALETTE["fp16"]),
-        (sm_tq3,     f"TurboQuant 3-bit  cosim≈{cs_tq3:.3f}",        PALETTE["tq3"]),
+        (sm_fp16, f"fp16 Baseline (reference)", PALETTE["fp16"]),
+        (sm_tq3, f"TurboQuant 3-bit  cosim≈{cs_tq3:.3f}", PALETTE["tq3"]),
         (sm_sq_nqjl, f"SpectralQuant noQJL  cosim≈{cs_sq_noqjl:.3f}", PALETTE["sq_noqjl"]),
-        (sm_sq_qjl,  f"SpectralQuant +QJL  cosim≈{cs_sq_qjl:.3f}",   PALETTE["sq_qjl"]),
+        (sm_sq_qjl, f"SpectralQuant +QJL  cosim≈{cs_sq_qjl:.3f}", PALETTE["sq_qjl"]),
     ]
     fig4, axes4 = plt.subplots(4, 1, figsize=(14, 13), sharex=True)
     fig4.suptitle(
         f"Attention Score Distortion — {model_label} (head_dim={d})\n"
         f"{N_k} key vectors, query dot-product, softmax",
-        fontsize=13, fontweight="bold",
+        fontsize=13,
+        fontweight="bold",
     )
     for ax, (sm, lbl, col) in zip(axes4, attn_configs):
         ax.bar(np.arange(N_k), sm, color=col, alpha=0.78, edgecolor="white", linewidth=0.5)
-        ax.plot(np.arange(N_k), sm_fp16, color=PALETTE["fp16"], lw=1.5, ls="--", alpha=0.5, label="fp16 ref")
+        ax.plot(
+            np.arange(N_k),
+            sm_fp16,
+            color=PALETTE["fp16"],
+            lw=1.5,
+            ls="--",
+            alpha=0.5,
+            label="fp16 ref",
+        )
         mse_a, cos_a = _mse_cos(sm)
         ax.set_ylabel("Attention weight")
-        ax.set_title(f"{lbl}   |   MSE={mse_a:.2e}   cosine={cos_a:.4f}",
-                     fontsize=11, fontweight="bold")
+        ax.set_title(
+            f"{lbl}   |   MSE={mse_a:.2e}   cosine={cos_a:.4f}", fontsize=11, fontweight="bold"
+        )
         ax.set_ylim(0, max(sm_fp16) * 1.45)
         ax.grid(True, alpha=0.3)
     axes4[-1].set_xlabel("Key Token Index")
@@ -1083,32 +1360,30 @@ def generate_benchmark_figures(
         if bench_results and key in bench_results:
             r = bench_results[key]
             resp = r.get("response", "")[:500]
-            return (f"{resp}{'...' if len(r.get('response',''))>500 else ''}\n"
-                    f"[{r['tps']:.1f} tok/s · prefill={r['prefill_toks']} · "
-                    f"ratio={r['ratio']:.2f}×]")
+            return (
+                f"{resp}{'...' if len(r.get('response', '')) > 500 else ''}\n"
+                f"[{r['tps']:.1f} tok/s · prefill={r['prefill_toks']} · "
+                f"ratio={r['ratio']:.2f}×]"
+            )
         return "(no generation run — synthetic eval)"
 
     descriptions = {
         "fp16 Baseline": (
             f"Standard fp16 KV cache. No compression.\n"
-            f"Memory: {mem_fp16[4]:.1f} MB @ 4K tokens.\n\n"
-            + _resp_snippet("fp16")
+            f"Memory: {mem_fp16[4]:.1f} MB @ 4K tokens.\n\n" + _resp_snippet("fp16")
         ),
         "TurboQuant 3-bit": (
             f"Random Hadamard rotation + 3-bit Lloyd-Max + QJL correction.\n"
-            f"Cosine sim: {cs_tq3:.4f}  Ratio: {ratio_tq3:.2f}×\n\n"
-            + _resp_snippet("tq3")
+            f"Cosine sim: {cs_tq3:.4f}  Ratio: {ratio_tq3:.2f}×\n\n" + _resp_snippet("tq3")
         ),
         "SpectralQuant noQJL (primary)": (
             f"PCA eigenvector rotation, 3-bit signal+noise, no QJL.\n"
             f"Cosine sim: {cs_sq_noqjl:.4f}  Ratio: {ratio_sq_noqjl:.2f}×  "
-            f"key d_eff={key_ds}  val d_eff={val_ds}\n\n"
-            + _resp_snippet("sq_noqjl")
+            f"key d_eff={key_ds}  val d_eff={val_ds}\n\n" + _resp_snippet("sq_noqjl")
         ),
         "SpectralQuant +QJL (signal only)": (
             f"Spectral rotation + QJL correction on signal dims only.\n"
-            f"Cosine sim: {cs_sq_qjl:.4f}  Ratio: {ratio_sq_qjl:.2f}×\n\n"
-            + _resp_snippet("sq_qjl")
+            f"Cosine sim: {cs_sq_qjl:.4f}  Ratio: {ratio_sq_qjl:.2f}×\n\n" + _resp_snippet("sq_qjl")
         ),
     }
     card_colors = [PALETTE["fp16"], PALETTE["tq3"], PALETTE["sq_noqjl"], PALETTE["sq_qjl"]]
@@ -1116,12 +1391,29 @@ def generate_benchmark_figures(
     fig5.suptitle(f"Method Comparison — {model_label}", fontsize=14, fontweight="bold")
     for ax, (lbl, desc), col in zip(axes5, descriptions.items(), card_colors):
         ax.set_facecolor(col + "18")
-        ax.text(0.01, 0.97, f"[{lbl}]", transform=ax.transAxes,
-                fontsize=11, fontweight="bold", color=col, va="top")
-        ax.text(0.01, 0.75, desc, transform=ax.transAxes, fontsize=10,
-                va="top", family="monospace",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.85))
-        ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
+        ax.text(
+            0.01,
+            0.97,
+            f"[{lbl}]",
+            transform=ax.transAxes,
+            fontsize=11,
+            fontweight="bold",
+            color=col,
+            va="top",
+        )
+        ax.text(
+            0.01,
+            0.75,
+            desc,
+            transform=ax.transAxes,
+            fontsize=10,
+            va="top",
+            family="monospace",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.85),
+        )
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis("off")
     fig5.tight_layout()
     fig5.savefig(out_dir / "fig5_output_comparison.png", dpi=150, bbox_inches="tight")
     plt.close(fig5)
@@ -1136,10 +1428,17 @@ def generate_benchmark_figures(
     bars = ax_a.bar(configs_lbl, compress, color=colors, edgecolor="white", lw=1.2)
     ax_a.axhline(1.0, color="grey", ls="--", lw=1, alpha=0.7)
     for bar, v in zip(bars, compress):
-        ax_a.text(bar.get_x() + bar.get_width() / 2, v + 0.06,
-                  f"{v:.2f}×", ha="center", fontsize=11, fontweight="bold")
+        ax_a.text(
+            bar.get_x() + bar.get_width() / 2,
+            v + 0.06,
+            f"{v:.2f}×",
+            ha="center",
+            fontsize=11,
+            fontweight="bold",
+        )
     ax_a.set_title("A  Key Compression Ratio", fontsize=12, fontweight="bold", loc="left")
-    ax_a.set_ylabel("Ratio vs fp16"); ax_a.set_ylim(0, max(compress) * 1.3)
+    ax_a.set_ylabel("Ratio vs fp16")
+    ax_a.set_ylim(0, max(compress) * 1.3)
     ax_a.grid(True, alpha=0.3)
 
     ax_b6 = fig6.add_subplot(gs[0, 1])
@@ -1147,55 +1446,102 @@ def generate_benchmark_figures(
         bars = ax_b6.bar(configs_lbl, tps_list, color=colors, edgecolor="white", lw=1.2)
         ax_b6.axhline(tps_list[0], color="grey", ls="--", lw=1, alpha=0.7, label="fp16 ref")
         for bar, v in zip(bars, tps_list):
-            ax_b6.text(bar.get_x() + bar.get_width() / 2, v + max(tps_list) * 0.02,
-                       f"{v:.1f}", ha="center", fontsize=10, fontweight="bold")
-        ax_b6.set_title("B  Generation Throughput (tok/s)", fontsize=12, fontweight="bold", loc="left")
-        ax_b6.set_ylabel("tok/s"); ax_b6.set_ylim(0, max(tps_list) * 1.3)
+            ax_b6.text(
+                bar.get_x() + bar.get_width() / 2,
+                v + max(tps_list) * 0.02,
+                f"{v:.1f}",
+                ha="center",
+                fontsize=10,
+                fontweight="bold",
+            )
+        ax_b6.set_title(
+            "B  Generation Throughput (tok/s)", fontsize=12, fontweight="bold", loc="left"
+        )
+        ax_b6.set_ylabel("tok/s")
+        ax_b6.set_ylim(0, max(tps_list) * 1.3)
     else:
         bars = ax_b6.bar(configs_lbl, cosims_list, color=colors, edgecolor="white", lw=1.2)
         for bar, v in zip(bars, cosims_list):
-            ax_b6.text(bar.get_x() + bar.get_width() / 2, v + 0.003,
-                       f"{v:.4f}", ha="center", fontsize=10, fontweight="bold")
-        ax_b6.set_title("B  Reconstruction Quality (cosine)", fontsize=12, fontweight="bold", loc="left")
-        ax_b6.set_ylabel("Cosine Similarity"); ax_b6.set_ylim(0.5, 1.05)
+            ax_b6.text(
+                bar.get_x() + bar.get_width() / 2,
+                v + 0.003,
+                f"{v:.4f}",
+                ha="center",
+                fontsize=10,
+                fontweight="bold",
+            )
+        ax_b6.set_title(
+            "B  Reconstruction Quality (cosine)", fontsize=12, fontweight="bold", loc="left"
+        )
+        ax_b6.set_ylabel("Cosine Similarity")
+        ax_b6.set_ylim(0.5, 1.05)
     ax_b6.grid(True, alpha=0.3)
 
     ax_c6 = fig6.add_subplot(gs[1, 0])
-    ax_c6.plot(bit_range, coss_sq, color=PALETTE["sq_noqjl"], marker="o", lw=2.2, ms=7, label="SpectralQuant")
-    ax_c6.plot(bit_range, coss_tq, color=PALETTE["tq3"],      marker="s", lw=2.2, ms=7, label="TurboQuant-like")
+    ax_c6.plot(
+        bit_range,
+        coss_sq,
+        color=PALETTE["sq_noqjl"],
+        marker="o",
+        lw=2.2,
+        ms=7,
+        label="SpectralQuant",
+    )
+    ax_c6.plot(
+        bit_range, coss_tq, color=PALETTE["tq3"], marker="s", lw=2.2, ms=7, label="TurboQuant-like"
+    )
     ax_c6.axhline(0.90, color="green", ls="--", lw=1.5, alpha=0.7, label="0.90 near-lossless")
-    ax_c6.set_xlabel("Bit-width"); ax_c6.set_ylabel("Cosine Similarity")
-    ax_c6.set_xticks(bit_range); ax_c6.set_ylim(0.4, 1.05)
+    ax_c6.set_xlabel("Bit-width")
+    ax_c6.set_ylabel("Cosine Similarity")
+    ax_c6.set_xticks(bit_range)
+    ax_c6.set_ylim(0.4, 1.05)
     ax_c6.set_title("C  Quality vs Bits", fontsize=12, fontweight="bold", loc="left")
-    ax_c6.legend(fontsize=9); ax_c6.grid(True, alpha=0.3)
+    ax_c6.legend(fontsize=9)
+    ax_c6.grid(True, alpha=0.3)
 
     ax_d6 = fig6.add_subplot(gs[1, 1])
-    ax_d6.plot(token_counts, mem_fp16, color=PALETTE["fp16"],    lw=2.5, marker="o", ms=5, label="fp16")
-    ax_d6.plot(token_counts, mem_tq3,  color=PALETTE["tq3"],     lw=2.5, marker="s", ms=5, label="TQ 3-bit")
-    ax_d6.plot(token_counts, mem_sq,   color=PALETTE["sq_noqjl"],lw=2.5, marker="^", ms=5, label="SQ noQJL")
+    ax_d6.plot(
+        token_counts, mem_fp16, color=PALETTE["fp16"], lw=2.5, marker="o", ms=5, label="fp16"
+    )
+    ax_d6.plot(
+        token_counts, mem_tq3, color=PALETTE["tq3"], lw=2.5, marker="s", ms=5, label="TQ 3-bit"
+    )
+    ax_d6.plot(
+        token_counts, mem_sq, color=PALETTE["sq_noqjl"], lw=2.5, marker="^", ms=5, label="SQ noQJL"
+    )
     ax_d6.set_xscale("log", base=2)
     ax_d6.set_xticks(token_counts)
-    ax_d6.set_xticklabels([f"{t//1024}K" if t >= 1024 else str(t) for t in token_counts], fontsize=8)
-    ax_d6.set_xlabel("Context length"); ax_d6.set_ylabel("Memory (MB)")
+    ax_d6.set_xticklabels(
+        [f"{t // 1024}K" if t >= 1024 else str(t) for t in token_counts], fontsize=8
+    )
+    ax_d6.set_xlabel("Context length")
+    ax_d6.set_ylabel("Memory (MB)")
     ax_d6.set_title("D  KV Cache Memory at Scale", fontsize=12, fontweight="bold", loc="left")
-    ax_d6.legend(fontsize=9); ax_d6.grid(True, alpha=0.3)
+    ax_d6.legend(fontsize=9)
+    ax_d6.grid(True, alpha=0.3)
 
     ax_e6 = fig6.add_subplot(gs[2, :])
     w = 0.20
     for offset, sm, lbl, col in zip(
-        [-1.5*w, -0.5*w, 0.5*w, 1.5*w],
+        [-1.5 * w, -0.5 * w, 0.5 * w, 1.5 * w],
         [sm_fp16, sm_tq3, sm_sq_nqjl, sm_sq_qjl],
         ["fp16", "TQ 3-bit", "SQ noQJL", "SQ +QJL"],
         [PALETTE["fp16"], PALETTE["tq3"], PALETTE["sq_noqjl"], PALETTE["sq_qjl"]],
     ):
         ax_e6.bar(np.arange(N_k) + offset, sm, width=w, color=col, alpha=0.85, label=lbl)
-    ax_e6.set_xlabel("Key Token Index"); ax_e6.set_ylabel("Attention weight")
-    ax_e6.set_title(f"E  Attention Distortion (head_dim={d})", fontsize=12, fontweight="bold", loc="left")
-    ax_e6.legend(fontsize=9); ax_e6.grid(True, alpha=0.3)
+    ax_e6.set_xlabel("Key Token Index")
+    ax_e6.set_ylabel("Attention weight")
+    ax_e6.set_title(
+        f"E  Attention Distortion (head_dim={d})", fontsize=12, fontweight="bold", loc="left"
+    )
+    ax_e6.legend(fontsize=9)
+    ax_e6.grid(True, alpha=0.3)
 
     fig6.suptitle(
         f"SpectralQuant KV Cache — {model_label} Full Benchmark Report\nApple Silicon · veloxquant_mlx",
-        fontsize=16, fontweight="bold", y=1.005,
+        fontsize=16,
+        fontweight="bold",
+        y=1.005,
     )
     fig6.savefig(out_dir / "fig6_full_report.png", dpi=150, bbox_inches="tight")
     plt.close(fig6)
@@ -1208,14 +1554,14 @@ def generate_benchmark_figures(
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="SpectralQuant evaluation")
-    parser.add_argument("--model", type=str, default=None,
-                        help="mlx_lm model name (e.g. Qwen/Qwen2.5-0.5B)")
-    parser.add_argument("--synthetic", action="store_true",
-                        help="Run synthetic evaluation only")
-    parser.add_argument("--n-tokens", type=int, default=512,
-                        help="Number of calibration tokens")
+    parser.add_argument(
+        "--model", type=str, default=None, help="mlx_lm model name (e.g. Qwen/Qwen2.5-0.5B)"
+    )
+    parser.add_argument("--synthetic", action="store_true", help="Run synthetic evaluation only")
+    parser.add_argument("--n-tokens", type=int, default=512, help="Number of calibration tokens")
     args = parser.parse_args()
 
     if args.model:

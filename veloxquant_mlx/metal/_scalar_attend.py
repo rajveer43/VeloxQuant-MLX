@@ -40,6 +40,7 @@ kernel; no other scaling is folded in.
 Public API:
   - :func:`scalar_fused_decode_attend`
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -177,6 +178,7 @@ _SCALAR_AFFINE_ATTEND_SRC = r"""
 # Kernel factory
 # ---------------------------------------------------------------------------
 
+
 def _scalar_affine_attend_kernel(D: int, nsg: int):
     key = ("scalar_affine_attend", D, nsg)
     if key not in _cache:
@@ -184,9 +186,14 @@ def _scalar_affine_attend_kernel(D: int, nsg: int):
             name=f"scalar_affine_attend_d{D}_nsg{nsg}",
             input_names=[
                 "q",
-                "k_codes", "k_scale", "k_zero",
-                "v_codes", "v_scale", "v_zero",
-                "gsize", "scale_arr",
+                "k_codes",
+                "k_scale",
+                "k_zero",
+                "v_codes",
+                "v_scale",
+                "v_zero",
+                "gsize",
+                "scale_arr",
             ],
             output_names=["out"],
             header=f"#define NSG_C {nsg}\n",
@@ -199,6 +206,7 @@ def _scalar_affine_attend_kernel(D: int, nsg: int):
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def scalar_fused_decode_attend(
     q: mx.array,

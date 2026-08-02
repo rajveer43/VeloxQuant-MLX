@@ -15,6 +15,7 @@ Threadgroup: (min(D, 256), 1, 1)
 Public API:
   - :func:`comm_vq_decode_metal`
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -111,6 +112,7 @@ _COMM_VQ_DECODE_SRC = r"""
 # Kernel factory
 # ---------------------------------------------------------------------------
 
+
 def _comm_vq_kernel(n_cb: int, sub_dim: int, cb_size: int, D: int):
     key = ("comm_vq_decode", n_cb, sub_dim, cb_size, D)
     if key not in _cache:
@@ -128,6 +130,7 @@ def _comm_vq_kernel(n_cb: int, sub_dim: int, cb_size: int, D: int):
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def comm_vq_decode_metal(
     indices: mx.array,
@@ -154,7 +157,7 @@ def comm_vq_decode_metal(
     """
     N = indices.shape[0]
     D = n_cb * sub_dim
-    TG = min(D // 2, 128)   # threads per threadgroup (we dispatch D/2 pairs)
+    TG = min(D // 2, 128)  # threads per threadgroup (we dispatch D/2 pairs)
     n_pairs = N * (D // 2)
 
     outputs = _comm_vq_kernel(n_cb, sub_dim, cb_size, D)(
@@ -165,7 +168,7 @@ def comm_vq_decode_metal(
             inv_freq.astype(mx.float32),
         ],
         template=[("N_CB", n_cb), ("SUB_DIM", sub_dim), ("CB_SIZE", cb_size)],
-        grid=(n_pairs * 2, 1, 1),    # total threads = N * D; kernel handles pairs
+        grid=(n_pairs * 2, 1, 1),  # total threads = N * D; kernel handles pairs
         threadgroup=(min(D, 256), 1, 1),
         output_shapes=[(N, D)],
         output_dtypes=[mx.float16],

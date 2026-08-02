@@ -32,6 +32,7 @@ Public API:
   a2ats_apply_exact_rope     — standard RoPE at each token's own position
   a2ats_apply_windowed_rope  — distance-gated exact/approximate RoPE
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -51,7 +52,7 @@ def _rope_cos_sin(positions: mx.array, head_dim: int, base: float) -> tuple:
     """
     half = head_dim // 2
     inv_freq = 1.0 / (base ** (mx.arange(0, half, dtype=mx.float32) / half))  # [half]
-    angles = positions.astype(mx.float32)[:, None] * inv_freq[None, :]        # [N, half]
+    angles = positions.astype(mx.float32)[:, None] * inv_freq[None, :]  # [N, half]
     return mx.cos(angles).astype(mx.float16), mx.sin(angles).astype(mx.float16)
 
 
@@ -123,7 +124,7 @@ def a2ats_apply_windowed_rope(
 
     x16 = x.astype(mx.float16)
     distance = mx.array(query_position, dtype=mx.float32) - positions.astype(mx.float32)
-    near_mask = distance < float(window)   # [N] bool; window<=0 -> all False
+    near_mask = distance < float(window)  # [N] bool; window<=0 -> all False
 
     exact = a2ats_apply_exact_rope(x16, positions, base=base)
 
@@ -131,8 +132,8 @@ def a2ats_apply_windowed_rope(
     # (or 0 if window<=0, degenerating to position-0 i.e. unrotated-frame
     # reconstruction — the paper's coarsest approximation bucket).
     far_offset = mx.array([max(float(window), 0.0)], dtype=mx.float32)
-    far_cos, far_sin = _rope_cos_sin(far_offset, x.shape[-1], base)   # [1, half]
-    approx = _rotate(x16, far_cos, far_sin)   # broadcasts [1, half] against [N, half]
+    far_cos, far_sin = _rope_cos_sin(far_offset, x.shape[-1], base)  # [1, half]
+    approx = _rotate(x16, far_cos, far_sin)  # broadcasts [1, half] against [N, half]
 
     return mx.where(near_mask[:, None], exact, approx)
 

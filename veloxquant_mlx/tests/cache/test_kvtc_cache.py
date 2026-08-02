@@ -6,6 +6,7 @@ unchanged across decode steps (the "not path-dependent" contrast with the
 eviction family — H2O/TOVA/MorphKV/KVzip), byte-accounting properties, and
 compression_ratio > 1 at a reasonable budget on structured (low-rank) data.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -148,6 +149,7 @@ def test_deterministic_same_call_pattern_same_output():
     determinism pin required because KVTC is explicitly NOT path-dependent
     like H2O/TOVA/MorphKV/KVzip.
     """
+
     def run():
         cache = _make(head_dim=16, kvtc_bit_budget=32)
         rng = np.random.default_rng(3)
@@ -157,7 +159,7 @@ def test_deterministic_same_call_pattern_same_output():
         K = V = None
         for t in range(10, 20):
             K, V = cache.update_and_fetch(
-                mx.array(k_all[:, :, t:t + 1]), mx.array(v_all[:, :, t:t + 1])
+                mx.array(k_all[:, :, t : t + 1]), mx.array(v_all[:, :, t : t + 1])
             )
         return K, V
 

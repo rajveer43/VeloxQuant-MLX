@@ -114,12 +114,12 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="nestedkv",
     head_dim=128,
-    nestedkv_budget=512,          # per-head-equivalent budget (total layer budget = this * n_heads)
-    nestedkv_n_sink=4,            # leading positions never evicted
-    nestedkv_window=64,           # W, current-memory trailing window
-    nestedkv_beta=3.0,            # head-adaptive blend temperature (paper default)
-    nestedkv_tau=0.60,            # surprise gate threshold (paper default)
-    nestedkv_kappa=10.0,          # surprise gate sharpness (paper default)
+    nestedkv_budget=512,  # per-head-equivalent budget (total layer budget = this * n_heads)
+    nestedkv_n_sink=4,  # leading positions never evicted
+    nestedkv_window=64,  # W, current-memory trailing window
+    nestedkv_beta=3.0,  # head-adaptive blend temperature (paper default)
+    nestedkv_tau=0.60,  # surprise gate threshold (paper default)
+    nestedkv_kappa=10.0,  # surprise gate sharpness (paper default)
     nestedkv_safeguard_alpha=0.20,  # per-head guaranteed budget floor (paper default)
 )
 caches = KVCacheBuilder.for_model(model, config)

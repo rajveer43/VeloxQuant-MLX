@@ -44,13 +44,14 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 
 config = KVCacheConfig(
     method="turboquant_rvq",
-    bits=1,           # 1-bit keys (7.5× compression)
-    value_bits=2,     # 2-bit values
+    bits=1,  # 1-bit keys (7.5× compression)
+    value_bits=2,  # 2-bit values
 )
 cache = KVCacheBuilder.build(model, config)
 
 response = mlx_lm.generate(
-    model, tokenizer,
+    model,
+    tokenizer,
     prompt="Explain transformer attention in one paragraph.",
     max_tokens=512,
     kv_cache=cache,
@@ -63,10 +64,10 @@ print(response)
 ```python
 KVCacheConfig(
     method="turboquant_rvq",
-    bits=1,            # Key quantization bits (1, 2, 3). Default: 1
-    value_bits=2,      # Value quantization bits (2, 4). Default: 2
-    num_residuals=2,   # Number of RVQ passes. Default: 2
-    use_hadamard=True, # Apply WHT before quantization. Default: True
+    bits=1,  # Key quantization bits (1, 2, 3). Default: 1
+    value_bits=2,  # Value quantization bits (2, 4). Default: 2
+    num_residuals=2,  # Number of RVQ passes. Default: 2
+    use_hadamard=True,  # Apply WHT before quantization. Default: True
 )
 ```
 
@@ -93,8 +94,8 @@ decoded = quantizer.decode(encoded)
 
 # Measure cosine similarity
 cos_sim = mx.mean(
-    mx.sum(keys * decoded, axis=-1) /
-    (mx.linalg.norm(keys, axis=-1) * mx.linalg.norm(decoded, axis=-1))
+    mx.sum(keys * decoded, axis=-1)
+    / (mx.linalg.norm(keys, axis=-1) * mx.linalg.norm(decoded, axis=-1))
 ).item()
 print(f"Cosine similarity: {cos_sim:.4f}")  # typically 0.97-0.99
 ```

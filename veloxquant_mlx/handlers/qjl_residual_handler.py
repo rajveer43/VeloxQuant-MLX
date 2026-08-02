@@ -48,8 +48,10 @@ class QJLResidualHandler(QuantizationHandler):
             if ctx.signs is not None and ctx.residual_norm is not None:
                 # x_qjl = r_norm * scale/m * signs @ S
                 scale = self._encoder._SCALE / self._encoder.m
-                x_qjl = ctx.residual_norm[:, None] * scale * (
-                    ctx.signs.astype(mx.float16) @ self._encoder._S
+                x_qjl = (
+                    ctx.residual_norm[:, None]
+                    * scale
+                    * (ctx.signs.astype(mx.float16) @ self._encoder._S)
                 )
                 ctx.x_current = ctx.x_current + x_qjl
 

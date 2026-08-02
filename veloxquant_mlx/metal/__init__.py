@@ -17,6 +17,7 @@ Public surface:
 * :func:`vecinfer_dequant_metal` — Metal-backed
   ``dequantize_vq`` drop-in (re-exported from :mod:`.kernels`).
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -41,15 +42,19 @@ USE_METAL: bool = metal_available()
 def __getattr__(name: str):
     if name == "vecinfer_dequant_metal":
         from .kernels import vecinfer_dequant_metal as _fn
+
         return _fn
     if name == "vecinfer_quantize_metal":
         from .kernels import vecinfer_quantize_metal as _fn
+
         return _fn
     if name == "metal_fused_sdpa":
         from .fused_sdpa import metal_fused_sdpa as _fn
+
         return _fn
     if name == "fused_sdpa_supports_shape":
         from .fused_sdpa import supports_shape as _fn
+
         return _fn
     # TurboQuant kernels
     _turboquant_names = {
@@ -66,6 +71,7 @@ def __getattr__(name: str):
     }
     if name in _turboquant_names:
         from . import kernels as _k
+
         return getattr(_k, name)
     raise AttributeError(f"module 'veloxquant_mlx.metal' has no attribute {name!r}")
 

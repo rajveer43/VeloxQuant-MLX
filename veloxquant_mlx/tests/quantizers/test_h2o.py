@@ -8,6 +8,7 @@ enforcement, score accumulation), h2o_get_kv (shape, dtype, empty state), byte
 accounting, and edge cases (n_sink=0, budget=1, score-based ordering). All data
 is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -34,6 +35,7 @@ def _rand_kv(S: int, D: int = 32, seed: int = 0):
 # ---------------------------------------------------------------------------
 # init_h2o_state
 # ---------------------------------------------------------------------------
+
 
 def test_init_state_fields() -> None:
     st = init_h2o_state(n_sink=4, budget=16, head_dim=64)
@@ -66,6 +68,7 @@ def test_init_state_rejects_n_sink_above_budget() -> None:
 # h2o_get_kv — empty state
 # ---------------------------------------------------------------------------
 
+
 def test_get_kv_empty_returns_zero_rows() -> None:
     st = init_h2o_state(n_sink=4, budget=16, head_dim=32)
     k, v = h2o_get_kv(st)
@@ -76,6 +79,7 @@ def test_get_kv_empty_returns_zero_rows() -> None:
 # ---------------------------------------------------------------------------
 # h2o_update — basic absorption
 # ---------------------------------------------------------------------------
+
 
 def test_single_token_absorbed() -> None:
     """First token bootstraps state with one row."""
@@ -113,6 +117,7 @@ def test_output_dtype_fp16() -> None:
 # h2o_update — eviction when over budget
 # ---------------------------------------------------------------------------
 
+
 def test_budget_never_exceeded() -> None:
     """After many tokens, kept count never exceeds budget."""
     D = 32
@@ -148,6 +153,7 @@ def test_score_array_length_matches_keys() -> None:
 # ---------------------------------------------------------------------------
 # h2o_update — sink protection
 # ---------------------------------------------------------------------------
+
 
 def test_sinks_never_evicted() -> None:
     """First n_sink tokens are always present in the output."""
@@ -187,6 +193,7 @@ def test_n_sink_zero_allows_all_evictions() -> None:
 # h2o_update — score accumulation
 # ---------------------------------------------------------------------------
 
+
 def test_scores_non_negative() -> None:
     """Cumulative scores are always >= 0 (they are sums of softmax weights)."""
     D = 32
@@ -219,6 +226,7 @@ def test_scores_accumulate_over_steps() -> None:
 # Byte accounting
 # ---------------------------------------------------------------------------
 
+
 def test_h2o_fp16_bytes_formula() -> None:
     """h2o_fp16_bytes = n_kept * D * 4 (K + V, fp16)."""
     D = 64
@@ -243,6 +251,7 @@ def test_full_h2o_fp16_bytes_formula() -> None:
 # ---------------------------------------------------------------------------
 # Multi-step decode stress
 # ---------------------------------------------------------------------------
+
 
 def test_30_step_stress_budget_constant() -> None:
     """30 single-token decode steps — budget never exceeded."""

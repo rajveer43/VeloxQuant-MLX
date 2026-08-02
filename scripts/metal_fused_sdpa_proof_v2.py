@@ -19,6 +19,7 @@ Run from repo root:
 
     PYTHONPATH=. python scripts/metal_fused_sdpa_proof_v2.py
 """
+
 from __future__ import annotations
 
 import time
@@ -36,6 +37,7 @@ from veloxquant_mlx.metal import metal_available
 
 # Import the v1 reference + fixture helpers
 import sys
+
 sys.path.insert(0, "scripts")
 from metal_fused_sdpa_proof import (  # noqa: E402
     reference_sdpa,
@@ -257,17 +259,21 @@ def _get_kernel_v2(n_centroids: int, n_sub: int, D: int):
     key = (n_centroids, n_sub, D)
     if key not in _kernel_cache:
         src = (
-            _FUSED_SDPA_V2_SRC
-            .replace("LUT_N_CENTROIDS", str(n_centroids))
+            _FUSED_SDPA_V2_SRC.replace("LUT_N_CENTROIDS", str(n_centroids))
             .replace("LUT_MAX_SIZE", str(n_sub * n_centroids))
             .replace("MAX_D", str(D))
         )
         _kernel_cache[key] = mx.fast.metal_kernel(
             name=f"vecinfer_fused_sdpa_v2_c{n_centroids}_s{n_sub}_d{D}",
             input_names=[
-                "q", "k_indices", "k_codebook",
-                "v_indices", "v_codebook",
-                "params", "scale_arr", "slide_arr",
+                "q",
+                "k_indices",
+                "k_codebook",
+                "v_indices",
+                "v_codebook",
+                "params",
+                "scale_arr",
+                "slide_arr",
             ],
             output_names=["out"],
             source=src,
@@ -302,8 +308,10 @@ def metal_fused_sdpa_v2(
     v_cb = v_codebook.astype(mx.float32)
 
     flags = 0
-    if causal: flags |= 1
-    if sliding_window and sliding_window > 0: flags |= 2
+    if causal:
+        flags |= 1
+    if sliding_window and sliding_window > 0:
+        flags |= 2
 
     params = mx.array(
         [H_q, H_kv, S_q, S_kv, D, n_sub, sub_dim, n_sub_v, sub_dim_v, flags],
@@ -315,8 +323,7 @@ def metal_fused_sdpa_v2(
     kernel = _get_kernel_v2(n_centroids, n_sub, D)
 
     outputs = kernel(
-        inputs=[q_flat, k_idx_flat, k_cb, v_idx_flat, v_cb,
-                params, scale_arr, slide_arr],
+        inputs=[q_flat, k_idx_flat, k_cb, v_idx_flat, v_cb, params, scale_arr, slide_arr],
         output_shapes=[(B * H_q * S_q, D)],
         output_dtypes=[mx.float32],
         # Grid x: 32 lanes per query × B*H_q queries.  Each SIMD group
@@ -339,28 +346,48 @@ def main() -> int:
 
     # Realistic shape
     fixture = _make_test_inputs(
-        B=1, H_q=32, H_kv=8, S_q=1, S_kv=2048, D=128,
-        sub_dim=8, n_centroids=256,
+        B=1,
+        H_q=32,
+        H_kv=8,
+        S_q=1,
+        S_kv=2048,
+        D=128,
+        sub_dim=8,
+        n_centroids=256,
     )
 
     print("\n=== Correctness (v2 vs reference) ===")
     for causal, sw in [(True, 0), (False, 0), (True, 128)]:
-        q       = fixture["q"]
-        k_idx   = fixture["k_indices"]
-        v_idx   = fixture["v_indices"]
-        cb      = fixture["codebook"]
-        smooth  = fixture["smooth"]
-        H       = fixture["H"]
-        scale   = fixture["scale"]
+        q = fixture["q"]
+        k_idx = fixture["k_indices"]
+        v_idx = fixture["v_indices"]
+        cb = fixture["codebook"]
+        smooth = fixture["smooth"]
+        H = fixture["H"]
+        scale = fixture["scale"]
 
-        out_ref = reference_sdpa(q=q, k_indices=k_idx, k_codebook=cb, smooth=smooth, H=H,
-                                  v_indices=v_idx, v_codebook=cb, scale=scale,
-                                  causal=causal, sliding_window=sw)
+        out_ref = reference_sdpa(
+            q=q,
+            k_indices=k_idx,
+            k_codebook=cb,
+            smooth=smooth,
+            H=H,
+            v_indices=v_idx,
+            v_codebook=cb,
+            scale=scale,
+            causal=causal,
+            sliding_window=sw,
+        )
         q_tilde = apply_dual_transform_queries(q.astype(mx.float32), smooth, H)
-        out_v2  = metal_fused_sdpa_v2(
-            q_tilde=q_tilde, k_indices=k_idx, k_codebook=cb,
-            v_indices=v_idx, v_codebook=cb, scale=scale,
-            causal=causal, sliding_window=sw,
+        out_v2 = metal_fused_sdpa_v2(
+            q_tilde=q_tilde,
+            k_indices=k_idx,
+            k_codebook=cb,
+            v_indices=v_idx,
+            v_codebook=cb,
+            scale=scale,
+            causal=causal,
+            sliding_window=sw,
         )
         mx.eval(out_ref, out_v2)
         d = _max_abs_diff(out_ref, out_v2)
@@ -371,7 +398,7 @@ def main() -> int:
     # Benchmark sweep
     print("\n=== Throughput (median of 30, after 3 warmup) ===")
     print(f"  {'shape':<55s}  {'ref ms':>8s}  {'v2 ms':>8s}  {'speedup':>8s}")
-    print(f"  {'-'*55}  {'-'*8}  {'-'*8}  {'-'*8}")
+    print(f"  {'-' * 55}  {'-' * 8}  {'-' * 8}  {'-' * 8}")
     for B, H_q, H_kv, S_q, S_kv in [
         (1, 32, 8, 1, 512),
         (1, 32, 8, 1, 2048),
@@ -380,40 +407,72 @@ def main() -> int:
         (1, 32, 8, 1, 16384),
     ]:
         fx = _make_test_inputs(B, H_q, H_kv, S_q, S_kv, 128, 8, 256)
-        q       = fx["q"]
-        k_idx   = fx["k_indices"]
-        v_idx   = fx["v_indices"]
-        cb      = fx["codebook"]
-        smooth  = fx["smooth"]
-        H       = fx["H"]
-        scale   = fx["scale"]
+        q = fx["q"]
+        k_idx = fx["k_indices"]
+        v_idx = fx["v_indices"]
+        cb = fx["codebook"]
+        smooth = fx["smooth"]
+        H = fx["H"]
+        scale = fx["scale"]
         q_tilde = apply_dual_transform_queries(q.astype(mx.float32), smooth, H)
 
         # Warmup
         for _ in range(3):
-            a = reference_sdpa(q=q, k_indices=k_idx, k_codebook=cb, smooth=smooth, H=H,
-                               v_indices=v_idx, v_codebook=cb, scale=scale, causal=True)
-            b = metal_fused_sdpa_v2(q_tilde=q_tilde, k_indices=k_idx, k_codebook=cb,
-                                     v_indices=v_idx, v_codebook=cb, scale=scale, causal=True)
+            a = reference_sdpa(
+                q=q,
+                k_indices=k_idx,
+                k_codebook=cb,
+                smooth=smooth,
+                H=H,
+                v_indices=v_idx,
+                v_codebook=cb,
+                scale=scale,
+                causal=True,
+            )
+            b = metal_fused_sdpa_v2(
+                q_tilde=q_tilde,
+                k_indices=k_idx,
+                k_codebook=cb,
+                v_indices=v_idx,
+                v_codebook=cb,
+                scale=scale,
+                causal=True,
+            )
             mx.eval(a, b)
 
         t_ref, t_v2 = [], []
         for _ in range(30):
             t0 = time.perf_counter()
-            a = reference_sdpa(q=q, k_indices=k_idx, k_codebook=cb, smooth=smooth, H=H,
-                               v_indices=v_idx, v_codebook=cb, scale=scale, causal=True)
+            a = reference_sdpa(
+                q=q,
+                k_indices=k_idx,
+                k_codebook=cb,
+                smooth=smooth,
+                H=H,
+                v_indices=v_idx,
+                v_codebook=cb,
+                scale=scale,
+                causal=True,
+            )
             mx.eval(a)
             t_ref.append(time.perf_counter() - t0)
         for _ in range(30):
             t0 = time.perf_counter()
-            b = metal_fused_sdpa_v2(q_tilde=q_tilde, k_indices=k_idx, k_codebook=cb,
-                                     v_indices=v_idx, v_codebook=cb, scale=scale, causal=True)
+            b = metal_fused_sdpa_v2(
+                q_tilde=q_tilde,
+                k_indices=k_idx,
+                k_codebook=cb,
+                v_indices=v_idx,
+                v_codebook=cb,
+                scale=scale,
+                causal=True,
+            )
             mx.eval(b)
             t_v2.append(time.perf_counter() - t0)
 
         m_ref = float(np.median(t_ref)) * 1e3
-        m_v2  = float(np.median(t_v2)) * 1e3
-        sp    = m_ref / m_v2 if m_v2 > 0 else float("inf")
+        m_v2 = float(np.median(t_v2)) * 1e3
+        sp = m_ref / m_v2 if m_v2 > 0 else float("inf")
         shape_str = f"B={B} H_q={H_q} H_kv={H_kv} S_q={S_q} S_kv={S_kv}"
         print(f"  {shape_str:<55s}  {m_ref:>7.2f}  {m_v2:>7.2f}  {sp:>7.2f}x")
 

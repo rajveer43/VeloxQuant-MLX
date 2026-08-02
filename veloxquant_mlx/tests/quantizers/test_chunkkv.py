@@ -5,6 +5,7 @@ pooling, the chunk-aligned keep-mask, the per-head eviction state machine, both
 score modes, byte accounting, determinism, and the C=1 == H2O bit-for-bit
 equivalence. All data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -35,6 +36,7 @@ def _kv(S, D, seed=0):
 # ======================================================================
 # chunk_partition
 # ======================================================================
+
 
 def test_partition_contiguous_and_covers_tail():
     sinks, chunks = chunk_partition(seq_len=20, chunk_size=4, n_sink=2)
@@ -72,6 +74,7 @@ def test_partition_rejects_bad_chunk_size():
 # chunk_scores  +  chunkkv_keep_mask
 # ======================================================================
 
+
 def test_chunk_scores_are_means():
     scores = mx.array([0.0, 0.0, 2.0, 4.0, 1.0, 3.0], dtype=mx.float32)
     _, chunks = chunk_partition(6, chunk_size=2, n_sink=0)
@@ -99,6 +102,7 @@ def test_keep_mask_never_exceeds_budget():
 # ======================================================================
 # ChunkKVState eviction
 # ======================================================================
+
 
 def test_init_rejects_bad_args():
     with pytest.raises(ValueError):
@@ -150,8 +154,7 @@ def test_sinks_always_retained():
 
 
 def test_key_norm_score_mode_runs():
-    st = init_chunkkv_state(n_sink=2, budget=12, head_dim=8, chunk_size=4,
-                            score_mode="key_norm")
+    st = init_chunkkv_state(n_sink=2, budget=12, head_dim=8, chunk_size=4, score_mode="key_norm")
     k, v = _kv(50, 8, seed=7)
     st = chunkkv_update(st, k, v)
     assert st.keys.shape[0] <= 12
@@ -174,7 +177,7 @@ def test_get_kv_placeholder_before_update():
 
 def test_byte_accounting_helpers():
     st = init_chunkkv_state(2, 10, 8, chunk_size=4)
-    assert chunkkv_fp16_bytes(st) == 0          # empty
+    assert chunkkv_fp16_bytes(st) == 0  # empty
     k, v = _kv(30, 8, seed=13)
     st = chunkkv_update(st, k, v)
     n = int(st.keys.shape[0])
@@ -185,6 +188,7 @@ def test_byte_accounting_helpers():
 # ======================================================================
 # C = 1  ==  H2O  (bit-for-bit)
 # ======================================================================
+
 
 @pytest.mark.parametrize("seed", [0, 1, 2])
 def test_chunk_size_one_reduces_to_h2o(seed):

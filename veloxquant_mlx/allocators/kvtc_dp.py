@@ -37,6 +37,7 @@ is an **analytic proxy**, not the paper's rate-distortion model fit on real
 LLM activation statistics — see the honest-scope docstring in
 ``quantizers/kvtc.py`` for the full statement.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -133,15 +134,11 @@ def dp_allocate_bits(
     """
     v = np.asarray(variances, dtype=np.float64)
     if v.ndim != 1 or v.shape[0] < 1:
-        raise ValueError(
-            f"kvtc_dp: variances must be a non-empty 1-D array, got shape {v.shape!r}"
-        )
+        raise ValueError(f"kvtc_dp: variances must be a non-empty 1-D array, got shape {v.shape!r}")
     if np.any(v < 0):
         raise ValueError("kvtc_dp: variances must be non-negative.")
     if total_bit_budget < 0:
-        raise ValueError(
-            f"kvtc_dp: total_bit_budget must be >= 0, got {total_bit_budget!r}"
-        )
+        raise ValueError(f"kvtc_dp: total_bit_budget must be >= 0, got {total_bit_budget!r}")
     if not bit_choices:
         raise ValueError("kvtc_dp: bit_choices must be non-empty.")
     choices = sorted(set(int(b) for b in bit_choices))
@@ -181,9 +178,7 @@ def dp_allocate_bits(
     # choice_used[i][b] = bit-width chosen for component i-1 to reach dp[i][b]
     choice_used = np.full((n + 1, B_cap + 1), -1, dtype=np.int64)
 
-    per_choice_distortion = [
-        [(_distortion(v[i], c, beta), c) for c in choices] for i in range(n)
-    ]
+    per_choice_distortion = [[(_distortion(v[i], c, beta), c) for c in choices] for i in range(n)]
 
     eps = 1e-9 / max(n, 1)
 

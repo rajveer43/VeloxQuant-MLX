@@ -37,6 +37,7 @@ Byte accounting (same names as H2OKVCache):
     tokens_seen       — total token positions ever passed to update_and_fetch
     tokens_kept       — tokens currently in the first (B=0, H=0) head's cache
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -80,8 +81,7 @@ class L2NormKVCache(_MLXKVCache):
         self._keep = str(getattr(config, "knorm_keep", "low"))
 
         # Fail at build time with clear messages (delegates the guards).
-        init_knorm_state(self._n_sink, self._budget, 1,
-                         recent=self._recent, keep=self._keep)
+        init_knorm_state(self._n_sink, self._budget, 1, recent=self._recent, keep=self._keep)
 
         self._head_dim: int = 0
         self._states: list[KnormState] = []
@@ -99,8 +99,9 @@ class L2NormKVCache(_MLXKVCache):
             self._H = H
             self._head_dim = D
             self._states = [
-                init_knorm_state(self._n_sink, self._budget, D,
-                                 recent=self._recent, keep=self._keep)
+                init_knorm_state(
+                    self._n_sink, self._budget, D, recent=self._recent, keep=self._keep
+                )
                 for _ in range(B * H)
             ]
 
@@ -122,7 +123,7 @@ class L2NormKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2   # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
         k_out_b, v_out_b = [], []

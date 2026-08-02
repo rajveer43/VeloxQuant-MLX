@@ -6,6 +6,7 @@ correctness, channel quant round-trips, compress/reconstruct shapes,
 uniform-bits edge cases, byte ordering, values-off path, and determinism.
 All data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import math
@@ -40,6 +41,7 @@ def _mse(a: mx.array, b: mx.array) -> float:
 # ---------------------------------------------------------------------------
 # Saliency helpers
 # ---------------------------------------------------------------------------
+
 
 def test_token_key_norms_shape() -> None:
     x = _rand((16, 64))
@@ -86,13 +88,16 @@ def test_saliency_mask_full_fraction() -> None:
 # channel_quant / channel_dequant
 # ---------------------------------------------------------------------------
 
+
 def test_channel_quant_4bit_near_lossless() -> None:
     """4-bit channel quant round-trip has cosine > 0.995 on smooth data."""
     x = _rand((64, 128), seed=2, scale=1.0)
     codes, scales, zeros = channel_quant(x, bits=4, group_size=32)
     recon = channel_dequant(codes, scales, zeros, group_size=32)
     x_norm = x / (mx.linalg.norm(x.reshape(-1)) + 1e-8)
-    r_norm = recon.astype(mx.float32) / (mx.linalg.norm(recon.astype(mx.float32).reshape(-1)) + 1e-8)
+    r_norm = recon.astype(mx.float32) / (
+        mx.linalg.norm(recon.astype(mx.float32).reshape(-1)) + 1e-8
+    )
     cosine = float((x_norm.reshape(-1) * r_norm.reshape(-1)).sum().item())
     assert cosine > 0.995
 
@@ -103,7 +108,9 @@ def test_channel_quant_2bit_lossy_bounded() -> None:
     codes, scales, zeros = channel_quant(x, bits=2, group_size=32)
     recon = channel_dequant(codes, scales, zeros, group_size=32)
     x_norm = x / (mx.linalg.norm(x.reshape(-1)) + 1e-8)
-    r_norm = recon.astype(mx.float32) / (mx.linalg.norm(recon.astype(mx.float32).reshape(-1)) + 1e-8)
+    r_norm = recon.astype(mx.float32) / (
+        mx.linalg.norm(recon.astype(mx.float32).reshape(-1)) + 1e-8
+    )
     cosine = float((x_norm.reshape(-1) * r_norm.reshape(-1)).sum().item())
     assert cosine > 0.8
 
@@ -118,6 +125,7 @@ def test_channel_quant_empty_input() -> None:
 # ---------------------------------------------------------------------------
 # zipcache_compress / zipcache_reconstruct
 # ---------------------------------------------------------------------------
+
 
 def test_compress_returns_state() -> None:
     x = _rand((32, 64))
@@ -162,6 +170,7 @@ def test_hi_fraction_one_no_error() -> None:
 # Byte accounting
 # ---------------------------------------------------------------------------
 
+
 def test_byte_ordering_compressed_lt_fp16() -> None:
     """Mixed-bit stored size is strictly below fp16."""
     S, D = 128, 128
@@ -187,6 +196,7 @@ def test_byte_ordering_between_lo_and_fp16() -> None:
 # ---------------------------------------------------------------------------
 # Determinism
 # ---------------------------------------------------------------------------
+
 
 def test_deterministic() -> None:
     x = _rand((64, 128), seed=7)

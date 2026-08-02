@@ -71,7 +71,7 @@ Before optimization work, we added [`TurboQuantRVQ`](mlx_kv_quant/quantizers/tur
 **After:** Lloyd-Max boundaries are exactly the midpoints between sorted centroids. The nearest-centroid index is then "how many boundaries does y exceed?". One comparison + one sum:
 
 ```python
-cmp = (y[:, :, None] > self._boundaries_mx[None, None, :])
+cmp = y[:, :, None] > self._boundaries_mx[None, None, :]
 return mx.sum(cmp.astype(mx.uint8), axis=-1)
 ```
 

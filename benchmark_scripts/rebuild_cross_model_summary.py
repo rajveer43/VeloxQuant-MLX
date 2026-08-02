@@ -9,6 +9,7 @@ filters to the 8 standard configs, and regenerates:
 Run from repo root:
     PYTHONPATH=. python benchmark_scripts/rebuild_cross_model_summary.py
 """
+
 from __future__ import annotations
 
 import json
@@ -89,26 +90,31 @@ def plot_cross_model(per_model: dict, out_path: Path) -> None:
         return
 
     # Only include configs that have at least one model with a working result
-    config_names = [c for c in _STD_CONFIGS
-                    if any(_ok(r) for results in per_model.values()
-                           for r in results if r["name"] == c)]
+    config_names = [
+        c
+        for c in _STD_CONFIGS
+        if any(_ok(r) for results in per_model.values() for r in results if r["name"] == c)
+    ]
     models = list(per_model.keys())
 
     fig, axes = plt.subplots(2, 1, figsize=(max(16, len(models) * 2.6), 12))
     fig.suptitle(
         "Cross-model comparison · key compression and throughput\n"
         f"({len(models)} models · Apple Silicon MLX · 8 KV-cache configurations)",
-        fontsize=14, fontweight="bold",
+        fontsize=14,
+        fontweight="bold",
     )
 
     n_cfg = len(config_names)
     width = 0.85 / n_cfg
     x = np.arange(len(models))
 
-    for ax_idx, (metric, ylabel, title) in enumerate([
-        ("key_compression", "Key compression (×)", "Key Compression Ratio"),
-        ("throughput_tok_s", "Throughput (tok/s)", "Generation Throughput"),
-    ]):
+    for ax_idx, (metric, ylabel, title) in enumerate(
+        [
+            ("key_compression", "Key compression (×)", "Key Compression Ratio"),
+            ("throughput_tok_s", "Throughput (tok/s)", "Generation Throughput"),
+        ]
+    ):
         ax = axes[ax_idx]
         for i, cfg in enumerate(config_names):
             vals = []
@@ -117,14 +123,20 @@ def plot_cross_model(per_model: dict, out_path: Path) -> None:
                 val = hit[metric] if (hit and _ok(hit)) else 0.0
                 vals.append(val)
             ax.bar(
-                x + (i - n_cfg / 2 + 0.5) * width, vals, width,
-                color=_PALETTE.get(cfg, "#999"), label=cfg,
-                edgecolor="white", linewidth=0.6,
+                x + (i - n_cfg / 2 + 0.5) * width,
+                vals,
+                width,
+                color=_PALETTE.get(cfg, "#999"),
+                label=cfg,
+                edgecolor="white",
+                linewidth=0.6,
             )
         ax.set_xticks(x)
         short_names = [
             m.split("/")[-1]
-            .replace("-Instruct", "").replace("-4bit", "").replace("-Chat", "")
+            .replace("-Instruct", "")
+            .replace("-4bit", "")
+            .replace("-Chat", "")
             .replace("-it", "")
             for m in models
         ]
@@ -199,7 +211,15 @@ def build_summary_md(per_model: dict, meta: dict, out_path: Path) -> None:
         "| Model | TQ-2bit | TQ-3bit | TQ-4bit | RVQ-2bit | RVQ-1bit | VecInfer-2bit | VecInfer-1bit |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
-    cfg_order = ["TQ-2bit", "TQ-3bit", "TQ-4bit", "RVQ-2bit", "RVQ-1bit", "VecInfer-2bit", "VecInfer-1bit"]
+    cfg_order = [
+        "TQ-2bit",
+        "TQ-3bit",
+        "TQ-4bit",
+        "RVQ-2bit",
+        "RVQ-1bit",
+        "VecInfer-2bit",
+        "VecInfer-1bit",
+    ]
     for model_id, results in per_model.items():
         stem = model_id.split("/")[-1]
         row = [stem]

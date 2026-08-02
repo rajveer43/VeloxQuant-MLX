@@ -14,6 +14,7 @@ Grid convention (MLX)
 threadgroups.  Both kernels use a threadgroup size of 32 (one simdgroup) and
 set ``grid = n_threadgroups * 32`` accordingly.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -140,6 +141,7 @@ _QJL_INNER_PRODUCT_SRC = r"""
 # Kernel factories
 # ---------------------------------------------------------------------------
 
+
 def _encode_kernel():
     key = "qjl_encode"
     if key not in _cache:
@@ -170,6 +172,7 @@ def _inner_product_kernel():
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def qjl_encode(x: mx.array, S: mx.array) -> tuple[mx.array, mx.array]:
     """Compute 1-bit QJL encoding: sign(S @ x) bit-packed + ‖x‖.
 
@@ -197,7 +200,7 @@ def qjl_encode(x: mx.array, S: mx.array) -> tuple[mx.array, mx.array]:
     n_simd_per_batch = (m + 31) // 32
     # MLX grid = total threads; threadgroup size = 32
     n_total_threads = B * n_simd_per_batch * 32
-    n_sign_bytes    = B * (m // 8)
+    n_sign_bytes = B * (m // 8)
 
     outputs = _encode_kernel()(
         inputs=[x.astype(mx.float16), S.astype(mx.float16)],
@@ -232,13 +235,15 @@ def qjl_inner_product(
     if q_proj.ndim != 2:
         raise ValueError(f"qjl_inner_product: q_proj must be 2D [H,m], got {q_proj.shape}")
     if packed_signs.ndim != 3:
-        raise ValueError(f"qjl_inner_product: packed_signs must be 3D [S_kv,H,m/8], got {packed_signs.shape}")
+        raise ValueError(
+            f"qjl_inner_product: packed_signs must be 3D [S_kv,H,m/8], got {packed_signs.shape}"
+        )
     if norms.ndim != 2:
         raise ValueError(f"qjl_inner_product: norms must be 2D [S_kv,H], got {norms.shape}")
 
-    H, m  = q_proj.shape
-    S_kv  = norms.shape[0]
-    n_tg  = H * S_kv
+    H, m = q_proj.shape
+    S_kv = norms.shape[0]
+    n_tg = H * S_kv
 
     # packed_signs flat layout expected by kernel: [S_kv * H, m//8]
     ps_flat = packed_signs.astype(mx.uint8).reshape(S_kv * H, m // 8)

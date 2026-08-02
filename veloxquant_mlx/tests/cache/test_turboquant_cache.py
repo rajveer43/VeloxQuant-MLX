@@ -1,4 +1,5 @@
 """Tests for TurboQuantKVCache."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -8,6 +9,7 @@ import pytest
 @pytest.fixture(scope="module")
 def cache():
     from veloxquant_mlx.cache.base import KVCacheBuilder
+
     return (
         KVCacheBuilder()
         .with_method("turboquant_prod")
@@ -49,19 +51,23 @@ def test_builder_validation() -> None:
     from veloxquant_mlx.core.exceptions import QuantizerConfigError
 
     with pytest.raises(QuantizerConfigError):
-        (KVCacheBuilder()
-         .with_method("turboquant_prod")
-         .with_head_dim(100)  # not power of 2
-         .with_bit_width(inlier=2)
-         .build())
+        (
+            KVCacheBuilder()
+            .with_method("turboquant_prod")
+            .with_head_dim(100)  # not power of 2
+            .with_bit_width(inlier=2)
+            .build()
+        )
 
     with pytest.raises(QuantizerConfigError):
-        (KVCacheBuilder()
-         .with_method("turboquant_prod")
-         .with_head_dim(64)
-         .with_bit_width(inlier=2)
-         .with_jl_dim(128)  # jl_dim > head_dim
-         .build())
+        (
+            KVCacheBuilder()
+            .with_method("turboquant_prod")
+            .with_head_dim(64)
+            .with_bit_width(inlier=2)
+            .with_jl_dim(128)  # jl_dim > head_dim
+            .build()
+        )
 
 
 def test_empty_cache_attend() -> None:
@@ -186,14 +192,19 @@ def test_outlier_encode_decode_correctness() -> None:
 
     # Verify int8 round-trip for the last appended token.
     last_slot = (cache._head + cache._size - 1) % cache._capacity
-    raw_int8 = cache._outlier_cache[last_slot]          # (n_outliers,) int8
-    scale = float(cache._outlier_scales[last_slot])     # fp16 scalar
-    dequant = raw_int8.astype(np.float32) * scale       # approximate fp16 values
+    raw_int8 = cache._outlier_cache[last_slot]  # (n_outliers,) int8
+    scale = float(cache._outlier_scales[last_slot])  # fp16 scalar
+    dequant = raw_int8.astype(np.float32) * scale  # approximate fp16 values
 
     k_last = stored_keys[-1]
     k_out_true = k_last[out_idx].astype(np.float32)
-    np.testing.assert_allclose(dequant, k_out_true, rtol=0.02, atol=0.05,
-                                err_msg="Outlier int8 dequant diverges from original")
+    np.testing.assert_allclose(
+        dequant,
+        k_out_true,
+        rtol=0.02,
+        atol=0.05,
+        err_msg="Outlier int8 dequant diverges from original",
+    )
 
 
 def test_outlier_combined_attend_reconstruction() -> None:
@@ -227,8 +238,9 @@ def test_outlier_combined_attend_reconstruction() -> None:
     phys = cache_out._physical_indices(cache_out._size)
     scales = cache_out._outlier_scales[phys]
     n_post = n_total - n_calib
-    assert np.sum(scales > 0) >= n_post, \
+    assert np.sum(scales > 0) >= n_post, (
         f"Expected >= {n_post} populated outlier slots, got {np.sum(scales > 0)}"
+    )
 
     # attend() must return a finite, correctly shaped vector.
     q = mx.array(rng.standard_normal(64).astype(np.float16))

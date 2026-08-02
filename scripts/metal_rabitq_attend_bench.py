@@ -15,6 +15,7 @@ the dispatch/materialization cost of each route, not output parity.
 
 Usage: python scripts/metal_rabitq_attend_bench.py
 """
+
 from __future__ import annotations
 
 import time
@@ -40,15 +41,15 @@ def _bench(fn, n_warmup: int = N_WARMUP, n_iter: int = N_ITER) -> float:
 def main() -> None:
     rng = np.random.default_rng(42)
     print(f"[bench] rabitq_fused_attend vs dequant+SDPA — B={B} H={H} S_q={S_q} D={D}")
-    print(f"{'S_kv':>6} | {'fused (ms)':>10} | {'packed-V (ms)':>13} | "
-          f"{'baseline (ms)':>13} | {'speedup':>7} | {'pk spd':>6}")
+    print(
+        f"{'S_kv':>6} | {'fused (ms)':>10} | {'packed-V (ms)':>13} | "
+        f"{'baseline (ms)':>13} | {'speedup':>7} | {'pk spd':>6}"
+    )
     print("-" * 66)
 
     for S_kv in (512, 2048, 8192):
         q = mx.array(rng.standard_normal((B, H, S_q, D)).astype(np.float16))
-        q_scale = mx.array(
-            (rng.uniform(0.05, 0.15, (B, H, S_q)) / np.sqrt(D)).astype(np.float32)
-        )
+        q_scale = mx.array((rng.uniform(0.05, 0.15, (B, H, S_q)) / np.sqrt(D)).astype(np.float32))
         k_bits = mx.array(rng.integers(0, 256, (B, H, S_kv, D // 8), dtype=np.uint8))
         k_mag = mx.array(rng.uniform(0.5, 1.5, (B, H, S_kv)).astype(np.float32))
         k_const = mx.array(np.zeros((B, H, S_kv), dtype=np.float32))
@@ -63,18 +64,16 @@ def main() -> None:
             return rabitq_fused_attend(q, q_scale, k_bits, k_mag, k_const, v_idx, v_cents)
 
         def fused_packed():
-            return rabitq_fused_attend(
-                q, q_scale, k_bits, k_mag, k_const, v_idx_packed, v_cents
-            )
+            return rabitq_fused_attend(q, q_scale, k_bits, k_mag, k_const, v_idx_packed, v_cents)
 
         shifts = mx.arange(8, dtype=mx.uint8)
 
         def baseline():
             # Unpack 1-bit keys -> +-1 signs, scale by per-key magnitude.
-            bits = (k_bits[..., None] >> shifts) & 1          # [B,H,S_kv,D/8,8]
+            bits = (k_bits[..., None] >> shifts) & 1  # [B,H,S_kv,D/8,8]
             signs = bits.reshape(B, H, S_kv, D).astype(mx.float16) * 2 - 1
             k_hat = signs * k_mag[..., None].astype(mx.float16)
-            v_hat = v_cents.astype(mx.float16)[v_idx]         # [B,H,S_kv,D]
+            v_hat = v_cents.astype(mx.float16)[v_idx]  # [B,H,S_kv,D]
             return mx.fast.scaled_dot_product_attention(
                 q, k_hat, v_hat, scale=1.0 / float(D) ** 0.5
             )
@@ -82,8 +81,10 @@ def main() -> None:
         t_fused = _bench(fused)
         t_packed = _bench(fused_packed)
         t_base = _bench(baseline)
-        print(f"{S_kv:>6} | {t_fused:>10.3f} | {t_packed:>13.3f} | {t_base:>13.3f} | "
-              f"{t_base / t_fused:>6.2f}x | {t_base / t_packed:>5.2f}x")
+        print(
+            f"{S_kv:>6} | {t_fused:>10.3f} | {t_packed:>13.3f} | {t_base:>13.3f} | "
+            f"{t_base / t_fused:>6.2f}x | {t_base / t_packed:>5.2f}x"
+        )
 
 
 if __name__ == "__main__":

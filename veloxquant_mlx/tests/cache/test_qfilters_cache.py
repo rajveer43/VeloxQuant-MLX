@@ -6,6 +6,7 @@ NON-equivalence (both valid, not bit-for-bit — Q-Filters is path-dependent),
 the sign ablation knob, the mechanism test under paper-like geometry, byte
 accounting, build-time validation, and for_model wiring.
 """
+
 from __future__ import annotations
 
 import math
@@ -26,8 +27,13 @@ def _kv(B, H, S, D, seed=0):
 
 
 def _make(**cfg):
-    base = dict(method="qfilters", head_dim=64, qfilters_budget=16,
-                qfilters_n_sink=2, qfilters_calib_tokens=16)
+    base = dict(
+        method="qfilters",
+        head_dim=64,
+        qfilters_budget=16,
+        qfilters_n_sink=2,
+        qfilters_calib_tokens=16,
+    )
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 
@@ -35,6 +41,7 @@ def _make(**cfg):
 # ------------------------------------------------------------------
 # Protocol basics
 # ------------------------------------------------------------------
+
 
 def test_factory_dispatch() -> None:
     assert isinstance(_make(), QFiltersKVCache)
@@ -45,7 +52,7 @@ def test_shape_dtype_preserved() -> None:
     k, v = _kv(1, 4, 64, 64)
     ko, vo = cache.update_and_fetch(k, v)
     mx.eval(ko, vo)
-    assert ko.shape == (1, 4, 64, 64)   # under budget: everything kept
+    assert ko.shape == (1, 4, 64, 64)  # under budget: everything kept
     assert vo.shape == (1, 4, 64, 64)
     assert ko.dtype == mx.float16
 
@@ -65,7 +72,7 @@ def test_under_budget_bit_for_bit_passthrough() -> None:
 def test_pre_calibration_passthrough() -> None:
     """Below calib_tokens, no filter yet — nothing evicted even over budget."""
     cache = _make(qfilters_budget=8, qfilters_calib_tokens=200)
-    k, v = _kv(1, 2, 50, 64, seed=2)   # 50 > budget 8, but < calib 200
+    k, v = _kv(1, 2, 50, 64, seed=2)  # 50 > budget 8, but < calib 200
     ko, _ = cache.update_and_fetch(k, v)
     assert ko.shape[2] == 50
 
@@ -73,6 +80,7 @@ def test_pre_calibration_passthrough() -> None:
 # ------------------------------------------------------------------
 # Eviction behavior
 # ------------------------------------------------------------------
+
 
 def test_budget_enforced_after_long_prefill() -> None:
     cache = _make(qfilters_budget=16)
@@ -111,7 +119,7 @@ def test_prefill_decode_both_valid_not_equivalent() -> None:
 
     stream = _make(qfilters_budget=20, qfilters_n_sink=2, head_dim=64)
     for t in range(S):
-        kb, _ = stream.update_and_fetch(k[:, :, t:t + 1, :], v[:, :, t:t + 1, :])
+        kb, _ = stream.update_and_fetch(k[:, :, t : t + 1, :], v[:, :, t : t + 1, :])
     mx.eval(ka, kb)
 
     assert ka.shape[2] <= 20 and kb.shape[2] <= 20
@@ -133,6 +141,7 @@ def test_sign_differs_and_respects_budget() -> None:
 # ------------------------------------------------------------------
 # Mechanism test under paper-like geometry
 # ------------------------------------------------------------------
+
 
 def _attn_out(q, k, v):
     scale = 1.0 / math.sqrt(float(k.shape[-1]))
@@ -177,11 +186,17 @@ def test_projection_scorer_beats_random_under_paper_geometry() -> None:
         return float(mx.mean(1.0 - mx.sum(rn * on, -1)).item())
 
     def sign_pert(sign: int) -> float:
-        cache = _make(qfilters_budget=budget, qfilters_n_sink=0,
-                      qfilters_sign=sign, qfilters_calib_tokens=32, head_dim=D)
+        cache = _make(
+            qfilters_budget=budget,
+            qfilters_n_sink=0,
+            qfilters_sign=sign,
+            qfilters_calib_tokens=32,
+            head_dim=D,
+        )
         ko, vo = cache.update_and_fetch(kk, vv)
-        return _pert(_attn_out(mx.array(q), ko[0, 0].astype(mx.float32),
-                               vo[0, 0].astype(mx.float32)))
+        return _pert(
+            _attn_out(mx.array(q), ko[0, 0].astype(mx.float32), vo[0, 0].astype(mx.float32))
+        )
 
     # Random-eviction baseline at the same budget.
     rperts = []
@@ -197,6 +212,7 @@ def test_projection_scorer_beats_random_under_paper_geometry() -> None:
 # ------------------------------------------------------------------
 # Accounting / validation / wiring
 # ------------------------------------------------------------------
+
 
 def test_compression_ratio_math() -> None:
     D = 64
@@ -253,9 +269,7 @@ class _ToyModel:
 def test_for_model_wiring_and_fallback() -> None:
     from mlx_lm.models.cache import KVCache as _FallbackCache
 
-    caches = KVCacheBuilder.for_model(
-        _ToyModel(), KVCacheConfig(method="qfilters", head_dim=64)
-    )
+    caches = KVCacheBuilder.for_model(_ToyModel(), KVCacheConfig(method="qfilters", head_dim=64))
     assert len(caches) == 3
     assert isinstance(caches[0], QFiltersKVCache)
     assert type(caches[1]) is _FallbackCache

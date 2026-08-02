@@ -9,6 +9,7 @@ Covers:
   - path independence at recent=0 (block vs token-by-token, bit-for-bit)
   - byte accounting and empty-state placeholders
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -41,6 +42,7 @@ def _norms(k: mx.array) -> np.ndarray:
 # Basic behavior
 # ------------------------------------------------------------------
 
+
 def test_under_budget_passthrough_in_order() -> None:
     st = init_knorm_state(n_sink=2, budget=16, head_dim=8)
     k, v = _kv(10, 8, seed=1)
@@ -66,7 +68,7 @@ def test_over_budget_keeps_lowest_norms_in_order() -> None:
 def test_sinks_protected_even_with_highest_norms() -> None:
     S, D, n_sink, budget = 24, 8, 3, 8
     scale = np.ones(S, dtype=np.float32)
-    scale[:n_sink] = 50.0   # sinks get enormous norms
+    scale[:n_sink] = 50.0  # sinks get enormous norms
     st = init_knorm_state(n_sink=n_sink, budget=budget, head_dim=D)
     k, v = _kv(S, D, seed=3, scale=scale)
     st = knorm_update(st, k, v)
@@ -109,6 +111,7 @@ def test_keep_high_inverts_selection() -> None:
 # Intrinsic-score properties
 # ------------------------------------------------------------------
 
+
 def test_norms_immutable_across_updates() -> None:
     D, budget = 8, 64
     st = init_knorm_state(n_sink=0, budget=budget, head_dim=D)
@@ -139,6 +142,7 @@ def test_path_independence_block_vs_tokenwise() -> None:
 # ------------------------------------------------------------------
 # Accounting / placeholders
 # ------------------------------------------------------------------
+
 
 def test_bytes_accounting() -> None:
     D, budget = 16, 8

@@ -29,6 +29,7 @@ behaves as standalone per-layer SVD compression — no basis sharing, useful for
 unit-testing the projection/reconstruction path in isolation and for the
 group-of-1 equivalence check against SVDq's mechanism.
 """
+
 from __future__ import annotations
 
 import math
@@ -81,15 +82,13 @@ class XKVCache(_MLXKVCache):
         self._coord: Optional[XKVCoordinator] = coordinator if self._n_members > 1 else None
 
         self._rank: Optional[int] = getattr(config, "xkv_rank", None)
-        self._energy_threshold: float = float(
-            getattr(config, "xkv_energy_threshold", 0.95)
-        )
+        self._energy_threshold: float = float(getattr(config, "xkv_energy_threshold", 0.95))
         self._latent_bits: int = int(getattr(config, "xkv_latent_bits", 4))
         self._group_quant_size: int = int(getattr(config, "xkv_group_quant_size", 32))
 
         # Shared-basis state — set once, on the first successful fetch/compute.
-        self._V_g: Optional[mx.array] = None          # [D, r] fp32
-        self._K_mean_g: Optional[mx.array] = None      # [D] fp32
+        self._V_g: Optional[mx.array] = None  # [D, r] fp32
+        self._K_mean_g: Optional[mx.array] = None  # [D] fp32
         self._singular_values: Optional[mx.array] = None  # [r] fp32
         self._r: int = 0
         self._token_offset: int = 0
@@ -118,8 +117,11 @@ class XKVCache(_MLXKVCache):
         available. Never publishes — publishing only happens in
         _acquire_basis on this layer's own prefill call."""
         basis = self._coord.get_shared_basis(
-            self._group_id, self._basis_token_start, self._n_members,
-            rank=self._rank, energy_threshold=self._energy_threshold,
+            self._group_id,
+            self._basis_token_start,
+            self._n_members,
+            rank=self._rank,
+            energy_threshold=self._energy_threshold,
         )
         if basis is None:
             return False
@@ -247,7 +249,7 @@ class XKVCache(_MLXKVCache):
         r = self._r if self._r > 0 else D
         code_bytes = math.ceil(S * r * self._latent_bits / 8)
         n_groups = math.ceil(S / self._group_quant_size)
-        param_bytes = n_groups * r * 2 * 2   # scale + zero, fp16
+        param_bytes = n_groups * r * 2 * 2  # scale + zero, fp16
         self._compressed_key_bytes += (code_bytes + param_bytes) * H * B
         self._fp16_key_bytes += B * H * S * D * 2
         self._value_fp16_bytes += B * H * S * D * 2

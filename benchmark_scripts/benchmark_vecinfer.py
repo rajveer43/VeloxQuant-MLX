@@ -13,6 +13,7 @@ Calibration artifacts (smooth factors + codebooks) are cached under
 ``~/.cache/veloxquant/vecinfer/<model-id>/`` so reruns are fast. The
 first run does a short calibration pass on synthetic activations.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -43,7 +44,7 @@ def _ensure_path() -> None:
 
 def _peak_mb() -> float:
     try:
-        return float(mx.metal.get_peak_memory()) / (1024 ** 2)
+        return float(mx.metal.get_peak_memory()) / (1024**2)
     except Exception:
         return float("nan")
 
@@ -99,8 +100,8 @@ def _calibrate_artifacts(
     v_subs = mx.array(np.asarray(V).reshape(-1, value_sub_dim))
 
     n_train = min(8000, k_subs.shape[0])
-    key_cb = train_codebook(k_subs[:n_train], 2 ** key_bits, max_iter=15, seed=seed)
-    val_cb = train_codebook(v_subs[:n_train], 2 ** value_bits, max_iter=15, seed=seed + 1)
+    key_cb = train_codebook(k_subs[:n_train], 2**key_bits, max_iter=15, seed=seed)
+    val_cb = train_codebook(v_subs[:n_train], 2**value_bits, max_iter=15, seed=seed + 1)
 
     cache_dir.mkdir(parents=True, exist_ok=True)
     np.savez(
@@ -163,6 +164,7 @@ def _build_vecinfer_caches(
 
 def _build_fp16_caches(model) -> list:
     from mlx_lm.models.cache import KVCache as _FallbackCache
+
     layers = getattr(model, "layers", None) or model.model.layers
     return [_FallbackCache() for _ in layers]
 
@@ -174,8 +176,11 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int, caches: list) -> t
     t0 = time.time()
     try:
         out = generate(
-            model, tokenizer, prompt=prompt,
-            max_tokens=max_tokens, verbose=False,
+            model,
+            tokenizer,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            verbose=False,
             prompt_cache=caches,
         )
     except TypeError:
@@ -200,7 +205,9 @@ def _run_config(model, tokenizer, name: str, build_caches_fn, max_tokens: int) -
         n_tok, elapsed = _generate(model, tokenizer, prompt, max_tokens, caches)
         total_tok += n_tok
         total_time += elapsed
-        print(f"  prompt {i}: {n_tok} tok in {elapsed:.2f}s ({n_tok/max(elapsed,1e-6):.1f} tok/s)")
+        print(
+            f"  prompt {i}: {n_tok} tok in {elapsed:.2f}s ({n_tok / max(elapsed, 1e-6):.1f} tok/s)"
+        )
 
     throughput = total_tok / max(total_time, 1e-6)
     peak_mb = _peak_mb()
@@ -244,7 +251,7 @@ def _plot_summary(results: list[dict], out_path: Path, model_label: str) -> None
     fig, axes = plt.subplots(1, 4, figsize=(20, 5))
     fig.suptitle(f"VecInfer benchmark — {model_label}", fontsize=14)
 
-    colors = ["#666", "#00d4ff", "#7c3aed", "#ff6b35"][:len(names)]
+    colors = ["#666", "#00d4ff", "#7c3aed", "#ff6b35"][: len(names)]
 
     axes[0].bar(names, throughputs, color=colors)
     axes[0].set_ylabel("Tokens / second")
@@ -277,15 +284,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="VecInfer benchmark")
     parser.add_argument("--model", required=True, help="HF model id (mlx-community/...)")
     parser.add_argument("--max-tokens", type=int, default=80)
-    parser.add_argument("--output-dir", default=None,
-                        help="Defaults to figures/vecinfer/<model-stem>/")
+    parser.add_argument(
+        "--output-dir", default=None, help="Defaults to figures/vecinfer/<model-stem>/"
+    )
     args = parser.parse_args()
 
     from mlx_lm import load
 
     model_stem = args.model.split("/")[-1]
-    out_dir = Path(args.output_dir) if args.output_dir else \
-        Path("figures/vecinfer") / model_stem
+    out_dir = Path(args.output_dir) if args.output_dir else Path("figures/vecinfer") / model_stem
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Loading {args.model}...", flush=True)
@@ -303,62 +310,78 @@ def main() -> int:
     head_dim = getattr(first_attn, "head_dim", None) or (
         margs.hidden_size // margs.num_attention_heads
     )
-    n_heads = getattr(first_attn, "n_heads", None) or getattr(
-        margs, "num_attention_heads", 1
-    )
+    n_heads = getattr(first_attn, "n_heads", None) or getattr(margs, "num_attention_heads", 1)
     print(f"  head_dim={head_dim}, n_heads={n_heads}")
 
     cache_root = Path(os.path.expanduser("~/.cache/veloxquant/vecinfer")) / model_stem
 
     # Three VecInfer configs (key bits / sub_dim / value bits / sub_dim)
     configs = [
-        ("vecinfer-2bit", 8, 4, 8, 4),   # 2 bits/elem
+        ("vecinfer-2bit", 8, 4, 8, 4),  # 2 bits/elem
         ("vecinfer-1.5bit", 12, 8, 12, 8),
-        ("vecinfer-1bit", 8, 8, 8, 8),   # 1 bit/elem
+        ("vecinfer-1bit", 8, 8, 8, 8),  # 1 bit/elem
     ]
 
     results = []
 
     # fp16 baseline
-    results.append(_run_config(
-        model, tokenizer, "fp16-baseline",
-        lambda: _build_fp16_caches(model),
-        args.max_tokens,
-    ))
+    results.append(
+        _run_config(
+            model,
+            tokenizer,
+            "fp16-baseline",
+            lambda: _build_fp16_caches(model),
+            args.max_tokens,
+        )
+    )
 
     for cfg_name, kb, ksd, vb, vsd in configs:
         artifacts = _calibrate_artifacts(
-            head_dim=head_dim, n_heads=n_heads,
-            key_bits=kb, value_bits=vb,
-            key_sub_dim=ksd, value_sub_dim=vsd,
+            head_dim=head_dim,
+            n_heads=n_heads,
+            key_bits=kb,
+            value_bits=vb,
+            key_sub_dim=ksd,
+            value_sub_dim=vsd,
             cache_dir=cache_root,
         )
-        results.append(_run_config(
-            model, tokenizer, cfg_name,
-            lambda kb=kb, ksd=ksd, vb=vb, vsd=vsd, art=artifacts:
-                _build_vecinfer_caches(model, kb, vb, ksd, vsd, art),
-            args.max_tokens,
-        ))
+        results.append(
+            _run_config(
+                model,
+                tokenizer,
+                cfg_name,
+                lambda kb=kb, ksd=ksd, vb=vb, vsd=vsd, art=artifacts: _build_vecinfer_caches(
+                    model, kb, vb, ksd, vsd, art
+                ),
+                args.max_tokens,
+            )
+        )
 
     summary_path = out_dir / "vecinfer_summary.png"
     _plot_summary(results, summary_path, model_stem)
 
     json_path = out_dir / "results.json"
     with open(json_path, "w") as f:
-        json.dump({
-            "model": args.model,
-            "max_tokens": args.max_tokens,
-            "prompts": PROMPTS,
-            "results": results,
-        }, f, indent=2)
+        json.dump(
+            {
+                "model": args.model,
+                "max_tokens": args.max_tokens,
+                "prompts": PROMPTS,
+                "results": results,
+            },
+            f,
+            indent=2,
+        )
 
     print(f"\nSummary: {summary_path}")
     print(f"Results: {json_path}")
     print("\nFinal:")
     for r in results:
-        print(f"  {r['name']:<20s} {r['throughput_tok_s']:6.1f} tok/s  "
-              f"{r['peak_mb']:7.1f} MB  "
-              f"key_x={r['key_compression']:.2f}  avg_bits={r['avg_bits']:.2f}")
+        print(
+            f"  {r['name']:<20s} {r['throughput_tok_s']:6.1f} tok/s  "
+            f"{r['peak_mb']:7.1f} MB  "
+            f"key_x={r['key_compression']:.2f}  avg_bits={r['avg_bits']:.2f}"
+        )
     return 0
 
 

@@ -7,6 +7,7 @@ under heterogeneous channels, byte accounting against the closed form,
 build-time validation, the max_ctx guard, and for_model wiring incl. the
 fallback path.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -36,8 +37,7 @@ def _het_scales(d, seed=3):
 
 
 def _make(**cfg):
-    base = dict(method="skvq", head_dim=64, skvq_window=16, skvq_n_sink=4,
-                skvq_group_size=16)
+    base = dict(method="skvq", head_dim=64, skvq_window=16, skvq_n_sink=4, skvq_group_size=16)
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 
@@ -45,6 +45,7 @@ def _make(**cfg):
 # ------------------------------------------------------------------
 # Factory / protocol basics
 # ------------------------------------------------------------------
+
 
 def test_factory_dispatch() -> None:
     assert isinstance(_make(), SKVQKVCache)
@@ -77,9 +78,7 @@ def test_frontier_advances_in_whole_chunks() -> None:
     assert cache.quantized_tokens == 3 * r
     # ... and the un-flushed tail is exact fp16
     ko = cache.keys[..., : cache.offset, :]
-    assert np.array_equal(
-        np.array(ko[:, :, 3 * r :, :]), np.array(k[:, :, 3 * r :, :])
-    )
+    assert np.array_equal(np.array(ko[:, :, 3 * r :, :]), np.array(k[:, :, 3 * r :, :]))
 
 
 def test_sink_rows_fp16_exact_after_flush() -> None:
@@ -88,12 +87,8 @@ def test_sink_rows_fp16_exact_after_flush() -> None:
     k, v = _kv(1, 2, 40, 64, seed=3)  # 2 chunks flushed
     ko, vo = cache.update_and_fetch(k, v)
     assert cache.quantized_tokens == 32
-    assert np.array_equal(
-        np.array(ko[:, :, :n_sink, :]), np.array(k[:, :, :n_sink, :])
-    )
-    assert np.array_equal(
-        np.array(vo[:, :, :n_sink, :]), np.array(v[:, :, :n_sink, :])
-    )
+    assert np.array_equal(np.array(ko[:, :, :n_sink, :]), np.array(k[:, :, :n_sink, :]))
+    assert np.array_equal(np.array(vo[:, :, :n_sink, :]), np.array(v[:, :, :n_sink, :]))
 
 
 def test_quantized_region_actually_quantized() -> None:
@@ -111,6 +106,7 @@ def test_quantized_region_actually_quantized() -> None:
 # Sliding-window / path-independence semantics
 # ------------------------------------------------------------------
 
+
 def test_prefill_decode_bit_for_bit_equivalence() -> None:
     """Same tokens as one prefill block vs token-by-token decode produce
     bit-for-bit identical caches: chunk boundaries, first-chunk permutation
@@ -125,9 +121,7 @@ def test_prefill_decode_bit_for_bit_equivalence() -> None:
 
     decode = _make()
     for t in range(S):
-        ko_b, vo_b = decode.update_and_fetch(
-            k[:, :, t : t + 1, :], v[:, :, t : t + 1, :]
-        )
+        ko_b, vo_b = decode.update_and_fetch(k[:, :, t : t + 1, :], v[:, :, t : t + 1, :])
     mx.eval(ko_a, vo_a, ko_b, vo_b)
     assert np.array_equal(np.array(ko_a), np.array(ko_b))
     assert np.array_equal(np.array(vo_a), np.array(vo_b))
@@ -201,6 +195,7 @@ def test_clip_search_off_fixed_alpha_runs() -> None:
 # Byte accounting / reporting
 # ------------------------------------------------------------------
 
+
 def test_byte_accounting_closed_form() -> None:
     B, H, D, r, n_sink, gs = 1, 2, 64, 16, 4, 16
     cache = _make()
@@ -208,9 +203,8 @@ def test_byte_accounting_closed_form() -> None:
     cache.update_and_fetch(k, v)
     # chunk 0 quantizes r - n_sink tokens, chunk 1 quantizes r
     expect_k = (
-        skvq_compressed_bytes(r - n_sink, D, 2, gs)
-        + skvq_compressed_bytes(r, D, 2, gs)
-    ) * B * H
+        (skvq_compressed_bytes(r - n_sink, D, 2, gs) + skvq_compressed_bytes(r, D, 2, gs)) * B * H
+    )
     assert cache.compressed_key_bytes == expect_k
     assert cache.compressed_value_bytes == expect_k  # same bits for values
     assert cache.fp16_key_bytes == B * H * (2 * r + 3) * D * 2
@@ -246,6 +240,7 @@ def test_determinism() -> None:
 # Guards / validation
 # ------------------------------------------------------------------
 
+
 def test_max_ctx_guard_raises() -> None:
     cache = _make(skvq_max_ctx=32)
     k, v = _kv(1, 2, 33, 64, seed=15)
@@ -274,6 +269,7 @@ def test_build_time_validation() -> None:
 # for_model wiring
 # ------------------------------------------------------------------
 
+
 class _ToyAttn:
     def __init__(self, head_dim):
         self.head_dim = head_dim
@@ -286,6 +282,7 @@ class _ToyLayer:
 
 class _ToyNorm:
     """Layer without attention — must get the fallback cache."""
+
     pass
 
 
@@ -303,13 +300,11 @@ class _ToyModel:
 def test_for_model_wiring_and_fallback() -> None:
     from mlx_lm.models.cache import KVCache as _FallbackCache
 
-    caches = KVCacheBuilder.for_model(
-        _ToyModel(), KVCacheConfig(method="skvq", head_dim=64)
-    )
+    caches = KVCacheBuilder.for_model(_ToyModel(), KVCacheConfig(method="skvq", head_dim=64))
     assert len(caches) == 4
     assert isinstance(caches[0], SKVQKVCache)
     assert isinstance(caches[1], SKVQKVCache)
-    assert type(caches[2]) is _FallbackCache      # non-attention layer
+    assert type(caches[2]) is _FallbackCache  # non-attention layer
     assert isinstance(caches[3], SKVQKVCache)
 
     k, v = _kv(1, 2, 8, 64, seed=16)

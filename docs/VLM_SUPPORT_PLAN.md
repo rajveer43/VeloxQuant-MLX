@@ -61,6 +61,7 @@ def build_vlm_caches(model, bits: int, use_rvq: bool = False, seed: int = 42):
         if attn is None:
             # Non-attention layer — use standard fp16 cache
             from mlx_lm.models.cache import KVCache as _MLXKVCache
+
             caches.append(_MLXKVCache())
             continue
         n_kv = getattr(attn, "n_kv_heads", None) or model.args.num_key_value_heads
@@ -92,6 +93,7 @@ def for_model(model, config: "KVCacheConfig") -> list:
         attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
         if attn is None:
             from mlx_lm.models.cache import KVCache as _FallbackCache
+
             caches.append(_FallbackCache())
             continue
         hd = getattr(attn, "head_dim", None) or (

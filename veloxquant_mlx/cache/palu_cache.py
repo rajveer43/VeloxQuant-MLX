@@ -40,6 +40,7 @@ Byte accounting:
 
   Effective bit-width ≈ (r / D) * weighted_avg(hi_bit, lo_bit).
 """
+
 from __future__ import annotations
 
 import math
@@ -85,12 +86,12 @@ class _TensorLowRank:
         self.group_size = group_size
         self.quantize = quantize
 
-        self._bounds: list[tuple[int, int]] = []          # head-group ranges
-        self._V: list[mx.array] = []                       # per group [D, r]
-        self._mu: list[mx.array] = []                      # per group [D]
-        self._sv: list[mx.array] = []                      # per group [r]
-        self._head_group: list[int] = []                  # head -> group index
-        self._r: int = 0                                   # rank (uniform across groups)
+        self._bounds: list[tuple[int, int]] = []  # head-group ranges
+        self._V: list[mx.array] = []  # per group [D, r]
+        self._mu: list[mx.array] = []  # per group [D]
+        self._sv: list[mx.array] = []  # per group [r]
+        self._head_group: list[int] = []  # head -> group index
+        self._r: int = 0  # rank (uniform across groups)
         # Latent buffer: list over heads, each a growing [S, r] fp16 array.
         self._latents: Optional[list[mx.array]] = None
         self._fitted = False
@@ -105,9 +106,7 @@ class _TensorLowRank:
         for g, (lo, hi) in enumerate(self._bounds):
             # Stack this group's heads (batch 0) → [G, S, D]
             x_g = x[0, lo:hi].astype(mx.float32)
-            V, mu, sv = group_head_svd(
-                x_g, rank=self.rank, energy_threshold=self.energy_threshold
-            )
+            V, mu, sv = group_head_svd(x_g, rank=self.rank, energy_threshold=self.energy_threshold)
             mx.eval(V, mu, sv)
             self._V.append(V)
             self._mu.append(mu)
@@ -128,12 +127,15 @@ class _TensorLowRank:
     def _encode_head(self, x_hd: mx.array, h: int) -> mx.array:
         """Project + (optionally) quantize one head's [S, D] → [S, r] fp16."""
         g = self._head_group[h]
-        L = project_to_latent(x_hd, self._V[g], self._mu[g])     # [S, r] fp32
+        L = project_to_latent(x_hd, self._V[g], self._mu[g])  # [S, r] fp32
         if self.quantize:
             L = quantize_latent(
-                L, self._sv[g],
-                hi_bit=self.hi_bit, lo_bit=self.lo_bit,
-                hi_fraction=self.hi_fraction, group_size=self.group_size,
+                L,
+                self._sv[g],
+                hi_bit=self.hi_bit,
+                lo_bit=self.lo_bit,
+                hi_fraction=self.hi_fraction,
+                group_size=self.group_size,
             )
         return L.astype(mx.float16)
 
@@ -145,8 +147,7 @@ class _TensorLowRank:
             self._latents = encoded
         else:
             self._latents = [
-                mx.concatenate([self._latents[h], encoded[h]], axis=0)
-                for h in range(H)
+                mx.concatenate([self._latents[h], encoded[h]], axis=0) for h in range(H)
             ]
 
     def reconstruct(self) -> mx.array:
@@ -156,7 +157,7 @@ class _TensorLowRank:
         for h, L in enumerate(self._latents):
             g = self._head_group[h]
             heads.append(reconstruct_from_latent(L, self._V[g], self._mu[g]))  # [S, D]
-        return mx.stack(heads, axis=0)[None]   # [1, H, S, D]
+        return mx.stack(heads, axis=0)[None]  # [1, H, S, D]
 
     # ------------------------------------------------------------------
     @property
@@ -173,10 +174,11 @@ class _TensorLowRank:
             return n_tokens * r * 2 * H
         n_hi = max(1, int(r * self.hi_fraction))
         n_lo = r - n_hi
-        code_bytes = math.ceil(n_tokens * n_hi * self.hi_bit / 8) + \
-            math.ceil(n_tokens * n_lo * self.lo_bit / 8)
+        code_bytes = math.ceil(n_tokens * n_hi * self.hi_bit / 8) + math.ceil(
+            n_tokens * n_lo * self.lo_bit / 8
+        )
         n_groups = math.ceil(n_tokens / self.group_size)
-        param_bytes = n_groups * r * 2 * 2     # scale + zero, fp16, per channel
+        param_bytes = n_groups * r * 2 * 2  # scale + zero, fp16, per channel
         return (code_bytes + param_bytes) * H
 
     def projection_bytes(self, D: int, H: int) -> int:
@@ -228,9 +230,7 @@ class PALUKVCache(_MLXKVCache):
         lo_bit = int(getattr(config, "palu_lo_bit", 2))
         hi_frac = float(getattr(config, "palu_hi_fraction", 0.25))
         if not 0.0 <= hi_frac <= 1.0:
-            raise ValueError(
-                f"palu: palu_hi_fraction must be in [0, 1], got {hi_frac}"
-            )
+            raise ValueError(f"palu: palu_hi_fraction must be in [0, 1], got {hi_frac}")
         gsize = int(getattr(config, "palu_group_size", 32))
         quant_values = bool(getattr(config, "palu_quantize_values", True))
 
@@ -267,7 +267,7 @@ class PALUKVCache(_MLXKVCache):
         self._vals_lr.append(values)
         self._palu_offset += S
 
-        k_out = self._keys_lr.reconstruct()      # [1, H, total, D] fp16
+        k_out = self._keys_lr.reconstruct()  # [1, H, total, D] fp16
         v_out = self._vals_lr.reconstruct()
         self._account_bytes(H, S, D)
         return k_out, v_out
@@ -276,15 +276,15 @@ class PALUKVCache(_MLXKVCache):
         n = self._palu_offset
         # Recompute realised latent storage for the full sequence so the ratio
         # reflects the actual stored low-rank buffer, not a per-call delta.
-        self._compressed_key_bytes = (
-            self._keys_lr.latent_bytes(n, H) + self._keys_lr.projection_bytes(D, H)
-        )
-        self._compressed_value_bytes = (
-            self._vals_lr.latent_bytes(n, H) + self._vals_lr.projection_bytes(D, H)
-        )
-        self._projection_bytes = (
-            self._keys_lr.projection_bytes(D, H) + self._vals_lr.projection_bytes(D, H)
-        )
+        self._compressed_key_bytes = self._keys_lr.latent_bytes(
+            n, H
+        ) + self._keys_lr.projection_bytes(D, H)
+        self._compressed_value_bytes = self._vals_lr.latent_bytes(
+            n, H
+        ) + self._vals_lr.projection_bytes(D, H)
+        self._projection_bytes = self._keys_lr.projection_bytes(
+            D, H
+        ) + self._vals_lr.projection_bytes(D, H)
         self._fp16_key_bytes = n * H * D * 2
         self._fp16_value_bytes = n * H * D * 2
 
@@ -292,7 +292,7 @@ class PALUKVCache(_MLXKVCache):
     # mlx_lm KVCache surface — keep consistent with our own offset
     # ------------------------------------------------------------------
     @property
-    def offset(self) -> int:        # type: ignore[override]
+    def offset(self) -> int:  # type: ignore[override]
         return self._palu_offset
 
     @offset.setter

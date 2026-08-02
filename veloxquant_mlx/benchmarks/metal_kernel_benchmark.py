@@ -16,6 +16,7 @@ Usage::
     python -m veloxquant_mlx.benchmarks.metal_kernel_benchmark
     python -m veloxquant_mlx.benchmarks.metal_kernel_benchmark --n_iter 50
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,6 +27,7 @@ from pathlib import Path
 from typing import Callable
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -46,9 +48,9 @@ OUT_DIR = Path(__file__).parents[2] / "figures" / "metal" / "turboquant_kernels"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 STYLE = {
-    "metal":    dict(color="#2196F3", linewidth=2.0, marker="o", markersize=5),
-    "numpy":    dict(color="#FF5722", linewidth=2.0, marker="s", markersize=5, linestyle="--"),
-    "mlx":      dict(color="#4CAF50", linewidth=2.0, marker="^", markersize=5, linestyle="--"),
+    "metal": dict(color="#2196F3", linewidth=2.0, marker="o", markersize=5),
+    "numpy": dict(color="#FF5722", linewidth=2.0, marker="s", markersize=5, linestyle="--"),
+    "mlx": dict(color="#4CAF50", linewidth=2.0, marker="^", markersize=5, linestyle="--"),
 }
 PALETTE = ["#2196F3", "#FF5722", "#4CAF50", "#9C27B0", "#FF9800"]
 
@@ -56,6 +58,7 @@ PALETTE = ["#2196F3", "#FF5722", "#4CAF50", "#9C27B0", "#FF9800"]
 # ---------------------------------------------------------------------------
 # Timing helpers
 # ---------------------------------------------------------------------------
+
 
 def _bench_mlx(fn: Callable, n_warmup: int = 5, n_iter: int = 50) -> float:
     """Return ms/iter for an MLX kernel call (evaluates graph each iter)."""
@@ -81,28 +84,31 @@ def _bench_np(fn: Callable, n_warmup: int = 5, n_iter: int = 50) -> float:
 # 1. Bit-pack / unpack
 # ---------------------------------------------------------------------------
 
-def bench_bit_pack(n_iter: int):
-    Ns    = [256, 512, 1024, 4096, 16384, 65536]
-    bits  = [1, 2, 4]
-    rng   = np.random.default_rng(0)
 
-    pack_results: dict   = {b: {} for b in bits}
+def bench_bit_pack(n_iter: int):
+    Ns = [256, 512, 1024, 4096, 16384, 65536]
+    bits = [1, 2, 4]
+    rng = np.random.default_rng(0)
+
+    pack_results: dict = {b: {} for b in bits}
     unpack_results: dict = {b: {} for b in bits}
 
     for b in bits:
         for N in Ns:
             indices = mx.array((rng.integers(0, 1 << b, size=N)).astype(np.uint8))
-            packed  = turboquant_bit_pack(indices, b)
+            packed = turboquant_bit_pack(indices, b)
             mx.eval(packed)
 
-            pack_ms   = _bench_mlx(lambda i=indices, _b=b: turboquant_bit_pack(i, _b), n_iter=n_iter)
-            unpack_ms = _bench_mlx(lambda p=packed, _N=N, _b=b: turboquant_bit_unpack(p, _N, _b), n_iter=n_iter)
+            pack_ms = _bench_mlx(lambda i=indices, _b=b: turboquant_bit_pack(i, _b), n_iter=n_iter)
+            unpack_ms = _bench_mlx(
+                lambda p=packed, _N=N, _b=b: turboquant_bit_unpack(p, _N, _b), n_iter=n_iter
+            )
 
             # Numpy reference: simple bit-packing loop
             idx_np = np.array(indices, dtype=np.uint8)
             pack_ms_np = _bench_np(lambda i=idx_np, _b=b: _np_pack(i, _b), n_iter=n_iter)
 
-            pack_results[b][N]   = (pack_ms, pack_ms_np)
+            pack_results[b][N] = (pack_ms, pack_ms_np)
             unpack_results[b][N] = (unpack_ms, pack_ms_np)
 
     return Ns, pack_results, unpack_results
@@ -111,7 +117,7 @@ def bench_bit_pack(n_iter: int):
 def _np_pack(indices: np.ndarray, b: int) -> np.ndarray:
     n = len(indices)
     elems = 8 // b
-    mask  = (1 << b) - 1
+    mask = (1 << b) - 1
     n_bytes = n * b // 8
     out = np.zeros(n_bytes, dtype=np.uint8)
     for i in range(n_bytes):
@@ -127,17 +133,27 @@ def plot_bit_pack(Ns, pack_results, unpack_results, n_iter: int):
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle("Bit-pack / Bit-unpack: Metal vs NumPy", fontsize=14, fontweight="bold")
 
-    for ax, (results, title) in zip(axes, [(pack_results, "bit_pack"), (unpack_results, "bit_unpack")]):
+    for ax, (results, title) in zip(
+        axes, [(pack_results, "bit_pack"), (unpack_results, "bit_unpack")]
+    ):
         for i, b in enumerate(bits):
             metal_ms = [results[b][N][0] for N in Ns]
-            np_ms    = [results[b][N][1] for N in Ns]
+            np_ms = [results[b][N][1] for N in Ns]
             # throughput in GB/s: N bytes processed
             metal_gb = [N / 1e9 / (ms * 1e-3) for N, ms in zip(Ns, metal_ms)]
-            np_gb    = [N / 1e9 / (ms * 1e-3) for N, ms in zip(Ns, np_ms)]
+            np_gb = [N / 1e9 / (ms * 1e-3) for N, ms in zip(Ns, np_ms)]
             c = PALETTE[i]
             ax.plot(Ns, metal_gb, color=c, marker="o", linewidth=2, label=f"Metal b={b}")
-            ax.plot(Ns, np_gb,    color=c, marker="s", linewidth=1.5, linestyle="--",
-                    alpha=0.6, label=f"NumPy b={b}")
+            ax.plot(
+                Ns,
+                np_gb,
+                color=c,
+                marker="s",
+                linewidth=1.5,
+                linestyle="--",
+                alpha=0.6,
+                label=f"NumPy b={b}",
+            )
 
         ax.set_xscale("log")
         ax.set_xlabel("N (elements)", fontsize=11)
@@ -160,22 +176,24 @@ def plot_bit_pack(Ns, pack_results, unpack_results, n_iter: int):
 # 2. Scalar quantize / dequantize
 # ---------------------------------------------------------------------------
 
+
 def _lloyd_max_centroids(b: int) -> np.ndarray:
     """Approximate Lloyd-Max centroids for N(0,1) with 2^b bins."""
     n = 1 << b
     # uniform quantiles as an approximation
     from scipy import stats  # type: ignore
+
     edges = np.linspace(1e-6, 1 - 1e-6, n + 1)
     qedges = stats.norm.ppf(edges)
     return ((qedges[:-1] + qedges[1:]) / 2).astype(np.float32)
 
 
 def bench_scalar_quant(n_iter: int):
-    Ns   = [256, 1024, 4096, 16384, 65536, 262144]
+    Ns = [256, 1024, 4096, 16384, 65536, 262144]
     bits = [1, 2, 4]
-    rng  = np.random.default_rng(1)
+    rng = np.random.default_rng(1)
 
-    sq_results: dict  = {b: {} for b in bits}
+    sq_results: dict = {b: {} for b in bits}
     sdq_results: dict = {b: {} for b in bits}
 
     for b in bits:
@@ -189,15 +207,21 @@ def bench_scalar_quant(n_iter: int):
             indices = turboquant_scalar_quantize(x, cents, b)
             mx.eval(indices)
 
-            sq_ms  = _bench_mlx(lambda _x=x, _c=cents, _b=b: turboquant_scalar_quantize(_x, _c, _b), n_iter=n_iter)
-            sdq_ms = _bench_mlx(lambda _i=indices, _c=cents: turboquant_scalar_dequantize(_i, _c), n_iter=n_iter)
+            sq_ms = _bench_mlx(
+                lambda _x=x, _c=cents, _b=b: turboquant_scalar_quantize(_x, _c, _b), n_iter=n_iter
+            )
+            sdq_ms = _bench_mlx(
+                lambda _i=indices, _c=cents: turboquant_scalar_dequantize(_i, _c), n_iter=n_iter
+            )
 
             # NumPy reference (argmin-based)
-            x_np   = np.array(x, dtype=np.float32)
-            c_np   = np.array(cents, dtype=np.float32)
-            sq_ms_np = _bench_np(lambda _x=x_np, _c=c_np: _np_scalar_quantize(_x, _c), n_iter=n_iter)
+            x_np = np.array(x, dtype=np.float32)
+            c_np = np.array(cents, dtype=np.float32)
+            sq_ms_np = _bench_np(
+                lambda _x=x_np, _c=c_np: _np_scalar_quantize(_x, _c), n_iter=n_iter
+            )
 
-            sq_results[b][N]  = (sq_ms, sq_ms_np)
+            sq_results[b][N] = (sq_ms, sq_ms_np)
             sdq_results[b][N] = (sdq_ms, sq_ms_np)
 
     return Ns, sq_results, sdq_results
@@ -213,16 +237,26 @@ def plot_scalar_quant(Ns, sq_results, sdq_results, n_iter: int):
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle("Scalar Quantize / Dequantize: Metal vs NumPy", fontsize=14, fontweight="bold")
 
-    for ax, (results, title) in zip(axes, [(sq_results, "scalar_quantize"), (sdq_results, "scalar_dequantize")]):
+    for ax, (results, title) in zip(
+        axes, [(sq_results, "scalar_quantize"), (sdq_results, "scalar_dequantize")]
+    ):
         for i, b in enumerate(bits):
             metal_ms = [results[b][N][0] for N in Ns]
-            np_ms    = [results[b][N][1] for N in Ns]
+            np_ms = [results[b][N][1] for N in Ns]
             metal_gb = [N * 2 / 1e9 / (ms * 1e-3) for N, ms in zip(Ns, metal_ms)]
-            np_gb    = [N * 2 / 1e9 / (ms * 1e-3) for N, ms in zip(Ns, np_ms)]
+            np_gb = [N * 2 / 1e9 / (ms * 1e-3) for N, ms in zip(Ns, np_ms)]
             c = PALETTE[i]
             ax.plot(Ns, metal_gb, color=c, marker="o", linewidth=2, label=f"Metal b={b}")
-            ax.plot(Ns, np_gb,    color=c, marker="s", linewidth=1.5, linestyle="--",
-                    alpha=0.6, label=f"NumPy b={b}")
+            ax.plot(
+                Ns,
+                np_gb,
+                color=c,
+                marker="s",
+                linewidth=1.5,
+                linestyle="--",
+                alpha=0.6,
+                label=f"NumPy b={b}",
+            )
 
         ax.set_xscale("log")
         ax.set_xlabel("N (elements)", fontsize=11)
@@ -243,10 +277,11 @@ def plot_scalar_quant(Ns, sq_results, sdq_results, n_iter: int):
 # 3. Fused Hadamard + quantize
 # ---------------------------------------------------------------------------
 
+
 def bench_hadamard_quantize(n_iter: int):
-    Ds   = [64, 128, 256, 512, 1024]
-    Bs   = [1, 8, 32, 64, 128]
-    rng  = np.random.default_rng(2)
+    Ds = [64, 128, 256, 512, 1024]
+    Bs = [1, 8, 32, 64, 128]
+    rng = np.random.default_rng(2)
 
     try:
         cents = mx.array(_lloyd_max_centroids(4))
@@ -258,8 +293,11 @@ def bench_hadamard_quantize(n_iter: int):
     B_fixed = 64
     for D in Ds:
         diag = mx.array(rng.choice([-1.0, 1.0], size=D).astype(np.float32))
-        x    = mx.array(rng.standard_normal((B_fixed, D)).astype(np.float16))
-        ms   = _bench_mlx(lambda _x=x, _d=diag, _c=cents: turboquant_hadamard_quantize(_x, _d, _c, 4), n_iter=n_iter)
+        x = mx.array(rng.standard_normal((B_fixed, D)).astype(np.float16))
+        ms = _bench_mlx(
+            lambda _x=x, _d=diag, _c=cents: turboquant_hadamard_quantize(_x, _d, _c, 4),
+            n_iter=n_iter,
+        )
         d_results[D] = ms
 
     # Sweep B at fixed D=128
@@ -267,8 +305,11 @@ def bench_hadamard_quantize(n_iter: int):
     diag_fixed = mx.array(rng.choice([-1.0, 1.0], size=D_fixed).astype(np.float32))
     b_results: dict = {}
     for B in Bs:
-        x  = mx.array(rng.standard_normal((B, D_fixed)).astype(np.float16))
-        ms = _bench_mlx(lambda _x=x, _d=diag_fixed, _c=cents: turboquant_hadamard_quantize(_x, _d, _c, 4), n_iter=n_iter)
+        x = mx.array(rng.standard_normal((B, D_fixed)).astype(np.float16))
+        ms = _bench_mlx(
+            lambda _x=x, _d=diag_fixed, _c=cents: turboquant_hadamard_quantize(_x, _d, _c, 4),
+            n_iter=n_iter,
+        )
         b_results[B] = ms
 
     return Ds, d_results, Bs, b_results, B_fixed, D_fixed
@@ -287,7 +328,9 @@ def plot_hadamard_quantize(Ds, d_results, Bs, b_results, B_fixed, D_fixed, n_ite
     ax.set_xticks(Ds)
     ax.grid(True, alpha=0.3)
     for D, ms in zip(Ds, ms_vals):
-        ax.annotate(f"{ms:.2f}", (D, ms), textcoords="offset points", xytext=(0, 6), fontsize=8, ha="center")
+        ax.annotate(
+            f"{ms:.2f}", (D, ms), textcoords="offset points", xytext=(0, 6), fontsize=8, ha="center"
+        )
 
     ax = axes[1]
     ms_vals = [b_results[B] for B in Bs]
@@ -311,31 +354,32 @@ def plot_hadamard_quantize(Ds, d_results, Bs, b_results, B_fixed, D_fixed, n_ite
 # 4. QJL encode
 # ---------------------------------------------------------------------------
 
+
 def bench_qjl_encode(n_iter: int):
-    Bs  = [1, 8, 32, 64, 128, 256]
-    d   = 128
-    m   = 128
+    Bs = [1, 8, 32, 64, 128, 256]
+    d = 128
+    m = 128
     rng = np.random.default_rng(3)
-    S   = mx.array(rng.standard_normal((m, d)).astype(np.float16) / np.sqrt(d))
+    S = mx.array(rng.standard_normal((m, d)).astype(np.float16) / np.sqrt(d))
 
     metal_results: dict = {}
-    np_results: dict    = {}
+    np_results: dict = {}
     for B in Bs:
-        x     = mx.array(rng.standard_normal((B, d)).astype(np.float16))
-        x_np  = np.array(x, dtype=np.float32)
-        S_np  = np.array(S, dtype=np.float32)
+        x = mx.array(rng.standard_normal((B, d)).astype(np.float16))
+        x_np = np.array(x, dtype=np.float32)
+        S_np = np.array(S, dtype=np.float32)
 
         metal_ms = _bench_mlx(lambda _x=x, _S=S: qjl_encode(_x, _S), n_iter=n_iter)
-        np_ms    = _bench_np(lambda _x=x_np, _S=S_np: _np_qjl_encode(_x, _S), n_iter=n_iter)
+        np_ms = _bench_np(lambda _x=x_np, _S=S_np: _np_qjl_encode(_x, _S), n_iter=n_iter)
 
         metal_results[B] = metal_ms
-        np_results[B]    = np_ms
+        np_results[B] = np_ms
 
     return Bs, metal_results, np_results, d, m
 
 
 def _np_qjl_encode(x: np.ndarray, S: np.ndarray):
-    proj = S @ x.T             # (m, B)
+    proj = S @ x.T  # (m, B)
     signs = (proj >= 0).astype(np.uint8)
     packed = np.packbits(signs.T, axis=1)
     norms = np.linalg.norm(x, axis=1).astype(np.float16)
@@ -347,11 +391,11 @@ def plot_qjl_encode(Bs, metal_results, np_results, d, m, n_iter: int):
     fig.suptitle(f"QJL Encode (Metal vs NumPy)  [d={d}, m={m}]", fontsize=14, fontweight="bold")
 
     metal_ms = [metal_results[B] for B in Bs]
-    np_ms    = [np_results[B] for B in Bs]
+    np_ms = [np_results[B] for B in Bs]
 
     ax = axes[0]
     ax.plot(Bs, metal_ms, label="Metal", **STYLE["metal"])
-    ax.plot(Bs, np_ms,    label="NumPy", **STYLE["numpy"])
+    ax.plot(Bs, np_ms, label="NumPy", **STYLE["numpy"])
     ax.set_xlabel("Batch size B", fontsize=11)
     ax.set_ylabel("Latency (ms/iter)", fontsize=11)
     ax.set_title("Latency vs B", fontsize=12)
@@ -383,12 +427,13 @@ def plot_qjl_encode(Bs, metal_results, np_results, d, m, n_iter: int):
 # 5. QJL inner product
 # ---------------------------------------------------------------------------
 
+
 def bench_qjl_ip(n_iter: int):
     S_kvs = [64, 128, 256, 512, 1024, 2048, 4096]
-    H     = 8
-    m     = 128
-    d     = 128
-    rng   = np.random.default_rng(4)
+    H = 8
+    m = 128
+    d = 128
+    rng = np.random.default_rng(4)
     S_mat = mx.array(rng.standard_normal((m, d)).astype(np.float16) / np.sqrt(d))
     q_proj = mx.array(rng.standard_normal((H, m)).astype(np.float16))
 
@@ -398,7 +443,7 @@ def bench_qjl_ip(n_iter: int):
         packed_signs_flat, norms_flat = qjl_encode(x_keys, S_mat)
         mx.eval(packed_signs_flat, norms_flat)
         packed_signs = packed_signs_flat.reshape(S_kv, H, m // 8)
-        norms        = norms_flat.reshape(S_kv, H)
+        norms = norms_flat.reshape(S_kv, H)
 
         ms = _bench_mlx(
             lambda _q=q_proj, _ps=packed_signs, _n=norms: qjl_inner_product(_q, _ps, _n),
@@ -424,7 +469,7 @@ def plot_qjl_ip(S_kvs, metal_results, H, m, n_iter: int):
 
     ax = axes[1]
     # Throughput: H × S_kv inner products per call
-    ops   = [H * S * m * 2 / 1e9 for S in S_kvs]   # GFLOPs (m mults + m adds per pair)
+    ops = [H * S * m * 2 / 1e9 for S in S_kvs]  # GFLOPs (m mults + m adds per pair)
     gflops = [op / (ms * 1e-3) for op, ms in zip(ops, ms_vals)]
     ax.plot(S_kvs, gflops, color=PALETTE[1], marker="^", linewidth=2, markersize=5)
     ax.set_xlabel("S_kv", fontsize=11)
@@ -444,11 +489,12 @@ def plot_qjl_ip(S_kvs, metal_results, H, m, n_iter: int):
 # 6. Fused RVQ decode + attend
 # ---------------------------------------------------------------------------
 
+
 def bench_rvq_attend(n_iter: int):
     S_kvs = [64, 128, 256, 512, 1024, 2048]
-    B  = 1
-    H  = 8
-    D  = 128
+    B = 1
+    H = 8
+    D = 128
     b1, b2, bv = 4, 4, 4
     rng = np.random.default_rng(5)
 
@@ -464,15 +510,16 @@ def bench_rvq_attend(n_iter: int):
 
     metal_results: dict = {}
     for S_kv in S_kvs:
-        q        = mx.array(rng.standard_normal((B, H, 1, D)).astype(np.float16))
-        k_idx1   = mx.array(rng.integers(0, n_cents1,  (B, H, S_kv, D), dtype=np.uint8))
-        k_idx2   = mx.array(rng.integers(0, n_cents2,  (B, H, S_kv, D), dtype=np.uint8))
+        q = mx.array(rng.standard_normal((B, H, 1, D)).astype(np.float16))
+        k_idx1 = mx.array(rng.integers(0, n_cents1, (B, H, S_kv, D), dtype=np.uint8))
+        k_idx2 = mx.array(rng.integers(0, n_cents2, (B, H, S_kv, D), dtype=np.uint8))
         v_indices = mx.array(rng.integers(0, n_cents_v, (B, H, S_kv, n_sub_v), dtype=np.uint8))
         mx.eval(q, k_idx1, k_idx2, v_indices)
 
         ms = _bench_mlx(
-            lambda _q=q, _k1=k_idx1, _k2=k_idx2, _c1=centroids1, _c2=centroids2, _vi=v_indices, _vc=v_codebook:
-                turboquant_fused_rvq_decode_attend(_q, _k1, _k2, _c1, _c2, _vi, _vc, b1, b2, bv),
+            lambda _q=q, _k1=k_idx1, _k2=k_idx2, _c1=centroids1, _c2=centroids2, _vi=v_indices, _vc=v_codebook: (
+                turboquant_fused_rvq_decode_attend(_q, _k1, _k2, _c1, _c2, _vi, _vc, b1, b2, bv)
+            ),
             n_iter=n_iter,
         )
         metal_results[S_kv] = ms
@@ -482,8 +529,9 @@ def bench_rvq_attend(n_iter: int):
 
 def plot_rvq_attend(S_kvs, metal_results, B, H, D, n_iter: int):
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-    fig.suptitle(f"Fused RVQ Decode + Attend (Metal)  [B={B}, H={H}, D={D}]",
-                 fontsize=14, fontweight="bold")
+    fig.suptitle(
+        f"Fused RVQ Decode + Attend (Metal)  [B={B}, H={H}, D={D}]", fontsize=14, fontweight="bold"
+    )
 
     ms_vals = [metal_results[S] for S in S_kvs]
 
@@ -494,8 +542,9 @@ def plot_rvq_attend(S_kvs, metal_results, B, H, D, n_iter: int):
     ax.set_title("Attend Latency vs S_kv", fontsize=12)
     ax.grid(True, alpha=0.3)
     for S, ms in zip(S_kvs, ms_vals):
-        ax.annotate(f"{ms:.2f}", (S, ms), textcoords="offset points", xytext=(0, 6),
-                    fontsize=8, ha="center")
+        ax.annotate(
+            f"{ms:.2f}", (S, ms), textcoords="offset points", xytext=(0, 6), fontsize=8, ha="center"
+        )
 
     ax = axes[1]
     # ms per token
@@ -518,16 +567,17 @@ def plot_rvq_attend(S_kvs, metal_results, B, H, D, n_iter: int):
 # 7. Memory savings
 # ---------------------------------------------------------------------------
 
+
 def plot_memory_savings():
     S_kvs = [128, 256, 512, 1024, 2048, 4096, 8192]
-    D     = 128
-    H     = 8
+    D = 128
+    H = 8
 
     def fp16_bytes(S):
-        return S * H * D * 2          # keys fp16
+        return S * H * D * 2  # keys fp16
 
     def bits_quant_bytes(S, b):
-        return S * H * D * b // 8    # b bits per element, byte-packed
+        return S * H * D * b // 8  # b bits per element, byte-packed
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle(f"KV Cache Memory Footprint  [H={H}, D={D}]", fontsize=14, fontweight="bold")
@@ -537,7 +587,15 @@ def plot_memory_savings():
     ax.plot(S_kvs, fp16_mb, label="fp16 (baseline)", color="gray", linewidth=2, linestyle="--")
     for i, b in enumerate([1, 2, 4]):
         mb = [bits_quant_bytes(S, b) / 1e6 for S in S_kvs]
-        ax.plot(S_kvs, mb, label=f"{b}-bit (Metal kernel)", color=PALETTE[i], linewidth=2, marker="o", markersize=4)
+        ax.plot(
+            S_kvs,
+            mb,
+            label=f"{b}-bit (Metal kernel)",
+            color=PALETTE[i],
+            linewidth=2,
+            marker="o",
+            markersize=4,
+        )
     ax.set_xlabel("Sequence length S_kv", fontsize=11)
     ax.set_ylabel("Memory (MB)", fontsize=11)
     ax.set_title("Key Cache Memory", fontsize=12)
@@ -547,7 +605,15 @@ def plot_memory_savings():
     ax = axes[1]
     for i, b in enumerate([1, 2, 4]):
         ratio = [fp16_bytes(S) / bits_quant_bytes(S, b) for S in S_kvs]
-        ax.plot(S_kvs, ratio, label=f"{b}-bit compression", color=PALETTE[i], linewidth=2, marker="o", markersize=4)
+        ax.plot(
+            S_kvs,
+            ratio,
+            label=f"{b}-bit compression",
+            color=PALETTE[i],
+            linewidth=2,
+            marker="o",
+            markersize=4,
+        )
     ax.axhline(1.0, color="gray", linestyle="--", linewidth=1, label="no compression")
     ax.set_xlabel("Sequence length S_kv", fontsize=11)
     ax.set_ylabel("Compression ratio (fp16 / b-bit)", fontsize=11)
@@ -568,15 +634,20 @@ def plot_memory_savings():
 # 8. Summary speedup bar chart
 # ---------------------------------------------------------------------------
 
+
 def plot_summary(all_speedups: dict):
     fig, ax = plt.subplots(figsize=(13, 5))
-    fig.suptitle("TurboQuant Metal Kernels — Summary Speedup vs NumPy/CPU", fontsize=14, fontweight="bold")
+    fig.suptitle(
+        "TurboQuant Metal Kernels — Summary Speedup vs NumPy/CPU", fontsize=14, fontweight="bold"
+    )
 
     kernels = list(all_speedups.keys())
     speedups = [all_speedups[k] for k in kernels]
     colors = [PALETTE[i % len(PALETTE)] for i in range(len(kernels))]
 
-    bars = ax.bar(range(len(kernels)), speedups, color=colors, alpha=0.85, edgecolor="white", linewidth=0.5)
+    bars = ax.bar(
+        range(len(kernels)), speedups, color=colors, alpha=0.85, edgecolor="white", linewidth=0.5
+    )
     ax.axhline(1.0, color="gray", linestyle="--", linewidth=1, label="baseline (1×)")
     ax.set_xticks(range(len(kernels)))
     ax.set_xticklabels(kernels, rotation=20, ha="right", fontsize=9)
@@ -584,8 +655,15 @@ def plot_summary(all_speedups: dict):
     ax.set_title("Peak Speedup (larger batch / sequence)", fontsize=12)
     ax.grid(True, alpha=0.3, axis="y")
     for i, (bar, s) in enumerate(zip(bars, speedups)):
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.05,
-                f"{s:.1f}×", ha="center", va="bottom", fontsize=9, fontweight="bold")
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.05,
+            f"{s:.1f}×",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            fontweight="bold",
+        )
 
     plt.tight_layout()
     path = OUT_DIR / "fig8_summary_speedup.png"
@@ -598,6 +676,7 @@ def plot_summary(all_speedups: dict):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="TurboQuant Metal kernel benchmark")
@@ -618,7 +697,10 @@ def main():
     best_N = Ns[-1]
     su_pack = pack_r[4][best_N][1] / pack_r[4][best_N][0]
     all_speedups["bit_pack (b=4, N=65k)"] = su_pack
-    results_json["bit_pack"] = {str(b): {str(N): {"metal_ms": pack_r[b][N][0], "numpy_ms": pack_r[b][N][1]} for N in Ns} for b in [1,2,4]}
+    results_json["bit_pack"] = {
+        str(b): {str(N): {"metal_ms": pack_r[b][N][0], "numpy_ms": pack_r[b][N][1]} for N in Ns}
+        for b in [1, 2, 4]
+    }
 
     # ---- 2. Scalar quant ----
     print("2/6  Benchmarking scalar_quantize / dequantize ...")
@@ -627,7 +709,10 @@ def main():
     best_N_sq = Ns_sq[-1]
     su_sq = sq_r[4][best_N_sq][1] / sq_r[4][best_N_sq][0]
     all_speedups["scalar_quantize (b=4, N=256k)"] = su_sq
-    results_json["scalar_quantize"] = {str(b): {str(N): {"metal_ms": sq_r[b][N][0], "numpy_ms": sq_r[b][N][1]} for N in Ns_sq} for b in [1,2,4]}
+    results_json["scalar_quantize"] = {
+        str(b): {str(N): {"metal_ms": sq_r[b][N][0], "numpy_ms": sq_r[b][N][1]} for N in Ns_sq}
+        for b in [1, 2, 4]
+    }
 
     # ---- 3. Hadamard quantize ----
     print("3/6  Benchmarking hadamard_quantize ...")
@@ -636,7 +721,7 @@ def main():
     # speedup vs sequential Hadamard + quantize
     best_D = Ds[-1]
     # Reference: measure MLX hadamard_transform + scalar_quantize separately
-    rng2  = np.random.default_rng(99)
+    rng2 = np.random.default_rng(99)
     try:
         cents = mx.array(_lloyd_max_centroids(4))
     except ImportError:
@@ -647,13 +732,18 @@ def main():
     twostep_ms = _bench_mlx(
         lambda _x=x_ref, _d=diag, _c=cents: turboquant_scalar_quantize(
             mx.hadamard_transform(_x.astype(mx.float32) * _d),
-            _c, 4,
+            _c,
+            4,
         ),
         n_iter=n_iter,
     )
     su_had = twostep_ms / d_r[best_D]
     all_speedups[f"hadamard_quant (D={best_D}, B={B_fix})"] = su_had
-    results_json["hadamard_quantize"] = {"D_sweep": {str(D): d_r[D] for D in Ds}, "B_sweep": {str(B): b_r[B] for B in Bs_hq}, "twostep_ms_D1024": twostep_ms}
+    results_json["hadamard_quantize"] = {
+        "D_sweep": {str(D): d_r[D] for D in Ds},
+        "B_sweep": {str(B): b_r[B] for B in Bs_hq},
+        "twostep_ms_D1024": twostep_ms,
+    }
 
     # ---- 4. QJL encode ----
     print("4/6  Benchmarking qjl_encode ...")
@@ -662,21 +752,27 @@ def main():
     best_B_qjl = Bs_qjl[-1]
     su_qjl = np_qjl[best_B_qjl] / metal_qjl[best_B_qjl]
     all_speedups[f"qjl_encode (B={best_B_qjl})"] = su_qjl
-    results_json["qjl_encode"] = {str(B): {"metal_ms": metal_qjl[B], "numpy_ms": np_qjl[B]} for B in Bs_qjl}
+    results_json["qjl_encode"] = {
+        str(B): {"metal_ms": metal_qjl[B], "numpy_ms": np_qjl[B]} for B in Bs_qjl
+    }
 
     # ---- 5. QJL inner product ----
     print("5/6  Benchmarking qjl_inner_product ...")
     S_kvs_ip, metal_ip, H_ip, m_ip = bench_qjl_ip(n_iter)
     plot_qjl_ip(S_kvs_ip, metal_ip, H_ip, m_ip, n_iter)
     results_json["qjl_inner_product"] = {str(S): metal_ip[S] for S in S_kvs_ip}
-    all_speedups["qjl_ip (S_kv=4096)"] = metal_ip[S_kvs_ip[0]] / metal_ip[S_kvs_ip[-1]] * len(S_kvs_ip)  # relative efficiency
+    all_speedups["qjl_ip (S_kv=4096)"] = (
+        metal_ip[S_kvs_ip[0]] / metal_ip[S_kvs_ip[-1]] * len(S_kvs_ip)
+    )  # relative efficiency
 
     # ---- 6. RVQ attend ----
     print("6/6  Benchmarking fused_rvq_decode_attend ...")
     S_kvs_rv, metal_rv, B_rv, H_rv, D_rv = bench_rvq_attend(n_iter)
     plot_rvq_attend(S_kvs_rv, metal_rv, B_rv, H_rv, D_rv, n_iter)
     results_json["fused_rvq_attend"] = {str(S): metal_rv[S] for S in S_kvs_rv}
-    all_speedups["rvq_attend (S_kv=2048)"] = metal_rv[S_kvs_rv[0]] / metal_rv[S_kvs_rv[-1]] * len(S_kvs_rv)
+    all_speedups["rvq_attend (S_kv=2048)"] = (
+        metal_rv[S_kvs_rv[0]] / metal_rv[S_kvs_rv[-1]] * len(S_kvs_rv)
+    )
 
     # ---- 7. Memory ----
     plot_memory_savings()

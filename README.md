@@ -122,7 +122,9 @@ config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches
 
-response = mlx_lm.generate(model, tokenizer,
+response = mlx_lm.generate(
+    model,
+    tokenizer,
     prompt="Explain the theory of relativity in simple terms.",
     max_tokens=200,
 )
@@ -386,11 +388,14 @@ Load precomputed artifacts to skip re-computation at runtime:
 ```python
 from veloxquant_mlx.artifacts import NpyArtifactStore
 
-cache = (KVCacheBuilder()
+cache = (
+    KVCacheBuilder()
     .with_method("turboquant_rvq")
-    .with_head_dim(128).with_bit_width(inlier=2)
+    .with_head_dim(128)
+    .with_bit_width(inlier=2)
     .with_artifact_store(NpyArtifactStore("./artifacts/"))
-    .build())
+    .build()
+)
 ```
 
 ---

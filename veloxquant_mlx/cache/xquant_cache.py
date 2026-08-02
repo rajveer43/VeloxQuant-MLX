@@ -26,6 +26,7 @@ Byte accounting:
 Degenerate case: with no coordinator (single isolated layer) the cache behaves
 as a plain anchor — useful for unit-testing the anchor path in isolation.
 """
+
 from __future__ import annotations
 
 import math
@@ -73,7 +74,7 @@ class XQuantKVCache(_MLXKVCache):
         self._residual_bits: int = int(getattr(config, "xquant_residual_bits", 0))
         self._gqs: int = int(getattr(config, "xquant_group_quant_size", 32))
 
-        self._token_offset: int = 0   # this layer's running token count
+        self._token_offset: int = 0  # this layer's running token count
 
         # Byte accounting
         self._compressed_key_bytes: int = 0
@@ -117,9 +118,12 @@ class XQuantKVCache(_MLXKVCache):
                 params = compute_reuse_params(t[b, h], codes, self._base_bits, self._gqs)
                 recon = dequant_with_params(codes, params)
                 if self._residual_bits > 0:
-                    recon = (recon.astype(mx.float32)
-                             + quantize_residual(t[b, h], recon, self._residual_bits, self._gqs)
-                             .astype(mx.float32)).astype(mx.float16)
+                    recon = (
+                        recon.astype(mx.float32)
+                        + quantize_residual(t[b, h], recon, self._residual_bits, self._gqs).astype(
+                            mx.float32
+                        )
+                    ).astype(mx.float16)
                 recon_h.append(recon)
             recon_b.append(mx.stack(recon_h, axis=0))
         return mx.stack(recon_b, axis=0)
@@ -137,7 +141,9 @@ class XQuantKVCache(_MLXKVCache):
             if self._coord is not None:
                 # Store keys+values codes together (tuple in .codes slot).
                 self._coord.register_anchor(
-                    self._group_id, tok_start, S,
+                    self._group_id,
+                    tok_start,
+                    S,
                     codes=(k_codes, v_codes),
                     params=GroupParams(scale=None, zero=None, n_rows=S, bits=self._base_bits),
                 )
@@ -165,7 +171,7 @@ class XQuantKVCache(_MLXKVCache):
     def _code_param_bytes(self, S: int, D: int, bits: int, B: int, H: int) -> int:
         code_bytes = math.ceil(S * D * bits / 8)
         n_groups = math.ceil(S / self._gqs)
-        param_bytes = n_groups * D * 2 * 2   # scale + zero, fp16
+        param_bytes = n_groups * D * 2 * 2  # scale + zero, fp16
         return (code_bytes + param_bytes) * B * H
 
     def _param_only_bytes(self, S: int, D: int, B: int, H: int) -> int:
@@ -185,7 +191,7 @@ class XQuantKVCache(_MLXKVCache):
     def _account_reuse(self, B: int, H: int, S: int, D: int) -> None:
         pb = self._param_only_bytes(S, D, B, H)
         self._reuse_param_bytes += pb
-        self._compressed_key_bytes += pb       # reuse stores only params (+residual)
+        self._compressed_key_bytes += pb  # reuse stores only params (+residual)
         self._fp16_key_bytes += B * H * S * D * 2
         self._fp16_value_bytes += B * H * S * D * 2
 

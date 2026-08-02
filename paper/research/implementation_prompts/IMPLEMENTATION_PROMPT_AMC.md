@@ -92,6 +92,7 @@ def amc_calibrate_channel_order(
     # calib_activations; sort columns of V by descending singular value.
     ...
 
+
 def amc_permute_weights(weight: mx.array, perm: mx.array, axis: int) -> mx.array:
     # Static, offline reordering of a weight tensor's hidden-dim axis by perm.
     # Zero runtime cost — this permutation is baked into the stored weights
@@ -125,9 +126,9 @@ variant is the paper's stated mitigation for "repetitive punctuation gets
 high magnitude but low true importance"):
 ```python
 def amc_query_aware_saliency(
-    x: mx.array,        # [N, D] token activations
-    keys: mx.array,      # [N, D] key projections (k_i)
-    query: mx.array,     # [D] embedded query/prompt vector
+    x: mx.array,  # [N, D] token activations
+    keys: mx.array,  # [N, D] key projections (k_i)
+    query: mx.array,  # [D] embedded query/prompt vector
     alpha: float = 0.5,
 ) -> mx.array:
     # S_i = alpha * mean(|x_i|) + (1 - alpha) * cosine_similarity(query, keys[i])
@@ -155,15 +156,17 @@ sub-byte packing — reuse over reinvention is the pattern here).
 ```python
 @dataclass
 class AMCTierConfig:
-    tier: int          # 0=High, 1=Mid, 2=Low
-    rank: int           # 128 / 43 / 8
-    bits: int           # 16 / 8 / 4
+    tier: int  # 0=High, 1=Mid, 2=Low
+    rank: int  # 128 / 43 / 8
+    bits: int  # 16 / 8 / 4
+
 
 AMC_TIERS = (
     AMCTierConfig(tier=0, rank=128, bits=16),
     AMCTierConfig(tier=1, rank=43, bits=8),
     AMCTierConfig(tier=2, rank=8, bits=4),
 )
+
 
 def amc_assign_tiers(
     saliency: mx.array,  # [N]
@@ -181,8 +184,8 @@ statistics:
 def amc_adaptive_thresholds(
     tau_high_base: float,
     tau_low_base: float,
-    seq_variance: float,     # moving variance over the trailing activation window (RingBuffer-backed)
-    calib_variance: float,   # nominal variance from the offline calibration set
+    seq_variance: float,  # moving variance over the trailing activation window (RingBuffer-backed)
+    calib_variance: float,  # nominal variance from the offline calibration set
     gamma: float = 0.1,
 ) -> Tuple[float, float]:
     # tau_H = tau_high_base * (1 - gamma * ln(seq_variance / calib_variance))
@@ -258,14 +261,16 @@ AMC's family is "adaptive rank+precision," not "eviction."
 
 Config fields (add to `KVCacheConfig` in `cache/base.py`):
 ```python
-amc_k_high: float = 0.20          # top percentile -> High tier
-amc_k_mid: float = 0.30           # next percentile -> Mid tier
+amc_k_high: float = 0.20  # top percentile -> High tier
+amc_k_mid: float = 0.30  # next percentile -> Mid tier
 amc_use_query_saliency: bool = False
-amc_query_alpha: float = 0.5      # Eq. 3 balance coefficient
-amc_adaptive_thresholds: bool = False   # Eq. 4-5 closed-loop adjustment
-amc_threshold_window: int = 64    # RingBuffer window for seq_variance
-amc_gamma: float = 0.1            # threshold attenuation factor
-amc_calib_variance: float | None = None  # from offline calibration; required if amc_adaptive_thresholds=True
+amc_query_alpha: float = 0.5  # Eq. 3 balance coefficient
+amc_adaptive_thresholds: bool = False  # Eq. 4-5 closed-loop adjustment
+amc_threshold_window: int = 64  # RingBuffer window for seq_variance
+amc_gamma: float = 0.1  # threshold attenuation factor
+amc_calib_variance: float | None = (
+    None  # from offline calibration; required if amc_adaptive_thresholds=True
+)
 ```
 
 Wire into `base.py`: add `"amc"` to the `Literal`, add the config block, add

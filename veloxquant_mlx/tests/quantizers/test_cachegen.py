@@ -1,4 +1,5 @@
 """Unit tests for CacheGen entropy-coding primitives."""
+
 from __future__ import annotations
 
 import math
@@ -78,6 +79,7 @@ def test_entropy_bytes_smaller_on_correlated() -> None:
 
 def test_drop_in_matches_group_quant() -> None:
     from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
+
     rng = np.random.default_rng(6)
     x = mx.array(rng.standard_normal((48, 32)).astype(np.float32))
     a = cachegen_quant_dequant(x, 4, 16)

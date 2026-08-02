@@ -3,6 +3,7 @@
 Implements TurboQuant, TurboQuantRVQ, PolarQuant, and QJL plus the
 RateQuant per-layer bit allocator for production LLM inference.
 """
+
 from __future__ import annotations
 
 from veloxquant_mlx.allocators import (

@@ -78,11 +78,13 @@ from veloxquant_mlx.observers.base import QuantizationEvent
 observer = KeyNormObserver()
 
 # Feed it per-token key norm² however you compute it in your own pipeline
-observer.on_event(QuantizationEvent(
-    stage="key_norm",
-    input_shape=keys.shape,
-    metadata={"key_l2_norm_sq": per_token_norm_sq},
-))
+observer.on_event(
+    QuantizationEvent(
+        stage="key_norm",
+        input_shape=keys.shape,
+        metadata={"key_l2_norm_sq": per_token_norm_sq},
+    )
+)
 
 report = observer.report()
 print(f"Heterogeneity ratio: {report.heterogeneity_ratio:.2f}")

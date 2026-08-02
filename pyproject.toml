@@ -48,6 +48,8 @@ dev = [
     "build>=1.2",
     "twine>=5.0",
     "python-semantic-release>=9.15",
+    "pre-commit>=3.7",
+    "ruff>=0.6",
 ]
 
 [project.urls]
@@ -74,6 +76,17 @@ filterwarnings = ["ignore::DeprecationWarning"]
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["veloxquant_mlx"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]

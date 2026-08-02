@@ -41,16 +41,12 @@ class PreconditionerFactory:
         """
         if kind == "rotation":
             if "Pi" not in kwargs:
-                raise QuantizerConfigError(
-                    "PreconditionerFactory: 'rotation' requires 'Pi' kwarg."
-                )
+                raise QuantizerConfigError("PreconditionerFactory: 'rotation' requires 'Pi' kwarg.")
             cls = PreconditionerRegistry.get("rotation")
             return cls(kwargs["Pi"])
         elif kind == "jl":
             if "S" not in kwargs:
-                raise QuantizerConfigError(
-                    "PreconditionerFactory: 'jl' requires 'S' kwarg."
-                )
+                raise QuantizerConfigError("PreconditionerFactory: 'jl' requires 'S' kwarg.")
             cls = PreconditionerRegistry.get("jl")
             return cls(kwargs["S"])
         elif kind == "hadamard":
@@ -62,6 +58,5 @@ class PreconditionerFactory:
             return cls(kwargs["D"])
         else:
             raise QuantizerConfigError(
-                f"PreconditionerFactory: unknown kind '{kind}'. "
-                f"Choices: rotation, jl, hadamard."
+                f"PreconditionerFactory: unknown kind '{kind}'. Choices: rotation, jl, hadamard."
             )

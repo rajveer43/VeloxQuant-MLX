@@ -11,6 +11,7 @@ the only permitted divergence is the kernel's fp32 online-softmax
 accumulation vs. the reference's direct softmax — which is *more* accurate,
 not less.
 """
+
 from __future__ import annotations
 
 import math
@@ -32,6 +33,7 @@ pytestmark = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 # Quantization helpers (KIVI-exact group-affine min/max)
 # ---------------------------------------------------------------------------
+
 
 def _quant_keys(k: np.ndarray, g: int, levels: int, eps=1e-8):
     """Per-CHANNEL group quant (group along tokens). k: [B,H,S,D]."""
@@ -72,7 +74,7 @@ def _reference_attend(q, kc, ks, kz, vc, vs, vz, g, scale):
     B, H, S_q, D = q.shape
     S_kv = kc.shape[2]
     kg = np.arange(S_kv) // g
-    k_hat = kc.astype(np.float32) * ks[:, :, kg, :] + kz[:, :, kg, :]   # [B,H,Skv,D]
+    k_hat = kc.astype(np.float32) * ks[:, :, kg, :] + kz[:, :, kg, :]  # [B,H,Skv,D]
     vgi = np.arange(D) // g
     v_hat = vc.astype(np.float32) * vs[:, :, :, vgi] + vz[:, :, :, vgi]  # [B,H,Skv,D]
 
@@ -98,6 +100,7 @@ def _make_inputs(B, H, S_kv, D, b, g, seed=0):
 # Parity
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("S_kv", [64, 512, 2048])
 @pytest.mark.parametrize("nsg", [1, 2, 4, 8])
 def test_scalar_attend_parity(S_kv, nsg):
@@ -107,8 +110,16 @@ def test_scalar_attend_parity(S_kv, nsg):
 
     ref = _reference_attend(q, kc, ks, kz, vc, vs, vz, g, scale)
     got = scalar_fused_decode_attend(
-        mx.array(q), mx.array(kc), mx.array(ks), mx.array(kz),
-        mx.array(vc), mx.array(vs), mx.array(vz), g, scale, nsg=nsg,
+        mx.array(q),
+        mx.array(kc),
+        mx.array(ks),
+        mx.array(kz),
+        mx.array(vc),
+        mx.array(vs),
+        mx.array(vz),
+        g,
+        scale,
+        nsg=nsg,
     )
     mx.eval(got)
     got_np = np.array(got).astype(np.float32)
@@ -125,8 +136,16 @@ def test_scalar_attend_bitwidths(b):
     q, kc, ks, kz, vc, vs, vz = _make_inputs(B, H, S_kv, D, b, g, seed=b)
     ref = _reference_attend(q, kc, ks, kz, vc, vs, vz, g, scale)
     got = scalar_fused_decode_attend(
-        mx.array(q), mx.array(kc), mx.array(ks), mx.array(kz),
-        mx.array(vc), mx.array(vs), mx.array(vz), g, scale, nsg=4,
+        mx.array(q),
+        mx.array(kc),
+        mx.array(ks),
+        mx.array(kz),
+        mx.array(vc),
+        mx.array(vs),
+        mx.array(vz),
+        g,
+        scale,
+        nsg=4,
     )
     mx.eval(got)
     max_abs = np.abs(np.array(got).astype(np.float32) - ref).max()
@@ -141,16 +160,26 @@ def test_scalar_attend_validation():
     with pytest.raises(ValueError):
         scalar_fused_decode_attend(
             mx.zeros((1, 4, 1, 512), dtype=mx.float16),
-            z, z.astype(mx.float32), z.astype(mx.float32), z, s, s, 32, 0.1)
+            z,
+            z.astype(mx.float32),
+            z.astype(mx.float32),
+            z,
+            s,
+            s,
+            32,
+            0.1,
+        )
     # bad nsg rejected
     with pytest.raises(ValueError):
-        scalar_fused_decode_attend(q, z, z.astype(mx.float32), z.astype(mx.float32),
-                                   z, s, s, 32, 0.1, nsg=0)
+        scalar_fused_decode_attend(
+            q, z, z.astype(mx.float32), z.astype(mx.float32), z, s, s, 32, 0.1, nsg=0
+        )
 
 
 # ---------------------------------------------------------------------------
 # Benchmark (printed, not asserted) — before/after vs. dequant->MLX SDPA
 # ---------------------------------------------------------------------------
+
 
 def test_scalar_attend_benchmark(capsys):
     B, H, D, b, g = 1, 32, 128, 2, 32
@@ -171,24 +200,36 @@ def test_scalar_attend_benchmark(capsys):
         # reconstruct fp16 K_hat/V_hat then MLX SDPA — the round-trip we kill
         S_kv = kc.shape[2]
         kg = mx.arange(S_kv) // g
-        k_hat = (kc.astype(mx.float32) * mx.take(ks, kg, axis=2)
-                 + mx.take(kz, kg, axis=2)).astype(mx.float16)
+        k_hat = (kc.astype(mx.float32) * mx.take(ks, kg, axis=2) + mx.take(kz, kg, axis=2)).astype(
+            mx.float16
+        )
         vgi = mx.arange(D) // g
-        v_hat = (vc.astype(mx.float32) * mx.take(vs, vgi, axis=3)
-                 + mx.take(vz, vgi, axis=3)).astype(mx.float16)
+        v_hat = (
+            vc.astype(mx.float32) * mx.take(vs, vgi, axis=3) + mx.take(vz, vgi, axis=3)
+        ).astype(mx.float16)
         return mx.fast.scaled_dot_product_attention(q, k_hat, v_hat, scale=scale)
 
     with capsys.disabled():
-        print(f"\n# fused group-affine decode-attend  |  B={B} H={H} D={D} b={b} "
-              f"g={g} nsg={nsg}  |  MLX {mx.__version__}")
+        print(
+            f"\n# fused group-affine decode-attend  |  B={B} H={H} D={D} b={b} "
+            f"g={g} nsg={nsg}  |  MLX {mx.__version__}"
+        )
         print("| S_kv | before (MLX) ms | after (fused) ms | speedup |")
         print("|------|-----------------|------------------|---------|")
         for S_kv in [512, 2048, 8192, 16384]:
             q, kc, ks, kz, vc, vs, vz = _make_inputs(B, H, S_kv, D, b, g)
-            aq = mx.array(q); akc = mx.array(kc); aks = mx.array(ks); akz = mx.array(kz)
-            avc = mx.array(vc); avs = mx.array(vs); avz = mx.array(vz)
+            aq = mx.array(q)
+            akc = mx.array(kc)
+            aks = mx.array(ks)
+            akz = mx.array(kz)
+            avc = mx.array(vc)
+            avs = mx.array(vs)
+            avz = mx.array(vz)
             mx.eval(aq, akc, aks, akz, avc, avs, avz)
             tb = _timeit(lambda: _baseline(aq, akc, aks, akz, avc, avs, avz))
-            ta = _timeit(lambda: scalar_fused_decode_attend(
-                aq, akc, aks, akz, avc, avs, avz, g, scale, nsg=nsg))
-            print(f"| {S_kv:5d} | {tb:15.3f} | {ta:16.3f} | {tb/ta:6.2f}x |")
+            ta = _timeit(
+                lambda: scalar_fused_decode_attend(
+                    aq, akc, aks, akz, avc, avs, avz, g, scale, nsg=nsg
+                )
+            )
+            print(f"| {S_kv:5d} | {tb:15.3f} | {ta:16.3f} | {tb / ta:6.2f}x |")

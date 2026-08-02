@@ -47,6 +47,7 @@ Byte accounting:
     tokens_kept        — tokens currently in the first (B=0, H=0) head's cache
     chunk_size         — this cache's eviction granularity (diagnostic)
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -106,8 +107,11 @@ class ChunkKVCache(_MLXKVCache):
             self._head_dim = D
             self._states = [
                 init_chunkkv_state(
-                    self._n_sink, self._budget, D,
-                    chunk_size=self._chunk_size, score_mode=self._score_mode,
+                    self._n_sink,
+                    self._budget,
+                    D,
+                    chunk_size=self._chunk_size,
+                    score_mode=self._score_mode,
                 )
                 for _ in range(B * H)
             ]
@@ -130,7 +134,7 @@ class ChunkKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2   # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
         # 1) Update every head's state independently.
@@ -161,12 +165,12 @@ class ChunkKVCache(_MLXKVCache):
             k_out_h, v_out_h = [], []
             for h in range(H):
                 k_h, v_h = chunkkv_get_kv(self._states[self._head_idx(b, h)])
-                k_out_h.append(k_h)    # [min_kept, D]
+                k_out_h.append(k_h)  # [min_kept, D]
                 v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))   # [H, min_kept, D]
+            k_out_b.append(mx.stack(k_out_h, axis=0))  # [H, min_kept, D]
             v_out_b.append(mx.stack(v_out_h, axis=0))
 
-        K_out = mx.stack(k_out_b, axis=0)   # [B, H, min_kept, D]
+        K_out = mx.stack(k_out_b, axis=0)  # [B, H, min_kept, D]
         V_out = mx.stack(v_out_b, axis=0)
 
         # Byte accounting: sum across all head states.

@@ -45,6 +45,7 @@ pyramid_get_kv      — extract current (keys, values) arrays
 pyramid_fp16_bytes  — bytes stored in current state
 full_pyramid_fp16_bytes — hypothetical cost without eviction
 """
+
 from __future__ import annotations
 
 import math
@@ -96,8 +97,8 @@ def pyramid_budgets(
 
     budgets: list[int] = []
     for i in range(n_layers):
-        frac = i / (n_layers - 1)          # 0.0 at layer 0 → 1.0 at last layer
-        b = hi + (lo - hi) * frac          # linear taper hi → lo
+        frac = i / (n_layers - 1)  # 0.0 at layer 0 → 1.0 at last layer
+        b = hi + (lo - hi) * frac  # linear taper hi → lo
         budgets.append(max(int(round(b)), floor))
     return budgets
 
@@ -157,13 +158,13 @@ def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
         [n] softmax weights summing to ~1.
     """
     scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
-    logits = (keys @ query_proxy) * scale   # [n]
+    logits = (keys @ query_proxy) * scale  # [n]
     return mx.softmax(logits, axis=-1)
 
 
 def pyramid_update(
     state: PyramidState,
-    new_keys: mx.array,    # [S, D] fp16
+    new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
 ) -> PyramidState:
     """Absorb S new tokens, evicting the lowest-score non-sink token if over this layer's budget.
@@ -183,7 +184,7 @@ def pyramid_update(
     S = new_keys.shape[0]
 
     for i in range(S):
-        k_i = new_keys[i]    # [D]
+        k_i = new_keys[i]  # [D]
         v_i = new_values[i]  # [D]
 
         if state.keys is None:
@@ -199,10 +200,10 @@ def pyramid_update(
 
         # --- score update --------------------------------------------------
         attn = _attention_scores(k_i.astype(mx.float32), state.keys.astype(mx.float32))
-        updated_scores = state.scores + attn   # [n_kept]
+        updated_scores = state.scores + attn  # [n_kept]
 
         # --- append new token (score = 0; begins accumulating next step) ---
-        keys_cat   = mx.concatenate([state.keys,   k_i[None].astype(mx.float16)], axis=0)
+        keys_cat = mx.concatenate([state.keys, k_i[None].astype(mx.float16)], axis=0)
         values_cat = mx.concatenate([state.values, v_i[None].astype(mx.float16)], axis=0)
         scores_cat = mx.concatenate([updated_scores, mx.zeros((1,), dtype=mx.float32)], axis=0)
 
@@ -219,7 +220,7 @@ def pyramid_update(
 
             evict_idx = int(mx.argmin(protected).item())
             keep_indices = [j for j in range(n_total) if j != evict_idx]
-            keys_cat   = keys_cat[keep_indices]
+            keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
             scores_cat = scores_cat[keep_indices]
 
@@ -250,12 +251,12 @@ def pyramid_fp16_bytes(state: PyramidState) -> int:
     if state.keys is None:
         return 0
     n, D = state.keys.shape
-    return n * D * 2 * 2   # K + V, 2 bytes each
+    return n * D * 2 * 2  # K + V, 2 bytes each
 
 
 def full_pyramid_fp16_bytes(tokens_seen: int, head_dim: int) -> int:
     """Hypothetical fp16 K + V bytes if all ``tokens_seen`` were stored."""
-    return tokens_seen * head_dim * 2 * 2   # K + V, 2 bytes each
+    return tokens_seen * head_dim * 2 * 2  # K + V, 2 bytes each
 
 
 __all__ = [

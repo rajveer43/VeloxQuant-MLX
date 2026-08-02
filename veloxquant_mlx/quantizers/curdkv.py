@@ -38,6 +38,7 @@ curdkv_get_kv        — extract current (keys, values) arrays
 curdkv_fp16_bytes    — bytes stored in current state
 full_curdkv_fp16_bytes — hypothetical cost without eviction
 """
+
 from __future__ import annotations
 
 import math
@@ -91,8 +92,12 @@ def init_curdkv_state(n_sink: int, budget: int, head_dim: int, rank_cap: int = 1
             "the cache fills"
         )
     return CurDKVState(
-        keys=None, values=None, leverage_scores=None,
-        n_sink=n_sink, budget=budget, rank_cap=rank_cap,
+        keys=None,
+        values=None,
+        leverage_scores=None,
+        n_sink=n_sink,
+        budget=budget,
+        rank_cap=rank_cap,
     )
 
 
@@ -107,11 +112,13 @@ def _attention_weights(query_proxy: mx.array, keys: mx.array) -> mx.array:
         [n] softmax weights summing to ~1.
     """
     scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
-    logits = (keys @ query_proxy) * scale   # [n]
+    logits = (keys @ query_proxy) * scale  # [n]
     return mx.softmax(logits, axis=-1)
 
 
-def _leverage_scores(query_proxy: mx.array, keys: mx.array, values: mx.array, rank_cap: int) -> mx.array:
+def _leverage_scores(
+    query_proxy: mx.array, keys: mx.array, values: mx.array, rank_cap: int
+) -> mx.array:
     """Approximated leverage scores of the proxy attention-output contribution.
 
     Builds the proxy attention-weighted value block
@@ -144,8 +151,8 @@ def _leverage_scores(query_proxy: mx.array, keys: mx.array, values: mx.array, ra
         [n] non-negative leverage scores, summing to ~1 (or all-zero if the
         weighted-value block is degenerately all-zero).
     """
-    attn = _attention_weights(query_proxy, keys)          # [n]
-    weighted_values = values * attn[:, None]              # [n, D]
+    attn = _attention_weights(query_proxy, keys)  # [n]
+    weighted_values = values * attn[:, None]  # [n, D]
 
     n, d = weighted_values.shape
 
@@ -156,14 +163,14 @@ def _leverage_scores(query_proxy: mx.array, keys: mx.array, values: mx.array, ra
     # Full SVD is fine at these sizes (n, d are small per-head cache blocks).
     u, s, _ = np.linalg.svd(wv_np, full_matrices=False)
     k = max(1, min(rank_cap, n, d))
-    u_k = u[:, :k]                                        # [n, k]
-    s_k = s[:k]                                           # [k]
+    u_k = u[:, :k]  # [n, k]
+    s_k = s[:k]  # [k]
 
     energy = s_k * s_k
     energy_total = energy.sum()
     if energy_total <= 0:
         return mx.zeros((n,), dtype=mx.float32)
-    weights = energy / energy_total                       # [k], sums to 1
+    weights = energy / energy_total  # [k], sums to 1
 
     scores = np.sum((u_k * u_k) * weights[None, :], axis=1)  # [n]
 
@@ -175,7 +182,7 @@ def _leverage_scores(query_proxy: mx.array, keys: mx.array, values: mx.array, ra
 
 def curdkv_update(
     state: CurDKVState,
-    new_keys: mx.array,    # [S, D] fp16
+    new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
 ) -> CurDKVState:
     """Absorb S new tokens into state, evicting the lowest-leverage non-sink token if over budget.
@@ -209,7 +216,7 @@ def curdkv_update(
     S = new_keys.shape[0]
 
     for i in range(S):
-        k_i = new_keys[i]   # [D]
+        k_i = new_keys[i]  # [D]
         v_i = new_values[i]  # [D]
 
         if state.keys is None:
@@ -231,11 +238,11 @@ def curdkv_update(
             state.values.astype(mx.float32),
             state.rank_cap,
         )
-        updated_scores = state.leverage_scores + lev   # [n_kept]
+        updated_scores = state.leverage_scores + lev  # [n_kept]
 
         # --- append new token, seeded with its own leverage within the
         # resulting (existing + new) block (see docstring: not a flat 0) ---
-        keys_cat   = mx.concatenate([state.keys,   k_i[None].astype(mx.float16)], axis=0)
+        keys_cat = mx.concatenate([state.keys, k_i[None].astype(mx.float16)], axis=0)
         values_cat = mx.concatenate([state.values, v_i[None].astype(mx.float16)], axis=0)
         self_lev = _leverage_scores(
             k_i.astype(mx.float32),
@@ -258,7 +265,7 @@ def curdkv_update(
 
             evict_idx = int(mx.argmin(protected).item())
             keep_indices = [j for j in range(n_total) if j != evict_idx]
-            keys_cat   = keys_cat[keep_indices]
+            keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
             scores_cat = scores_cat[keep_indices]
 
@@ -290,12 +297,12 @@ def curdkv_fp16_bytes(state: CurDKVState) -> int:
     if state.keys is None:
         return 0
     n, D = state.keys.shape
-    return n * D * 2 * 2   # K + V, 2 bytes each
+    return n * D * 2 * 2  # K + V, 2 bytes each
 
 
 def full_curdkv_fp16_bytes(tokens_seen: int, head_dim: int) -> int:
     """Hypothetical fp16 K + V bytes if all ``tokens_seen`` were stored."""
-    return tokens_seen * head_dim * 2 * 2   # K + V, 2 bytes each
+    return tokens_seen * head_dim * 2 * 2  # K + V, 2 bytes each
 
 
 __all__ = [

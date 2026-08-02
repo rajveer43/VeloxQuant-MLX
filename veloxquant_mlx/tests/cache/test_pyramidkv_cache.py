@@ -8,6 +8,7 @@ shape bounded by budget, output dtype fp16, sink protection, budget enforcement
 across steps, byte accounting, and — the distinguishing feature — for_model
 producing per-layer caches with a decreasing pyramid of budgets. All data synthetic.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -49,6 +50,7 @@ class _Model:
 # Factory and interface
 # ---------------------------------------------------------------------------
 
+
 def test_factory_dispatch() -> None:
     assert isinstance(_make(), PyramidKVCache)
 
@@ -71,6 +73,7 @@ def test_single_layer_falls_back_to_avg_budget() -> None:
 # ---------------------------------------------------------------------------
 # Shape and dtype
 # ---------------------------------------------------------------------------
+
 
 def test_output_shape_below_budget() -> None:
     c = _make(pyramid_budget=16, pyramid_n_sink=2)
@@ -109,6 +112,7 @@ def test_output_batch_head_dims_preserved() -> None:
 # Budget enforcement across steps
 # ---------------------------------------------------------------------------
 
+
 def test_budget_enforced_after_many_steps() -> None:
     budget = 10
     c = _make(pyramid_budget=budget, pyramid_n_sink=3)
@@ -130,6 +134,7 @@ def test_tokens_kept_bounded_by_budget() -> None:
 # Byte accounting
 # ---------------------------------------------------------------------------
 
+
 def test_compression_ratio_equals_1_below_budget() -> None:
     c = _make(pyramid_budget=32, pyramid_n_sink=0)
     k, v = _rand_kv(S=4, H=2, D=32)
@@ -148,7 +153,7 @@ def test_tokens_seen_accumulates() -> None:
     c = _make(pyramid_budget=32)
     k, v = _rand_kv(S=6, H=2, D=32)
     c.update_and_fetch(k, v)
-    assert c.tokens_seen == 12   # B=1, H=2, S=6
+    assert c.tokens_seen == 12  # B=1, H=2, S=6
 
 
 def test_pyramid_kept_bytes_positive_after_update() -> None:
@@ -162,6 +167,7 @@ def test_pyramid_kept_bytes_positive_after_update() -> None:
 # Determinism
 # ---------------------------------------------------------------------------
 
+
 def test_deterministic() -> None:
     k, v = _rand_kv(S=12, H=2, D=32)
     ko1, _ = _make().update_and_fetch(k, v)
@@ -174,6 +180,7 @@ def test_deterministic() -> None:
 # for_model — the pyramid (distinguishing feature)
 # ---------------------------------------------------------------------------
 
+
 def test_for_model_returns_pyramidkv_caches() -> None:
     cfg = KVCacheConfig(method="pyramidkv", head_dim=32, pyramid_budget=256, pyramid_n_sink=4)
     caches = KVCacheBuilder.for_model(_Model(8), cfg)
@@ -182,20 +189,22 @@ def test_for_model_returns_pyramidkv_caches() -> None:
 
 def test_for_model_budgets_form_decreasing_pyramid() -> None:
     """Early-layer caches get a larger budget than deep-layer caches."""
-    cfg = KVCacheConfig(method="pyramidkv", head_dim=32,
-                        pyramid_budget=256, pyramid_n_sink=4, pyramid_beta=2.0)
+    cfg = KVCacheConfig(
+        method="pyramidkv", head_dim=32, pyramid_budget=256, pyramid_n_sink=4, pyramid_beta=2.0
+    )
     caches = KVCacheBuilder.for_model(_Model(12), cfg)
     budgets = [c.layer_budget for c in caches]
     for i in range(len(budgets) - 1):
-        assert budgets[i] >= budgets[i + 1], f"layer {i}={budgets[i]} < {i+1}={budgets[i+1]}"
+        assert budgets[i] >= budgets[i + 1], f"layer {i}={budgets[i]} < {i + 1}={budgets[i + 1]}"
     assert budgets[0] > budgets[-1]
 
 
 def test_for_model_budget_mean_near_avg() -> None:
     """The per-layer budgets average to roughly pyramid_budget."""
     avg = 256
-    cfg = KVCacheConfig(method="pyramidkv", head_dim=32,
-                        pyramid_budget=avg, pyramid_n_sink=4, pyramid_beta=2.0)
+    cfg = KVCacheConfig(
+        method="pyramidkv", head_dim=32, pyramid_budget=avg, pyramid_n_sink=4, pyramid_beta=2.0
+    )
     caches = KVCacheBuilder.for_model(_Model(16), cfg)
     budgets = [c.layer_budget for c in caches]
     mean = sum(budgets) / len(budgets)
@@ -204,8 +213,9 @@ def test_for_model_budget_mean_near_avg() -> None:
 
 def test_for_model_flat_beta_gives_uniform_budgets() -> None:
     """beta=1.0 → every layer gets the same budget (== uniform H2O)."""
-    cfg = KVCacheConfig(method="pyramidkv", head_dim=32,
-                        pyramid_budget=200, pyramid_n_sink=4, pyramid_beta=1.0)
+    cfg = KVCacheConfig(
+        method="pyramidkv", head_dim=32, pyramid_budget=200, pyramid_n_sink=4, pyramid_beta=1.0
+    )
     caches = KVCacheBuilder.for_model(_Model(10), cfg)
     budgets = [c.layer_budget for c in caches]
     assert all(b == 200 for b in budgets)
@@ -213,8 +223,9 @@ def test_for_model_flat_beta_gives_uniform_budgets() -> None:
 
 def test_for_model_early_layer_keeps_more_tokens() -> None:
     """Feeding the same long sequence, the early-layer cache retains more tokens."""
-    cfg = KVCacheConfig(method="pyramidkv", head_dim=32,
-                        pyramid_budget=64, pyramid_n_sink=4, pyramid_beta=2.5)
+    cfg = KVCacheConfig(
+        method="pyramidkv", head_dim=32, pyramid_budget=64, pyramid_n_sink=4, pyramid_beta=2.5
+    )
     caches = KVCacheBuilder.for_model(_Model(12), cfg)
     k, v = _rand_kv(S=200, H=2, D=32, seed=3)
     caches[0].update_and_fetch(k, v)

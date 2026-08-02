@@ -22,6 +22,7 @@ paper's "strictly zero runtime overhead" claim is about silicon; here it
 means this function is never called from :func:`amc_saliency` /
 :func:`amc_assign_tiers` / :func:`amc_apply_rank_mask`).
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -53,9 +54,7 @@ def amc_calibrate_channel_order(calib_activations: mx.array) -> mx.array:
         )
     n_calib, d = calib_activations.shape
     if n_calib < 2:
-        raise ValueError(
-            f"amc_calibrate_channel_order: n_calib must be >= 2, got {n_calib}"
-        )
+        raise ValueError(f"amc_calibrate_channel_order: n_calib must be >= 2, got {n_calib}")
 
     x = calib_activations.astype(mx.float32)
     mean = mx.mean(x, axis=0)

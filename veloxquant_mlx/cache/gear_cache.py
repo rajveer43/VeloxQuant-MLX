@@ -36,6 +36,7 @@ Byte accounting:
     base_only_key_bytes  / base_only_value_bytes    — base codes alone (baseline)
     fp16_key_bytes       / fp16_value_bytes          — uncompressed cost for the ratio
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -99,7 +100,7 @@ class GEARKVCache(_MLXKVCache):
         for b in range(B):
             recon_h = []
             for h in range(H):
-                mat = t[b, h]                          # [S, D]
+                mat = t[b, h]  # [S, D]
                 state = gear_compress(
                     mat,
                     bits=self._bits,

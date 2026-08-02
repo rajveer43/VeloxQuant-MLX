@@ -25,9 +25,9 @@ from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
 
 config = KVCacheConfig(
     method="xquant",
-    xquant_group_size=2,        # layers per anchor/reuse group (2 = pairs)
-    xquant_base_bits=2,         # anchor quantizer bit-width
-    xquant_residual_bits=0,     # reuse-layer correction residual (0 = pure reuse)
+    xquant_group_size=2,  # layers per anchor/reuse group (2 = pairs)
+    xquant_base_bits=2,  # anchor quantizer bit-width
+    xquant_residual_bits=0,  # reuse-layer correction residual (0 = pure reuse)
     xquant_group_quant_size=32,
 )
 

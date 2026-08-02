@@ -35,6 +35,7 @@ This module holds the pure numerics: base quant (borrowed), residual,
 residual-low-rank, sparse-outlier extraction, full compress/reconstruct, and an
 honest byte estimator. The cache wrapper owns the per-layer prefill/decode state.
 """
+
 from __future__ import annotations
 
 import math
@@ -61,6 +62,7 @@ class GEARState(NamedTuple):
         bits:   int base bit-width.
         rank:   int residual low-rank (0 = no low-rank term).
     """
+
     codes: mx.array
     scale: mx.array
     zero: mx.array
@@ -110,8 +112,8 @@ def lowrank_error(
     if rank is not None and int(rank) == 0:
         return None, None
     U_r, s_r, Vt_r = _truncated_svd(E, rank=rank, energy_threshold=energy_threshold)
-    L = U_r * s_r[None, :]          # fold singular values into the left factor
-    R = Vt_r                        # [r, D]
+    L = U_r * s_r[None, :]  # fold singular values into the left factor
+    R = Vt_r  # [r, D]
     return L, R
 
 
@@ -140,8 +142,8 @@ def sparse_outliers(
         return None, None
     flat = resid.reshape(-1)
     mag = mx.abs(flat)
-    order = mx.argsort(mag)                       # ascending
-    top = order[total - nnz:]                     # largest-magnitude indices
+    order = mx.argsort(mag)  # ascending
+    top = order[total - nnz :]  # largest-magnitude indices
     top = top.astype(mx.int32)
     vals = flat[top].astype(mx.float16)
     return top, vals
@@ -163,7 +165,7 @@ def gear_compress(
     x32 = x.astype(mx.float32)
     n = int(x32.shape[0])
     stream, base_recon = quantize_base(x32, bits, group_size)
-    E = residual(x32, base_recon)                 # [N, D]
+    E = residual(x32, base_recon)  # [N, D]
 
     L, R = lowrank_error(E, rank, energy_threshold)
     if L is not None:
@@ -176,9 +178,16 @@ def gear_compress(
     sp_idx, sp_val = sparse_outliers(E_after, sparse_frac)
 
     return GEARState(
-        codes=stream.codes, scale=stream.scale, zero=stream.zero,
-        L=L, R=R, sp_idx=sp_idx, sp_val=sp_val,
-        n_rows=n, bits=bits, rank=r,
+        codes=stream.codes,
+        scale=stream.scale,
+        zero=stream.zero,
+        L=L,
+        R=R,
+        sp_idx=sp_idx,
+        sp_val=sp_val,
+        n_rows=n,
+        bits=bits,
+        rank=r,
     )
 
 
@@ -201,6 +210,7 @@ def gear_reconstruct(state: GEARState) -> mx.array:
 
 class _CodeStreamView(NamedTuple):
     """Minimal CodeStream-shaped view so ``dequant_codes`` can rebuild the base."""
+
     codes: mx.array
     scale: mx.array
     zero: mx.array
@@ -216,14 +226,14 @@ def gear_bytes(state: GEARState) -> int:
     """
     n_groups, gs, d = state.codes.shape
     code_bytes = math.ceil(state.n_rows * d * state.bits / 8)
-    param_bytes = n_groups * d * 2 * 2            # scale + zero, fp16
+    param_bytes = n_groups * d * 2 * 2  # scale + zero, fp16
     lr_bytes = 0
     if state.L is not None and state.R is not None:
         lr_bytes = (state.L.shape[0] * state.L.shape[1] + state.R.shape[0] * state.R.shape[1]) * 2
     sp_bytes = 0
     if state.sp_idx is not None:
         nnz = int(state.sp_idx.shape[0])
-        sp_bytes = nnz * (4 + 2)                  # int32 index + fp16 value
+        sp_bytes = nnz * (4 + 2)  # int32 index + fp16 value
     return int(code_bytes + param_bytes + lr_bytes + sp_bytes)
 
 
@@ -244,9 +254,7 @@ def gear_quant_dequant(
     energy_threshold: float = 0.90,
 ) -> mx.array:
     """Drop-in quant→dequant: full GEAR reconstruction of ``[N, D]`` → fp16."""
-    return gear_reconstruct(
-        gear_compress(x, bits, rank, sparse_frac, group_size, energy_threshold)
-    )
+    return gear_reconstruct(gear_compress(x, bits, rank, sparse_frac, group_size, energy_threshold))
 
 
 __all__ = [

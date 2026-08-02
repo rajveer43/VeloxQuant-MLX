@@ -1,4 +1,5 @@
 """Unit tests for MiniCache SLERP-merge primitives."""
+
 from __future__ import annotations
 
 import math
@@ -19,6 +20,7 @@ from veloxquant_mlx.quantizers.minicache import (
 # ------------------------------------------------------------------
 # pair_layers_depth
 # ------------------------------------------------------------------
+
 
 def test_pair_layers_depth_early_all_primary() -> None:
     roles = pair_layers_depth(8, start_frac=0.5, group_size=2)
@@ -45,6 +47,7 @@ def test_pair_layers_depth_rejects_small_group() -> None:
 # slerp
 # ------------------------------------------------------------------
 
+
 def test_slerp_endpoints() -> None:
     d0 = mx.array([[1.0, 0.0, 0.0]])
     d1 = mx.array([[0.0, 1.0, 0.0]])
@@ -69,7 +72,7 @@ def test_slerp_output_unit_norm() -> None:
 
 def test_slerp_collinear_fallback() -> None:
     d0 = mx.array([[1.0, 0.0]])
-    d1 = mx.array([[1.0, 0.0]])   # identical → sin(omega)=0 fallback
+    d1 = mx.array([[1.0, 0.0]])  # identical → sin(omega)=0 fallback
     s = slerp(d0, d1, 0.5)
     mx.eval(s)
     assert np.allclose(np.array(s), np.array(d0), atol=1e-5)
@@ -78,6 +81,7 @@ def test_slerp_collinear_fallback() -> None:
 # ------------------------------------------------------------------
 # merge / reconstruct
 # ------------------------------------------------------------------
+
 
 def test_to_mag_dir_recovers_vector() -> None:
     rng = np.random.default_rng(1)
@@ -106,7 +110,7 @@ def test_merge_preserves_magnitude() -> None:
     rng = np.random.default_rng(3)
     base = rng.standard_normal((8, 16)).astype(np.float32)
     xp = mx.array(base * 1.0)
-    xm = mx.array(base * 3.0)   # same direction, 3x magnitude
+    xm = mx.array(base * 3.0)  # same direction, 3x magnitude
     res = merge_pair(xp, xm, retention_threshold=0.99, t=0.5)
     rp = reconstruct_layer(res, "primary")
     rm = reconstruct_layer(res, "merge")

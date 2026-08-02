@@ -23,10 +23,10 @@ from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
 
 config = KVCacheConfig(
     method="kvquant",
-    head_dim=128,                    # set to your model's head dimension
-    kvquant_bits=3,                  # base NUQ bit-width
-    kvquant_outlier_fraction=0.01,   # top 1% by magnitude kept fp16
-    kvquant_lloyd_iters=8,           # Lloyd-Max iterations for level fitting
+    head_dim=128,  # set to your model's head dimension
+    kvquant_bits=3,  # base NUQ bit-width
+    kvquant_outlier_fraction=0.01,  # top 1% by magnitude kept fp16
+    kvquant_lloyd_iters=8,  # Lloyd-Max iterations for level fitting
 )
 
 caches = KVCacheBuilder.for_model(model, config)

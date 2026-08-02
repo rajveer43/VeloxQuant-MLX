@@ -30,6 +30,7 @@ Adaptation notes:
     - Static calibration path is NOT implemented (deferred; no calibration
       dataset requirement keeps the cache-only contract intact).
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -55,7 +56,7 @@ def rank_channels_by_sensitivity(
         lo_indices: remaining channels.
     """
     D = keys.shape[-1]
-    variance = mx.var(keys.astype(mx.float32), axis=0)   # [D]
+    variance = mx.var(keys.astype(mx.float32), axis=0)  # [D]
     mx.eval(variance)
     var_list = variance.tolist()
     sorted_idx = sorted(range(D), key=lambda i: -var_list[i])
@@ -90,21 +91,21 @@ def quantize_mixed_channels(
         Reconstructed keys [S, D] fp16.
     """
     S, D = keys.shape
-    parts: list[mx.array] = list(keys.astype(mx.float16).T)   # D × [S]
+    parts: list[mx.array] = list(keys.astype(mx.float16).T)  # D × [S]
 
     if hi_indices:
         K_hi = keys[:, hi_indices]
-        recon_hi = _group_quant_dequant(K_hi, hi_bit, group_size)   # [S, n_hi]
+        recon_hi = _group_quant_dequant(K_hi, hi_bit, group_size)  # [S, n_hi]
         for new_col, orig_col in enumerate(hi_indices):
             parts[orig_col] = recon_hi[:, new_col]
 
     if lo_indices:
         K_lo = keys[:, lo_indices]
-        recon_lo = _group_quant_dequant(K_lo, lo_bit, group_size)   # [S, n_lo]
+        recon_lo = _group_quant_dequant(K_lo, lo_bit, group_size)  # [S, n_lo]
         for new_col, orig_col in enumerate(lo_indices):
             parts[orig_col] = recon_lo[:, new_col]
 
-    return mx.stack(parts, axis=1).astype(mx.float16)   # [S, D]
+    return mx.stack(parts, axis=1).astype(mx.float16)  # [S, D]
 
 
 def compute_running_variance(

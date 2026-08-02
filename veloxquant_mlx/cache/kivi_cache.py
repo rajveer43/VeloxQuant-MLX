@@ -31,6 +31,7 @@ fp16 (scale, zero) amortized per group.  Byte accounting below reflects the
 realized quantized-region cost; the fp16 residual window is reported
 separately so the compression ratio is not inflated.
 """
+
 from __future__ import annotations
 
 import math
@@ -96,19 +97,17 @@ class KIVIKVCache(_MLXKVCache):
         pad = n_groups * gs - L
 
         # Move quant axis to the end for uniform grouping, then restore.
-        xm = mx.moveaxis(x32, axis, -1)            # [..., other, L]
+        xm = mx.moveaxis(x32, axis, -1)  # [..., other, L]
         if pad:
             tail = xm[..., -1:]
-            xm = mx.concatenate(
-                [xm, mx.broadcast_to(tail, xm.shape[:-1] + (pad,))], axis=-1
-            )
+            xm = mx.concatenate([xm, mx.broadcast_to(tail, xm.shape[:-1] + (pad,))], axis=-1)
         new_shape = xm.shape[:-1] + (n_groups, gs)
-        xg = xm.reshape(new_shape)                 # [..., other, G, gs]
+        xg = xm.reshape(new_shape)  # [..., other, G, gs]
         gmin = mx.min(xg, axis=-1, keepdims=True)
         gmax = mx.max(xg, axis=-1, keepdims=True)
         scale = mx.maximum((gmax - gmin) / self._levels, self._eps)
         codes = mx.clip(mx.round((xg - gmin) / scale), 0, self._levels)
-        recon = codes * scale + gmin               # asymmetric dequant
+        recon = codes * scale + gmin  # asymmetric dequant
         recon = recon.reshape(xm.shape)[..., :L]
         recon = mx.moveaxis(recon, -1, axis)
         return recon.astype(x.dtype)

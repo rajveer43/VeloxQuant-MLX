@@ -32,6 +32,7 @@ Primary config from paper (SQ_noQJL_v3): omit JL sketch entirely (m=0),
 use b_signal = b_noise = 3 bits. Compression gain comes from NOT adding
 QJL sketch bits for the d - d_s = 124 noise dimensions.
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -122,13 +123,14 @@ class SpectralQuantizer(Quantizer):
         if apply_qjl:
             m = jl_dim if jl_dim is not None else self._d_s
             from veloxquant_mlx.preconditioners.jl_sketch import QJLEncoder
+
             S_np = make_jl_matrix(self._d_s, m, seed=seed)
             self._qjl = QJLEncoder(mx.array(S_np.astype(np.float16)))
 
         # Precompute bit accounting
         self._bits_per_signal_dim = b_signal
         self._bits_per_noise_dim = b_noise
-        self._jl_dim = (self._qjl.m if self._qjl is not None else 0)
+        self._jl_dim = self._qjl.m if self._qjl is not None else 0
 
     # ------------------------------------------------------------------
     # Core encode / decode
@@ -164,8 +166,8 @@ class SpectralQuantizer(Quantizer):
         # Step 2: Per-vector std-dev scale so rotated coordinates fit codebook
         # We scale by the std of the signal dims (the dominant energy).
         # This matches the paper's normalisation before codebook lookup.
-        h_s = h_tilde_np[:, : self._d_s]       # (batch, d_s)
-        h_n = h_tilde_np[:, self._d_s :]        # (batch, d - d_s)
+        h_s = h_tilde_np[:, : self._d_s]  # (batch, d_s)
+        h_n = h_tilde_np[:, self._d_s :]  # (batch, d - d_s)
 
         # Per-vector abs-max scale for signal dims (matches TurboQuant convention)
         sig_absmax = np.max(np.abs(h_s), axis=1, keepdims=True)  # (batch, 1)
@@ -182,12 +184,12 @@ class SpectralQuantizer(Quantizer):
 
         # Step 3: Quantize signal dims with C_signal
         h_s_norm = mx.array(h_s / sig_absmax, dtype=mx.float16)  # normalised
-        idx_s_mx = self._cb_signal.quantize(h_s_norm)              # (batch, d_s) uint8
+        idx_s_mx = self._cb_signal.quantize(h_s_norm)  # (batch, d_s) uint8
 
         # Step 4: Quantize noise dims with C_noise
         if h_n.size > 0:
             h_n_norm = mx.array(h_n / noise_absmax, dtype=mx.float16)
-            idx_n_mx = self._cb_noise.quantize(h_n_norm)          # (batch, d-d_s) uint8
+            idx_n_mx = self._cb_noise.quantize(h_n_norm)  # (batch, d-d_s) uint8
         else:
             idx_n_mx = None
 
@@ -202,10 +204,10 @@ class SpectralQuantizer(Quantizer):
         residual_norm_mx = None
         if self._apply_qjl and self._qjl is not None:
             # Reconstruct signal estimate ĥ_s^(0) to compute residual
-            h_s_hat_norm = self._cb_signal.dequantize(idx_s_mx)      # (batch, d_s) fp16
+            h_s_hat_norm = self._cb_signal.dequantize(idx_s_mx)  # (batch, d_s) fp16
             h_s_hat = h_s_hat_norm.astype(mx.float32) * mx.array(sig_absmax, dtype=mx.float32)
             h_s_mx = mx.array(h_s, dtype=mx.float32)
-            epsilon_s = (h_s_mx - h_s_hat).astype(mx.float16)        # (batch, d_s)
+            epsilon_s = (h_s_mx - h_s_hat).astype(mx.float16)  # (batch, d_s)
             signs_mx, residual_norm_mx = self._qjl.encode_key(epsilon_s)
 
         # Pack scales: store signal scale in norm field, noise scale in final_radius
@@ -217,8 +219,8 @@ class SpectralQuantizer(Quantizer):
             batch_size=batch,
             dim=self._d,
             indices=indices_mx,
-            norm=scales_mx,              # signal scale per token
-            final_radius=noise_scales_mx, # noise scale per token
+            norm=scales_mx,  # signal scale per token
+            final_radius=noise_scales_mx,  # noise scale per token
             signs=signs_mx,
             residual_norm=residual_norm_mx,
         )
@@ -236,9 +238,9 @@ class SpectralQuantizer(Quantizer):
         """
         import mlx.core as mx
 
-        sig_scale = ev.norm.astype(mx.float32)[:, None]          # (batch, 1)
-        noise_scale = ev.final_radius.astype(mx.float32)[:, None] # (batch, 1)
-        indices_np = np.array(ev.indices, dtype=np.int32)         # (batch, d)
+        sig_scale = ev.norm.astype(mx.float32)[:, None]  # (batch, 1)
+        noise_scale = ev.final_radius.astype(mx.float32)[:, None]  # (batch, 1)
+        indices_np = np.array(ev.indices, dtype=np.int32)  # (batch, d)
         batch = ev.batch_size
 
         idx_s = mx.array(indices_np[:, : self._d_s], dtype=mx.uint8)
@@ -248,12 +250,17 @@ class SpectralQuantizer(Quantizer):
         h_s_hat = self._cb_signal.dequantize(idx_s).astype(mx.float32) * sig_scale
 
         # QJL correction on signal dims (if applicable)
-        if self._apply_qjl and self._qjl is not None and ev.signs is not None and ev.residual_norm is not None:
+        if (
+            self._apply_qjl
+            and self._qjl is not None
+            and ev.signs is not None
+            and ev.residual_norm is not None
+        ):
             scale_qjl = SQRT_PI_OVER_2 / self._qjl.m
-            r_norm = ev.residual_norm.astype(mx.float32)[:, None]   # (batch, 1)
-            correction = r_norm * scale_qjl * (
-                ev.signs.astype(mx.float32) @ self._qjl._S.astype(mx.float32)
-            )   # (batch, d_s)
+            r_norm = ev.residual_norm.astype(mx.float32)[:, None]  # (batch, 1)
+            correction = (
+                r_norm * scale_qjl * (ev.signs.astype(mx.float32) @ self._qjl._S.astype(mx.float32))
+            )  # (batch, d_s)
             h_s_hat = h_s_hat + correction
 
         # Decode noise dims: ĥ_n = decode(c_n) * scale (no correction)
@@ -285,12 +292,12 @@ class SpectralQuantizer(Quantizer):
 
         q_f32 = q.reshape(-1).astype(mx.float32)
         # Rotate query: q̃ = U^T q = _R @ q
-        q_rot = (self._R @ q_f32).reshape(-1)   # (d,)
-        q_rot_s = q_rot[: self._d_s]             # signal dims of query
-        q_rot_n = q_rot[self._d_s :]             # noise dims of query
+        q_rot = (self._R @ q_f32).reshape(-1)  # (d,)
+        q_rot_s = q_rot[: self._d_s]  # signal dims of query
+        q_rot_n = q_rot[self._d_s :]  # noise dims of query
 
-        sig_scale = ev.norm.astype(mx.float32)           # (batch,)
-        noise_scale = ev.final_radius.astype(mx.float32) # (batch,)
+        sig_scale = ev.norm.astype(mx.float32)  # (batch,)
+        noise_scale = ev.final_radius.astype(mx.float32)  # (batch,)
         indices_np = np.array(ev.indices, dtype=np.int32)
         batch = ev.batch_size
 
@@ -299,19 +306,24 @@ class SpectralQuantizer(Quantizer):
 
         # MSE IP from signal dims: ĥ_s · q̃_s
         h_s_hat = self._cb_signal.dequantize(idx_s).astype(mx.float32) * sig_scale[:, None]
-        ip_signal = h_s_hat @ q_rot_s                              # (batch,)
+        ip_signal = h_s_hat @ q_rot_s  # (batch,)
 
         # MSE IP from noise dims: ĥ_n · q̃_n
         if idx_n.shape[1] > 0:
             h_n_hat = self._cb_noise.dequantize(idx_n).astype(mx.float32) * noise_scale[:, None]
-            ip_noise = h_n_hat @ q_rot_n                           # (batch,)
+            ip_noise = h_n_hat @ q_rot_n  # (batch,)
         else:
             ip_noise = mx.zeros((batch,), dtype=mx.float32)
 
         ip_total = ip_signal + ip_noise
 
         # QJL residual correction on signal dims
-        if self._apply_qjl and self._qjl is not None and ev.signs is not None and ev.residual_norm is not None:
+        if (
+            self._apply_qjl
+            and self._qjl is not None
+            and ev.signs is not None
+            and ev.residual_norm is not None
+        ):
             ip_qjl = self._qjl.estimate_ip(
                 q_rot_s.reshape(1, -1).astype(mx.float16),
                 ev.signs,
@@ -337,13 +349,13 @@ class SpectralQuantizer(Quantizer):
         # Per-vector scales (2 fp16) are a small fixed overhead equivalent to
         # TurboQuant's residual norm, not included in the per-element budget.
         compressed_bits = (
-            self._d_s * self._b_signal                    # signal quantization
-            + (self._d - self._d_s) * self._b_noise       # noise quantization
+            self._d_s * self._b_signal  # signal quantization
+            + (self._d - self._d_s) * self._b_noise  # noise quantization
         )
         if self._apply_qjl and self._qjl is not None:
             m = self._qjl.m
-            compressed_bits += m                           # JL sign bits
-            compressed_bits += 16                          # residual norm fp16
+            compressed_bits += m  # JL sign bits
+            compressed_bits += 16  # residual norm fp16
         return fp16_bits / max(compressed_bits, 1)
 
     def __repr__(self) -> str:

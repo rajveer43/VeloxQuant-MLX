@@ -54,6 +54,7 @@ squeeze_get_kv        — extract current (keys, values) arrays
 squeeze_fp16_bytes    — bytes stored in current state
 full_squeeze_fp16_bytes — hypothetical cost without eviction
 """
+
 from __future__ import annotations
 
 import math
@@ -91,9 +92,9 @@ def concentration_score(keys: mx.array) -> float:
         return 0.0
 
     k = keys.astype(mx.float32)
-    norms = mx.sqrt(mx.sum(k * k, axis=-1, keepdims=True)) + 1e-8   # [n, 1]
-    k_norm = k / norms                                              # [n, D]
-    gram = k_norm @ k_norm.T                                        # [n, n] cosine
+    norms = mx.sqrt(mx.sum(k * k, axis=-1, keepdims=True)) + 1e-8  # [n, 1]
+    k_norm = k / norms  # [n, D]
+    gram = k_norm @ k_norm.T  # [n, n] cosine
 
     # Sum off-diagonal entries: total - trace, over n*(n-1) unordered*2 pairs.
     total = float(mx.sum(gram).item())
@@ -164,7 +165,7 @@ def squeeze_budgets(
 
     budgets: list[int] = []
     for w in weights:
-        blended = (1.0 - strength) + strength * w   # 1.0 at strength=0
+        blended = (1.0 - strength) + strength * w  # 1.0 at strength=0
         b = avg_budget * blended
         budgets.append(max(int(round(b)), floor))
     return budgets
@@ -227,13 +228,13 @@ def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
         [n] softmax weights summing to ~1.
     """
     scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
-    logits = (keys @ query_proxy) * scale   # [n]
+    logits = (keys @ query_proxy) * scale  # [n]
     return mx.softmax(logits, axis=-1)
 
 
 def squeeze_update(
     state: SqueezeState,
-    new_keys: mx.array,    # [S, D] fp16
+    new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
 ) -> SqueezeState:
     """Absorb S new tokens, evicting the lowest-score non-sink token if over this layer's budget.
@@ -253,7 +254,7 @@ def squeeze_update(
     S = new_keys.shape[0]
 
     for i in range(S):
-        k_i = new_keys[i]    # [D]
+        k_i = new_keys[i]  # [D]
         v_i = new_values[i]  # [D]
 
         if state.keys is None:
@@ -269,10 +270,10 @@ def squeeze_update(
 
         # --- score update --------------------------------------------------
         attn = _attention_scores(k_i.astype(mx.float32), state.keys.astype(mx.float32))
-        updated_scores = state.scores + attn   # [n_kept]
+        updated_scores = state.scores + attn  # [n_kept]
 
         # --- append new token (score = 0; begins accumulating next step) ---
-        keys_cat   = mx.concatenate([state.keys,   k_i[None].astype(mx.float16)], axis=0)
+        keys_cat = mx.concatenate([state.keys, k_i[None].astype(mx.float16)], axis=0)
         values_cat = mx.concatenate([state.values, v_i[None].astype(mx.float16)], axis=0)
         scores_cat = mx.concatenate([updated_scores, mx.zeros((1,), dtype=mx.float32)], axis=0)
 
@@ -289,7 +290,7 @@ def squeeze_update(
 
             evict_idx = int(mx.argmin(protected).item())
             keep_indices = [j for j in range(n_total) if j != evict_idx]
-            keys_cat   = keys_cat[keep_indices]
+            keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
             scores_cat = scores_cat[keep_indices]
 
@@ -320,12 +321,12 @@ def squeeze_fp16_bytes(state: SqueezeState) -> int:
     if state.keys is None:
         return 0
     n, D = state.keys.shape
-    return n * D * 2 * 2   # K + V, 2 bytes each
+    return n * D * 2 * 2  # K + V, 2 bytes each
 
 
 def full_squeeze_fp16_bytes(tokens_seen: int, head_dim: int) -> int:
     """Hypothetical fp16 K + V bytes if all ``tokens_seen`` were stored."""
-    return tokens_seen * head_dim * 2 * 2   # K + V, 2 bytes each
+    return tokens_seen * head_dim * 2 * 2  # K + V, 2 bytes each
 
 
 __all__ = [

@@ -8,6 +8,7 @@ So the old code silently patched zero layers on every real model and only
 emitted a warning, while ``run_turboquant_method`` in the benchmark script
 kept measuring the *unpatched* fp16 model and mislabeling the result.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -27,8 +28,7 @@ def _make_fake_model(n_layers: int = 4, n_heads: int = 4, head_dim: int = 32) ->
     """
     hidden_size = n_heads * head_dim
     layers = [
-        SimpleNamespace(self_attn=SimpleNamespace(head_dim=head_dim))
-        for _ in range(n_layers)
+        SimpleNamespace(self_attn=SimpleNamespace(head_dim=head_dim)) for _ in range(n_layers)
     ]
     args = SimpleNamespace(hidden_size=hidden_size, num_attention_heads=n_heads)
     return SimpleNamespace(layers=layers, args=args)

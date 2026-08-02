@@ -8,6 +8,7 @@ mechanism (reconstruction-reliance retains the region the model relies on to
 reconstruct its context, at a higher rate than a cumulative H2O-style baseline),
 with a null "flat" control where it shows no advantage.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -154,6 +155,7 @@ def test_run_is_reproducible():
             k, v = _rand_kv(1, 16, seed=i)
             st = kvzip_update(st, k, v)
         return kvzip_get_kv(st)[0]
+
     assert bool(mx.all(run() == run()).item())
 
 
@@ -171,7 +173,7 @@ def test_latest_probe_matches_tova():
 
     z = init_kvzip_state(n_sink=4, budget=12, head_dim=16, probe="latest")
     t = init_tova_state(n_sink=4, budget=12, head_dim=16)
-    for (k, v) in ks:
+    for k, v in ks:
         z = kvzip_update(z, k, v)
         t = tova_update(t, k, v)
 
@@ -190,7 +192,7 @@ def test_context_probe_can_differ_from_latest():
 
     def run(probe):
         st = init_kvzip_state(n_sink=2, budget=12, head_dim=16, probe=probe)
-        for (k, v) in ks:
+        for k, v in ks:
             st = kvzip_update(st, k, v)
         return kvzip_get_kv(st)[0]
 
@@ -217,8 +219,10 @@ def test_reconstruction_geometry_retains_critical():
     over planted seeds — a statistical claim, not a per-seed guarantee.
     """
     D = 16
-    axis_a = np.zeros(D, dtype=np.float16); axis_a[0] = 3.0
-    axis_b = np.zeros(D, dtype=np.float16); axis_b[1] = 3.0
+    axis_a = np.zeros(D, dtype=np.float16)
+    axis_a[0] = 3.0
+    axis_b = np.zeros(D, dtype=np.float16)
+    axis_b[1] = 3.0
 
     def build_stream(seed):
         r = np.random.default_rng(seed)
@@ -246,7 +250,7 @@ def test_reconstruction_geometry_retains_critical():
             for k in stream:
                 st = h2o_update(st, k, k)
             K, _ = h2o_get_kv(st)
-        proj_b = (K.astype(mx.float32) @ mx.array(axis_b.astype(np.float32)))
+        proj_b = K.astype(mx.float32) @ mx.array(axis_b.astype(np.float32))
         return int((proj_b > 6.0).sum().item())
 
     seeds = range(30)
@@ -262,12 +266,15 @@ def test_flat_control_no_advantage_required():
     win is regime-dependent and not overclaimed on flat geometry.
     """
     D = 16
-    axis = np.zeros(D, dtype=np.float16); axis[0] = 3.0
+    axis = np.zeros(D, dtype=np.float16)
+    axis[0] = 3.0
 
     def run(method, seed):
         r = np.random.default_rng(seed)
-        stream = [mx.array((axis + r.standard_normal(D).astype(np.float16) * 0.2)[None])
-                  for _ in range(30)]
+        stream = [
+            mx.array((axis + r.standard_normal(D).astype(np.float16) * 0.2)[None])
+            for _ in range(30)
+        ]
         if method == "kvzip":
             st = init_kvzip_state(n_sink=1, budget=10, head_dim=D, probe="context")
             for k in stream:

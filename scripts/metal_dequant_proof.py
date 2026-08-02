@@ -16,6 +16,7 @@ Acceptance for Phase 1:
     * Outputs match exactly across all shapes and dtypes.
     * Metal path is at least as fast as pure MLX at S>=512.
 """
+
 from __future__ import annotations
 
 import time
@@ -30,8 +31,14 @@ from veloxquant_mlx.metal.kernels import vecinfer_dequant_metal
 
 
 def _make_inputs(
-    B: int, H: int, S: int, n_sub: int, sub_dim: int, n_centroids: int,
-    dtype: mx.Dtype, seed: int = 42,
+    B: int,
+    H: int,
+    S: int,
+    n_sub: int,
+    sub_dim: int,
+    n_centroids: int,
+    dtype: mx.Dtype,
+    seed: int = 42,
 ) -> Tuple[mx.array, mx.array]:
     rng = np.random.default_rng(seed)
     indices_np = rng.integers(0, n_centroids, size=(B, H, S, n_sub), dtype=np.int32)
@@ -50,12 +57,12 @@ def correctness_check() -> bool:
     all_ok = True
     cases = [
         # (B, H, S, n_sub, sub_dim, n_centroids, dtype)
-        (1, 8, 128,  16, 8,  256, mx.float16),
-        (1, 8, 512,  16, 8,  256, mx.float16),
-        (1, 8, 2048, 16, 8,  256, mx.float16),
-        (1, 4, 2048, 32, 8,  256, mx.float16),   # head_dim=256 (Falcon/Gemma)
-        (1, 8, 1024, 8,  16, 4096, mx.float16),  # larger codebook
-        (1, 8, 512,  16, 8,  256, mx.float32),
+        (1, 8, 128, 16, 8, 256, mx.float16),
+        (1, 8, 512, 16, 8, 256, mx.float16),
+        (1, 8, 2048, 16, 8, 256, mx.float16),
+        (1, 4, 2048, 32, 8, 256, mx.float16),  # head_dim=256 (Falcon/Gemma)
+        (1, 8, 1024, 8, 16, 4096, mx.float16),  # larger codebook
+        (1, 8, 512, 16, 8, 256, mx.float32),
     ]
     for case in cases:
         B, H, S, n_sub, sub_dim, n_c, dtype = case
@@ -73,8 +80,10 @@ def correctness_check() -> bool:
         diff = _max_abs_diff(out_ref, out_metal)
         ok = diff == 0.0  # gather + reshape, no arithmetic — should be bit-exact
         tag = "OK" if ok else "FAIL"
-        print(f"  [{tag}] B={B} H={H} S={S} n_sub={n_sub} sub_dim={sub_dim} "
-              f"n_c={n_c} dtype={dtype}  max|diff|={diff:.2e}")
+        print(
+            f"  [{tag}] B={B} H={H} S={S} n_sub={n_sub} sub_dim={sub_dim} "
+            f"n_c={n_c} dtype={dtype}  max|diff|={diff:.2e}"
+        )
         if not ok:
             all_ok = False
     return all_ok
@@ -83,15 +92,15 @@ def correctness_check() -> bool:
 def benchmark() -> None:
     print("\n=== Benchmark (median of 50 iters, after 5 warmup) ===")
     print(f"  {'shape':<40s}  {'pure-mlx (us)':>14s}  {'metal (us)':>12s}  {'speedup':>8s}")
-    print(f"  {'-'*40}  {'-'*14}  {'-'*12}  {'-'*8}")
+    print(f"  {'-' * 40}  {'-' * 14}  {'-' * 12}  {'-' * 8}")
 
     shape_cases = [
-        (1, 8, 128,  16, 8,  256),
-        (1, 8, 512,  16, 8,  256),
-        (1, 8, 2048, 16, 8,  256),
-        (1, 8, 8192, 16, 8,  256),
-        (1, 4, 2048, 32, 8,  256),    # head_dim=256, n_kv_heads=4 (Falcon3-7B)
-        (1, 4, 8192, 32, 8,  256),
+        (1, 8, 128, 16, 8, 256),
+        (1, 8, 512, 16, 8, 256),
+        (1, 8, 2048, 16, 8, 256),
+        (1, 8, 8192, 16, 8, 256),
+        (1, 4, 2048, 32, 8, 256),  # head_dim=256, n_kv_heads=4 (Falcon3-7B)
+        (1, 4, 8192, 32, 8, 256),
     ]
     dtype = mx.float16
 

@@ -4,6 +4,7 @@ KIVI is deterministic (min/max group quant, no codebook training, no RNG),
 so every reconstruction-quality assertion below is exact run-to-run.  All
 synthetic data is seeded for reproducibility regardless.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -18,6 +19,7 @@ from veloxquant_mlx.quantizers.kivi import KIVIQuantizer
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _unit_gaussian(n: int, d: int, seed: int = 0) -> np.ndarray:
     rng = np.random.default_rng(seed)
@@ -35,6 +37,7 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
 # ---------------------------------------------------------------------------
 # Registry / construction
 # ---------------------------------------------------------------------------
+
 
 def test_registered() -> None:
     assert QuantizerRegistry.is_registered("kivi")
@@ -56,6 +59,7 @@ def test_rejects_bad_axis() -> None:
 # ---------------------------------------------------------------------------
 # Shape / dtype preservation
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("axis", ["channel", "token"])
 def test_encode_decode_shape_dtype(axis: str) -> None:
@@ -79,6 +83,7 @@ def test_encode_wrong_dim_raises() -> None:
 # ---------------------------------------------------------------------------
 # Reconstruction quality (deterministic; tolerances justified inline)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "b, min_cos",
@@ -131,6 +136,7 @@ def test_determinism() -> None:
 # Asymmetric scheme: per-token (value) path
 # ---------------------------------------------------------------------------
 
+
 def test_token_axis_roundtrip() -> None:
     X = _unit_gaussian(300, 128, seed=5)
     q = KIVIQuantizer(d=128, b=4, group_size=32, axis="token")
@@ -141,6 +147,7 @@ def test_token_axis_roundtrip() -> None:
 # ---------------------------------------------------------------------------
 # Ragged final group (n not divisible by group_size)
 # ---------------------------------------------------------------------------
+
 
 def test_ragged_group_handled() -> None:
     # 100 tokens, group_size 32 → groups of 32,32,32,4 (padded internally)
@@ -154,6 +161,7 @@ def test_ragged_group_handled() -> None:
 # ---------------------------------------------------------------------------
 # Inner-product estimate
 # ---------------------------------------------------------------------------
+
 
 def test_inner_product_tracks_exact() -> None:
     X = _unit_gaussian(256, 128, seed=2)

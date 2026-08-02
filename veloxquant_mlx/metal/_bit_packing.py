@@ -12,6 +12,7 @@ Public API:
   - :func:`turboquant_bit_pack`
   - :func:`turboquant_bit_unpack`
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -65,6 +66,7 @@ _UNPACK_SRC = r"""
 # Kernel factories
 # ---------------------------------------------------------------------------
 
+
 def _pack_kernel(b: int):
     key = ("bit_pack", b)
     if key not in _cache:
@@ -95,6 +97,7 @@ def _unpack_kernel(b: int):
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def turboquant_bit_pack(indices: mx.array, b: int) -> mx.array:
     """Pack uint8 indices into tightly bit-packed uint8 storage.
 
@@ -111,11 +114,9 @@ def turboquant_bit_pack(indices: mx.array, b: int) -> mx.array:
     N = indices.size
     elems_per_byte = 8 // b
     if N % elems_per_byte != 0:
-        raise ValueError(
-            f"turboquant_bit_pack: N={N} not divisible by {elems_per_byte} (= 8/b)"
-        )
+        raise ValueError(f"turboquant_bit_pack: N={N} not divisible by {elems_per_byte} (= 8/b)")
     n_bytes = N * b // 8
-    flat    = indices.reshape(-1).astype(mx.uint8)
+    flat = indices.reshape(-1).astype(mx.uint8)
     outputs = _pack_kernel(b)(
         inputs=[flat],
         template=[("B_BITS", b)],
@@ -140,7 +141,7 @@ def turboquant_bit_unpack(packed: mx.array, N: int, b: int) -> mx.array:
     """
     if b not in (1, 2, 4):
         raise ValueError(f"turboquant_bit_unpack: b must be 1, 2, or 4, got {b}")
-    flat    = packed.reshape(-1).astype(mx.uint8)
+    flat = packed.reshape(-1).astype(mx.uint8)
     outputs = _unpack_kernel(b)(
         inputs=[flat],
         template=[("B_BITS", b)],

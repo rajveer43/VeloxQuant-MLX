@@ -5,6 +5,7 @@ handling, mode validation), the per-head merge-eviction state machine, sink
 preservation, budget enforcement, byte accounting, determinism, and the
 drop-mode == H2O bit-for-bit equivalence. All data is synthetic — no model.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -35,10 +36,11 @@ def _kv(S, D, seed=0):
 # most_similar_survivor
 # ======================================================================
 
+
 def test_survivor_picks_closest_non_sink():
     # 4 keys; evicted key equals key[2] direction → survivor should be 2.
     keys = mx.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [-1.0, 0.0]], dtype=mx.float32)
-    evicted = mx.array([1.0, 1.0], dtype=mx.float32)   # closest to row 2
+    evicted = mx.array([1.0, 1.0], dtype=mx.float32)  # closest to row 2
     tgt = most_similar_survivor(evicted, keys, exclude_idx=99, n_sink_eff=0)
     assert tgt == 2
 
@@ -61,6 +63,7 @@ def test_survivor_none_when_all_sinks():
 # ======================================================================
 # merge_pair
 # ======================================================================
+
 
 def test_merge_drop_returns_survivor_unchanged():
     ks = mx.array([1.0, 2.0], dtype=mx.float16)
@@ -87,7 +90,7 @@ def test_merge_mean_is_average_values_only():
 def test_merge_sim_weight_bounds_value_between_inputs():
     ks = mx.array([1.0, 0.0], dtype=mx.float16)
     vs = mx.array([0.0, 0.0], dtype=mx.float16)
-    ke = mx.array([1.0, 0.0], dtype=mx.float16)   # identical dir → w≈1 → v_new≈ve
+    ke = mx.array([1.0, 0.0], dtype=mx.float16)  # identical dir → w≈1 → v_new≈ve
     ve = mx.array([10.0, 10.0], dtype=mx.float16)
     _, v_new = merge_pair(ks, vs, ke, ve, "sim_weighted", merge_keys=False)
     # w = cos = 1 → v_new should be ~ve
@@ -101,13 +104,14 @@ def test_merge_keys_flag_blends_keys():
     ve = mx.array([1.0, 0.0], dtype=mx.float16)
     k_off, _ = merge_pair(ks, vs, ke, ve, "mean", merge_keys=False)
     k_on, _ = merge_pair(ks, vs, ke, ve, "mean", merge_keys=True)
-    assert bool(mx.all(k_off == ks).item())        # keys untouched
-    assert not bool(mx.all(k_on == ks).item())      # keys blended
+    assert bool(mx.all(k_off == ks).item())  # keys untouched
+    assert not bool(mx.all(k_on == ks).item())  # keys blended
 
 
 # ======================================================================
 # CaMState eviction/merge
 # ======================================================================
+
 
 def test_init_rejects_bad_mode():
     with pytest.raises(ValueError):
@@ -137,7 +141,7 @@ def test_update_respects_budget_exactly():
     st = init_cam_state(n_sink=2, budget=10, head_dim=8, merge_mode="sim_weighted")
     k, v = _kv(40, 8)
     st = cam_update(st, k, v)
-    assert int(st.keys.shape[0]) == 10   # merge trims to exactly budget
+    assert int(st.keys.shape[0]) == 10  # merge trims to exactly budget
 
 
 def test_sinks_always_retained():
@@ -159,8 +163,7 @@ def test_merge_changes_values_vs_drop():
 def test_merge_keys_false_leaves_keys_like_drop():
     k, v = _kv(50, 8, seed=9)
     drop = cam_update(init_cam_state(2, 10, 8, merge_mode="drop"), k, v)
-    sim = cam_update(init_cam_state(2, 10, 8, merge_mode="sim_weighted",
-                                    merge_keys=False), k, v)
+    sim = cam_update(init_cam_state(2, 10, 8, merge_mode="sim_weighted", merge_keys=False), k, v)
     # values-only merge → surviving keys identical to the drop path
     assert bool(mx.all(drop.keys == sim.keys).item())
 
@@ -192,6 +195,7 @@ def test_byte_accounting_helpers():
 # ======================================================================
 # drop mode == H2O (bit-for-bit)
 # ======================================================================
+
 
 @pytest.mark.parametrize("seed", [0, 1, 2])
 def test_drop_mode_reduces_to_h2o(seed):

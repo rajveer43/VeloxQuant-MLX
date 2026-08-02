@@ -10,6 +10,7 @@ Covers:
   - ragged-group channel padding; shapes/dtypes; determinism; guards
   - analytic byte helpers
 """
+
 from __future__ import annotations
 
 import math
@@ -57,6 +58,7 @@ def _mse(a: mx.array, b: mx.array) -> float:
 # Permutation primitives
 # ------------------------------------------------------------------
 
+
 def test_permutation_valid_and_inverse() -> None:
     x = _rows(64, 32, seed=1, channel_scales=_het_scales(32))
     perm = channel_permutation(x)
@@ -93,6 +95,7 @@ def test_sorted_permutation_shrinks_group_range_spread() -> None:
 # ------------------------------------------------------------------
 # Clipped group quantization
 # ------------------------------------------------------------------
+
 
 def test_alpha1_equals_plain_minmax() -> None:
     x = _rows(64, 32, seed=5, channel_scales=_het_scales(32))
@@ -137,10 +140,7 @@ def test_clip_search_never_worse_than_alpha1() -> None:
 
 def test_error_monotone_in_bits() -> None:
     x = _rows(128, 64, seed=7)
-    errs = [
-        _mse(skvq_round_trip(x, None, bits=b, group_size=16), x)
-        for b in (2, 4, 8)
-    ]
+    errs = [_mse(skvq_round_trip(x, None, bits=b, group_size=16), x) for b in (2, 4, 8)]
     assert errs[0] > errs[1] > errs[2]
     assert errs[2] < 1e-4  # 8-bit round trip is near-exact
 
@@ -158,7 +158,7 @@ def test_reorder_helps_heterogeneous_not_homogeneous() -> None:
 
     imp_het = improvement(het)
     imp_hom = improvement(hom)
-    assert imp_het > 0.05           # real win under smooth heterogeneity
+    assert imp_het > 0.05  # real win under smooth heterogeneity
     assert imp_het > imp_hom + 0.03  # and clearly larger than the control
 
 
@@ -178,9 +178,7 @@ def test_reorder_large_win_on_per_channel_snr() -> None:
     x = _rows(256, d, seed=15, channel_scales=scales)
 
     def norm_err(perm):
-        recon = np.array(
-            skvq_round_trip(x, perm, bits=2, group_size=16), dtype=np.float32
-        )
+        recon = np.array(skvq_round_trip(x, perm, bits=2, group_size=16), dtype=np.float32)
         err = np.mean((recon - np.array(x)) ** 2, axis=0)
         var = np.maximum(np.array(x).var(axis=0), 1e-12)
         return float(np.mean(err / var))
@@ -233,9 +231,7 @@ def test_guards() -> None:
 
 def test_byte_helpers() -> None:
     # 100 tokens, d=64, 2 bits, gs=16 -> 4 groups
-    assert skvq_compressed_bytes(100, 64, 2, 16) == (
-        math.ceil(100 * 64 * 2 / 8) + 100 * 4 * 2 * 2
-    )
+    assert skvq_compressed_bytes(100, 64, 2, 16) == (math.ceil(100 * 64 * 2 / 8) + 100 * 4 * 2 * 2)
     assert skvq_fp16_bytes(100, 64) == 100 * 64 * 2
     # ragged: d=10, gs=4 -> 3 groups
     assert skvq_compressed_bytes(10, 10, 4, 4) == math.ceil(10 * 10 * 4 / 8) + 10 * 3 * 4

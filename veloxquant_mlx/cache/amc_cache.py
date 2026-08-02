@@ -21,6 +21,7 @@ Byte accounting:
     tokens_seen         — total token positions ever passed to update_and_fetch
     tokens_high/mid/low — cumulative per-tier token counts (observability)
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -108,7 +109,7 @@ class AMCKVCache(_MLXKVCache):
 
         self._B: int = 0
         self._H: int = 0
-        self._keys: List[mx.array] = []    # per (b,h): [n_seen, D] fp16
+        self._keys: List[mx.array] = []  # per (b,h): [n_seen, D] fp16
         self._values: List[mx.array] = []  # per (b,h): [n_seen, D] fp16
 
         self._threshold_states: List[AMCThresholdState] = []
@@ -178,8 +179,8 @@ class AMCKVCache(_MLXKVCache):
             k_out_h, v_out_h = [], []
             for h in range(H):
                 idx = self._head_idx(b, h)
-                k_step = keys[b, h].astype(mx.float16)     # [S, D]
-                v_step = values[b, h].astype(mx.float16)   # [S, D]
+                k_step = keys[b, h].astype(mx.float16)  # [S, D]
+                v_step = values[b, h].astype(mx.float16)  # [S, D]
 
                 if self._use_query_saliency:
                     query = mx.mean(k_step.astype(mx.float32), axis=0)
@@ -201,8 +202,16 @@ class AMCKVCache(_MLXKVCache):
 
                 prev_k = self._keys[idx]
                 prev_v = self._values[idx]
-                new_k = k_compressed if prev_k is None else mx.concatenate([prev_k, k_compressed], axis=0)
-                new_v = v_compressed if prev_v is None else mx.concatenate([prev_v, v_compressed], axis=0)
+                new_k = (
+                    k_compressed
+                    if prev_k is None
+                    else mx.concatenate([prev_k, k_compressed], axis=0)
+                )
+                new_v = (
+                    v_compressed
+                    if prev_v is None
+                    else mx.concatenate([prev_v, v_compressed], axis=0)
+                )
                 self._keys[idx] = new_k
                 self._values[idx] = new_v
 

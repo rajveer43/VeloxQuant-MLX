@@ -1,4 +1,5 @@
 """Tests for MaxHeap and SortedChannelIndex."""
+
 from __future__ import annotations
 
 import pytest

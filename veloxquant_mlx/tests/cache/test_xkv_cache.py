@@ -16,6 +16,7 @@ Covers:
       independent per-layer SVD at the same rank (mechanism validation)
   13. Determinism
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -62,8 +63,7 @@ class _MockModel:
 def _group(coordinator, n_members, rank=8, group_id=0, **cfg_kwargs):
     cfg = _cfg(xkv_rank=rank, **cfg_kwargs)
     return [
-        XKVCache(cfg, member_idx=i, group_id=group_id, n_members=n_members,
-                 coordinator=coordinator)
+        XKVCache(cfg, member_idx=i, group_id=group_id, n_members=n_members, coordinator=coordinator)
         for i in range(n_members)
     ]
 
@@ -202,7 +202,7 @@ def test_decode_accumulation_uses_frozen_basis():
     members = _group(coord, n_members=2, rank=8)
     k = _rand(1, 2, 32, 32)
     v = _rand(1, 2, 32, 32, seed=1)
-    _prefill_and_settle(members, k, v)   # settle round advances offset by 1 each
+    _prefill_and_settle(members, k, v)  # settle round advances offset by 1 each
     basis_before = np.array(members[0]._V_g.tolist())
 
     for step in range(4):
@@ -228,7 +228,7 @@ def test_coordinator_budget_raises():
     # the design intent that the joint SVD runs once, at prefill.
     coord = XKVCoordinator(max_ctx=8)
     members = _group(coord, n_members=2, rank=4)
-    k = _rand(1, 2, 16, 32)   # exceeds max_ctx=8 in a single prefill call
+    k = _rand(1, 2, 16, 32)  # exceeds max_ctx=8 in a single prefill call
     v = _rand(1, 2, 16, 32, seed=1)
     with pytest.raises(RuntimeError, match="max_ctx"):
         members[0].update_and_fetch(k, v)
@@ -239,9 +239,12 @@ def test_coordinator_budget_raises():
 # ---------------------------------------------------------------------------
 def test_for_model_grouping():
     assert pair_layers_grouped(6, 2) == [
-        (0, 0, 2), (1, 0, 2),
-        (0, 1, 2), (1, 1, 2),
-        (0, 2, 2), (1, 2, 2),
+        (0, 0, 2),
+        (1, 0, 2),
+        (0, 1, 2),
+        (1, 1, 2),
+        (0, 2, 2),
+        (1, 2, 2),
     ]
     model = _MockModel(n_layers=6, head_dim=32)
     caches = KVCacheBuilder.for_model(model, _cfg(xkv_group_size=2, xkv_rank=8))
@@ -249,9 +252,12 @@ def test_for_model_grouping():
     assert all(isinstance(c, XKVCache) for c in caches)
     member_groups = [(c.member_idx, c.group_id) for c in caches]
     assert member_groups == [
-        (0, 0), (1, 0),
-        (0, 1), (1, 1),
-        (0, 2), (1, 2),
+        (0, 0),
+        (1, 0),
+        (0, 1),
+        (1, 1),
+        (0, 2),
+        (1, 2),
     ]
     coords = {id(c._coord) for c in caches}
     assert len(coords) == 1
@@ -269,9 +275,11 @@ def test_for_model_trailing_partial_group():
     assert len(caches) == 5
     member_groups = [(c.member_idx, c.group_id) for c in caches]
     assert member_groups == [
-        (0, 0), (1, 0),
-        (0, 1), (1, 1),
-        (0, 2),   # trailing group of size 1
+        (0, 0),
+        (1, 0),
+        (0, 1),
+        (1, 1),
+        (0, 2),  # trailing group of size 1
     ]
     k = _rand(1, 2, 16, 32)
     v = _rand(1, 2, 16, 32, seed=1)
@@ -306,8 +314,9 @@ def test_shared_structure_beats_independent_svd():
     # Independent per-layer standalone caches (group_of_1) on the SAME data.
     indep_mse = 0.0
     for k in layer_keys:
-        standalone = XKVCache(_cfg(xkv_rank=r_true), member_idx=0, group_id=0,
-                               n_members=1, coordinator=None)
+        standalone = XKVCache(
+            _cfg(xkv_rank=r_true), member_idx=0, group_id=0, n_members=1, coordinator=None
+        )
         ko, _ = standalone.update_and_fetch(k, k)
         indep_mse += _mse(ko, k)
     indep_mse /= 3

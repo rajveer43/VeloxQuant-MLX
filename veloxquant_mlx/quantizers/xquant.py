@@ -26,6 +26,7 @@ All quantization uses the same asymmetric min/max group scheme as
 ``_quant_utils._group_quant_dequant`` (groups along the token axis), so XQuant
 composes with the rest of the suite's correctness guarantees.
 """
+
 from __future__ import annotations
 
 from typing import NamedTuple
@@ -42,6 +43,7 @@ class GroupParams(NamedTuple):
         n_rows: int — original (pre-pad) number of token rows.
         bits: int — bit-width these params were computed at.
     """
+
     scale: mx.array
     zero: mx.array
     n_rows: int
@@ -102,11 +104,11 @@ def quantize_codes(x: mx.array, bits: int, group_size: int = 32) -> tuple[mx.arr
     x32, n_groups, n = _pad_to_groups(x32, group_size)
     d = x32.shape[-1]
     xg = x32.reshape(n_groups, group_size, d)
-    gmin = mx.min(xg, axis=1, keepdims=True)            # [n_groups, 1, D]
+    gmin = mx.min(xg, axis=1, keepdims=True)  # [n_groups, 1, D]
     gmax = mx.max(xg, axis=1, keepdims=True)
     levels = (1 << bits) - 1
     eps = 1e-8
-    scale = mx.maximum((gmax - gmin) / levels, eps)     # [n_groups, 1, D]
+    scale = mx.maximum((gmax - gmin) / levels, eps)  # [n_groups, 1, D]
     codes = mx.clip(mx.round((xg - gmin) / scale), 0, levels)
     return codes, GroupParams(scale=scale, zero=gmin, n_rows=n, bits=bits)
 
@@ -154,14 +156,12 @@ def dequant_with_params(codes: mx.array, params: GroupParams) -> mx.array:
     Returns:
         Reconstructed [n_rows, D] fp16.
     """
-    recon = codes * params.scale + params.zero          # [n_groups, gs, D]
+    recon = codes * params.scale + params.zero  # [n_groups, gs, D]
     n_groups, gs, d = recon.shape
     return recon.reshape(n_groups * gs, d)[: params.n_rows].astype(mx.float16)
 
 
-def quantize_residual(
-    x: mx.array, recon: mx.array, bits: int, group_size: int = 32
-) -> mx.array:
+def quantize_residual(x: mx.array, recon: mx.array, bits: int, group_size: int = 32) -> mx.array:
     """Quantize the reuse-layer residual (x - recon) and return its contribution.
 
     A low-bit correction applied on top of the shared-code reconstruction. With
@@ -176,7 +176,7 @@ def quantize_residual(
     Returns:
         [N, D] fp16 quantized residual to add back to ``recon``.
     """
-    res = (x.astype(mx.float32) - recon.astype(mx.float32))
+    res = x.astype(mx.float32) - recon.astype(mx.float32)
     res32, n_groups, n = _pad_to_groups(res, group_size)
     d = res32.shape[-1]
     rg = res32.reshape(n_groups, group_size, d)

@@ -18,6 +18,7 @@ Usage::
     PYTHONPATH=. python benchmark_scripts/benchmark_minicache.py \\
         --model mlx-community/Llama-3.2-3B-Instruct-4bit
 """
+
 from __future__ import annotations
 
 import argparse
@@ -52,7 +53,7 @@ def _ensure_path() -> None:
 
 def _peak_mb() -> float:
     try:
-        return float(mx.metal.get_peak_memory()) / (1024 ** 2)
+        return float(mx.metal.get_peak_memory()) / (1024**2)
     except Exception:
         return float("nan")
 
@@ -67,6 +68,7 @@ def _reset_peak() -> None:
 def _chip_name() -> str:
     try:
         import subprocess
+
         return subprocess.check_output(
             ["sysctl", "-n", "machdep.cpu.brand_string"], text=True
         ).strip()
@@ -76,11 +78,16 @@ def _chip_name() -> str:
 
 def run_one(model, tokenizer, cache_arg, n_decode: int, label: str) -> dict:
     from mlx_lm import generate
+
     _reset_peak()
     t0 = time.perf_counter()
     result = generate(
-        model, tokenizer, prompt=PROMPT,
-        max_tokens=n_decode, kv_cache=cache_arg, verbose=False,
+        model,
+        tokenizer,
+        prompt=PROMPT,
+        max_tokens=n_decode,
+        kv_cache=cache_arg,
+        verbose=False,
     )
     elapsed = time.perf_counter() - t0
     peak = _peak_mb()
@@ -97,14 +104,15 @@ def run_one(model, tokenizer, cache_arg, n_decode: int, label: str) -> dict:
 
 def build_cache(method: str, model, overrides: dict):
     from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
+
     cfg = KVCacheConfig(method=method, **overrides)
     return KVCacheBuilder.for_model(model, cfg)
 
 
 def merge_quality_offline(seed: int = 0) -> dict:
     """Offline: adjacent-layer cosine + merge MSE on similar vs dissimilar layers."""
-    from veloxquant_mlx.quantizers.minicache import (
-        merge_pair, reconstruct_layer, merge_similarity)
+    from veloxquant_mlx.quantizers.minicache import merge_pair, reconstruct_layer, merge_similarity
+
     rng = np.random.default_rng(seed)
     S, D = 128, 128
     base = rng.standard_normal((S, D)).astype(np.float32)
@@ -136,6 +144,7 @@ def main() -> None:
 
     print(f"Loading model: {args.model}")
     from mlx_lm import load
+
     model, tokenizer = load(args.model)
 
     out_dir = Path(args.out_dir)
@@ -159,15 +168,18 @@ def main() -> None:
             cache_arg = None if method is None else build_cache(method, model, overrides)
             res = run_one(model, tokenizer, cache_arg, args.n_decode, label)
             trial_results.append(res)
-            print(f"  {label} trial {trial+1}: {res['tokens_per_sec']:.1f} tok/s")
+            print(f"  {label} trial {trial + 1}: {res['tokens_per_sec']:.1f} tok/s")
         avg_tps = float(np.mean([r["tokens_per_sec"] for r in trial_results]))
         avg_peak = float(np.mean([r["peak_memory_mb"] for r in trial_results]))
-        all_results.append({
-            "label": label, "method": method or "fp16",
-            "avg_tokens_per_sec": round(avg_tps, 2),
-            "avg_peak_memory_mb": round(avg_peak, 1),
-            "trials": trial_results,
-        })
+        all_results.append(
+            {
+                "label": label,
+                "method": method or "fp16",
+                "avg_tokens_per_sec": round(avg_tps, 2),
+                "avg_peak_memory_mb": round(avg_peak, 1),
+                "trials": trial_results,
+            }
+        )
 
     output = {
         "model": args.model,
@@ -192,10 +204,10 @@ def _plot(results: list, model_name: str, out_dir: Path) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle(f"MiniCache KV Cache — {model_stem}", fontsize=13)
     colors = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B2"]
-    axes[0].bar(labels, tps, color=colors[:len(labels)])
+    axes[0].bar(labels, tps, color=colors[: len(labels)])
     axes[0].set_title("Throughput (tok/s)")
     axes[0].tick_params(axis="x", rotation=30)
-    axes[1].bar(labels, peak, color=colors[:len(labels)])
+    axes[1].bar(labels, peak, color=colors[: len(labels)])
     axes[1].set_title("Peak Memory (MB)")
     axes[1].tick_params(axis="x", rotation=30)
     plt.tight_layout()

@@ -9,6 +9,7 @@ entropy-coded payload + table + V + mean; kvtc_pre_entropy_bytes excludes
 entropy gain), determinism, and values compressed too (not keys-only, unlike
 SVDq).
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -38,7 +39,9 @@ def _skewed_variance_data(S: int, D: int, r_true: int, seed: int, scale=None):
     return mx.array(X)
 
 
-def _svdq_fixed_split_reconstruction(x: mx.array, total_bit_budget: int, hi_fraction=0.25) -> mx.array:
+def _svdq_fixed_split_reconstruction(
+    x: mx.array, total_bit_budget: int, hi_fraction=0.25
+) -> mx.array:
     """SVDq-style fixed top-25%/75% mixed-bit split, at a MATCHED total bit
     budget, for the same local PCA basis kvtc_compress would fit — used as
     the baseline in the "DP beats fixed split" comparison. Implemented
@@ -72,7 +75,9 @@ def _svdq_fixed_split_reconstruction(x: mx.array, total_bit_budget: int, hi_frac
     for lo_bit in range(0, 9):
         hi_bit = 2 * lo_bit
         total = n_hi * hi_bit + n_lo * lo_bit
-        if total <= total_bit_budget and (n_hi * hi_bit + n_lo * lo_bit) > (n_hi * best[0] + n_lo * best[1]):
+        if total <= total_bit_budget and (n_hi * hi_bit + n_lo * lo_bit) > (
+            n_hi * best[0] + n_lo * best[1]
+        ):
             best = (hi_bit, lo_bit)
     hi_bit, lo_bit = best
 
@@ -126,10 +131,12 @@ def test_generous_budget_near_identity_reconstruction():
 
     xf = x.astype(mx.float32)
     rf = recon.astype(mx.float32)
-    cos = float(mx.mean(
-        mx.sum(xf * rf, axis=-1)
-        / (mx.sqrt(mx.sum(xf * xf, axis=-1)) * mx.sqrt(mx.sum(rf * rf, axis=-1)) + 1e-8)
-    ).item())
+    cos = float(
+        mx.mean(
+            mx.sum(xf * rf, axis=-1)
+            / (mx.sqrt(mx.sum(xf * xf, axis=-1)) * mx.sqrt(mx.sum(rf * rf, axis=-1)) + 1e-8)
+        ).item()
+    )
     assert cos > 0.999
 
 
@@ -211,6 +218,7 @@ def test_fp16_bytes_includes_payload_table_projection():
     quant_param_bytes = art.n_survived * 8
     payload_bytes = len(art.entropy_payload)
     from veloxquant_mlx.quantizers._entropy_coding import table_nbytes
+
     table_bytes = table_nbytes(art.entropy_table)
 
     expected = projection_bytes + quant_param_bytes + payload_bytes + table_bytes

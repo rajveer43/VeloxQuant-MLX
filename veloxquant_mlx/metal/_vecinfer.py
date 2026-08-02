@@ -9,6 +9,7 @@ Phase 2 (fused encode+decode):
   - :func:`vecinfer_encode_decode_metal`        — key path: smooth→WHT→VQ→dequant→inv-WHT→smooth.
   - :func:`vecinfer_encode_decode_simple_metal` — value path: VQ only, no transforms.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -260,6 +261,7 @@ _ENCODE_DECODE_SIMPLE_SRC = r"""
 # Kernel factories
 # ---------------------------------------------------------------------------
 
+
 def _dequant_kernel(dtype: mx.Dtype):
     key = ("dequant", str(dtype))
     if key not in _cache:
@@ -290,9 +292,7 @@ def _encode_decode_full_kernel(D: int, n_sub: int, sub_dim: int, n_centroids: in
     key = ("enc_dec_full", D, n_sub, sub_dim, n_centroids)
     if key not in _cache:
         header = (
-            "#pragma METAL fp math_mode(relaxed)\n"
-            f"#define MAX_D {D}\n"
-            f"#define MAX_N_SUB {n_sub}\n"
+            f"#pragma METAL fp math_mode(relaxed)\n#define MAX_D {D}\n#define MAX_N_SUB {n_sub}\n"
         )
         _cache[key] = mx.fast.metal_kernel(
             name=f"vecinfer_enc_dec_full_d{D}_ns{n_sub}_sd{sub_dim}_nc{n_centroids}",
@@ -309,9 +309,7 @@ def _encode_decode_simple_kernel(D: int, n_sub: int, sub_dim: int, n_centroids: 
     key = ("enc_dec_simple", D, n_sub, sub_dim, n_centroids)
     if key not in _cache:
         header = (
-            "#pragma METAL fp math_mode(relaxed)\n"
-            f"#define MAX_D {D}\n"
-            f"#define MAX_N_SUB {n_sub}\n"
+            f"#pragma METAL fp math_mode(relaxed)\n#define MAX_D {D}\n#define MAX_N_SUB {n_sub}\n"
         )
         _cache[key] = mx.fast.metal_kernel(
             name=f"vecinfer_enc_dec_simple_d{D}_ns{n_sub}_sd{sub_dim}_nc{n_centroids}",
@@ -327,6 +325,7 @@ def _encode_decode_simple_kernel(D: int, n_sub: int, sub_dim: int, n_centroids: 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def vecinfer_dequant_metal(
     indices: mx.array,
@@ -391,13 +390,13 @@ def vecinfer_quantize_metal(
             f"vecinfer_quantize_metal: codebook must be [n_centroids, {sub_dim}], got {codebook.shape}"
         )
 
-    n_sub   = D // sub_dim
-    flat_x  = x.reshape(*leading, n_sub, sub_dim).reshape(-1, sub_dim)
+    n_sub = D // sub_dim
+    flat_x = x.reshape(*leading, n_sub, sub_dim).reshape(-1, sub_dim)
     n_total = flat_x.shape[0]
 
     work_dtype = flat_x.dtype if flat_x.dtype in (mx.float16, mx.float32) else mx.float32
     flat_x_w = flat_x.astype(work_dtype) if flat_x.dtype != work_dtype else flat_x
-    cb_w     = codebook.astype(work_dtype) if codebook.dtype != work_dtype else codebook
+    cb_w = codebook.astype(work_dtype) if codebook.dtype != work_dtype else codebook
 
     outputs = _quantize_kernel(work_dtype)(
         inputs=[flat_x_w, cb_w],
@@ -433,7 +432,7 @@ def vecinfer_encode_decode_metal(
     if keys.ndim != 4:
         raise ValueError(f"vecinfer_encode_decode_metal: keys must be 4D, got {keys.shape}")
     B, H_dim, S, D = keys.shape
-    n_sub       = D // sub_dim
+    n_sub = D // sub_dim
     n_centroids = k_codebook.shape[0]
 
     if D % sub_dim != 0:
@@ -442,14 +441,14 @@ def vecinfer_encode_decode_metal(
         raise ValueError(f"vecinfer_encode_decode_metal: D={D} > 512 (threadgroup limit)")
 
     keys_f32 = keys.astype(mx.float32) if keys.dtype != mx.float32 else keys
-    cb_f32   = k_codebook.astype(mx.float32) if k_codebook.dtype != mx.float32 else k_codebook
-    H_f32    = H_mat.astype(mx.float32) if H_mat.dtype != mx.float32 else H_mat
+    cb_f32 = k_codebook.astype(mx.float32) if k_codebook.dtype != mx.float32 else k_codebook
+    H_f32 = H_mat.astype(mx.float32) if H_mat.dtype != mx.float32 else H_mat
 
     has_smooth, smooth_rows = 0, 1
     if smooth is not None:
         has_smooth = 1
-        smooth_2d  = smooth.reshape(1, D) if smooth.ndim == 1 else smooth
-        smooth_2d  = smooth_2d.astype(mx.float32)
+        smooth_2d = smooth.reshape(1, D) if smooth.ndim == 1 else smooth
+        smooth_2d = smooth_2d.astype(mx.float32)
         smooth_rows = smooth_2d.shape[0]
     else:
         smooth_2d = mx.ones((1, D), dtype=mx.float32)
@@ -491,18 +490,22 @@ def vecinfer_encode_decode_simple_metal(
         ``(v_hat [B,H,S,D] fp16, v_indices [B,H,S,n_sub] uint32)``
     """
     if values.ndim != 4:
-        raise ValueError(f"vecinfer_encode_decode_simple_metal: values must be 4D, got {values.shape}")
+        raise ValueError(
+            f"vecinfer_encode_decode_simple_metal: values must be 4D, got {values.shape}"
+        )
     B, H, S, D = values.shape
-    n_sub       = D // sub_dim
+    n_sub = D // sub_dim
     n_centroids = v_codebook.shape[0]
 
     if D % sub_dim != 0:
-        raise ValueError(f"vecinfer_encode_decode_simple_metal: D={D} not divisible by sub_dim={sub_dim}")
+        raise ValueError(
+            f"vecinfer_encode_decode_simple_metal: D={D} not divisible by sub_dim={sub_dim}"
+        )
     if D > 512:
         raise ValueError(f"vecinfer_encode_decode_simple_metal: D={D} > 512 (threadgroup limit)")
 
     values_f32 = values.astype(mx.float32) if values.dtype != mx.float32 else values
-    cb_f32     = v_codebook.astype(mx.float32) if v_codebook.dtype != mx.float32 else v_codebook
+    cb_f32 = v_codebook.astype(mx.float32) if v_codebook.dtype != mx.float32 else v_codebook
 
     params = mx.array([B, H, S, D, n_sub, sub_dim, n_centroids], dtype=mx.uint32)
     n_tokens = B * H * S
