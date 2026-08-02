@@ -22,6 +22,7 @@ Usage::
 
     PYTHONPATH=. python scripts/plot_kivi.py
 """
+
 from __future__ import annotations
 
 import json
@@ -36,9 +37,15 @@ import numpy as np
 REPO = Path(__file__).resolve().parent.parent
 KIVI_DIR = REPO / "figures" / "kivi"
 VECINFER_DIR = REPO / "figures" / "vecinfer"
-COLORS = {"fp16": "#666666", "2bit": "#00d4ff", "3bit": "#7c3aed",
-          "4bit": "#ff6b35", "kivi": "#22c55e", "vecinfer": "#7c3aed",
-          "rvq": "#ff6b35"}
+COLORS = {
+    "fp16": "#666666",
+    "2bit": "#00d4ff",
+    "3bit": "#7c3aed",
+    "4bit": "#ff6b35",
+    "kivi": "#22c55e",
+    "vecinfer": "#7c3aed",
+    "rvq": "#ff6b35",
+}
 
 
 def _load_kivi() -> dict:
@@ -54,9 +61,9 @@ def _load_kivi() -> dict:
 # ---------------------------------------------------------------------------
 # Deterministic synthetic reconstruction quality (model-independent)
 # ---------------------------------------------------------------------------
-def _kivi_cosine(b: int, d: int = 128, n: int = 512, group_size: int = 32,
-                 seed: int = 0) -> float:
+def _kivi_cosine(b: int, d: int = 128, n: int = 512, group_size: int = 32, seed: int = 0) -> float:
     from veloxquant_mlx.quantizers.kivi import KIVIQuantizer
+
     rng = np.random.default_rng(seed)
     X = rng.standard_normal((n, d)).astype(np.float32)
     X /= np.linalg.norm(X, axis=1, keepdims=True)
@@ -78,15 +85,18 @@ def fig1_compression_vs_quality(kivi: dict) -> None:
     fig, ax = plt.subplots(figsize=(7, 5))
     ax.plot(comp, cos, "o-", color=COLORS["kivi"], linewidth=2, markersize=9)
     for b, c, q in zip(bits, comp, cos):
-        ax.annotate(f"{b}-bit", (c, q), textcoords="offset points",
-                    xytext=(8, -4), fontsize=10)
+        ax.annotate(f"{b}-bit", (c, q), textcoords="offset points", xytext=(8, -4), fontsize=10)
     ax.set_xlabel("Realized key compression (×)  [measured]")
     ax.set_ylabel("Reconstruction cosine  [synthetic unit-norm Gaussian, d=128]")
-    ax.set_title("KIVI: compression vs reconstruction quality\n"
-                 f"(compression from {model0}; quality deterministic-synthetic)")
+    ax.set_title(
+        "KIVI: compression vs reconstruction quality\n"
+        f"(compression from {model0}; quality deterministic-synthetic)"
+    )
     ax.grid(alpha=0.3)
     out = KIVI_DIR / "fig1_compression_vs_quality.png"
-    plt.tight_layout(); plt.savefig(out, dpi=120, bbox_inches="tight"); plt.close()
+    plt.tight_layout()
+    plt.savefig(out, dpi=120, bbox_inches="tight")
+    plt.close()
     print("wrote", out)
 
 
@@ -94,23 +104,31 @@ def fig2_throughput(kivi: dict) -> None:
     models = sorted(kivi)
     configs = ["fp16-baseline", "KIVI-2bit", "KIVI-3bit", "KIVI-4bit"]
     fig, ax = plt.subplots(figsize=(10, 5))
-    x = np.arange(len(models)); w = 0.2
+    x = np.arange(len(models))
+    w = 0.2
     for i, cfg in enumerate(configs):
         vals = []
         for m in models:
             rows = {r["name"]: r for r in kivi[m]["results"]}
             vals.append(rows[cfg]["throughput_tok_s"])
-        color = COLORS.get(cfg.split("-")[-1].replace("bit", "bit"),
-                           COLORS["fp16"] if "fp16" in cfg else COLORS["kivi"])
+        color = COLORS.get(
+            cfg.split("-")[-1].replace("bit", "bit"),
+            COLORS["fp16"] if "fp16" in cfg else COLORS["kivi"],
+        )
         ax.bar(x + (i - 1.5) * w, vals, w, label=cfg, color=color)
     chip = kivi[models[0]].get("hardware", {}).get("chip", "Apple Silicon")
-    ax.set_xticks(x); ax.set_xticklabels([m.replace("-Instruct", "").replace("-4bit", "")
-                                          for m in models], rotation=10)
+    ax.set_xticks(x)
+    ax.set_xticklabels(
+        [m.replace("-Instruct", "").replace("-4bit", "") for m in models], rotation=10
+    )
     ax.set_ylabel("Tokens / second  [measured]")
     ax.set_title(f"KIVI throughput vs fp16 baseline ({chip}, max_tokens≈120)")
-    ax.legend(); ax.grid(alpha=0.3, axis="y")
+    ax.legend()
+    ax.grid(alpha=0.3, axis="y")
     out = KIVI_DIR / "fig2_throughput.png"
-    plt.tight_layout(); plt.savefig(out, dpi=120, bbox_inches="tight"); plt.close()
+    plt.tight_layout()
+    plt.savefig(out, dpi=120, bbox_inches="tight")
+    plt.close()
     print("wrote", out)
 
 
@@ -140,15 +158,20 @@ def fig3_memory_at_scale(kivi: dict) -> None:
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(seqs, kv_bytes_fp16(seqs) / 1e9, "o-", color=COLORS["fp16"], label="fp16")
     for b, col in [(2, COLORS["2bit"]), (4, COLORS["4bit"])]:
-        ax.plot(seqs, kv_bytes_kivi(seqs, b) / 1e9, "s-", color=col,
-                label=f"KIVI-{b}bit")
-    ax.set_xscale("log", base=2); ax.set_xlabel("Sequence length (tokens)")
+        ax.plot(seqs, kv_bytes_kivi(seqs, b) / 1e9, "s-", color=col, label=f"KIVI-{b}bit")
+    ax.set_xscale("log", base=2)
+    ax.set_xlabel("Sequence length (tokens)")
     ax.set_ylabel("KV-cache memory (GB)  [analytic]")
-    ax.set_title(f"Analytic KV memory vs seq-len — {model0}\n"
-                 f"(head_dim={hd}, n_kv_heads={hkv}, n_layers={nl}, residual={r})")
-    ax.legend(); ax.grid(alpha=0.3)
+    ax.set_title(
+        f"Analytic KV memory vs seq-len — {model0}\n"
+        f"(head_dim={hd}, n_kv_heads={hkv}, n_layers={nl}, residual={r})"
+    )
+    ax.legend()
+    ax.grid(alpha=0.3)
     out = KIVI_DIR / "fig3_memory_at_scale.png"
-    plt.tight_layout(); plt.savefig(out, dpi=120, bbox_inches="tight"); plt.close()
+    plt.tight_layout()
+    plt.savefig(out, dpi=120, bbox_inches="tight")
+    plt.close()
     print("wrote", out)
 
 
@@ -175,16 +198,21 @@ def fig4_vs_existing(kivi: dict) -> None:
     if not shared:
         print("fig4 skipped — no overlapping vecinfer results.json found.")
         return
-    x = np.arange(len(shared)); w = 0.35
+    x = np.arange(len(shared))
+    w = 0.35
     fig, ax = plt.subplots(figsize=(9, 5))
     ax.bar(x - w / 2, kivi_vals, w, label="KIVI-2bit", color=COLORS["kivi"])
     ax.bar(x + w / 2, vec_vals, w, label="VecInfer-2bit", color=COLORS["vecinfer"])
-    ax.set_xticks(x); ax.set_xticklabels(shared, rotation=10)
+    ax.set_xticks(x)
+    ax.set_xticklabels(shared, rotation=10)
     ax.set_ylabel("Key compression (×)  [measured]")
     ax.set_title("KIVI vs VecInfer — key compression at ~2 bits (same models)")
-    ax.legend(); ax.grid(alpha=0.3, axis="y")
+    ax.legend()
+    ax.grid(alpha=0.3, axis="y")
     out = KIVI_DIR / "fig4_vs_existing.png"
-    plt.tight_layout(); plt.savefig(out, dpi=120, bbox_inches="tight"); plt.close()
+    plt.tight_layout()
+    plt.savefig(out, dpi=120, bbox_inches="tight")
+    plt.close()
     print("wrote", out)
 
 
@@ -197,13 +225,16 @@ def write_summary(kivi: dict) -> None:
             "n_kv_heads": data.get("n_kv_heads"),
             "n_layers": data.get("n_layers"),
             "prompt_tokens": data.get("prompt_tokens"),
-            "configs": {r["name"]: {
-                "throughput_tok_s": round(r["throughput_tok_s"], 2),
-                "key_compression": round(r["key_compression"], 2),
-                "full_kv_compression": round(r["full_kv_compression"], 2),
-                "peak_mb": round(r["peak_mb"], 1),
-                "tokens_generated": r["tokens_generated"],
-            } for r in data["results"]},
+            "configs": {
+                r["name"]: {
+                    "throughput_tok_s": round(r["throughput_tok_s"], 2),
+                    "key_compression": round(r["key_compression"], 2),
+                    "full_kv_compression": round(r["full_kv_compression"], 2),
+                    "peak_mb": round(r["peak_mb"], 1),
+                    "tokens_generated": r["tokens_generated"],
+                }
+                for r in data["results"]
+            },
         }
     out = KIVI_DIR / "results_summary.json"
     with open(out, "w") as f:

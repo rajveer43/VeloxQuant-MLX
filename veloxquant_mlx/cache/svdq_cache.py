@@ -34,6 +34,7 @@ Byte accounting:
   weight is hi_fraction.  For r = 0.5D, hi_fraction = 0.25:
     effective ≈ 0.5 * (0.25*4 + 0.75*2) = 0.5 * 2.5 = 1.25 bits/element.
 """
+
 from __future__ import annotations
 
 import math
@@ -72,24 +73,19 @@ class SVDqKVCache(_MLXKVCache):
         super().__init__()
         self._D = int(config.head_dim)
         self._rank: Optional[int] = getattr(config, "svdq_rank", None)
-        self._energy_threshold: float = float(
-            getattr(config, "svdq_energy_threshold", 0.95)
-        )
+        self._energy_threshold: float = float(getattr(config, "svdq_energy_threshold", 0.95))
         self._hi_bit: int = int(getattr(config, "svdq_hi_bit", 4))
         self._lo_bit: int = int(getattr(config, "svdq_lo_bit", 2))
         self._hi_fraction: float = float(getattr(config, "svdq_hi_fraction", 0.25))
         if not 0.0 <= self._hi_fraction <= 1.0:
-            raise ValueError(
-                f"svdq: svdq_hi_fraction must be in [0, 1], got "
-                f"{self._hi_fraction}"
-            )
+            raise ValueError(f"svdq: svdq_hi_fraction must be in [0, 1], got {self._hi_fraction}")
         self._group_size: int = int(getattr(config, "svdq_group_size", 32))
 
         # SVD state — set on first prefill call
-        self._V: Optional[mx.array] = None           # [D, r] fp32
-        self._K_mean: Optional[mx.array] = None      # [D] fp32
+        self._V: Optional[mx.array] = None  # [D, r] fp32
+        self._K_mean: Optional[mx.array] = None  # [D] fp32
         self._singular_values: Optional[mx.array] = None  # [r] fp32
-        self._r: int = 0                              # actual rank used
+        self._r: int = 0  # actual rank used
 
         # Byte accounting
         self._compressed_key_bytes: int = 0
@@ -105,13 +101,13 @@ class SVDqKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         # Process head 0 of batch 0 for the SVD; apply the same V to all heads.
         # Keys across heads share the same D-dimensional space.
-        k0 = keys[0, 0].astype(mx.float32)   # [S, D]
+        k0 = keys[0, 0].astype(mx.float32)  # [S, D]
         L, V, K_mean, s_vals = svd_compress_keys(
             k0, rank=self._rank, energy_threshold=self._energy_threshold
         )
-        self._V = V                            # [D, r]
-        self._K_mean = K_mean                  # [D]
-        self._singular_values = s_vals         # [r]
+        self._V = V  # [D, r]
+        self._K_mean = K_mean  # [D]
+        self._singular_values = s_vals  # [r]
         self._r = int(V.shape[1])
         mx.eval(self._V, self._K_mean, self._singular_values)
 
@@ -129,20 +125,21 @@ class SVDqKVCache(_MLXKVCache):
         for b in range(B):
             out_batch = []
             for h in range(H):
-                k_bh = keys[b, h].astype(mx.float32)          # [S, D]
+                k_bh = keys[b, h].astype(mx.float32)  # [S, D]
                 k_centered = k_bh - K_mean[None, :]
-                L = k_centered @ V                             # [S, r]
+                L = k_centered @ V  # [S, r]
                 L_q = quantize_latents_mixed(
-                    L, sv,
+                    L,
+                    sv,
                     hi_bit=self._hi_bit,
                     lo_bit=self._lo_bit,
                     hi_fraction=self._hi_fraction,
                     group_size=self._group_size,
                 )
-                k_hat = reconstruct_keys(L_q, V, K_mean)      # [S, D] fp16
+                k_hat = reconstruct_keys(L_q, V, K_mean)  # [S, D] fp16
                 out_batch.append(k_hat)
-            out_heads.append(mx.stack(out_batch, axis=0))     # [H, S, D]
-        return mx.stack(out_heads, axis=0)                     # [B, H, S, D]
+            out_heads.append(mx.stack(out_batch, axis=0))  # [H, S, D]
+        return mx.stack(out_heads, axis=0)  # [B, H, S, D]
 
     # ------------------------------------------------------------------
     # mlx_lm protocol
@@ -170,13 +167,12 @@ class SVDqKVCache(_MLXKVCache):
         def _latent_bytes(n_tokens: int, n_ch: int, b: int) -> int:
             code_bytes = math.ceil(n_tokens * n_ch * b / 8)
             n_groups = math.ceil(n_tokens / self._group_size)
-            param_bytes = n_groups * n_ch * 2 * 2   # scale + zero, fp16
+            param_bytes = n_groups * n_ch * 2 * 2  # scale + zero, fp16
             return (code_bytes + param_bytes) * H * B
 
-        key_bytes = _latent_bytes(S, n_hi, self._hi_bit) + \
-                    _latent_bytes(S, n_lo, self._lo_bit)
+        key_bytes = _latent_bytes(S, n_hi, self._hi_bit) + _latent_bytes(S, n_lo, self._lo_bit)
         # V [D, r] + K_mean [D] stored once — amortized over tokens seen
-        projection_bytes = (D * r + D) * 4 * H * B   # fp32
+        projection_bytes = (D * r + D) * 4 * H * B  # fp32
 
         self._compressed_key_bytes += key_bytes + projection_bytes
         self._fp16_key_bytes += B * H * S * D * 2

@@ -58,6 +58,7 @@ chunkkv_get_kv        — extract current (keys, values) arrays
 chunkkv_fp16_bytes    — bytes stored in current state
 full_chunkkv_fp16_bytes — hypothetical cost without eviction
 """
+
 from __future__ import annotations
 
 import math
@@ -228,8 +229,7 @@ def init_chunkkv_state(
         raise ValueError(f"init_chunkkv_state: chunk_size must be >= 1, got {chunk_size}.")
     if score_mode not in ("attn_mass", "key_norm"):
         raise ValueError(
-            f"init_chunkkv_state: score_mode must be 'attn_mass' or 'key_norm', "
-            f"got {score_mode!r}."
+            f"init_chunkkv_state: score_mode must be 'attn_mass' or 'key_norm', got {score_mode!r}."
         )
     if n_sink > 0 and n_sink >= budget:
         raise ValueError(
@@ -238,8 +238,13 @@ def init_chunkkv_state(
             "the cache fills"
         )
     return ChunkKVState(
-        keys=None, values=None, scores=None, n_sink=n_sink, budget=budget,
-        chunk_size=int(chunk_size), score_mode=score_mode,
+        keys=None,
+        values=None,
+        scores=None,
+        n_sink=n_sink,
+        budget=budget,
+        chunk_size=int(chunk_size),
+        score_mode=score_mode,
     )
 
 
@@ -254,13 +259,11 @@ def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
         [n] softmax weights summing to ~1.
     """
     scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
-    logits = (keys @ query_proxy) * scale   # [n]
+    logits = (keys @ query_proxy) * scale  # [n]
     return mx.softmax(logits, axis=-1)
 
 
-def _lowest_scoring_chunk(
-    scores: mx.array, n_sink_eff: int, chunk_size: int
-) -> list[int]:
+def _lowest_scoring_chunk(scores: mx.array, n_sink_eff: int, chunk_size: int) -> list[int]:
     """Indices of the lowest-scoring evictable chunk of ``chunk_size`` tokens.
 
     The non-sink tail ``[n_sink_eff, n_total)`` is partitioned into contiguous
@@ -286,7 +289,7 @@ def _lowest_scoring_chunk(
 
 def chunkkv_update(
     state: ChunkKVState,
-    new_keys: mx.array,    # [S, D] fp16
+    new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
 ) -> ChunkKVState:
     """Absorb S new tokens, evicting the lowest-score chunk if over budget.
@@ -316,7 +319,7 @@ def chunkkv_update(
     S = new_keys.shape[0]
 
     for i in range(S):
-        k_i = new_keys[i]    # [D]
+        k_i = new_keys[i]  # [D]
         v_i = new_values[i]  # [D]
 
         if state.keys is None:
@@ -343,11 +346,11 @@ def chunkkv_update(
             new_score = mx.sqrt(mx.sum(k_i.astype(mx.float32) ** 2))[None]
         else:
             attn = _attention_scores(k_i.astype(mx.float32), state.keys.astype(mx.float32))
-            updated_scores = state.scores + attn   # [n_kept]
+            updated_scores = state.scores + attn  # [n_kept]
             new_score = mx.zeros((1,), dtype=mx.float32)
 
         # --- append new token ---------------------------------------------
-        keys_cat   = mx.concatenate([state.keys,   k_i[None].astype(mx.float16)], axis=0)
+        keys_cat = mx.concatenate([state.keys, k_i[None].astype(mx.float16)], axis=0)
         values_cat = mx.concatenate([state.values, v_i[None].astype(mx.float16)], axis=0)
         scores_cat = mx.concatenate([updated_scores, new_score], axis=0)
 
@@ -362,7 +365,7 @@ def chunkkv_update(
                 break  # nothing evictable (all sinks) — cannot shrink further
             evict_set = set(evict)
             keep_indices = [j for j in range(n_now) if j not in evict_set]
-            keys_cat   = keys_cat[keep_indices]
+            keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
             scores_cat = scores_cat[keep_indices]
 
@@ -434,12 +437,12 @@ def chunkkv_fp16_bytes(state: ChunkKVState) -> int:
     if state.keys is None:
         return 0
     n, D = state.keys.shape
-    return n * D * 2 * 2   # K + V, 2 bytes each
+    return n * D * 2 * 2  # K + V, 2 bytes each
 
 
 def full_chunkkv_fp16_bytes(tokens_seen: int, head_dim: int) -> int:
     """Hypothetical fp16 K + V bytes if all ``tokens_seen`` were stored."""
-    return tokens_seen * head_dim * 2 * 2   # K + V, 2 bytes each
+    return tokens_seen * head_dim * 2 * 2  # K + V, 2 bytes each
 
 
 __all__ = [

@@ -19,6 +19,7 @@ previous release. Update it by hand in the release PR.
 Usage:
     python scripts/sync_release_badges.py
 """
+
 from __future__ import annotations
 
 import re

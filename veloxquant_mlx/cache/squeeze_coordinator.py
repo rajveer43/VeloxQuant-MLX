@@ -19,6 +19,7 @@ this coordinator exchanges only per-layer scalars and runs its allocation exactl
 once. Single-threaded by construction (mlx generate is sequential), so plain
 dicts need no locking.
 """
+
 from __future__ import annotations
 
 from typing import Optional

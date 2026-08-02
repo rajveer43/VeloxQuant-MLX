@@ -25,6 +25,7 @@ q >= 0 encodes as bit 1.
 Public API:
   - :func:`rabitq_fused_attend`
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -192,9 +193,13 @@ def _rabitq_attend_kernel(n_bytes: int, d: int, v_packed: bool):
         _cache[key] = mx.fast.metal_kernel(
             name=f"rabitq_fused_attend_nb{n_bytes}_d{d}_vp{int(v_packed)}",
             input_names=[
-                "q", "q_scale",
-                "k_bits", "k_mag", "k_const",
-                "v_idx", "v_cents",
+                "q",
+                "q_scale",
+                "k_bits",
+                "k_mag",
+                "k_const",
+                "v_idx",
+                "v_cents",
             ],
             output_names=["out"],
             source=_RABITQ_ATTEND_SRC,
@@ -207,13 +212,14 @@ def _rabitq_attend_kernel(n_bytes: int, d: int, v_packed: bool):
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def rabitq_fused_attend(
-    q: mx.array,        # [B, H, S_q, D]    fp16 — queries (pre-rotated)
+    q: mx.array,  # [B, H, S_q, D]    fp16 — queries (pre-rotated)
     q_scale: mx.array,  # [B, H, S_q]       fp32 — per-query score scale
-    k_bits: mx.array,   # [B, H, S_kv, D/8] uint8 — packed 1-bit key signs
-    k_mag: mx.array,    # [B, H, S_kv]      fp32 — per-key magnitude
+    k_bits: mx.array,  # [B, H, S_kv, D/8] uint8 — packed 1-bit key signs
+    k_mag: mx.array,  # [B, H, S_kv]      fp32 — per-key magnitude
     k_const: mx.array,  # [B, H, S_kv]      fp32 — per-key additive score bias
-    v_idx: mx.array,    # [B, H, S_kv, D]   uint8 — value codebook indices
+    v_idx: mx.array,  # [B, H, S_kv, D]   uint8 — value codebook indices
     v_cents: mx.array,  # [n_cents]         fp32 — scalar value codebook
 ) -> mx.array:
     """Fused asymmetric RaBitQ attention: 1-bit keys, codebook values.
@@ -262,17 +268,13 @@ def rabitq_fused_attend(
         )
     S_kv = k_bits.shape[2]
     if k_mag.shape != (B, H, S_kv):
-        raise ValueError(
-            f"rabitq_fused_attend: k_mag must be {(B, H, S_kv)}, got {k_mag.shape}"
-        )
+        raise ValueError(f"rabitq_fused_attend: k_mag must be {(B, H, S_kv)}, got {k_mag.shape}")
     if k_const.shape != (B, H, S_kv):
         raise ValueError(
             f"rabitq_fused_attend: k_const must be {(B, H, S_kv)}, got {k_const.shape}"
         )
     if q_scale.shape != (B, H, S_q):
-        raise ValueError(
-            f"rabitq_fused_attend: q_scale must be {(B, H, S_q)}, got {q_scale.shape}"
-        )
+        raise ValueError(f"rabitq_fused_attend: q_scale must be {(B, H, S_q)}, got {q_scale.shape}")
     if v_idx.shape == (B, H, S_kv, D):
         v_packed = False
     elif v_idx.shape == (B, H, S_kv, D // 2):

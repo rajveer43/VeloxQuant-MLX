@@ -14,6 +14,7 @@ Methods compared:
 
 Saves 4 figures to figures/model/ and results.json.
 """
+
 from __future__ import annotations
 
 import gc
@@ -24,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import mlx.core as mx
@@ -32,7 +34,7 @@ import numpy as np
 FIGURES_DIR = Path(__file__).parents[2] / "figures" / "model"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-MODEL_ID   = "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit"
+MODEL_ID = "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit"
 DEVICE_STR = "Apple M-series (Metal)"
 
 # Evaluation corpus: a short slice of WikiText-2 sentences
@@ -63,8 +65,10 @@ compared to naive NumPy implementations running on the CPU cores.
 # mlx-lm helpers
 # ---------------------------------------------------------------------------
 
+
 def load_model():
     from mlx_lm import load
+
     print(f"Loading {MODEL_ID} ...")
     t0 = time.perf_counter()
     model, tokenizer = load(MODEL_ID)
@@ -74,12 +78,13 @@ def load_model():
 
 def tokenize(tokenizer, text: str) -> mx.array:
     ids = tokenizer.encode(text)
-    return mx.array(ids, dtype=mx.int32)[None]   # [1, T]
+    return mx.array(ids, dtype=mx.int32)[None]  # [1, T]
 
 
 # ---------------------------------------------------------------------------
 # KV cache size measurement (hooks into model forward)
 # ---------------------------------------------------------------------------
+
 
 class KVMemoryTracker:
     """Context manager that measures peak KV cache memory during a forward pass."""
@@ -111,6 +116,7 @@ class KVMemoryTracker:
 # Perplexity computation
 # ---------------------------------------------------------------------------
 
+
 def compute_perplexity(model, tokenizer, text: str, max_tokens: int = 256) -> float:
     """Compute perplexity of model on text (causal LM, stride = 1)."""
     from mlx_lm.models.cache import make_prompt_cache
@@ -120,23 +126,27 @@ def compute_perplexity(model, tokenizer, text: str, max_tokens: int = 256) -> fl
         return float("nan")
 
     total_nll = 0.0
-    n_tokens  = 0
+    n_tokens = 0
 
     # Process all tokens except the last as context; score each next-token
     # We run a single forward pass over the prefix and accumulate log-probs.
-    input_ids = mx.array(tokens[:-1], dtype=mx.int32)[None]   # [1, T-1]
-    targets   = tokens[1:]
+    input_ids = mx.array(tokens[:-1], dtype=mx.int32)[None]  # [1, T-1]
+    targets = tokens[1:]
 
     try:
         logits = model(input_ids)
         if isinstance(logits, tuple):
             logits = logits[0]
         mx.eval(logits)
-        logits_np = np.array(logits[0], dtype=np.float32)     # [T-1, vocab]
+        logits_np = np.array(logits[0], dtype=np.float32)  # [T-1, vocab]
         for t, tgt in enumerate(targets):
-            log_probs = logits_np[t] - np.log(np.sum(np.exp(logits_np[t] - logits_np[t].max())) + 1e-8) - logits_np[t].max()
+            log_probs = (
+                logits_np[t]
+                - np.log(np.sum(np.exp(logits_np[t] - logits_np[t].max())) + 1e-8)
+                - logits_np[t].max()
+            )
             total_nll -= log_probs[tgt]
-            n_tokens   += 1
+            n_tokens += 1
     except Exception as e:
         print(f"  [perplexity] error: {e}")
         return float("nan")
@@ -151,14 +161,14 @@ def compute_perplexity_stable(model, tokenizer, text: str, max_tokens: int = 256
         return float("nan")
 
     input_ids = mx.array(tokens[:-1], dtype=mx.int32)[None]
-    targets   = tokens[1:]
+    targets = tokens[1:]
 
     try:
         logits = model(input_ids)
         if isinstance(logits, tuple):
             logits = logits[0]
         mx.eval(logits)
-        logits_np = np.array(logits[0], dtype=np.float32)   # [T-1, vocab]
+        logits_np = np.array(logits[0], dtype=np.float32)  # [T-1, vocab]
 
         # log-softmax per step
         total_nll = 0.0
@@ -177,6 +187,7 @@ def compute_perplexity_stable(model, tokenizer, text: str, max_tokens: int = 256
 # ---------------------------------------------------------------------------
 # Latency measurement
 # ---------------------------------------------------------------------------
+
 
 def measure_latency(model, tokenizer, prompt: str, n_new_tokens: int = 32) -> dict:
     """Measure prefill + decode latency."""
@@ -209,22 +220,24 @@ def measure_latency(model, tokenizer, prompt: str, n_new_tokens: int = 32) -> di
 # CommVQ integration (patch model forward to use CommVQ cache)
 # ---------------------------------------------------------------------------
 
+
 class CommVQKVStore:
     """Minimal KV store using CommVQQuantizer for keys, fp16 for values."""
 
     def __init__(self, head_dim: int, n_heads: int, b: int = 8, n_cb: int = 4):
         from veloxquant_mlx.quantizers.comm_vq import CommVQQuantizer
-        self._d        = head_dim
-        self._n_heads  = n_heads
-        self._q        = CommVQQuantizer(d=head_dim, b=b, n_codebooks=n_cb, seed=42)
-        self._trained  = False
+
+        self._d = head_dim
+        self._n_heads = n_heads
+        self._q = CommVQQuantizer(d=head_dim, b=b, n_codebooks=n_cb, seed=42)
+        self._trained = False
         self._calib_buf: list[np.ndarray] = []
-        self._n_calib  = 512
+        self._n_calib = 512
 
         # Storage
-        self._k_indices: list[mx.array] = []   # list of [n_heads, n_cb] uint8
-        self._k_pos:     list[int]       = []
-        self._v_cache:   list[mx.array]  = []   # list of [n_heads, head_dim] fp16
+        self._k_indices: list[mx.array] = []  # list of [n_heads, n_cb] uint8
+        self._k_pos: list[int] = []
+        self._v_cache: list[mx.array] = []  # list of [n_heads, head_dim] fp16
 
     def _maybe_train(self, k: mx.array) -> None:
         """Collect calibration data and train on first n_calib tokens."""
@@ -244,20 +257,21 @@ class CommVQKVStore:
 
         if self._trained:
             # Encode each head separately
-            k_flat = k_new.reshape(-1, self._d)              # [n_heads, d]
+            k_flat = k_new.reshape(-1, self._d)  # [n_heads, d]
             pos_arr = mx.full((self._n_heads,), pos, dtype=mx.int32)
             ev = self._q.encode(k_flat, positions=pos_arr)
-            self._k_indices.append(ev.indices)               # [n_heads, n_cb]
+            self._k_indices.append(ev.indices)  # [n_heads, n_cb]
             self._k_pos.append(pos)
 
             # Decode all stored keys
             if len(self._k_indices) > 0:
-                all_idx  = mx.concatenate(self._k_indices, axis=0)  # [S*n_heads, n_cb]
-                all_pos  = mx.array(
+                all_idx = mx.concatenate(self._k_indices, axis=0)  # [S*n_heads, n_cb]
+                all_pos = mx.array(
                     [p for p, _ in enumerate(self._k_indices) for _ in range(self._n_heads)],
                     dtype=mx.int32,
                 )
                 from veloxquant_mlx.core.context import EncodedVector
+
                 ev_all = EncodedVector(
                     quantizer_type="comm_vq",
                     batch_size=all_idx.shape[0],
@@ -265,9 +279,11 @@ class CommVQKVStore:
                     indices=all_idx,
                     norm=all_pos.astype(mx.float32),
                 )
-                k_hat = self._q.decode(ev_all)               # [S*n_heads, d]
+                k_hat = self._q.decode(ev_all)  # [S*n_heads, d]
                 S = len(self._k_indices)
-                return k_hat.reshape(S, self._n_heads, self._d).transpose(1, 0, 2)  # [n_heads, S, d]
+                return k_hat.reshape(S, self._n_heads, self._d).transpose(
+                    1, 0, 2
+                )  # [n_heads, S, d]
         else:
             # Not trained yet — fall back to raw fp16
             self._k_indices.append(None)
@@ -279,8 +295,8 @@ class CommVQKVStore:
     def memory_bytes(self) -> int:
         n_stored = len(self._k_indices)
         if self._trained:
-            return n_stored * self._n_heads * self._q._n_cb   # uint8 indices
-        return n_stored * self._n_heads * self._d * 2         # fp16
+            return n_stored * self._n_heads * self._q._n_cb  # uint8 indices
+        return n_stored * self._n_heads * self._d * 2  # fp16
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +307,7 @@ METHODS = {
     "fp16_baseline": {"label": "fp16 (baseline)", "color": "#2c3e50"},
     "turboquant_mse_b2": {"label": "TurboQuantMSE b=2", "color": "#e74c3c"},
     "turboquant_rvq_b2": {"label": "TurboQuantRVQ b=2", "color": "#3498db"},
-    "comm_vq_b8_n4":     {"label": "CommVQ b=8 n_cb=4", "color": "#2ecc71"},
+    "comm_vq_b8_n4": {"label": "CommVQ b=8 n_cb=4", "color": "#2ecc71"},
 }
 
 
@@ -304,8 +320,13 @@ def run_fp16_baseline(model, tokenizer) -> dict:
     # Estimate fp16 KV memory for a 256-token context
     n_layers, n_heads, head_dim = 32, 32, 128
     fp16_bytes = 256 * n_layers * n_heads * head_dim * 2 * 2  # K+V
-    print(f"  PPL={ppl:.2f}  latency={lat['ms_per_token']:.1f}ms/tok  KV≈{fp16_bytes/1e6:.1f}MB")
-    return {"ppl": ppl, "latency_ms_per_tok": lat["ms_per_token"], "kv_mb": fp16_bytes / 1e6, "compression": 1.0}
+    print(f"  PPL={ppl:.2f}  latency={lat['ms_per_token']:.1f}ms/tok  KV≈{fp16_bytes / 1e6:.1f}MB")
+    return {
+        "ppl": ppl,
+        "latency_ms_per_tok": lat["ms_per_token"],
+        "kv_mb": fp16_bytes / 1e6,
+        "compression": 1.0,
+    }
 
 
 def run_turboquant_method(model, tokenizer, method: str, b: int) -> dict:
@@ -344,7 +365,9 @@ def run_turboquant_method(model, tokenizer, method: str, b: int) -> dict:
     fp16_bytes = 256 * n_layers * n_heads * head_dim * 2 * 2
     compression = fp16_bytes / compressed_bytes
 
-    print(f"  PPL={ppl:.2f}  latency={lat['ms_per_token']:.1f}ms/tok  KV≈{compressed_bytes/1e6:.1f}MB  {compression:.1f}×")
+    print(
+        f"  PPL={ppl:.2f}  latency={lat['ms_per_token']:.1f}ms/tok  KV≈{compressed_bytes / 1e6:.1f}MB  {compression:.1f}×"
+    )
     return {
         "ppl": ppl,
         "latency_ms_per_tok": lat["ms_per_token"],
@@ -361,7 +384,7 @@ def run_comm_vq(model, tokenizer) -> dict:
 
     # Train CommVQ on WikiText tokens
     tokens = tokenizer.encode(WIKITEXT_SAMPLE)
-    input_ids = mx.array(tokens[:128], dtype=mx.int32)[None]   # [1, 128]
+    input_ids = mx.array(tokens[:128], dtype=mx.int32)[None]  # [1, 128]
 
     # Get hidden states via a single forward pass to use as key proxies
     # (We don't have direct access to per-layer keys without hooks)
@@ -381,8 +404,8 @@ def run_comm_vq(model, tokenizer) -> dict:
     # Measure encode→decode roundtrip MSE as a quality proxy
     N = 512
     test_keys = (rng.standard_normal((N, head_dim)) * 0.5).astype(np.float16)
-    pos_arr   = mx.arange(N, dtype=mx.int32)
-    keys_mx   = mx.array(test_keys)
+    pos_arr = mx.arange(N, dtype=mx.int32)
+    keys_mx = mx.array(test_keys)
 
     t0 = time.perf_counter()
     ev = q.encode(keys_mx, positions=pos_arr)
@@ -396,17 +419,19 @@ def run_comm_vq(model, tokenizer) -> dict:
     snr_db = 10 * math.log10(signal_power / (mse / head_dim + 1e-8))
 
     # Memory estimate
-    fp16_bytes        = 256 * n_layers * n_heads * head_dim * 2 * 2   # K+V fp16
-    comm_vq_key_bytes = 256 * n_layers * n_heads * n_cb * 1           # K indices only (uint8)
-    comm_vq_val_bytes = 256 * n_layers * n_heads * head_dim * 2       # V still fp16
-    comm_vq_bytes     = comm_vq_key_bytes + comm_vq_val_bytes
-    compression       = fp16_bytes / comm_vq_bytes
+    fp16_bytes = 256 * n_layers * n_heads * head_dim * 2 * 2  # K+V fp16
+    comm_vq_key_bytes = 256 * n_layers * n_heads * n_cb * 1  # K indices only (uint8)
+    comm_vq_val_bytes = 256 * n_layers * n_heads * head_dim * 2  # V still fp16
+    comm_vq_bytes = comm_vq_key_bytes + comm_vq_val_bytes
+    compression = fp16_bytes / comm_vq_bytes
 
-    print(f"  MSE={mse:.4f}  SNR={snr_db:.1f}dB  encode+decode={encode_decode_ms:.1f}ms  KV≈{comm_vq_bytes/1e6:.1f}MB  {compression:.1f}×")
+    print(
+        f"  MSE={mse:.4f}  SNR={snr_db:.1f}dB  encode+decode={encode_decode_ms:.1f}ms  KV≈{comm_vq_bytes / 1e6:.1f}MB  {compression:.1f}×"
+    )
 
     # Perplexity: CommVQ affects keys only; ppl degradation approximated by SNR
     # (We don't run a full forward pass with CommVQ keys — would need custom attention)
-    ppl_estimate = float("nan")    # mark as N/A (requires custom attention integration)
+    ppl_estimate = float("nan")  # mark as N/A (requires custom attention integration)
     lat_ms_per_tok = encode_decode_ms / N * 1000  # amortised encode cost per token
 
     return {
@@ -424,15 +449,16 @@ def run_comm_vq(model, tokenizer) -> dict:
 # Figure generation
 # ---------------------------------------------------------------------------
 
-def save_figures(results: dict) -> None:
-    methods  = list(results.keys())
-    labels   = [METHODS[m]["label"] for m in methods]
-    colors   = [METHODS[m]["color"] for m in methods]
 
-    ppls        = [results[m]["ppl"]               for m in methods]
-    latencies   = [results[m]["latency_ms_per_tok"] for m in methods]
-    kv_mbs      = [results[m]["kv_mb"]              for m in methods]
-    compressions= [results[m]["compression"]         for m in methods]
+def save_figures(results: dict) -> None:
+    methods = list(results.keys())
+    labels = [METHODS[m]["label"] for m in methods]
+    colors = [METHODS[m]["color"] for m in methods]
+
+    ppls = [results[m]["ppl"] for m in methods]
+    latencies = [results[m]["latency_ms_per_tok"] for m in methods]
+    kv_mbs = [results[m]["kv_mb"] for m in methods]
+    compressions = [results[m]["compression"] for m in methods]
 
     # Fig 1: KV cache memory (MB) for 256-token context
     fig, ax = plt.subplots(figsize=(9, 5))
@@ -445,7 +471,7 @@ def save_figures(results: dict) -> None:
     fig.tight_layout()
     fig.savefig(FIGURES_DIR / "fig1_kv_memory.png", dpi=150)
     plt.close(fig)
-    print(f"  Saved {FIGURES_DIR/'fig1_kv_memory.png'}")
+    print(f"  Saved {FIGURES_DIR / 'fig1_kv_memory.png'}")
 
     # Fig 2: Compression ratio
     fig, ax = plt.subplots(figsize=(9, 5))
@@ -460,7 +486,7 @@ def save_figures(results: dict) -> None:
     fig.tight_layout()
     fig.savefig(FIGURES_DIR / "fig2_compression.png", dpi=150)
     plt.close(fig)
-    print(f"  Saved {FIGURES_DIR/'fig2_compression.png'}")
+    print(f"  Saved {FIGURES_DIR / 'fig2_compression.png'}")
 
     # Fig 3: Perplexity (skip NaN entries)
     valid = [(l, p, c) for l, p, c in zip(labels, ppls, colors) if not math.isnan(p)]
@@ -476,16 +502,27 @@ def save_figures(results: dict) -> None:
         fig.tight_layout()
         fig.savefig(FIGURES_DIR / "fig3_perplexity.png", dpi=150)
         plt.close(fig)
-        print(f"  Saved {FIGURES_DIR/'fig3_perplexity.png'}")
+        print(f"  Saved {FIGURES_DIR / 'fig3_perplexity.png'}")
 
     # Fig 4: Memory vs Compression scatter
     fig, ax = plt.subplots(figsize=(8, 5))
     for m in methods:
         r = results[m]
-        ax.scatter(r["compression"], r["kv_mb"], color=METHODS[m]["color"],
-                   s=120, zorder=5, label=METHODS[m]["label"])
-        ax.annotate(METHODS[m]["label"], (r["compression"], r["kv_mb"]),
-                    textcoords="offset points", xytext=(6, 4), fontsize=8)
+        ax.scatter(
+            r["compression"],
+            r["kv_mb"],
+            color=METHODS[m]["color"],
+            s=120,
+            zorder=5,
+            label=METHODS[m]["label"],
+        )
+        ax.annotate(
+            METHODS[m]["label"],
+            (r["compression"], r["kv_mb"]),
+            textcoords="offset points",
+            xytext=(6, 4),
+            fontsize=8,
+        )
     ax.set_xlabel("Compression ratio (×)")
     ax.set_ylabel("KV memory (MB)")
     ax.set_title("Memory vs Compression Trade-off — LLaMA-3.1-8B")
@@ -494,7 +531,7 @@ def save_figures(results: dict) -> None:
     fig.tight_layout()
     fig.savefig(FIGURES_DIR / "fig4_memory_vs_compression.png", dpi=150)
     plt.close(fig)
-    print(f"  Saved {FIGURES_DIR/'fig4_memory_vs_compression.png'}")
+    print(f"  Saved {FIGURES_DIR / 'fig4_memory_vs_compression.png'}")
 
     # Fig 5 (CommVQ specific): SNR bar if available
     if "snr_db" in results.get("comm_vq_b8_n4", {}):
@@ -516,7 +553,7 @@ def save_figures(results: dict) -> None:
         fig.tight_layout()
         fig.savefig(FIGURES_DIR / "fig5_comm_vq_quality.png", dpi=150)
         plt.close(fig)
-        print(f"  Saved {FIGURES_DIR/'fig5_comm_vq_quality.png'}")
+        print(f"  Saved {FIGURES_DIR / 'fig5_comm_vq_quality.png'}")
 
 
 # ---------------------------------------------------------------------------
@@ -559,5 +596,7 @@ if __name__ == "__main__":
     for key, r in results.items():
         label = METHODS[key]["label"]
         ppl_s = f"{r['ppl']:.2f}" if not math.isnan(r["ppl"]) else "N/A"
-        print(f"{label:<28} {ppl_s:>8} {r['kv_mb']:>9.1f}  {r['compression']:>6.1f}×  {r['latency_ms_per_tok']:>6.1f}")
+        print(
+            f"{label:<28} {ppl_s:>8} {r['kv_mb']:>9.1f}  {r['compression']:>6.1f}×  {r['latency_ms_per_tok']:>6.1f}"
+        )
     print("=" * 70)

@@ -86,7 +86,7 @@ from veloxquant_mlx.core.abstractions import Codebook
 ```python
 class Codebook(ABC):
     @abstractmethod
-    def quantize(self, x: mx.array) -> mx.array: ...   # returns indices
+    def quantize(self, x: mx.array) -> mx.array: ...  # returns indices
 
     @abstractmethod
     def dequantize(self, indices: mx.array) -> mx.array: ...
@@ -107,11 +107,11 @@ from veloxquant_mlx.core.context import EncodedVector
 ```python
 @dataclass
 class EncodedVector:
-    indices: mx.array           # packed integer codes
-    scale: mx.array | None      # per-channel or per-block scale
-    metadata: dict              # algorithm-specific extra data
+    indices: mx.array  # packed integer codes
+    scale: mx.array | None  # per-channel or per-block scale
+    metadata: dict  # algorithm-specific extra data
     original_shape: tuple[int, ...]
-    dtype: mx.Dtype             # original dtype (usually mx.float16)
+    dtype: mx.Dtype  # original dtype (usually mx.float16)
 ```
 
 `EncodedVector` is the currency passed between `encode()` and `decode()`. Different algorithms store different things in `metadata` (e.g., cluster IDs for RaBitQ, rotation info for SpectralQuant).
@@ -128,7 +128,7 @@ Request-scoped context passed through a quantization pipeline.
 @dataclass
 class QuantizationContext:
     layer_name: str
-    step: int           # generation step (0-indexed)
+    step: int  # generation step (0-indexed)
     config: KVCacheConfig
     artifacts: ArtifactStore
 ```
@@ -157,6 +157,7 @@ Plugin registry for quantizer discovery.
 class MyQuantizer(Quantizer):
     def encode(self, x): ...
     def decode(self, encoded): ...
+
 
 # Create by name
 q = QuantizerFactory.create("my_quantizer", bits=2)

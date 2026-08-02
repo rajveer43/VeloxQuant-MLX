@@ -10,7 +10,11 @@ from veloxquant_mlx.core.abstractions import ArtifactStore, Quantizer
 from veloxquant_mlx.core.constants import DEFAULT_POLAR_LEVELS
 from veloxquant_mlx.core.context import EncodedVector, TransformResult
 from veloxquant_mlx.core.registry import QuantizerRegistry
-from veloxquant_mlx.math.rotation import is_hadamard_compatible, make_hadamard_diagonal, make_rotation_matrix
+from veloxquant_mlx.math.rotation import (
+    is_hadamard_compatible,
+    make_hadamard_diagonal,
+    make_rotation_matrix,
+)
 from veloxquant_mlx.preconditioners.rotation import HadamardPreconditioner, RotationPreconditioner
 from veloxquant_mlx.transforms.polar import RecursivePolarTransform
 
@@ -80,13 +84,16 @@ class PolarQuantizer(Quantizer):
             if store is not None and store.exists("codebook", distribution=dist_key, b=b, d=d):
                 cb_np = np.array(store.load_codebook(dist_key, b=b, d=d), dtype=np.float32)
                 from veloxquant_mlx.codebooks.scalar_codebook import ScalarCodebook
+
                 cb = ScalarCodebook(cb_np)
             else:
                 cb = CodebookFactory.create("polar_level", b=b, d=d, polar_level=level)
                 if store is not None:
                     store.save_codebook(
                         cb.centroids_numpy(),  # type: ignore[attr-defined]
-                        distribution=dist_key, b=b, d=d,
+                        distribution=dist_key,
+                        b=b,
+                        d=d,
                     )
             self._codebooks.append(cb)
 
@@ -129,10 +136,7 @@ class PolarQuantizer(Quantizer):
             Reconstructed array of shape (batch, d), fp16.
         """
         # Dequantize angles
-        dequant_angles = [
-            cb.dequantize(idx)
-            for cb, idx in zip(self._codebooks, ev.angles)
-        ]
+        dequant_angles = [cb.dequantize(idx) for cb, idx in zip(self._codebooks, ev.angles)]
 
         result = TransformResult(
             angles=dequant_angles,
@@ -153,8 +157,8 @@ class PolarQuantizer(Quantizer):
             Estimated inner products, shape (batch,), fp16.
         """
         q_flat = q.reshape(-1)
-        k_hat = self.decode(ev)   # (batch, d)
-        return k_hat @ q_flat     # (batch,)
+        k_hat = self.decode(ev)  # (batch, d)
+        return k_hat @ q_flat  # (batch,)
 
     def __repr__(self) -> str:
         return (

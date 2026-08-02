@@ -4,6 +4,7 @@ Covers: factory dispatch, config propagation, constant-size budget across B/H,
 byte-accounting properties, prefill/decode both valid, construction guards,
 no leftover .bits attribute, and the cache-level window=1 reduction sanity.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -118,7 +119,7 @@ def test_prefill_and_decode_both_within_budget():
 
     dc = _make(morphkv_budget=10, morphkv_n_sink=2, morphkv_window=4)
     for t in range(40):
-        Kd, _ = dc.update_and_fetch(k_all[:, :, t:t + 1], v_all[:, :, t:t + 1])
+        Kd, _ = dc.update_and_fetch(k_all[:, :, t : t + 1], v_all[:, :, t : t + 1])
 
     assert Kp.shape[2] <= 10 and Kd.shape[2] <= 10
 
@@ -131,7 +132,7 @@ def test_window_one_deterministic_at_cache_level():
 
     def run():
         cache = _make(morphkv_budget=10, morphkv_n_sink=2, morphkv_window=1)
-        for (k, v) in ks:
+        for k, v in ks:
             K, _ = cache.update_and_fetch(k, v)
         return K
 

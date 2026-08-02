@@ -57,12 +57,12 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="skvq",
     head_dim=128,
-    skvq_bits_key=2,        # paper setting
-    skvq_bits_value=2,      # paper uses 1.5; we ship integer bits
-    skvq_group_size=32,     # channels per quant group
-    skvq_window=128,        # fp16 sliding window (= flush chunk size)
-    skvq_n_sink=5,          # attention-sink filter, kept fp16
-    skvq_reorder=True,      # channel reordering (False = ablation)
+    skvq_bits_key=2,  # paper setting
+    skvq_bits_value=2,  # paper uses 1.5; we ship integer bits
+    skvq_group_size=32,  # channels per quant group
+    skvq_window=128,  # fp16 sliding window (= flush chunk size)
+    skvq_n_sink=5,  # attention-sink filter, kept fp16
+    skvq_reorder=True,  # channel reordering (False = ablation)
     skvq_clip_search=True,  # per-group clip grid search
 )
 caches = KVCacheBuilder.for_model(model, config)

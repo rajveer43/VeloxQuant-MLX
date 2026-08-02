@@ -18,6 +18,7 @@ Usage
 Prints a table and saves a JSON summary. Wall-clock is dominated by the O(S^2)
 pure-Python merge loop (a prefill worst case), not a per-decode-step cost.
 """
+
 from __future__ import annotations
 
 import json
@@ -33,13 +34,13 @@ from veloxquant_mlx.cache.base import KVCacheConfig
 from veloxquant_mlx.cache.cam_cache import CaMKVCache
 
 # ── sweep configuration ──────────────────────────────────────────────────────
-SEQ_LENS    = [256, 512, 1024]
-BUDGETS     = [64, 128]
+SEQ_LENS = [256, 512, 1024]
+BUDGETS = [64, 128]
 MERGE_MODES = ["drop", "mean", "sim_weighted"]
-N_HEADS     = 4
-HEAD_DIM    = 64
-N_SINK      = 4
-N_PROBES    = 32
+N_HEADS = 4
+HEAD_DIM = 64
+N_SINK = 4
+N_PROBES = 32
 
 
 def _synthetic_kv(S: int, seed: int = 0):
@@ -66,29 +67,32 @@ def _attn_output(query, keys, values):
     k = keys.astype(mx.float32)
     v = values.astype(mx.float32)
     scale = 1.0 / math.sqrt(float(k.shape[-1]))
-    logits = (q @ k.T) * scale               # [P, n]
-    w = mx.softmax(logits, axis=-1)          # [P, n]
-    return w @ v                             # [P, D]
+    logits = (q @ k.T) * scale  # [P, n]
+    w = mx.softmax(logits, axis=-1)  # [P, n]
+    return w @ v  # [P, D]
 
 
 def _perturbation(probe, full_k, full_v, comp_k, comp_v):
     """Mean cosine distance between compressed-cache and full-cache attention outputs."""
-    ref = _attn_output(probe, full_k, full_v)     # [P, D]
-    got = _attn_output(probe, comp_k, comp_v)     # [P, D]
+    ref = _attn_output(probe, full_k, full_v)  # [P, D]
+    got = _attn_output(probe, comp_k, comp_v)  # [P, D]
     rn = ref / (mx.sqrt(mx.sum(ref * ref, axis=-1, keepdims=True)) + 1e-8)
     gn = got / (mx.sqrt(mx.sum(got * got, axis=-1, keepdims=True)) + 1e-8)
-    cos = mx.sum(rn * gn, axis=-1)                # [P]
+    cos = mx.sum(rn * gn, axis=-1)  # [P]
     return float(mx.mean(1.0 - cos).item())
 
 
 def _run_once(seq_len, budget, merge_mode, drop_ref=None) -> dict:
     K, V = _synthetic_kv(seq_len, seed=budget)
-    full_k, full_v = K[0, 0], V[0, 0]             # head 0 full cache
+    full_k, full_v = K[0, 0], V[0, 0]  # head 0 full cache
     rng = np.random.default_rng(seq_len + budget)
     probe = mx.array(rng.standard_normal((N_PROBES, HEAD_DIM)).astype(np.float16))
 
     cfg = KVCacheConfig(
-        method="cam", head_dim=HEAD_DIM, cam_budget=budget, cam_n_sink=N_SINK,
+        method="cam",
+        head_dim=HEAD_DIM,
+        cam_budget=budget,
+        cam_n_sink=N_SINK,
         cam_merge=merge_mode,
     )
     cache = CaMKVCache(cfg)
@@ -102,14 +106,14 @@ def _run_once(seq_len, budget, merge_mode, drop_ref=None) -> dict:
     gain = None if drop_ref is None else round(drop_ref - pert, 5)
 
     return {
-        "seq_len":           seq_len,
-        "budget":            budget,
-        "merge_mode":        merge_mode,
-        "tokens_kept":       cache.tokens_kept,
+        "seq_len": seq_len,
+        "budget": budget,
+        "merge_mode": merge_mode,
+        "tokens_kept": cache.tokens_kept,
         "compression_ratio": round(cache.compression_ratio, 3),
-        "perturbation":      round(pert, 5),
-        "gain_vs_drop":      gain,
-        "latency_ms":        round(latency_ms, 2),
+        "perturbation": round(pert, 5),
+        "gain_vs_drop": gain,
+        "latency_ms": round(latency_ms, 2),
     }
 
 
@@ -119,8 +123,10 @@ def main() -> None:
     print("  (perturbation = cosine distance of attn output vs full cache; lower better)")
     print("  (drop == H2O baseline; gain_vs_drop > 0 means merging helped)")
     print()
-    header = (f"{'seq':>5}  {'budget':>6}  {'mode':>13}  {'kept':>5}  {'ratio':>6}  "
-              f"{'perturb':>8}  {'gain_v_drop':>11}  {'ms':>7}")
+    header = (
+        f"{'seq':>5}  {'budget':>6}  {'mode':>13}  {'kept':>5}  {'ratio':>6}  "
+        f"{'perturb':>8}  {'gain_v_drop':>11}  {'ms':>7}"
+    )
     print(header)
     print("-" * len(header))
 
@@ -132,8 +138,11 @@ def main() -> None:
         drop_row = _run_once(seq_len, budget, "drop")
         drop_ref = drop_row["perturbation"]
         for merge_mode in MERGE_MODES:
-            row = drop_row if merge_mode == "drop" else _run_once(
-                seq_len, budget, merge_mode, drop_ref=drop_ref)
+            row = (
+                drop_row
+                if merge_mode == "drop"
+                else _run_once(seq_len, budget, merge_mode, drop_ref=drop_ref)
+            )
             if merge_mode == "drop":
                 row = {**row, "gain_vs_drop": 0.0}
             results.append(row)

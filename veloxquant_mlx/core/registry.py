@@ -30,6 +30,7 @@ class _BaseRegistry:
             @QuantizerRegistry.register("qjl")
             class QJLQuantizer(Quantizer): ...
         """
+
         def decorator(target_cls: type) -> type:
             with cls._lock:
                 if name in cls._registry:
@@ -40,6 +41,7 @@ class _BaseRegistry:
                     )
                 cls._registry[name] = target_cls
             return target_cls
+
         return decorator
 
     @classmethod
@@ -58,10 +60,7 @@ class _BaseRegistry:
         with cls._lock:
             if name not in cls._registry:
                 available = sorted(cls._registry.keys())
-                raise KeyError(
-                    f"{cls.__name__}: '{name}' not registered. "
-                    f"Available: {available}"
-                )
+                raise KeyError(f"{cls.__name__}: '{name}' not registered. Available: {available}")
             return cls._registry[name]
 
     @classmethod

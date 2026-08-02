@@ -27,6 +27,7 @@ Byte accounting:
     baseline_key_bytes   / baseline_value_bytes    — uniform lo-bit baseline
     fp16_key_bytes       / fp16_value_bytes         — uncompressed cost
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -68,8 +69,7 @@ class ZipCacheKVCache(_MLXKVCache):
         self._hi_fraction = float(getattr(config, "zipcache_hi_fraction", 0.20))
         if not 0.0 <= self._hi_fraction <= 1.0:
             raise ValueError(
-                f"zipcache: zipcache_hi_fraction must be in [0, 1], got "
-                f"{self._hi_fraction}"
+                f"zipcache: zipcache_hi_fraction must be in [0, 1], got {self._hi_fraction}"
             )
         self._gs = int(getattr(config, "zipcache_group_size", 32))
         self._quant_values = bool(getattr(config, "zipcache_quantize_values", True))
@@ -82,9 +82,7 @@ class ZipCacheKVCache(_MLXKVCache):
         self._fp16_value_bytes = 0
 
     # ------------------------------------------------------------------
-    def _compress_head(
-        self, mat: mx.array, is_key: bool
-    ) -> tuple[mx.array, int, int]:
+    def _compress_head(self, mat: mx.array, is_key: bool) -> tuple[mx.array, int, int]:
         """Compress ``[S, D]`` per head. Returns (fp16 recon, comp_bytes, base_bytes)."""
         S, D = mat.shape
         if is_key:
@@ -103,7 +101,7 @@ class ZipCacheKVCache(_MLXKVCache):
             state = zipcache_compress(
                 mat,
                 hi_bits=self._hi_bits,
-                lo_bits=self._hi_bits,   # uniform at hi_bits for values
+                lo_bits=self._hi_bits,  # uniform at hi_bits for values
                 hi_fraction=1.0,
                 group_size=self._gs,
             )
@@ -121,7 +119,7 @@ class ZipCacheKVCache(_MLXKVCache):
         for b in range(B):
             recon_h = []
             for h in range(H):
-                mat = t[b, h]          # [S, D]
+                mat = t[b, h]  # [S, D]
                 recon, comp, base = self._compress_head(mat, is_key)
                 recon_h.append(recon)
                 comp_total += comp

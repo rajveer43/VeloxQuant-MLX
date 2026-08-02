@@ -6,6 +6,7 @@ applies exact RoPE to tokens within a trailing window of the current decode
 position, and a single fixed-offset approximate rotation to tokens outside it.
 All data is synthetic.
 """
+
 from __future__ import annotations
 
 import math
@@ -28,6 +29,7 @@ def _mat(n, d, seed=0):
 # ---------------------------------------------------------------------------
 # a2ats_apply_exact_rope
 # ---------------------------------------------------------------------------
+
 
 def test_exact_rope_preserves_shape_and_dtype() -> None:
     x = _mat(6, 16)
@@ -76,6 +78,7 @@ def test_exact_rope_matches_hand_computed_rotation() -> None:
 # a2ats_apply_windowed_rope — window boundary behavior
 # ---------------------------------------------------------------------------
 
+
 def test_windowed_rope_within_window_matches_exact_rope() -> None:
     """Tokens inside the trailing window get RoPE identical to the exact path."""
     x = _mat(10, 16, seed=1)
@@ -101,7 +104,7 @@ def test_windowed_rope_outside_window_uses_fixed_offset() -> None:
     absolute position coincides with ``window`` itself.
     """
     x = _mat(10, 16, seed=1)
-    positions = mx.arange(100, 110)   # offset so none equals window=3
+    positions = mx.arange(100, 110)  # offset so none equals window=3
     exact = a2ats_apply_exact_rope(x, positions)
     windowed = a2ats_apply_windowed_rope(x, positions, query_position=109, window=3)
 
@@ -113,7 +116,7 @@ def test_windowed_rope_far_tokens_share_single_rotation() -> None:
     """All far tokens get the SAME rotation (the fixed-offset approximation),
     not each their own distinct exact rotation — the defining property of
     the approximation bucket."""
-    x = mx.array(np.ones((5, 8), dtype=np.float32))   # identical inputs
+    x = mx.array(np.ones((5, 8), dtype=np.float32))  # identical inputs
     positions = mx.array([0, 1, 2, 3, 4])
     windowed = a2ats_apply_windowed_rope(x, positions, query_position=100, window=3)
     # All 5 tokens are far (distance >= 97 >> window=3); since inputs are

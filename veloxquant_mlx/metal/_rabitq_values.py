@@ -12,6 +12,7 @@ Layout: byte ``j`` holds elements ``2j`` (low nibble) and ``2j + 1``
 Public API:
   - :func:`rabitq_pack_values`
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -37,6 +38,7 @@ _PACK_VALUES_SRC = r"""
 # Kernel factory
 # ---------------------------------------------------------------------------
 
+
 def _pack_values_kernel():
     key = ("rabitq_pack_values",)
     if key not in _cache:
@@ -53,6 +55,7 @@ def _pack_values_kernel():
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def rabitq_pack_values(v_idx: mx.array) -> mx.array:
     """Pack 4-bit value indices two-per-byte along the last axis.
@@ -71,9 +74,7 @@ def rabitq_pack_values(v_idx: mx.array) -> mx.array:
         raise ValueError("rabitq_pack_values: v_idx must have at least 1 dim")
     last = v_idx.shape[-1]
     if last % 2 != 0:
-        raise ValueError(
-            f"rabitq_pack_values: last dimension must be even, got {last}"
-        )
+        raise ValueError(f"rabitq_pack_values: last dimension must be even, got {last}")
 
     out_shape = (*v_idx.shape[:-1], last // 2)
     n_out = 1

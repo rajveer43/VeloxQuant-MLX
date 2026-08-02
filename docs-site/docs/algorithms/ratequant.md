@@ -44,14 +44,15 @@ from veloxquant_mlx.allocators.ratequant import (
 model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 
 sensitivities = calibrate_layer_sensitivities(
-    model, tokenizer,
+    model,
+    tokenizer,
     seq_len=256,
 )
 
 bit_allocation = allocate_bits_ratequant(
     sensitivities,
     target_avg_bits=2.0,
-    beta=3.5,               # paper-reported constant for TurboQuant RVQ
+    beta=3.5,  # paper-reported constant for TurboQuant RVQ
     bit_choices=(1, 2, 3),
 )
 print(bit_allocation)
@@ -70,7 +71,8 @@ config = KVCacheConfig(
 caches = KVCacheBuilder.for_model(model, config)
 
 response = mlx_lm.generate(
-    model, tokenizer,
+    model,
+    tokenizer,
     prompt="Write a detailed analysis of the economic impacts of automation.",
     max_tokens=1024,
     kv_cache=caches,

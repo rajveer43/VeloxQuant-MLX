@@ -1,4 +1,5 @@
 """Tests for the Lloyd-Max solver."""
+
 from __future__ import annotations
 
 import math
@@ -57,12 +58,14 @@ def test_lloyd_max_beats_uniform_beta() -> None:
         for i in range(n_levels):
             mask = (x_grid >= edges[i]) & (x_grid < edges[i + 1])
             if np.any(mask):
-                total += float(np.trapezoid((x_grid[mask] - centers[i]) ** 2 * pdf_vals[mask], x_grid[mask]))
+                total += float(
+                    np.trapezoid((x_grid[mask] - centers[i]) ** 2 * pdf_vals[mask], x_grid[mask])
+                )
         return total
 
     pdf_fn = lambda x: beta_pdf(x, d=d)
     for b in [1, 2, 3]:
-        n_levels = 2 ** b
+        n_levels = 2**b
         lloyd_max(pdf_fn, (-1.0, 1.0), n_levels=n_levels)
         lm_mse = lloyd_max.last_mse_cost
         unif_mse = uniform_mse(n_levels)
@@ -77,11 +80,11 @@ def test_lloyd_max_mse_improves_with_bits_gaussian() -> None:
     pdf_fn = lambda x: gaussian_pdf(x, sigma=sigma)
     prev_mse = None
     for b in [3, 2, 1]:
-        lloyd_max(pdf_fn, (-5.0, 5.0), n_levels=2 ** b)
+        lloyd_max(pdf_fn, (-5.0, 5.0), n_levels=2**b)
         mse = lloyd_max.last_mse_cost
         if prev_mse is not None:
             # Going from b+1 to b bits, MSE should roughly increase by 4×
-            assert mse > prev_mse * 1.5, f"MSE did not increase enough from b={b+1} to b={b}"
+            assert mse > prev_mse * 1.5, f"MSE did not increase enough from b={b + 1} to b={b}"
         prev_mse = mse
 
 

@@ -77,6 +77,24 @@ pip install -e ".[dev]"
 Fork first if you do not have write access, then add
 `upstream` pointing at `rajveer43/VeloxQuant-MLX`.
 
+## Code style (pre-commit)
+
+Python code is formatted and linted with [Ruff](https://docs.astral.sh/ruff/)
+(config in `pyproject.toml`). Install the git hook once after setting up your
+virtualenv:
+
+```bash
+pre-commit install
+```
+
+This runs `ruff format` and `ruff check --fix` on staged files before every
+commit. To run it manually against the whole repo (e.g. before opening a
+PR):
+
+```bash
+pre-commit run --all-files
+```
+
 ## Running the tests
 
 ```bash

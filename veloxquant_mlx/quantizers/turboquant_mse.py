@@ -8,7 +8,11 @@ from veloxquant_mlx.codebooks.base import CodebookFactory
 from veloxquant_mlx.core.abstractions import ArtifactStore, Quantizer
 from veloxquant_mlx.core.context import EncodedVector, QuantizationContext
 from veloxquant_mlx.core.registry import QuantizerRegistry
-from veloxquant_mlx.math.rotation import is_hadamard_compatible, make_hadamard_diagonal, make_rotation_matrix
+from veloxquant_mlx.math.rotation import (
+    is_hadamard_compatible,
+    make_hadamard_diagonal,
+    make_rotation_matrix,
+)
 from veloxquant_mlx.preconditioners.rotation import HadamardPreconditioner, RotationPreconditioner
 
 
@@ -77,13 +81,16 @@ class TurboQuantMSE(Quantizer):
         if store is not None and store.exists("codebook", distribution=dist_key, b=b, d=d):
             cb_centroids = np.array(store.load_codebook(dist_key, b=b, d=d), dtype=np.float32)
             from veloxquant_mlx.codebooks.scalar_codebook import ScalarCodebook
+
             self._codebook = ScalarCodebook(cb_centroids)
         else:
             self._codebook = CodebookFactory.create(distribution, b=b, d=d)
             if store is not None:
                 store.save_codebook(
                     self._codebook.centroids_numpy(),  # type: ignore[attr-defined]
-                    distribution=dist_key, b=b, d=d,
+                    distribution=dist_key,
+                    b=b,
+                    d=d,
                 )
 
     def encode(self, x: Any) -> EncodedVector:
@@ -131,9 +138,10 @@ class TurboQuantMSE(Quantizer):
             Estimated inner products, shape (batch,), fp16.
         """
         import mlx.core as mx
+
         q_flat = q.reshape(-1)
-        k_hat = self.decode(ev)   # (batch, d)
-        return (k_hat @ q_flat)   # (batch,)
+        k_hat = self.decode(ev)  # (batch, d)
+        return k_hat @ q_flat  # (batch,)
 
     def __repr__(self) -> str:
         return f"TurboQuantMSE(d={self._d}, b={self._b}, seed={self._seed})"

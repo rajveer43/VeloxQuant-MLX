@@ -21,11 +21,11 @@ from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
 
 config = KVCacheConfig(
     method="adakv",
-    head_dim=128,               # set to your model's head dimension
+    head_dim=128,  # set to your model's head dimension
     adakv_target_avg_bits=2.0,  # global average bits/element target
-    adakv_lo_bit=2,             # minimum bits any head can get
-    adakv_mid_bit=3,            # middle tier (set == hi for a 2-tier set)
-    adakv_hi_bit=4,             # maximum bits any head can get
+    adakv_lo_bit=2,  # minimum bits any head can get
+    adakv_mid_bit=3,  # middle tier (set == hi for a 2-tier set)
+    adakv_hi_bit=4,  # maximum bits any head can get
     adakv_group_size=32,
 )
 

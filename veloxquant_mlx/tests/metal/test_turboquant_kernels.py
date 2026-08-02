@@ -8,6 +8,7 @@ Each test:
 
 Tests are skipped automatically on builds where Metal is unavailable.
 """
+
 from __future__ import annotations
 
 import math
@@ -38,6 +39,7 @@ pytestmark = pytest.mark.skipif(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _bench(fn, n_warmup: int = 5, n_iter: int = 100) -> float:
     """Return mean wall-clock time per iteration in milliseconds."""
     for _ in range(n_warmup):
@@ -52,8 +54,8 @@ def _bench(fn, n_warmup: int = 5, n_iter: int = 100) -> float:
 
 def _ref_scalar_quantize(x: np.ndarray, centroids: np.ndarray) -> np.ndarray:
     """Reference numpy nearest-centroid quantization."""
-    diffs = x[..., None] - centroids[None, :]      # [..., n_cents]
-    return np.argmin(diffs ** 2, axis=-1).astype(np.uint8)
+    diffs = x[..., None] - centroids[None, :]  # [..., n_cents]
+    return np.argmin(diffs**2, axis=-1).astype(np.uint8)
 
 
 def _ref_hadamard(x: np.ndarray, diag: np.ndarray) -> np.ndarray:
@@ -75,6 +77,7 @@ def _ref_hadamard(x: np.ndarray, diag: np.ndarray) -> np.ndarray:
 # ===========================================================================
 # KERNEL C — bit pack / unpack
 # ===========================================================================
+
 
 @pytest.mark.parametrize("b", [1, 2, 4])
 @pytest.mark.parametrize("N", [256, 1024, 4096])
@@ -126,6 +129,7 @@ def test_bit_pack_bench(b: int, capsys):
 # KERNEL A — scalar quantize
 # ===========================================================================
 
+
 @pytest.mark.parametrize("b", [1, 2, 3, 4])
 def test_scalar_quantize_correctness(b: int):
     """Metal kernel must match numpy argmin nearest-centroid."""
@@ -136,7 +140,7 @@ def test_scalar_quantize_correctness(b: int):
     cents_np = np.linspace(-2.0, 2.0, n_cents, dtype=np.float32)
     x_np = rng.standard_normal((B, d)).astype(np.float32)
 
-    ref = _ref_scalar_quantize(x_np, cents_np)              # [B, d] uint8
+    ref = _ref_scalar_quantize(x_np, cents_np)  # [B, d] uint8
     x_mx = mx.array(x_np.astype(np.float16))
     c_mx = mx.array(cents_np)
 
@@ -165,6 +169,7 @@ def test_scalar_quantize_bench(capsys):
 # KERNEL B — scalar dequantize
 # ===========================================================================
 
+
 @pytest.mark.parametrize("b", [1, 2, 3, 4])
 def test_scalar_dequantize_correctness(b: int):
     """Dequantize must reproduce centroids[indices] in fp16."""
@@ -174,7 +179,7 @@ def test_scalar_dequantize_correctness(b: int):
     cents_np = np.linspace(-2.0, 2.0, n_cents, dtype=np.float32)
     idx_np = rng.integers(0, n_cents, size=(B, d), dtype=np.uint8)
 
-    ref = cents_np[idx_np].astype(np.float16)               # [B, d] fp16
+    ref = cents_np[idx_np].astype(np.float16)  # [B, d] fp16
 
     idx_mx = mx.array(idx_np)
     c_mx = mx.array(cents_np)
@@ -218,7 +223,7 @@ def test_quantize_dequantize_roundtrip():
 
     x_hat_np = np.array(x_hat, dtype=np.float32)
     mse = np.mean((x_np - x_hat_np) ** 2)
-    signal = np.mean(x_np ** 2)
+    signal = np.mean(x_np**2)
     snr_db = 10 * math.log10(signal / mse)
     # 4-bit quantization with uniform centroids should give > 15 dB SNR
     # (Lloyd-Max centroids give ~24 dB; linspace is a lower bar but still validates correctness)
@@ -228,6 +233,7 @@ def test_quantize_dequantize_roundtrip():
 # ===========================================================================
 # KERNEL G — fused Hadamard + quantize
 # ===========================================================================
+
 
 @pytest.mark.parametrize("D", [64, 128, 256])
 @pytest.mark.parametrize("b", [2, 4])
@@ -258,8 +264,7 @@ def test_hadamard_quantize_matches_twostep(D: int, b: int):
     # on exact boundary — allow at most 1% mismatch.
     mismatch_rate = np.mean(np.array(out) != ref_idx)
     assert mismatch_rate < 0.01, (
-        f"hadamard_quantize mismatch rate {mismatch_rate:.3%} exceeds 1% "
-        f"(D={D}, b={b})"
+        f"hadamard_quantize mismatch rate {mismatch_rate:.3%} exceeds 1% (D={D}, b={b})"
     )
 
 
@@ -277,6 +282,7 @@ def test_hadamard_quantize_bench(capsys):
 # KERNEL D — qjl_encode
 # ===========================================================================
 
+
 def test_qjl_encode_sign_correctness():
     """Metal sign bits must match numpy sign(S @ x)."""
     rng = np.random.default_rng(55)
@@ -284,8 +290,8 @@ def test_qjl_encode_sign_correctness():
     x_np = rng.standard_normal((B, d)).astype(np.float16)
     S_np = rng.standard_normal((m, d)).astype(np.float16) / math.sqrt(d)
 
-    proj = (x_np.astype(np.float32) @ S_np.T.astype(np.float32))  # [B, m]
-    ref_signs = (proj >= 0).astype(np.uint8)                       # [B, m] {0,1}
+    proj = x_np.astype(np.float32) @ S_np.T.astype(np.float32)  # [B, m]
+    ref_signs = (proj >= 0).astype(np.uint8)  # [B, m] {0,1}
 
     x_mx = mx.array(x_np)
     S_mx = mx.array(S_np)
@@ -299,7 +305,7 @@ def test_qjl_encode_sign_correctness():
     assert norms.dtype == mx.float16
 
     # Unpack bits and compare against reference
-    ps_np = np.array(packed_signs)   # [B, m//8]
+    ps_np = np.array(packed_signs)  # [B, m//8]
     recovered = np.unpackbits(ps_np, axis=-1, bitorder="little")[:, :m]  # [B, m]
 
     mismatch = np.mean(recovered != ref_signs)
@@ -341,6 +347,7 @@ def test_qjl_encode_bench(capsys):
 # KERNEL E — qjl_inner_product
 # ===========================================================================
 
+
 def test_qjl_inner_product_correctness():
     """Metal QJL IP scores must correlate with true inner products (unbiased estimator).
 
@@ -362,8 +369,8 @@ def test_qjl_inner_product_correctness():
     k_np = rng.standard_normal((S_kv * H, d)).astype(np.float16)
 
     # Reference true inner products: [H, S_kv]
-    q_f = q_np.astype(np.float32)    # [H, d]
-    k_f = k_np.astype(np.float32)    # [S_kv*H, d]
+    q_f = q_np.astype(np.float32)  # [H, d]
+    k_f = k_np.astype(np.float32)  # [S_kv*H, d]
     true_ip = np.zeros((H, S_kv), dtype=np.float32)
     for h in range(H):
         for s in range(S_kv):
@@ -410,6 +417,7 @@ def test_qjl_inner_product_bench(capsys):
 # KERNEL F — fused RVQ decode + attend
 # ===========================================================================
 
+
 def _make_rvq_cache(B, H, S_kv, D, b1, b2, bv, sub_dim_v, rng):
     """Return (q, ki1, ki2, c1, c2, vi, vcb) for fused attend test."""
     n_c1 = 1 << b1
@@ -441,8 +449,9 @@ def _ref_rvq_attend(q_np, ki1_np, ki2_np, c1_np, c2_np, vi_np, vcb_np):
                 q_vec = q_np[b, h, sq, :].astype(np.float32)
                 scores = np.zeros(S_kv, dtype=np.float32)
                 for sk in range(S_kv):
-                    k_vec = (c1_np[ki1_np[b, h, sk, :]] +
-                             c2_np[ki2_np[b, h, sk, :]]).astype(np.float32)
+                    k_vec = (c1_np[ki1_np[b, h, sk, :]] + c2_np[ki2_np[b, h, sk, :]]).astype(
+                        np.float32
+                    )
                     scores[sk] = np.dot(q_vec, k_vec) * inv_sqrt
                 scores -= scores.max()
                 weights = np.exp(scores)
@@ -452,7 +461,7 @@ def _ref_rvq_attend(q_np, ki1_np, ki2_np, c1_np, c2_np, vi_np, vcb_np):
                     v_vec = np.zeros(D, dtype=np.float32)
                     for s in range(n_sub_v):
                         cb_row = vcb_np[vi_np[b, h, sk, s]].astype(np.float32)
-                        v_vec[s * sub_dim_v:(s + 1) * sub_dim_v] = cb_row
+                        v_vec[s * sub_dim_v : (s + 1) * sub_dim_v] = cb_row
                     out[b, h, sq, :] += weights[sk] * v_vec
     return out.astype(np.float16)
 
@@ -476,7 +485,9 @@ def test_fused_rvq_attend_correctness():
         mx.array(c2_np),
         mx.array(vi_np),
         mx.array(vcb_np),
-        b1=b1, b2=b2, bv=bv,
+        b1=b1,
+        b2=b2,
+        bv=bv,
     )
     mx.eval(out)
 
@@ -509,12 +520,19 @@ def test_fused_rvq_attend_bench(capsys):
     vi_mx = mx.array(vi_np)
     vcb_mx = mx.array(vcb_np)
 
-    ms = _bench(lambda: turboquant_fused_rvq_decode_attend(
-        q_mx, ki1_mx, ki2_mx, c1_mx, c2_mx, vi_mx, vcb_mx,
-        b1=b1, b2=b2, bv=bv,
-    ))
-    with capsys.disabled():
-        print(
-            f"\n[bench] fused_rvq_decode_attend  "
-            f"B={B} H={H} S_kv={S_kv} D={D}: {ms:.3f} ms/iter"
+    ms = _bench(
+        lambda: turboquant_fused_rvq_decode_attend(
+            q_mx,
+            ki1_mx,
+            ki2_mx,
+            c1_mx,
+            c2_mx,
+            vi_mx,
+            vcb_mx,
+            b1=b1,
+            b2=b2,
+            bv=bv,
         )
+    )
+    with capsys.disabled():
+        print(f"\n[bench] fused_rvq_decode_attend  B={B} H={H} S_kv={S_kv} D={D}: {ms:.3f} ms/iter")

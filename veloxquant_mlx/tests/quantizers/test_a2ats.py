@@ -5,6 +5,7 @@ blends reconstruction quality with query-cosine-similarity when assigning
 codebook centroids, and splits tokens into a high-fidelity retrieval set vs.
 the bulk via the same query-similarity signal. All data is synthetic.
 """
+
 from __future__ import annotations
 
 import math
@@ -27,6 +28,7 @@ def _mat(n, d, seed=0):
 # ---------------------------------------------------------------------------
 # a2ats_query_aware_assignment
 # ---------------------------------------------------------------------------
+
 
 def test_assignment_output_shape_and_dtype() -> None:
     x = _mat(5, 4)
@@ -51,10 +53,13 @@ def test_beta_one_reduces_to_nearest_centroid() -> None:
     """beta=1.0 -> pure reconstruction-error term -> must pick the same
     centroid as plain nearest-centroid VQ, regardless of query."""
     x = mx.array([[1.0, 0.0, 0.0, 0.0]], dtype=mx.float32)
-    cb = mx.array([
-        [1.0, 0.0, 0.0, 0.0],   # nearest to x
-        [0.0, 0.0, 0.0, 1.0],   # far from x, but aligned with an adversarial query
-    ], dtype=mx.float32)
+    cb = mx.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],  # nearest to x
+            [0.0, 0.0, 0.0, 1.0],  # far from x, but aligned with an adversarial query
+        ],
+        dtype=mx.float32,
+    )
     adversarial_query = mx.array([0.0, 0.0, 0.0, 1.0], dtype=mx.float32)
     idx = a2ats_query_aware_assignment(x, cb, adversarial_query, beta=1.0)
     assert int(idx[0].item()) == 0
@@ -67,17 +72,20 @@ def test_query_aware_prefers_relevant_centroid_over_nearest() -> None:
     mode does something (mirrors AMC's
     test_query_aware_saliency_downweights_high_magnitude_irrelevant_tokens)."""
     x = mx.array([[1.0, 0.1, 0.0, 0.0]], dtype=mx.float32)
-    cb = mx.array([
-        [1.0, 0.0, 0.0, 0.0],    # nearest to x by L2, but orthogonal-ish to query
-        [0.0, 0.0, 0.0, 1.0],    # far from x, but exactly aligned with query
-    ], dtype=mx.float32)
+    cb = mx.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],  # nearest to x by L2, but orthogonal-ish to query
+            [0.0, 0.0, 0.0, 1.0],  # far from x, but exactly aligned with query
+        ],
+        dtype=mx.float32,
+    )
     query = mx.array([0.0, 0.0, 0.0, 1.0], dtype=mx.float32)
 
     idx_nearest_only = a2ats_query_aware_assignment(x, cb, query, beta=1.0)
     idx_query_dominant = a2ats_query_aware_assignment(x, cb, query, beta=0.0)
 
-    assert int(idx_nearest_only[0].item()) == 0     # pure reconstruction picks centroid 0
-    assert int(idx_query_dominant[0].item()) == 1    # pure query-alignment picks centroid 1
+    assert int(idx_nearest_only[0].item()) == 0  # pure reconstruction picks centroid 0
+    assert int(idx_query_dominant[0].item()) == 1  # pure query-alignment picks centroid 1
 
 
 def test_assignment_deterministic() -> None:
@@ -92,6 +100,7 @@ def test_assignment_deterministic() -> None:
 # ---------------------------------------------------------------------------
 # a2ats_select_retrieval_set
 # ---------------------------------------------------------------------------
+
 
 def test_retrieval_set_respects_fraction() -> None:
     keys = _mat(100, 8, seed=10)
@@ -116,12 +125,15 @@ def test_retrieval_set_picks_most_similar_to_query() -> None:
     retrieval set contains the most-similar tokens, not arbitrary ones."""
     d = 4
     query = mx.array([1.0, 0.0, 0.0, 0.0], dtype=mx.float32)
-    keys = mx.array([
-        [1.0, 0.0, 0.0, 0.0],    # most similar (parallel)
-        [0.9, 0.1, 0.0, 0.0],    # second most similar
-        [0.0, 1.0, 0.0, 0.0],    # orthogonal
-        [-1.0, 0.0, 0.0, 0.0],   # anti-parallel (least similar)
-    ], dtype=mx.float32)
+    keys = mx.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],  # most similar (parallel)
+            [0.9, 0.1, 0.0, 0.0],  # second most similar
+            [0.0, 1.0, 0.0, 0.0],  # orthogonal
+            [-1.0, 0.0, 0.0, 0.0],  # anti-parallel (least similar)
+        ],
+        dtype=mx.float32,
+    )
     ret_idx, bulk_idx = a2ats_select_retrieval_set(keys, query, retrieval_fraction=0.5)
     ret_set = set(np.array(ret_idx).tolist())
     assert ret_set == {0, 1}

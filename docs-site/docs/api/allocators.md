@@ -168,12 +168,12 @@ Trains a product-VQ codebook via K-means on collected key activations.
 
 ```python
 from veloxquant_mlx.allocators.vecinfer import (
-    walsh_hadamard_matrix,      # (d,) -> ndarray [d, d] WHT matrix
+    walsh_hadamard_matrix,  # (d,) -> ndarray [d, d] WHT matrix
     apply_dual_transform_keys,  # smooth + Hadamard rotation for keys
     apply_dual_transform_queries,  # inverse dual transform for queries
-    quantize_vq,                # product VQ encoding
-    dequantize_vq,              # codebook lookup decoding
-    compute_query_lut,          # precompute query-codebook LUT for MIPS
+    quantize_vq,  # product VQ encoding
+    dequantize_vq,  # codebook lookup decoding
+    compute_query_lut,  # precompute query-codebook LUT for MIPS
 )
 ```
 

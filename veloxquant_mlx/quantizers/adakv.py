@@ -38,6 +38,7 @@ Adaptation notes:
       contract.
     - Values are left at fp16 — AdaKV-proxy is a key-only method.
 """
+
 from __future__ import annotations
 
 from typing import Sequence
@@ -62,11 +63,11 @@ def compute_head_norm_variance(keys: mx.array) -> mx.array:
     """
     B, H, S, D = keys.shape
     k32 = keys.astype(mx.float32)
-    norms = mx.sqrt(mx.sum(k32 * k32, axis=-1))          # [B, H, S]
+    norms = mx.sqrt(mx.sum(k32 * k32, axis=-1))  # [B, H, S]
     if S < 2:
         return mx.zeros((H,), dtype=mx.float32)
-    var = mx.var(norms, axis=-1)                          # [B, H]
-    return mx.mean(var, axis=0)                           # [H]
+    var = mx.var(norms, axis=-1)  # [B, H]
+    return mx.mean(var, axis=0)  # [H]
 
 
 def allocate_head_bits(
@@ -99,13 +100,15 @@ def allocate_head_bits(
     allowed = sorted(set(int(b) for b in allowed_bits))
     lo, hi = allowed[0], allowed[-1]
 
-    imp = [float(x) for x in (head_importance.tolist()
-                              if isinstance(head_importance, mx.array)
-                              else head_importance)]
+    imp = [
+        float(x)
+        for x in (
+            head_importance.tolist() if isinstance(head_importance, mx.array) else head_importance
+        )
+    ]
     if len(imp) != n_heads:
         raise ValueError(
-            f"allocate_head_bits: head_importance has {len(imp)} entries but "
-            f"n_heads={n_heads}."
+            f"allocate_head_bits: head_importance has {len(imp)} entries but n_heads={n_heads}."
         )
 
     # Single head: no allocation freedom — snap target to the allowed set.

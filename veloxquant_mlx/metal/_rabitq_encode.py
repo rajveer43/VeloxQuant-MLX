@@ -18,6 +18,7 @@ land in one 32-bit vote mask in a single instruction, which is exactly
 Public API:
   - :func:`rabitq_encode`
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -103,6 +104,7 @@ _RABITQ_ENCODE_SRC = r"""
 # Kernel factory
 # ---------------------------------------------------------------------------
 
+
 def _encode_kernel(d: int):
     key = ("rabitq_encode", d)
     if key not in _cache:
@@ -119,6 +121,7 @@ def _encode_kernel(d: int):
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def rabitq_encode(
     keys: mx.array,  # [N, D] fp16/fp32 — raw (pre-rotation) key vectors

@@ -32,6 +32,7 @@ What is NOT implemented (documented):
       ``adakv_update_interval`` config field is wired but the assignment is
       recomputed every step regardless (future optimisation).
 """
+
 from __future__ import annotations
 
 import math
@@ -70,14 +71,12 @@ class AdaKVCache(_MLXKVCache):
         self._update_interval: int = max(1, int(getattr(config, "adakv_update_interval", 1)))
 
         # Allowed bit set (dedup + sort). mid==hi collapses to a 2-tier set.
-        self._allowed_bits: list[int] = sorted(
-            {self._lo_bit, self._mid_bit, self._hi_bit}
-        )
+        self._allowed_bits: list[int] = sorted({self._lo_bit, self._mid_bit, self._hi_bit})
 
         # Running per-head accumulators of the per-token key L2 norm.
-        self._norm_sum: Optional[mx.array] = None      # [H] fp32
-        self._norm_sq_sum: Optional[mx.array] = None   # [H] fp32
-        self._n_tokens: int = 0                         # total tokens seen
+        self._norm_sum: Optional[mx.array] = None  # [H] fp32
+        self._norm_sq_sum: Optional[mx.array] = None  # [H] fp32
+        self._n_tokens: int = 0  # total tokens seen
 
         # Current per-head bit assignment ([H] ints). Set on first update.
         self._head_bits: Optional[list[int]] = None
@@ -98,9 +97,9 @@ class AdaKVCache(_MLXKVCache):
         """
         B, H, S, D = keys.shape
         k32 = keys.astype(mx.float32)
-        norms = mx.sqrt(mx.sum(k32 * k32, axis=-1))   # [B, H, S]
-        norms_b = mx.mean(norms, axis=0)              # [H, S] (avg over batch)
-        new_sum = mx.sum(norms_b, axis=-1)            # [H]
+        norms = mx.sqrt(mx.sum(k32 * k32, axis=-1))  # [B, H, S]
+        norms_b = mx.mean(norms, axis=0)  # [H, S] (avg over batch)
+        new_sum = mx.sum(norms_b, axis=-1)  # [H]
         new_sq_sum = mx.sum(norms_b * norms_b, axis=-1)  # [H]
         mx.eval(new_sum, new_sq_sum)
 
@@ -146,8 +145,8 @@ class AdaKVCache(_MLXKVCache):
             for h in range(H):
                 k_q = quantize_head(keys[b, h], self._head_bits[h], self._group_size)
                 out_heads.append(k_q)
-            out_batches.append(mx.stack(out_heads, axis=0))   # [H, S, D]
-        return mx.stack(out_batches, axis=0)                   # [B, H, S, D]
+            out_batches.append(mx.stack(out_heads, axis=0))  # [H, S, D]
+        return mx.stack(out_batches, axis=0)  # [B, H, S, D]
 
     # ------------------------------------------------------------------
     # mlx_lm protocol
@@ -168,7 +167,7 @@ class AdaKVCache(_MLXKVCache):
         for h in range(H):
             b = self._head_bits[h]
             code_bytes = math.ceil(S * D * b / 8)
-            param_bytes = n_groups * D * 2 * 2   # scale + zero, fp16
+            param_bytes = n_groups * D * 2 * 2  # scale + zero, fp16
             self._compressed_key_bytes += (code_bytes + param_bytes) * B
         self._fp16_key_bytes += B * H * S * D * 2
         self._value_fp16_bytes += B * H * S * D * 2

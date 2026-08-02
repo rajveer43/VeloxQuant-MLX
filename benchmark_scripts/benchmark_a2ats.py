@@ -43,6 +43,7 @@ Usage
 
 Prints tables and saves a JSON summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -110,11 +111,15 @@ def _rope_comparison(keys_mx: mx.array, codebook: mx.array, query_position: int)
     positions = mx.arange(n)
 
     idx = quantize_vq(keys_mx, codebook, SUB_DIM)
-    dequant = dequantize_vq(idx, codebook).astype(mx.float16)   # pre-RoPE reconstruction
+    dequant = dequantize_vq(idx, codebook).astype(mx.float16)  # pre-RoPE reconstruction
 
-    true_post_rope = a2ats_apply_exact_rope(keys_mx, positions)  # ground truth: exact RoPE on unquantized keys
+    true_post_rope = a2ats_apply_exact_rope(
+        keys_mx, positions
+    )  # ground truth: exact RoPE on unquantized keys
     windowed_recon = a2ats_apply_windowed_rope(dequant, positions, query_position, window=WINDOW)
-    always_exact_recon = a2ats_apply_windowed_rope(dequant, positions, query_position, window=10_000_000)
+    always_exact_recon = a2ats_apply_windowed_rope(
+        dequant, positions, query_position, window=10_000_000
+    )
 
     return {
         "windowed_mse": _mse(windowed_recon, true_post_rope),
@@ -156,7 +161,9 @@ def _assignment_comparison(keys_mx: mx.array, codebook: mx.array, query_mx: mx.a
         # Functional scatter: replace retrieval-set rows in the baseline
         # reconstruction with their query-aware reconstruction.
         update = mx.zeros_like(a2ats_recon)
-        update = update.at[retrieval_idx].add(ret_recon - mx.take(a2ats_recon, retrieval_idx, axis=0))
+        update = update.at[retrieval_idx].add(
+            ret_recon - mx.take(a2ats_recon, retrieval_idx, axis=0)
+        )
         a2ats_recon = a2ats_recon + update
 
     return {
@@ -179,12 +186,12 @@ def _run_once(seq_len: int, geometry: str, seed: int) -> dict:
         query_mx = mx.array(query_np)
 
         cb_train_data = keys_mx.reshape(-1, SUB_DIM)
-        codebook = train_codebook(cb_train_data, 2 ** CODEBOOK_BITS, max_iter=10, seed=seed + ds)
+        codebook = train_codebook(cb_train_data, 2**CODEBOOK_BITS, max_iter=10, seed=seed + ds)
 
         t0 = time.perf_counter()
         rope_res = _rope_comparison(keys_mx, codebook, query_position=seq_len - 1)
         assign_res = _assignment_comparison(keys_mx, codebook, query_mx)
-        mx.eval(mx.array(0))   # force any lazy graph before timing stop
+        mx.eval(mx.array(0))  # force any lazy graph before timing stop
         ms_list.append((time.perf_counter() - t0) * 1_000)
 
         windowed_mses.append(rope_res["windowed_mse"])
@@ -204,12 +211,16 @@ def _run_once(seq_len: int, geometry: str, seed: int) -> dict:
 
 def main() -> None:
     print("A2ATS-adapted windowed RoPE + query-aware VQ — offline synthetic benchmark")
-    print(f"  head_dim={HEAD_DIM}  sub_dim={SUB_DIM}  codebook_bits={CODEBOOK_BITS}  "
-          f"window={WINDOW}  retrieval_fraction={RETRIEVAL_FRACTION}  beta={BETA}")
+    print(
+        f"  head_dim={HEAD_DIM}  sub_dim={SUB_DIM}  codebook_bits={CODEBOOK_BITS}  "
+        f"window={WINDOW}  retrieval_fraction={RETRIEVAL_FRACTION}  beta={BETA}"
+    )
     print("  (mse = mean squared reconstruction error; lower = better fidelity)")
     print()
-    header = (f"{'seq':>4} {'geometry':>20}  {'windowed':>10}  {'always_exact':>12}  "
-              f"{'a2ats_assign':>12}  {'plain_vq':>10}")
+    header = (
+        f"{'seq':>4} {'geometry':>20}  {'windowed':>10}  {'always_exact':>12}  "
+        f"{'a2ats_assign':>12}  {'plain_vq':>10}"
+    )
     print(header)
     print("-" * len(header))
 
@@ -217,9 +228,11 @@ def main() -> None:
     for seq_len, geometry in product(SEQ_LENS, GEOMETRIES):
         row = _run_once(seq_len, geometry, seed=SEED + seq_len)
         results.append(row)
-        print(f"{row['seq_len']:>4} {row['geometry']:>20}  {row['windowed_rope_mse']:>10.6f}  "
-              f"{row['always_exact_rope_mse']:>12.6f}  {row['a2ats_assignment_mse']:>12.6f}  "
-              f"{row['plain_vq_mse']:>10.6f}")
+        print(
+            f"{row['seq_len']:>4} {row['geometry']:>20}  {row['windowed_rope_mse']:>10.6f}  "
+            f"{row['always_exact_rope_mse']:>12.6f}  {row['a2ats_assignment_mse']:>12.6f}  "
+            f"{row['plain_vq_mse']:>10.6f}"
+        )
 
     out_path = Path(__file__).parent.parent / "figures" / "a2ats" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
@@ -233,7 +246,9 @@ def main() -> None:
         plain = float(np.mean([r["plain_vq_mse"] for r in rows]))
         print(f"\nSummary ({geom}):")
         print(f"  RoPE reconstruction MSE — windowed: {windowed:.6f}   always-exact: {exact:.6f}")
-        print(f"  VQ reconstruction MSE   — a2ats query-aware: {a2ats_assign:.6f}   plain nearest-centroid: {plain:.6f}")
+        print(
+            f"  VQ reconstruction MSE   — a2ats query-aware: {a2ats_assign:.6f}   plain nearest-centroid: {plain:.6f}"
+        )
 
     print("\n  (honest reading, stated plainly rather than softened:")
     print()

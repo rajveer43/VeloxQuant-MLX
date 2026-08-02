@@ -21,7 +21,7 @@ from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
 
 config = KVCacheConfig(
     method="kitty",
-    head_dim=128,          # set to your model's head dimension
+    head_dim=128,  # set to your model's head dimension
     kitty_hi_fraction=0.25,  # top 25% channels get 4-bit (default)
     kitty_hi_bit=4,
     kitty_lo_bit=2,

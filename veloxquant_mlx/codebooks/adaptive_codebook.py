@@ -43,12 +43,13 @@ class AdaptiveScalarCodebook:
     ) -> None:
         self._b = int(b)
         self._d = int(d)
-        self._k = 2 ** self._b
+        self._k = 2**self._b
         self._n_calib = int(n_calib)
         self._n_hist_bins = int(n_hist_bins)
 
         if default_codebook is None:
             from veloxquant_mlx.codebooks.base import CodebookFactory
+
             distribution = "gaussian" if d >= 64 else "beta"
             default_codebook = CodebookFactory.create(distribution, b=b, d=d)
         self._codebook: ScalarCodebook = default_codebook  # type: ignore[assignment]
@@ -76,11 +77,13 @@ class AdaptiveScalarCodebook:
         """
         c = self._codebook.centroids_numpy()
         c_sorted = np.sort(c)
-        boundaries = np.concatenate([
-            [-np.inf],
-            (c_sorted[:-1] + c_sorted[1:]) / 2.0,
-            [np.inf],
-        ])
+        boundaries = np.concatenate(
+            [
+                [-np.inf],
+                (c_sorted[:-1] + c_sorted[1:]) / 2.0,
+                [np.inf],
+            ]
+        )
         return c_sorted, boundaries
 
     def observe(self, y: Any) -> None:

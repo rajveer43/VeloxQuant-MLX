@@ -24,6 +24,7 @@ self-attention belongs on the fp16 path.
 Public API:
   - :func:`rabitq_prefill_attend`
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -235,9 +236,13 @@ def _prefill_kernel(n_bytes: int, d: int):
         _cache[key] = mx.fast.metal_kernel(
             name=f"rabitq_prefill_attend_nb{n_bytes}_d{d}",
             input_names=[
-                "q", "scale",
-                "k_bits", "k_mag", "k_const",
-                "v_idx", "v_cents",
+                "q",
+                "scale",
+                "k_bits",
+                "k_mag",
+                "k_const",
+                "v_idx",
+                "v_cents",
             ],
             output_names=["out"],
             source=_RABITQ_PREFILL_SRC,
@@ -250,13 +255,14 @@ def _prefill_kernel(n_bytes: int, d: int):
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def rabitq_prefill_attend(
-    q: mx.array,        # [B, H, S_q, D]      fp16 — new-turn queries
-    scale: mx.array,    # [1]                 fp32 — softmax scale (1/sqrt(D))
-    k_bits: mx.array,   # [B, H, S_kv, D/8]   uint8 — packed 1-bit key signs
-    k_mag: mx.array,    # [B, H, S_kv]        fp32 — per-key magnitude
+    q: mx.array,  # [B, H, S_q, D]      fp16 — new-turn queries
+    scale: mx.array,  # [1]                 fp32 — softmax scale (1/sqrt(D))
+    k_bits: mx.array,  # [B, H, S_kv, D/8]   uint8 — packed 1-bit key signs
+    k_mag: mx.array,  # [B, H, S_kv]        fp32 — per-key magnitude
     k_const: mx.array,  # [B, H, S_kv]        fp32 — additive score bias
-    v_idx: mx.array,    # [B, H, S_kv, D/2]   uint8 — nibble-packed value indices
+    v_idx: mx.array,  # [B, H, S_kv, D/2]   uint8 — nibble-packed value indices
     v_cents: mx.array,  # [n_cents <= 16]     fp32 — scalar value codebook
 ) -> mx.array:
     """Tiled prefill attention over the compressed asymmetric cache.
@@ -277,21 +283,17 @@ def rabitq_prefill_attend(
         raise ValueError(f"rabitq_prefill_attend: D={D} must be divisible by 8")
     if D > 128:
         raise ValueError(
-            f"rabitq_prefill_attend: D={D} exceeds the 128 limit "
-            f"(threadgroup memory budget)"
+            f"rabitq_prefill_attend: D={D} exceeds the 128 limit (threadgroup memory budget)"
         )
     n_bytes = D // 8
 
     if k_bits.ndim != 4 or k_bits.shape[:2] != (B, H) or k_bits.shape[3] != n_bytes:
         raise ValueError(
-            f"rabitq_prefill_attend: k_bits must be [B, H, S_kv, {n_bytes}], "
-            f"got {k_bits.shape}"
+            f"rabitq_prefill_attend: k_bits must be [B, H, S_kv, {n_bytes}], got {k_bits.shape}"
         )
     S_kv = k_bits.shape[2]
     if k_mag.shape != (B, H, S_kv):
-        raise ValueError(
-            f"rabitq_prefill_attend: k_mag must be {(B, H, S_kv)}, got {k_mag.shape}"
-        )
+        raise ValueError(f"rabitq_prefill_attend: k_mag must be {(B, H, S_kv)}, got {k_mag.shape}")
     if k_const.shape != (B, H, S_kv):
         raise ValueError(
             f"rabitq_prefill_attend: k_const must be {(B, H, S_kv)}, got {k_const.shape}"
@@ -303,8 +305,7 @@ def rabitq_prefill_attend(
         )
     if v_cents.ndim != 1 or v_cents.shape[0] > 16:
         raise ValueError(
-            f"rabitq_prefill_attend: v_cents must be 1D with <= 16 entries, "
-            f"got {v_cents.shape}"
+            f"rabitq_prefill_attend: v_cents must be 1D with <= 16 entries, got {v_cents.shape}"
         )
 
     n_qblk = (S_q + 31) // 32

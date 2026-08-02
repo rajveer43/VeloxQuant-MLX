@@ -1,4 +1,5 @@
 """Tests for the TurboQuantRVQKVCache mlx_lm wrapper."""
+
 from __future__ import annotations
 
 import math
@@ -12,8 +13,10 @@ from veloxquant_mlx.cache.turboquant_rvq_cache import TurboQuantRVQKVCache
 
 def _build(bits: int = 1, head_dim: int = 128):
     cfg = KVCacheConfig(
-        method="turboquant_rvq", head_dim=head_dim,
-        bit_width_inlier=bits, seed=0,
+        method="turboquant_rvq",
+        head_dim=head_dim,
+        bit_width_inlier=bits,
+        seed=0,
     )
     return KVCacheFactory.create(cfg)
 
@@ -71,8 +74,10 @@ def test_rejects_list_bit_width() -> None:
     """List form must be handled by KVCacheBuilder.for_model, not the
     individual cache class."""
     cfg = KVCacheConfig(
-        method="turboquant_rvq", head_dim=128,
-        bit_width_inlier=[1, 2], seed=0,
+        method="turboquant_rvq",
+        head_dim=128,
+        bit_width_inlier=[1, 2],
+        seed=0,
     )
     with pytest.raises(TypeError, match="list-form"):
         TurboQuantRVQKVCache(cfg)

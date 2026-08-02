@@ -39,6 +39,7 @@ Public API:
   a2ats_query_aware_assignment — query-aware nearest-centroid selection
   a2ats_select_retrieval_set   — split token indices into retrieval / bulk sets
 """
+
 from __future__ import annotations
 
 import math
@@ -79,17 +80,17 @@ def a2ats_query_aware_assignment(
     cb32 = codebook.astype(mx.float32)
     q32 = query.astype(mx.float32)
 
-    diff = x32[:, None, :] - cb32[None, :, :]         # [N, K, d]
-    sq_err = mx.sum(diff * diff, axis=-1)              # [N, K]
+    diff = x32[:, None, :] - cb32[None, :, :]  # [N, K, d]
+    sq_err = mx.sum(diff * diff, axis=-1)  # [N, K]
     max_err = mx.max(sq_err, axis=-1, keepdims=True)
     max_err = mx.maximum(max_err, 1e-8)
-    err_term = 1.0 - sq_err / max_err                  # [N, K], higher = better, in [0, 1]
+    err_term = 1.0 - sq_err / max_err  # [N, K], higher = better, in [0, 1]
 
-    cb_norm = mx.sqrt(mx.sum(cb32 * cb32, axis=-1))     # [K]
-    q_norm = mx.sqrt(mx.sum(q32 * q32))                 # scalar
+    cb_norm = mx.sqrt(mx.sum(cb32 * cb32, axis=-1))  # [K]
+    q_norm = mx.sqrt(mx.sum(q32 * q32))  # scalar
     eps = 1e-8
     denom = mx.maximum(cb_norm * q_norm, eps)
-    cos_sim = (cb32 @ q32) / denom                      # [K]
+    cos_sim = (cb32 @ q32) / denom  # [K]
     cos_sim = mx.clip((cos_sim + 1.0) * 0.5, 0.0, 1.0)  # [-1,1] -> [0,1]
 
     score = beta * err_term + (1.0 - beta) * cos_sim[None, :]  # [N, K]
@@ -130,7 +131,7 @@ def a2ats_select_retrieval_set(
     q_norm = mx.sqrt(mx.sum(q32 * q32))
     eps = 1e-8
     denom = mx.maximum(k_norm * q_norm, eps)
-    sim = (k32 @ q32) / denom   # [N]
+    sim = (k32 @ q32) / denom  # [N]
     mx.eval(sim)
 
     n_retrieve = max(1, math.ceil(retrieval_fraction * n))

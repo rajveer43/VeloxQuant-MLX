@@ -6,6 +6,7 @@ count), determinism, and the core quality claims: sink-protected KIVI must
 beat plain KIVI on data with planted sinks, and we compare honestly against
 a Preserve-First-N (PFN) baseline at equal fp16 budget.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -18,8 +19,14 @@ from veloxquant_mlx.cache.sink_cache import SinkProtectedKVCache
 
 
 def _make(**cfg):
-    base = dict(method="kivi_sink", head_dim=128, bit_width_inlier=2,
-                residual_length=8, kivi_group_size=32, n_sink_tokens=5)
+    base = dict(
+        method="kivi_sink",
+        head_dim=128,
+        bit_width_inlier=2,
+        residual_length=8,
+        kivi_group_size=32,
+        n_sink_tokens=5,
+    )
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 
@@ -64,9 +71,11 @@ def test_zero_sinks_equals_plain_kivi() -> None:
     """n_sink_tokens=0 must reproduce plain KIVI bit-for-bit."""
     K, V = _kv_with_sinks(sink_pos=())
     sink0 = _make(n_sink_tokens=0)
-    kivi = KVCacheFactory.create(KVCacheConfig(
-        method="kivi", head_dim=128, bit_width_inlier=2,
-        residual_length=8, kivi_group_size=32))
+    kivi = KVCacheFactory.create(
+        KVCacheConfig(
+            method="kivi", head_dim=128, bit_width_inlier=2, residual_length=8, kivi_group_size=32
+        )
+    )
     a, _ = sink0.update_and_fetch(mx.array(K), mx.array(V))
     b, _ = kivi.update_and_fetch(mx.array(K), mx.array(V))
     mx.eval(a, b)
@@ -84,8 +93,12 @@ def test_byte_accounting_no_double_count() -> None:
     assert c.residual_fp16_bytes == 8 * fp16_tok
     assert c.sink_fp16_bytes == 3 * fp16_tok
     assert c.fp16_key_bytes == H * B * 64 * D * 2
-    total = (c.compressed_key_bytes + c.compressed_value_bytes
-             + c.sink_fp16_bytes + c.residual_fp16_bytes)
+    total = (
+        c.compressed_key_bytes
+        + c.compressed_value_bytes
+        + c.sink_fp16_bytes
+        + c.residual_fp16_bytes
+    )
     assert total < c.fp16_key_bytes + c.fp16_value_bytes  # still compresses
 
 
@@ -114,7 +127,7 @@ def _recon_err(cache, K, V):
     ko, _ = cache.update_and_fetch(mx.array(K), mx.array(V))
     mx.eval(ko)
     diff = np.array(ko).astype(np.float32) - K.astype(np.float32)
-    return float(np.mean(diff ** 2))
+    return float(np.mean(diff**2))
 
 
 def test_sink_protection_beats_plain_kivi_on_planted_sinks() -> None:
@@ -123,12 +136,15 @@ def test_sink_protection_beats_plain_kivi_on_planted_sinks() -> None:
     large-magnitude sinks dominate the squared error when quantized."""
     K, V = _kv_with_sinks(S=128, sink_pos=(0, 7, 20, 41, 90), scale=25.0)
     err_sink = _recon_err(_make(n_sink_tokens=5, residual_length=8), K, V)
-    kivi = KVCacheFactory.create(KVCacheConfig(
-        method="kivi", head_dim=128, bit_width_inlier=2,
-        residual_length=8, kivi_group_size=32))
+    kivi = KVCacheFactory.create(
+        KVCacheConfig(
+            method="kivi", head_dim=128, bit_width_inlier=2, residual_length=8, kivi_group_size=32
+        )
+    )
     err_plain = _recon_err(kivi, K, V)
     assert err_sink < err_plain, (
-        f"sink-protected MSE {err_sink:.5f} not < plain KIVI {err_plain:.5f}")
+        f"sink-protected MSE {err_sink:.5f} not < plain KIVI {err_plain:.5f}"
+    )
 
 
 def test_dynamic_selection_vs_pfn_equal_budget() -> None:
@@ -147,5 +163,4 @@ def test_dynamic_selection_vs_pfn_equal_budget() -> None:
     pfn._sink_norms = {i: float("inf") for i in range(5)}
     pfn._update_sinks = lambda keys, start: set(pfn._sink_norms)  # freeze
     err_pfn = _recon_err(pfn, K, V)
-    assert err_dyn < err_pfn, (
-        f"dynamic MSE {err_dyn:.5f} not < PFN-5 {err_pfn:.5f}")
+    assert err_dyn < err_pfn, f"dynamic MSE {err_dyn:.5f} not < PFN-5 {err_pfn:.5f}"

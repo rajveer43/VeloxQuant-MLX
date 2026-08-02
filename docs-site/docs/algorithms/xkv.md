@@ -49,12 +49,12 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="xkv",
     head_dim=128,
-    xkv_group_size=2,            # layers per shared-subspace group (2 = pairs)
-    xkv_rank=None,               # None -> energy-threshold rank selection
-    xkv_energy_threshold=0.95,   # fraction of singular value energy to retain
-    xkv_latent_bits=4,           # single-bit-width latent quantization
-    xkv_group_quant_size=32,     # token group size for latent quantization
-    xkv_max_ctx=8192,            # coordinator per-group token budget
+    xkv_group_size=2,  # layers per shared-subspace group (2 = pairs)
+    xkv_rank=None,  # None -> energy-threshold rank selection
+    xkv_energy_threshold=0.95,  # fraction of singular value energy to retain
+    xkv_latent_bits=4,  # single-bit-width latent quantization
+    xkv_group_quant_size=32,  # token group size for latent quantization
+    xkv_max_ctx=8192,  # coordinator per-group token budget
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

@@ -29,6 +29,7 @@ Byte accounting:
 Effective bit-width (default):
     avg_bits = 0.25×4 + 0.75×2 = 2.5 bits/element → 6.4× key bandwidth reduction
 """
+
 from __future__ import annotations
 
 import math
@@ -61,18 +62,15 @@ class KittyKVCache(_MLXKVCache):
         self._D: int = int(config.head_dim)
         self._hi_fraction: float = float(getattr(config, "kitty_hi_fraction", 0.25))
         if not 0.0 <= self._hi_fraction <= 1.0:
-            raise ValueError(
-                f"kitty: kitty_hi_fraction must be in [0, 1], got "
-                f"{self._hi_fraction}"
-            )
+            raise ValueError(f"kitty: kitty_hi_fraction must be in [0, 1], got {self._hi_fraction}")
         self._hi_bit: int = int(getattr(config, "kitty_hi_bit", 4))
         self._lo_bit: int = int(getattr(config, "kitty_lo_bit", 2))
         self._group_size: int = int(getattr(config, "kitty_group_size", 32))
 
         # Running accumulators per head — shape [H, D], initialised at prefill
-        self._key_sum: Optional[mx.array] = None      # [H, D] fp32
-        self._key_sq_sum: Optional[mx.array] = None   # [H, D] fp32
-        self._n_keys: int = 0                          # total tokens accumulated
+        self._key_sum: Optional[mx.array] = None  # [H, D] fp32
+        self._key_sq_sum: Optional[mx.array] = None  # [H, D] fp32
+        self._n_keys: int = 0  # total tokens accumulated
 
         # Byte accounting
         self._compressed_key_bytes: int = 0
@@ -94,7 +92,7 @@ class KittyKVCache(_MLXKVCache):
         for b in range(B):
             out_heads = []
             for h in range(H):
-                k_bh = keys[b, h]   # [S, D]
+                k_bh = keys[b, h]  # [S, D]
 
                 if self._n_keys == 0:
                     # Prefill: rank from the batch itself
@@ -111,22 +109,24 @@ class KittyKVCache(_MLXKVCache):
                     lo_idx = sorted(sorted_idx[n_hi:])
 
                 k_q = quantize_mixed_channels(
-                    k_bh, hi_idx, lo_idx,
+                    k_bh,
+                    hi_idx,
+                    lo_idx,
                     hi_bit=self._hi_bit,
                     lo_bit=self._lo_bit,
                     group_size=self._group_size,
                 )
                 out_heads.append(k_q)
-            out_batches.append(mx.stack(out_heads, axis=0))   # [H, S, D]
-        return mx.stack(out_batches, axis=0)                   # [B, H, S, D]
+            out_batches.append(mx.stack(out_heads, axis=0))  # [H, S, D]
+        return mx.stack(out_batches, axis=0)  # [B, H, S, D]
 
     def _update_accumulators(self, keys: mx.array) -> None:
         """Update running key_sum and key_sq_sum from incoming keys [B, H, S, D]."""
         B, H, S, D = keys.shape
         k32 = keys.astype(mx.float32)
         # Average over batch dimension; sum over sequence
-        k_mean_b = mx.mean(k32, axis=0)   # [H, S, D]
-        new_sum = mx.sum(k_mean_b, axis=1)          # [H, D]
+        k_mean_b = mx.mean(k32, axis=0)  # [H, S, D]
+        new_sum = mx.sum(k_mean_b, axis=1)  # [H, D]
         new_sq_sum = mx.sum(k_mean_b * k_mean_b, axis=1)  # [H, D]
         mx.eval(new_sum, new_sq_sum)
 
@@ -163,12 +163,11 @@ class KittyKVCache(_MLXKVCache):
         def _channel_bytes(n_tokens: int, n_ch: int, b: int) -> int:
             code_bytes = math.ceil(n_tokens * n_ch * b / 8)
             n_groups = math.ceil(n_tokens / self._group_size)
-            param_bytes = n_groups * n_ch * 2 * 2   # scale + zero, fp16
+            param_bytes = n_groups * n_ch * 2 * 2  # scale + zero, fp16
             return (code_bytes + param_bytes) * H * B
 
-        self._compressed_key_bytes += (
-            _channel_bytes(S, n_hi, self._hi_bit) +
-            _channel_bytes(S, n_lo, self._lo_bit)
+        self._compressed_key_bytes += _channel_bytes(S, n_hi, self._hi_bit) + _channel_bytes(
+            S, n_lo, self._lo_bit
         )
         self._fp16_key_bytes += B * H * S * D * 2
         self._value_fp16_bytes += B * H * S * D * 2

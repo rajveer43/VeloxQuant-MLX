@@ -8,6 +8,7 @@ codebook indices.
 Public API:
   - :func:`turboquant_fused_rvq_decode_attend`
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -121,15 +122,20 @@ _FUSED_RVQ_ATTEND_SRC = r"""
 # Kernel factory
 # ---------------------------------------------------------------------------
 
+
 def _rvq_attend_kernel(b1: int, b2: int, bv: int, D: int):
     key = ("fused_rvq_attend", b1, b2, bv, D)
     if key not in _cache:
         _cache[key] = mx.fast.metal_kernel(
             name=f"turboquant_fused_rvq_attend_b{b1}_{b2}_{bv}_d{D}",
             input_names=[
-                "q", "k_indices1", "k_indices2",
-                "centroids1", "centroids2",
-                "v_indices", "v_codebook",
+                "q",
+                "k_indices1",
+                "k_indices2",
+                "centroids1",
+                "centroids2",
+                "v_indices",
+                "v_codebook",
             ],
             output_names=["out"],
             source=_FUSED_RVQ_ATTEND_SRC,
@@ -141,6 +147,7 @@ def _rvq_attend_kernel(b1: int, b2: int, bv: int, D: int):
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def turboquant_fused_rvq_decode_attend(
     q: mx.array,

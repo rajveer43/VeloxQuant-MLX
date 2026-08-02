@@ -9,6 +9,7 @@ Usage
 
 Results print a table and optionally save a JSON summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -22,13 +23,13 @@ import numpy as np
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
 # ── sweep configuration ──────────────────────────────────────────────────────
-SEQ_LENS   = [128, 512, 1024, 2048]
-BUDGETS    = [64, 128, 256, 512]
-N_SINKS    = [0, 4]
-N_HEADS    = 8
-HEAD_DIM   = 128
-N_WARMUP   = 2
-N_TIMED    = 5
+SEQ_LENS = [128, 512, 1024, 2048]
+BUDGETS = [64, 128, 256, 512]
+N_SINKS = [0, 4]
+N_HEADS = 8
+HEAD_DIM = 128
+N_WARMUP = 2
+N_TIMED = 5
 
 
 def _rand_kv(S: int, H: int = N_HEADS, D: int = HEAD_DIM, seed: int = 0):
@@ -64,16 +65,16 @@ def _run_once(seq_len: int, budget: int, n_sink: int) -> dict:
         times.append((time.perf_counter() - t0) * 1_000)
 
     ratio = cache.compression_ratio
-    kept  = cache.tokens_kept
+    kept = cache.tokens_kept
 
     return {
-        "seq_len":        seq_len,
-        "h2o_budget":     budget,
-        "h2o_n_sink":     n_sink,
-        "kept_tokens":    kept,
+        "seq_len": seq_len,
+        "h2o_budget": budget,
+        "h2o_n_sink": n_sink,
+        "kept_tokens": kept,
         "compression_ratio": round(ratio, 3),
-        "latency_ms_mean":   round(float(np.mean(times)), 3),
-        "latency_ms_min":    round(float(np.min(times)), 3),
+        "latency_ms_mean": round(float(np.mean(times)), 3),
+        "latency_ms_min": round(float(np.min(times)), 3),
     }
 
 
@@ -88,7 +89,7 @@ def main() -> None:
     results = []
     for seq_len, budget, n_sink in product(SEQ_LENS, BUDGETS, N_SINKS):
         if budget > seq_len:
-            continue   # trivial: no eviction possible
+            continue  # trivial: no eviction possible
         row = _run_once(seq_len, budget, n_sink)
         results.append(row)
         print(

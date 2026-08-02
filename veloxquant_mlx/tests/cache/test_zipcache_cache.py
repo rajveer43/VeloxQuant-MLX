@@ -6,6 +6,7 @@ preservation, byte ordering, decode accumulation, edge-case hi_fractions, the
 values-off path, mask handling, and construction via both KVCacheFactory.create
 and KVCacheBuilder.for_model. All data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -18,9 +19,12 @@ from veloxquant_mlx.cache.zipcache_cache import ZipCacheKVCache
 
 def _make(**cfg):
     base = dict(
-        method="zipcache", head_dim=128,
-        zipcache_hi_bits=4, zipcache_lo_bits=2,
-        zipcache_hi_fraction=0.20, zipcache_group_size=32,
+        method="zipcache",
+        head_dim=128,
+        zipcache_hi_bits=4,
+        zipcache_lo_bits=2,
+        zipcache_hi_fraction=0.20,
+        zipcache_group_size=32,
     )
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
@@ -36,6 +40,7 @@ def _rand_kv(S=64, H=2, D=128, seed=0):
 # ---------------------------------------------------------------------------
 # Factory and interface
 # ---------------------------------------------------------------------------
+
 
 def test_factory_dispatch() -> None:
     assert isinstance(_make(), ZipCacheKVCache)
@@ -67,6 +72,7 @@ def test_output_dtype_fp16() -> None:
 # Byte accounting
 # ---------------------------------------------------------------------------
 
+
 def test_byte_ordering_compressed_lt_fp16() -> None:
     c = _make()
     k, v = _rand_kv()
@@ -95,6 +101,7 @@ def test_effective_avg_bits_in_range() -> None:
 # Values-off path
 # ---------------------------------------------------------------------------
 
+
 def test_values_off_passthrough() -> None:
     c = _make(zipcache_quantize_values=False)
     k, v = _rand_kv()
@@ -107,6 +114,7 @@ def test_values_off_passthrough() -> None:
 # ---------------------------------------------------------------------------
 # Edge-case hi_fraction values
 # ---------------------------------------------------------------------------
+
 
 def test_hi_fraction_zero() -> None:
     """hi_fraction=0 (all lo_bits) runs without error."""
@@ -128,6 +136,7 @@ def test_hi_fraction_one() -> None:
 # Decode accumulation
 # ---------------------------------------------------------------------------
 
+
 def test_decode_accumulation() -> None:
     c = _make()
     k, v = _rand_kv(S=32)
@@ -142,6 +151,7 @@ def test_decode_accumulation() -> None:
 # Determinism
 # ---------------------------------------------------------------------------
 
+
 def test_deterministic() -> None:
     k, v = _rand_kv()
     c1, c2 = _make(), _make()
@@ -154,6 +164,7 @@ def test_deterministic() -> None:
 # ---------------------------------------------------------------------------
 # for_model construction
 # ---------------------------------------------------------------------------
+
 
 def test_build_via_for_model_propagates_config() -> None:
     """KVCacheBuilder.for_model must carry the zipcache_* fields."""
@@ -169,9 +180,12 @@ def test_build_via_for_model_propagates_config() -> None:
         layers = [_Layer(), _Layer()]
 
     cfg = KVCacheConfig(
-        method="zipcache", head_dim=128,
-        zipcache_hi_bits=4, zipcache_lo_bits=2,
-        zipcache_hi_fraction=0.25, zipcache_group_size=32,
+        method="zipcache",
+        head_dim=128,
+        zipcache_hi_bits=4,
+        zipcache_lo_bits=2,
+        zipcache_hi_fraction=0.25,
+        zipcache_group_size=32,
     )
     caches = KVCacheBuilder.for_model(_Model(), cfg)
     assert all(isinstance(c, ZipCacheKVCache) for c in caches)
@@ -183,6 +197,7 @@ def test_build_via_for_model_propagates_config() -> None:
 # ---------------------------------------------------------------------------
 # Config validation — zipcache_hi_fraction must be in [0, 1]
 # ---------------------------------------------------------------------------
+
 
 def test_hi_fraction_above_one_rejected() -> None:
     with pytest.raises(ValueError, match="zipcache_hi_fraction"):

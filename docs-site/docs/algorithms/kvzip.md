@@ -79,8 +79,8 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="kvzip",
     head_dim=128,
-    kvzip_budget=512,       # max tokens kept (incl. sinks)
-    kvzip_n_sink=4,         # leading positions never evicted
+    kvzip_budget=512,  # max tokens kept (incl. sinks)
+    kvzip_n_sink=4,  # leading positions never evicted
     kvzip_probe="context",  # reconstruction probe; "latest" = latest-token (TOVA)
 )
 caches = KVCacheBuilder.for_model(model, config)

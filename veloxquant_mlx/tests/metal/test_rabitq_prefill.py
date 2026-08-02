@@ -6,6 +6,7 @@ scalar softmax scale plus per-key bias, softmax, then matmul against
 nibble-decoded codebook values. Tolerances cover the kernel's fp16 tile
 arithmetic (float running accumulators, half 8x8 MAC fragments).
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -25,20 +26,20 @@ pytestmark = pytest.mark.skipif(
 # Reference implementation (numpy float32)
 # ---------------------------------------------------------------------------
 
+
 def _reference_prefill(q, scale, k_bits, k_mag, k_const, v_idx_unpacked, v_cents):
     D = q.shape[-1]
-    signs = np.unpackbits(k_bits, axis=-1, count=D, bitorder="little").astype(
-        np.float32
-    ) * 2.0 - 1.0                                            # [B,H,Skv,D] +-1
-    k_hat = signs * k_mag[..., None]                          # [B,H,Skv,D]
+    signs = (
+        np.unpackbits(k_bits, axis=-1, count=D, bitorder="little").astype(np.float32) * 2.0 - 1.0
+    )  # [B,H,Skv,D] +-1
+    k_hat = signs * k_mag[..., None]  # [B,H,Skv,D]
     scores = (
-        np.einsum("bhqd,bhsd->bhqs", q.astype(np.float32), k_hat) * scale
-        + k_const[:, :, None, :]
+        np.einsum("bhqd,bhsd->bhqs", q.astype(np.float32), k_hat) * scale + k_const[:, :, None, :]
     )
     scores = scores - scores.max(axis=-1, keepdims=True)
     w = np.exp(scores)
     w = w / w.sum(axis=-1, keepdims=True)
-    v_hat = v_cents[v_idx_unpacked]                           # [B,H,Skv,D]
+    v_hat = v_cents[v_idx_unpacked]  # [B,H,Skv,D]
     return np.einsum("bhqs,bhsd->bhqd", w, v_hat).astype(np.float32)
 
 
@@ -57,8 +58,13 @@ def _make_inputs(B, H, S_q, S_kv, D, seed=0):
 def _run_kernel(q, scale, k_bits, k_mag, k_const, v_idx_unpacked, v_cents):
     packed = rabitq_pack_values(mx.array(v_idx_unpacked))
     out = rabitq_prefill_attend(
-        mx.array(q), mx.array(scale), mx.array(k_bits), mx.array(k_mag),
-        mx.array(k_const), packed, mx.array(v_cents),
+        mx.array(q),
+        mx.array(scale),
+        mx.array(k_bits),
+        mx.array(k_mag),
+        mx.array(k_const),
+        packed,
+        mx.array(v_cents),
     )
     mx.eval(out)
     return np.array(out, dtype=np.float32)
@@ -67,6 +73,7 @@ def _run_kernel(q, scale, k_bits, k_mag, k_const, v_idx_unpacked, v_cents):
 # ---------------------------------------------------------------------------
 # Parity
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("D", [64, 128])
 @pytest.mark.parametrize("S_q", [1, 8, 33, 256])
@@ -94,17 +101,27 @@ def test_prefill_matches_decode_kernel_semantics():
 # Input validation
 # ---------------------------------------------------------------------------
 
+
 def test_prefill_rejects_bad_inputs():
     q, scale, k_bits, k_mag, k_const, v_idx, v_cents = _make_inputs(1, 1, 8, 16, 64)
     packed = rabitq_pack_values(mx.array(v_idx))
     with pytest.raises(ValueError, match="128 limit"):
         rabitq_prefill_attend(
-            mx.array(np.zeros((1, 1, 8, 256), np.float16)), mx.array(scale),
-            mx.array(k_bits), mx.array(k_mag), mx.array(k_const), packed,
+            mx.array(np.zeros((1, 1, 8, 256), np.float16)),
+            mx.array(scale),
+            mx.array(k_bits),
+            mx.array(k_mag),
+            mx.array(k_const),
+            packed,
             mx.array(v_cents),
         )
     with pytest.raises(ValueError, match="nibble-packed"):
         rabitq_prefill_attend(
-            mx.array(q), mx.array(scale), mx.array(k_bits), mx.array(k_mag),
-            mx.array(k_const), mx.array(v_idx), mx.array(v_cents),
+            mx.array(q),
+            mx.array(scale),
+            mx.array(k_bits),
+            mx.array(k_mag),
+            mx.array(k_const),
+            mx.array(v_idx),
+            mx.array(v_cents),
         )

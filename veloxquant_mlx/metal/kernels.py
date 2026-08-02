@@ -13,6 +13,7 @@ Kernels are organized into focused submodules:
   _rabitq_encode — Fused RaBitQ key encode (rotate + pack + magnitude)
   _rabitq_values — Nibble packing for 4-bit value indices
 """
+
 from __future__ import annotations
 
 from veloxquant_mlx.metal._vecinfer import (

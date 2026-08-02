@@ -37,12 +37,12 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="gear",
     head_dim=128,
-    gear_bits=2,                 # ultra-low base bit-width
-    gear_rank=8,                 # residual low-rank (keep small: this is the premise)
+    gear_bits=2,  # ultra-low base bit-width
+    gear_rank=8,  # residual low-rank (keep small: this is the premise)
     gear_energy_threshold=0.90,  # used when gear_rank is None
     gear_sparse_fraction=0.005,  # top-|residual| fraction kept exact
     gear_group_size=32,
-    gear_quantize_values=True,   # apply GEAR to values too (False = keys only)
+    gear_quantize_values=True,  # apply GEAR to values too (False = keys only)
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

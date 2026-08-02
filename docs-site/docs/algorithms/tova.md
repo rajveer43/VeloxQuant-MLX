@@ -38,8 +38,8 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="tova",
     head_dim=128,
-    tova_budget=512,   # max tokens retained at any time (sinks + non-sinks)
-    tova_n_sink=4,     # initial positions never evicted (attention sinks)
+    tova_budget=512,  # max tokens retained at any time (sinks + non-sinks)
+    tova_n_sink=4,  # initial positions never evicted (attention sinks)
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

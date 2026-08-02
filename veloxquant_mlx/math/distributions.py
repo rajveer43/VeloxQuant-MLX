@@ -28,14 +28,10 @@ def beta_pdf(x: np.ndarray, d: int) -> np.ndarray:
     if not np.any(mask):
         return out
 
-    log_norm = (
-        math.lgamma(d / 2.0)
-        - 0.5 * math.log(math.pi)
-        - math.lgamma((d - 1) / 2.0)
-    )
+    log_norm = math.lgamma(d / 2.0) - 0.5 * math.log(math.pi) - math.lgamma((d - 1) / 2.0)
     alpha = (d - 3) / 2.0
     xm = x[mask]
-    log_vals = log_norm + alpha * np.log1p(-xm ** 2)
+    log_vals = log_norm + alpha * np.log1p(-(xm**2))
     out[mask] = np.exp(log_vals)
     return out
 

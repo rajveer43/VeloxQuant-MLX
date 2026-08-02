@@ -7,6 +7,7 @@ decode accumulation within window, window trimming (overflow evicts oldest), byt
 accounting (streaming_ratio, tokens_in_window), n_sink=0 edge case, determinism,
 and for_model config propagation. All data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -19,8 +20,10 @@ from veloxquant_mlx.cache.streaming_llm_cache import StreamingLLMKVCache
 
 def _make(**cfg):
     base = dict(
-        method="streaming_llm", head_dim=64,
-        stream_n_sink=4, stream_window_size=8,
+        method="streaming_llm",
+        head_dim=64,
+        stream_n_sink=4,
+        stream_window_size=8,
     )
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
@@ -37,6 +40,7 @@ def _rand_kv(S: int = 16, H: int = 2, D: int = 64, seed: int = 0):
 # Factory and interface
 # ---------------------------------------------------------------------------
 
+
 def test_factory_dispatch() -> None:
     assert isinstance(_make(), StreamingLLMKVCache)
 
@@ -51,6 +55,7 @@ def test_no_bits_attribute() -> None:
 # ---------------------------------------------------------------------------
 # Shape and dtype
 # ---------------------------------------------------------------------------
+
 
 def test_output_shape_sink_only() -> None:
     """Exactly n_sink tokens → output seq dim == n_sink."""
@@ -81,6 +86,7 @@ def test_output_dtype_fp16() -> None:
 # ---------------------------------------------------------------------------
 # Window growth and trimming
 # ---------------------------------------------------------------------------
+
 
 def test_decode_grow_within_window() -> None:
     """Single-token decode steps grow output until window_size is reached."""
@@ -125,6 +131,7 @@ def test_tokens_in_window_bounded() -> None:
 # Byte accounting
 # ---------------------------------------------------------------------------
 
+
 def test_streaming_ratio_equals_1_before_window_fills() -> None:
     """When all tokens fit in n_sink + window_size, ratio == 1."""
     c = _make(stream_n_sink=4, stream_window_size=100)
@@ -155,6 +162,7 @@ def test_tokens_seen_accumulates() -> None:
 # Edge cases
 # ---------------------------------------------------------------------------
 
+
 def test_n_sink_zero() -> None:
     """n_sink=0: all tokens go into recent window only."""
     c = _make(stream_n_sink=0, stream_window_size=8)
@@ -169,12 +177,13 @@ def test_large_prefill_trimmed_correctly() -> None:
     c = _make(stream_n_sink=4, stream_window_size=8)
     k, v = _rand_kv(S=1000, D=64)
     ko, vo = c.update_and_fetch(k, v)
-    assert ko.shape[2] == 12   # 4 + 8
+    assert ko.shape[2] == 12  # 4 + 8
 
 
 # ---------------------------------------------------------------------------
 # Determinism
 # ---------------------------------------------------------------------------
+
 
 def test_deterministic() -> None:
     k, v = _rand_kv(S=20)
@@ -189,6 +198,7 @@ def test_deterministic() -> None:
 # for_model construction
 # ---------------------------------------------------------------------------
 
+
 def test_build_via_for_model_propagates_config() -> None:
     from veloxquant_mlx.cache.base import KVCacheBuilder
 
@@ -202,8 +212,10 @@ def test_build_via_for_model_propagates_config() -> None:
         layers = [_Layer(), _Layer()]
 
     cfg = KVCacheConfig(
-        method="streaming_llm", head_dim=64,
-        stream_n_sink=6, stream_window_size=128,
+        method="streaming_llm",
+        head_dim=64,
+        stream_n_sink=6,
+        stream_window_size=128,
     )
     caches = KVCacheBuilder.for_model(_Model(), cfg)
     assert all(isinstance(c, StreamingLLMKVCache) for c in caches)

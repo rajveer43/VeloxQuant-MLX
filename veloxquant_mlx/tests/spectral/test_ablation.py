@@ -5,6 +5,7 @@ Reproduces the key findings:
   - Removing QJL on noise dims improves quality (paper +3.0pp finding).
   - Compression ratio ordering: no-QJL > selective-QJL > full-QJL.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -49,8 +50,12 @@ def test_spectral_no_qjl_beats_random_rotation_on_low_rank():
     x_np = _low_rank_keys()
     U_pca = _pca_U(x_np)
 
-    sq_spectral = SpectralQuantizer(d=D, b_signal=3, b_noise=3, rotation=U_pca, d_s=4, apply_qjl=False, seed=SEED)
-    sq_random = SpectralQuantizer(d=D, b_signal=3, b_noise=3, rotation=None, d_s=4, apply_qjl=False, seed=SEED)
+    sq_spectral = SpectralQuantizer(
+        d=D, b_signal=3, b_noise=3, rotation=U_pca, d_s=4, apply_qjl=False, seed=SEED
+    )
+    sq_random = SpectralQuantizer(
+        d=D, b_signal=3, b_noise=3, rotation=None, d_s=4, apply_qjl=False, seed=SEED
+    )
 
     cs_spectral = _cosine_sim(x_np, sq_spectral, mx)
     cs_random = _cosine_sim(x_np, sq_random, mx)
@@ -75,9 +80,13 @@ def test_no_qjl_on_noise_dims_vs_full_qjl():
     U_pca = _pca_U(x_np)
 
     # SQ_noQJL_v3 (paper primary config): no QJL at all
-    sq_no_qjl = SpectralQuantizer(d=D, b_signal=3, b_noise=3, rotation=U_pca, d_s=4, apply_qjl=False, seed=SEED)
+    sq_no_qjl = SpectralQuantizer(
+        d=D, b_signal=3, b_noise=3, rotation=U_pca, d_s=4, apply_qjl=False, seed=SEED
+    )
     # Signal-only QJL (selective)
-    sq_selective_qjl = SpectralQuantizer(d=D, b_signal=3, b_noise=3, rotation=U_pca, d_s=4, apply_qjl=True, seed=SEED)
+    sq_selective_qjl = SpectralQuantizer(
+        d=D, b_signal=3, b_noise=3, rotation=U_pca, d_s=4, apply_qjl=True, seed=SEED
+    )
 
     cs_no_qjl = _cosine_sim(x_np, sq_no_qjl, mx)
     cs_selective = _cosine_sim(x_np, sq_selective_qjl, mx)
@@ -91,7 +100,9 @@ def test_compression_ratio_ordering():
     from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
 
     sq_no_qjl = SpectralQuantizer(d=D, b_signal=3, b_noise=3, d_s=4, apply_qjl=False, seed=SEED)
-    sq_selective = SpectralQuantizer(d=D, b_signal=3, b_noise=3, d_s=4, apply_qjl=True, jl_dim=4, seed=SEED)
+    sq_selective = SpectralQuantizer(
+        d=D, b_signal=3, b_noise=3, d_s=4, apply_qjl=True, jl_dim=4, seed=SEED
+    )
 
     # No QJL → fewest bits → highest compression ratio
     assert sq_no_qjl.compression_ratio() >= sq_selective.compression_ratio(), (
@@ -115,8 +126,8 @@ def test_water_filling_concentrates_bits_on_high_signal_dims():
 
     d = 128
     ev = np.zeros(d, dtype=np.float64)
-    ev[:4] = 10.0   # high signal
-    ev[4:] = 0.1    # low signal
+    ev[:4] = 10.0  # high signal
+    ev[4:] = 0.1  # low signal
 
     bits = water_fill_bits(ev, total_bit_budget=d * 3, min_bits=1, max_bits=8)
     assert bits.sum() == d * 3, f"Total bits {bits.sum()} != budget {d * 3}"
@@ -130,12 +141,12 @@ def test_keys_have_lower_d_eff_than_values():
     rng = np.random.default_rng(10)
     # Keys: rank-4 data
     basis_k, _ = np.linalg.qr(rng.standard_normal((D, 4)).astype(np.float32))
-    keys = (rng.standard_normal((512, 4)).astype(np.float32) @ basis_k.T)
+    keys = rng.standard_normal((512, 4)).astype(np.float32) @ basis_k.T
     keys += rng.standard_normal((512, D)).astype(np.float32) * 0.05
 
     # Values: rank-50 data
     basis_v, _ = np.linalg.qr(rng.standard_normal((D, 50)).astype(np.float32))
-    values = (rng.standard_normal((512, 50)).astype(np.float32) @ basis_v.T)
+    values = rng.standard_normal((512, 50)).astype(np.float32) @ basis_v.T
     values += rng.standard_normal((512, D)).astype(np.float32) * 0.05
 
     pr_k = compute_participation_ratio(keys)

@@ -43,6 +43,7 @@ knorm_get_kv         — extract current (keys, values) arrays
 knorm_fp16_bytes     — bytes stored in current state
 full_knorm_fp16_bytes — hypothetical cost without eviction
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -96,14 +97,19 @@ def init_knorm_state(
             f"budget ({budget}) — no evictable positions remain"
         )
     return KnormState(
-        keys=None, values=None, norms=None,
-        n_sink=n_sink, budget=budget, recent=recent, keep=keep,
+        keys=None,
+        values=None,
+        norms=None,
+        n_sink=n_sink,
+        budget=budget,
+        recent=recent,
+        keep=keep,
     )
 
 
 def knorm_update(
     state: KnormState,
-    new_keys: mx.array,    # [S, D] fp16
+    new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
 ) -> KnormState:
     """Absorb a whole block of S tokens, then evict down to budget in one shot.
@@ -112,9 +118,7 @@ def knorm_update(
     the over-budget case is a single protected top-k selection. Kept tokens
     are returned in original temporal order.
     """
-    new_norms = mx.sqrt(
-        mx.sum(new_keys.astype(mx.float32) ** 2, axis=-1)
-    )  # [S]
+    new_norms = mx.sqrt(mx.sum(new_keys.astype(mx.float32) ** 2, axis=-1))  # [S]
 
     if state.keys is None:
         keys_cat = new_keys.astype(mx.float16)
@@ -141,10 +145,10 @@ def knorm_update(
         if state.recent > 0:
             r_eff = min(state.recent, n_total - n_sink_eff)
             if r_eff > 0:
-                protect[n_total - r_eff:] = float("-inf")
+                protect[n_total - r_eff :] = float("-inf")
         scores = scores + protect
 
-        order = mx.argsort(scores)                # ascending; protected first
+        order = mx.argsort(scores)  # ascending; protected first
         keep_idx = mx.sort(order[: state.budget])  # restore temporal order
         keys_cat = keys_cat[keep_idx]
         values_cat = values_cat[keep_idx]
@@ -178,7 +182,7 @@ def knorm_fp16_bytes(state: KnormState) -> int:
     if state.keys is None:
         return 0
     n, D = state.keys.shape
-    return n * D * 2 * 2   # K + V, 2 bytes each
+    return n * D * 2 * 2  # K + V, 2 bytes each
 
 
 def full_knorm_fp16_bytes(tokens_seen: int, head_dim: int) -> int:

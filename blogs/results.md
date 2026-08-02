@@ -177,7 +177,8 @@ config = KVCacheConfig(bits=1, algorithm="turboquant_rvq")
 cache = KVCacheBuilder(config).for_model(model).build()
 
 response = mlx_lm.generate(
-    model, tokenizer,
+    model,
+    tokenizer,
     prompt="Explain the difference between RAM and unified memory.",
     kv_cache=cache,
     max_tokens=500,

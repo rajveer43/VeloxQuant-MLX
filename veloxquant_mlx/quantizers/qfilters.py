@@ -54,6 +54,7 @@ qfilters_get_kv         — extract current (keys, values) arrays
 qfilters_fp16_bytes     — bytes stored in current state (incl. filter_dir)
 full_qfilters_fp16_bytes — hypothetical cost without eviction
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -115,9 +116,15 @@ def init_qfilters_state(
             f"budget ({budget}) — no evictable positions remain"
         )
     return QFiltersState(
-        keys=None, values=None, scores=None, filter_dir=None,
-        n_sink=n_sink, budget=budget, recent=recent,
-        calib_tokens=calib_tokens, sign=int(sign),
+        keys=None,
+        values=None,
+        scores=None,
+        filter_dir=None,
+        n_sink=n_sink,
+        budget=budget,
+        recent=recent,
+        calib_tokens=calib_tokens,
+        sign=int(sign),
     )
 
 
@@ -138,15 +145,15 @@ def estimate_filter_dir(keys: mx.array) -> mx.array:
         [D] float32 unit vector.
     """
     x = keys.astype(mx.float32)
-    x = x - mx.mean(x, axis=0, keepdims=True)          # center
+    x = x - mx.mean(x, axis=0, keepdims=True)  # center
     # Leading eigenvector of the covariance via eigh (symmetric [D, D]).
     cov = (x.T @ x) / max(int(x.shape[0]) - 1, 1)
-    _, vecs = mx.linalg.eigh(cov, stream=mx.cpu)       # ascending eigenvalues
-    direction = vecs[:, -1]                             # top eigenvector
+    _, vecs = mx.linalg.eigh(cov, stream=mx.cpu)  # ascending eigenvalues
+    direction = vecs[:, -1]  # top eigenvector
     # Deterministic sign: force the largest-magnitude component positive.
     pivot = mx.argmax(mx.abs(direction))
     direction = direction * mx.sign(direction[pivot])
-    norm = mx.sqrt(mx.sum(direction ** 2))
+    norm = mx.sqrt(mx.sum(direction**2))
     return direction / mx.maximum(norm, mx.array(1e-12, dtype=mx.float32))
 
 
@@ -157,7 +164,7 @@ def _project(keys: mx.array, filter_dir: mx.array, sign: int) -> mx.array:
 
 def qfilters_update(
     state: QFiltersState,
-    new_keys: mx.array,    # [S, D] fp16
+    new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
 ) -> QFiltersState:
     """Absorb a whole block of S tokens, then evict down to budget in one shot.
@@ -188,9 +195,15 @@ def qfilters_update(
     # Still pre-calibration: keep everything, no scores yet.
     if filter_dir is None:
         return QFiltersState(
-            keys=keys_cat, values=values_cat, scores=None, filter_dir=None,
-            n_sink=state.n_sink, budget=state.budget, recent=state.recent,
-            calib_tokens=state.calib_tokens, sign=state.sign,
+            keys=keys_cat,
+            values=values_cat,
+            scores=None,
+            filter_dir=None,
+            n_sink=state.n_sink,
+            budget=state.budget,
+            recent=state.recent,
+            calib_tokens=state.calib_tokens,
+            sign=state.sign,
         )
 
     # Score every stored token against the frozen filter (scores never change
@@ -207,11 +220,11 @@ def qfilters_update(
         if state.recent > 0:
             r_eff = min(state.recent, n_total - n_sink_eff)
             if r_eff > 0:
-                protect[n_total - r_eff:] = float("inf")
+                protect[n_total - r_eff :] = float("inf")
         sel = scores_cat + protect
 
-        order = mx.argsort(sel)                       # ascending
-        keep_idx = mx.sort(order[n_total - state.budget:])  # top-budget, temporal order
+        order = mx.argsort(sel)  # ascending
+        keep_idx = mx.sort(order[n_total - state.budget :])  # top-budget, temporal order
         keys_cat = keys_cat[keep_idx]
         values_cat = values_cat[keep_idx]
         scores_cat = scores_cat[keep_idx]
@@ -250,9 +263,9 @@ def qfilters_fp16_bytes(state: QFiltersState) -> int:
     if state.keys is None:
         return 0
     n, D = state.keys.shape
-    total = n * D * 2 * 2   # K + V, 2 bytes each
+    total = n * D * 2 * 2  # K + V, 2 bytes each
     if state.filter_dir is not None:
-        total += int(state.filter_dir.shape[0]) * 4   # float32 direction
+        total += int(state.filter_dir.shape[0]) * 4  # float32 direction
     return total
 
 

@@ -27,6 +27,7 @@ Algorithm:
 Public API:
   RaBitQQuantizer — fit / encode / decode / search / estimate_inner_product
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -49,6 +50,7 @@ from veloxquant_mlx.metal._rabitq import rabitq_hamming_score
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _rotate_np(x: np.ndarray, diag: np.ndarray, use_hadamard: bool) -> np.ndarray:
     """Apply randomised Hadamard (or QR) rotation in float32 NumPy."""
     xf = x.astype(np.float32) * diag[None, :]
@@ -61,8 +63,9 @@ def _rotate_np(x: np.ndarray, diag: np.ndarray, use_hadamard: bool) -> np.ndarra
         return xf  # already rotated by caller
 
 
-def _rotate_mx(x: mx.array, diag_mx: mx.array, use_hadamard: bool,
-               rot_mx: Optional[mx.array] = None) -> mx.array:
+def _rotate_mx(
+    x: mx.array, diag_mx: mx.array, use_hadamard: bool, rot_mx: Optional[mx.array] = None
+) -> mx.array:
     """Apply rotation in MLX (lazy)."""
     xf = x.astype(mx.float32)
     if use_hadamard:
@@ -74,17 +77,17 @@ def _rotate_mx(x: mx.array, diag_mx: mx.array, use_hadamard: bool,
 
 def _pack_signs(residual: np.ndarray) -> np.ndarray:
     """Pack sign(residual) into uint8 bits. Shape [N, D] → [N, D//8]."""
-    signs = (residual >= 0).astype(np.uint8)   # 1 = positive, 0 = negative
+    signs = (residual >= 0).astype(np.uint8)  # 1 = positive, 0 = negative
     N, D = signs.shape
     n_bytes = D // 8
-    packed = np.packbits(signs, axis=1, bitorder='little')  # [N, ceil(D/8)]
+    packed = np.packbits(signs, axis=1, bitorder="little")  # [N, ceil(D/8)]
     return packed[:, :n_bytes]
 
 
 def _unpack_signs(packed: np.ndarray, D: int) -> np.ndarray:
     """Unpack uint8 bytes back to ±1 float signs. [N, D//8] → [N, D]."""
-    bits = np.unpackbits(packed, axis=1, count=D, bitorder='little').astype(np.float32)
-    return bits * 2.0 - 1.0   # {0,1} → {-1,+1}
+    bits = np.unpackbits(packed, axis=1, count=D, bitorder="little").astype(np.float32)
+    return bits * 2.0 - 1.0  # {0,1} → {-1,+1}
 
 
 def _kmeans_np(data: np.ndarray, k: int, n_iter: int = 30, seed: int = 42) -> np.ndarray:
@@ -111,6 +114,7 @@ def _kmeans_np(data: np.ndarray, k: int, n_iter: int = 30, seed: int = 42) -> np
 # ev.indices  : [N, D//8] uint8  — packed sign bits
 # ev.norm     : [N, 3] float32   — columns: [centroid_id, Cx, L1_norm]
 
+
 @QuantizerRegistry.register("rabitq")
 class RaBitQQuantizer(Quantizer):
     """1-bit IVF-RaBitQ quantizer for KV-cache key vectors.
@@ -133,11 +137,11 @@ class RaBitQQuantizer(Quantizer):
         seed: int = 42,
         **kwargs: Any,
     ) -> None:
-        self._d      = d
-        self._nlist  = nlist
+        self._d = d
+        self._nlist = nlist
         self._nprobe = nprobe
         self._rerank = rerank
-        self._seed   = seed
+        self._seed = seed
 
         self._n_bytes = d // 8
         if d % 8 != 0:
@@ -146,24 +150,24 @@ class RaBitQQuantizer(Quantizer):
         # Rotation
         self._use_hadamard = is_hadamard_compatible(d)
         if self._use_hadamard:
-            self._diag_np = make_hadamard_diagonal(d, seed=seed)       # [D] float32
+            self._diag_np = make_hadamard_diagonal(d, seed=seed)  # [D] float32
             self._diag_mx = mx.array(self._diag_np)
-            self._rot_mx  = None
+            self._rot_mx = None
         else:
             rot = make_rotation_matrix(d, seed=seed).astype(np.float32)  # [D, D]
             self._diag_np = np.ones(d, dtype=np.float32)
             self._diag_mx = mx.array(self._diag_np)
-            self._rot_mx  = mx.array(rot)
+            self._rot_mx = mx.array(rot)
 
         # Populated by fit()
-        self._centroids_np: Optional[np.ndarray] = None   # [nlist, D] float32
-        self._centroids_mx: Optional[mx.array]   = None
+        self._centroids_np: Optional[np.ndarray] = None  # [nlist, D] float32
+        self._centroids_mx: Optional[mx.array] = None
         self._trained: bool = False
 
         # Stored encoded index (set by fit after encoding all calibration keys)
         self._index_bits: Optional[np.ndarray] = None  # [N_total, D//8] uint8
-        self._index_Cx:   Optional[np.ndarray] = None  # [N_total] float32
-        self._index_L1:   Optional[np.ndarray] = None  # [N_total] float32
+        self._index_Cx: Optional[np.ndarray] = None  # [N_total] float32
+        self._index_L1: Optional[np.ndarray] = None  # [N_total] float32
         self._index_cids: Optional[np.ndarray] = None  # [N_total] int32
 
     # ------------------------------------------------------------------
@@ -193,7 +197,7 @@ class RaBitQQuantizer(Quantizer):
             return np.array(out, dtype=np.float32)
         else:
             xd = x * self._diag_np[None, :]
-            return (xd @ np.array(self._rot_mx, dtype=np.float32).T)
+            return xd @ np.array(self._rot_mx, dtype=np.float32).T
 
     def _rotate_batch_mx(self, x: mx.array) -> mx.array:
         """Rotate [N, D] mlx array lazily."""
@@ -227,7 +231,7 @@ class RaBitQQuantizer(Quantizer):
             data_np = data_np[idx]
 
         # Rotate all calibration keys
-        rotated = self._rotate_batch_np(data_np)   # [N, D]
+        rotated = self._rotate_batch_np(data_np)  # [N, D]
 
         # K-Means in rotated space
         k = min(self._nlist, len(rotated))
@@ -263,26 +267,26 @@ class RaBitQQuantizer(Quantizer):
         N = keys_np.shape[0]
 
         # 1. Rotate
-        xhat = self._rotate_batch_np(keys_np)   # [N, D]
+        xhat = self._rotate_batch_np(keys_np)  # [N, D]
 
         # 2. Assign to nearest centroid
         dists = np.sum(
             (xhat[:, None, :] - self._centroids_np[None, :, :]) ** 2, axis=-1
-        )   # [N, nlist]
-        cids = np.argmin(dists, axis=1).astype(np.int32)    # [N]
-        c    = self._centroids_np[cids]                      # [N, D]
+        )  # [N, nlist]
+        cids = np.argmin(dists, axis=1).astype(np.int32)  # [N]
+        c = self._centroids_np[cids]  # [N, D]
 
         # 3. Residual
-        residual = xhat - c   # [N, D]
+        residual = xhat - c  # [N, D]
 
         # 4. Pack sign bits
-        packed = _pack_signs(residual)   # [N, D//8] uint8
+        packed = _pack_signs(residual)  # [N, D//8] uint8
 
         # 5. Precomputed scalars
-        xhat_norm_sq = np.sum(xhat ** 2, axis=1)            # [N]
-        dot_xhat_c   = np.sum(xhat * c, axis=1)             # [N]
-        Cx  = xhat_norm_sq - dot_xhat_c                     # [N]
-        L1  = np.sum(np.abs(residual), axis=1)              # [N]
+        xhat_norm_sq = np.sum(xhat**2, axis=1)  # [N]
+        dot_xhat_c = np.sum(xhat * c, axis=1)  # [N]
+        Cx = xhat_norm_sq - dot_xhat_c  # [N]
+        L1 = np.sum(np.abs(residual), axis=1)  # [N]
 
         # Pack into EncodedVector
         meta = np.stack([cids.astype(np.float32), Cx, L1], axis=1)  # [N, 3]
@@ -310,28 +314,28 @@ class RaBitQQuantizer(Quantizer):
         if not self._trained:
             raise RuntimeError("RaBitQQuantizer has not been trained — call fit() first")
 
-        packed_np = np.array(ev.indices, dtype=np.uint8)     # [N, D//8]
-        meta_np   = np.array(ev.norm, dtype=np.float32)      # [N, 3]
+        packed_np = np.array(ev.indices, dtype=np.uint8)  # [N, D//8]
+        meta_np = np.array(ev.norm, dtype=np.float32)  # [N, 3]
         N = packed_np.shape[0]
 
         cids = meta_np[:, 0].astype(np.int32)
-        L1   = meta_np[:, 2]                                  # [N]
-        c    = self._centroids_np[cids]                       # [N, D]
+        L1 = meta_np[:, 2]  # [N]
+        c = self._centroids_np[cids]  # [N, D]
 
         # Reconstruct approximate rotated vector
-        signs    = _unpack_signs(packed_np, self._d)           # [N, D] ±1
-        avg_mag  = L1 / self._d                               # [N] scalar per row
-        xhat_hat = c + signs * avg_mag[:, None]               # [N, D]
+        signs = _unpack_signs(packed_np, self._d)  # [N, D] ±1
+        avg_mag = L1 / self._d  # [N] scalar per row
+        xhat_hat = c + signs * avg_mag[:, None]  # [N, D]
 
         # Inverse rotate: H is self-inverse (up to scale), QR uses R.T
         if self._use_hadamard:
             arr = mx.array(xhat_hat.astype(np.float32))
             out = mx.hadamard_transform(arr, scale=1.0 / float(self._d) ** 0.5)
-            out = out * mx.array(self._diag_np)[None, :]       # undo diag
+            out = out * mx.array(self._diag_np)[None, :]  # undo diag
         else:
             rot_np = np.array(self._rot_mx, dtype=np.float32)
-            inv    = xhat_hat @ rot_np                         # R^T = R^{-1} for orthogonal
-            out    = mx.array(inv.astype(np.float32)) * mx.array(self._diag_np)[None, :]
+            inv = xhat_hat @ rot_np  # R^T = R^{-1} for orthogonal
+            out = mx.array(inv.astype(np.float32)) * mx.array(self._diag_np)[None, :]
 
         return out.astype(mx.float16)
 
@@ -344,9 +348,9 @@ class RaBitQQuantizer(Quantizer):
 
         Uses decoded approximate keys. Shape: [N].
         """
-        keys_hat = self.decode(ev)                          # [N, D] fp16
-        q_fp16   = q.astype(mx.float16).reshape(1, -1)     # [1, D]
-        return (keys_hat @ q_fp16.T).reshape(-1)            # [N]
+        keys_hat = self.decode(ev)  # [N, D] fp16
+        q_fp16 = q.astype(mx.float16).reshape(1, -1)  # [1, D]
+        return (keys_hat @ q_fp16.T).reshape(-1)  # [N]
 
     # ------------------------------------------------------------------
     # search
@@ -372,43 +376,43 @@ class RaBitQQuantizer(Quantizer):
             raise RuntimeError("RaBitQQuantizer has not been trained — call fit() first")
 
         # --- 1. Rotate query ---
-        q_np  = np.array(q.reshape(1, -1), dtype=np.float32)
-        qhat  = self._rotate_batch_np(q_np)[0]              # [D]
+        q_np = np.array(q.reshape(1, -1), dtype=np.float32)
+        qhat = self._rotate_batch_np(q_np)[0]  # [D]
 
         # --- 2. Probe nProbe nearest centroids ---
         c_dists = np.sum((self._centroids_np - qhat[None, :]) ** 2, axis=1)  # [nlist]
-        probe_ids = np.argsort(c_dists)[:self._nprobe]       # [nprobe] centroid ids
+        probe_ids = np.argsort(c_dists)[: self._nprobe]  # [nprobe] centroid ids
 
         # --- 3. Gather candidates from probed clusters ---
-        meta_np   = np.array(ev.norm, dtype=np.float32)      # [N, 3]
-        packed_np = np.array(ev.indices, dtype=np.uint8)     # [N, D//8]
-        cids_all  = meta_np[:, 0].astype(np.int32)           # [N]
+        meta_np = np.array(ev.norm, dtype=np.float32)  # [N, 3]
+        packed_np = np.array(ev.indices, dtype=np.uint8)  # [N, D//8]
+        cids_all = meta_np[:, 0].astype(np.int32)  # [N]
 
         probe_set = set(probe_ids.tolist())
         cand_mask = np.array([c in probe_set for c in cids_all])
-        cand_idx  = np.where(cand_mask)[0]                   # global indices of candidates
+        cand_idx = np.where(cand_mask)[0]  # global indices of candidates
 
         if len(cand_idx) == 0:
             # Fallback: return top_k zeros
             return mx.zeros((top_k,), dtype=mx.int32)
 
-        cand_bits = packed_np[cand_idx]    # [M, D//8]
-        cand_Cx   = meta_np[cand_idx, 1]  # [M]
+        cand_bits = packed_np[cand_idx]  # [M, D//8]
+        cand_Cx = meta_np[cand_idx, 1]  # [M]
 
         # --- 4. Quantise query per centroid (use mean over probed centroids) ---
         # For simplicity: use nearest centroid's residual for query
-        nearest_c   = self._centroids_np[probe_ids[0]]       # [D]
-        q_residual  = qhat - nearest_c
-        L1_q        = float(np.sum(np.abs(q_residual)))
-        scale_val   = L1_q / self._d
+        nearest_c = self._centroids_np[probe_ids[0]]  # [D]
+        q_residual = qhat - nearest_c
+        L1_q = float(np.sum(np.abs(q_residual)))
+        scale_val = L1_q / self._d
 
-        q_sign_np   = (q_residual >= 0).astype(np.uint8).reshape(1, -1)
-        qbits_np    = np.packbits(q_sign_np, axis=1, bitorder='little')[0, :self._n_bytes]
+        q_sign_np = (q_residual >= 0).astype(np.uint8).reshape(1, -1)
+        qbits_np = np.packbits(q_sign_np, axis=1, bitorder="little")[0, : self._n_bytes]
 
         # --- 5. Metal Hamming score ---
         qbits_mx = mx.array(qbits_np)
-        bits_mx  = mx.array(cand_bits)
-        Cx_mx    = mx.array(cand_Cx)
+        bits_mx = mx.array(cand_bits)
+        Cx_mx = mx.array(cand_Cx)
         scale_mx = mx.array([scale_val], dtype=mx.float32)
 
         scores = rabitq_hamming_score(qbits_mx, bits_mx, Cx_mx, scale_mx)
@@ -418,19 +422,21 @@ class RaBitQQuantizer(Quantizer):
         M = len(cand_idx)
         rerank_m = min(self._rerank, M)
         scores_np = np.array(scores)
-        top_coarse_local = np.argsort(scores_np)[:rerank_m]   # local into cand_idx
-        top_coarse_global = cand_idx[top_coarse_local]         # global indices
+        top_coarse_local = np.argsort(scores_np)[:rerank_m]  # local into cand_idx
+        top_coarse_global = cand_idx[top_coarse_local]  # global indices
 
         # --- 7. Re-rank with fp16 exact dot ---
-        q_fp16   = q.astype(mx.float16).reshape(-1)           # [D]
-        rerank_keys = self.decode(EncodedVector(
-            quantizer_type="rabitq",
-            batch_size=rerank_m,
-            dim=self._d,
-            indices=mx.array(packed_np[top_coarse_global]),
-            norm=mx.array(meta_np[top_coarse_global]),
-        ))                                                     # [rerank_m, D]
-        exact_scores = (rerank_keys @ q_fp16).reshape(-1)     # [rerank_m]
+        q_fp16 = q.astype(mx.float16).reshape(-1)  # [D]
+        rerank_keys = self.decode(
+            EncodedVector(
+                quantizer_type="rabitq",
+                batch_size=rerank_m,
+                dim=self._d,
+                indices=mx.array(packed_np[top_coarse_global]),
+                norm=mx.array(meta_np[top_coarse_global]),
+            )
+        )  # [rerank_m, D]
+        exact_scores = (rerank_keys @ q_fp16).reshape(-1)  # [rerank_m]
         mx.eval(exact_scores)
         exact_np = np.array(exact_scores)
 

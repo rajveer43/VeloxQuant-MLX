@@ -68,6 +68,7 @@ Byte accounting:
                            full rank
     compression_ratio   — full_seq_bytes / amc_kept_bytes (> 1 = savings)
 """
+
 from __future__ import annotations
 
 import math
@@ -92,9 +93,9 @@ HIGH, MID, LOW = 0, 1, 2
 class AMCTierConfig:
     """One tier's (rank, bit-width) pair — Algorithm 1's Golden Model values."""
 
-    tier: int   # HIGH=0, MID=1, LOW=2
-    rank: int   # channels retained
-    bits: int   # quantization bit-width
+    tier: int  # HIGH=0, MID=1, LOW=2
+    rank: int  # channels retained
+    bits: int  # quantization bit-width
 
 
 AMC_TIERS: Tuple[AMCTierConfig, ...] = (
@@ -125,6 +126,7 @@ def _tier_config_for_dim(tier: int, head_dim: int) -> AMCTierConfig:
 # ---------------------------------------------------------------------------
 # Saliency scoring — Eq. 1-2 (faithful port), Eq. 3 (opt-in query-aware)
 # ---------------------------------------------------------------------------
+
 
 def amc_saliency(x: mx.array) -> mx.array:
     """Magnitude-based saliency score (Eq. 1-2): mean(|x|) clamped to [0, 1].
@@ -164,12 +166,12 @@ def amc_query_aware_saliency(
 
     k32 = keys.astype(mx.float32)
     q32 = query.astype(mx.float32)
-    k_norm = mx.sqrt(mx.sum(k32 * k32, axis=-1))            # [N]
-    q_norm = mx.sqrt(mx.sum(q32 * q32))                       # scalar
+    k_norm = mx.sqrt(mx.sum(k32 * k32, axis=-1))  # [N]
+    q_norm = mx.sqrt(mx.sum(q32 * q32))  # scalar
     eps = 1e-8
     denom = mx.maximum(k_norm * q_norm, eps)
-    cos_sim = (k32 @ q32) / denom                              # [N]
-    cos_sim = mx.clip((cos_sim + 1.0) * 0.5, 0.0, 1.0)         # map [-1,1] -> [0,1]
+    cos_sim = (k32 @ q32) / denom  # [N]
+    cos_sim = mx.clip((cos_sim + 1.0) * 0.5, 0.0, 1.0)  # map [-1,1] -> [0,1]
 
     s = alpha * mx.clip(mag, 0.0, 1.0) + (1.0 - alpha) * cos_sim
     return mx.clip(s, 0.0, 1.0)
@@ -178,6 +180,7 @@ def amc_query_aware_saliency(
 # ---------------------------------------------------------------------------
 # Tier assignment — Algorithm 1 Phase II, top-k selection via dsa.MaxHeap
 # ---------------------------------------------------------------------------
+
 
 def amc_assign_tiers(
     saliency: mx.array,
@@ -233,6 +236,7 @@ def amc_assign_tiers(
 # ---------------------------------------------------------------------------
 # Sequence-adaptive closed-loop thresholds — Eq. 4-5, dsa.RingBuffer-backed
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class AMCThresholdState:
@@ -305,6 +309,7 @@ def amc_adaptive_thresholds(
 # Rank masking — Eq. 6, Hadamard/index masking on calibration-ordered channels
 # ---------------------------------------------------------------------------
 
+
 def amc_apply_rank_mask(x: mx.array, rank: int) -> mx.array:
     """Zero channels ``[rank:D)`` of a (calibration-ordered) activation vector.
 
@@ -328,6 +333,7 @@ def amc_apply_rank_mask(x: mx.array, rank: int) -> mx.array:
 # ---------------------------------------------------------------------------
 # Precision scaling — Eq. 7, reuses the shared group quantizer
 # ---------------------------------------------------------------------------
+
 
 def amc_quantize_tier(x: mx.array, bits: int, group_size: int = 32) -> mx.array:
     """Quantize-then-dequantize a tier's activations to ``bits`` precision.
@@ -356,6 +362,7 @@ def amc_quantize_tier(x: mx.array, bits: int, group_size: int = 32) -> mx.array:
 # 4-bit dense packing for the Low tier — dsa.BitPackBuffer
 # ---------------------------------------------------------------------------
 
+
 def amc_pack_low_tier(quantized_codes: "mx.array") -> Tuple[bytes, int]:
     """Densely pack Low-tier 4-bit integer codes via :class:`BitPackBuffer`.
 
@@ -379,6 +386,7 @@ def amc_pack_low_tier(quantized_codes: "mx.array") -> Tuple[bytes, int]:
 # ---------------------------------------------------------------------------
 # Byte accounting
 # ---------------------------------------------------------------------------
+
 
 def amc_fp16_bytes(tier_counts: dict, head_dim: int) -> int:
     """Compute actual stored bytes given per-tier token counts (K + V).

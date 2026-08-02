@@ -12,6 +12,7 @@ Covers:
     is path-DEPENDENT by construction)
   - byte accounting incl. the float32 filter_dir term, and placeholders
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -43,6 +44,7 @@ def _proj(k: mx.array, d: mx.array, sign: int = 1) -> np.ndarray:
 # Basic behavior
 # ------------------------------------------------------------------
 
+
 def test_under_budget_passthrough_in_order() -> None:
     st = init_qfilters_state(n_sink=2, budget=64, head_dim=8, calib_tokens=8)
     k, v = _kv(10, 8, seed=1)
@@ -56,10 +58,10 @@ def test_pre_calibration_passthrough_even_over_budget() -> None:
     """Below calib_tokens the filter is None — nothing is evicted even when
     the token count exceeds the budget."""
     st = init_qfilters_state(n_sink=0, budget=8, head_dim=8, calib_tokens=100)
-    k, v = _kv(50, 8, seed=2)   # 50 > budget 8, but 50 < calib_tokens 100
+    k, v = _kv(50, 8, seed=2)  # 50 > budget 8, but 50 < calib_tokens 100
     st = qfilters_update(st, k, v)
     assert st.filter_dir is None
-    assert st.keys.shape[0] == 50   # nothing evicted yet
+    assert st.keys.shape[0] == 50  # nothing evicted yet
 
 
 def test_estimate_filter_dir_recovers_planted_axis() -> None:
@@ -98,9 +100,7 @@ def test_sinks_protected_even_with_low_projection() -> None:
 
 def test_recent_window_protected() -> None:
     S, D, budget, recent = 64, 8, 20, 3
-    st = init_qfilters_state(
-        n_sink=0, budget=budget, head_dim=D, recent=recent, calib_tokens=16
-    )
+    st = init_qfilters_state(n_sink=0, budget=budget, head_dim=D, recent=recent, calib_tokens=16)
     k, v = _kv(S, D, seed=6)
     st = qfilters_update(st, k, v)
     assert st.keys.shape[0] == budget
@@ -117,18 +117,15 @@ def test_guard_and_sign_validation() -> None:
 def test_sign_inverts_selection() -> None:
     S, D, budget = 64, 8, 20
     k, v = _kv(S, D, seed=7)
-    pos = qfilters_update(
-        init_qfilters_state(0, budget, D, calib_tokens=16, sign=1), k, v
-    )
-    neg = qfilters_update(
-        init_qfilters_state(0, budget, D, calib_tokens=16, sign=-1), k, v
-    )
+    pos = qfilters_update(init_qfilters_state(0, budget, D, calib_tokens=16, sign=1), k, v)
+    neg = qfilters_update(init_qfilters_state(0, budget, D, calib_tokens=16, sign=-1), k, v)
     assert not np.array_equal(np.array(pos.keys), np.array(neg.keys))
 
 
 # ------------------------------------------------------------------
 # Frozen-filter properties
 # ------------------------------------------------------------------
+
 
 def test_filter_frozen_and_scores_stable() -> None:
     D, budget = 8, 128
@@ -158,9 +155,9 @@ def test_given_same_filter_order_invariance() -> None:
 
     def run(order):
         st = init_qfilters_state(0, budget, D, calib_tokens=1)
-        st.filter_dir = fixed   # inject, bypass estimation
+        st.filter_dir = fixed  # inject, bypass estimation
         for t in order:
-            st = qfilters_update(st, k[t:t + 1], v[t:t + 1])
+            st = qfilters_update(st, k[t : t + 1], v[t : t + 1])
         return st
 
     block = run(list(range(S)))
@@ -174,6 +171,7 @@ def test_given_same_filter_order_invariance() -> None:
 # ------------------------------------------------------------------
 # Accounting / placeholders
 # ------------------------------------------------------------------
+
 
 def test_bytes_accounting_includes_filter() -> None:
     D, budget = 16, 8

@@ -39,18 +39,24 @@ value_sub_dim = 8
 # [n_tokens, n_heads, head_dim]. calibrate_smooth_factors/train_codebook
 # take raw arrays; there is no built-in "run the model and collect" helper,
 # so you hook into your own forward pass (or use synthetic data for testing).
-keys_calib = mx.array(np.random.default_rng(0).standard_normal(
-    (4096, 8, head_dim)).astype(np.float32))
-values_calib = mx.array(np.random.default_rng(1).standard_normal(
-    (4096, 8, head_dim)).astype(np.float32))
+keys_calib = mx.array(
+    np.random.default_rng(0).standard_normal((4096, 8, head_dim)).astype(np.float32)
+)
+values_calib = mx.array(
+    np.random.default_rng(1).standard_normal((4096, 8, head_dim)).astype(np.float32)
+)
 
 smooth_factors = calibrate_smooth_factors(keys_calib)
 
 key_codebook = train_codebook(
-    keys_calib.reshape(-1, key_sub_dim), n_centroids=2 ** 12, seed=42,
+    keys_calib.reshape(-1, key_sub_dim),
+    n_centroids=2**12,
+    seed=42,
 )
 value_codebook = train_codebook(
-    values_calib.reshape(-1, value_sub_dim), n_centroids=2 ** 8, seed=43,
+    values_calib.reshape(-1, value_sub_dim),
+    n_centroids=2**8,
+    seed=43,
 )
 
 np.savez(
@@ -77,7 +83,7 @@ bit_allocation = allocate_bits_ratequant(
     sensitivities,
     target_avg_bits=2.0,
     beta=3.5,  # paper-reported constant; see fit_distortion_curve() docstring
-               # for why fitting it from scratch is usually unnecessary
+    # for why fitting it from scratch is usually unnecessary
 )
 ```
 

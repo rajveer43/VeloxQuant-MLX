@@ -34,6 +34,7 @@ Byte accounting:
     tokens_seen       — total token positions ever passed to update_and_fetch
     tokens_kept       — tokens currently in the first (B=0, H=0) head's cache
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -90,10 +91,7 @@ class H2OKVCache(_MLXKVCache):
             self._B = B
             self._H = H
             self._head_dim = D
-            self._states = [
-                init_h2o_state(self._n_sink, self._budget, D)
-                for _ in range(B * H)
-            ]
+            self._states = [init_h2o_state(self._n_sink, self._budget, D) for _ in range(B * H)]
 
     def _head_idx(self, b: int, h: int) -> int:
         return b * self._H + h
@@ -113,7 +111,7 @@ class H2OKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2   # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
         k_out_b, v_out_b = [], []
@@ -129,12 +127,12 @@ class H2OKVCache(_MLXKVCache):
                 )
                 self._states[idx] = st
                 k_h, v_h = h2o_get_kv(st)
-                k_out_h.append(k_h)    # [n_kept, D]
+                k_out_h.append(k_h)  # [n_kept, D]
                 v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))   # [H, n_kept, D]
+            k_out_b.append(mx.stack(k_out_h, axis=0))  # [H, n_kept, D]
             v_out_b.append(mx.stack(v_out_h, axis=0))
 
-        K_out = mx.stack(k_out_b, axis=0)   # [B, H, n_kept, D]
+        K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_kept, D]
         V_out = mx.stack(v_out_b, axis=0)
 
         # Byte accounting: sum across all head states

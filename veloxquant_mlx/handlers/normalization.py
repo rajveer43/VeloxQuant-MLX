@@ -35,7 +35,7 @@ class NormalizationHandler(QuantizationHandler):
         if ctx.mode == "encode":
             norm = mx.sqrt(mx.sum(ctx.x_current * ctx.x_current, axis=-1, keepdims=True))
             norm_clipped = mx.maximum(norm, self._eps)
-            ctx.norm = norm_clipped[:, 0]   # (batch,)
+            ctx.norm = norm_clipped[:, 0]  # (batch,)
             ctx.x_current = ctx.x_current / norm_clipped
         else:
             # decode: restore scale

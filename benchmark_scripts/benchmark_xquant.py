@@ -24,6 +24,7 @@ Usage::
     PYTHONPATH=. python benchmark_scripts/benchmark_xquant.py \\
         --model mlx-community/Llama-3.2-3B-Instruct-4bit
 """
+
 from __future__ import annotations
 
 import argparse
@@ -58,7 +59,7 @@ def _ensure_path() -> None:
 
 def _peak_mb() -> float:
     try:
-        return float(mx.metal.get_peak_memory()) / (1024 ** 2)
+        return float(mx.metal.get_peak_memory()) / (1024**2)
     except Exception:
         return float("nan")
 
@@ -73,6 +74,7 @@ def _reset_peak() -> None:
 def _chip_name() -> str:
     try:
         import subprocess
+
         return subprocess.check_output(
             ["sysctl", "-n", "machdep.cpu.brand_string"], text=True
         ).strip()
@@ -87,8 +89,12 @@ def run_one(model, tokenizer, cache_arg, n_decode: int, label: str) -> dict:
     _reset_peak()
     t0 = time.perf_counter()
     result = generate(
-        model, tokenizer, prompt=PROMPT,
-        max_tokens=n_decode, kv_cache=cache_arg, verbose=False,
+        model,
+        tokenizer,
+        prompt=PROMPT,
+        max_tokens=n_decode,
+        kv_cache=cache_arg,
+        verbose=False,
     )
     elapsed = time.perf_counter() - t0
     peak = _peak_mb()
@@ -105,6 +111,7 @@ def run_one(model, tokenizer, cache_arg, n_decode: int, label: str) -> dict:
 
 def build_cache(method: str, model, overrides: dict):
     from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
+
     cfg = KVCacheConfig(method=method, **overrides)
     return KVCacheBuilder.for_model(model, cfg)
 
@@ -114,6 +121,7 @@ def measure_cross_layer_similarity(model, tokenizer) -> dict:
     try:
         from veloxquant_mlx.quantizers.xquant import cross_layer_similarity
         from mlx_lm.models.cache import KVCache
+
         layers = getattr(model, "layers", None) or model.model.layers
         caches = [KVCache() for _ in layers]
         ids = mx.array([tokenizer.encode(PROMPT[:512])])
@@ -149,6 +157,7 @@ def main() -> None:
 
     print(f"Loading model: {args.model}")
     from mlx_lm import load
+
     model, tokenizer = load(args.model)
 
     out_dir = Path(args.out_dir)
@@ -161,9 +170,21 @@ def main() -> None:
         ("fp16_baseline", None, {}),
         ("kivi_2bit", "kivi", {"bit_width_inlier": 2, "kivi_group_size": 32}),
         ("svdq_1_25bit", "svdq", {"svdq_energy_threshold": 0.95, "svdq_hi_fraction": 0.25}),
-        ("xquant_g2_r0", "xquant", {"xquant_group_size": 2, "xquant_base_bits": 2, "xquant_residual_bits": 0}),
-        ("xquant_g2_r1", "xquant", {"xquant_group_size": 2, "xquant_base_bits": 2, "xquant_residual_bits": 1}),
-        ("xquant_g3_r0", "xquant", {"xquant_group_size": 3, "xquant_base_bits": 2, "xquant_residual_bits": 0}),
+        (
+            "xquant_g2_r0",
+            "xquant",
+            {"xquant_group_size": 2, "xquant_base_bits": 2, "xquant_residual_bits": 0},
+        ),
+        (
+            "xquant_g2_r1",
+            "xquant",
+            {"xquant_group_size": 2, "xquant_base_bits": 2, "xquant_residual_bits": 1},
+        ),
+        (
+            "xquant_g3_r0",
+            "xquant",
+            {"xquant_group_size": 3, "xquant_base_bits": 2, "xquant_residual_bits": 0},
+        ),
     ]
 
     all_results = []
@@ -173,16 +194,21 @@ def main() -> None:
             cache_arg = None if method is None else build_cache(method, model, overrides)
             res = run_one(model, tokenizer, cache_arg, args.n_decode, label)
             trial_results.append(res)
-            print(f"  {label} trial {trial+1}: {res['tokens_per_sec']:.1f} tok/s, "
-                  f"peak {res['peak_memory_mb']:.0f} MB")
+            print(
+                f"  {label} trial {trial + 1}: {res['tokens_per_sec']:.1f} tok/s, "
+                f"peak {res['peak_memory_mb']:.0f} MB"
+            )
         avg_tps = float(np.mean([r["tokens_per_sec"] for r in trial_results]))
         avg_peak = float(np.mean([r["peak_memory_mb"] for r in trial_results]))
-        all_results.append({
-            "label": label, "method": method or "fp16",
-            "avg_tokens_per_sec": round(avg_tps, 2),
-            "avg_peak_memory_mb": round(avg_peak, 1),
-            "trials": trial_results,
-        })
+        all_results.append(
+            {
+                "label": label,
+                "method": method or "fp16",
+                "avg_tokens_per_sec": round(avg_tps, 2),
+                "avg_peak_memory_mb": round(avg_peak, 1),
+                "trials": trial_results,
+            }
+        )
         print(f"  {label} avg: {avg_tps:.1f} tok/s")
 
     fp16_entry = next((r for r in all_results if r["method"] == "fp16"), None)
@@ -218,11 +244,11 @@ def _plot(results: list, model_name: str, out_dir: Path) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle(f"XQuant KV Cache — {model_stem}", fontsize=13)
     colors = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B2", "#937860"]
-    axes[0].bar(labels, tps, color=colors[:len(labels)])
+    axes[0].bar(labels, tps, color=colors[: len(labels)])
     axes[0].set_title("Throughput (tok/s)")
     axes[0].set_ylabel("Tokens / second")
     axes[0].tick_params(axis="x", rotation=30)
-    axes[1].bar(labels, peak, color=colors[:len(labels)])
+    axes[1].bar(labels, peak, color=colors[: len(labels)])
     axes[1].set_title("Peak Memory (MB)")
     axes[1].set_ylabel("Peak memory (MB)")
     axes[1].tick_params(axis="x", rotation=30)

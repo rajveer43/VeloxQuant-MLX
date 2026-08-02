@@ -28,6 +28,7 @@ Byte accounting (charged to the *merge* layer, which is where the win lands):
 Degenerate case: no coordinator (isolated layer) → behaves as a lossless fp16
 passthrough primary, useful for unit-testing.
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -77,9 +78,7 @@ class MiniCacheKVCache(_MLXKVCache):
         self._n_retained_this_call = 0
 
     # ------------------------------------------------------------------
-    def _merge_reconstruct(
-        self, t_self: mx.array, t_primary: mx.array, is_key: bool
-    ) -> mx.array:
+    def _merge_reconstruct(self, t_self: mx.array, t_primary: mx.array, is_key: bool) -> mx.array:
         """Merge this (merge-role) layer with the primary's tensor, per head.
 
         Reconstructs *this* layer from the shared-direction merge. Accumulates
@@ -92,8 +91,10 @@ class MiniCacheKVCache(_MLXKVCache):
             out_h = []
             for h in range(H):
                 res = merge_pair(
-                    t_primary[b, h], t_self[b, h],
-                    retention_threshold=self._ret, t=self._t,
+                    t_primary[b, h],
+                    t_self[b, h],
+                    retention_threshold=self._ret,
+                    t=self._t,
                 )
                 out_h.append(reconstruct_layer(res, "merge"))
                 if is_key:
@@ -103,7 +104,7 @@ class MiniCacheKVCache(_MLXKVCache):
         if is_key:
             n_total = B * H * S
             self._n_retained += n_ret
-            self._n_merged += (n_total - n_ret)
+            self._n_merged += n_total - n_ret
         return out
 
     def _account_merge(self, B: int, H: int, S: int, D: int) -> None:
@@ -127,7 +128,7 @@ class MiniCacheKVCache(_MLXKVCache):
         layer) it is a plain fp16 reference.
         """
         if self._role == "primary" and self._coord is not None:
-            dir_bytes = B * H * S * D * 2     # shared direction (counted once, here)
+            dir_bytes = B * H * S * D * 2  # shared direction (counted once, here)
             mag_bytes = B * H * S * 2
             self._compressed_key_bytes += dir_bytes + mag_bytes
             self._compressed_value_bytes += dir_bytes + mag_bytes

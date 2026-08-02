@@ -71,6 +71,7 @@ kvzip_get_kv      — extract current (keys, values) arrays
 kvzip_fp16_bytes  — bytes stored in current state
 full_kvzip_fp16_bytes — hypothetical cost without eviction
 """
+
 from __future__ import annotations
 
 import math
@@ -124,16 +125,17 @@ def init_kvzip_state(
         raise ValueError(f"kvzip: budget must be >= 1, got {budget!r}")
     if n_sink >= budget:
         raise ValueError(
-            f"kvzip: n_sink ({n_sink}) must be < budget ({budget}) — "
-            f"no evictable positions remain"
+            f"kvzip: n_sink ({n_sink}) must be < budget ({budget}) — no evictable positions remain"
         )
     if probe not in _VALID_PROBES:
-        raise ValueError(
-            f"kvzip: probe must be one of {_VALID_PROBES}, got {probe!r}"
-        )
+        raise ValueError(f"kvzip: probe must be one of {_VALID_PROBES}, got {probe!r}")
     return KVzipState(
-        keys=None, values=None, pos=0,
-        n_sink=n_sink, budget=budget, probe=str(probe),
+        keys=None,
+        values=None,
+        pos=0,
+        n_sink=n_sink,
+        budget=budget,
+        probe=str(probe),
         head_dim=int(head_dim),
     )
 
@@ -152,7 +154,7 @@ def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
         [n] softmax weights summing to ~1.
     """
     scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
-    logits = (keys @ query_proxy) * scale   # [n]
+    logits = (keys @ query_proxy) * scale  # [n]
     return mx.softmax(logits, axis=-1)
 
 
@@ -190,14 +192,14 @@ def _reconstruction_importance(keys: mx.array, probe: str) -> mx.array:
     # probe == "context": max over all probe rows of the attention placed on
     # each stored key. Build the [n_probe, n] matrix and reduce with max(axis=0).
     scale = 1.0 / math.sqrt(float(keys_f.shape[-1]))
-    logits = (keys_f @ keys_f.T) * scale          # [n_probe, n]
-    attn = mx.softmax(logits, axis=-1)            # each probe row sums to ~1
-    return mx.max(attn, axis=0)                   # [n] max reliance per key
+    logits = (keys_f @ keys_f.T) * scale  # [n_probe, n]
+    attn = mx.softmax(logits, axis=-1)  # each probe row sums to ~1
+    return mx.max(attn, axis=0)  # [n] max reliance per key
 
 
 def kvzip_update(
     state: KVzipState,
-    new_keys: mx.array,    # [S, D] fp16
+    new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
 ) -> KVzipState:
     """Absorb S new tokens, evicting the least reconstruction-critical if over budget.
@@ -218,7 +220,7 @@ def kvzip_update(
     S = int(new_keys.shape[0])
 
     for i in range(S):
-        k_i = new_keys[i].astype(mx.float16)    # [D]
+        k_i = new_keys[i].astype(mx.float16)  # [D]
         v_i = new_values[i].astype(mx.float16)  # [D]
 
         if state.keys is None:
@@ -226,13 +228,15 @@ def kvzip_update(
                 keys=k_i[None],
                 values=v_i[None],
                 pos=state.pos + 1,
-                n_sink=state.n_sink, budget=state.budget,
-                probe=state.probe, head_dim=state.head_dim,
+                n_sink=state.n_sink,
+                budget=state.budget,
+                probe=state.probe,
+                head_dim=state.head_dim,
             )
             continue
 
         # --- append new token ---------------------------------------------
-        keys_cat   = mx.concatenate([state.keys,   k_i[None]], axis=0)
+        keys_cat = mx.concatenate([state.keys, k_i[None]], axis=0)
         values_cat = mx.concatenate([state.values, v_i[None]], axis=0)
 
         n_total = int(keys_cat.shape[0])
@@ -249,15 +253,17 @@ def kvzip_update(
 
             evict_idx = int(mx.argmin(sel).item())
             keep = [j for j in range(n_total) if j != evict_idx]
-            keys_cat   = keys_cat[keep]
+            keys_cat = keys_cat[keep]
             values_cat = values_cat[keep]
 
         state = KVzipState(
             keys=keys_cat,
             values=values_cat,
             pos=state.pos + 1,
-            n_sink=state.n_sink, budget=state.budget,
-            probe=state.probe, head_dim=state.head_dim,
+            n_sink=state.n_sink,
+            budget=state.budget,
+            probe=state.probe,
+            head_dim=state.head_dim,
         )
 
     return state
@@ -284,7 +290,7 @@ def kvzip_fp16_bytes(state: KVzipState) -> int:
     if state.keys is None:
         return 0
     n, D = state.keys.shape
-    return n * D * 2 * 2   # K + V, 2 bytes each
+    return n * D * 2 * 2  # K + V, 2 bytes each
 
 
 def full_kvzip_fp16_bytes(tokens_seen: int, head_dim: int) -> int:

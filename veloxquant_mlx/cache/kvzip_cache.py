@@ -44,6 +44,7 @@ Byte accounting (same names as H2OKVCache / MorphKVKVCache):
     tokens_seen      — total token positions ever passed to update_and_fetch
     tokens_kept      — tokens currently in the (B=0, H=0) head's cache
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -106,8 +107,7 @@ class KVzipKVCache(_MLXKVCache):
             self._H = H
             self._head_dim = D
             self._states = [
-                init_kvzip_state(self._n_sink, self._budget, D,
-                                 probe=self._probe)
+                init_kvzip_state(self._n_sink, self._budget, D, probe=self._probe)
                 for _ in range(B * H)
             ]
 
@@ -129,7 +129,7 @@ class KVzipKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2   # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
         k_out_b, v_out_b = [], []
@@ -152,9 +152,7 @@ class KVzipKVCache(_MLXKVCache):
         K_out = mx.stack(k_out_b, axis=0)
         V_out = mx.stack(v_out_b, axis=0)
 
-        self._kvzip_kept_bytes = sum(
-            kvzip_fp16_bytes(st) for st in self._states
-        )
+        self._kvzip_kept_bytes = sum(kvzip_fp16_bytes(st) for st in self._states)
         return K_out, V_out
 
     # ------------------------------------------------------------------

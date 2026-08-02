@@ -103,9 +103,9 @@ ok = supports_shape(batch=1, heads=8, seq_len=4096, head_dim=128)
 if ok:
     attn_output = metal_fused_sdpa(
         queries=q,
-        encoded_keys=encoded_k,   # compressed format from VecInfer
+        encoded_keys=encoded_k,  # compressed format from VecInfer
         values=v,
-        scale=1.0 / (head_dim ** 0.5),
+        scale=1.0 / (head_dim**0.5),
     )
 ```
 
@@ -122,18 +122,18 @@ import mlx.core as mx
 from veloxquant_mlx.metal.kernels import rabitq_encode, rabitq_fused_attend
 
 # Encode: [N, D] fp16 keys -> packed bits + per-vector magnitude
-k_bits_flat, k_mag_flat = rabitq_encode(keys, diag)   # [N, D//8] uint8, [N] fp32
+k_bits_flat, k_mag_flat = rabitq_encode(keys, diag)  # [N, D//8] uint8, [N] fp32
 
 # Attend: score packed keys, gather 4-bit values — single dispatch
 out = rabitq_fused_attend(
-    q,        # [B, H, S_q, D]    fp16, pre-rotated
+    q,  # [B, H, S_q, D]    fp16, pre-rotated
     q_scale,  # [B, H, S_q]       fp32, e.g. L1(q)/D (fold in 1/sqrt(D))
-    k_bits,   # [B, H, S_kv, D/8] uint8 packed sign bits
-    k_mag,    # [B, H, S_kv]      fp32 per-key magnitude
+    k_bits,  # [B, H, S_kv, D/8] uint8 packed sign bits
+    k_mag,  # [B, H, S_kv]      fp32 per-key magnitude
     k_const,  # [B, H, S_kv]      fp32 additive bias (zeros for centroid-free)
-    v_idx,    # [B, H, S_kv, D]   uint8 value codebook indices
+    v_idx,  # [B, H, S_kv, D]   uint8 value codebook indices
     v_cents,  # [16]              fp32 scalar value codebook
-)                                 # -> [B, H, S_q, D] fp16
+)  # -> [B, H, S_q, D] fp16
 ```
 
 The score per slot is `(D − 2·ham) · q_scale · k_mag + k_const`, the sign-bit estimate of `⟨q, k⟩`. Parity is verified against a numpy reference in `veloxquant_mlx/tests/metal/test_rabitq_attend.py` and `test_rabitq_encode.py`, including an end-to-end encode→attend test.
@@ -162,17 +162,17 @@ import mlx.core as mx
 from veloxquant_mlx.metal.kernels import scalar_fused_decode_attend
 
 out = scalar_fused_decode_attend(
-    q,          # [B, H, S_q, D]    fp16 queries (pre-rotated)
-    k_codes,    # [B, H, S_kv, D]   uint8  key codes
-    k_scale,    # [B, H, GK, D]     fp32   GK = ceil(S_kv / group_size)
-    k_zero,     # [B, H, GK, D]     fp32
-    v_codes,    # [B, H, S_kv, D]   uint8  value codes
-    v_scale,    # [B, H, S_kv, GV]  fp32   GV = ceil(D / group_size)
-    v_zero,     # [B, H, S_kv, GV]  fp32
+    q,  # [B, H, S_q, D]    fp16 queries (pre-rotated)
+    k_codes,  # [B, H, S_kv, D]   uint8  key codes
+    k_scale,  # [B, H, GK, D]     fp32   GK = ceil(S_kv / group_size)
+    k_zero,  # [B, H, GK, D]     fp32
+    v_codes,  # [B, H, S_kv, D]   uint8  value codes
+    v_scale,  # [B, H, S_kv, GV]  fp32   GV = ceil(D / group_size)
+    v_zero,  # [B, H, S_kv, GV]  fp32
     group_size=32,
-    scale=1.0 / (D ** 0.5),
-    nsg=8,      # SIMD-groups splitting the kv axis; 8 is tuned for M4
-)               # -> [B, H, S_q, D] fp16
+    scale=1.0 / (D**0.5),
+    nsg=8,  # SIMD-groups splitting the kv axis; 8 is tuned for M4
+)  # -> [B, H, S_q, D] fp16
 ```
 
 One compiled kernel serves any `(S_kv, D, g)` — the group counts are read from the passed shapes. `D` must be ≤ 256 and `nsg` in `1..32`.

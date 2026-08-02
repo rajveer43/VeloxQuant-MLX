@@ -1,4 +1,5 @@
 """Tests for the RateQuant per-layer bit allocator."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -25,8 +26,7 @@ class TestAllocateBitsRateQuant:
         """Higher-sensitivity layers get more bits."""
         # Layer 0 is 10x more sensitive than layer 1; others equal
         w = [10.0, 1.0] + [3.0] * 30
-        alloc = allocate_bits_ratequant(w, target_avg_bits=1.5,
-                                        beta=3.5, bit_choices=(1, 2, 3))
+        alloc = allocate_bits_ratequant(w, target_avg_bits=1.5, beta=3.5, bit_choices=(1, 2, 3))
         assert alloc[0] >= alloc[1]
         assert alloc[0] in (2, 3)
         assert alloc[1] in (1, 2)
@@ -36,8 +36,9 @@ class TestAllocateBitsRateQuant:
         rng = np.random.default_rng(0)
         w = rng.lognormal(0, 1.0, 28).tolist()
         for target in (1.0, 1.5, 1.7, 2.0, 2.5):
-            alloc = allocate_bits_ratequant(w, target_avg_bits=target,
-                                            beta=3.5, bit_choices=(1, 2, 3))
+            alloc = allocate_bits_ratequant(
+                w, target_avg_bits=target, beta=3.5, bit_choices=(1, 2, 3)
+            )
             assert sum(alloc) == round(target * len(w)), (
                 f"target={target} not hit: got {sum(alloc)}/{len(w)}"
             )
@@ -46,8 +47,7 @@ class TestAllocateBitsRateQuant:
         """No allocated bit-width may fall outside the supplied set."""
         rng = np.random.default_rng(0)
         w = rng.lognormal(0, 1.5, 16).tolist()
-        alloc = allocate_bits_ratequant(w, target_avg_bits=2.0,
-                                        bit_choices=(2, 4))
+        alloc = allocate_bits_ratequant(w, target_avg_bits=2.0, bit_choices=(2, 4))
         assert all(b in (2, 4) for b in alloc)
 
     def test_negative_weight_raises(self) -> None:
@@ -84,9 +84,9 @@ class TestKVCacheConfigListBitWidth:
 
     def test_builder_rejects_invalid_list(self) -> None:
         with pytest.raises(QuantizerConfigError):
-            KVCacheBuilder().with_method("turboquant_rvq").with_head_dim(
-                128
-            ).with_bit_width([1, "oops", 2]).build()
+            KVCacheBuilder().with_method("turboquant_rvq").with_head_dim(128).with_bit_width(
+                [1, "oops", 2]
+            ).build()
 
     def test_builder_accepts_int(self) -> None:
         c = (
@@ -130,16 +130,12 @@ class TestForModelPerLayer:
 
     def test_per_layer_list_propagates(self) -> None:
         model = self._make_mock_model(4)
-        cfg = KVCacheConfig(
-            method="turboquant_rvq", bit_width_inlier=[3, 1, 2, 1], seed=0
-        )
+        cfg = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=[3, 1, 2, 1], seed=0)
         caches = KVCacheBuilder.for_model(model, cfg)
         assert [c.assigned_bits for c in caches] == [3, 1, 2, 1]
 
     def test_wrong_length_list_raises(self) -> None:
         model = self._make_mock_model(4)
-        cfg = KVCacheConfig(
-            method="turboquant_rvq", bit_width_inlier=[1, 1, 1], seed=0
-        )
+        cfg = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=[1, 1, 1], seed=0)
         with pytest.raises(QuantizerConfigError, match="length"):
             KVCacheBuilder.for_model(model, cfg)

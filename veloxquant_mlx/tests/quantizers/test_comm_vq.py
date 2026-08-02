@@ -1,4 +1,5 @@
 """Tests for CommVQQuantizer — RoPE-commutative additive codebook VQ."""
+
 from __future__ import annotations
 
 import math
@@ -14,6 +15,7 @@ from veloxquant_mlx.quantizers.comm_vq import CommVQQuantizer, _apply_rope_np, _
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_quantizer(d: int = 64, b: int = 4, n_cb: int = 4) -> CommVQQuantizer:
     q = CommVQQuantizer(d=d, b=b, n_codebooks=n_cb, seed=42)
     rng = np.random.default_rng(0)
@@ -22,14 +24,16 @@ def _make_quantizer(d: int = 64, b: int = 4, n_cb: int = 4) -> CommVQQuantizer:
     return q
 
 
-def _apply_rope_mlx_ref(x: np.ndarray, positions: np.ndarray, d: int, base: float = 10000.0) -> np.ndarray:
+def _apply_rope_mlx_ref(
+    x: np.ndarray, positions: np.ndarray, d: int, base: float = 10000.0
+) -> np.ndarray:
     """Reference RoPE in NumPy."""
     half = d // 2
     inv_freq = 1.0 / (base ** (np.arange(half, dtype=np.float32) / half))
     x1, x2 = x[:, :half].astype(np.float32), x[:, half:].astype(np.float32)
-    angles  = positions[:, None].astype(np.float32) * inv_freq[None, :]
-    cos_v   = np.cos(angles)
-    sin_v   = np.sin(angles)
+    angles = positions[:, None].astype(np.float32) * inv_freq[None, :]
+    cos_v = np.cos(angles)
+    sin_v = np.sin(angles)
     out = np.concatenate([x1 * cos_v - x2 * sin_v, x1 * sin_v + x2 * cos_v], axis=1)
     return out.astype(np.float16)
 
@@ -37,6 +41,7 @@ def _apply_rope_mlx_ref(x: np.ndarray, positions: np.ndarray, d: int, base: floa
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 def test_encode_decode_roundtrip() -> None:
     """Encode pre-RoPE keys, decode gives post-RoPE reconstruction.
@@ -48,13 +53,13 @@ def test_encode_decode_roundtrip() -> None:
 
     rng = np.random.default_rng(1)
     N = 128
-    keys_np  = rng.standard_normal((N, d)).astype(np.float16)
-    pos_np   = np.arange(N, dtype=np.int32)
+    keys_np = rng.standard_normal((N, d)).astype(np.float16)
+    pos_np = np.arange(N, dtype=np.int32)
     # Ground-truth post-RoPE keys
     keys_post_np = _apply_rope_mlx_ref(keys_np, pos_np, d)
 
-    keys_mx   = mx.array(keys_np)
-    pos_mx    = mx.array(pos_np)
+    keys_mx = mx.array(keys_np)
+    pos_mx = mx.array(pos_np)
     keys_post = mx.array(keys_post_np)
 
     ev = q.encode(keys_mx, positions=pos_mx)
@@ -83,7 +88,7 @@ def test_rope_commutativity() -> None:
     q.fit(mx.array(keys))
 
     N = 64
-    x_pre  = rng.standard_normal((N, d)).astype(np.float16)
+    x_pre = rng.standard_normal((N, d)).astype(np.float16)
     pos_np = np.arange(N, dtype=np.int32)
     x_post = _apply_rope_mlx_ref(x_pre, pos_np, d)
 
@@ -109,7 +114,9 @@ def test_rope_commutativity() -> None:
     assert mse_b < 80.0, f"Path B MSE too high: {mse_b:.4f}"
     # The ratio between paths should not be extreme (commutativity check)
     ratio = max(mse_a, mse_b) / (min(mse_a, mse_b) + 1e-6)
-    assert ratio < 8.0, f"Commutativity mismatch: MSE_A={mse_a:.4f}, MSE_B={mse_b:.4f}, ratio={ratio:.2f}"
+    assert ratio < 8.0, (
+        f"Commutativity mismatch: MSE_A={mse_a:.4f}, MSE_B={mse_b:.4f}, ratio={ratio:.2f}"
+    )
 
 
 def test_encode_decode_shapes() -> None:
@@ -135,13 +142,11 @@ def test_compression_ratio() -> None:
     d, b, n_cb = 128, 8, 4
     q = CommVQQuantizer(d=d, b=b, n_codebooks=n_cb, seed=0)
 
-    fp16_bytes  = d * 2
-    index_bytes = n_cb * 1   # n_cb uint8 indices
+    fp16_bytes = d * 2
+    index_bytes = n_cb * 1  # n_cb uint8 indices
     ratio = fp16_bytes / index_bytes
 
-    assert q.compression_ratio == ratio, (
-        f"Expected {ratio}x, got {q.compression_ratio}x"
-    )
+    assert q.compression_ratio == ratio, f"Expected {ratio}x, got {q.compression_ratio}x"
     # With d=128, n_cb=4 → 128*2 / 4 = 64× compression
     assert q.compression_ratio == 64.0
 
@@ -152,10 +157,10 @@ def test_inner_product_shape() -> None:
     q = _make_quantizer(d=d, b=b, n_cb=n_cb)
 
     N = 16
-    keys  = mx.array(np.random.randn(N, d).astype(np.float16))
+    keys = mx.array(np.random.randn(N, d).astype(np.float16))
     query = mx.array(np.random.randn(d).astype(np.float16))
-    ev    = q.encode(keys)
-    ips   = q.estimate_inner_product(query, ev)
+    ev = q.encode(keys)
+    ips = q.estimate_inner_product(query, ev)
     mx.eval(ips)
 
     assert ips.shape == (N,), f"IP shape mismatch: {ips.shape}"

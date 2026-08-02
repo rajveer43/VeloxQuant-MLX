@@ -45,10 +45,12 @@ The `[dev]` extra installs SciPy (for codebook training) and the full test suite
 
 ```python
 import veloxquant_mlx
-print(veloxquant_mlx.__version__)   # should print the version you just installed
+
+print(veloxquant_mlx.__version__)  # should print the version you just installed
 
 import mlx.core as mx
-print(mx.default_device())           # Device(gpu, 0)
+
+print(mx.default_device())  # Device(gpu, 0)
 ```
 
 If you see `Device(cpu, 0)` instead of `gpu`, MLX is not using Metal. See the troubleshooting section below.

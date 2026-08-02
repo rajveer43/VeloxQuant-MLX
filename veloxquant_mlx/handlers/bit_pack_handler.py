@@ -50,6 +50,7 @@ class BitPackingHandler(QuantizationHandler):
                 unpacked = [self._buf.unpack(ctx.packed_bits[i], self._d) for i in range(batch)]
                 idx_np = np.stack(unpacked, axis=0)  # (batch, d)
                 import mlx.core as mx
+
                 ctx.indices = mx.array(idx_np.astype(np.uint8))
 
         return self._pass_to_next(ctx)

@@ -67,11 +67,11 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="keyformer",
     head_dim=128,
-    keyformer_budget=512,   # max tokens kept (incl. sinks)
-    keyformer_n_sink=4,     # leading positions never evicted
-    keyformer_recent=0,     # trailing protected window (extension, off)
-    keyformer_tau=1.0,      # Gumbel temperature; 0 = H2O-adapted (ablation)
-    keyformer_seed=0,       # base seed for the frozen per-position noise
+    keyformer_budget=512,  # max tokens kept (incl. sinks)
+    keyformer_n_sink=4,  # leading positions never evicted
+    keyformer_recent=0,  # trailing protected window (extension, off)
+    keyformer_tau=1.0,  # Gumbel temperature; 0 = H2O-adapted (ablation)
+    keyformer_seed=0,  # base seed for the frozen per-position noise
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

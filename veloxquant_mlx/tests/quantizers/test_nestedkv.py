@@ -17,6 +17,7 @@ test_single_anchor_blind_spot) prove the multi-scale ensembling retains
 tokens a single-anchor scorer would miss — the direct analogue of CurDKV's
 H2O-blind-spot proof. All data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -337,7 +338,9 @@ def test_three_scales_diverge_on_planted_geometry() -> None:
     # 40 "normal" tokens all aligned with base_direction (global AND recent
     # mean end up close to base_direction), then one outlier recently.
     normal_keys = base_direction[None, :] + 0.01 * rng.standard_normal((40, D))
-    outlier_key = -base_direction  # antipodal: anomalous vs both global and recent mean at this point
+    outlier_key = (
+        -base_direction
+    )  # antipodal: anomalous vs both global and recent mean at this point
 
     keys = np.concatenate([normal_keys, outlier_key[None, :]], axis=0).astype(np.float32)
     k_hat = mx.array(keys)
@@ -351,8 +354,12 @@ def test_three_scales_diverge_on_planted_geometry() -> None:
     # instead confirms the *current* window score reacts specifically to
     # recent context: the last token's current-window score must be its
     # highest-anomaly signal among the three scales computed.
-    assert a_c_np[-1] > 0.5, "antipodal recent token should score highly anomalous under current memory"
-    assert a_s_np[-1] > 0.5, "antipodal token should also be anomalous under stable memory (sanity check)"
+    assert a_c_np[-1] > 0.5, (
+        "antipodal recent token should score highly anomalous under current memory"
+    )
+    assert a_s_np[-1] > 0.5, (
+        "antipodal token should also be anomalous under stable memory (sanity check)"
+    )
 
 
 def test_single_anchor_blind_spot() -> None:

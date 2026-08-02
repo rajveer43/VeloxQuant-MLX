@@ -27,6 +27,7 @@ def test_save_and_load_rotations(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("VELOXQUANT_CACHE_DIR", str(tmp_path))
     import importlib
     import veloxquant_mlx.spectral.calibrate as calib_mod
+
     importlib.reload(calib_mod)
 
     d = 64
@@ -52,6 +53,7 @@ def test_load_returns_none_when_missing(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("VELOXQUANT_CACHE_DIR", str(tmp_path))
     import importlib
     import veloxquant_mlx.spectral.calibrate as calib_mod
+
     importlib.reload(calib_mod)
 
     result = calib_mod.load_cached_rotations("nonexistent_model")
@@ -69,6 +71,7 @@ def test_model_name_with_slash_is_safe(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("VELOXQUANT_CACHE_DIR", str(tmp_path))
     import importlib
     import veloxquant_mlx.spectral.calibrate as calib_mod
+
     importlib.reload(calib_mod)
 
     d = 32
@@ -86,7 +89,7 @@ def test_calibrate_from_vectors_produces_orthonormal_U():
     d = 128
     rng = np.random.default_rng(42)
     basis, _ = np.linalg.qr(rng.standard_normal((d, 4)).astype(np.float32))
-    keys = (rng.standard_normal((256, 4)).astype(np.float32) @ basis.T)
+    keys = rng.standard_normal((256, 4)).astype(np.float32) @ basis.T
     vals = rng.standard_normal((256, d)).astype(np.float32)
 
     rotations = calibrate_from_vectors({0: keys}, {0: vals}, model_name="test_ortho")
@@ -111,7 +114,7 @@ def test_calibrate_from_vectors_detects_low_d_eff():
     d = 128
     rng = np.random.default_rng(42)
     basis, _ = np.linalg.qr(rng.standard_normal((d, 4)).astype(np.float32))
-    keys = (rng.standard_normal((512, 4)).astype(np.float32) @ basis.T)
+    keys = rng.standard_normal((512, 4)).astype(np.float32) @ basis.T
     keys += rng.standard_normal((512, d)).astype(np.float32) * 0.01  # small noise
 
     rotations = calibrate_from_vectors({0: keys}, {0: keys}, model_name="test_deff")

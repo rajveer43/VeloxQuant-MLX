@@ -5,6 +5,7 @@ D hidden-dim channel indices by descending empirical variance so that AMC's
 rank-masking (Eq. 6, veloxquant_mlx.quantizers.amc.amc_apply_rank_mask) is
 safe to apply to raw index prefixes. All data is synthetic.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -28,13 +29,14 @@ def _calib_matrix(n: int, d: int, variances: list, seed: int = 0) -> mx.array:
 # Core ordering behaviour
 # ---------------------------------------------------------------------------
 
+
 def test_orders_channels_by_descending_variance() -> None:
     # Column 2 has the highest variance, then 0, then 3, then 1 (lowest).
     variances = [4.0, 0.01, 25.0, 1.0]
     x = _calib_matrix(500, 4, variances, seed=1)
     perm = amc_calibrate_channel_order(x)
     order = perm.tolist()
-    assert order[0] == 2   # highest variance first
+    assert order[0] == 2  # highest variance first
     assert order[-1] == 1  # lowest variance last
 
 
@@ -60,6 +62,7 @@ def test_permuted_columns_have_descending_variance() -> None:
 # Weight permutation
 # ---------------------------------------------------------------------------
 
+
 def test_permute_weights_last_axis() -> None:
     w = mx.array(np.arange(12).reshape(3, 4).astype(np.float32))
     perm = mx.array([3, 1, 0, 2], dtype=mx.int32)
@@ -78,6 +81,7 @@ def test_permute_weights_roundtrip_identity() -> None:
 # ---------------------------------------------------------------------------
 # Edge cases / guards
 # ---------------------------------------------------------------------------
+
 
 def test_rejects_non_2d_input() -> None:
     x = mx.array(np.random.default_rng(5).standard_normal((10,)).astype(np.float32))

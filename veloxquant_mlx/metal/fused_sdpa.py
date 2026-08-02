@@ -92,6 +92,7 @@ The win compounds at long context because MLX's SDPA must load the full
 fp16 K_hat (grows linearly with S_kv) while this kernel reads only the
 compressed indices (16× smaller for VecInfer-1bit).
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -312,17 +313,12 @@ def supports_shape(n_centroids: int, n_sub: int, head_dim: int) -> bool:
 def _get_kernel(n_centroids: int, n_sub: int, D: int):
     if n_centroids > MAX_N_CENTROIDS:
         raise ValueError(
-            f"Fused SDPA kernel: n_centroids must be <= {MAX_N_CENTROIDS}, "
-            f"got {n_centroids}."
+            f"Fused SDPA kernel: n_centroids must be <= {MAX_N_CENTROIDS}, got {n_centroids}."
         )
     if n_sub > MAX_N_SUB:
-        raise ValueError(
-            f"Fused SDPA kernel: n_sub must be <= {MAX_N_SUB}, got {n_sub}."
-        )
+        raise ValueError(f"Fused SDPA kernel: n_sub must be <= {MAX_N_SUB}, got {n_sub}.")
     if D > MAX_HEAD_DIM:
-        raise ValueError(
-            f"Fused SDPA kernel: head_dim must be <= {MAX_HEAD_DIM}, got {D}."
-        )
+        raise ValueError(f"Fused SDPA kernel: head_dim must be <= {MAX_HEAD_DIM}, got {D}.")
     if D % 32 != 0:
         raise ValueError(
             f"Fused SDPA kernel: head_dim must be a multiple of 32 "
@@ -331,8 +327,7 @@ def _get_kernel(n_centroids: int, n_sub: int, D: int):
     key = (n_centroids, n_sub, D)
     if key not in _kernel_cache:
         src = (
-            _FUSED_SDPA_SRC
-            .replace("LUT_N_CENTROIDS", str(n_centroids))
+            _FUSED_SDPA_SRC.replace("LUT_N_CENTROIDS", str(n_centroids))
             .replace("LUT_MAX_SIZE", str(n_sub * n_centroids))
             .replace("MAX_D", str(D))
         )
@@ -344,9 +339,14 @@ def _get_kernel(n_centroids: int, n_sub: int, D: int):
         _kernel_cache[key] = mx.fast.metal_kernel(
             name=f"vecinfer_fused_sdpa_c{n_centroids}_s{n_sub}_d{D}",
             input_names=[
-                "q", "k_indices", "k_codebook",
-                "v_indices", "v_codebook",
-                "params", "scale_arr", "slide_arr",
+                "q",
+                "k_indices",
+                "k_codebook",
+                "v_indices",
+                "v_codebook",
+                "params",
+                "scale_arr",
+                "slide_arr",
             ],
             output_names=["out"],
             header=header,
@@ -360,11 +360,11 @@ def _get_kernel(n_centroids: int, n_sub: int, D: int):
 # Public API
 # ===========================================================================
 def metal_fused_sdpa(
-    q_tilde: mx.array,            # [B, H_q, S_q, D]   fp32 — already transformed
-    k_indices: mx.array,          # [B, H_kv, S_kv, n_sub]
-    k_codebook: mx.array,         # [n_centroids, sub_dim]
-    v_indices: mx.array,          # [B, H_kv, S_kv, n_sub_v]
-    v_codebook: mx.array,         # [n_centroids_v, sub_dim_v]
+    q_tilde: mx.array,  # [B, H_q, S_q, D]   fp32 — already transformed
+    k_indices: mx.array,  # [B, H_kv, S_kv, n_sub]
+    k_codebook: mx.array,  # [n_centroids, sub_dim]
+    v_indices: mx.array,  # [B, H_kv, S_kv, n_sub_v]
+    v_codebook: mx.array,  # [n_centroids_v, sub_dim_v]
     scale: float,
     *,
     causal: bool = True,
@@ -412,22 +412,16 @@ def metal_fused_sdpa(
     n_centroids_v, sub_dim_v = v_codebook.shape
 
     if D != n_sub * sub_dim:
-        raise ValueError(
-            f"fused_sdpa: D={D} must equal n_sub*sub_dim={n_sub*sub_dim}."
-        )
+        raise ValueError(f"fused_sdpa: D={D} must equal n_sub*sub_dim={n_sub * sub_dim}.")
     if D != n_sub_v * sub_dim_v:
-        raise ValueError(
-            f"fused_sdpa: D={D} must equal n_sub_v*sub_dim_v={n_sub_v*sub_dim_v}."
-        )
+        raise ValueError(f"fused_sdpa: D={D} must equal n_sub_v*sub_dim_v={n_sub_v * sub_dim_v}.")
     if n_centroids != n_centroids_v:
         raise ValueError(
             "fused_sdpa: key and value codebooks must currently have the same "
             f"n_centroids (got {n_centroids} vs {n_centroids_v})."
         )
     if H_q % H_kv != 0:
-        raise ValueError(
-            f"fused_sdpa: H_q={H_q} must be a multiple of H_kv={H_kv}."
-        )
+        raise ValueError(f"fused_sdpa: H_q={H_q} must be a multiple of H_kv={H_kv}.")
 
     in_dtype = q_tilde.dtype
     if out_dtype is None:
@@ -455,8 +449,7 @@ def metal_fused_sdpa(
     kernel = _get_kernel(n_centroids, n_sub, D)
 
     outputs = kernel(
-        inputs=[q_flat, k_idx_flat, k_cb, v_idx_flat, v_cb,
-                params, scale_arr, slide_arr],
+        inputs=[q_flat, k_idx_flat, k_cb, v_idx_flat, v_cb, params, scale_arr, slide_arr],
         output_shapes=[(B * H_q * S_q, D)],
         output_dtypes=[mx.float32],
         grid=(B * H_q * 32, S_q, 1),
@@ -512,8 +505,9 @@ def patch_mlx_lm_for_fused_sdpa() -> None:
         # explicitly (e.g. memory-bound configurations that skip the K_hat
         # buffer entirely).  This dispatcher would route to it if mlx_lm
         # ever stops returning a usable fp16 tensor from update_and_fetch.
-        return _original_sdpa(queries, keys, values, cache=cache,
-                              scale=scale, mask=mask, sinks=sinks)
+        return _original_sdpa(
+            queries, keys, values, cache=cache, scale=scale, mask=mask, sinks=sinks
+        )
 
     _base.scaled_dot_product_attention = _patched_sdpa
     _patched = True
@@ -525,6 +519,7 @@ def unpatch_mlx_lm() -> None:
     if not _patched:
         return
     import mlx_lm.models.base as _base
+
     _base.scaled_dot_product_attention = _original_sdpa
     _patched = False
 
@@ -535,7 +530,12 @@ def is_patched() -> bool:
 
 
 __all__ = [
-    "metal_fused_sdpa", "supports_shape",
-    "MAX_N_CENTROIDS", "MAX_N_SUB", "MAX_HEAD_DIM",
-    "patch_mlx_lm_for_fused_sdpa", "unpatch_mlx_lm", "is_patched",
+    "metal_fused_sdpa",
+    "supports_shape",
+    "MAX_N_CENTROIDS",
+    "MAX_N_SUB",
+    "MAX_HEAD_DIM",
+    "patch_mlx_lm_for_fused_sdpa",
+    "unpatch_mlx_lm",
+    "is_patched",
 ]

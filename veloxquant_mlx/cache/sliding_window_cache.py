@@ -67,12 +67,14 @@ class SlidingWindowKVCache(KVCache):
         """Rebuild the inner cache from the current window of raw vectors."""
         # Create a fresh inner cache of the same type
         from copy import deepcopy
+
         fresh = deepcopy(self._inner)
         # Reset its state
         if hasattr(fresh, "_n_tokens"):
             fresh._n_tokens = 0
         if hasattr(fresh, "_k_indices"):
             from veloxquant_mlx.dsa.ring_buffer import RingBuffer
+
             cap = fresh._k_indices._capacity
             fresh._k_indices = RingBuffer(cap)
             fresh._k_signs = RingBuffer(cap)

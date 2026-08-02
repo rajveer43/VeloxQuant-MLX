@@ -18,6 +18,7 @@ Per-vector storage at bit-width ``b`` and head-dim ``d``:
 For ``d=128, b=1`` this is 34 bytes/vector vs 256 bytes fp16 → 7.5× compression.
 For ``d=128, b=2`` this is 66 bytes/vector vs 256 bytes fp16 → 3.9× compression.
 """
+
 from __future__ import annotations
 
 import math
@@ -54,17 +55,19 @@ class TurboQuantRVQKVCache(_MLXKVCache):
                 "dispatches to the per-layer factory."
             )
         self._head_dim = int(config.head_dim)
-        self._bits     = int(b)
+        self._bits = int(b)
         # NOTE: must be a private attribute. mlx_lm.scaled_dot_product_attention
         # checks `hasattr(cache, "bits")` to route to its quantized SDPA kernel
         # (which expects a different cache layout). Exposing our `b` as a
         # public `.bits` property would silently break attention on some models.
         self._quantizer = TurboQuantRVQ(
-            d=self._head_dim, b=self._bits, seed=int(config.seed),
+            d=self._head_dim,
+            b=self._bits,
+            seed=int(config.seed),
             use_hadamard=True,
         )
         self._key_bytes_compressed = 0
-        self._key_bytes_fp16       = 0
+        self._key_bytes_fp16 = 0
 
     def update_and_fetch(self, keys, values):
         B, H, S, D = keys.shape
@@ -72,19 +75,18 @@ class TurboQuantRVQKVCache(_MLXKVCache):
 
         k_flat = keys.reshape(-1, D)
         # fp32 norm computation preserves bfloat16 dynamic range
-        norms = mx.linalg.norm(k_flat.astype(mx.float32), axis=-1,
-                                keepdims=True).astype(kdtype)
-        safe  = mx.maximum(norms, mx.array(1e-4, dtype=kdtype))
+        norms = mx.linalg.norm(k_flat.astype(mx.float32), axis=-1, keepdims=True).astype(kdtype)
+        safe = mx.maximum(norms, mx.array(1e-4, dtype=kdtype))
         k_unit = (k_flat / safe).astype(mx.float16)
 
-        ev      = self._quantizer.encode(k_unit)
+        ev = self._quantizer.encode(k_unit)
         k_hat_u = self._quantizer.decode(ev)
         k_dequant = (k_hat_u.astype(kdtype) * safe).reshape(B, H, S, D)
 
         # Byte accounting: two b-bit index sets per dim + fp16 norm
         per_tok = (math.ceil(self._head_dim * 2 * self._bits / 8) + 2) * H * B
         self._key_bytes_compressed += per_tok * S
-        self._key_bytes_fp16       += H * B * S * self._head_dim * 2
+        self._key_bytes_fp16 += H * B * S * self._head_dim * 2
 
         return super().update_and_fetch(k_dequant, values)
 

@@ -29,6 +29,7 @@ which arrive in the prefill block where protection is fully effective.
 Deterministic end to end: top-k on key norm + min/max group quantization.
 No codebook training, no RNG.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -58,9 +59,7 @@ class SinkProtectedKVCache(KIVIKVCache):
         super().__init__(config)
         self._n_sink = int(getattr(config, "n_sink_tokens", 5))
         if self._n_sink < 0:
-            raise ValueError(
-                f"SinkProtectedKVCache: n_sink_tokens={self._n_sink} must be >= 0."
-            )
+            raise ValueError(f"SinkProtectedKVCache: n_sink_tokens={self._n_sink} must be >= 0.")
         # Running candidates: absolute position -> key-norm (float).
         # Pruned to the top n_sink entries after every update.
         self._sink_norms: dict[int, float] = {}
@@ -78,7 +77,7 @@ class SinkProtectedKVCache(KIVIKVCache):
             return set()
         # [B, H, S, D] -> per-token norm, mean over heads, batch 0.
         norms = mx.linalg.norm(keys.astype(mx.float32), axis=-1)  # [B, H, S]
-        per_tok = mx.mean(norms, axis=1)[0]                        # [S]
+        per_tok = mx.mean(norms, axis=1)[0]  # [S]
         per_tok_np = [float(v) for v in per_tok.tolist()]
         for i, v in enumerate(per_tok_np):
             self._sink_norms[start_pos + i] = v
@@ -104,9 +103,7 @@ class SinkProtectedKVCache(KIVIKVCache):
             n_sink_in_block = 0
         else:
             n_quant = S - r
-            sink_local = sorted(
-                p - start for p in sinks if 0 <= p - start < n_quant
-            )
+            sink_local = sorted(p - start for p in sinks if 0 <= p - start < n_quant)
             k_region = keys[:, :, :n_quant, :]
             v_region = values[:, :, :n_quant, :]
             if sink_local:
@@ -156,6 +153,7 @@ class SinkProtectedKVCache(KIVIKVCache):
         ``n_res = S - n_quant``), so we account the three pools explicitly.
         """
         import math
+
         n_compressed = n_quant - n_sink
         gs = self._group_size
         if n_compressed > 0:
@@ -167,7 +165,7 @@ class SinkProtectedKVCache(KIVIKVCache):
             v_param_bytes = n_compressed * v_groups * 2 * 2 * H * B
             self._key_bytes_compressed += k_code_bytes + k_param_bytes
             self._value_bytes_compressed += v_code_bytes + v_param_bytes
-        self._sink_fp16_bytes += n_sink * D * 2 * 2 * H * B           # K+V
+        self._sink_fp16_bytes += n_sink * D * 2 * 2 * H * B  # K+V
         self._residual_fp16_bytes += (S - n_quant) * D * 2 * 2 * H * B
         self._key_bytes_fp16 += H * B * S * D * 2
         self._value_bytes_fp16 += H * B * S * D * 2
@@ -184,8 +182,7 @@ class SinkProtectedKVCache(KIVIKVCache):
     @property
     def sink_positions(self) -> list:
         """Current protected absolute token positions, highest-norm first."""
-        return [p for p, _ in
-                sorted(self._sink_norms.items(), key=lambda kv: -kv[1])]
+        return [p for p, _ in sorted(self._sink_norms.items(), key=lambda kv: -kv[1])]
 
 
 __all__ = ["SinkProtectedKVCache"]
