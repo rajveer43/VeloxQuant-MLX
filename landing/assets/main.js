@@ -1,6 +1,12 @@
 // ============================================================
 // VeloxQuant-MLX landing page behavior
 // Zero-build static JS — served as-is by Netlify (cp -r landing/* dist/)
+//
+// The atmospheric layer (matrix rain, aurora blobs, particles, magnetic
+// buttons, badge typing) is what gives the hero its character, so it stays.
+// Every effect is gated on prefers-reduced-motion, and the two heaviest —
+// the canvas and the scroll parallax — are additionally skipped on narrow /
+// touch viewports where they cost battery for no visible benefit.
 // ============================================================
 
 function hexToRgba(hex, alpha) {
@@ -69,13 +75,13 @@ function initCodeTabs() {
 function initBadgeTyping() {
   const badge = document.getElementById('hero-badge');
   if (!badge) return;
-  const text = "v0.42.1 — fused KIVI-style Metal attention kernel shipped";
+  const text = badge.dataset.text || badge.textContent.trim();
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     badge.textContent = text;
     return;
   }
   let i = 0;
-  badge.innerHTML = '';
+  badge.textContent = '';
   const cursor = document.createElement('span');
   cursor.className = 'badge-cursor';
   badge.appendChild(cursor);
@@ -92,7 +98,7 @@ function initBadgeTyping() {
 
 // ── HERO MATRIX-RAIN CANVAS ──
 // Decorative only; skipped for reduced-motion and on narrow/touch viewports
-// where it costs battery for no visible benefit (canvas covers the hero,
+// where it costs battery for no visible benefit (the canvas covers the hero,
 // which is mostly obscured by content on small screens anyway).
 function initMatrixRain() {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -138,11 +144,259 @@ function initMatrixRain() {
     }
   }
 
-  setInterval(draw, 60);
+  // rAF-driven at a throttled ~16fps rather than a bare setInterval, so the
+  // browser pauses it in background tabs instead of animating off-screen.
+  let last = 0;
+  let stopped = false;
+  function frame(now) {
+    if (stopped) return;
+    if (now - last >= 60) { draw(); last = now; }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // Stop entirely once the hero scrolls out of view.
+  const vis = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting && stopped) { stopped = false; requestAnimationFrame(frame); }
+      else if (!e.isIntersecting) { stopped = true; }
+    });
+  }, { threshold: 0 });
+  vis.observe(hero);
+}
+
+// ── HERO SCROLL PARALLAX (aurora blobs) ──
+function initScrollParallax() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const heroEl = document.getElementById('hero');
+  if (!heroEl) return;
+  const auroraContainer = heroEl.querySelector('.aurora-container');
+  if (!auroraContainer) return;
+
+  // Write the transform inside rAF so a fast scroll can't queue up layout
+  // work on every single scroll event.
+  let ticking = false;
+  window.addEventListener('scroll', () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      ticking = false;
+      const heroH = heroEl.offsetHeight;
+      if (window.scrollY > heroH) return;
+      auroraContainer.style.transform = `translateY(${(window.scrollY / heroH) * 60}px)`;
+    });
+  }, { passive: true });
+}
+
+// ── MAGNETIC BUTTONS (desktop hover only — mousemove never fires on touch) ──
+function initMagneticButtons() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelectorAll('.btn').forEach(btn => {
+    btn.addEventListener('mousemove', e => {
+      const rect = btn.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dx = (e.clientX - cx) / (rect.width / 2);
+      const dy = (e.clientY - cy) / (rect.height / 2);
+      btn.style.transform = `translate(${dx * 7}px, ${dy * 5}px)`;
+    });
+    btn.addEventListener('mouseleave', () => { btn.style.transform = ''; });
+  });
+}
+
+// ── INLINE MEMORY CALCULATOR ──
+// Three inputs only; the full parameter surface stays in the playground.
+// State round-trips through the query string so a result can be shared.
+function initCalculator() {
+  const shell = document.getElementById('calc');
+  if (!shell || typeof VQCalc === 'undefined') return;
+
+  const modelSel = document.getElementById('calc-model');
+  const ctxRange = document.getElementById('calc-ctx');
+  const ctxOut   = document.getElementById('calc-ctx-val');
+  const ramSel   = document.getElementById('calc-ram');
+  const out      = document.getElementById('calc-out');
+  const nojs     = document.getElementById('calc-nojs');
+  if (!modelSel || !ctxRange || !ramSel || !out) return;
+
+  // Context slider works in powers of two: 4k … 128k.
+  const CTX_STEPS = [4096, 8192, 16384, 32768, 65536, 131072];
+
+  modelSel.innerHTML = VQCalc.MODEL_PRESETS
+    .map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  ramSel.innerHTML = VQCalc.ALLOWED_RAM_GB
+    .map(g => `<option value="${g}">${g} GB</option>`).join('');
+
+  ctxRange.min = '0';
+  ctxRange.max = String(CTX_STEPS.length - 1);
+  ctxRange.step = '1';
+
+  // ── query-string state ──
+  function readState() {
+    const q = new URLSearchParams(location.search);
+    const model = q.get('model');
+    const ctx = parseInt(q.get('ctx'), 10);
+    const ram = parseInt(q.get('ram'), 10);
+
+    if (model && VQCalc.MODEL_PRESETS.some(p => p.id === model)) modelSel.value = model;
+    else modelSel.value = 'llama31-8b';
+
+    const ctxIdx = CTX_STEPS.indexOf(ctx);
+    ctxRange.value = String(ctxIdx >= 0 ? ctxIdx : CTX_STEPS.indexOf(32768));
+
+    ramSel.value = String(VQCalc.ALLOWED_RAM_GB.includes(ram) ? ram : 16);
+  }
+
+  function writeState(seqLen) {
+    const q = new URLSearchParams(location.search);
+    q.set('model', modelSel.value);
+    q.set('ctx', String(seqLen));
+    q.set('ram', ramSel.value);
+    history.replaceState(null, '', location.pathname + '?' + q.toString() + location.hash);
+  }
+
+  function render() {
+    const preset = VQCalc.MODEL_PRESETS.find(p => p.id === modelSel.value);
+    const seqLen = CTX_STEPS[parseInt(ctxRange.value, 10)];
+    const ramGb = parseInt(ramSel.value, 10);
+    if (!preset) return;
+
+    ctxOut.textContent = VQCalc.formatTokens(seqLen) + ' tokens';
+
+    const res = VQCalc.computeRows(preset, seqLen, ramGb);
+    const rec = VQCalc.pickRecommended(res.rows);
+    const fp16 = res.rows[0];
+
+    const verdict = fp16.fits
+      ? `<span class="t-strong">fp16 already fits.</span> ${preset.name} at ` +
+        `${VQCalc.formatTokens(seqLen)} tokens needs ${VQCalc.formatMb(fp16.mb)} of KV cache, ` +
+        `and you have about ${res.budgetGb} GB free. Compression still buys you ` +
+        `headroom: <code class="inline plain t-accent">${rec.id}</code> takes you to ` +
+        `~${VQCalc.formatTokens(rec.maxTokens)} tokens in the same RAM.`
+      : `<span class="t-strong">fp16 does not fit.</span> ${preset.name} at ` +
+        `${VQCalc.formatTokens(seqLen)} tokens needs ${VQCalc.formatMb(fp16.mb)}, but only ` +
+        `about ${res.budgetGb} GB is free after weights and the OS. ` +
+        `<code class="inline plain t-accent">${rec.id}</code> fits in ` +
+        `${VQCalc.formatMb(rec.mb)}.`;
+
+    const rowsHtml = res.rows.map(r => {
+      const isRec = r.id === rec.id;
+      const fit = r.fits
+        ? '<span class="calc-row-fit y">✓ fits</span>'
+        : '<span class="calc-row-fit n">✗ too big</span>';
+      const label = r.id === 'fp16' ? r.name : `${r.name} · ${r.ratio}×`;
+      return `
+        <div class="calc-row${isRec ? ' rec' : ''}">
+          <span class="calc-row-name">${label}</span>
+          <span class="viz-track">
+            <span class="viz-bar ${r.id === 'fp16' ? 'b-fp16' : (r.id === 'vecinfer' ? 'b-max' : 'b-rvq')}"
+                  style="width:${Math.max(1.5, (r.mb / fp16.mb) * 100)}%"></span>
+          </span>
+          <span class="calc-row-size">${VQCalc.formatMb(r.mb)}</span>
+          ${fit}
+        </div>`;
+    }).join('');
+
+    // Key-accounting methods keep an fp16 parent cache on the default path,
+    // so their ratio is an accounting bound rather than a resident-RAM
+    // promise. Say so rather than letting the bar imply otherwise.
+    const residentNote = rec.resident
+      ? `<code class="inline plain">${rec.id}</code> compresses keys <em>and</em> values, so the saving shows up as real resident RAM.`
+      : `<code class="inline plain">${rec.id}</code> is a key-accounting method: on the default path it dequantizes into an fp16 parent cache, so the ratio is an accounting bound rather than a guaranteed drop in resident RAM. For real resident savings use <code class="inline plain">rabitq</code>.`;
+
+    out.innerHTML =
+      `<div class="calc-verdict ${fp16.fits ? 'good' : 'bad'}">${verdict}</div>` +
+      `<div class="calc-rows">${rowsHtml}</div>` +
+      `<p class="calc-note">Estimated from your model's real shape ` +
+      `(${preset.n_layers} layers · ${preset.n_kv_heads} KV heads · head_dim ${preset.head_dim}), ` +
+      `assuming 4-bit weights (~${res.weightGb} GB) and a 4 GB OS reserve. ` +
+      `${residentNote}</p>` +
+      `<div class="calc-cta">` +
+        `<a class="btn btn-filled" href="#quickstart">Use <code class="inline plain">${rec.id}</code> →</a>` +
+        `<a class="btn btn-outline" href="playground.html">Full playground →</a>` +
+      `</div>`;
+
+    writeState(seqLen);
+  }
+
+  // The no-JS fallback is in the markup and removed only once we know the
+  // calculator can actually take over.
+  readState();
+  if (nojs) nojs.remove();
+  render();
+
+  modelSel.addEventListener('change', render);
+  ramSel.addEventListener('change', render);
+  ctxRange.addEventListener('input', render);
+}
+
+// ── CODE BLOCK "TERMINAL BOOT" TYPE-ON EFFECT ──
+// Only ever applied to blocks that opt in with data-boot: the quickstart diff
+// is meant to be copied, and making someone wait for it to type is hostile.
+function bootCode(preEl) {
+  if (preEl.dataset.booted) return;
+  preEl.dataset.booted = 'true';
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  const original = preEl.innerHTML;
+  preEl.innerHTML = '';
+
+  const tmp = document.createElement('div');
+  tmp.innerHTML = original;
+
+  const cursor = document.createElement('span');
+  cursor.className = 'code-cursor-blink';
+  preEl.appendChild(cursor);
+
+  const nodes = Array.from(tmp.childNodes);
+  let nodeIdx = 0;
+  let charIdx = 0;
+  let delay = 0;
+
+  function nextTick() {
+    if (nodeIdx >= nodes.length) { cursor.remove(); return; }
+    const node = nodes[nodeIdx];
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent;
+      if (charIdx < text.length) {
+        preEl.insertBefore(document.createTextNode(text[charIdx]), cursor);
+        charIdx++;
+        delay = 12;
+      } else {
+        nodeIdx++; charIdx = 0; delay = 0;
+      }
+    } else {
+      preEl.insertBefore(node.cloneNode(true), cursor);
+      nodeIdx++; charIdx = 0; delay = 18;
+    }
+    setTimeout(nextTick, delay);
+  }
+
+  setTimeout(nextTick, 120);
+}
+
+function initCodeBootAnimation() {
+  const targets = document.querySelectorAll('.code-wrap[data-boot]');
+  if (!targets.length) return;
+  const codeObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const pre = entry.target.querySelector('pre');
+        if (pre) bootCode(pre);
+        codeObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.25 });
+  targets.forEach(el => codeObserver.observe(el));
 }
 
 // ── STAT NUMBER COUNTER ──
 function animateCounter(element, target, suffix) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    element.textContent = target + suffix;
+    element.classList.add('counting');
+    return;
+  }
   const steps = 50;
   const duration = 900;
   let i = 0;
@@ -168,17 +422,17 @@ function initScrollFadeIn() {
       if (entry.isIntersecting) {
         setTimeout(() => {
           entry.target.classList.add('visible');
-          if (entry.target.classList.contains('stat-card')) {
-            const statNum = entry.target.querySelector('.stat-number');
-            if (statNum && !statNum.dataset.animated) {
-              statNum.dataset.animated = 'true';
-              const raw = statNum.textContent.trim();
-              const num = parseFloat(raw);
-              const suffix = raw.replace(/[\d.]/g, '');
-              if (!isNaN(num)) animateCounter(statNum, num, suffix);
+          if (entry.target.classList.contains('proof-item')) {
+            const val = entry.target.querySelector('[data-count]');
+            if (val && !val.dataset.animated) {
+              val.dataset.animated = 'true';
+              const raw = val.textContent.trim();
+              const num = parseFloat(raw.replace(/[^\d.]/g, ''));
+              const suffix = raw.replace(/[\d.,\s]/g, '');
+              if (!isNaN(num)) animateCounter(val, num, suffix);
             }
           }
-        }, i * 80);
+        }, i * 60);
         observer.unobserve(entry.target);
       }
     });
@@ -203,87 +457,6 @@ function initActiveNav() {
   }, { rootMargin: '-40% 0px -55% 0px' });
 
   sections.forEach(s => navObserver.observe(s));
-}
-
-// ── HERO SCROLL PARALLAX (aurora blobs) ──
-function initScrollParallax() {
-  const heroEl = document.getElementById('hero');
-  if (!heroEl) return;
-  const auroraContainer = heroEl.querySelector('.aurora-container');
-  if (!auroraContainer) return;
-
-  window.addEventListener('scroll', () => {
-    const scrollY = window.scrollY;
-    const heroH = heroEl.offsetHeight;
-    if (scrollY > heroH) return;
-    const pct = scrollY / heroH;
-    auroraContainer.style.transform = `translateY(${pct * 60}px)`;
-  }, { passive: true });
-}
-
-// ── CODE BLOCK "TERMINAL BOOT" TYPE-ON EFFECT ──
-function bootCode(preEl) {
-  if (preEl.dataset.booted) return;
-  preEl.dataset.booted = 'true';
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-  const original = preEl.innerHTML;
-  preEl.innerHTML = '';
-
-  const tmp = document.createElement('div');
-  tmp.innerHTML = original;
-
-  const cursor = document.createElement('span');
-  cursor.className = 'code-cursor-blink';
-  preEl.appendChild(cursor);
-
-  const nodes = Array.from(tmp.childNodes);
-  let nodeIdx = 0;
-  let charIdx = 0;
-  let delay = 0;
-
-  function nextTick() {
-    if (nodeIdx >= nodes.length) {
-      cursor.remove();
-      return;
-    }
-    const node = nodes[nodeIdx];
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent;
-      if (charIdx < text.length) {
-        preEl.insertBefore(document.createTextNode(text[charIdx]), cursor);
-        charIdx++;
-        delay = 12;
-      } else {
-        nodeIdx++;
-        charIdx = 0;
-        delay = 0;
-      }
-    } else {
-      const clone = node.cloneNode(true);
-      preEl.insertBefore(clone, cursor);
-      nodeIdx++;
-      charIdx = 0;
-      delay = 18;
-    }
-    setTimeout(nextTick, delay);
-  }
-
-  setTimeout(nextTick, 120);
-}
-
-function initCodeBootAnimation() {
-  const codeObserver = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        const pre = entry.target.querySelector('pre');
-        if (pre) bootCode(pre);
-        codeObserver.unobserve(entry.target);
-      }
-    });
-  }, { threshold: 0.25 });
-
-  document.querySelectorAll('.code-wrap').forEach(el => codeObserver.observe(el));
 }
 
 // ── MOBILE HAMBURGER MENU ──
@@ -330,35 +503,18 @@ function initThemeToggle() {
   });
 }
 
-// ── MAGNETIC BUTTONS (desktop hover only — mousemove never fires on touch) ──
-function initMagneticButtons() {
-  document.querySelectorAll('.btn').forEach(btn => {
-    btn.addEventListener('mousemove', e => {
-      const rect = btn.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const dx = (e.clientX - cx) / (rect.width / 2);
-      const dy = (e.clientY - cy) / (rect.height / 2);
-      btn.style.transform = `translate(${dx * 7}px, ${dy * 5}px)`;
-    });
-
-    btn.addEventListener('mouseleave', () => {
-      btn.style.transform = '';
-    });
-  });
-}
-
 // ── INIT ──
 document.addEventListener('DOMContentLoaded', () => {
   initCopyButtons();
   initCodeTabs();
   initBadgeTyping();
   initMatrixRain();
+  initScrollParallax();
+  initMagneticButtons();
+  initCodeBootAnimation();
+  initCalculator();
   initScrollFadeIn();
   initActiveNav();
-  initScrollParallax();
-  initCodeBootAnimation();
   initHamburgerMenu();
-  initMagneticButtons();
   initThemeToggle();
 });
