@@ -122,6 +122,18 @@
         <span class="hero-pill">Apple Silicon only</span>
       </div>
 
+      <!-- Accounting vs resident RAM: compression ratios are bit-width accounting,
+           not measured process RSS. Most quantization methods still store dequantized
+           fp16 tensors on the default mlx_lm serving path today (see GitHub #27). Only
+           eviction/true-latent methods reduce resident memory today. -->
+      <p class="hero-disclaimer">
+        Compression ratios are bit-width accounting, not measured RAM. Methods that shrink
+        <strong>resident</strong> memory today are marked 🔻RSS in the
+        <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">method table</a>;
+        others reduce precision at equal fp16 storage for now
+        (<a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/27" target="_blank" rel="noopener">packed-storage roadmap</a>).
+      </p>
+
       <div class="install-block" id="hero-install" title="Click to copy">
         <span class="dollar">$</span>
         <span id="install-cmd">pip install VeloxQuant-MLX</span>
