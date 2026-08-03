@@ -29,7 +29,7 @@ from veloxquant_mlx.integration.mlx_lm_patch import patch_model_kv_cache
 
 config = KVCacheConfig(
     method="turboquant_rvq",  # zero-calibration 1-bit RVQ
-    bit_width_inlier=1,       # 1-bit inlier channels
+    bit_width_inlier=1,  # 1-bit inlier channels
     seed=42,
 )
 
