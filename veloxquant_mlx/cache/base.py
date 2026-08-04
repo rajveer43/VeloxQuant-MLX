@@ -8,6 +8,28 @@ from typing import Any, Literal, Optional, Union
 from veloxquant_mlx.core.abstractions import ArtifactStore, KVCache, QuantizationObserver
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
 
+# Methods whose cache class implements VeloxQuant's own KVCache ABC
+# (append_key/append_value/attend/memory_bytes) instead of subclassing
+# mlx_lm.models.cache.KVCache (update_and_fetch/nbytes/state/trim/merge/
+# meta_state). mlx_lm.generate() drives caches purely through the latter
+# interface via model.make_cache() -> cache.update_and_fetch(...), so an
+# object built from one of these methods does not satisfy that contract and
+# either crashes or silently produces wrong output deep inside generation
+# instead of failing at config/patch time. Verified against the codebase in
+# https://github.com/rajveer43/VeloxQuant-MLX/issues/27: these are the 5
+# "standalone" methods among the 40 in the registry; all others subclass
+# mlx_lm's KVCache and are safe to wire into patch_model_kv_cache /
+# KVCacheBuilder.for_model for live mlx_lm serving.
+STANDALONE_METHODS = frozenset(
+    {
+        "turboquant_prod",
+        "turboquant_mse",
+        "polar",
+        "qjl",
+        "spectral",
+    }
+)
+
 
 @dataclass
 class KVCacheConfig:
@@ -770,7 +792,24 @@ class KVCacheBuilder:
 
         Returns:
             List of KVCache instances, one per language-model layer.
+
+        Raises:
+            QuantizerConfigError: If ``config.method`` is a standalone method
+                (see :data:`STANDALONE_METHODS`) that does not implement the
+                mlx_lm KVCache serving contract.
         """
+        if config.method in STANDALONE_METHODS:
+            raise QuantizerConfigError(
+                f"KVCacheBuilder.for_model: method {config.method!r} is a standalone "
+                f"method — its cache class implements VeloxQuant's own KVCache "
+                f"interface, not mlx_lm.models.cache.KVCache, so it cannot serve "
+                f"mlx_lm.generate() traffic and will fail deep inside generation "
+                f"rather than here. Use it directly via KVCacheFactory.create() / "
+                f"KVCacheBuilder.build() for standalone/research use instead, or "
+                f"pick a serving-compatible method (see the method library's "
+                f"'standalone' tag: https://github.com/rajveer43/VeloxQuant-MLX#method-library)."
+            )
+
         from mlx_lm.models.cache import KVCache as _FallbackCache
 
         # Qwen2-VL exposes model.layers directly; text models expose model.model.layers

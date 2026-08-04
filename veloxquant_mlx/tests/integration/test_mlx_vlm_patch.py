@@ -18,6 +18,7 @@ import mlx.core as mx
 import pytest
 
 from veloxquant_mlx.cache.base import KVCacheConfig
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.integration.mlx_vlm_patch import patch_vlm_kv_cache
 
 
@@ -93,6 +94,18 @@ def test_patch_builds_requested_method():
     caches = patch_vlm_kv_cache(model, config)
     for c in caches:
         assert type(c).__name__ == "TurboQuantRVQKVCache"
+
+
+def test_rejects_standalone_method():
+    """qjl does not implement the mlx_lm KVCache serving contract (#27) --
+    patching it into a VLM's language_model must raise before
+    language_model.make_cache is ever touched.
+    """
+    model = _make_fake_vlm(n_layers=2)
+    config = KVCacheConfig(method="qjl", seed=42)
+    with pytest.raises(QuantizerConfigError, match="qjl"):
+        patch_vlm_kv_cache(model, config)
+    assert not hasattr(model.language_model, "make_cache")
 
 
 def test_rejects_text_only_model():
