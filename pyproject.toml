@@ -35,11 +35,14 @@ classifiers = [
 ]
 dependencies = [
     "mlx>=0.18",
+    "mlx-lm>=0.31.3",
     "numpy>=1.26",
-    "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]
+plots = [
+    "matplotlib>=3.8",
+]
 dev = [
     "pytest>=8.0",
     "pytest-xdist",
