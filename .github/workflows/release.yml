@@ -44,11 +44,6 @@ jobs:
       - name: Install package + dev/release dependencies
         run: |
           pip install -e ".[dev]"
-          # mlx_lm is not in [project.dependencies] but 35 non-test modules
-          # (including veloxquant_mlx/__init__.py's own import chain) import
-          # it at module level, so the package cannot even be imported
-          # without it -- required here for the test suite to collect at all.
-          pip install mlx-lm
 
       - name: Run test suite (release gate)
         run: python -m pytest veloxquant_mlx/tests -q

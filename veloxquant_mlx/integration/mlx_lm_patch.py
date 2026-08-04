@@ -17,12 +17,12 @@ Usage::
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any
 
 from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig
 
 
-def patch_model_kv_cache(model: Any, config: KVCacheConfig) -> List[Any]:
+def patch_model_kv_cache(model: Any, config: KVCacheConfig) -> list[Any]:
     """Wire a quantized KV cache into an mlx-lm model's generation path.
 
     ``mlx_lm.generate()`` builds its prompt cache via
@@ -44,6 +44,13 @@ def patch_model_kv_cache(model: Any, config: KVCacheConfig) -> List[Any]:
 
     Returns:
         The list of KVCache instances now wired into ``model.make_cache``.
+
+    Raises:
+        QuantizerConfigError: If ``config.method`` is a standalone method
+            (does not implement the mlx_lm KVCache serving contract — see
+            ``veloxquant_mlx.cache.base.STANDALONE_METHODS``). Raised
+            immediately by the underlying ``KVCacheBuilder.for_model()``
+            call, before ``model.make_cache`` is touched.
 
     Example::
 
