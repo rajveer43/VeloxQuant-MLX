@@ -108,6 +108,22 @@ def test_rejects_standalone_method():
     assert not hasattr(model.language_model, "make_cache")
 
 
+@pytest.mark.parametrize("wrapper_exposes_layers", [False, True])
+def test_rejects_standalone_method_regardless_of_wrapper_shape(wrapper_exposes_layers):
+    """for_model's target resolution (top-level model.layers for Qwen2-VL-style
+    wrappers vs. language_model directly) must not bypass the refusal check
+    on either branch.
+    """
+    model = _make_fake_vlm(n_layers=2, wrapper_exposes_layers=wrapper_exposes_layers)
+    config = KVCacheConfig(method="polar", seed=42)
+
+    with pytest.raises(QuantizerConfigError, match="polar"):
+        patch_vlm_kv_cache(model, config)
+
+    assert not hasattr(model.language_model, "make_cache")
+    assert not callable(getattr(model, "make_cache", None))
+
+
 def test_rejects_text_only_model():
     text_model = _make_language_model(n_layers=2, n_heads=2, head_dim=32)
     config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)
