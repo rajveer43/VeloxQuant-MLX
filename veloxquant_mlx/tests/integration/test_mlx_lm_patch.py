@@ -17,6 +17,7 @@ import mlx.core as mx
 import pytest
 
 from veloxquant_mlx.cache.base import KVCacheConfig
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.integration.mlx_lm_patch import patch_model_kv_cache
 
 
@@ -46,6 +47,20 @@ def test_patch_model_kv_cache_wires_make_cache() -> None:
     # and must return the same cache list every time (persistent, not rebuilt).
     assert model.make_cache() is caches
     assert model.make_cache(some_arg=1) is caches
+
+
+def test_patch_model_kv_cache_refuses_standalone_method() -> None:
+    """spectral does not implement the mlx_lm KVCache serving contract (#27) --
+    patching it in must raise before model.make_cache is ever touched, not
+    fail later inside mlx_lm.generate().
+    """
+    model = _make_fake_model(n_layers=2)
+    config = KVCacheConfig(method="spectral", bit_width_inlier=1, seed=42)
+
+    with pytest.raises(QuantizerConfigError, match="spectral"):
+        patch_model_kv_cache(model, config)
+
+    assert not hasattr(model, "make_cache")
 
 
 def test_patch_model_kv_cache_returns_correct_method() -> None:
