@@ -60,6 +60,12 @@ class StreamingLLMKVCache(_MLXKVCache):
         adapted, which evicts only at prefill. StreamingLLM operates continuously.
         Single-layer (no coordinator); ``for_model`` propagates all ``stream_*``
         fields automatically via ``dataclasses.replace``.
+        Writes through to the base ``mlx_lm`` ``KVCache``'s ``self.keys`` /
+        ``self.values`` / ``self.offset`` on every call so ``.state`` stays
+        valid (mlx_lm's ``generate()`` reads it unconditionally during
+        chunked prefill); ``is_trimmable()`` reports ``False`` since the
+        internal per-token state can't be rolled back by a base-class
+        ``trim()`` (see #83).
     """
 
     def __init__(self, config: Any) -> None:
@@ -136,10 +142,24 @@ class StreamingLLMKVCache(_MLXKVCache):
         kept_bytes = stream_fp16_bytes(self._windows[0]) * B * H
         self._stream_kept_bytes = kept_bytes  # snapshot (not cumulative; current state)
 
-        # Pass through to parent's accumulator using the evicted slice
-        # We bypass the parent concatenation and manage state ourselves.
-        # Return directly — StreamingLLM manages its own complete K/V state.
-        return K_out, V_out
+        # K_out/V_out is the full sink+recent window every call, not a
+        # delta — reset so the base class's append-only buffer starts fresh
+        # instead of stacking on top of the previous call's rows. Without
+        # this, self.keys/self.values/self.offset stay at __init__ defaults
+        # forever, and mlx_lm's generate() crashes on `cache.state` during
+        # chunked prefill (see #83).
+        self.keys = None
+        self.values = None
+        self.offset = 0
+        return super().update_and_fetch(K_out, V_out)
+
+    # ------------------------------------------------------------------
+    def is_trimmable(self) -> bool:
+        """False: trim() would only roll back base-class offset bookkeeping,
+        not the internal per-token eviction/compression state that actually
+        determines what gets returned, silently corrupting future calls.
+        """
+        return False
 
     # ------------------------------------------------------------------
     @property

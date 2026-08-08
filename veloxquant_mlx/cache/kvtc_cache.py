@@ -126,6 +126,22 @@ class _TensorKVTC:
         """
         assert self._fitted and self._artifact is not None and self._raw_rows is not None
         self._raw_rows = mx.concatenate([self._raw_rows, x.astype(mx.float32)], axis=0)
+        return self._requantize()
+
+    def trim(self, n: int) -> None:
+        """Drop the ``n`` most-recent rows and re-quantize through the frozen basis."""
+        assert self._fitted and self._raw_rows is not None
+        keep = max(0, self._raw_rows.shape[0] - n)
+        self._raw_rows = self._raw_rows[:keep]
+        if keep > 0:
+            self._requantize()
+        else:
+            self._fitted = False
+            self._artifact = None
+
+    def _requantize(self) -> mx.array:
+        """Re-derive the entropy-coded artifact for the current ``_raw_rows`` through the frozen basis/allocation."""
+        assert self._artifact is not None and self._raw_rows is not None
         V = self._artifact.V
         mean = self._artifact.mean
         bit_alloc = self._artifact.bit_allocation
@@ -226,6 +242,12 @@ class KVTCKVCache(_MLXKVCache):
         self._H = 0
 
         self._full_seq_bytes = 0
+        # Last (k_out, v_out) reconstructed by update_and_fetch, for .state —
+        # mlx_lm's generate() reads cache.state directly (e.g. during chunked
+        # prefill and the speculative-decoding rewind path); since self.keys/
+        # self.values are never populated (true latent storage), .state must
+        # be overridden to serve this instead (see #83).
+        self._last_state: Optional[tuple] = None
 
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int) -> None:
@@ -274,6 +296,7 @@ class KVTCKVCache(_MLXKVCache):
 
         self._kvtc_offset += S
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
+        self._last_state = (K_out, V_out)
         return K_out, V_out
 
     # ------------------------------------------------------------------
@@ -289,6 +312,36 @@ class KVTCKVCache(_MLXKVCache):
 
     def size(self) -> int:
         return self._kvtc_offset
+
+    @property
+    def state(self):  # type: ignore[override]
+        if self._last_state is None:
+            empty = mx.zeros((1, self._H, 0, self._D), dtype=mx.float16)
+            return empty, empty
+        return self._last_state
+
+    @state.setter
+    def state(self, v) -> None:
+        k, v_ = v
+        self._last_state = (k, v_)
+        self._kvtc_offset = int(k.shape[2])
+
+    def is_trimmable(self) -> bool:
+        return True
+
+    def trim(self, n: int) -> int:
+        n = min(self._kvtc_offset, n)
+        if n <= 0:
+            return 0
+        for ks in self._keys_states:
+            ks.trim(n)
+        for vs in self._vals_states:
+            vs.trim(n)
+        self._kvtc_offset -= n
+        if self._last_state is not None:
+            k, v_ = self._last_state
+            self._last_state = (k[:, :, : k.shape[2] - n, :], v_[:, :, : v_.shape[2] - n, :])
+        return n
 
     # ------------------------------------------------------------------
     # Reporting
