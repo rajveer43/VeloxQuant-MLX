@@ -51,6 +51,26 @@ class TestAllocateBitsRateQuant:
         alloc = allocate_bits_ratequant(w, target_avg_bits=2.0, bit_choices=(2, 4))
         assert all(b in (2, 4) for b in alloc)
 
+    def test_non_contiguous_bit_choices_membership(self) -> None:
+        """Regression for #72: every allocated value must be an actual member
+        of a non-contiguous bit_choices set, not merely within [min, max]."""
+        sensitivities = [1.0, 5.0, 0.2, 3.0, 0.5]
+        choices = (0, 1, 2, 4, 6, 8)
+        alloc = allocate_bits_ratequant(sensitivities, target_avg_bits=2.6, bit_choices=choices)
+        assert all(a in choices for a in alloc), alloc
+
+    def test_non_contiguous_bit_choices_membership_randomized(self) -> None:
+        """Broader sweep over random sparse bit_choices sets and targets."""
+        rng = np.random.default_rng(0)
+        for _ in range(200):
+            n = int(rng.integers(2, 12))
+            w = rng.lognormal(0, 1.0, n).tolist()
+            target = float(rng.uniform(0.5, 7.0))
+            pool = rng.choice(9, size=int(rng.integers(2, 6)), replace=False)
+            choices = tuple(sorted(set(int(c) for c in pool)))
+            alloc = allocate_bits_ratequant(w, target_avg_bits=target, bit_choices=choices)
+            assert all(a in choices for a in alloc), (choices, alloc)
+
     def test_negative_weight_raises(self) -> None:
         with pytest.raises(ValueError, match="strictly positive"):
             allocate_bits_ratequant([1.0, -0.5, 2.0], target_avg_bits=1.5)
