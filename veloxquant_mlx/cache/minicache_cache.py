@@ -50,6 +50,9 @@ class MiniCacheKVCache(_MLXKVCache):
         role: ``"primary"`` or ``"merge"`` (default ``"primary"``).
         group_id: Cross-layer merge group this layer belongs to.
         coordinator: Shared :class:`MiniCacheCoordinator` (None → degenerate).
+        n_readers: Number of merge layers in this primary's group (group_size - 1).
+            Only meaningful for ``role="primary"``; tells the coordinator how many
+            fetches to expect before a published entry can be reclaimed.
     """
 
     def __init__(
@@ -58,11 +61,13 @@ class MiniCacheKVCache(_MLXKVCache):
         role: str = "primary",
         group_id: int = 0,
         coordinator: Optional[MiniCacheCoordinator] = None,
+        n_readers: int = 1,
     ) -> None:
         super().__init__()
         self._role = role if coordinator is not None else "primary"
         self._group_id = int(group_id)
         self._coord = coordinator
+        self._n_readers = int(n_readers)
         self._ret = float(getattr(config, "minicache_retention_threshold", 0.9))
         self._t = float(getattr(config, "minicache_slerp_t", 0.5))
 
@@ -159,7 +164,9 @@ class MiniCacheKVCache(_MLXKVCache):
         else:
             # primary: store true KV for the merge partner, reconstruct losslessly
             if self._coord is not None:
-                self._coord.publish_primary(self._group_id, tok_start, S, keys, values)
+                self._coord.publish_primary(
+                    self._group_id, tok_start, S, keys, values, n_readers=self._n_readers
+                )
             k_out, v_out = keys, values
             self._account_primary(B, H, S, D)
 
