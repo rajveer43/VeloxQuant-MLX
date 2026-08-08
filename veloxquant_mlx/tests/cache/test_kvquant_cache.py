@@ -1,6 +1,6 @@
 """Tests for KVQuantKVCache — non-uniform quantization + dense/sparse outliers.
 
-15 tests covering:
+16 tests covering:
   1.  Factory dispatch
   2.  Output shape (prefill + decode)
   3.  Values reconstructed within tolerance
@@ -16,6 +16,7 @@
   13. effective_bits within [bits, bits + overhead] at realistic context
   14. Per-channel (key) vs per-token (value) axis correctness
   15. Determinism (end-to-end)
+  16. No public `.bits` attribute (mlx_lm SDPA dispatch trap)
 """
 
 from __future__ import annotations
@@ -215,10 +216,10 @@ def test_key_value_axes():
     cache.update_and_fetch(_laplace(1, 1, 64, 64), _laplace(1, 1, 64, 64, seed=1))
     # Keys: per-channel levels → [L, D] with D = head_dim columns.
     kl = cache.key_levels[0]
-    assert kl.shape[0] == (1 << cache.bits) and kl.shape[1] == 64
+    assert kl.shape[0] == (1 << cache.nuq_bits) and kl.shape[1] == 64
     # Values: per-token levels (transposed space) → columns are tokens (S=64).
     vl = cache.value_levels[0]
-    assert vl.shape[0] == (1 << cache.bits) and vl.shape[1] == 64
+    assert vl.shape[0] == (1 << cache.nuq_bits) and vl.shape[1] == 64
 
 
 # ---------------------------------------------------------------------------
@@ -237,3 +238,19 @@ def test_determinism():
     k2, v2 = run()
     np.testing.assert_array_equal(k1, k2)
     np.testing.assert_array_equal(v1, v2)
+
+
+# ---------------------------------------------------------------------------
+# Test 16 — no public .bits attribute (mlx_lm SDPA dispatch trap)
+# ---------------------------------------------------------------------------
+def test_no_bits_leak():
+    """mlx_lm's SDPA checks `hasattr(cache, "bits")` to route to its
+    quantized-matmul kernel, which expects mx.quantize's native tuple layout
+    and a `.group_size` attribute this cache doesn't have. Exposing `.bits`
+    here would silently hijack attention dispatch — see issue #87."""
+    cache = KVQuantKVCache(_cfg(kvquant_bits=3))
+    assert not hasattr(cache, "bits"), (
+        "KVQuantKVCache must not expose .bits — would break mlx_lm SDPA dispatch"
+    )
+    assert hasattr(cache, "nuq_bits")
+    assert cache.nuq_bits == 3
