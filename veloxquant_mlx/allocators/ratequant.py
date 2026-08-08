@@ -204,33 +204,60 @@ def allocate_bits_ratequant(
     if not bit_choices:
         raise ValueError("bit_choices must be non-empty.")
 
+    choices_sorted = sorted(set(int(c) for c in bit_choices))
+
     N = w.size
     log_w = np.log(w)
     log_w_bar = float(log_w.mean())
     b_continuous = target_avg_bits + (log_w - log_w_bar) / max(np.log(beta), 1e-6)
 
-    b_min, b_max = min(bit_choices), max(bit_choices)
+    b_min, b_max = choices_sorted[0], choices_sorted[-1]
     b_clamped = np.clip(b_continuous, b_min, b_max)
-    alloc = [int(round(b)) for b in b_clamped]
+
+    def _nearest_choice(value: float) -> int:
+        return min(choices_sorted, key=lambda c: abs(c - value))
+
+    # Snap to the nearest *member* of bit_choices, not the nearest integer --
+    # bit_choices may be a non-contiguous set (e.g. (0, 1, 2, 4, 6, 8)).
+    alloc = [_nearest_choice(b) for b in b_clamped]
 
     target_total = int(round(target_avg_bits * N))
     current_total = sum(alloc)
 
-    # Greedy re-balance to hit exact integer budget
+    def _next_choice(value: int) -> Optional[int]:
+        idx = choices_sorted.index(value)
+        return choices_sorted[idx + 1] if idx + 1 < len(choices_sorted) else None
+
+    def _prev_choice(value: int) -> Optional[int]:
+        idx = choices_sorted.index(value)
+        return choices_sorted[idx - 1] if idx > 0 else None
+
+    # Greedy re-balance to hit exact integer budget, always stepping to the
+    # actual next/previous member of bit_choices (never a bare +1/-1).
     while current_total < target_total:
-        deficits = [(b_continuous[i] - alloc[i], i) for i in range(N) if alloc[i] < b_max]
-        if not deficits:
+        candidates = [
+            (b_continuous[i] - alloc[i], i, _next_choice(alloc[i]))
+            for i in range(N)
+            if alloc[i] < b_max
+        ]
+        candidates = [(score, i, nxt) for score, i, nxt in candidates if nxt is not None]
+        if not candidates:
             break
-        _, i = max(deficits)
-        alloc[i] += 1
-        current_total += 1
+        _, i, nxt = max(candidates, key=lambda t: t[0])
+        current_total += nxt - alloc[i]
+        alloc[i] = nxt
 
     while current_total > target_total:
-        surplus = [(alloc[i] - b_continuous[i], i) for i in range(N) if alloc[i] > b_min]
-        if not surplus:
+        candidates = [
+            (alloc[i] - b_continuous[i], i, _prev_choice(alloc[i]))
+            for i in range(N)
+            if alloc[i] > b_min
+        ]
+        candidates = [(score, i, prv) for score, i, prv in candidates if prv is not None]
+        if not candidates:
             break
-        _, i = max(surplus)
-        alloc[i] -= 1
-        current_total -= 1
+        _, i, prv = max(candidates, key=lambda t: t[0])
+        current_total += prv - alloc[i]
+        alloc[i] = prv
 
     return alloc
