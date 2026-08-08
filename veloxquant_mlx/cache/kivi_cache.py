@@ -79,6 +79,12 @@ class KIVIKVCache(_MLXKVCache):
         self._residual_fp16_bytes = 0
         self._tokens_seen = 0
 
+        # Cumulative count of leading tokens (absolute sequence positions
+        # [0, _n_quantized)) that have already been quantized in-place in
+        # the parent cache's storage. Tokens age out of the fp16 residual
+        # window based on true cumulative position, not this call's S.
+        self._n_quantized = 0
+
     # ------------------------------------------------------------------
     # Group quant/dequant helpers (asymmetric min/max, deterministic)
     # ------------------------------------------------------------------
@@ -116,48 +122,59 @@ class KIVIKVCache(_MLXKVCache):
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys, values):
-        """Quantize the aged-out portion of K/V, keep the residual in fp16.
+        """Quantize whatever has aged out of the fp16 residual window.
 
-        We quantize **only** tokens that fall outside the most-recent
-        ``residual_length`` window of the *current* incoming block.  During
-        prefill (large S) this quantizes the bulk and keeps the tail exact;
-        during decode (S==1) the new token is within the residual window and
-        passes through untouched until it ages out on later steps.
+        Tokens age out based on their **true cumulative position** in the
+        sequence, not this call's own ``S``: after every call, the most
+        recent ``residual_length`` tokens (of the *entire* history) stay
+        fp16 and everything older is quantized. During decode (S==1) that
+        means each new token starts in the residual window and gets
+        quantized ``residual_length`` steps later, once it actually ages
+        out — not never, as a per-call ``S <= residual_length`` check would
+        imply.
+
+        Implementation: store the incoming block via the parent cache
+        first (so ``self.offset``/``self.keys``/``self.values`` reflect the
+        full accumulated history), then quantize-in-place any newly-aged
+        leading slice of that stored buffer that hasn't been quantized yet.
         """
         B, H, S, D = keys.shape
         r = self._residual_length
+        k_all, v_all = super().update_and_fetch(keys, values)
 
-        if S <= r:
-            # Entire incoming block is within the fp16 residual window.
-            k_out, v_out = keys, values
-            n_quant = 0
-        else:
-            n_quant = S - r
-            k_q = self._quant_dequant_along(keys[:, :, :n_quant, :], axis=-2)
-            v_q = self._quant_dequant_along(values[:, :, :n_quant, :], axis=-1)
-            k_out = mx.concatenate([k_q, keys[:, :, n_quant:, :]], axis=2)
-            v_out = mx.concatenate([v_q, values[:, :, n_quant:, :]], axis=2)
+        new_boundary = max(0, self.offset - r)
+        n_quant_now = new_boundary - self._n_quantized
+        if n_quant_now > 0:
+            lo, hi = self._n_quantized, new_boundary
+            k_q = self._quant_dequant_along(self.keys[:, :, lo:hi, :], axis=-2)
+            v_q = self._quant_dequant_along(self.values[:, :, lo:hi, :], axis=-1)
+            self.keys[:, :, lo:hi, :] = k_q
+            self.values[:, :, lo:hi, :] = v_q
+            self._n_quantized = new_boundary
+            k_all, v_all = self.keys[..., : self.offset, :], self.values[..., : self.offset, :]
 
-        self._account_bytes(B, H, S, D, n_quant)
-        return super().update_and_fetch(k_out, v_out)
+        self._account_bytes(B, H, S, D, n_quant_now)
+        return k_all, v_all
 
-    def _account_bytes(self, B: int, H: int, S: int, D: int, n_quant: int) -> None:
-        n_res = S - n_quant
+    def _account_bytes(self, B: int, H: int, S: int, D: int, n_quant_now: int) -> None:
         gs = self._group_size
         # Quantized keys: per-channel — D channels, ceil(n_quant/gs) groups,
         # b bits/code + (scale, zero) fp16 per (group, channel).
-        if n_quant > 0:
-            k_groups = math.ceil(n_quant / gs)
-            k_code_bytes = math.ceil(n_quant * D * self._b / 8) * H * B
+        if n_quant_now > 0:
+            k_groups = math.ceil(n_quant_now / gs)
+            k_code_bytes = math.ceil(n_quant_now * D * self._b / 8) * H * B
             k_param_bytes = k_groups * D * 2 * 2 * H * B  # scale+zero, fp16
             # Quantized values: per-token — ceil(D/gs) groups per token.
             v_groups = math.ceil(D / gs)
-            v_code_bytes = math.ceil(n_quant * D * self._b / 8) * H * B
-            v_param_bytes = n_quant * v_groups * 2 * 2 * H * B
+            v_code_bytes = math.ceil(n_quant_now * D * self._b / 8) * H * B
+            v_param_bytes = n_quant_now * v_groups * 2 * 2 * H * B
             self._key_bytes_compressed += k_code_bytes + k_param_bytes
             self._value_bytes_compressed += v_code_bytes + v_param_bytes
-        # fp16 residual window (kept exact)
-        self._residual_fp16_bytes += n_res * D * 2 * 2 * H * B  # K+V
+        # fp16 residual window: current size (not cumulative) — this is
+        # the live, still-fp16 tail, so it must plateau at residual_length
+        # once the window fills, not grow with every call.
+        n_res = self.offset - self._n_quantized
+        self._residual_fp16_bytes = n_res * D * 2 * 2 * H * B  # K+V
         # fp16 equivalents (for ratio): every token at full precision
         self._key_bytes_fp16 += H * B * S * D * 2
         self._value_bytes_fp16 += H * B * S * D * 2
