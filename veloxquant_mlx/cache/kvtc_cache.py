@@ -59,9 +59,14 @@ Byte accounting
 combined, mirroring Palu's combined reporting style.
 ``pre_entropy_bytes`` — fixed-width (pre-entropy-coding) size, for
 comparison.
-``entropy_coding_gain`` — ``pre_entropy_bytes / kvtc_bytes`` (>= 1 typically;
-a modest, honestly-reported secondary effect on synthetic Gaussian-like
-data — see the module docstring in ``quantizers/_entropy_coding.py``).
+``entropy_coding_gain`` — ``pre_entropy_bytes / kvtc_bytes``. Since #77,
+``kvtc_compress`` guarantees the entropy-coded payload+table never exceeds
+fixed-width packing (falling back to fixed-width when Huffman doesn't pay
+for itself — see ``quantizers/kvtc.py``'s module docstring), but this ratio
+divides by the FULL stored size (``kvtc_bytes``, which also carries the
+fixed projection-basis overhead unrelated to entropy coding), so it can
+still legitimately read < 1 when that basis dominates — it is not itself
+guaranteed >= 1.
 """
 
 from __future__ import annotations
@@ -73,9 +78,9 @@ import numpy as np
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.allocators.kvtc_dp import DEFAULT_BETA, DEFAULT_BIT_CHOICES
-from veloxquant_mlx.quantizers._entropy_coding import entropy_encode
 from veloxquant_mlx.quantizers.kvtc import (
     KVTCArtifact,
+    _encode_survived_codes,
     kvtc_compress,
     kvtc_decompress,
     kvtc_fp16_bytes,
@@ -157,15 +162,15 @@ class _TensorKVTC:
         survived_idx = self._artifact.survived_idx
 
         all_codes = []
-        mins, scales = [], []
+        mins, scales, bits_per_component = [], [], []
         for i in survived_idx:
             bits = int(bit_alloc[i])
             codes, lo, scale = quantize_component(L_np[:, i], bits)
             all_codes.append(codes)
             mins.append(lo)
             scales.append(scale)
-        flat_codes = np.concatenate(all_codes) if all_codes else np.zeros((0,), dtype=np.int64)
-        payload, table = entropy_encode(flat_codes)
+            bits_per_component.append(bits)
+        payload, table, is_entropy_coded = _encode_survived_codes(all_codes, bits_per_component)
 
         self._artifact = KVTCArtifact(
             V=V,
@@ -178,6 +183,7 @@ class _TensorKVTC:
             quant_min=np.asarray(mins, dtype=np.float64),
             quant_scale=np.asarray(scales, dtype=np.float64),
             survived_idx=survived_idx,
+            is_entropy_coded=is_entropy_coded,
         )
         return kvtc_decompress(self._artifact)
 
@@ -368,9 +374,12 @@ class KVTCKVCache(_MLXKVCache):
 
         A modest, honestly-scoped secondary effect (see
         ``quantizers/_entropy_coding.py``): NOT the theoretical
-        Shannon-entropy bound, and it can be < 1 when the code table
-        overhead outweighs the achieved bitstream savings at short
-        sequence lengths.
+        Shannon-entropy bound. Since #77, the entropy-coding stage itself
+        (payload + table) is guaranteed to never exceed fixed-width packing
+        — but this ratio's denominator (``kvtc_bytes``) also includes the
+        fixed projection-basis overhead, which is unrelated to entropy
+        coding and can dominate at small survived-component counts, so this
+        property can still read < 1 for that reason.
         """
         kb = self.kvtc_bytes
         if kb == 0:
