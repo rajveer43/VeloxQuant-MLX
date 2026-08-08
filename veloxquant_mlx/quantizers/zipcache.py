@@ -64,6 +64,9 @@ class ZipCacheState(NamedTuple):
         lo_bits:   int bit-width for non-salient tokens.
         seq_len:   int original token count (= S).
         head_dim:  int feature dimension (= D).
+        group_size: int token group size used for min/max quantization at
+            compress time; must be reused by ``zipcache_reconstruct`` for the
+            dequant grouping to match.
     """
 
     hi_codes: mx.array
@@ -77,6 +80,7 @@ class ZipCacheState(NamedTuple):
     lo_bits: int
     seq_len: int
     head_dim: int
+    group_size: int
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +248,7 @@ def zipcache_compress(
         lo_bits=lo_bits,
         seq_len=S,
         head_dim=D,
+        group_size=group_size,
     )
 
 
@@ -255,8 +260,7 @@ def zipcache_reconstruct(state: ZipCacheState) -> mx.array:
     """
     S = state.seq_len
     D = state.head_dim
-    gs = 32  # group_size is not stored in state; use 32 (the only value used)
-    # Use scales shape to derive actual group_size used at compress time
+    gs = state.group_size
     n_hi = int(state.hi_codes.shape[0]) if state.hi_codes.shape[0] > 0 else 0
     n_lo = int(state.lo_codes.shape[0]) if state.lo_codes.shape[0] > 0 else 0
 
