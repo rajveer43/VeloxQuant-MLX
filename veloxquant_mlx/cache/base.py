@@ -1069,6 +1069,15 @@ class KVCacheBuilder:
         role_by_layer: dict[int, tuple[str, int]] = {
             attn_layer_idx[k]: roles[k] for k in range(len(attn_layer_idx))
         }
+        # Each primary's published entry is consumed by every merge layer in
+        # its group before the coordinator can reclaim it (#79). Seed every
+        # group at 0 first so a standalone primary (no merge partners, e.g.
+        # an early layer below minicache_start_frac) doesn't fall through to
+        # some other group's reader count.
+        n_readers_by_group: dict[int, int] = {group_id: 0 for _, group_id in roles}
+        for role, group_id in roles:
+            if role == "merge":
+                n_readers_by_group[group_id] += 1
 
         caches = []
         for i, layer in enumerate(layers):
@@ -1088,7 +1097,13 @@ class KVCacheBuilder:
                 minicache_max_ctx=config.minicache_max_ctx,
             )
             caches.append(
-                MiniCacheKVCache(layer_cfg, role=role, group_id=group_id, coordinator=coordinator)
+                MiniCacheKVCache(
+                    layer_cfg,
+                    role=role,
+                    group_id=group_id,
+                    coordinator=coordinator,
+                    n_readers=n_readers_by_group[group_id],
+                )
             )
         return caches
 
