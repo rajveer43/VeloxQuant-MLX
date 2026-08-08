@@ -2923,6 +2923,9 @@ code.inline.max { color: var(--max); }
 }
 .picker-row.is-max .picker-pick { color: var(--max); }
 .picker-pick small { display: block; color: var(--muted); font-size: 0.74rem; margin-top: 0.2rem; }
+.picker-tab-link { text-decoration: none; }
+.picker-tab-link:hover code.inline,
+.picker-tab-link:focus-visible code.inline { text-decoration: underline; }
 
 /* ── Quality cost ── */
 .cost-pending {
