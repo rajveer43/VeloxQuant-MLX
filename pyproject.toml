@@ -71,6 +71,9 @@ mlx-kv-quant = "veloxquant_mlx.__main__:main"
 where = ["."]
 include = ["veloxquant_mlx*"]
 
+[tool.setuptools.package-data]
+veloxquant_mlx = ["metal/src/*.metal"]
+
 [tool.pytest.ini_options]
 testpaths = ["veloxquant_mlx/tests"]
 addopts = "-v"

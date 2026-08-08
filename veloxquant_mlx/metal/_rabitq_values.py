@@ -15,7 +15,15 @@ Public API:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import mlx.core as mx
+
+
+def _read_kernel_source(filename: str) -> str:
+    """Read a standalone .metal kernel source file from metal/src/."""
+    return (Path(__file__).parent / "src" / filename).read_text()
+
 
 _cache: dict = {}
 
@@ -26,12 +34,7 @@ _cache: dict = {}
 # Grid: (N_out, 1, 1) — one thread per output byte. Indices are masked
 # to 4 bits so out-of-range inputs can never corrupt a neighbour nibble.
 
-_PACK_VALUES_SRC = r"""
-    uint j = thread_position_in_grid.x;
-    uint lo = uint(v_idx[2u * j])     & 0xFu;
-    uint hi = uint(v_idx[2u * j + 1u]) & 0xFu;
-    packed[j] = uint8_t(lo | (hi << 4u));
-"""
+_PACK_VALUES_SRC = _read_kernel_source("rabitq_pack_values.metal")
 
 
 # ---------------------------------------------------------------------------
