@@ -90,22 +90,29 @@ class SinkProtectedKVCache(KIVIKVCache):
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys, values):
-        """Quantize aged-out tokens except sinks; keep residual + sinks fp16."""
+        """Quantize aged-out tokens except sinks; keep residual + sinks fp16.
+
+        Ages tokens out based on **true cumulative position** (mirrors the
+        fix in ``KIVIKVCache.update_and_fetch``): store the incoming block
+        via the parent first, then quantize-in-place the newly-aged leading
+        slice ``[self._n_quantized, self.offset - residual_length)`` of the
+        accumulated buffer, skipping any position still marked a sink.
+        """
         B, H, S, D = keys.shape
         r = self._residual_length
         start = self.offset  # absolute position of keys[:, :, 0, :]
 
         sinks = self._update_sinks(keys, start)
+        k_all, v_all = super(KIVIKVCache, self).update_and_fetch(keys, values)
 
-        if S <= r:
-            k_out, v_out = keys, values
-            n_quant = 0
-            n_sink_in_block = 0
-        else:
-            n_quant = S - r
-            sink_local = sorted(p - start for p in sinks if 0 <= p - start < n_quant)
-            k_region = keys[:, :, :n_quant, :]
-            v_region = values[:, :, :n_quant, :]
+        new_boundary = max(0, self.offset - r)
+        n_quant_now = new_boundary - self._n_quantized
+        n_sink_in_block = 0
+        if n_quant_now > 0:
+            lo, hi = self._n_quantized, new_boundary
+            sink_local = sorted(p - lo for p in sinks if lo <= p < hi)
+            k_region = self.keys[:, :, lo:hi, :]
+            v_region = self.values[:, :, lo:hi, :]
             if sink_local:
                 # Per the KVSink paper, sinks must be excluded from
                 # quantization *parameter calibration*, not just restored
@@ -122,39 +129,40 @@ class SinkProtectedKVCache(KIVIKVCache):
                         src -= 1
                     if src < 0 or src in sink_set:
                         src = idx + 1
-                        while src in sink_set and src < n_quant - 1:
+                        while src in sink_set and src < n_quant_now - 1:
                             src += 1
-                    if 0 <= src < n_quant and src not in sink_set:
-                        k_region[:, :, idx, :] = keys[:, :, src, :]
-                        v_region[:, :, idx, :] = values[:, :, src, :]
+                    if 0 <= src < n_quant_now and src not in sink_set:
+                        k_region[:, :, idx, :] = self.keys[:, :, lo + src, :]
+                        v_region[:, :, idx, :] = self.values[:, :, lo + src, :]
             k_q = self._quant_dequant_along(k_region, axis=-2)
             v_q = self._quant_dequant_along(v_region, axis=-1)
             # Restore fp16 for sink positions inside the quantized region.
             for idx in sink_local:
-                k_q[:, :, idx, :] = keys[:, :, idx, :]
-                v_q[:, :, idx, :] = values[:, :, idx, :]
+                k_q[:, :, idx, :] = self.keys[:, :, lo + idx, :]
+                v_q[:, :, idx, :] = self.values[:, :, lo + idx, :]
+            self.keys[:, :, lo:hi, :] = k_q
+            self.values[:, :, lo:hi, :] = v_q
             n_sink_in_block = len(sink_local)
-            k_out = mx.concatenate([k_q, keys[:, :, n_quant:, :]], axis=2)
-            v_out = mx.concatenate([v_q, values[:, :, n_quant:, :]], axis=2)
+            self._n_quantized = new_boundary
+            k_all, v_all = self.keys[..., : self.offset, :], self.values[..., : self.offset, :]
 
-        self._account_bytes_with_sinks(B, H, S, D, n_quant, n_sink_in_block)
-        # offset is advanced by the parent call below.
-        return super(KIVIKVCache, self).update_and_fetch(k_out, v_out)
+        self._account_bytes_with_sinks(B, H, S, D, n_quant_now, n_sink_in_block)
+        return k_all, v_all
 
     def _account_bytes_with_sinks(
-        self, B: int, H: int, S: int, D: int, n_quant: int, n_sink: int
+        self, B: int, H: int, S: int, D: int, n_quant_now: int, n_sink: int
     ) -> None:
         """KIVI accounting with sinks split out — no double counting.
 
-        Of the S incoming tokens: ``n_quant - n_sink`` are compressed,
-        ``n_sink`` go to the sink fp16 pool, and ``S - n_quant`` go to the
-        residual fp16 window.  Calling the parent ``_account_bytes`` with a
-        reduced n_quant would inflate its residual term (it derives
-        ``n_res = S - n_quant``), so we account the three pools explicitly.
+        Of the tokens newly quantized this call: ``n_quant_now - n_sink``
+        are compressed and ``n_sink`` go to the sink fp16 pool.  The
+        residual window is reported as its *current* live size (the
+        cumulative fp16 tail), not a per-call delta, so it plateaus at
+        ``residual_length`` once the window fills.
         """
         import math
 
-        n_compressed = n_quant - n_sink
+        n_compressed = n_quant_now - n_sink
         gs = self._group_size
         if n_compressed > 0:
             k_groups = math.ceil(n_compressed / gs)
@@ -166,7 +174,8 @@ class SinkProtectedKVCache(KIVIKVCache):
             self._key_bytes_compressed += k_code_bytes + k_param_bytes
             self._value_bytes_compressed += v_code_bytes + v_param_bytes
         self._sink_fp16_bytes += n_sink * D * 2 * 2 * H * B  # K+V
-        self._residual_fp16_bytes += (S - n_quant) * D * 2 * 2 * H * B
+        n_res = self.offset - self._n_quantized
+        self._residual_fp16_bytes = n_res * D * 2 * 2 * H * B
         self._key_bytes_fp16 += H * B * S * D * 2
         self._value_bytes_fp16 += H * B * S * D * 2
         self._tokens_seen += S

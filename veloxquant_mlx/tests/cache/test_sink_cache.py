@@ -123,6 +123,30 @@ def test_decode_steps_after_prefill() -> None:
     assert c.offset == 45
 
 
+def test_decode_tokens_age_out_of_residual_window() -> None:
+    """Regression for #86 (inherited via KIVIKVCache.update_and_fetch):
+    with S==1 every decode step, tokens must still age out of the fp16
+    residual window once cumulative length exceeds residual_length."""
+    c = _make(residual_length=4, n_sink_tokens=1, kivi_group_size=4)
+    K, V = _kv_with_sinks(S=10, H=1, D=128, sink_pos=(0,))
+    c.update_and_fetch(mx.array(K), mx.array(V))
+
+    rng = np.random.default_rng(11)
+    for _ in range(50):
+        k1 = mx.array(rng.standard_normal((1, 1, 1, 128)).astype(np.float16))
+        v1 = mx.array(rng.standard_normal((1, 1, 1, 128)).astype(np.float16))
+        c.update_and_fetch(k1, v1)
+
+    assert c.offset == 60
+    D, H, B = 128, 1, 1
+    expected_residual = 4 * D * 2 * 2 * H * B
+    assert c.residual_fp16_bytes == expected_residual, (
+        f"residual_fp16_bytes={c.residual_fp16_bytes} did not plateau at "
+        f"{expected_residual} after 50 decode steps past the residual window"
+    )
+    assert c.compressed_key_bytes > 0
+
+
 def _recon_err(cache, K, V):
     ko, _ = cache.update_and_fetch(mx.array(K), mx.array(V))
     mx.eval(ko)

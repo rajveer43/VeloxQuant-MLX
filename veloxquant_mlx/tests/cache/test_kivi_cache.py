@@ -113,3 +113,26 @@ def test_higher_bits_more_compressed_bytes_but_better_quality(b: int) -> None:
     ko, _ = cache.update_and_fetch(k, v)
     mx.eval(ko)
     assert cache.assigned_avg_bits == float(b)
+
+
+def test_decode_tokens_age_out_of_residual_window() -> None:
+    """Regression for #86: with S==1 every decode step, tokens must still
+    age out of the fp16 residual window once total cumulative length
+    exceeds residual_length — the residual byte count must plateau, not
+    grow unboundedly with decode steps."""
+    cache = _make(residual_length=4, kivi_group_size=4)
+    k, v = _kv(1, 1, 10, 128, seed=7)
+    cache.update_and_fetch(k, v)  # prefill: 10 tokens, 6 quantized, 4 residual
+
+    for t in range(50):
+        k1, v1 = _kv(1, 1, 1, 128, seed=200 + t)
+        cache.update_and_fetch(k1, v1)
+
+    assert cache.offset == 60
+    D, H, B = 128, 1, 1
+    expected_residual = 4 * D * 2 * 2 * H * B  # residual_length * K+V * fp16 bytes
+    assert cache.residual_fp16_bytes == expected_residual, (
+        f"residual_fp16_bytes={cache.residual_fp16_bytes} did not plateau at "
+        f"{expected_residual} after 50 decode steps past the residual window"
+    )
+    assert cache.compressed_key_bytes > 0
