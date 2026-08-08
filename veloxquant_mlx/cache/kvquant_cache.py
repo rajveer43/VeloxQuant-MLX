@@ -56,6 +56,11 @@ class KVQuantKVCache(_MLXKVCache):
             ``kvquant_group_size``       (int, default 32; reserved for grouped fits),
             ``kvquant_lloyd_iters``      (int, default 8),
             ``kvquant_refit_interval``   (int, default 0 = freeze prefill levels).
+
+    No ``.bits`` attribute — mlx_lm's SDPA checks ``hasattr(cache, "bits")``
+    to route to its quantized-matmul kernel path, which expects a different
+    cache layout (mx.quantize's native tuple format) and a ``.group_size``
+    attribute this cache doesn't have. We expose ``.nuq_bits`` instead.
     """
 
     def __init__(self, config: Any) -> None:
@@ -170,7 +175,13 @@ class KVQuantKVCache(_MLXKVCache):
     # Properties
     # ------------------------------------------------------------------
     @property
-    def bits(self) -> int:
+    def nuq_bits(self) -> int:
+        # Deliberately not named `.bits` — mlx_lm's SDPA checks
+        # `hasattr(cache, "bits")` to route to its quantized-matmul kernel,
+        # which expects mx.quantize's native tuple layout and a `.group_size`
+        # attribute this cache doesn't have. Exposing `.bits` here would
+        # silently hijack attention dispatch. See other *_cache.py classes
+        # (e.g. kivi_cache.py, turboquant_rvq_cache.py) for the same guard.
         return self._bits
 
     @property
