@@ -56,9 +56,7 @@ class TestAllocateBitsRateQuant:
         of a non-contiguous bit_choices set, not merely within [min, max]."""
         sensitivities = [1.0, 5.0, 0.2, 3.0, 0.5]
         choices = (0, 1, 2, 4, 6, 8)
-        alloc = allocate_bits_ratequant(
-            sensitivities, target_avg_bits=2.6, bit_choices=choices
-        )
+        alloc = allocate_bits_ratequant(sensitivities, target_avg_bits=2.6, bit_choices=choices)
         assert all(a in choices for a in alloc), alloc
 
     def test_non_contiguous_bit_choices_membership_randomized(self) -> None:

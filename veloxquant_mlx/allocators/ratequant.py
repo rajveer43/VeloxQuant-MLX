@@ -224,11 +224,11 @@ def allocate_bits_ratequant(
     target_total = int(round(target_avg_bits * N))
     current_total = sum(alloc)
 
-    def _next_choice(value: int) -> Optional[int]:
+    def _next_choice(value: int) -> int | None:
         idx = choices_sorted.index(value)
         return choices_sorted[idx + 1] if idx + 1 < len(choices_sorted) else None
 
-    def _prev_choice(value: int) -> Optional[int]:
+    def _prev_choice(value: int) -> int | None:
         idx = choices_sorted.index(value)
         return choices_sorted[idx - 1] if idx > 0 else None
 
