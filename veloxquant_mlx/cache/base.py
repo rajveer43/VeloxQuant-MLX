@@ -935,6 +935,14 @@ class KVCacheBuilder:
         role_by_layer: dict[int, tuple[str, int]] = {
             attn_layer_idx[k]: roles[k] for k in range(len(attn_layer_idx))
         }
+        # Each anchor's published segment is consumed by every reuse layer in
+        # its group before the coordinator can reclaim it (#80). Seed every
+        # group at 0 first so a trailing degenerate group (anchor with no
+        # reusers) doesn't fall through to some other group's reader count.
+        n_readers_by_group: dict[int, int] = {group_id: 0 for _, group_id in roles}
+        for role, group_id in roles:
+            if role == "reuse":
+                n_readers_by_group[group_id] += 1
 
         caches = []
         for i, layer in enumerate(layers):
@@ -954,7 +962,13 @@ class KVCacheBuilder:
                 xquant_max_ctx=config.xquant_max_ctx,
             )
             caches.append(
-                XQuantKVCache(layer_cfg, role=role, group_id=group_id, coordinator=coordinator)
+                XQuantKVCache(
+                    layer_cfg,
+                    role=role,
+                    group_id=group_id,
+                    coordinator=coordinator,
+                    n_readers=n_readers_by_group[group_id],
+                )
             )
         return caches
 
