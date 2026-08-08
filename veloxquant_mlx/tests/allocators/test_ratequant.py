@@ -11,6 +11,7 @@ from veloxquant_mlx import (
     KVCacheFactory,
     QuantizerConfigError,
     allocate_bits_ratequant,
+    calibrate_layer_sensitivities,
     fit_distortion_curve,
 )
 
@@ -139,3 +140,57 @@ class TestForModelPerLayer:
         cfg = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=[1, 1, 1], seed=0)
         with pytest.raises(QuantizerConfigError, match="length"):
             KVCacheBuilder.for_model(model, cfg)
+
+
+class _FakeTokenizer:
+    def encode(self, prompt: str) -> list[int]:
+        return [ord(c) % 100 for c in prompt][:16]
+
+
+class TestCalibrateLayerSensitivitiesRestoresMakeCache:
+    """Regression for #73: a raising forward pass must not permanently leave
+    model.make_cache pointed at the calibration lambda."""
+
+    class _RaisingModel:
+        def __init__(self) -> None:
+            self.layers = [1, 2, 3]
+            self.make_cache = "original_make_cache"
+
+        def __call__(self, *_a, **_k):
+            raise RuntimeError("simulated forward-pass failure")
+
+    class _RaisingModelNoOriginal:
+        """A model that never had its own make_cache attribute."""
+
+        def __init__(self) -> None:
+            self.layers = [1, 2]
+
+        def __call__(self, *_a, **_k):
+            raise RuntimeError("simulated forward-pass failure")
+
+    def test_restores_original_make_cache_after_forward_pass_raises(self) -> None:
+        model = self._RaisingModel()
+        with pytest.raises(RuntimeError, match="simulated forward-pass failure"):
+            calibrate_layer_sensitivities(model, _FakeTokenizer(), prompts=["hello world"])
+        assert model.make_cache == "original_make_cache"
+
+    def test_deletes_patched_make_cache_after_raise_when_no_original(self) -> None:
+        model = self._RaisingModelNoOriginal()
+        with pytest.raises(RuntimeError, match="simulated forward-pass failure"):
+            calibrate_layer_sensitivities(model, _FakeTokenizer(), prompts=["hello world"])
+        assert not hasattr(model, "make_cache")
+
+    def test_deletes_patched_make_cache_after_success_when_no_original(self) -> None:
+        """Even on the success path, a model with no original make_cache must
+        not be left with the calibration lambda attached."""
+
+        class _SucceedingModel:
+            def __init__(self) -> None:
+                self.layers = [1, 2]
+
+            def __call__(self, *_a, **_k):
+                return None
+
+        model = _SucceedingModel()
+        calibrate_layer_sensitivities(model, _FakeTokenizer(), prompts=["hi"])
+        assert not hasattr(model, "make_cache")

@@ -108,17 +108,20 @@ def calibrate_layer_sensitivities(
     original = getattr(model, "make_cache", None)
     model.make_cache = lambda *_a, **_k: probes
 
-    for i, prompt in enumerate(prompts):
-        toks = tokenizer.encode(prompt)
-        if len(toks) > seq_len:
-            toks = toks[:seq_len]
-        toks_mx = mx.array(toks).reshape(1, -1)
-        _ = model(toks_mx, cache=probes)
-        if verbose:
-            print(f"  [calib] {i + 1}/{len(prompts)} (len={len(toks)})")
-
-    if original is not None:
-        model.make_cache = original
+    try:
+        for i, prompt in enumerate(prompts):
+            toks = tokenizer.encode(prompt)
+            if len(toks) > seq_len:
+                toks = toks[:seq_len]
+            toks_mx = mx.array(toks).reshape(1, -1)
+            _ = model(toks_mx, cache=probes)
+            if verbose:
+                print(f"  [calib] {i + 1}/{len(prompts)} (len={len(toks)})")
+    finally:
+        if original is not None:
+            model.make_cache = original
+        elif hasattr(model, "make_cache"):
+            del model.make_cache
 
     weights = [max(p.sensitivity, 1e-6) for p in probes]
     return weights
