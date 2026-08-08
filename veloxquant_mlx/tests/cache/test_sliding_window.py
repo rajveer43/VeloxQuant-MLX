@@ -91,13 +91,7 @@ def test_sliding_window_rejected_via_builder() -> None:
     from veloxquant_mlx.core.exceptions import QuantizerConfigError
 
     with pytest.raises(QuantizerConfigError, match="sliding_window"):
-        (
-            KVCacheBuilder()
-            .with_method("h2o")
-            .with_head_dim(16)
-            .with_sliding_window(8)
-            .build()
-        )
+        (KVCacheBuilder().with_method("h2o").with_head_dim(16).with_sliding_window(8).build())
 
 
 @pytest.mark.parametrize("method,extra", [("qjl", {"jl_dim": 8}), ("polar", {})])
