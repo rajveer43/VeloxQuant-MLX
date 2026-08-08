@@ -69,7 +69,15 @@ def pyramid_budgets(
     (every layer gets ``avg_budget`` → reduces to uniform H2O).
 
     The minimum budget is floored at ``n_sink + 1`` so every layer can always
-    hold its sinks plus at least one token.
+    hold its sinks plus at least one token. For ``beta > 2.0`` the raw linear
+    taper's low end would fall below this floor; naively clamping only the
+    low layers up (with no compensating reduction elsewhere) would silently
+    inflate the realized mean above ``avg_budget`` (#76). Instead, any excess
+    from floor-clamping is redistributed away from the *unclamped* layers —
+    proportional to their slack above the floor, iterated until stable — so
+    the taper shape (steeper for larger ``beta``) is preserved while the mean
+    is pulled back to (approximately, subject to integer rounding)
+    ``avg_budget`` for every ``beta >= 1.0``, not just ``beta <= 2.0``.
 
     Args:
         n_layers:   Number of attention-bearing layers.
@@ -79,7 +87,7 @@ def pyramid_budgets(
 
     Returns:
         Length-``n_layers`` list of per-layer budgets (ints), decreasing, whose
-        mean is approximately ``avg_budget``.
+        mean is approximately ``avg_budget`` regardless of ``beta``.
     """
     if n_layers <= 0:
         return []
@@ -90,17 +98,42 @@ def pyramid_budgets(
 
     floor = n_sink + 1
     # Half-width of the taper around the mean: at beta=2 the top layer gets
-    # 2*avg above floor-adjusted centre; symmetric linear ramp keeps the mean.
+    # 2*avg above floor-adjusted centre; symmetric linear ramp keeps the mean
+    # (before floor-clamping is applied below).
     span = (avg_budget - floor) * (beta - 1.0)
     hi = avg_budget + span
     lo = avg_budget - span
 
-    budgets: list[int] = []
+    values = []
     for i in range(n_layers):
         frac = i / (n_layers - 1)  # 0.0 at layer 0 → 1.0 at last layer
         b = hi + (lo - hi) * frac  # linear taper hi → lo
-        budgets.append(max(int(round(b)), floor))
-    return budgets
+        values.append(b)
+
+    # Water-filling renormalization: clamp sub-floor layers up to floor, then
+    # remove the resulting total excess (above avg_budget * n_layers) from
+    # the still-unclamped layers, proportional to their slack above floor.
+    # Reclamping can push additional layers to the floor, so repeat until no
+    # layer's value moves below floor between iterations (at most one newly
+    # clamped layer per pass, hence n_layers passes always suffice).
+    target_total = float(avg_budget) * n_layers
+    clamped = [False] * n_layers
+    for _ in range(n_layers):
+        for i in range(n_layers):
+            if values[i] < floor:
+                values[i] = float(floor)
+                clamped[i] = True
+        excess = sum(values) - target_total
+        if excess <= 1e-9:
+            break
+        free_idx = [i for i in range(n_layers) if not clamped[i]]
+        free_slack_total = sum(values[i] - floor for i in free_idx)
+        if not free_idx or free_slack_total <= 1e-9:
+            break
+        for i in free_idx:
+            values[i] -= excess * (values[i] - floor) / free_slack_total
+
+    return [max(int(round(v)), floor) for v in values]
 
 
 @dataclass
