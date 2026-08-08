@@ -577,6 +577,20 @@ class KVCacheFactory:
             )
 
         if config.sliding_window is not None:
+            if config.method not in STANDALONE_METHODS:
+                raise QuantizerConfigError(
+                    f"KVCacheFactory: sliding_window is only compatible with "
+                    f"standalone methods (see STANDALONE_METHODS: "
+                    f"{sorted(STANDALONE_METHODS)}) — method {config.method!r} "
+                    f"produces a cache implementing mlx_lm.models.cache.KVCache's "
+                    f"update_and_fetch protocol, not VeloxQuant's own "
+                    f"append_key/append_value/attend interface that "
+                    f"SlidingWindowKVCache wraps, so the result would have "
+                    f"neither method working. Drop sliding_window for this "
+                    f"method — several mlx_lm-protocol methods (h2o, tova, "
+                    f"streaming_llm, snapkv, etc.) already implement their own "
+                    f"budget/window-based eviction."
+                )
             cache = SlidingWindowKVCache(cache, window_size=config.sliding_window)
 
         return cache
