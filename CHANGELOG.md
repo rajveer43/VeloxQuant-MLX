@@ -4,6 +4,19 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 <!-- version list -->
 
+## v0.43.7 (2026-08-09)
+
+### Bug Fixes
+
+- **ci**: Release.yml re-ran full release steps when nothing actually changed
+  ([`828c627`](https://github.com/rajveer43/VeloxQuant-MLX/commit/828c6277f3b181d957ba1e76787e11f0300c35a4))
+
+### Documentation
+
+- **readme**: Replace static status claims with live CI/PyPI badges
+  ([`38a4752`](https://github.com/rajveer43/VeloxQuant-MLX/commit/38a47527b07baac38f4c8020fe7f54204935fb24))
+
+
 ## v0.43.6 (2026-08-09)
 
 ### Bug Fixes
