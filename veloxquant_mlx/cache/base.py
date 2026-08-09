@@ -95,7 +95,7 @@ class KVCacheConfig:
         "nestedkv",
         "amc",
         "a2ats",
-    ] = "turboquant_prod"
+    ] = "turboquant_rvq"
     head_dim: int = 128
     bit_width_inlier: Union[int, list] = 2
     bit_width_outlier: Optional[int] = None

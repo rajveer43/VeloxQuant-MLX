@@ -105,6 +105,23 @@ def test_for_model_accepts_serving_compatible_method() -> None:
     assert len(caches) == 2
 
 
+def test_default_method_is_serving_compatible() -> None:
+    """Regression test for issue #130: KVCacheConfig()'s default method used
+    to be "turboquant_prod", a STANDALONE_METHODS entry -- so a user who
+    built a config with no explicit `method=` and then called
+    patch_model_kv_cache()/for_model() on a live model got refused
+    immediately, even though nothing about their code named a standalone
+    method. The out-of-the-box default must always be one for_model()
+    actually accepts.
+    """
+    default_method = KVCacheConfig().method
+    assert default_method not in STANDALONE_METHODS
+
+    model = _make_fake_model()
+    caches = KVCacheBuilder.for_model(model, KVCacheConfig())
+    assert len(caches) == 2
+
+
 def test_for_model_accepts_all_non_standalone_methods() -> None:
     """Every method NOT in STANDALONE_METHODS must still be accepted by the
     refusal check itself (build may still fail later for unrelated
