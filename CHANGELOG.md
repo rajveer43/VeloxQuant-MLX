@@ -4,6 +4,14 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 <!-- version list -->
 
+## v0.44.1 (2026-08-09)
+
+### Bug Fixes
+
+- **cache**: Default KVCacheConfig method to turboquant_rvq, not turboquant_prod
+  ([`f6e9434`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f6e94348b4eb5ffd71b12a13019f0a52a0a8c6d2))
+
+
 ## v0.44.0 (2026-08-09)
 
 ### Features
