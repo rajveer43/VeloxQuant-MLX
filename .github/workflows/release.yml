@@ -74,6 +74,18 @@ jobs:
             exit 1
           fi
 
+          # "No release will be made" still prints the *current* (unchanged)
+          # version to stdout, not an empty string -- e.g. "0.43.6" when
+          # 0.43.6 was already released and nothing since qualifies (a
+          # docs-only merge landing right after a real release). Treating
+          # that as next_version made every downstream step run again for
+          # a version that was never actually bumped: "Commit, tag, and
+          # push" found nothing staged (README/CHANGELOG/pyproject.toml
+          # were already at that version) and failed on an empty commit.
+          if grep -qi "no release will be made" version_err.txt; then
+            NEXT_VERSION=""
+          fi
+
           echo "next_version=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: No release needed
