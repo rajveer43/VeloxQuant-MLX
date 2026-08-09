@@ -182,7 +182,7 @@ the [documentation site](https://veloxquant-mlx.netlify.app/docs/algorithms/over
 
 | Method | `method=` | What it does | Compression | Category | New in |
 |---|---|---|---|---|---|
-| [TurboQuant RVQ](https://veloxquant-mlx.netlify.app/docs/algorithms/rvq) | `turboquant_rvq` | Residual VQ, zero calibration — **the default** | 7.5× @ 1-bit | 🧮 accounting_only | — |
+| [TurboQuant RVQ](https://veloxquant-mlx.netlify.app/docs/algorithms/rvq) | `turboquant_rvq` | Residual VQ, zero calibration — **the default** | 7.5× @ 1-bit (accounting); measured -12.8% peak RSS vs fp16 at 4k-token context | 🔻RSS | — |
 | [VecInfer](https://veloxquant-mlx.netlify.app/docs/algorithms/vecinfer) | `vecinfer` | Dual-transform product VQ, Metal-accelerated | 16× | 🧮 accounting_only | 0.4.0 |
 | [SpectralQuant](https://veloxquant-mlx.netlify.app/docs/algorithms/spectral) | `spectral` | Rotate keys into eigenbasis — best quality-per-bit | 5.33× | ⚙️ standalone | 0.6.0 |
 | [RateQuant](https://veloxquant-mlx.netlify.app/docs/algorithms/ratequant) | *(allocator)* | Per-layer mixed precision via reverse-waterfilling | 5.2× @ 1.5 avg bit | 🧮 accounting_only | — |
