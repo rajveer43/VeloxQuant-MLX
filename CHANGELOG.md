@@ -4,6 +4,14 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 <!-- version list -->
 
+## v0.43.5 (2026-08-09)
+
+### Bug Fixes
+
+- **release**: CHANGELOG.md was never auto-updated; add mode=update + backfill
+  ([`cd27c1e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cd27c1eecd8d09b4b5632f31bf08d3c17103dad9))
+
+
 ## [0.43.4] — 2026-08-09
 
 ### Fixed
