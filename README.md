@@ -12,11 +12,18 @@
 
 <p>
   <a href="https://pypi.org/project/VeloxQuant-MLX/"><img src="https://img.shields.io/pypi/v/VeloxQuant-MLX?style=flat-square&logo=pypi&logoColor=white&color=0078d4" alt="PyPI"/></a>
+  <a href="https://pypi.org/project/VeloxQuant-MLX/"><img src="https://img.shields.io/pypi/dm/VeloxQuant-MLX?style=flat-square&logo=pypi&logoColor=white&color=0078d4" alt="PyPI downloads"/></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11+-0078d4?style=flat-square&logo=python&logoColor=white" alt="Python"/></a>
   <img src="https://img.shields.io/badge/platform-Apple%20Silicon%20M1+-black?style=flat-square&logo=apple&logoColor=white" alt="Platform"/>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License"/></a>
-  <img src="https://img.shields.io/badge/tests-1759%20passing-22c55e?style=flat-square" alt="Tests"/>
   <a href="https://doi.org/10.5281/zenodo.20647294"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20647294-1f6feb?style=flat-square" alt="DOI"/></a>
+</p>
+
+<p>
+  <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/release.yml?branch=master&style=flat-square&label=release%20%2B%20full%20test%20suite&logo=github" alt="Release build status"/></a>
+  <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/non-metal-unit.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/non-metal-unit.yml?branch=master&style=flat-square&label=non-metal%20unit&logo=github" alt="Non-Metal unit tests"/></a>
+  <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/lint.yml?branch=master&style=flat-square&label=lint&logo=github" alt="Lint status"/></a>
+  <img src="https://img.shields.io/badge/tests-1759%20passing-22c55e?style=flat-square" alt="Tests"/>
 </p>
 
 <p>
