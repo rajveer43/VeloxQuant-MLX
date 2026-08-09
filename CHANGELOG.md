@@ -4,6 +4,25 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 <!-- version list -->
 
+## v0.44.2 (2026-08-09)
+
+### Bug Fixes
+
+- **cache**: Store turboquant_rvq keys genuinely packed, not dequantized fp16
+  ([`ae04c26`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ae04c26f5ebd48d0bdeb0e709a52233b10441967))
+
+### Documentation
+
+- Correct turboquant_rvq API examples and update benchmark numbers
+  ([`4bf0cf3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4bf0cf3b67fe256f0898510783aa3698ac0255c0))
+
+- Make TurboQuant RVQ page read as a normal feature page
+  ([`53069d6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/53069d657fbd589fd1b4c5a43cf1218856ac9772))
+
+- Record turboquant_rvq packed-storage investigation and update roadmap
+  ([`884bbd8`](https://github.com/rajveer43/VeloxQuant-MLX/commit/884bbd831c409e24f848a273debb9967d358d170))
+
+
 ## v0.44.1 (2026-08-09)
 
 ### Bug Fixes
