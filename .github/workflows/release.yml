@@ -55,6 +55,8 @@ jobs:
 
       - name: Determine next version (dry run)
         id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Do NOT discard stderr or swallow the exit code here. PSR exits 2
           # with "no release will be made" when there is genuinely nothing to
@@ -80,6 +82,8 @@ jobs:
 
       - name: Bump pyproject.toml/__init__.py and prepend CHANGELOG entry (no commit yet)
         if: steps.version.outputs.next_version != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: semantic-release version --no-commit --no-tag --no-push --no-vcs-release
 
       - name: Sync README badges + landing page (version + live test count)
@@ -109,6 +113,30 @@ jobs:
 
       - name: Publish GitHub Release
         if: steps.version.outputs.next_version != ''
-        run: semantic-release publish
+        run: |
+          # `semantic-release publish` does NOT create a GitHub Release --
+          # it only uploads build artifacts to one that already exists. With
+          # --no-vcs-release on the bump step (deliberate: this workflow tags
+          # and pushes manually, see the step above), nothing ever created
+          # the release itself, so `publish` logged "No release corresponds
+          # to tag ..., can't upload dists" and exited 0 -- a silent no-op
+          # that looked like success. Create the release directly instead,
+          # extracting this version's section from CHANGELOG.md for the
+          # release notes (the same content `semantic-release version` just
+          # prepended there).
+          VERSION="${{ steps.version.outputs.next_version }}"
+          awk -v ver="## [${VERSION}]" '
+            index($0, ver) == 1 { found=1; print; next }
+            found && index($0, "## [") == 1 { exit }
+            found { print }
+          ' CHANGELOG.md > release_notes.md
+
+          if [ ! -s release_notes.md ]; then
+            echo "::warning::No CHANGELOG.md section found for v${VERSION}; publishing release with an empty body."
+          fi
+
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --notes-file release_notes.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
