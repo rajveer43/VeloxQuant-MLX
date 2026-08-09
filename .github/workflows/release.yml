@@ -124,10 +124,14 @@ jobs:
           # extracting this version's section from CHANGELOG.md for the
           # release notes (the same content `semantic-release version` just
           # prepended there).
+          # semantic-release's auto-generated heading is "## v<version> (<date>)"
+          # (no brackets) -- distinct from this file's older hand-written
+          # "## [<version>] — <date>" entries. Match either so a future
+          # switch back to hand-editing doesn't silently break this again.
           VERSION="${{ steps.version.outputs.next_version }}"
-          awk -v ver="## [${VERSION}]" '
-            index($0, ver) == 1 { found=1; print; next }
-            found && index($0, "## [") == 1 { exit }
+          awk -v v1="## v${VERSION} " -v v2="## [${VERSION}]" '
+            (index($0, v1) == 1 || index($0, v2) == 1) { found=1; print; next }
+            found && index($0, "## ") == 1 { exit }
             found { print }
           ' CHANGELOG.md > release_notes.md
 
