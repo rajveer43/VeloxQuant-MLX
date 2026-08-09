@@ -4,6 +4,14 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 <!-- version list -->
 
+## v0.43.6 (2026-08-09)
+
+### Bug Fixes
+
+- **ci**: Release-notes extraction didn't match semantic-release's real heading format
+  ([`4344666`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4344666bff7db1707ef17b33c48dda5869e93bf0))
+
+
 ## v0.43.5 (2026-08-09)
 
 ### Bug Fixes
