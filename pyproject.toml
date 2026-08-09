@@ -120,6 +120,13 @@ changelog_file = "CHANGELOG.md"
 exclude_commit_patterns = [
     "^chore\\(release\\):",
 ]
+# Default mode is "init" -- regenerate-from-scratch, only if CHANGELOG.md
+# doesn't already exist. This repo's CHANGELOG.md was hand-authored before
+# any release ran, so every release silently no-op'd on it forever (no
+# error, no diff) until this was set. "update" prepends each new version's
+# section above the `<!-- version list -->` marker in the existing file.
+mode = "update"
+insertion_flag = "<!-- version list -->"
 
 [tool.semantic_release.changelog.default_templates]
 changelog_file = "CHANGELOG.md"
