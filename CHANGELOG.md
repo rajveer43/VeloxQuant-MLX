@@ -4,6 +4,14 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 <!-- version list -->
 
+## v0.44.0 (2026-08-09)
+
+### Features
+
+- **release**: Publish to TestPyPI then PyPI via Trusted Publishing (OIDC)
+  ([`61d49f9`](https://github.com/rajveer43/VeloxQuant-MLX/commit/61d49f99695fa7ea5db984bf50e2a03c8b20f960))
+
+
 ## v0.43.7 (2026-08-09)
 
 ### Bug Fixes
