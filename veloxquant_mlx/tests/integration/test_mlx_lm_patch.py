@@ -26,6 +26,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import mlx.core as mx
+import pytest
 
 from veloxquant_mlx.cache.base import KVCacheConfig
 from veloxquant_mlx.core.exceptions import QuantizerConfigError

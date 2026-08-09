@@ -71,8 +71,8 @@ def patch_model_kv_cache(model: Any, config: KVCacheConfig) -> list[Any]:
     def _make_cache(*_args: Any, **_kwargs: Any) -> list[Any]:
         return KVCacheBuilder.for_model(model, config)
 
-    model.make_cache = _make_cache
     caches = _make_cache()
+    model.make_cache = _make_cache
     print(
         f"[veloxquant_mlx] Wired {len(caches)} layer cache(s) with "
         f"{config.method!r} (fresh per call)."
