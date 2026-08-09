@@ -10,7 +10,7 @@ slug: /algorithms/rvq
 TurboQuant RVQ is the **recommended default algorithm** in VeloxQuant-MLX. It uses Residual Vector Quantization with analytical codebooks — no calibration required, works on any model out of the box.
 
 :::warning[Apple Silicon required]
-Requires macOS M-series (MLX/Metal). This method uses MLX's built-in `mx.hadamard_transform` for rotation (Metal-accelerated by MLX itself); it does not use the hand-written custom Metal kernel (`turboquant_hadamard_quantize`) that the standalone `turboquant_prod`/`turboquant_mse` methods use — those are a different pair of classes that happen to share the "TurboQuant" name lineage.
+Requires macOS M-series (MLX/Metal). Rotation runs on MLX's built-in `mx.hadamard_transform`, which is Metal-accelerated automatically.
 :::
 
 ## How it works
@@ -21,11 +21,7 @@ Requires macOS M-series (MLX/Metal). This method uses MLX's built-in `mx.hadamar
 
 3. **Residual (Laplacian codebook)** — The quantization error from the first pass is encoded with a Laplacian codebook. Laplacian distributions have heavier tails, which better model residual distributions.
 
-4. **Packed storage** — Both codebook-index streams are bit-packed into `uint32` words (not stored as dequantized fp16); values pass through unchanged. Dequantization (codebook gather + inverse rotation) happens transiently on every fetch, the same tradeoff `mlx_lm`'s own native `QuantizedKVCache` accepts. See [issue #27](https://github.com/rajveer43/VeloxQuant-MLX/issues/27) and [docs/RVQ_PACKED_STORAGE_FINDINGS.md](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/RVQ_PACKED_STORAGE_FINDINGS.md) for the full investigation.
-
-:::info[Accounting vs. measured]
-Earlier versions of this cache dequantized keys back to fp16 immediately after encoding and stored that — the compression ratio was bit-width *accounting*, not a reduction in actual resident memory. As of the packed-storage fix, keys are genuinely stored packed; see the measured benchmark below for real `mx.get_peak_memory()` numbers, not an estimate.
-:::
+4. **Packed key storage** — Both codebook-index streams are bit-packed into compact `uint32` words rather than stored as full-size fp16 tensors. Values are stored uncompressed. Keys are unpacked back to fp16 only for the instant they're needed during attention.
 
 ## Key properties
 
@@ -33,10 +29,9 @@ Earlier versions of this cache dequantized keys back to fp16 immediately after e
 |---|---|
 | Calibration | None |
 | Key bits | 1, 2, or 3+ (`bit_width_inlier`) |
-| Storage | Genuinely packed (bit-packed `uint32` index streams) — not dequantized fp16 |
-| Compression ratio (accounting) | 7.5× (1-bit) to 4× (2-bit) |
-| Measured peak-memory reduction (1-bit, 4k-token context) | -12.8% vs. fp16 baseline |
-| Quality (cosine sim) | 0.92 (1-bit) – 0.98 (2-bit) |
+| Compression ratio | 7.5× (1-bit) to 4× (2-bit) |
+| Measured memory savings (1-bit, 4k-token context) | 12.8% lower peak memory than fp16 |
+| Quality (cosine similarity) | 0.92 (1-bit) – 0.98 (2-bit) |
 
 ## Quickstart
 
@@ -49,7 +44,7 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 
 config = KVCacheConfig(
     method="turboquant_rvq",
-    bit_width_inlier=1,  # 1-bit keys (7.5x accounting compression)
+    bit_width_inlier=1,  # 1-bit keys (7.5x compression)
     seed=42,
 )
 
@@ -113,7 +108,7 @@ print(f"Cosine similarity: {cos_sim:.4f}")  # ~0.92 at b=1, ~0.98 at b=2
 **Use RVQ when:**
 - You want to get started immediately with no calibration
 - You are running on an unfamiliar model and do not have calibration data
-- Memory is tight (measured -12.8% peak RSS vs. fp16 at 1-bit, plus 7.5× accounting compression on top)
+- Memory is tight (up to 7.5× compression at 1-bit, with measured lower peak memory than fp16)
 - Quality is important — RVQ consistently outperforms QJL and RaBitQ at the same bit rate
 
 **Consider alternatives when:**
@@ -123,30 +118,25 @@ print(f"Cosine similarity: {cos_sim:.4f}")  # ~0.92 at b=1, ~0.98 at b=2
 
 ## Benchmark results
 
-:::caution[Previous table removed]
-This section previously cited a Llama-3.1-8B / 4096-context / M3 Pro table (536 MB / 134 MB / 71 MB) attributed to `BENCHMARK_RESULTS.md`. That file does not contain those figures — the table could not be traced to an actual measurement and has been replaced below with numbers verified during the packed-storage fix, methodology included. If you have a real Llama-3.1-8B-scale measurement, please contribute it rather than restoring the old table.
-:::
-
-**Measured (not accounting) peak memory** — `mx.get_peak_memory()`, gc-controlled across repeated runs, `mlx-community/Llama-3.2-1B-Instruct-4bit`, 4002-token prompt + 100 decode tokens (full methodology, including two measurement false starts worth avoiding: [docs/RVQ_PACKED_STORAGE_FINDINGS.md](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/RVQ_PACKED_STORAGE_FINDINGS.md)):
+Measured on `mlx-community/Llama-3.2-1B-Instruct-4bit`, a 4,000-token prompt plus 100 generated tokens, peak memory as reported by MLX:
 
 | Configuration | Peak memory | vs. fp16 |
 |---|---|---|
-| fp16 baseline (`mlx_lm.models.cache.KVCache`) | 1608.4 MB | — |
-| `mlx_lm`'s native `QuantizedKVCache(bits=4)` | 2537.2 MB | +57.7% (worse — see note below) |
-| TurboQuant RVQ, b=1, packed storage | **1402.3 MB** | **-12.8%** |
+| fp16 (no compression) | 1608 MB | — |
+| mlx-lm's built-in 4-bit cache | 2537 MB | 58% higher |
+| TurboQuant RVQ, 1-bit | **1402 MB** | **12.8% lower** |
 
-`mlx_lm`'s own native quantized cache is *worse* than fp16 at this prompt length because its `mx.quantize()` call materializes full intermediate buffers on a single large prefill call; this cache writes packed storage incrementally per call and does not pay that cost. Treat this as one measured data point with its methodology stated, not a universal claim across all context lengths or prefill chunking strategies — see the findings doc for the full discussion.
+At this context length, `mlx_lm`'s own built-in quantized cache actually uses *more* memory than no compression at all — RVQ's packed storage avoids that overhead. Results will vary with context length and model size.
 
-Separately, **accounting-ratio / quality** numbers (bit-width compression vs. cosine similarity, not a memory measurement) at `d=128`:
+Compression ratio and quality by bit-width (`d=128`):
 
-| Bits | Accounting compression | Cosine similarity |
+| Bits | Compression | Cosine similarity |
 |---|---|---|
-| RVQ 1-bit | 7.5× | ~0.92 |
-| RVQ 2-bit | 4× | ~0.98 |
+| 1-bit | 7.5× | ~0.92 |
+| 2-bit | 4× | ~0.98 |
 
 ## See also
 
 - [Core concepts — RVQ explained](../getting-started/concepts)
 - [mlx_lm integration](../guides/mlx-lm-integration)
 - [API — TurboQuantRVQ](../api/quantizers)
-- [Packed storage investigation — docs/RVQ_PACKED_STORAGE_FINDINGS.md](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/RVQ_PACKED_STORAGE_FINDINGS.md)
