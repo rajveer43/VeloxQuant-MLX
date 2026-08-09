@@ -207,6 +207,63 @@ def test_coordinator_max_ctx_guard() -> None:
         coord.publish_primary(0, 0, 16, K, V)
 
 
+# ------------------------------------------------------------------
+# Regression for #79: coordinator must reclaim published entries once
+# consumed, or long generations exhaust minicache_max_ctx and crash.
+# ------------------------------------------------------------------
+
+
+def test_coordinator_round_trip_reclaims() -> None:
+    coord = MiniCacheCoordinator()
+    K, V = _kv(16)
+    coord.publish_primary(0, token_start=0, n_tokens=16, keys=K, values=V, n_readers=1)
+    assert coord.published_tokens(0) == 16
+    entry = coord.fetch_primary(0, 0)
+    assert entry is not None
+    np.testing.assert_array_equal(np.array(entry.keys.tolist()), np.array(K.tolist()))
+    # Once the single expected reader has fetched it, the entry is reclaimed
+    # and its tokens credited back — published_tokens tracks live (unconsumed)
+    # tokens, not a lifetime total.
+    assert coord.published_tokens(0) == 0
+    assert coord.fetch_primary(0, 999) is None  # missing offset
+    assert coord.fetch_primary(0, 0) is None  # already reclaimed
+
+
+def test_publish_past_max_ctx_does_not_raise_after_reclaim() -> None:
+    coord = MiniCacheCoordinator(max_ctx=8)
+    for i in range(20):
+        K, V = _kv(1, seed=i)
+        coord.publish_primary(0, token_start=i, n_tokens=1, keys=K, values=V, n_readers=1)
+        coord.fetch_primary(0, i)
+    assert coord.published_tokens(0) == 0
+
+
+def test_group_size_three_both_mergers_consume_before_reclaim() -> None:
+    coord = MiniCacheCoordinator()
+    K, V = _kv(16)
+    coord.publish_primary(0, token_start=0, n_tokens=16, keys=K, values=V, n_readers=2)
+    assert coord.published_tokens(0) == 16  # still live: 0 of 2 readers fetched
+
+    coord.fetch_primary(0, 0)
+    assert coord.published_tokens(0) == 16  # still live: 1 of 2 readers fetched
+
+    coord.fetch_primary(0, 0)
+    assert coord.published_tokens(0) == 0  # reclaimed: both readers fetched
+
+
+def test_for_model_decode_past_max_ctx_does_not_raise() -> None:
+    """End-to-end via for_model: decode past minicache_max_ctx must not raise,
+    for both simple pairs and group_size=3 (one primary : two mergers)."""
+    for group_size in (2, 3):
+        caches = _build(
+            6, minicache_start_frac=0.0, minicache_group_size=group_size, minicache_max_ctx=8
+        )
+        for _ in range(20):
+            K, V = _kv(1)
+            for c in caches:
+                c.update_and_fetch(K, V)
+
+
 def test_determinism() -> None:
     c1 = _build(8, seed=11)
     c2 = _build(8, seed=11)

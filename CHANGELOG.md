@@ -2,6 +2,136 @@
 
 All notable changes to **VeloxQuant-MLX** are documented here.
 
+<!-- version list -->
+
+## v0.44.2 (2026-08-09)
+
+### Bug Fixes
+
+- **cache**: Store turboquant_rvq keys genuinely packed, not dequantized fp16
+  ([`ae04c26`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ae04c26f5ebd48d0bdeb0e709a52233b10441967))
+
+### Documentation
+
+- Correct turboquant_rvq API examples and update benchmark numbers
+  ([`4bf0cf3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4bf0cf3b67fe256f0898510783aa3698ac0255c0))
+
+- Make TurboQuant RVQ page read as a normal feature page
+  ([`53069d6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/53069d657fbd589fd1b4c5a43cf1218856ac9772))
+
+- Record turboquant_rvq packed-storage investigation and update roadmap
+  ([`884bbd8`](https://github.com/rajveer43/VeloxQuant-MLX/commit/884bbd831c409e24f848a273debb9967d358d170))
+
+
+## v0.44.1 (2026-08-09)
+
+### Bug Fixes
+
+- **cache**: Default KVCacheConfig method to turboquant_rvq, not turboquant_prod
+  ([`f6e9434`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f6e94348b4eb5ffd71b12a13019f0a52a0a8c6d2))
+
+
+## v0.44.0 (2026-08-09)
+
+### Features
+
+- **release**: Publish to TestPyPI then PyPI via Trusted Publishing (OIDC)
+  ([`61d49f9`](https://github.com/rajveer43/VeloxQuant-MLX/commit/61d49f99695fa7ea5db984bf50e2a03c8b20f960))
+
+
+## v0.43.7 (2026-08-09)
+
+### Bug Fixes
+
+- **ci**: Release.yml re-ran full release steps when nothing actually changed
+  ([`828c627`](https://github.com/rajveer43/VeloxQuant-MLX/commit/828c6277f3b181d957ba1e76787e11f0300c35a4))
+
+### Documentation
+
+- **readme**: Replace static status claims with live CI/PyPI badges
+  ([`38a4752`](https://github.com/rajveer43/VeloxQuant-MLX/commit/38a47527b07baac38f4c8020fe7f54204935fb24))
+
+
+## v0.43.6 (2026-08-09)
+
+### Bug Fixes
+
+- **ci**: Release-notes extraction didn't match semantic-release's real heading format
+  ([`4344666`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4344666bff7db1707ef17b33c48dda5869e93bf0))
+
+
+## v0.43.5 (2026-08-09)
+
+### Bug Fixes
+
+- **release**: CHANGELOG.md was never auto-updated; add mode=update + backfill
+  ([`cd27c1e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cd27c1eecd8d09b4b5632f31bf08d3c17103dad9))
+
+
+## [0.43.4] — 2026-08-09
+
+### Fixed
+
+**Release pipeline had been silently broken since PR #109 (2026-08-08).** `test_mlx_lm_patch.py::test_patch_model_kv_cache_refuses_standalone_method` called `pytest.raises(...)` with no `import pytest` in the file, so it failed with a bare `NameError` rather than a real assertion. This test runs inside `release.yml`'s test-suite gate, so every release run since PR #109 failed at that step -- `pyproject.toml`/`__init__.py`/git tags reached v0.43.2/v0.43.3 from earlier partial runs, but no GitHub Release or CHANGELOG.md entry had been produced for any of it. Fixed by adding the import (PR #117).
+
+Fixing the import surfaced a real bug underneath: `patch_model_kv_cache()` (`veloxquant_mlx/integration/mlx_lm_patch.py`) assigned `model.make_cache` *before* validating the config, so `KVCacheBuilder.for_model()`'s `QuantizerConfigError` for standalone methods (e.g. `"spectral"`) left the model permanently patched with a broken cache hook -- contradicting the function's own documented contract. Fixed by validating/building the cache before assigning the hook (PR #117).
+
+`semantic-release publish` does not create a GitHub Release from scratch -- it only uploads build artifacts to one that already exists. With `--no-vcs-release` on the bump step (this workflow tags and pushes manually), nothing ever created the release object, so `publish` logged a warning and exited 0 without doing anything -- a silent no-op that looked like success. Replaced with `gh release create` (PR #118).
+
+`CHANGELOG.md` had never been auto-updated by any release, ever: `python-semantic-release`'s default changelog mode (`"init"`) only generates a changelog if the target file doesn't already exist, and this file was hand-authored before the first automated release ran. Every release since silently no-op'd on it. Fixed by setting `mode = "update"` and adding the `<!-- version list -->` insertion marker this file was missing.
+
+## [0.43.0] – [0.43.3] — 2026-08-08
+
+Twenty-four bug-fix PRs (#88–#116) merged in one day, none of which reached a GitHub Release or this file until the pipeline fix above (v0.43.4) restored automated changelog generation. Backfilled by hand from the merged PRs' own descriptions.
+
+### Fixed — KV-cache classes
+
+- **`KVQuantKVCache` crashed on first attention call** (#88). Its public `.bits` property was treated by mlx_lm's SDPA dispatcher as a sentinel for the quantized-matmul path, which then failed looking for a nonexistent `.group_size`. Renamed to `.nuq_bits`.
+- **`KIVIKVCache` never quantized decode tokens** (#89). `update_and_fetch` compared only the current call's row count against `residual_length`; every decode call has `S == 1`, so the fp16 residual window grew unboundedly instead of staying capped. Fixed by tracking true cumulative offset. `SinkProtectedKVCache` (subclasses `KIVIKVCache`) shared and inherited the fix.
+- **`SinkProtectedKVCache` selected sink positions from batch element 0 only** (#90), misprotecting outlier tokens in every other batch element. Sink tracking is now per-batch-element.
+- **`SnapKVKVCache` exceeded its budget under mlx_lm's standard chunked prefill** (#91). Prompts longer than one `prefill_step_size` chunk let each chunk compress independently and append, growing retained tokens past `snap_budget`. Later chunks now recompress the full retained-so-far set and replace, not append.
+- **17 of 40 eviction/compression cache classes crashed on ordinary generation** (#92) — `AttributeError` on `.state`, hit on the first prefill chunk past `prefill_step_size` — because they never called `super().update_and_fetch(...)`, leaving mlx_lm's base `.keys`/`.values`/`.offset` permanently `None`.
+- **`QJLKVCache`/`PolarQuantKVCache` crashed once tokens exceeded configured `capacity`** (#93). `attend()` used an unbounded lifetime counter instead of the buffer's actual capacity-capped live size.
+- **`sliding_window` silently produced a fully broken cache for 35+ of 40 methods** (#94). `KVCacheFactory.create()` wrapped any method regardless of whether it implemented the wrapper's expected interface. Now raises `QuantizerConfigError` at creation for incompatible methods.
+- **`XQuantCoordinator` and `MiniCacheCoordinator` crashed generation at their configured `max_ctx`** (#95, #96) even in routine use — published segments were never reclaimed after being consumed. Segments now track `reads_remaining` and are reclaimed once every expected reader has fetched them.
+
+### Fixed — Quantizers, allocators, transforms
+
+- **`zipcache_reconstruct` hardcoded `group_size=32`** (#97), silently desyncing dequant grouping whenever `zipcache_group_size` was set to anything else.
+- **KVTC entropy coding had no fixed-width fallback** (#98), so `entropy_coding_gain` regularly fell below 1.0 on near-uniform quantized codes.
+- **`pyramid_budgets()` exceeded `avg_budget` by up to 17.5% for `beta > 2.0`** (#99). The floor clamp raised sub-floor layers without compensating elsewhere; now uses water-filling renormalization.
+- **`water_fill_bits`'s zero-eigenvalue early-exit branch silently dropped `total_bit_budget % d` bits** (#100).
+- **`apply_dual_transform_keys`/`queries` silently averaged smooth factors across heads for genuine 3D per-head input** (#102) instead of true per-head math.
+- **`allocate_bits_ratequant()` could return bit-widths not in `bit_choices`** for non-contiguous choice sets (#106).
+- **`PolarQuantizer` level-1 angles caused severe silent reconstruction corruption** (#109). `arctan2`'s native `(-pi, pi]` range didn't match the level-1 codebook's assumed `[0, 2*pi)` support — roughly half of all level-1 angles were quantized against an all-positive codebook. Affected every `PolarQuantizer` use. Reconstruction MSE in testing dropped from 1.28 to 0.055 at `b=3, d=64` after the fix.
+- **`AdaptiveScalarCodebook.observe()` silently dropped calibration rows beyond `n_calib`** within a single call (#110).
+- **`is_hadamard_compatible(d)` returned `True` for `d` in `{12, 20, 28}`** (#111), which crash `mx.hadamard_transform` with an uncatchable Metal shader compile failure.
+
+### Fixed — Core, observers, artifacts
+
+- **`NpyArtifactStore` save methods were not atomic** (#107), risking partial-file reads under concurrent `exists()`-then-`save()` construction. Now write-temp-then-`os.replace()`.
+- **`DistortionObserver.report()` computed an unweighted mean-of-batch-means MSE** rather than a sample-weighted mean (#108), skewing `mse_ratio` under varying batch sizes.
+- **`EncodedVector.memory_bytes()` undercounted usage for outlier-split (composite) quantizers** (#112) by omitting `outlier_idx`.
+- **`calibrate_layer_sensitivities()` permanently corrupted `model.make_cache` if the calibration forward pass raised** (#105) — no `try/finally` around the monkey-patch/restore. Same bug class independently found and fixed again in the release-pipeline itself, above (`patch_model_kv_cache`).
+- **`allocate_bits_ratequant` (RateQuant)'s bit_choices membership fix** — see Quantizers section above.
+
+### Fixed — DSA
+
+- **`SortedChannelIndex.top_k()` returned duplicate channel indices** (#66/#114) when a channel was lazily re-inserted with a magnitude coincidentally matching its current live value. Fixed by tagging each insert with a monotonically increasing version and comparing `(magnitude, version)` tuples; also fixes unbounded heap growth from the same root cause.
+
+### Changed
+
+- **Inline MSL kernel strings extracted to standalone `.metal` files** (#64/#113). All 19 kernel sources moved from inline Python strings to `veloxquant_mlx/metal/src/*.metal`, read at import time. Pure refactor — `mx.fast.metal_kernel` still JIT-compiles the same source string at call time.
+
+### Docs
+
+- **Documented the `veloxquant_mlx/tests/` vs `tests/non_metal/` split** (#63/#115) — why the two directories exist and can't be merged (`veloxquant_mlx/__init__.py` imports `mlx`, which only installs on Apple Silicon).
+
+### Landing page
+
+- **Removed the "Verifiable, not asserted" (proof-of-maintenance) section** (#101/#103).
+- **Aligned landing-page section order and cross-links with the three visitor personas defined in `#scenarios`** (#104/#116): reordered Methods before Quickstart, added persona-entry nav link, method-picker → quickstart tab handoff, compare → benchmarks cross-link, quality-cost mention in the calculator, install micro-CTAs at each persona endpoint, and synced `playground.html`'s independently-drifted nav bar to match `index.html`'s.
+
 ## [0.42.0] — 2026-07-27
 
 ### Added

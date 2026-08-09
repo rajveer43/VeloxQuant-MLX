@@ -13,7 +13,15 @@ Public API:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import mlx.core as mx
+
+
+def _read_kernel_source(filename: str) -> str:
+    """Read a standalone .metal kernel source file from metal/src/."""
+    return (Path(__file__).parent / "src" / filename).read_text()
+
 
 _cache: dict = {}
 
@@ -25,25 +33,7 @@ _cache: dict = {}
 # N_BYTES = D / 8 is a compile-time template constant.
 # Metal 2.0+ provides popcount() builtin for uint.
 
-_HAMMING_SCORE_SRC = r"""
-    uint i = thread_position_in_grid.x;
-    if (i >= uint(N)) return;
-
-    // XOR + popcount over N_BYTES packed bytes
-    uint ham = 0u;
-    uint base = i * uint(N_BYTES);
-    for (uint b = 0; b < uint(N_BYTES); b++) {
-        uint8_t xr = qbits[b] ^ bits[base + b];
-        // popcount via bit manipulation (portable across Metal versions)
-        uint v = uint(xr);
-        v = v - ((v >> 1u) & 0x55u);
-        v = (v & 0x33u) + ((v >> 2u) & 0x33u);
-        v = (v + (v >> 4u)) & 0x0Fu;
-        ham += v;
-    }
-
-    scores[i] = float(ham) * scale[0] + Cx[i];
-"""
+_HAMMING_SCORE_SRC = _read_kernel_source("rabitq_hamming_score.metal")
 
 
 # ---------------------------------------------------------------------------

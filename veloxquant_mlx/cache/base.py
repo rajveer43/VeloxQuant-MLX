@@ -8,6 +8,28 @@ from typing import Any, Literal, Optional, Union
 from veloxquant_mlx.core.abstractions import ArtifactStore, KVCache, QuantizationObserver
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
 
+# Methods whose cache class implements VeloxQuant's own KVCache ABC
+# (append_key/append_value/attend/memory_bytes) instead of subclassing
+# mlx_lm.models.cache.KVCache (update_and_fetch/nbytes/state/trim/merge/
+# meta_state). mlx_lm.generate() drives caches purely through the latter
+# interface via model.make_cache() -> cache.update_and_fetch(...), so an
+# object built from one of these methods does not satisfy that contract and
+# either crashes or silently produces wrong output deep inside generation
+# instead of failing at config/patch time. Verified against the codebase in
+# https://github.com/rajveer43/VeloxQuant-MLX/issues/27: these are the 5
+# "standalone" methods among the 40 in the registry; all others subclass
+# mlx_lm's KVCache and are safe to wire into patch_model_kv_cache /
+# KVCacheBuilder.for_model for live mlx_lm serving.
+STANDALONE_METHODS = frozenset(
+    {
+        "turboquant_prod",
+        "turboquant_mse",
+        "polar",
+        "qjl",
+        "spectral",
+    }
+)
+
 
 @dataclass
 class KVCacheConfig:
@@ -73,7 +95,7 @@ class KVCacheConfig:
         "nestedkv",
         "amc",
         "a2ats",
-    ] = "turboquant_prod"
+    ] = "turboquant_rvq"
     head_dim: int = 128
     bit_width_inlier: Union[int, list] = 2
     bit_width_outlier: Optional[int] = None
@@ -556,6 +578,20 @@ class KVCacheFactory:
             )
 
         if config.sliding_window is not None:
+            if config.method not in STANDALONE_METHODS:
+                raise QuantizerConfigError(
+                    f"KVCacheFactory: sliding_window is only compatible with "
+                    f"standalone methods (see STANDALONE_METHODS: "
+                    f"{sorted(STANDALONE_METHODS)}) — method {config.method!r} "
+                    f"produces a cache implementing mlx_lm.models.cache.KVCache's "
+                    f"update_and_fetch protocol, not VeloxQuant's own "
+                    f"append_key/append_value/attend interface that "
+                    f"SlidingWindowKVCache wraps, so the result would have "
+                    f"neither method working. Drop sliding_window for this "
+                    f"method — several mlx_lm-protocol methods (h2o, tova, "
+                    f"streaming_llm, snapkv, etc.) already implement their own "
+                    f"budget/window-based eviction."
+                )
             cache = SlidingWindowKVCache(cache, window_size=config.sliding_window)
 
         return cache
@@ -771,7 +807,24 @@ class KVCacheBuilder:
 
         Returns:
             List of KVCache instances, one per language-model layer.
+
+        Raises:
+            QuantizerConfigError: If ``config.method`` is a standalone method
+                (see :data:`STANDALONE_METHODS`) that does not implement the
+                mlx_lm KVCache serving contract.
         """
+        if config.method in STANDALONE_METHODS:
+            raise QuantizerConfigError(
+                f"KVCacheBuilder.for_model: method {config.method!r} is a standalone "
+                f"method — its cache class implements VeloxQuant's own KVCache "
+                f"interface, not mlx_lm.models.cache.KVCache, so it cannot serve "
+                f"mlx_lm.generate() traffic and will fail deep inside generation "
+                f"rather than here. Use it directly via KVCacheFactory.create() / "
+                f"KVCacheBuilder.build() for standalone/research use instead, or "
+                f"pick a serving-compatible method (see the method library's "
+                f"'standalone' tag: https://github.com/rajveer43/VeloxQuant-MLX#method-library)."
+            )
+
         from mlx_lm.models.cache import KVCache as _FallbackCache
 
         # Qwen2-VL exposes model.layers directly; text models expose model.model.layers
@@ -887,6 +940,14 @@ class KVCacheBuilder:
         role_by_layer: dict[int, tuple[str, int]] = {
             attn_layer_idx[k]: roles[k] for k in range(len(attn_layer_idx))
         }
+        # Each anchor's published segment is consumed by every reuse layer in
+        # its group before the coordinator can reclaim it (#80). Seed every
+        # group at 0 first so a trailing degenerate group (anchor with no
+        # reusers) doesn't fall through to some other group's reader count.
+        n_readers_by_group: dict[int, int] = {group_id: 0 for _, group_id in roles}
+        for role, group_id in roles:
+            if role == "reuse":
+                n_readers_by_group[group_id] += 1
 
         caches = []
         for i, layer in enumerate(layers):
@@ -906,7 +967,13 @@ class KVCacheBuilder:
                 xquant_max_ctx=config.xquant_max_ctx,
             )
             caches.append(
-                XQuantKVCache(layer_cfg, role=role, group_id=group_id, coordinator=coordinator)
+                XQuantKVCache(
+                    layer_cfg,
+                    role=role,
+                    group_id=group_id,
+                    coordinator=coordinator,
+                    n_readers=n_readers_by_group[group_id],
+                )
             )
         return caches
 
@@ -1007,6 +1074,15 @@ class KVCacheBuilder:
         role_by_layer: dict[int, tuple[str, int]] = {
             attn_layer_idx[k]: roles[k] for k in range(len(attn_layer_idx))
         }
+        # Each primary's published entry is consumed by every merge layer in
+        # its group before the coordinator can reclaim it (#79). Seed every
+        # group at 0 first so a standalone primary (no merge partners, e.g.
+        # an early layer below minicache_start_frac) doesn't fall through to
+        # some other group's reader count.
+        n_readers_by_group: dict[int, int] = {group_id: 0 for _, group_id in roles}
+        for role, group_id in roles:
+            if role == "merge":
+                n_readers_by_group[group_id] += 1
 
         caches = []
         for i, layer in enumerate(layers):
@@ -1026,7 +1102,13 @@ class KVCacheBuilder:
                 minicache_max_ctx=config.minicache_max_ctx,
             )
             caches.append(
-                MiniCacheKVCache(layer_cfg, role=role, group_id=group_id, coordinator=coordinator)
+                MiniCacheKVCache(
+                    layer_cfg,
+                    role=role,
+                    group_id=group_id,
+                    coordinator=coordinator,
+                    n_readers=n_readers_by_group[group_id],
+                )
             )
         return caches
 

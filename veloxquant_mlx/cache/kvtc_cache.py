@@ -59,9 +59,14 @@ Byte accounting
 combined, mirroring Palu's combined reporting style.
 ``pre_entropy_bytes`` — fixed-width (pre-entropy-coding) size, for
 comparison.
-``entropy_coding_gain`` — ``pre_entropy_bytes / kvtc_bytes`` (>= 1 typically;
-a modest, honestly-reported secondary effect on synthetic Gaussian-like
-data — see the module docstring in ``quantizers/_entropy_coding.py``).
+``entropy_coding_gain`` — ``pre_entropy_bytes / kvtc_bytes``. Since #77,
+``kvtc_compress`` guarantees the entropy-coded payload+table never exceeds
+fixed-width packing (falling back to fixed-width when Huffman doesn't pay
+for itself — see ``quantizers/kvtc.py``'s module docstring), but this ratio
+divides by the FULL stored size (``kvtc_bytes``, which also carries the
+fixed projection-basis overhead unrelated to entropy coding), so it can
+still legitimately read < 1 when that basis dominates — it is not itself
+guaranteed >= 1.
 """
 
 from __future__ import annotations
@@ -73,9 +78,9 @@ import numpy as np
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.allocators.kvtc_dp import DEFAULT_BETA, DEFAULT_BIT_CHOICES
-from veloxquant_mlx.quantizers._entropy_coding import entropy_encode
 from veloxquant_mlx.quantizers.kvtc import (
     KVTCArtifact,
+    _encode_survived_codes,
     kvtc_compress,
     kvtc_decompress,
     kvtc_fp16_bytes,
@@ -126,6 +131,22 @@ class _TensorKVTC:
         """
         assert self._fitted and self._artifact is not None and self._raw_rows is not None
         self._raw_rows = mx.concatenate([self._raw_rows, x.astype(mx.float32)], axis=0)
+        return self._requantize()
+
+    def trim(self, n: int) -> None:
+        """Drop the ``n`` most-recent rows and re-quantize through the frozen basis."""
+        assert self._fitted and self._raw_rows is not None
+        keep = max(0, self._raw_rows.shape[0] - n)
+        self._raw_rows = self._raw_rows[:keep]
+        if keep > 0:
+            self._requantize()
+        else:
+            self._fitted = False
+            self._artifact = None
+
+    def _requantize(self) -> mx.array:
+        """Re-derive the entropy-coded artifact for the current ``_raw_rows`` through the frozen basis/allocation."""
+        assert self._artifact is not None and self._raw_rows is not None
         V = self._artifact.V
         mean = self._artifact.mean
         bit_alloc = self._artifact.bit_allocation
@@ -141,15 +162,15 @@ class _TensorKVTC:
         survived_idx = self._artifact.survived_idx
 
         all_codes = []
-        mins, scales = [], []
+        mins, scales, bits_per_component = [], [], []
         for i in survived_idx:
             bits = int(bit_alloc[i])
             codes, lo, scale = quantize_component(L_np[:, i], bits)
             all_codes.append(codes)
             mins.append(lo)
             scales.append(scale)
-        flat_codes = np.concatenate(all_codes) if all_codes else np.zeros((0,), dtype=np.int64)
-        payload, table = entropy_encode(flat_codes)
+            bits_per_component.append(bits)
+        payload, table, is_entropy_coded = _encode_survived_codes(all_codes, bits_per_component)
 
         self._artifact = KVTCArtifact(
             V=V,
@@ -162,6 +183,7 @@ class _TensorKVTC:
             quant_min=np.asarray(mins, dtype=np.float64),
             quant_scale=np.asarray(scales, dtype=np.float64),
             survived_idx=survived_idx,
+            is_entropy_coded=is_entropy_coded,
         )
         return kvtc_decompress(self._artifact)
 
@@ -226,6 +248,12 @@ class KVTCKVCache(_MLXKVCache):
         self._H = 0
 
         self._full_seq_bytes = 0
+        # Last (k_out, v_out) reconstructed by update_and_fetch, for .state —
+        # mlx_lm's generate() reads cache.state directly (e.g. during chunked
+        # prefill and the speculative-decoding rewind path); since self.keys/
+        # self.values are never populated (true latent storage), .state must
+        # be overridden to serve this instead (see #83).
+        self._last_state: Optional[tuple] = None
 
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int) -> None:
@@ -274,6 +302,7 @@ class KVTCKVCache(_MLXKVCache):
 
         self._kvtc_offset += S
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
+        self._last_state = (K_out, V_out)
         return K_out, V_out
 
     # ------------------------------------------------------------------
@@ -289,6 +318,36 @@ class KVTCKVCache(_MLXKVCache):
 
     def size(self) -> int:
         return self._kvtc_offset
+
+    @property
+    def state(self):  # type: ignore[override]
+        if self._last_state is None:
+            empty = mx.zeros((1, self._H, 0, self._D), dtype=mx.float16)
+            return empty, empty
+        return self._last_state
+
+    @state.setter
+    def state(self, v) -> None:
+        k, v_ = v
+        self._last_state = (k, v_)
+        self._kvtc_offset = int(k.shape[2])
+
+    def is_trimmable(self) -> bool:
+        return True
+
+    def trim(self, n: int) -> int:
+        n = min(self._kvtc_offset, n)
+        if n <= 0:
+            return 0
+        for ks in self._keys_states:
+            ks.trim(n)
+        for vs in self._vals_states:
+            vs.trim(n)
+        self._kvtc_offset -= n
+        if self._last_state is not None:
+            k, v_ = self._last_state
+            self._last_state = (k[:, :, : k.shape[2] - n, :], v_[:, :, : v_.shape[2] - n, :])
+        return n
 
     # ------------------------------------------------------------------
     # Reporting
@@ -315,9 +374,12 @@ class KVTCKVCache(_MLXKVCache):
 
         A modest, honestly-scoped secondary effect (see
         ``quantizers/_entropy_coding.py``): NOT the theoretical
-        Shannon-entropy bound, and it can be < 1 when the code table
-        overhead outweighs the achieved bitstream savings at short
-        sequence lengths.
+        Shannon-entropy bound. Since #77, the entropy-coding stage itself
+        (payload + table) is guaranteed to never exceed fixed-width packing
+        — but this ratio's denominator (``kvtc_bytes``) also includes the
+        fixed projection-basis overhead, which is unrelated to entropy
+        coding and can dominate at small survived-component counts, so this
+        property can still read < 1 for that reason.
         """
         kb = self.kvtc_bytes
         if kb == 0:
