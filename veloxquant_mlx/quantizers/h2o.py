@@ -10,16 +10,47 @@ Adaptation limitations (stated plainly):
     query vectors at each decode step. At cache level the query is not visible,
     so we use the incoming key vector as a proxy query to approximate the
     attention distribution. This is the same approximation used by SnapKV-adapted.
-  - No RoPE position-ID remapping after eviction.
   - Uniform budget across all heads.
   - Scores are accumulated additively (sum of softmax weights) rather than
     the paper's exact formulation, which may differ in low-budget regimes.
+
+KNOWN, CONFIRMED-ON-REAL-MODELS PROBLEM (not fixed here, see
+cache/h2o_cache.py and docs-site/docs/algorithms/h2o.md for the full
+writeup): every newly-arrived token starts at score 0.0, and eviction removes
+the global-minimum-score token — so on essentially any real score
+distribution, the brand-new token is its own eviction target almost every
+time the cache is full. In practice this freezes the kept set on whichever
+tokens filled the budget first (typically the prompt) and never admits
+anything generated afterward. Confirmed via mlx_lm.generate on Llama-3.2-1B
+and Mistral-7B: after dozens of true decode steps, the kept set was still
+exactly the original prompt positions, and generation degenerated into
+repetition loops from having no visibility into its own recent output. This
+is a consequence of implementing the paper's own formula correctly, not a
+deviation from it — fixing it needs a different eviction/scoring policy
+(e.g. a grace period before eviction-eligibility), tracked as follow-up work.
+
+RoPE position remapping (a separate, narrower, and now-fixed correctness
+issue — real, but NOT the cause of the freeze above):
+  Incoming keys arrive already RoPE-rotated for their true absolute position
+  (rotation happens in the model's attention module, upstream of this cache).
+  Evicting a row from the middle of the sequence leaves the survivors'
+  *storage index* out of sync with the absolute position baked into their
+  rotation — the model's attention math assumes contiguous positions, so this
+  desync would corrupt every subsequent query's relative-position math *if*
+  interior eviction happens (rare given the freeze above, but not impossible,
+  e.g. with ``n_sink > 0`` protecting only the front). Every kept row's true
+  original position is now tracked in ``H2OState.positions``, and
+  ``h2o_update`` de-rotates + re-rotates keys to a gap-free contiguous layout
+  via :func:`veloxquant_mlx.quantizers.a2ats_rope.rope_remap_positions`
+  whenever an eviction actually changes the kept set's positions. Verified
+  via a synthetic fingerprinted-token test forcing an interior eviction and
+  confirming every surviving key de-rotates back to its exact original value.
 
 Public API
 ----------
 H2OState          — immutable per-head state dataclass
 init_h2o_state    — construct empty state
-h2o_update        — absorb S new tokens, evict if over budget
+h2o_update        — absorb S new tokens, evict if over budget, remap RoPE
 h2o_get_kv        — extract current (keys, values) arrays
 h2o_fp16_bytes    — bytes stored in current state
 full_h2o_fp16_bytes — hypothetical cost without eviction
@@ -32,34 +63,55 @@ from dataclasses import dataclass
 
 import mlx.core as mx
 
+from veloxquant_mlx.quantizers.a2ats_rope import rope_remap_positions
+
 
 @dataclass
 class H2OState:
     """Per-head sliding H2O state.
 
     Attributes:
-        keys:   [n_kept, D] fp16 stored key rows, or None before first update.
-        values: [n_kept, D] fp16 stored value rows, or None before first update.
-        scores: [n_kept] cumulative softmax attention mass (float32), or None.
-        n_sink: Number of leading sink positions — never evicted.
-        budget: Maximum tokens to keep at any time (including sinks).
+        keys:      [n_kept, D] fp16 stored key rows, RoPE'd at ``positions``
+                   (contiguous 0..n_kept-1 after any eviction), or None
+                   before first update.
+        values:    [n_kept, D] fp16 stored value rows, or None before first
+                   update.
+        scores:    [n_kept] cumulative softmax attention mass (float32), or
+                   None.
+        positions: [n_kept] int32 absolute positions each kept key is
+                   currently rotated at. Reassigned to a contiguous range
+                   whenever eviction changes which rows survive, and each
+                   key is re-rotated (via ``rope_remap_positions``) to match.
+        n_sink:    Number of leading sink positions — never evicted.
+        budget:    Maximum tokens to keep at any time (including sinks).
+        rope_base: RoPE frequency base used to de-rotate/re-rotate kept keys.
+        next_pos:  Absolute position the next incoming token will occupy —
+                   tracks true sequence position across calls, independent
+                   of how many rows have been evicted so far.
     """
 
     keys: mx.array | None
     values: mx.array | None
     scores: mx.array | None
+    positions: mx.array | None
     n_sink: int
     budget: int
+    rope_base: float
+    next_pos: int
 
 
-def init_h2o_state(n_sink: int, budget: int, head_dim: int) -> H2OState:  # noqa: ARG001
+def init_h2o_state(n_sink: int, budget: int, head_dim: int, rope_base: float = 10000.0) -> H2OState:  # noqa: ARG001
     """Create an empty H2OState before any tokens arrive.
 
     Args:
-        n_sink:   Number of initial sink positions to protect from eviction.
-        budget:   Maximum total tokens kept (sinks + non-sinks).
-        head_dim: Head dimension D (unused here; accepted for API symmetry
-                  with StreamingLLM's init_streaming_window).
+        n_sink:    Number of initial sink positions to protect from eviction.
+        budget:    Maximum total tokens kept (sinks + non-sinks).
+        head_dim:  Head dimension D (unused here; accepted for API symmetry
+                   with StreamingLLM's init_streaming_window).
+        rope_base: RoPE frequency base — must match the base the model's own
+                   attention module uses, or position remapping after
+                   eviction will not cancel out the original rotation
+                   correctly.
 
     Raises:
         ValueError: if there are sink positions to protect but they leave no
@@ -72,7 +124,16 @@ def init_h2o_state(n_sink: int, budget: int, head_dim: int) -> H2OState:  # noqa
             "evictable positions remain, so sinks would be evicted once "
             "the cache fills"
         )
-    return H2OState(keys=None, values=None, scores=None, n_sink=n_sink, budget=budget)
+    return H2OState(
+        keys=None,
+        values=None,
+        scores=None,
+        positions=None,
+        n_sink=n_sink,
+        budget=budget,
+        rope_base=rope_base,
+        next_pos=0,
+    )
 
 
 def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
@@ -101,9 +162,14 @@ def h2o_update(
       1. Compute approximate attention weights of the new key (as proxy query)
          over all currently stored keys.
       2. Accumulate those weights into existing per-token scores.
-      3. Append the new token with score 0 (it starts accumulating next step).
+      3. Append the new token with score 0 (it starts accumulating next step)
+         at its true absolute position (``state.next_pos``).
       4. If total tokens > budget: permanently evict the non-sink token with the
-         lowest cumulative score.
+         lowest cumulative score. Survivors positioned *before* the evicted
+         token's position keep their exact original rotation untouched;
+         survivors *after* it shift down by exactly one position each (closing
+         the gap) and are re-rotated accordingly, so the cache's storage index
+         always matches a contiguous position range (see module docstring).
 
     Args:
         state:      Current H2OState for this head.
@@ -118,6 +184,7 @@ def h2o_update(
     for i in range(S):
         k_i = new_keys[i]  # [D]
         v_i = new_values[i]  # [D]
+        cur_pos = state.next_pos
 
         if state.keys is None:
             # Bootstrap: first token ever — no eviction needed.
@@ -125,8 +192,11 @@ def h2o_update(
                 keys=k_i[None].astype(mx.float16),
                 values=v_i[None].astype(mx.float16),
                 scores=mx.ones((1,), dtype=mx.float32),
+                positions=mx.array([cur_pos], dtype=mx.int32),
                 n_sink=state.n_sink,
                 budget=state.budget,
+                rope_base=state.rope_base,
+                next_pos=cur_pos + 1,
             )
             continue
 
@@ -138,6 +208,9 @@ def h2o_update(
         keys_cat = mx.concatenate([state.keys, k_i[None].astype(mx.float16)], axis=0)
         values_cat = mx.concatenate([state.values, v_i[None].astype(mx.float16)], axis=0)
         scores_cat = mx.concatenate([updated_scores, mx.zeros((1,), dtype=mx.float32)], axis=0)
+        positions_cat = mx.concatenate(
+            [state.positions, mx.array([cur_pos], dtype=mx.int32)], axis=0
+        )
 
         n_total = keys_cat.shape[0]
 
@@ -151,17 +224,37 @@ def h2o_update(
                 protected = scores_cat
 
             evict_idx = int(mx.argmin(protected).item())
+            evicted_pos = int(positions_cat[evict_idx].item())
             keep_indices = [j for j in range(n_total) if j != evict_idx]
             keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
             scores_cat = scores_cat[keep_indices]
+            old_positions_kept = positions_cat[keep_indices]
+
+            # Evicting row `evict_idx` leaves a size-1 gap at `evicted_pos`.
+            # Rows that sat *before* the gap (sinks included) keep their exact
+            # original position — nothing about their true distance from any
+            # future query changes. Rows *after* the gap shift down by
+            # exactly one position each, closing the gap so the model's
+            # position bookkeeping (which assumes a contiguous cache) stays
+            # in sync with what is actually stored. Minimal disturbance: only
+            # rows after the gap are re-rotated.
+            shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
+            new_positions = old_positions_kept + shift
+            keys_cat = rope_remap_positions(
+                keys_cat, old_positions_kept, new_positions, base=state.rope_base
+            )
+            positions_cat = new_positions
 
         state = H2OState(
             keys=keys_cat,
             values=values_cat,
             scores=scores_cat,
+            positions=positions_cat,
             n_sink=state.n_sink,
             budget=state.budget,
+            rope_base=state.rope_base,
+            next_pos=cur_pos + 1,
         )
 
     return state
