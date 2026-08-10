@@ -46,6 +46,25 @@ issue — real, but NOT the cause of the freeze above):
   via a synthetic fingerprinted-token test forcing an interior eviction and
   confirming every surviving key de-rotates back to its exact original value.
 
+Scalability fix (a separate, now-fixed bug found while testing long
+context — independent of both issues above): the original ``h2o_update``
+processed every incoming token with a Python ``for`` loop, issuing 4 separate
+``mx.concatenate`` calls (keys, values, scores, positions) per token. On a
+genuinely long prefill (~3200 tokens tested) with no eviction yet triggered,
+this built an unfused lazy-eval graph large enough to exceed MLX's Metal
+resource/command-buffer tracking limit — ``RuntimeError: [metal::malloc]
+Resource limit (499000) exceeded`` — crashing *before generation could even
+start*, regardless of budget or eviction settings. Fixed by
+:func:`_batch_absorb_no_eviction`: whichever leading portion of an incoming
+batch is guaranteed not to trigger eviction (because the cache has not yet
+reached ``budget``) is absorbed via one batched masked-attention matmul
+instead of a token-by-token loop. Verified numerically equivalent to the
+sequential loop it replaces (score/position/key parity within fp16 rounding,
+including across the batch-path/loop-path boundary within a single call).
+Only the genuinely sequential eviction logic (each eviction depends on the
+previous one) still loops per token, and only once the cache is actually at
+or over budget.
+
 Public API
 ----------
 H2OState          — immutable per-head state dataclass
@@ -151,6 +170,109 @@ def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
     return mx.softmax(logits, axis=-1)
 
 
+def _batch_absorb_no_eviction(
+    prior_keys: mx.array | None,
+    prior_scores: mx.array | None,
+    new_keys: mx.array,
+) -> mx.array:
+    """Vectorized score accumulation for a batch of incoming tokens, valid
+    ONLY while every one of them is guaranteed to survive (no eviction can
+    occur for any of them). Equivalent to calling the per-token score-update
+    step of :func:`h2o_update` once per row of ``new_keys`` in sequence, but
+    computed as a single masked batched attention matmul instead of a Python
+    loop with S separate ``mx.concatenate`` calls — this is what let a long
+    prefill (thousands of tokens) exceed MLX's Metal resource limit before
+    this fix, independent of eviction/budget settings.
+
+    Args:
+        prior_keys:   ``[P, D]`` fp32 keys already in the cache before this
+                      batch (``None`` if the cache was empty).
+        prior_scores: ``[P]`` fp32 cumulative scores already in the cache
+                      (``None`` if the cache was empty).
+        new_keys:     ``[S, D]`` fp32 incoming keys, all of which the caller
+                      has verified will fit within budget with no eviction.
+
+    Returns:
+        ``[P + S]`` fp32 scores: ``prior_scores`` updated with every new
+        token's contribution, concatenated with each new token's own
+        (partial) accumulated score — the newest token always ends at
+        exactly ``0.0``, matching the per-token loop's semantics.
+    """
+    S = new_keys.shape[0]
+    scale = 1.0 / math.sqrt(float(new_keys.shape[-1]))
+
+    if prior_keys is None:
+        # First S tokens ever: token 0 bootstraps to 1.0 (matches
+        # h2o_update's bootstrap branch); every later token j attends
+        # causally over tokens 0..j-1 only.
+        logits = (new_keys @ new_keys.T) * scale  # [S, S]
+        causal = mx.arange(S)[:, None] > mx.arange(S)[None, :]
+        masked = mx.where(causal, logits, -mx.inf)
+        attn = mx.softmax(masked, axis=-1)
+        attn = mx.where(mx.isnan(attn), 0.0, attn)  # row 0: all -inf -> nan -> 0
+        col_sums = mx.sum(attn, axis=0)  # [S], token j's mass from tokens after it
+        bootstrap = mx.concatenate([mx.array([1.0], dtype=mx.float32), mx.zeros((S - 1,))])
+        return col_sums + bootstrap
+
+    # Prior tokens already in the cache: each new token j attends over ALL
+    # prior tokens (full mass) plus new tokens 0..j-1 (causal within batch).
+    P = prior_keys.shape[0]
+    prior_logits = (new_keys @ prior_keys.T) * scale  # [S, P]
+    new_logits = (new_keys @ new_keys.T) * scale  # [S, S]
+    causal = mx.arange(S)[:, None] > mx.arange(S)[None, :]
+    new_logits = mx.where(causal, new_logits, -mx.inf)
+    full_logits = mx.concatenate([prior_logits, new_logits], axis=-1)  # [S, P+S]
+    attn = mx.softmax(full_logits, axis=-1)  # every row has >=1 real prior token -> no nan
+    prior_contrib = mx.sum(attn[:, :P], axis=0)  # [P] mass each prior token gains
+    new_contrib = mx.sum(attn[:, P:], axis=0)  # [S] mass each new token gains from later new tokens
+    updated_prior_scores = prior_scores + prior_contrib
+    return mx.concatenate([updated_prior_scores, new_contrib], axis=0)
+
+
+def _batch_absorb_prefix(
+    state: H2OState,
+    new_keys: mx.array,
+    new_values: mx.array,
+) -> H2OState:
+    """Absorb a batch of ``B`` incoming tokens known in advance to fit within
+    budget with zero eviction (``B <= state.budget - n_current``), as a
+    single vectorized update instead of ``B`` sequential per-token steps.
+
+    Args:
+        state:      Current H2OState (may be empty, i.e. ``state.keys is None``).
+        new_keys:   ``[B, D]`` fp16 rows, all guaranteed to survive.
+        new_values: ``[B, D]`` fp16 rows.
+
+    Returns:
+        Updated H2OState with ``n_current + B`` rows, no eviction applied.
+    """
+    B = new_keys.shape[0]
+    new_positions = mx.arange(state.next_pos, state.next_pos + B, dtype=mx.int32)
+
+    prior_keys32 = None if state.keys is None else state.keys.astype(mx.float32)
+    scores = _batch_absorb_no_eviction(prior_keys32, state.scores, new_keys.astype(mx.float32))
+
+    if state.keys is None:
+        keys_cat = new_keys.astype(mx.float16)
+        values_cat = new_values.astype(mx.float16)
+        positions_cat = new_positions
+    else:
+        keys_cat = mx.concatenate([state.keys, new_keys.astype(mx.float16)], axis=0)
+        values_cat = mx.concatenate([state.values, new_values.astype(mx.float16)], axis=0)
+        positions_cat = mx.concatenate([state.positions, new_positions], axis=0)
+
+    return H2OState(
+        keys=keys_cat,
+        values=values_cat,
+        scores=scores,
+        positions=positions_cat,
+        n_sink=state.n_sink,
+        budget=state.budget,
+        rope_base=state.rope_base,
+        next_pos=state.next_pos + B,
+    )
+
+
 def h2o_update(
     state: H2OState,
     new_keys: mx.array,  # [S, D] fp16
@@ -171,6 +293,17 @@ def h2o_update(
          the gap) and are re-rotated accordingly, so the cache's storage index
          always matches a contiguous position range (see module docstring).
 
+    Performance note: whichever *leading* portion of ``new_keys`` is
+    guaranteed not to trigger eviction (because the cache has not yet
+    reached ``budget``) is absorbed in one vectorized batched-attention call
+    (:func:`_batch_absorb_no_eviction`) instead of a Python loop with 4
+    separate ``mx.concatenate`` calls per token — this is what let a long
+    prefill (thousands of tokens, no eviction yet triggered) exceed MLX's
+    Metal resource limit before this fix. Only once the cache is actually at
+    or over budget does the remaining per-token eviction loop run, since each
+    eviction's outcome depends on the previous one and cannot be batched
+    without changing which token gets evicted.
+
     Args:
         state:      Current H2OState for this head.
         new_keys:   [S, D] fp16 new key rows.
@@ -180,6 +313,14 @@ def h2o_update(
         Updated H2OState with at most ``state.budget`` tokens.
     """
     S = new_keys.shape[0]
+    n_current = 0 if state.keys is None else state.keys.shape[0]
+    n_batchable = max(0, min(S, state.budget - n_current))
+
+    if n_batchable > 0:
+        state = _batch_absorb_prefix(state, new_keys[:n_batchable], new_values[:n_batchable])
+        new_keys = new_keys[n_batchable:]
+        new_values = new_values[n_batchable:]
+        S = new_keys.shape[0]
 
     for i in range(S):
         k_i = new_keys[i]  # [D]

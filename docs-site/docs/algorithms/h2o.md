@@ -20,7 +20,10 @@ cumulative-sum formulation at low budgets, not an implementation bug in the
 eviction *rule* itself (which correctly implements Algorithm 1 — see
 [fidelity check](#fidelity-to-algorithm-1)). See
 [the finding](#real-end-to-end-generation-eviction-breaks-coherence) before
-using `method="h2o"` for anything beyond studying the mechanism.
+using `method="h2o"` for anything beyond studying the mechanism. A separate
+scalability bug that used to crash long prefills outright (regardless of
+eviction settings) has since been fixed — see
+[long-context testing](#long-context-testing-the-freeze-holds-at-scale-plus-a-scalability-bug-now-fixed).
 :::
 
 H2O-adapted is the library's **third eviction axis** and the first based on
@@ -117,8 +120,8 @@ specified is what causes the practical problem, not a deviation from it.
 ## Evidence
 
 All claims trace to passing tests in
-`veloxquant_mlx/tests/cache/test_h2o_cache.py` (15 tests) and
-`veloxquant_mlx/tests/quantizers/test_h2o.py` (18 tests):
+`veloxquant_mlx/tests/cache/test_h2o_cache.py` (18 tests) and
+`veloxquant_mlx/tests/quantizers/test_h2o.py` (28 tests):
 
 - `init_h2o_state` fields correct; empty state returns zero-row K/V placeholder
 - Single token bootstraps state; multi-token absorption below budget keeps all tokens
@@ -135,6 +138,11 @@ All claims trace to passing tests in
 - Factory dispatch (`KVCacheFactory.create`) returns `H2OKVCache`
 - `for_model` propagates `h2o_budget` and `h2o_n_sink` to all layer caches
 - Determinism: identical inputs produce identical outputs
+- Position tracking stays gap-free and contiguous under a 60-step stress test; `n_sink` positions never move
+- Interior-eviction RoPE remap recovers each surviving key's exact original pre-rotation value (fingerprinted-token test)
+- `cache.offset` tracks the true absolute step count, not the kept-row count, once eviction has occurred
+- The vectorized below-budget batch path matches the sequential per-token loop it replaces bit-for-bit within fp16 rounding, including for a single call whose batch straddles the below-budget/over-budget boundary
+- A 4,000-token single-call absorption (no eviction) completes without error — the regression test for the prefill scalability crash
 
 The offline harness in `benchmark_scripts/benchmark_h2o.py` sweeps
 `(seq_len, budget, n_sink)` and reports latency and compression ratio —
@@ -213,6 +221,62 @@ change to the eviction/scoring policy itself (e.g. a grace period before a
 token becomes eviction-eligible, or age-normalized scoring) — a bigger,
 more opinionated algorithmic change than a bugfix, and not undertaken here.
 Tracked as follow-up work, not silently patched over.
+
+### Long-context testing: the freeze holds at scale, plus a scalability bug (now fixed)
+
+The same methodology was repeated on a genuinely long prompt (~3,238 tokens)
+to check whether the early-token freeze above behaves differently at scale,
+and to stress-test the implementation on long context in general.
+
+| Budget | Prefill | Decode | Kept (final) | Evicted | Compression | Generated tokens survived? | Output |
+|---|---|---|---|---|---|---|---|
+| 256 | 3,238 | 300 | 256 | 3,282 | 13.82× | **0** | `"of of of of of..."` — total collapse |
+| 800 | 3,238 | 300 | 800 | 2,738 | 4.42× | **0** | Garbled/gibberish tokens |
+| 1,200 | 3,238 | 400 | 1,200 | 2,438 | 3.03× | **0** | Degenerates into `"I am I am I am..."` loop |
+
+In every case the kept set is exactly `[0, budget-1]` — the earliest slice of
+the **prompt** — confirming the freeze is budget- and prompt-length-independent:
+bigger budgets don't fix it, they just delay how quickly the output degrades
+from coherent-looking phrases into pure repetition.
+
+:::warning[A second, independent bug was found and fixed here: H2O couldn't even complete a long prefill]
+Testing the no-eviction baseline (`h2o_budget` larger than the prompt, so no
+eviction should ever occur) crashed **during prefill alone**, before a single
+decode step:
+
+```
+RuntimeError: [metal::malloc] Resource limit (499000) exceeded.
+```
+
+Bisected the breaking point: prefill succeeded at 500 tokens, failed
+somewhere before 1,000 — independent of `h2o_budget`, `h2o_n_sink`, or
+`max_tokens` (reproduced even at `max_tokens=1`).
+
+**Root cause:** `h2o_update` processed every incoming token, including the
+entire prefill batch, with a Python `for` loop issuing 4 separate
+`mx.concatenate` calls per token (keys, values, scores, positions). At
+~3,238 tokens this builds an unfused lazy-evaluation graph large enough to
+exceed MLX's Metal resource/command-buffer tracking limit — a pure
+implementation scalability bug, completely independent of the RoPE fixes and
+the scoring-freeze issue above.
+
+**Fixed:** whichever leading portion of an incoming batch is guaranteed not
+to trigger eviction (because the cache hasn't yet reached `h2o_budget`) is
+now absorbed via a single batched masked-attention matmul instead of a
+per-token loop — mathematically the same score-accumulation formula, just
+computed all at once. Verified numerically equivalent to the sequential loop
+it replaces (exact match to fp16 rounding, including for calls that straddle
+the below-budget/over-budget boundary). The same 3,238-token no-eviction
+prefill that previously crashed now completes in ~2.4–3.2 seconds.
+
+Only the genuinely sequential part — the eviction decision itself, where
+each eviction depends on the previous step's result — still runs a per-token
+loop, and only once the cache is actually full. This means the fix has no
+effect on the freeze-heavy scenarios in the table above (their timing and
+output are byte-for-byte identical before and after this fix); it only
+unblocks the case that used to crash outright: long context with a budget
+large enough to avoid heavy early eviction.
+:::
 
 ## When to use it
 
