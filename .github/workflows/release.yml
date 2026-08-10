@@ -105,11 +105,11 @@ jobs:
       - name: Commit, tag, and push the release
         if: steps.version.outputs.next_version != ''
         run: |
-          # landing/ is included because sync_release_badges.py rewrites the
-          # hero pill version and the meta-description/test-count claims there;
-          # omitting it would silently discard that sync every release.
+          # landing/index.html is included because sync_release_badges.py rewrites
+          # the hero badge version and the meta-description/test-count claims
+          # there; omitting it would silently discard that sync every release.
           git add pyproject.toml veloxquant_mlx/__init__.py CHANGELOG.md README.md \
-                  landing/index.html landing/assets/main.js
+                  landing/index.html
           git commit -m "chore(release): ${{ steps.version.outputs.next_version }} [skip ci]"
           # Annotated (-a), not lightweight: `git push --follow-tags` pushes ONLY
           # annotated tags, so a lightweight tag here is created locally on the
