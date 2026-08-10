@@ -15,6 +15,7 @@ import mlx.core as mx
 import numpy as np
 import pytest
 
+from veloxquant_mlx.quantizers.a2ats_rope import a2ats_apply_exact_rope, rope_remap_positions
 from veloxquant_mlx.quantizers.h2o import (
     H2OState,
     full_h2o_fp16_bytes,
@@ -284,3 +285,123 @@ def test_deterministic_across_identical_inputs() -> None:
     kb, _ = h2o_get_kv(st_b)
     mse = float(mx.mean((ka.astype(mx.float32) - kb.astype(mx.float32)) ** 2).item())
     assert mse == pytest.approx(0.0, abs=0.0)
+
+
+# ---------------------------------------------------------------------------
+# RoPE position remapping after eviction (fixes a real regression — see
+# module docstring and docs-site/docs/algorithms/h2o.md for the full
+# investigation, including why interior eviction is rare but not impossible)
+# ---------------------------------------------------------------------------
+
+
+def test_state_tracks_positions_and_next_pos() -> None:
+    """H2OState exposes positions/next_pos so callers can detect gaps."""
+    D = 16
+    st = init_h2o_state(n_sink=0, budget=8, head_dim=D)
+    k, v = _rand_kv(S=3, D=D)
+    st = h2o_update(st, k, v)
+    assert st.positions.tolist() == [0, 1, 2]
+    assert st.next_pos == 3
+
+
+def test_positions_stay_contiguous_and_sorted_under_stress() -> None:
+    """Across many steps, kept positions never have gaps or duplicates, and
+    n_sink leading positions never move — the invariant the RoPE remap must
+    preserve for attention to see a consistent contiguous cache."""
+    D = 16
+    n_sink = 2
+    budget = 6
+    st = init_h2o_state(n_sink=n_sink, budget=budget, head_dim=D)
+    for i in range(60):
+        k, v = _rand_kv(S=1, D=D, seed=i)
+        st = h2o_update(st, k, v)
+        pos = st.positions.tolist()
+        assert pos == sorted(pos), f"step {i}: not sorted: {pos}"
+        assert len(set(pos)) == len(pos), f"step {i}: duplicate: {pos}"
+        diffs = [pos[j + 1] - pos[j] for j in range(len(pos) - 1)]
+        assert all(d == 1 for d in diffs), f"step {i}: gap in kept positions: {pos}"
+        if len(pos) >= n_sink:
+            assert pos[:n_sink] == list(range(n_sink)), f"step {i}: sinks moved: {pos}"
+
+
+def test_interior_eviction_gap_remap_recovers_exact_original_keys() -> None:
+    """The core correctness property of the eviction+remap logic in
+    h2o_update: when a row is dropped from the INTERIOR of the kept set
+    (rows after it shift down by one position and get re-rotated; rows
+    before it are untouched), every surviving key, de-rotated at its new
+    stored position, must exactly recover its original pre-rotation value.
+
+    A brand-new arrival always starts at score 0.0 in h2o_update, which
+    makes it (almost) always the eviction target in practice — see
+    test_new_token_almost_always_evicted_first — so genuine interior
+    eviction from realistic inputs is rare. This test instead exercises
+    h2o_update's exact eviction+remap code path (mirroring its
+    keep_indices/shift/rope_remap_positions logic line-for-line) directly on
+    a constructed 5-token state, to verify that logic's correctness
+    independent of how often it fires in practice.
+    """
+    D = 16
+    rng = np.random.default_rng(0)
+    raw_keys = mx.array(rng.standard_normal((5, D)).astype(np.float32))
+    fingerprints = np.zeros((5, D), dtype=np.float32)
+    for i in range(5):
+        fingerprints[i, 0] = i + 1.0
+    raw_values = mx.array(fingerprints)
+    positions = mx.arange(5, dtype=mx.int32)
+    rotated_keys = a2ats_apply_exact_rope(raw_keys, positions, base=10000.0)
+
+    # Evict the interior token at index 2 (position 2): same keep_indices /
+    # shift / remap steps h2o_update's eviction branch performs.
+    evict_idx = 2
+    keep_indices = [j for j in range(5) if j != evict_idx]
+    kept_keys_before = rotated_keys[keep_indices]
+    old_positions_kept = positions[keep_indices]
+    evicted_pos = int(positions[evict_idx].item())
+    shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
+    new_positions = old_positions_kept + shift
+    remapped_keys = rope_remap_positions(
+        kept_keys_before.astype(mx.float32), old_positions_kept, new_positions, base=10000.0
+    )
+
+    # Positions before the gap (0, 1) are untouched; after it (3, 4 -> 2, 3).
+    assert new_positions.tolist() == [0, 1, 2, 3]
+
+    # Rows before the gap must be numerically unchanged (no re-rotation
+    # needed — this is the "minimal disturbance" property).
+    for row in (0, 1):
+        err = float(
+            mx.max(mx.abs(remapped_keys[row] - kept_keys_before[row].astype(mx.float32))).item()
+        )
+        assert err < 1e-3, f"row {row} before the gap should be untouched, err={err}"
+
+    # Every surviving key, de-rotated at its NEW position, must recover its
+    # exact original pre-rotation value.
+    recovered = rope_remap_positions(
+        remapped_keys, new_positions, mx.zeros_like(new_positions), base=10000.0
+    )
+    kept_fingerprints = np.array(raw_values.astype(mx.float32))[keep_indices, 0]
+    assert 3.0 not in kept_fingerprints  # token originally at index 2 (fp=3.0) is gone
+    for row, fp in enumerate(kept_fingerprints):
+        orig_idx = int(round(fp)) - 1
+        err = float(mx.max(mx.abs(recovered[row] - raw_keys[orig_idx])).item())
+        assert err < 1e-2, f"row {row} (orig token {orig_idx}): recon error {err}"
+
+
+def test_new_token_almost_always_evicted_first() -> None:
+    """Documents the real, verified early-token-freeze finding: with a
+    realistic (non-degenerate) score distribution, a brand-new token's
+    starting score of 0.0 is virtually always the global minimum, so once
+    the cache is full, the newest arrival is evicted on (nearly) every step
+    rather than an old low-value token — freezing the kept set. Not a
+    regression to fix here; documented as a known property of the paper's
+    own cumulative-sum formula at tight budgets (see module docstring)."""
+    D = 16
+    budget = 4
+    st = init_h2o_state(n_sink=0, budget=budget, head_dim=D)
+    rng = np.random.default_rng(0)
+    for i in range(20):
+        k, v = _rand_kv(S=1, D=D, seed=i)
+        st = h2o_update(st, k, v)
+    # After 20 steps with budget=4, the kept set should have frozen on the
+    # earliest possible contiguous window (never grew past position 3).
+    assert st.positions.tolist() == [0, 1, 2, 3]

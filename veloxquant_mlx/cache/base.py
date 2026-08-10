@@ -192,6 +192,7 @@ class KVCacheConfig:
     # --- H2O-adapted configuration (cumulative attention-mass heavy-hitter eviction) ---
     h2o_budget: int = 512  # max tokens kept at any time (sinks + non-sinks)
     h2o_n_sink: int = 4  # initial positions protected from eviction (attention sinks)
+    h2o_rope_base: float = 10000.0  # RoPE base for post-eviction position remap; match the model
     # --- TOVA-adapted configuration (current-step attention-weight eviction, memoryless) ---
     tova_budget: int = 512  # max tokens kept at any time (sinks + non-sinks)
     tova_n_sink: int = 4  # initial positions protected from eviction (attention sinks)

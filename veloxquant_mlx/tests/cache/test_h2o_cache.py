@@ -206,3 +206,49 @@ def test_build_via_for_model_propagates_config() -> None:
     assert all(isinstance(c, H2OKVCache) for c in caches)
     assert caches[0]._budget == 64
     assert caches[0]._n_sink == 8
+
+
+# ---------------------------------------------------------------------------
+# offset tracks true absolute position, not kept-row count (RoPE fix — see
+# module docstring: mlx_lm rotates the query/next key using cache.offset
+# BEFORE update_and_fetch ever runs, so offset must equal the true step
+# count for that rotation to be correct, independent of how many rows this
+# cache has evicted)
+# ---------------------------------------------------------------------------
+
+
+def test_offset_tracks_true_position_not_kept_count() -> None:
+    """After eviction, self.offset must exceed the physically stored row
+    count — it tracks true elapsed steps, which is what mlx_lm's attention
+    module uses to rotate the NEXT query and key correctly."""
+    budget = 4
+    c = _make(h2o_budget=budget, h2o_n_sink=0)
+    for i in range(10):
+        k, v = _rand_kv(S=1, H=1, D=32, seed=i)
+        c.update_and_fetch(k, v)
+    assert c.keys.shape[2] <= budget
+    assert c.offset == 10
+    assert c.offset > c.keys.shape[2]
+
+
+def test_state_property_returns_exactly_kept_rows() -> None:
+    """cache.state (read by mlx_lm.generate during chunked prefill) must
+    return exactly the stored rows, not a slice sized by self.offset."""
+    budget = 4
+    c = _make(h2o_budget=budget, h2o_n_sink=0)
+    for i in range(10):
+        k, v = _rand_kv(S=1, H=1, D=32, seed=i)
+        c.update_and_fetch(k, v)
+    keys_state, values_state = c.state
+    assert keys_state.shape[2] == c.keys.shape[2] <= budget
+    assert values_state.shape[2] == c.values.shape[2] <= budget
+
+
+def test_size_returns_kept_count_not_offset() -> None:
+    budget = 4
+    c = _make(h2o_budget=budget, h2o_n_sink=0)
+    for i in range(10):
+        k, v = _rand_kv(S=1, H=1, D=32, seed=i)
+        c.update_and_fetch(k, v)
+    assert c.size() == c.keys.shape[2] <= budget
+    assert c.size() != c.offset
