@@ -5,8 +5,11 @@ weights (using the incoming key as a proxy query) and evicts the lowest-score
 non-sink token whenever the cache exceeds the budget. Tests cover: init_h2o_state,
 h2o_update (single token, multi-step, eviction trigger, sink protection, budget
 enforcement, score accumulation), h2o_get_kv (shape, dtype, empty state), byte
-accounting, and edge cases (n_sink=0, budget=1, score-based ordering). All data
-is synthetic — no model loading.
+accounting, edge cases (n_sink=0, budget=1, score-based ordering), RoPE position
+remapping after eviction, and the vectorized below-budget batch path (a
+performance fix: verified numerically equivalent to the sequential per-token
+loop it replaces, including across the batch-path/loop-path boundary within a
+single call). All data is synthetic — no model loading.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ import pytest
 from veloxquant_mlx.quantizers.a2ats_rope import a2ats_apply_exact_rope, rope_remap_positions
 from veloxquant_mlx.quantizers.h2o import (
     H2OState,
+    _batch_absorb_no_eviction,
     full_h2o_fp16_bytes,
     h2o_fp16_bytes,
     h2o_get_kv,
@@ -405,3 +409,104 @@ def test_new_token_almost_always_evicted_first() -> None:
     # After 20 steps with budget=4, the kept set should have frozen on the
     # earliest possible contiguous window (never grew past position 3).
     assert st.positions.tolist() == [0, 1, 2, 3]
+
+
+# ---------------------------------------------------------------------------
+# Vectorized below-budget batch path (perf fix: avoids a per-token Python
+# loop with 4 concats/token, which exhausted MLX's Metal resource limit on
+# long prefills — e.g. ~3200 tokens — even with eviction disabled). Must be
+# numerically equivalent to the sequential per-token loop it replaces.
+# ---------------------------------------------------------------------------
+
+
+def test_batch_absorb_matches_sequential_from_empty() -> None:
+    """_batch_absorb_no_eviction(None, None, keys) must match calling
+    h2o_update one token at a time from an empty state (huge budget, so no
+    eviction ever fires in the sequential reference)."""
+    D = 8
+    S = 6
+    rng = np.random.default_rng(0)
+    keys = mx.array(rng.standard_normal((S, D)).astype(np.float32))
+
+    st = init_h2o_state(n_sink=0, budget=1000, head_dim=D)
+    for i in range(S):
+        st = h2o_update(st, keys[i][None].astype(mx.float16), keys[i][None].astype(mx.float16))
+
+    vectorized = _batch_absorb_no_eviction(None, None, keys)
+    err = float(mx.max(mx.abs(vectorized - st.scores)).item())
+    assert err < 1e-3, f"batch vs sequential score mismatch: {err}"
+
+
+def test_batch_absorb_matches_sequential_with_prior_tokens() -> None:
+    """_batch_absorb_no_eviction with a non-empty prior state must match
+    continuing the sequential per-token loop from that same prior state."""
+    D = 8
+    P = 3
+    S = 4
+    rng = np.random.default_rng(1)
+    prior = rng.standard_normal((P, D)).astype(np.float32)
+    new = rng.standard_normal((S, D)).astype(np.float32)
+
+    st = init_h2o_state(n_sink=0, budget=1000, head_dim=D)
+    for i in range(P):
+        k = mx.array(prior[i][None].astype(np.float16))
+        st = h2o_update(st, k, k)
+    for i in range(S):
+        k = mx.array(new[i][None].astype(np.float16))
+        st = h2o_update(st, k, k)
+
+    st2 = init_h2o_state(n_sink=0, budget=1000, head_dim=D)
+    for i in range(P):
+        k = mx.array(prior[i][None].astype(np.float16))
+        st2 = h2o_update(st2, k, k)
+    vectorized = _batch_absorb_no_eviction(st2.keys.astype(mx.float32), st2.scores, mx.array(new))
+    err = float(mx.max(mx.abs(vectorized - st.scores)).item())
+    assert err < 1e-3, f"batch vs sequential score mismatch: {err}"
+
+
+def test_h2o_update_single_call_matches_many_single_token_calls() -> None:
+    """The public contract: h2o_update(state, keys[S,D], values[S,D]) in one
+    call must produce the identical final state as calling h2o_update S times
+    with one token each — across the batch-path/loop-path boundary (budget
+    straddled mid-batch), not just in the pure-batch or pure-loop regimes."""
+    D = 16
+    budget = 6
+    n_sink = 0
+    rng = np.random.default_rng(0)
+    all_k = rng.standard_normal((15, D)).astype(np.float16)
+    all_v = rng.standard_normal((15, D)).astype(np.float16)
+
+    st_seq = init_h2o_state(n_sink=n_sink, budget=budget, head_dim=D)
+    for i in range(15):
+        st_seq = h2o_update(st_seq, mx.array(all_k[i][None]), mx.array(all_v[i][None]))
+
+    st_batch = init_h2o_state(n_sink=n_sink, budget=budget, head_dim=D)
+    st_batch = h2o_update(st_batch, mx.array(all_k), mx.array(all_v))
+
+    assert st_seq.positions.tolist() == st_batch.positions.tolist()
+    assert st_seq.next_pos == st_batch.next_pos
+    score_err = float(mx.max(mx.abs(st_seq.scores - st_batch.scores)).item())
+    assert score_err < 1e-2, f"score mismatch: {score_err}"
+    key_mse = float(
+        mx.mean((st_seq.keys.astype(mx.float32) - st_batch.keys.astype(mx.float32)) ** 2).item()
+    )
+    assert key_mse < 1e-3, f"key mismatch: {key_mse}"
+
+
+def test_batch_path_handles_long_prefill_without_crashing() -> None:
+    """Regression for the real crash this fix addresses: a single
+    update_and_fetch-style call with thousands of tokens and a budget large
+    enough that no eviction occurs must not blow up building an enormous
+    unfused op graph (the pre-fix per-token-loop behavior). 4000 tokens is
+    smaller than the ~3200-token prompt that triggered a genuine Metal
+    resource-limit crash pre-fix, kept modest here to stay fast in CI."""
+    D = 32
+    S = 4000
+    rng = np.random.default_rng(0)
+    k = mx.array(rng.standard_normal((S, D)).astype(np.float16))
+    v = mx.array(rng.standard_normal((S, D)).astype(np.float16))
+
+    st = init_h2o_state(n_sink=4, budget=S + 100, head_dim=D)
+    st = h2o_update(st, k, v)  # must not raise
+    assert st.keys.shape[0] == S
+    assert st.next_pos == S

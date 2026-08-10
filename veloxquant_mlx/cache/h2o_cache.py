@@ -75,6 +75,16 @@ original unrotated value. ``h2o_rope_base`` must match the model's own RoPE
 base for cause (1)'s correction to cancel out the original rotation
 correctly.
 
+Scalability fix (found while testing long context, independent of the RoPE
+issues above): a genuinely long prefill (~3200 tokens) with no eviction yet
+triggered previously crashed with ``RuntimeError: [metal::malloc] Resource
+limit (499000) exceeded`` before generation could even start, because
+``h2o_update``'s per-token Python loop issued 4 separate ``mx.concatenate``
+calls per token. Fixed in :mod:`veloxquant_mlx.quantizers.h2o` by batching
+whichever leading portion of an incoming batch is guaranteed not to trigger
+eviction into one vectorized call; verified numerically equivalent to the
+sequential loop it replaces.
+
 Byte accounting:
     h2o_kept_bytes    — fp16 bytes for currently retained K + V tokens
     full_seq_bytes    — hypothetical fp16 cost if all tokens were kept
