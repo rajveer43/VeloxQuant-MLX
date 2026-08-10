@@ -13,6 +13,7 @@ Kernels are organized into focused submodules:
   _rabitq_encode — Fused RaBitQ key encode (rotate + pack + magnitude)
   _rabitq_values — Nibble packing for 4-bit value indices
   _h2o_evict     — Fused H2O eviction: sink-protected argmin + evict + RoPE-remap
+  _keyformer_evict — Fused Keyformer eviction: Gumbel-regularized argmin + evict + RoPE-remap
 """
 
 from __future__ import annotations
@@ -63,6 +64,9 @@ from veloxquant_mlx.metal._rabitq_prefill import (
 from veloxquant_mlx.metal._h2o_evict import (
     h2o_fused_evict,
 )
+from veloxquant_mlx.metal._keyformer_evict import (
+    keyformer_fused_evict,
+)
 
 __all__ = [
     "vecinfer_dequant_metal",
@@ -85,4 +89,5 @@ __all__ = [
     "rabitq_pack_values",
     "rabitq_prefill_attend",
     "h2o_fused_evict",
+    "keyformer_fused_evict",
 ]
