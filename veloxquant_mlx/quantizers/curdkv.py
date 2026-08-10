@@ -46,6 +46,7 @@ from dataclasses import dataclass
 
 import mlx.core as mx
 import numpy as np
+import scipy.linalg
 
 
 @dataclass
@@ -125,6 +126,29 @@ def _attention_weights(query_proxy: mx.array, keys: mx.array) -> mx.array:
     return mx.softmax(logits, axis=-1)
 
 
+def _robust_svd(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """SVD of ``a``, robust to LAPACK's ``gesdd`` driver occasionally failing
+    to converge on real (non-adversarial) floating-point input — an observed,
+    documented ``gesdd`` flakiness on Apple's Accelerate LAPACK backend, not
+    a property of any particular matrix being "bad." Falls back to scipy's
+    ``gesvd`` driver (slower, essentially always converges) only on that
+    failure; the common case pays no extra cost. See
+    https://github.com/rajveer43/VeloxQuant-MLX/issues/147 for the
+    real-model repro (rare, data-dependent, not reproducible via synthetic
+    ill-conditioning) — that issue also flags an unconfirmed risk that the
+    ``gesvd`` fallback itself may stall on some inputs rather than crash;
+    not yet root-caused.
+
+    Returns:
+        ``(u, s)`` — left singular vectors and singular values, ``full_matrices=False``.
+    """
+    try:
+        u, s, _ = np.linalg.svd(a, full_matrices=False)
+    except np.linalg.LinAlgError:
+        u, s, _ = scipy.linalg.svd(a, full_matrices=False, lapack_driver="gesvd")
+    return u, s
+
+
 def _leverage_scores(
     query_proxy: mx.array, keys: mx.array, values: mx.array, rank_cap: int
 ) -> mx.array:
@@ -170,7 +194,7 @@ def _leverage_scores(
         return mx.zeros((n,), dtype=mx.float32)
 
     # Full SVD is fine at these sizes (n, d are small per-head cache blocks).
-    u, s, _ = np.linalg.svd(wv_np, full_matrices=False)
+    u, s = _robust_svd(wv_np)
     k = max(1, min(rank_cap, n, d))
     u_k = u[:, :k]  # [n, k]
     s_k = s[:k]  # [k]

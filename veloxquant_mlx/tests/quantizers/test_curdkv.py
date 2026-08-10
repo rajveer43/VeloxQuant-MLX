@@ -17,6 +17,8 @@ loading.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import mlx.core as mx
 import numpy as np
 import pytest
@@ -381,6 +383,40 @@ def test_h2o_blind_spot_on_same_planted_geometry() -> None:
         "H2O should not show a strong value-aware preference on identical-key "
         "geometry — its blind spot is exactly the point of this test"
     )
+
+
+# ---------------------------------------------------------------------------
+# SVD non-convergence fallback (real-model regression)
+# ---------------------------------------------------------------------------
+
+
+def test_leverage_scores_falls_back_when_svd_does_not_converge() -> None:
+    """np.linalg.svd's ``gesdd`` LAPACK driver has documented, data-dependent
+    non-convergence flakiness (observed on Apple's Accelerate backend during
+    real-model generation — see
+    https://github.com/rajveer43/VeloxQuant-MLX/issues/147 for the crash
+    trace: a full mlx_lm.generate() run through CurDKVKVCache died with
+    ``numpy.linalg.LinAlgError: SVD did not converge`` on ordinary, non-
+    adversarial real K/V activations). This is not reliably reproducible
+    with synthetic inputs, so this test forces the failure via a mock and
+    checks that ``_leverage_scores`` falls back to scipy's more robust
+    ``gesvd`` driver instead of propagating the crash.
+    """
+    from veloxquant_mlx.quantizers.curdkv import _leverage_scores
+
+    D = 16
+    n = 10
+    rng = np.random.default_rng(0)
+    keys = mx.array(rng.standard_normal((n, D)).astype(np.float32))
+    values = mx.array(rng.standard_normal((n, D)).astype(np.float32))
+    query = mx.array(rng.standard_normal(D).astype(np.float32))
+
+    with patch("numpy.linalg.svd", side_effect=np.linalg.LinAlgError("SVD did not converge")):
+        scores = _leverage_scores(query, keys, values, rank_cap=8)
+
+    scores_np = np.array(scores.tolist())
+    assert np.all(np.isfinite(scores_np))
+    assert scores_np.sum() == pytest.approx(1.0, abs=1e-4)
 
 
 # ---------------------------------------------------------------------------
