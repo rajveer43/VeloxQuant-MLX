@@ -65,6 +65,22 @@ Only the genuinely sequential eviction logic (each eviction depends on the
 previous one) still loops per token, and only once the cache is actually at
 or over budget.
 
+Fused Metal kernel for the over-budget branch (optional, further speedup on
+top of the vectorization above): the per-token eviction step itself — append,
+sink-protected argmin, evict, RoPE-remap — is still a Python loop, but each
+iteration's ~15 small MLX ops (concat x4, argmin, boolean-index x4, remap)
+can optionally be replaced with two fused Metal dispatches via
+:func:`veloxquant_mlx.metal.h2o_fused_evict` (design:
+``paper/research/H2O_METAL_KERNEL_TECH_SPEC.md``). Verified bit-for-bit
+equivalent to the MLX eviction branch it replaces (18 parity tests in
+``veloxquant_mlx/tests/metal/test_h2o_evict.py``, including sink protection,
+interior eviction, tie-break-matches-``mx.argmin``, and untouched-rows-are-
+exact-copies). Measured ~3.4x faster than the pure-MLX per-token branch at
+``n_kept=512, D=128``. Used automatically when
+``veloxquant_mlx.metal.metal_available()`` is true; falls back to the
+pure-MLX loop otherwise — this library works without Metal, per the
+existing policy for every other kernel here.
+
 Public API
 ----------
 H2OState          — immutable per-head state dataclass
@@ -273,6 +289,106 @@ def _batch_absorb_prefix(
     )
 
 
+# How often (in loop iterations) h2o_update forces graph materialization
+# during the over-budget eviction loop. Without this, a long prefill whose
+# budget is exceeded almost immediately queues one eviction's worth of
+# unevaluated graph nodes per token, exhausting MLX's Metal resource/
+# command-buffer tracking limit before generation can even finish — see the
+# flush call site below for the full explanation and how this was found.
+# 32 is conservative: confirmed empirically to keep a ~3200-token, heavy-
+# eviction prefill well under the ~499000-resource ceiling on the fused
+# Metal path (the tighter of the two paths), with negligible eval overhead
+# (mx.eval on 4 small 1-D/2-D arrays is cheap relative to the eviction work
+# it flushes).
+_EVAL_FLUSH_INTERVAL = 32
+
+
+def _metal_evict_available() -> bool:
+    """True iff the fused Metal eviction kernel can be used on this build.
+
+    Lazily imported (not at module top-level) so this module has no hard
+    dependency on ``mx.fast.metal_kernel`` being present — matches the
+    pattern in :mod:`veloxquant_mlx.metal`'s own ``__getattr__``.
+    """
+    try:
+        from veloxquant_mlx.metal import metal_available
+
+        return metal_available()
+    except Exception:
+        return False
+
+
+def _evict_via_mlx(
+    keys_cat: mx.array,
+    values_cat: mx.array,
+    scores_cat: mx.array,
+    positions_cat: mx.array,
+    n_sink: int,
+    rope_base: float,
+) -> tuple[mx.array, mx.array, mx.array, mx.array]:
+    """Pure-MLX eviction: sink-protected argmin, drop the loser, re-rotate
+    the shifted survivors. Reference implementation — see module docstring
+    for why this exists (the fused Metal path in :func:`_evict_via_metal`
+    must match this bit-for-bit)."""
+    n_total = keys_cat.shape[0]
+    n_sink_eff = min(n_sink, n_total)
+    if n_sink_eff > 0:
+        inf_block = mx.full((n_sink_eff,), float("inf"), dtype=mx.float32)
+        protected = mx.concatenate([inf_block, scores_cat[n_sink_eff:]], axis=0)
+    else:
+        protected = scores_cat
+
+    evict_idx = int(mx.argmin(protected).item())
+    evicted_pos = int(positions_cat[evict_idx].item())
+    keep_indices = [j for j in range(n_total) if j != evict_idx]
+    keys_kept = keys_cat[keep_indices]
+    values_kept = values_cat[keep_indices]
+    scores_kept = scores_cat[keep_indices]
+    old_positions_kept = positions_cat[keep_indices]
+
+    # Evicting row `evict_idx` leaves a size-1 gap at `evicted_pos`. Rows
+    # that sat *before* the gap (sinks included) keep their exact original
+    # position — nothing about their true distance from any future query
+    # changes. Rows *after* the gap shift down by exactly one position each,
+    # closing the gap so the model's position bookkeeping (which assumes a
+    # contiguous cache) stays in sync with what is actually stored. Minimal
+    # disturbance: only rows after the gap are re-rotated.
+    shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
+    new_positions = old_positions_kept + shift
+    keys_kept = rope_remap_positions(keys_kept, old_positions_kept, new_positions, base=rope_base)
+    return keys_kept, values_kept, scores_kept, new_positions
+
+
+def _evict_via_metal(
+    keys_cat: mx.array,
+    values_cat: mx.array,
+    scores_cat: mx.array,
+    positions_cat: mx.array,
+    n_sink: int,
+    rope_base: float,
+) -> tuple[mx.array, mx.array, mx.array, mx.array]:
+    """Fused-Metal-kernel eviction — see
+    :func:`veloxquant_mlx.metal.h2o_fused_evict` and
+    ``paper/research/H2O_METAL_KERNEL_TECH_SPEC.md``. Bit-for-bit equivalent
+    to :func:`_evict_via_mlx` (verified in
+    ``veloxquant_mlx/tests/metal/test_h2o_evict.py``); single-(batch*head)
+    call here (``BH=1``), since ``h2o_update`` operates on one head's state
+    at a time — batching across heads is a natural follow-up (see spec
+    section 6) not implemented yet.
+    """
+    from veloxquant_mlx.metal import h2o_fused_evict
+
+    keys_out, values_out, scores_out, positions_out = h2o_fused_evict(
+        keys_cat[None],
+        values_cat[None],
+        scores_cat[None],
+        positions_cat[None],
+        n_sink=n_sink,
+        rope_base=rope_base,
+    )
+    return keys_out[0], values_out[0], scores_out[0], positions_out[0]
+
+
 def h2o_update(
     state: H2OState,
     new_keys: mx.array,  # [S, D] fp16
@@ -356,36 +472,14 @@ def h2o_update(
         n_total = keys_cat.shape[0]
 
         if n_total > state.budget:
-            # Build eviction-protected score view: sinks get +inf
-            n_sink_eff = min(state.n_sink, n_total)
-            if n_sink_eff > 0:
-                inf_block = mx.full((n_sink_eff,), float("inf"), dtype=mx.float32)
-                protected = mx.concatenate([inf_block, scores_cat[n_sink_eff:]], axis=0)
+            if _metal_evict_available():
+                keys_cat, values_cat, scores_cat, positions_cat = _evict_via_metal(
+                    keys_cat, values_cat, scores_cat, positions_cat, state.n_sink, state.rope_base
+                )
             else:
-                protected = scores_cat
-
-            evict_idx = int(mx.argmin(protected).item())
-            evicted_pos = int(positions_cat[evict_idx].item())
-            keep_indices = [j for j in range(n_total) if j != evict_idx]
-            keys_cat = keys_cat[keep_indices]
-            values_cat = values_cat[keep_indices]
-            scores_cat = scores_cat[keep_indices]
-            old_positions_kept = positions_cat[keep_indices]
-
-            # Evicting row `evict_idx` leaves a size-1 gap at `evicted_pos`.
-            # Rows that sat *before* the gap (sinks included) keep their exact
-            # original position — nothing about their true distance from any
-            # future query changes. Rows *after* the gap shift down by
-            # exactly one position each, closing the gap so the model's
-            # position bookkeeping (which assumes a contiguous cache) stays
-            # in sync with what is actually stored. Minimal disturbance: only
-            # rows after the gap are re-rotated.
-            shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
-            new_positions = old_positions_kept + shift
-            keys_cat = rope_remap_positions(
-                keys_cat, old_positions_kept, new_positions, base=state.rope_base
-            )
-            positions_cat = new_positions
+                keys_cat, values_cat, scores_cat, positions_cat = _evict_via_mlx(
+                    keys_cat, values_cat, scores_cat, positions_cat, state.n_sink, state.rope_base
+                )
 
         state = H2OState(
             keys=keys_cat,
@@ -397,6 +491,24 @@ def h2o_update(
             rope_base=state.rope_base,
             next_pos=cur_pos + 1,
         )
+
+        # Force materialization periodically. Without this, a long prefill
+        # whose budget is exceeded almost immediately (heavy eviction from
+        # the first over-budget token onward) queues one eviction's worth of
+        # graph nodes per loop iteration — concatenations and boolean-index
+        # ops on the pure-MLX path, or two kernel dispatches on the fused
+        # Metal path — without ever forcing evaluation, across potentially
+        # thousands of iterations. Confirmed on real models: this exhausts
+        # MLX's Metal resource/command-buffer tracking limit exactly like
+        # the pre-vectorization prefill crash this module's docstring
+        # describes, except triggered by the eviction loop instead of the
+        # since-fixed below-budget batch path — and the fused Metal path
+        # hits the ceiling with FEWER iterations than the pure-MLX path
+        # (each kernel dispatch appears to register more Metal-side
+        # resources per call than an equivalent handful of array ops), so
+        # this flush is required for both paths, not just Metal.
+        if (i + 1) % _EVAL_FLUSH_INTERVAL == 0:
+            mx.eval(state.keys, state.values, state.scores, state.positions)
 
     return state
 
