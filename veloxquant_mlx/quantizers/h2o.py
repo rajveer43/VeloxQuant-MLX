@@ -123,6 +123,19 @@ class H2OState:
         next_pos:  Absolute position the next incoming token will occupy —
                    tracks true sequence position across calls, independent
                    of how many rows have been evicted so far.
+        grace:     Number of most-recently-arrived tokens protected from
+                   eviction, the same way sinks are, giving each new token
+                   ``grace`` update steps to accumulate real attention mass
+                   before it can be evicted. Fixes a real, confirmed-on-
+                   real-models problem: without this, every new token starts
+                   at score 0.0 and is (almost always) the global-minimum
+                   argmin target the instant the cache is full — see module
+                   docstring's "KNOWN, CONFIRMED-ON-REAL-MODELS PROBLEM".
+                   Positions are always kept sorted ascending after eviction
+                   (see the class-level note above), so "the most recent
+                   ``grace`` tokens" is equivalent to "the last ``grace``
+                   array indices" — this is what the eviction protection
+                   logic actually implements.
     """
 
     keys: mx.array | None
@@ -133,31 +146,53 @@ class H2OState:
     budget: int
     rope_base: float
     next_pos: int
+    grace: int = 0
 
 
-def init_h2o_state(n_sink: int, budget: int, head_dim: int, rope_base: float = 10000.0) -> H2OState:  # noqa: ARG001
+def init_h2o_state(
+    n_sink: int,
+    budget: int,
+    head_dim: int,  # noqa: ARG001
+    rope_base: float = 10000.0,
+    grace: int = 0,
+) -> H2OState:
     """Create an empty H2OState before any tokens arrive.
 
     Args:
         n_sink:    Number of initial sink positions to protect from eviction.
-        budget:    Maximum total tokens kept (sinks + non-sinks).
+        budget:    Maximum total tokens kept (sinks + non-sinks + grace).
         head_dim:  Head dimension D (unused here; accepted for API symmetry
                    with StreamingLLM's init_streaming_window).
         rope_base: RoPE frequency base — must match the base the model's own
                    attention module uses, or position remapping after
                    eviction will not cancel out the original rotation
                    correctly.
+        grace:     Number of most-recently-arrived tokens protected from
+                   eviction (see :class:`H2OState`'s ``grace`` field). ``0``
+                   reproduces the original (paper-faithful, but freeze-prone
+                   at tight budgets) behavior.
 
     Raises:
         ValueError: if there are sink positions to protect but they leave no
             evictable room within ``budget`` (``n_sink=0, budget=0`` remains
             a valid "disabled cache" configuration).
+        ValueError: if ``n_sink + grace >= budget`` — every row would be
+            protected, so eviction could never make room for a genuinely
+            new token once the cache fills, silently growing past ``budget``
+            in :func:`h2o_update`'s over-budget branch (which always assumes
+            exactly one evictable row exists).
     """
     if n_sink > 0 and n_sink >= budget:
         raise ValueError(
             f"h2o: n_sink ({n_sink}) must be < budget ({budget}) — no "
             "evictable positions remain, so sinks would be evicted once "
             "the cache fills"
+        )
+    if (n_sink > 0 or grace > 0) and n_sink + grace >= budget:
+        raise ValueError(
+            f"h2o: n_sink ({n_sink}) + grace ({grace}) must be < budget "
+            f"({budget}) — every row would be protected, leaving nothing "
+            "evictable once the cache fills"
         )
     return H2OState(
         keys=None,
@@ -168,6 +203,7 @@ def init_h2o_state(n_sink: int, budget: int, head_dim: int, rope_base: float = 1
         budget=budget,
         rope_base=rope_base,
         next_pos=0,
+        grace=grace,
     )
 
 
@@ -286,6 +322,7 @@ def _batch_absorb_prefix(
         budget=state.budget,
         rope_base=state.rope_base,
         next_pos=state.next_pos + B,
+        grace=state.grace,
     )
 
 
@@ -325,18 +362,32 @@ def _evict_via_mlx(
     positions_cat: mx.array,
     n_sink: int,
     rope_base: float,
+    grace: int = 0,
 ) -> tuple[mx.array, mx.array, mx.array, mx.array]:
-    """Pure-MLX eviction: sink-protected argmin, drop the loser, re-rotate
-    the shifted survivors. Reference implementation — see module docstring
-    for why this exists (the fused Metal path in :func:`_evict_via_metal`
-    must match this bit-for-bit)."""
+    """Pure-MLX eviction: sink- and grace-protected argmin, drop the loser,
+    re-rotate the shifted survivors. Reference implementation — see module
+    docstring for why this exists (the fused Metal path in
+    :func:`_evict_via_metal` must match this bit-for-bit).
+
+    Grace protection (``grace > 0``): the last ``grace`` array indices — the
+    most recently arrived tokens, since positions are always kept sorted
+    ascending after eviction (see :class:`H2OState`) — are treated as +inf
+    the same way sinks are, so a token cannot be evicted until it has
+    survived ``grace`` update steps and had a real chance to accumulate
+    attention mass. Without this, a brand-new token's starting score of 0.0
+    makes it (almost always) the argmin target immediately — see module
+    docstring's "KNOWN, CONFIRMED-ON-REAL-MODELS PROBLEM".
+    """
     n_total = keys_cat.shape[0]
     n_sink_eff = min(n_sink, n_total)
+    n_grace_eff = min(grace, n_total)
+    protected = scores_cat
     if n_sink_eff > 0:
-        inf_block = mx.full((n_sink_eff,), float("inf"), dtype=mx.float32)
-        protected = mx.concatenate([inf_block, scores_cat[n_sink_eff:]], axis=0)
-    else:
-        protected = scores_cat
+        sink_inf = mx.full((n_sink_eff,), float("inf"), dtype=mx.float32)
+        protected = mx.concatenate([sink_inf, protected[n_sink_eff:]], axis=0)
+    if n_grace_eff > 0:
+        grace_inf = mx.full((n_grace_eff,), float("inf"), dtype=mx.float32)
+        protected = mx.concatenate([protected[: n_total - n_grace_eff], grace_inf], axis=0)
 
     evict_idx = int(mx.argmin(protected).item())
     evicted_pos = int(positions_cat[evict_idx].item())
@@ -366,15 +417,16 @@ def _evict_via_metal(
     positions_cat: mx.array,
     n_sink: int,
     rope_base: float,
+    grace: int = 0,
 ) -> tuple[mx.array, mx.array, mx.array, mx.array]:
     """Fused-Metal-kernel eviction — see
     :func:`veloxquant_mlx.metal.h2o_fused_evict` and
     ``paper/research/H2O_METAL_KERNEL_TECH_SPEC.md``. Bit-for-bit equivalent
     to :func:`_evict_via_mlx` (verified in
-    ``veloxquant_mlx/tests/metal/test_h2o_evict.py``); single-(batch*head)
-    call here (``BH=1``), since ``h2o_update`` operates on one head's state
-    at a time — batching across heads is a natural follow-up (see spec
-    section 6) not implemented yet.
+    ``veloxquant_mlx/tests/metal/test_h2o_evict.py``, including grace
+    protection); single-(batch*head) call here (``BH=1``), since
+    ``h2o_update`` operates on one head's state at a time — batching across
+    heads is a natural follow-up (see spec section 6) not implemented yet.
     """
     from veloxquant_mlx.metal import h2o_fused_evict
 
@@ -385,6 +437,7 @@ def _evict_via_metal(
         positions_cat[None],
         n_sink=n_sink,
         rope_base=rope_base,
+        grace=grace,
     )
     return keys_out[0], values_out[0], scores_out[0], positions_out[0]
 
@@ -454,6 +507,7 @@ def h2o_update(
                 budget=state.budget,
                 rope_base=state.rope_base,
                 next_pos=cur_pos + 1,
+                grace=state.grace,
             )
             continue
 
@@ -474,11 +528,23 @@ def h2o_update(
         if n_total > state.budget:
             if _metal_evict_available():
                 keys_cat, values_cat, scores_cat, positions_cat = _evict_via_metal(
-                    keys_cat, values_cat, scores_cat, positions_cat, state.n_sink, state.rope_base
+                    keys_cat,
+                    values_cat,
+                    scores_cat,
+                    positions_cat,
+                    state.n_sink,
+                    state.rope_base,
+                    state.grace,
                 )
             else:
                 keys_cat, values_cat, scores_cat, positions_cat = _evict_via_mlx(
-                    keys_cat, values_cat, scores_cat, positions_cat, state.n_sink, state.rope_base
+                    keys_cat,
+                    values_cat,
+                    scores_cat,
+                    positions_cat,
+                    state.n_sink,
+                    state.rope_base,
+                    state.grace,
                 )
 
         state = H2OState(
@@ -490,6 +556,7 @@ def h2o_update(
             budget=state.budget,
             rope_base=state.rope_base,
             next_pos=cur_pos + 1,
+            grace=state.grace,
         )
 
         # Force materialization periodically. Without this, a long prefill
