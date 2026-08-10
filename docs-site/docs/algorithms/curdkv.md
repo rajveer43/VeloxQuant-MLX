@@ -154,10 +154,17 @@ loop — no prefill-only phase, unlike [SnapKV](../algorithms/snapkv)):
 4. Accumulate the leverage score into each existing token's cumulative
    score; seed the new token's own score with its self-leverage within the
    resulting block (not a flat 0 — see honesty crux, point 4).
-5. If the cache now exceeds `curdkv_budget`, permanently evict the
-   lowest-cumulative-score non-sink token (sink protection identical to
+5. If the cache now exceeds `curdkv_budget`, permanently evict the non-sink
+   token with the lowest **mean per-step** leverage score (cumulative score
+   divided by the number of accumulation steps it has been through),
+   **not** the raw cumulative sum (sink protection identical to
    [H2O](../algorithms/h2o): the first `curdkv_n_sink` positions get `+inf`
-   protection before the `argmin`).
+   protection before the `argmin`). Comparing raw sums would bias eviction
+   against newcomers — an old survivor's sum grows with every step it
+   stays cached, so a brand-new, far-more-valuable token could otherwise be
+   evicted on the very step it arrives, before it has had any chance to
+   accumulate. See [#145](https://github.com/rajveer43/VeloxQuant-MLX/issues/145)
+   for the regression case.
 
 ## Byte accounting
 

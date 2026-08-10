@@ -384,6 +384,50 @@ def test_h2o_blind_spot_on_same_planted_geometry() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Age-bias regression: newcomer vs. long-lived survivor eviction fairness
+# ---------------------------------------------------------------------------
+
+
+def test_high_value_newcomer_not_evicted_on_arrival() -> None:
+    """A brand-new token with a value vector far larger (more
+    output-relevant) than anything already cached must not be evicted on the
+    very step it arrives, just because existing survivors have had many
+    prior steps to accumulate leverage score.
+
+    Regression test: comparing a newcomer's single-step self-leverage score
+    directly against survivors' many-step CUMULATIVE scores is a scale
+    mismatch — the cumulative sum grows with age regardless of value, so an
+    old-but-mild survivor could out-score a new-but-critical token purely by
+    having been in the cache longer. Eviction must compare MEAN per-step
+    leverage (cumulative score / steps survived) instead.
+    """
+    D = 16
+    budget = 4
+    st = init_curdkv_state(n_sink=0, budget=budget, head_dim=D)
+    rng = np.random.default_rng(3)
+
+    # Fill the cache and let mild-value survivors accumulate score over many
+    # steps, so their raw cumulative sums grow large purely from age.
+    for _ in range(24):
+        ki = mx.array(rng.standard_normal((1, D)).astype(np.float16)) * 0.1
+        vi = mx.array(rng.standard_normal((1, D)).astype(np.float16)) * 0.1
+        st = curdkv_update(st, ki, vi)
+
+    # A single newcomer with a value vector 1000x larger than anything seen
+    # so far — should clearly deserve retention over the mild survivors.
+    k_important = mx.array(rng.standard_normal((1, D)).astype(np.float16)) * 0.1
+    v_important = mx.array(rng.standard_normal((1, D)).astype(np.float16)) * 100.0
+    st = curdkv_update(st, k_important, v_important)
+
+    important_key_fp16 = k_important[0].astype(mx.float16)
+    retained = any(
+        float(mx.sum(mx.abs(st.keys[r] - important_key_fp16)).item()) < 1e-3
+        for r in range(st.keys.shape[0])
+    )
+    assert retained, "high-value newcomer was evicted purely due to accumulation-age bias"
+
+
+# ---------------------------------------------------------------------------
 # Byte accounting
 # ---------------------------------------------------------------------------
 

@@ -57,6 +57,13 @@ class CurDKVState:
         values: [n_kept, D] fp16 stored value rows, or None before first update.
         leverage_scores: [n_kept] cumulative leverage-score estimate
                          (float32), or None.
+        n_updates: [n_kept] number of accumulation steps each token's score
+                   has been through so far (float32), including its own
+                   self-leverage seed. Used to compare tokens of different
+                   ages on a fair per-step-average basis at eviction time —
+                   see honesty crux point 4 in the docs for why a raw
+                   cumulative-sum comparison is scale-biased against
+                   newcomers. `None` before the first update.
         n_sink: Number of leading sink positions — never evicted.
         budget: Maximum tokens to keep at any time (including sinks).
         rank_cap: SVD rank cap used for leverage-score estimation.
@@ -65,6 +72,7 @@ class CurDKVState:
     keys: mx.array | None
     values: mx.array | None
     leverage_scores: mx.array | None
+    n_updates: mx.array | None
     n_sink: int
     budget: int
     rank_cap: int
@@ -95,6 +103,7 @@ def init_curdkv_state(n_sink: int, budget: int, head_dim: int, rank_cap: int = 1
         keys=None,
         values=None,
         leverage_scores=None,
+        n_updates=None,
         n_sink=n_sink,
         budget=budget,
         rank_cap=rank_cap,
@@ -203,7 +212,16 @@ def curdkv_update(
          a negligible-value newcomer be evicted immediately instead of
          parking at a permanent tie.
       4. If total tokens > budget: permanently evict the non-sink token with the
-         lowest cumulative leverage score.
+         lowest MEAN per-step leverage score (cumulative score / number of
+         accumulation steps), not the raw cumulative sum. A raw-sum
+         comparison is scale-biased against newcomers: an old survivor's
+         score is a sum over every step it has been in the cache, while a
+         brand-new token's score is a single self-leverage sample — so a
+         newcomer with a far larger, more output-relevant value than
+         anything currently cached could otherwise be evicted on the very
+         step it arrives, purely because it hasn't had time to accumulate,
+         defeating the point of value-aware retention (see GH issue for the
+         regression case).
 
     Args:
         state:      Current CurDKVState for this head.
@@ -225,6 +243,7 @@ def curdkv_update(
                 keys=k_i[None].astype(mx.float16),
                 values=v_i[None].astype(mx.float16),
                 leverage_scores=mx.ones((1,), dtype=mx.float32),
+                n_updates=mx.ones((1,), dtype=mx.float32),
                 n_sink=state.n_sink,
                 budget=state.budget,
                 rank_cap=state.rank_cap,
@@ -239,6 +258,7 @@ def curdkv_update(
             state.rank_cap,
         )
         updated_scores = state.leverage_scores + lev  # [n_kept]
+        updated_n_updates = state.n_updates + 1.0  # [n_kept]
 
         # --- append new token, seeded with its own leverage within the
         # resulting (existing + new) block (see docstring: not a flat 0) ---
@@ -251,28 +271,37 @@ def curdkv_update(
             state.rank_cap,
         )[-1:]
         scores_cat = mx.concatenate([updated_scores, self_lev], axis=0)
+        n_updates_cat = mx.concatenate([updated_n_updates, mx.ones((1,), dtype=mx.float32)], axis=0)
 
         n_total = keys_cat.shape[0]
 
         if n_total > state.budget:
+            # Compare MEAN per-step leverage, not the raw cumulative sum —
+            # an old survivor's sum grows with every step it has survived,
+            # so comparing raw sums is biased against newcomers regardless
+            # of their actual value (see docstring point 4 above).
+            mean_scores = scores_cat / n_updates_cat
+
             # Build eviction-protected score view: sinks get +inf
             n_sink_eff = min(state.n_sink, n_total)
             if n_sink_eff > 0:
                 inf_block = mx.full((n_sink_eff,), float("inf"), dtype=mx.float32)
-                protected = mx.concatenate([inf_block, scores_cat[n_sink_eff:]], axis=0)
+                protected = mx.concatenate([inf_block, mean_scores[n_sink_eff:]], axis=0)
             else:
-                protected = scores_cat
+                protected = mean_scores
 
             evict_idx = int(mx.argmin(protected).item())
             keep_indices = [j for j in range(n_total) if j != evict_idx]
             keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
             scores_cat = scores_cat[keep_indices]
+            n_updates_cat = n_updates_cat[keep_indices]
 
         state = CurDKVState(
             keys=keys_cat,
             values=values_cat,
             leverage_scores=scores_cat,
+            n_updates=n_updates_cat,
             n_sink=state.n_sink,
             budget=state.budget,
             rank_cap=state.rank_cap,
