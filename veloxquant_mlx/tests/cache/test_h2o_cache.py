@@ -7,6 +7,15 @@ output shape bounded by budget, output dtype fp16, sink protection, decode
 accumulation, budget enforcement across many steps, byte accounting
 (compression_ratio, h2o_kept_bytes), tokens_kept, n_sink=0 edge case,
 determinism, and for_model config propagation. All data is synthetic.
+
+Most tests here pin ``h2o_grace=0`` and ``h2o_decay=1.0`` explicitly: they
+exercise the underlying eviction *mechanism* (sink protection, budget
+enforcement, determinism) in isolation from the grace-period and decay
+fixes (see grace/decay-specific tests further down and in test_h2o.py), and
+were originally written with small budgets (4-16) that predate
+``h2o_grace``'s and ``h2o_decay``'s nonzero/non-unity defaults — pinning
+grace=0, decay=1.0 keeps their behavior exactly reproducible without every
+one of them needing a size bump or score-tolerance change.
 """
 
 from __future__ import annotations
@@ -20,7 +29,7 @@ from veloxquant_mlx.cache.h2o_cache import H2OKVCache
 
 
 def _make(**cfg):
-    base = dict(method="h2o", head_dim=32, h2o_budget=8, h2o_n_sink=2)
+    base = dict(method="h2o", head_dim=32, h2o_budget=8, h2o_n_sink=2, h2o_grace=0, h2o_decay=1.0)
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 
@@ -201,11 +210,88 @@ def test_build_via_for_model_propagates_config() -> None:
         head_dim=32,
         h2o_budget=64,
         h2o_n_sink=8,
+        h2o_grace=12,
+        h2o_decay=0.95,
     )
     caches = KVCacheBuilder.for_model(_Model(), cfg)
     assert all(isinstance(c, H2OKVCache) for c in caches)
     assert caches[0]._budget == 64
     assert caches[0]._n_sink == 8
+    assert caches[0]._grace == 12
+    assert caches[0]._decay == 0.95
+
+
+# ---------------------------------------------------------------------------
+# Grace period: fixes the early-token-freeze problem (see h2o_cache.py's
+# module docstring). The most-recently-arrived h2o_grace tokens are
+# protected from eviction, giving new tokens a chance to accumulate real
+# attention mass instead of being evicted the instant they arrive (score 0.0
+# is otherwise almost always the global minimum).
+# ---------------------------------------------------------------------------
+
+
+def test_default_grace_is_nonzero() -> None:
+    """h2o_grace defaults to a nonzero value in KVCacheConfig — the freeze
+    fix is on by default for real usage, not opt-in only."""
+    cfg = KVCacheConfig(method="h2o", head_dim=32)
+    assert cfg.h2o_grace > 0
+
+
+def test_grace_protects_new_tokens_from_immediate_eviction() -> None:
+    """With grace >= budget-worth of headroom, newly-arrived tokens survive
+    long enough to actually grow the kept set's position range, unlike
+    grace=0 which freezes on the earliest tokens forever (see
+    test_h2o.py::test_new_token_almost_always_evicted_first for the grace=0
+    baseline this contrasts with)."""
+    budget = 8
+    c = _make(h2o_budget=budget, h2o_n_sink=0, h2o_grace=4)
+    for i in range(30):
+        k, v = _rand_kv(S=1, H=1, D=32, seed=i)
+        c.update_and_fetch(k, v)
+    # With grace=4 protecting the newest arrivals, the kept window must have
+    # advanced well past the first `budget` positions after 30 steps —
+    # grace=0 would freeze it at positions [0..budget-1] forever.
+    assert c.offset == 30
+    assert c.keys.shape[2] <= budget
+
+
+# ---------------------------------------------------------------------------
+# Decay: fixes score staleness (see h2o_cache.py's module docstring, "SECOND
+# FIXED..." section). Without decay, cumulative scores only ever grow, so an
+# old survivor permanently outranks any recently-graduated (post-grace)
+# token regardless of current relevance, thinning the kept window into a
+# sparse gapped trickle instead of a contiguous local context.
+# ---------------------------------------------------------------------------
+
+
+def test_default_decay_is_not_one() -> None:
+    """h2o_decay defaults to < 1.0 in KVCacheConfig — the staleness fix is on
+    by default for real usage, not opt-in only."""
+    cfg = KVCacheConfig(method="h2o", head_dim=32)
+    assert 0.0 < cfg.h2o_decay < 1.0
+
+
+def test_decay_rejects_out_of_range_values() -> None:
+    """Validation happens lazily in init_h2o_state, on the first
+    update_and_fetch call (state is only known once B/H/D are known) — not
+    at H2OKVCache construction time."""
+    k, v = _rand_kv(S=1, H=1, D=32)
+    with pytest.raises(ValueError, match="decay"):
+        _make(h2o_decay=0.0).update_and_fetch(k, v)
+    with pytest.raises(ValueError, match="decay"):
+        _make(h2o_decay=1.5).update_and_fetch(k, v)
+
+
+def test_decay_and_grace_together_keep_budget_enforced() -> None:
+    """Sanity check that combining both fixes doesn't break the invariant
+    every eviction path must uphold: never exceed h2o_budget."""
+    budget = 12
+    c = _make(h2o_budget=budget, h2o_n_sink=2, h2o_grace=4, h2o_decay=0.9)
+    for i in range(50):
+        k, v = _rand_kv(S=1, H=1, D=32, seed=i)
+        c.update_and_fetch(k, v)
+    assert c.offset == 50
+    assert c.keys.shape[2] <= budget
 
 
 # ---------------------------------------------------------------------------

@@ -88,7 +88,7 @@ def _evict_reduce_kernel(nsg: int):
     if key not in _cache:
         _cache[key] = mx.fast.metal_kernel(
             name=f"h2o_evict_reduce_nsg{nsg}",
-            input_names=["scores_mid", "n_sink_arr"],
+            input_names=["scores_mid", "n_sink_arr", "n_grace_arr"],
             output_names=["evict_idx"],
             header=f"#define NSG_C {nsg}\n",
             source=_H2O_EVICT_REDUCE_SRC,
@@ -129,9 +129,10 @@ def h2o_fused_evict(
     positions_mid: mx.array,
     n_sink: int,
     rope_base: float,
+    grace: int = 0,
     nsg: int = 4,
 ) -> tuple[mx.array, mx.array, mx.array, mx.array]:
-    """Fused sink-protected argmin + evict + RoPE-remap, batched over (batch*head).
+    """Fused sink+grace-protected argmin + evict + RoPE-remap, batched over (batch*head).
 
     Matches ``h2o_update``'s per-token eviction branch bit-for-bit (see
     ``H2O_METAL_KERNEL_TECH_SPEC.md`` section 3). Caller must have already
@@ -155,6 +156,10 @@ def h2o_fused_evict(
                        the re-rotation of shifted rows will not cancel out
                        the original rotation correctly (same requirement as
                        ``rope_remap_positions``).
+        grace:         Number of most-recently-arrived rows (trailing array
+                       index — positions are always sorted ascending, see
+                       ``H2OState.grace``) protected from eviction, uniform
+                       across all BH groups.
         nsg:           SIMD-groups per threadgroup for the reduction kernel.
 
     Returns:
@@ -178,9 +183,10 @@ def h2o_fused_evict(
         raise ValueError(f"h2o_fused_evict: nsg={nsg} must be in 1..32")
 
     n_sink_arr = mx.array([n_sink], dtype=mx.uint32)
+    n_grace_arr = mx.array([grace], dtype=mx.uint32)
 
     (evict_idx,) = _evict_reduce_kernel(nsg)(
-        inputs=[scores_mid.astype(mx.float32), n_sink_arr],
+        inputs=[scores_mid.astype(mx.float32), n_sink_arr, n_grace_arr],
         grid=(BH * 32, nsg, 1),
         threadgroup=(32, nsg, 1),
         output_shapes=[(BH,)],

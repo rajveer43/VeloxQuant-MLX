@@ -14,20 +14,39 @@ Adaptation limitations (stated plainly):
   - Scores are accumulated additively (sum of softmax weights) rather than
     the paper's exact formulation, which may differ in low-budget regimes.
 
-KNOWN, CONFIRMED-ON-REAL-MODELS PROBLEM (not fixed here, see
+FIXED, CONFIRMED-ON-REAL-MODELS PROBLEM #1 — permanent freeze (see
 cache/h2o_cache.py and docs-site/docs/algorithms/h2o.md for the full
 writeup): every newly-arrived token starts at score 0.0, and eviction removes
 the global-minimum-score token — so on essentially any real score
 distribution, the brand-new token is its own eviction target almost every
-time the cache is full. In practice this freezes the kept set on whichever
-tokens filled the budget first (typically the prompt) and never admits
+time the cache is full. In practice this froze the kept set on whichever
+tokens filled the budget first (typically the prompt) and never admitted
 anything generated afterward. Confirmed via mlx_lm.generate on Llama-3.2-1B
 and Mistral-7B: after dozens of true decode steps, the kept set was still
 exactly the original prompt positions, and generation degenerated into
-repetition loops from having no visibility into its own recent output. This
-is a consequence of implementing the paper's own formula correctly, not a
-deviation from it — fixing it needs a different eviction/scoring policy
-(e.g. a grace period before eviction-eligibility), tracked as follow-up work.
+repetition loops from having no visibility into its own recent output. Fixed
+via ``grace`` (see :class:`H2OState`): the most-recently-arrived ``grace``
+tokens are protected from eviction the same way sinks are, giving each new
+token real update steps to accumulate attention mass before it becomes
+eviction-eligible at all.
+
+FIXED, CONFIRMED-ON-REAL-MODELS PROBLEM #2 — score staleness (found while
+verifying the fix for #1 above): fixing the freeze is necessary but not
+sufficient. Scores are a running sum that never shrinks, so a token's total
+lifetime attention mass grows monotonically with its age — confirmed
+empirically (correlation of -0.97 between token age/position and score in a
+60-step synthetic run). An old sink-adjacent survivor can outscore every
+recently-graduated (post-grace) token forever, so once grace fixed the
+freeze, the eviction argmin instead thinned the *rest* of the budget into a
+sparse, gapped kept window (e.g. positions ``0,1,2,3,4,5,44,46,48,...``
+instead of a contiguous recent block) rather than a genuinely local window —
+and generation still degraded, just via broken local coherence from the gaps
+instead of the original permanent freeze. Fixed via ``decay`` (see
+:class:`H2OState`): existing scores are multiplicatively decayed each update
+step before new attention mass is added, so old tokens' scores fade and
+stop permanently outranking newer ones. Verified in simulation: with decay,
+the non-sink kept window becomes contiguous (gaps of 1) instead of a uniform
+trickle (gaps of ~2 everywhere).
 
 RoPE position remapping (a separate, narrower, and now-fixed correctness
 issue — real, but NOT the cause of the freeze above):
@@ -123,6 +142,31 @@ class H2OState:
         next_pos:  Absolute position the next incoming token will occupy —
                    tracks true sequence position across calls, independent
                    of how many rows have been evicted so far.
+        grace:     Number of most-recently-arrived tokens protected from
+                   eviction, the same way sinks are, giving each new token
+                   ``grace`` update steps to accumulate real attention mass
+                   before it can be evicted. Fixes a real, confirmed-on-
+                   real-models problem: without this, every new token starts
+                   at score 0.0 and is (almost always) the global-minimum
+                   argmin target the instant the cache is full — see module
+                   docstring's "KNOWN, CONFIRMED-ON-REAL-MODELS PROBLEM".
+                   Positions are always kept sorted ascending after eviction
+                   (see the class-level note above), so "the most recent
+                   ``grace`` tokens" is equivalent to "the last ``grace``
+                   array indices" — this is what the eviction protection
+                   logic actually implements.
+        decay:     Multiplicative factor applied to every existing score
+                   before adding a new token's attention contribution, each
+                   update step. Fixes a second real, confirmed-on-real-models
+                   problem distinct from (and only exposed by fixing) the
+                   freeze above: scores are a running sum that never shrinks,
+                   so a token's total lifetime attention mass grows with its
+                   age regardless of current relevance — an old sink-adjacent
+                   survivor can outscore every recently-graduated token
+                   forever, so the eviction argmin keeps thinning the *rest*
+                   of the budget into a sparse, gapped trickle instead of a
+                   contiguous local window. ``decay=1.0`` reproduces the
+                   original (paper-faithful, no-decay) behavior exactly.
     """
 
     keys: mx.array | None
@@ -133,25 +177,50 @@ class H2OState:
     budget: int
     rope_base: float
     next_pos: int
+    grace: int = 0
+    decay: float = 1.0
 
 
-def init_h2o_state(n_sink: int, budget: int, head_dim: int, rope_base: float = 10000.0) -> H2OState:  # noqa: ARG001
+def init_h2o_state(
+    n_sink: int,
+    budget: int,
+    head_dim: int,  # noqa: ARG001
+    rope_base: float = 10000.0,
+    grace: int = 0,
+    decay: float = 1.0,
+) -> H2OState:
     """Create an empty H2OState before any tokens arrive.
 
     Args:
         n_sink:    Number of initial sink positions to protect from eviction.
-        budget:    Maximum total tokens kept (sinks + non-sinks).
+        budget:    Maximum total tokens kept (sinks + non-sinks + grace).
         head_dim:  Head dimension D (unused here; accepted for API symmetry
                    with StreamingLLM's init_streaming_window).
         rope_base: RoPE frequency base — must match the base the model's own
                    attention module uses, or position remapping after
                    eviction will not cancel out the original rotation
                    correctly.
+        grace:     Number of most-recently-arrived tokens protected from
+                   eviction (see :class:`H2OState`'s ``grace`` field). ``0``
+                   reproduces the original (paper-faithful, but freeze-prone
+                   at tight budgets) behavior.
+        decay:     Multiplicative per-step decay on existing scores (see
+                   :class:`H2OState`'s ``decay`` field). ``1.0`` reproduces
+                   the original (paper-faithful, but staleness-prone)
+                   behavior — must be in ``(0, 1]``.
 
     Raises:
         ValueError: if there are sink positions to protect but they leave no
             evictable room within ``budget`` (``n_sink=0, budget=0`` remains
             a valid "disabled cache" configuration).
+        ValueError: if ``n_sink + grace >= budget`` — every row would be
+            protected, so eviction could never make room for a genuinely
+            new token once the cache fills, silently growing past ``budget``
+            in :func:`h2o_update`'s over-budget branch (which always assumes
+            exactly one evictable row exists).
+        ValueError: if ``decay`` is not in ``(0, 1]`` — ``<= 0`` collapses
+            all history to nothing (or flips sign) every step, and ``> 1``
+            is growth, not decay, defeating the point of this field.
     """
     if n_sink > 0 and n_sink >= budget:
         raise ValueError(
@@ -159,6 +228,14 @@ def init_h2o_state(n_sink: int, budget: int, head_dim: int, rope_base: float = 1
             "evictable positions remain, so sinks would be evicted once "
             "the cache fills"
         )
+    if (n_sink > 0 or grace > 0) and n_sink + grace >= budget:
+        raise ValueError(
+            f"h2o: n_sink ({n_sink}) + grace ({grace}) must be < budget "
+            f"({budget}) — every row would be protected, leaving nothing "
+            "evictable once the cache fills"
+        )
+    if not (0.0 < decay <= 1.0):
+        raise ValueError(f"h2o: decay ({decay}) must be in (0, 1]")
     return H2OState(
         keys=None,
         values=None,
@@ -168,6 +245,8 @@ def init_h2o_state(n_sink: int, budget: int, head_dim: int, rope_base: float = 1
         budget=budget,
         rope_base=rope_base,
         next_pos=0,
+        grace=grace,
+        decay=decay,
     )
 
 
@@ -190,6 +269,7 @@ def _batch_absorb_no_eviction(
     prior_keys: mx.array | None,
     prior_scores: mx.array | None,
     new_keys: mx.array,
+    decay: float = 1.0,
 ) -> mx.array:
     """Vectorized score accumulation for a batch of incoming tokens, valid
     ONLY while every one of them is guaranteed to survive (no eviction can
@@ -207,6 +287,12 @@ def _batch_absorb_no_eviction(
                       (``None`` if the cache was empty).
         new_keys:     ``[S, D]`` fp32 incoming keys, all of which the caller
                       has verified will fit within budget with no eviction.
+        decay:        Multiplicative per-step decay applied to ``prior_scores``
+                      before any new mass is added (see :class:`H2OState`'s
+                      ``decay`` field). Applied once per absorbed token, same
+                      as the per-token loop it replaces — token ``j``'s prior
+                      contribution is decayed ``j+1`` times by the time all
+                      ``S`` tokens have been absorbed. ``1.0`` is a no-op.
 
     Returns:
         ``[P + S]`` fp32 scores: ``prior_scores`` updated with every new
@@ -220,14 +306,26 @@ def _batch_absorb_no_eviction(
     if prior_keys is None:
         # First S tokens ever: token 0 bootstraps to 1.0 (matches
         # h2o_update's bootstrap branch); every later token j attends
-        # causally over tokens 0..j-1 only.
+        # causally over tokens 0..j-1 only. Within-batch decay of the
+        # bootstrap/earlier contributions is handled the same way as the
+        # prior-tokens branch below, via per-step decay powers.
         logits = (new_keys @ new_keys.T) * scale  # [S, S]
         causal = mx.arange(S)[:, None] > mx.arange(S)[None, :]
         masked = mx.where(causal, logits, -mx.inf)
         attn = mx.softmax(masked, axis=-1)
         attn = mx.where(mx.isnan(attn), 0.0, attn)  # row 0: all -inf -> nan -> 0
+        if decay != 1.0:
+            # Row j's (token j's) contribution to column i (token i, i<j) is
+            # applied at absorption step j, then decayed once per subsequent
+            # step up to S-1 -> (S-1-j) further decay applications.
+            steps_remaining = (S - 1) - mx.arange(S)  # [S], per-row (per-j) exponent
+            decay_pow = mx.array(decay, dtype=mx.float32) ** steps_remaining.astype(mx.float32)
+            attn = attn * decay_pow[:, None]
         col_sums = mx.sum(attn, axis=0)  # [S], token j's mass from tokens after it
-        bootstrap = mx.concatenate([mx.array([1.0], dtype=mx.float32), mx.zeros((S - 1,))])
+        bootstrap_decay = (
+            mx.array(decay, dtype=mx.float32) ** (S - 1) if decay != 1.0 else mx.array(1.0)
+        )
+        bootstrap = mx.concatenate([bootstrap_decay[None], mx.zeros((S - 1,), dtype=mx.float32)])
         return col_sums + bootstrap
 
     # Prior tokens already in the cache: each new token j attends over ALL
@@ -239,9 +337,20 @@ def _batch_absorb_no_eviction(
     new_logits = mx.where(causal, new_logits, -mx.inf)
     full_logits = mx.concatenate([prior_logits, new_logits], axis=-1)  # [S, P+S]
     attn = mx.softmax(full_logits, axis=-1)  # every row has >=1 real prior token -> no nan
+    if decay != 1.0:
+        # Row j's contribution (to prior tokens AND to earlier new tokens i<j)
+        # is applied at absorption step j, then decayed once per subsequent
+        # step up to S-1 -> (S-1-j) further decay applications, same scheme
+        # as the bootstrap branch above.
+        steps_remaining = (S - 1) - mx.arange(S)  # [S]
+        decay_pow = mx.array(decay, dtype=mx.float32) ** steps_remaining.astype(mx.float32)
+        attn = attn * decay_pow[:, None]
     prior_contrib = mx.sum(attn[:, :P], axis=0)  # [P] mass each prior token gains
     new_contrib = mx.sum(attn[:, P:], axis=0)  # [S] mass each new token gains from later new tokens
-    updated_prior_scores = prior_scores + prior_contrib
+    # prior_scores themselves need decaying S times (once per absorbed token)
+    # before adding the (already correctly-decayed) contributions above.
+    decayed_prior_scores = prior_scores * (decay**S) if decay != 1.0 else prior_scores
+    updated_prior_scores = decayed_prior_scores + prior_contrib
     return mx.concatenate([updated_prior_scores, new_contrib], axis=0)
 
 
@@ -266,7 +375,9 @@ def _batch_absorb_prefix(
     new_positions = mx.arange(state.next_pos, state.next_pos + B, dtype=mx.int32)
 
     prior_keys32 = None if state.keys is None else state.keys.astype(mx.float32)
-    scores = _batch_absorb_no_eviction(prior_keys32, state.scores, new_keys.astype(mx.float32))
+    scores = _batch_absorb_no_eviction(
+        prior_keys32, state.scores, new_keys.astype(mx.float32), decay=state.decay
+    )
 
     if state.keys is None:
         keys_cat = new_keys.astype(mx.float16)
@@ -286,6 +397,8 @@ def _batch_absorb_prefix(
         budget=state.budget,
         rope_base=state.rope_base,
         next_pos=state.next_pos + B,
+        grace=state.grace,
+        decay=state.decay,
     )
 
 
@@ -325,18 +438,32 @@ def _evict_via_mlx(
     positions_cat: mx.array,
     n_sink: int,
     rope_base: float,
+    grace: int = 0,
 ) -> tuple[mx.array, mx.array, mx.array, mx.array]:
-    """Pure-MLX eviction: sink-protected argmin, drop the loser, re-rotate
-    the shifted survivors. Reference implementation — see module docstring
-    for why this exists (the fused Metal path in :func:`_evict_via_metal`
-    must match this bit-for-bit)."""
+    """Pure-MLX eviction: sink- and grace-protected argmin, drop the loser,
+    re-rotate the shifted survivors. Reference implementation — see module
+    docstring for why this exists (the fused Metal path in
+    :func:`_evict_via_metal` must match this bit-for-bit).
+
+    Grace protection (``grace > 0``): the last ``grace`` array indices — the
+    most recently arrived tokens, since positions are always kept sorted
+    ascending after eviction (see :class:`H2OState`) — are treated as +inf
+    the same way sinks are, so a token cannot be evicted until it has
+    survived ``grace`` update steps and had a real chance to accumulate
+    attention mass. Without this, a brand-new token's starting score of 0.0
+    makes it (almost always) the argmin target immediately — see module
+    docstring's "KNOWN, CONFIRMED-ON-REAL-MODELS PROBLEM".
+    """
     n_total = keys_cat.shape[0]
     n_sink_eff = min(n_sink, n_total)
+    n_grace_eff = min(grace, n_total)
+    protected = scores_cat
     if n_sink_eff > 0:
-        inf_block = mx.full((n_sink_eff,), float("inf"), dtype=mx.float32)
-        protected = mx.concatenate([inf_block, scores_cat[n_sink_eff:]], axis=0)
-    else:
-        protected = scores_cat
+        sink_inf = mx.full((n_sink_eff,), float("inf"), dtype=mx.float32)
+        protected = mx.concatenate([sink_inf, protected[n_sink_eff:]], axis=0)
+    if n_grace_eff > 0:
+        grace_inf = mx.full((n_grace_eff,), float("inf"), dtype=mx.float32)
+        protected = mx.concatenate([protected[: n_total - n_grace_eff], grace_inf], axis=0)
 
     evict_idx = int(mx.argmin(protected).item())
     evicted_pos = int(positions_cat[evict_idx].item())
@@ -366,15 +493,16 @@ def _evict_via_metal(
     positions_cat: mx.array,
     n_sink: int,
     rope_base: float,
+    grace: int = 0,
 ) -> tuple[mx.array, mx.array, mx.array, mx.array]:
     """Fused-Metal-kernel eviction — see
     :func:`veloxquant_mlx.metal.h2o_fused_evict` and
     ``paper/research/H2O_METAL_KERNEL_TECH_SPEC.md``. Bit-for-bit equivalent
     to :func:`_evict_via_mlx` (verified in
-    ``veloxquant_mlx/tests/metal/test_h2o_evict.py``); single-(batch*head)
-    call here (``BH=1``), since ``h2o_update`` operates on one head's state
-    at a time — batching across heads is a natural follow-up (see spec
-    section 6) not implemented yet.
+    ``veloxquant_mlx/tests/metal/test_h2o_evict.py``, including grace
+    protection); single-(batch*head) call here (``BH=1``), since
+    ``h2o_update`` operates on one head's state at a time — batching across
+    heads is a natural follow-up (see spec section 6) not implemented yet.
     """
     from veloxquant_mlx.metal import h2o_fused_evict
 
@@ -385,6 +513,7 @@ def _evict_via_metal(
         positions_cat[None],
         n_sink=n_sink,
         rope_base=rope_base,
+        grace=grace,
     )
     return keys_out[0], values_out[0], scores_out[0], positions_out[0]
 
@@ -454,12 +583,15 @@ def h2o_update(
                 budget=state.budget,
                 rope_base=state.rope_base,
                 next_pos=cur_pos + 1,
+                grace=state.grace,
+                decay=state.decay,
             )
             continue
 
         # --- score update --------------------------------------------------
         attn = _attention_scores(k_i.astype(mx.float32), state.keys.astype(mx.float32))
-        updated_scores = state.scores + attn  # [n_kept]
+        decayed_scores = state.scores * state.decay if state.decay != 1.0 else state.scores
+        updated_scores = decayed_scores + attn  # [n_kept]
 
         # --- append new token (score = 0; begins accumulating next step) ---
         keys_cat = mx.concatenate([state.keys, k_i[None].astype(mx.float16)], axis=0)
@@ -474,11 +606,23 @@ def h2o_update(
         if n_total > state.budget:
             if _metal_evict_available():
                 keys_cat, values_cat, scores_cat, positions_cat = _evict_via_metal(
-                    keys_cat, values_cat, scores_cat, positions_cat, state.n_sink, state.rope_base
+                    keys_cat,
+                    values_cat,
+                    scores_cat,
+                    positions_cat,
+                    state.n_sink,
+                    state.rope_base,
+                    state.grace,
                 )
             else:
                 keys_cat, values_cat, scores_cat, positions_cat = _evict_via_mlx(
-                    keys_cat, values_cat, scores_cat, positions_cat, state.n_sink, state.rope_base
+                    keys_cat,
+                    values_cat,
+                    scores_cat,
+                    positions_cat,
+                    state.n_sink,
+                    state.rope_base,
+                    state.grace,
                 )
 
         state = H2OState(
@@ -490,6 +634,8 @@ def h2o_update(
             budget=state.budget,
             rope_base=state.rope_base,
             next_pos=cur_pos + 1,
+            grace=state.grace,
+            decay=state.decay,
         )
 
         # Force materialization periodically. Without this, a long prefill
