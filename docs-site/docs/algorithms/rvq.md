@@ -65,9 +65,9 @@ print(response)
 ```python
 KVCacheConfig(
     method="turboquant_rvq",
-    head_dim=128,        # Attention head dimension. Default: 128
+    head_dim=128,  # Attention head dimension. Default: 128
     bit_width_inlier=1,  # Bits per key dimension per RVQ stage. Default: 2
-    seed=42,             # Random seed for the rotation matrix. Default: 42
+    seed=42,  # Random seed for the rotation matrix. Default: 42
 )
 ```
 
