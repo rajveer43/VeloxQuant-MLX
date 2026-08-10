@@ -47,7 +47,7 @@ _CONFIGS = {
     "cam": {"cam_budget": 8, "cam_n_sink": 1},
     "chunkkv": {"chunkkv_budget": 8, "chunkkv_n_sink": 1, "chunkkv_chunk_size": 2},
     "curdkv": {"curdkv_budget": 8, "curdkv_n_sink": 1},
-    "h2o": {"h2o_budget": 8, "h2o_n_sink": 1, "h2o_grace": 0},
+    "h2o": {"h2o_budget": 8, "h2o_n_sink": 1, "h2o_grace": 0, "h2o_decay": 1.0},
     "keyformer": {"keyformer_budget": 8, "keyformer_n_sink": 1},
     "knorm": {"knorm_budget": 8, "knorm_n_sink": 1},
     "kvzip": {"kvzip_budget": 8, "kvzip_n_sink": 1},

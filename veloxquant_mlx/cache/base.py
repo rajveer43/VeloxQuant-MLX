@@ -194,6 +194,9 @@ class KVCacheConfig:
     h2o_n_sink: int = 4  # initial positions protected from eviction (attention sinks)
     h2o_rope_base: float = 10000.0  # RoPE base for post-eviction position remap; match the model
     h2o_grace: int = 16  # most-recent tokens protected from eviction; fixes the early-token freeze
+    h2o_decay: float = (
+        0.98  # per-step multiplicative decay on existing scores; fixes score staleness
+    )
     # --- TOVA-adapted configuration (current-step attention-weight eviction, memoryless) ---
     tova_budget: int = 512  # max tokens kept at any time (sinks + non-sinks)
     tova_n_sink: int = 4  # initial positions protected from eviction (attention sinks)

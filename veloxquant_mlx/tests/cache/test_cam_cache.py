@@ -182,7 +182,14 @@ def test_cache_drop_mode_matches_h2o(seed):
     Kc, Vc = cc.update_and_fetch(k, v)
 
     hc = H2OKVCache(
-        KVCacheConfig(method="h2o", head_dim=D, h2o_budget=budget, h2o_n_sink=n_sink, h2o_grace=0)
+        KVCacheConfig(
+            method="h2o",
+            head_dim=D,
+            h2o_budget=budget,
+            h2o_n_sink=n_sink,
+            h2o_grace=0,
+            h2o_decay=1.0,
+        )
     )
     Kh, Vh = hc.update_and_fetch(k, v)
 
