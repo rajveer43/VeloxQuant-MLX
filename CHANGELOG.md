@@ -4,6 +4,30 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 <!-- version list -->
 
+## v0.44.3 (2026-08-10)
+
+### Bug Fixes
+
+- **gear**: Wire KCVT base quantizer (per-channel keys, per-token values)
+  ([`1aaa312`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1aaa312e3c5b82033562527ae5d2a479634d91e6))
+
+### Code Style
+
+- Apply ruff format to gear PR files
+  ([`0d6de55`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0d6de55d653f43962530b31af12b55e84a5952cd))
+
+- Fix ruff format drift in RVQ docs and cache
+  ([`9aad459`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9aad4593b9149fe3932e43e3288908cbc3f884b6))
+
+- **amc**: Fix ruff format alignment in doc code blocks
+  ([`0ccac92`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0ccac92e3365c297bab0e079ccd780682eb155d4))
+
+### Documentation
+
+- **amc**: Make AMC-adapted algorithm page consumer-focused
+  ([`65728d2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/65728d2a690540b1b9d75eedc680d09a3d5f54b0))
+
+
 ## v0.44.2 (2026-08-09)
 
 ### Bug Fixes
