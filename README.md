@@ -300,7 +300,6 @@ The kv axis is split flash-decoding style across `nsg` SIMD-groups so single-que
 
 | Model | RVQ-1bit | VecInfer-1bit |
 |---|---|---|
-| SmolLM2-135M | 7.1× | **16×** |
 | Llama-3.2-1B | 7.1× | **16×** |
 | Llama-3.2-3B | 7.5× | **16×** |
 | Llama-3.1-8B | 7.5× | **16×** |
@@ -315,7 +314,6 @@ The kv axis is split flash-decoding style across `nsg` SIMD-groups so single-que
 
 | Model | fp16 | RVQ-1bit | VecInfer-1bit |
 |---|---|---|---|
-| SmolLM2-135M | 250.4 | 188.5 | 175.8 |
 | Llama-3.2-1B | 105.4 | **104.3** | 91.2 |
 | Llama-3.2-3B | 47.6 | **46.2** | 40.2 |
 | Llama-3.1-8B | 20.5 | **20.6** | 19.6 |
