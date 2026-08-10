@@ -4,6 +4,28 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 <!-- version list -->
 
+## v0.44.4 (2026-08-10)
+
+### Bug Fixes
+
+- **h2o**: Correct RoPE position desync after eviction
+  ([`470ab0f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/470ab0fe9f07049082a9191404086a0cda274577))
+
+- **h2o**: Grace period fixes the early-token permanent-freeze bug
+  ([`85eb8e5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/85eb8e5e2d5ec98bc50e76a2fbe37d443105b05d))
+
+- **h2o**: Score decay fixes stale-token dominance after grace fixed the freeze
+  ([`62f3a72`](https://github.com/rajveer43/VeloxQuant-MLX/commit/62f3a72b52317cab472dbfdd649aa556cbcecd78))
+
+### Performance Improvements
+
+- **h2o**: Fused Metal kernel for the over-budget eviction step
+  ([`6f7db91`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6f7db918495a0f1f09732ff9cc6e9e4c7b42332f))
+
+- **h2o**: Vectorize below-budget prefill path, fixing a real crash
+  ([`dd3e0b1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/dd3e0b1a15e55dfd31b67548d4a8d54826145550))
+
+
 ## v0.44.3 (2026-08-10)
 
 ### Bug Fixes
