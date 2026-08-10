@@ -223,7 +223,9 @@ def test_channel_axis_beats_base_quant() -> None:
     """The core GEAR claim (error feedback beats base-quant-alone) also holds
     under the per-channel (KCVT key) base axis, not just the default token axis."""
     X = _lowrank_plus_outliers(N=128, D=128, r=6)
-    gear = gear_quant_dequant(X, bits=2, rank=12, sparse_frac=0.01, group_size=32, base_axis="channel")
+    gear = gear_quant_dequant(
+        X, bits=2, rank=12, sparse_frac=0.01, group_size=32, base_axis="channel"
+    )
     _, base_recon = quantize_base(X.astype(mx.float32), bits=2, group_size=32, axis="channel")
     assert _mse(gear, X) < _mse(base_recon, X)
 

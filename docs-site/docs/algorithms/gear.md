@@ -62,17 +62,18 @@ model, tokenizer = mlx_lm.load("mlx-community/Mistral-7B-Instruct-v0.3-4bit")
 config = KVCacheConfig(
     method="gear",
     head_dim=128,
-    gear_bits=2,                   # ultra-low base bit-width
-    gear_rank=4,                   # low-rank correction size — keep this small
-    gear_sparse_fraction=0.005,    # top 0.5% of residual entries kept exact
+    gear_bits=2,  # ultra-low base bit-width
+    gear_rank=4,  # low-rank correction size — keep this small
+    gear_sparse_fraction=0.005,  # top 0.5% of residual entries kept exact
     gear_group_size=32,
-    gear_quantize_values=True,     # apply GEAR to values too (False = keys only)
+    gear_quantize_values=True,  # apply GEAR to values too (False = keys only)
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches
 
 response = mlx_lm.generate(
-    model, tokenizer,
+    model,
+    tokenizer,
     prompt="Explain the theory of relativity in simple terms.",
     max_tokens=200,
 )

@@ -90,9 +90,7 @@ def run(seq: int, heads: int, dim: int, signal_rank: int) -> dict:
                     base_axis=base_axis,
                 )
                 rec = gear_reconstruct(st)
-                _, base_rec = quantize_base(
-                    X.astype(mx.float32), cfg["bits"], 32, axis=base_axis
-                )
+                _, base_rec = quantize_base(X.astype(mx.float32), cfg["bits"], 32, axis=base_axis)
                 mse_gear += _mse(rec, X)
                 mse_base += _mse(base_rec, X)
                 comp += gear_bytes(st)
