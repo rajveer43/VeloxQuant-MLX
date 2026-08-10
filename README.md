@@ -40,27 +40,27 @@
 
 ---
 
-**VeloxQuant-MLX** compresses the KV cache of any `mlx_lm` model on Apple Silicon — up to **16× smaller** with near-lossless quality, in three lines of code. It ships **41 research-adapted compression methods**, from zero-calibration 1-bit quantizers to token-eviction caches to cross-layer merging, plus hand-written Metal kernels that make the hottest path **up to 14.7× faster**.
+**VeloxQuant-MLX** shrinks the KV cache of any `mlx_lm` model on Apple Silicon so you can run longer contexts or bigger models in the same RAM — up to **16× smaller** with near-lossless quality, in three lines of code. Under the hood it's **41 compression methods** (each adapted from a published paper), from zero-calibration 1-bit quantizers to token-eviction caches to cross-layer merging, plus hand-written Metal kernels that speed up the hottest path by **up to 14.7×**.
 
-For anyone running `mlx_lm` locally and hitting a context-length or memory ceiling on
-Apple Silicon — this swaps in a compressed cache with no model changes. Actively developed,
+If you're running `mlx_lm` locally and hitting a context-length or memory wall on
+Apple Silicon, this swaps in a compressed cache with no model changes. Actively developed,
 with a full test suite gating every release (see badges above).
 
-> **Accounting vs. resident memory:** compression ratios above are computed from bit-width
-> accounting (bits actually needed to represent the values), not measured process RSS. Most
-> quantization methods still store dequantized fp16 tensors under the hood on the default
-> `mlx_lm` serving path today, so Activity Monitor / RSS won't drop by the same factor — see
-> [#27](https://github.com/rajveer43/VeloxQuant-MLX/issues/27) for the packed-storage roadmap.
-> Methods that reduce **resident** memory today are marked 🔻RSS in the
-> [method library](#method-library) below (eviction/merging methods, which actually shrink
-> token count); others reduce accounting-only storage at equal fp16 residency.
+> **Accounting vs. resident memory:** the compression ratios above are the theoretical
+> byte count (bit-width accounting) — not what Activity Monitor will show you. Most
+> quantization methods still store full fp16 tensors under the hood on the default
+> `mlx_lm` serving path today, so process RSS won't drop by the same factor yet — see
+> [#27](https://github.com/rajveer43/VeloxQuant-MLX/issues/27) for the packed-storage
+> roadmap. Methods that *do* shrink resident memory today (eviction/merging, which
+> actually drop tokens) are marked 🔻RSS in the [method library](#method-library) below;
+> the rest reduce accounting-only storage while staying fp16-sized in memory.
 
 **Why VeloxQuant-MLX:**
-- 41 methods behind one identical 3-line API — swap `method="..."` and go
-- Metal-accelerated hot paths: 6.9–14.7× faster quantize, 98% less peak memory at the OOM-trigger shape
-- Every "-adapted" method documents its honest deviation from the source paper — no silent approximations
-- Validated end-to-end on 12 production models: Llama, Mistral, Qwen, Phi, Gemma 3/4, Falcon
-- Vision-language models too: `patch_vlm_kv_cache` wires the same caches into [mlx-vlm](https://github.com/Blaizzy/mlx-vlm) single-prompt generation (Qwen2-VL, LLaVA, …) — [docs](https://veloxquant-mlx.netlify.app/docs/guides/mlx-lm-integration)
+- Try any of 41 compression strategies without rewriting your code — they all share one 3-line API, so switching is just changing `method="..."`
+- The hot path runs on hand-written Metal kernels: 6.9–14.7× faster quantize, 98% less peak memory at the shape that used to OOM
+- If a method had to cut a corner to work as a drop-in cache instead of a full model rewrite, we say so on its docs page — no silent approximations
+- Battle-tested on 12 production models: Llama, Mistral, Qwen, Phi, Gemma 3/4, Falcon
+- Works with vision-language models too — `patch_vlm_kv_cache` wires the same caches into [mlx-vlm](https://github.com/Blaizzy/mlx-vlm) single-prompt generation (Qwen2-VL, LLaVA, …) — [docs](https://veloxquant-mlx.netlify.app/docs/guides/mlx-lm-integration)
 
 ```python
 import mlx_lm
@@ -164,9 +164,9 @@ More examples, walked through step by step:
 
 ## Method library
 
-All 41 methods share the same 3-line integration (`method="<id>"` in `KVCacheConfig`).
-Full comparison table, decision tree, and per-model recommendations — mechanism, config,
-evidence, and honest limitations for every method — on the
+All 41 methods drop in the same way — just set `method="<id>"` in `KVCacheConfig`.
+For the full comparison table, a decision tree, and per-model recommendations —
+mechanism, config, evidence, and honest limitations for every method — see the
 [algorithm overview](https://veloxquant-mlx.netlify.app/docs/algorithms/overview).
 
 **Quick decision:**
@@ -184,21 +184,23 @@ The 41 methods span three families — each links to its full docs page:
 - **Low-rank & cross-layer** (6 methods) — compress across dimensions or depth. [PALU](https://veloxquant-mlx.netlify.app/docs/algorithms/palu), [XQuant](https://veloxquant-mlx.netlify.app/docs/algorithms/xquant), [MiniCache](https://veloxquant-mlx.netlify.app/docs/algorithms/minicache), [xKV-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/xkv), [AdaKV-proxy](https://veloxquant-mlx.netlify.app/docs/algorithms/adakv), [KVTC-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/kvtc).
 - **Token eviction & merging** (14 methods) — drop or merge low-value tokens; these reduce **resident** memory today (🔻RSS), not just accounting. [SnapKV-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/snapkv), [StreamingLLM-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/streaming_llm), [H2O-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/h2o), [TOVA-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/tova), [PyramidKV-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/pyramidkv), [SqueezeAttention-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/squeeze), [ChunkKV-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/chunkkv), [CaM-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/cam), [L2Norm-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/knorm), [Q-Filters-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/qfilters), [Keyformer-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/keyformer), [MorphKV-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/morphkv), [KVzip-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/kvzip), [CurDKV-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/curdkv), [NestedKV-adapted](https://veloxquant-mlx.netlify.app/docs/algorithms/nestedkv).
 
-> Category legend used on the docs site: 🧮 `accounting_only` (stores dequantized fp16 today
-> — bit-width savings are bookkeeping, not RSS; see [#27](https://github.com/rajveer43/VeloxQuant-MLX/issues/27)),
-> 🔻RSS `eviction`/`true_latent` (drops tokens or stores a genuinely smaller tensor — reduces
-> resident memory today), ⚙️ `standalone` (does not subclass `mlx_lm`'s `KVCache`, so it isn't
-> wired into the default serving path the same way). Every "-adapted" method is an honest
-> adaptation, not a faithful port — the cache wrapper sees per-layer K/V but not the model's
-> true query/attention maps, so attention-based signals use a key-as-query proxy. Full
-> per-method compression ratios, categories, and release versions are on the
+> Category legend used on the docs site: 🧮 won't shrink your Mac's memory usage today, only
+> the theoretical bit count (tagged `accounting_only` — still stores full fp16 under the hood;
+> see [#27](https://github.com/rajveer43/VeloxQuant-MLX/issues/27)); 🔻RSS actually reduces
+> memory you can see today (tagged `eviction`/`true_latent` — drops tokens or stores a
+> genuinely smaller tensor); ⚙️ needs a bit more wiring to use (tagged `standalone` — doesn't
+> subclass `mlx_lm`'s `KVCache`, so it isn't plugged into the default serving path the same
+> way). Also worth knowing: every "-adapted" method is an honest adaptation, not a 1:1 port —
+> the cache only sees per-layer K/V, never the model's real query/attention maps, so
+> attention-based signals fall back to a key-as-query proxy. Full per-method compression
+> ratios, categories, and release versions are on the
 > [algorithm overview](https://veloxquant-mlx.netlify.app/docs/algorithms/overview).
 
 ---
 
 ## Metal kernels — new in 0.5.1
 
-The VecInfer `quantize_vq` hot path is now a 30-line Metal Shading Language shader, JIT-compiled by `mx.fast.metal_kernel` on first use. Same Python API — no changes required.
+VecInfer's `quantize_vq` — the slowest step in the pipeline — now runs on the GPU instead of in Python: a 30-line Metal shader, JIT-compiled by `mx.fast.metal_kernel` the first time you call it. Same Python API, no code changes required to benefit.
 
 <div align="center">
   <img src="figures/metal/summary.png" alt="Metal kernel benchmark — quantize latency, speedup, and peak memory" width="820"/>
@@ -213,7 +215,7 @@ The VecInfer `quantize_vq` hot path is now a 30-line Metal Shading Language shad
 | Peak memory (Falcon3-7B shape) | 729 MB | **12 MB** | **98%** reduction |
 | API change required | — | None | `use_metal_kernels=None` auto-detects |
 
-**Why the memory win:** the `[N, n_centroids, sub_dim]` diff tensor is never materialised — the argmin accumulator lives entirely in thread-local registers.
+**Why the memory win:** nothing extra ever gets written out to memory — the `[N, n_centroids, sub_dim]` diff tensor that the pure-MLX version has to materialize is skipped entirely, since the argmin accumulator lives in thread-local GPU registers instead. That's the whole 98% peak-memory drop.
 
 > **Caveat:** the kernel pays a ~50–200 µs launch overhead per call. On tiny models (SmolLM2-135M, ~60 launches/token) that overhead can exceed the savings. Built for the regime that needs it: 7B+ models at realistic context lengths.
 
@@ -246,7 +248,7 @@ For large `S_q` — the multi-turn VLM case, where a new turn attends over a lon
 
 [`scalar_fused_decode_attend`](veloxquant_mlx/metal/_scalar_attend.py) is the scalar/group-quant analogue of the codebook fused attends above — it serves the **KIVI / SKVQ / Kitty / group-quant family**, where K/V are `uint8` codes plus a per-group `(scale, zero)` pair instead of a codebook.
 
-The pure-MLX path reconstructs `code * scale + zero` into a full fp16 tensor, then calls `scaled_dot_product_attention` — a `dequantize → DRAM → SDPA` round-trip paid every decode step. This kernel reconstructs `x_hat` in-register inside a FlashAttention-style online softmax, so no dequantized `K_hat`/`V_hat` ever reaches DRAM. The win compounds with context: the fp16 `K_hat` grows linearly with `S_kv` while the packed codes stay `16/b` times smaller.
+The pure-MLX path pays a real cost every decode step: it reconstructs `code * scale + zero` into a full fp16 tensor, writes that to memory, then reads it back for `scaled_dot_product_attention` — a `dequantize → DRAM → SDPA` round-trip. This kernel skips the memory round-trip entirely: it reconstructs `x_hat` directly in GPU registers inside a FlashAttention-style online softmax (a numerically stable way to compute softmax over a stream of values without holding them all in memory at once), so no dequantized `K_hat`/`V_hat` ever touches DRAM. The win grows with context length: the fp16 `K_hat` the old path builds grows linearly with `S_kv`, while the packed codes this kernel reads directly stay `16/b` times smaller.
 
 Measured (Apple M4 10-core GPU, B=1 H=32 D=128 b=2 g=32 S_q=1) vs. dequantize → MLX SDPA:
 
@@ -323,9 +325,9 @@ Full module reference and API docs: [docs — API reference](https://veloxquant-
 
 ## Architecture
 
-VeloxQuant-MLX pipelines each quantizer as rotate → quantize (± residual) → pack, built via a Builder/Factory/Strategy layering so every method shares the same `KVCacheConfig` → `KVCacheBuilder` → `mlx_lm`-compatible cache path. Ten design patterns are used throughout (Abstract Base Classes, Factory, Chain of Responsibility, Builder, Strategy, Registry + Plugin, Composite, Observer, DAO, and custom data structures like RingBuffer/MaxHeap/BitPackBuffer/VoronoiTree).
+Every method runs the same three-step pipeline: rotate the K/V tensors into a friendlier basis, quantize them (optionally with a residual pass for extra precision), then pack the bits. That's why swapping `method="..."` just works — every quantizer plugs into the same `KVCacheConfig` → `KVCacheBuilder` → `mlx_lm`-compatible cache path regardless of what it does internally.
 
-Full pipeline diagrams (TurboQuantRVQ, VecInfer) and design-pattern breakdown: [docs — Core concepts](https://veloxquant-mlx.netlify.app/docs/getting-started/concepts).
+If you're curious how that's wired up: it's built on standard design patterns (Factory, Strategy, Builder, and others) plus a few custom data structures for the lower-level bit-packing work. Full pipeline diagrams (TurboQuantRVQ, VecInfer) and the complete design-pattern breakdown: [docs — Core concepts](https://veloxquant-mlx.netlify.app/docs/getting-started/concepts).
 
 ---
 
