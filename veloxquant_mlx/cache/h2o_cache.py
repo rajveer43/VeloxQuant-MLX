@@ -28,21 +28,30 @@ Adaptation limitations (stated plainly):
     default and what Llama/Mistral/Qwen use — see
     :func:`veloxquant_mlx.quantizers.a2ats_rope.rope_remap_positions`.
 
-KNOWN, CONFIRMED-ON-REAL-MODELS PROBLEM (not fixed here — needs a different
-eviction/scoring policy, see docs-site/docs/algorithms/h2o.md for the full
-writeup): real end-to-end generation testing on Llama-3.2-1B and Mistral-7B
-showed generation degrading into repetition loops (mild) or total collapse
-(severe) once the cache fills. Root cause, verified precisely: every
-newly-arrived token starts at score 0.0, and eviction removes the
-global-minimum-score token, so the brand-new token is (almost always) its own
-eviction target the moment the budget is full — before it ever accumulates
-attention mass. Traced directly: after 43 true decode steps on Llama-3.2-1B,
-the kept set was still exactly the original prompt's positions; the model
-generated the entire time with zero visibility into its own output. This is
-what implementing the paper's own scoring formula correctly produces at tight
-budgets — not a deviation from the paper, and not fixed by anything in this
-module. A real fix needs a different eviction/scoring rule (e.g. a grace
-period before a token becomes eviction-eligible).
+FIXED, CONFIRMED-ON-REAL-MODELS PROBLEM (see docs-site/docs/algorithms/h2o.md
+for the full writeup): real end-to-end generation testing on Llama-3.2-1B
+and Mistral-7B showed generation degrading into repetition loops (mild) or
+total collapse (severe) once the cache filled. Root cause, verified
+precisely: every newly-arrived token started at score 0.0, and eviction
+removes the global-minimum-score token, so the brand-new token was (almost
+always) its own eviction target the moment the budget was full — before it
+ever accumulated attention mass. Traced directly: after 43 true decode steps
+on Llama-3.2-1B, the kept set was still exactly the original prompt's
+positions; the model generated the entire time with zero visibility into its
+own output. This was what implementing the paper's own scoring formula
+without any grace period produces at tight budgets — not a deviation from
+the paper (the paper doesn't specify one either), but a real practical gap.
+
+Fixed via ``h2o_grace`` (default 16): the most-recently-arrived ``grace``
+tokens are protected from eviction the same way sink tokens are (treated as
++inf in the eviction argmin), giving every new token ``grace`` update steps
+to accumulate real attention mass before it becomes eviction-eligible at
+all. Implemented identically in both the pure-MLX eviction path
+(:func:`veloxquant_mlx.quantizers.h2o._evict_via_mlx`) and the fused Metal
+kernel (:func:`veloxquant_mlx.metal.h2o_fused_evict`) — verified bit-for-bit
+equivalent between the two. ``h2o_grace=0`` reproduces the original
+(paper-faithful, freeze-prone) behavior exactly, for anyone who wants to
+study or reproduce that failure mode.
 
 RoPE position remapping (a separate, narrower, and now-fixed correctness
 issue found during the same investigation — real, but NOT the cause of the
@@ -120,7 +129,15 @@ class H2OKVCache(_MLXKVCache):
             ``h2o_n_sink`` (int, default 4)   — leading positions never evicted,
             ``h2o_rope_base`` (float, default 10000.0) — RoPE frequency base,
             must match the model's own attention RoPE base for post-eviction
-            position remapping to cancel out the original rotation correctly.
+            position remapping to cancel out the original rotation correctly,
+            ``h2o_grace`` (int, default 16) — most-recently-arrived tokens
+            protected from eviction, giving each new token this many update
+            steps to accumulate real attention mass before it becomes
+            eviction-eligible. Fixes a real, confirmed-on-real-models problem
+            (see module docstring): without this, a brand-new token's
+            starting score of 0.0 makes it almost always the eviction target
+            the instant the cache is full, freezing the kept set on whichever
+            tokens filled the budget first.
 
     Notes:
         No ``.bits`` attribute — stores and returns fp16 K/V directly.
@@ -150,6 +167,7 @@ class H2OKVCache(_MLXKVCache):
         self._budget = int(getattr(config, "h2o_budget", 512))
         self._n_sink = int(getattr(config, "h2o_n_sink", 4))
         self._rope_base = float(getattr(config, "h2o_rope_base", 10000.0))
+        self._grace = int(getattr(config, "h2o_grace", 16))
 
         self._head_dim: int = 0
         self._states: list[H2OState] = []
@@ -168,7 +186,9 @@ class H2OKVCache(_MLXKVCache):
             self._H = H
             self._head_dim = D
             self._states = [
-                init_h2o_state(self._n_sink, self._budget, D, rope_base=self._rope_base)
+                init_h2o_state(
+                    self._n_sink, self._budget, D, rope_base=self._rope_base, grace=self._grace
+                )
                 for _ in range(B * H)
             ]
 

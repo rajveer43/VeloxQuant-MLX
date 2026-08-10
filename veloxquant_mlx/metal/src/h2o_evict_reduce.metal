@@ -10,9 +10,20 @@
 // must match bit-for-bit). Finds, for each (batch*head) row group, the
 // index of the minimum "protected" score among the n_total = n_kept + 1
 // candidate rows (n_kept currently-stored rows plus the one new row that
-// h2o_update conceptually appends before evicting). The first n_sink rows
-// are protected (treated as +inf) and can never win the argmin, matching
-// h2o_update's sink-protection logic exactly.
+// h2o_update conceptually appends before evicting). Two independent
+// protections, each treated as +inf and unable to win the argmin, matching
+// h2o_update's protection logic exactly:
+//   - the first n_sink rows (sink tokens, protected by leading array index)
+//   - the last n_grace rows (most-recently-arrived tokens, protected by
+//     trailing array index -- positions are always kept sorted ascending
+//     after eviction, so "most recent" == "highest array index"). This
+//     gives every new token n_grace update steps to accumulate real
+//     attention mass before it becomes eviction-eligible, fixing a real,
+//     confirmed-on-real-models problem: without it, a brand-new token's
+//     starting score of 0.0 makes it (almost always) the argmin target the
+//     instant the cache is full, freezing the kept set on whichever tokens
+//     filled the budget first and never admitting anything generated
+//     afterward. See h2o.py's module docstring.
 //
 // One threadgroup handles one (batch*head) group. TG_SIZE threads grid-stride
 // over the n_total candidate rows, each thread tracking its own local
@@ -37,6 +48,10 @@
     uint n_kept = uint(scores_mid_shape[1]);   // scores_mid: [BH, n_total]
     uint n_total = n_kept;                      // caller passes n_total in this axis
     uint n_sink  = uint(n_sink_arr[0]);
+    uint n_grace = uint(n_grace_arr[0]);
+    // Clamp so sink+grace protection can never exceed n_total, mirroring
+    // h2o.py's min(n_sink, n_total) / min(grace, n_total) clamps.
+    uint grace_start = (n_grace >= n_total) ? 0u : (n_total - n_grace);
 
     uint tid = sg * 32u + lane;
 
@@ -44,7 +59,8 @@
     uint  local_idx  = 0xFFFFFFFFu;
 
     for (uint i = tid; i < n_total; i += TG) {
-        float v = (i < n_sink) ? INFINITY : scores_mid[bh * n_total + i];
+        bool protected_row = (i < n_sink) || (i >= grace_start);
+        float v = protected_row ? INFINITY : scores_mid[bh * n_total + i];
         if (v < local_min) {
             local_min = v;
             local_idx = i;
