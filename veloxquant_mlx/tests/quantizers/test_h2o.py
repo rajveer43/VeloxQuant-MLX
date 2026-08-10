@@ -510,3 +510,30 @@ def test_batch_path_handles_long_prefill_without_crashing() -> None:
     st = h2o_update(st, k, v)  # must not raise
     assert st.keys.shape[0] == S
     assert st.next_pos == S
+
+
+def test_heavy_eviction_thousands_of_loop_iterations() -> None:
+    """Exercises thousands of consecutive eviction-loop iterations within a
+    single h2o_update call (budget exceeded almost immediately, S >> budget)
+    to confirm the periodic mx.eval() flush (_EVAL_FLUSH_INTERVAL) doesn't
+    change output or crash at this iteration count.
+
+    NOTE: this synthetic case does NOT reproduce the actual crash the flush
+    fixes — that was only observed via real mlx_lm.generate() on a genuine
+    ~3200-token prompt with the fused Metal eviction kernel active (see
+    h2o.py's module docstring and _EVAL_FLUSH_INTERVAL's comment); isolating
+    a single head's state update here, without the full model's per-layer/
+    per-head aggregate Metal resource pressure, was not sufficient to
+    reproduce it synthetically. This test guards determinism/no-crash at
+    scale, not the specific resource-limit regression."""
+    D = 16
+    S = 2000
+    budget = 64
+    rng = np.random.default_rng(0)
+    k = mx.array(rng.standard_normal((S, D)).astype(np.float16))
+    v = mx.array(rng.standard_normal((S, D)).astype(np.float16))
+
+    st = init_h2o_state(n_sink=4, budget=budget, head_dim=D)
+    st = h2o_update(st, k, v)  # must not raise
+    assert st.keys.shape[0] == budget
+    assert st.next_pos == S
