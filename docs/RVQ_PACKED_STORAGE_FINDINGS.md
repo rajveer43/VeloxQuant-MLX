@@ -36,14 +36,14 @@ branch:
 def update_and_fetch(self, keys, values):
     ...
     ev = self._quantizer.encode(k_unit)
-    k_hat_u = self._quantizer.decode(ev)          # <- decode immediately
+    k_hat_u = self._quantizer.decode(ev)  # <- decode immediately
     k_dequant = (k_hat_u.astype(kdtype) * safe).reshape(B, H, S, D)
 
     per_tok = (math.ceil(self._head_dim * 2 * self._bits / 8) + 2) * H * B
-    self._key_bytes_compressed += per_tok * S      # <- counter only, no real storage
-    self._key_bytes_fp16       += H * B * S * self._head_dim * 2
+    self._key_bytes_compressed += per_tok * S  # <- counter only, no real storage
+    self._key_bytes_fp16 += H * B * S * self._head_dim * 2
 
-    return super().update_and_fetch(k_dequant, values)   # <- stores fp16 via parent class
+    return super().update_and_fetch(k_dequant, values)  # <- stores fp16 via parent class
 ```
 
 `compressed_key_bytes` / `fp16_key_bytes` were pure counters computed alongside
@@ -232,10 +232,10 @@ test_state_meta_state_round_trip_via_from_state PASSED
 ### 5.5 Real end-to-end generation on a real model
 
 ```python
-model, tokenizer = mlx_lm.load('mlx-community/Llama-3.2-1B-Instruct-4bit')
-config = KVCacheConfig(method='turboquant_rvq', bit_width_inlier=1, seed=42)
+model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-1B-Instruct-4bit")
+config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)
 patch_model_kv_cache(model, config)
-response = mlx_lm.generate(model, tokenizer, prompt='The capital of France is', max_tokens=30)
+response = mlx_lm.generate(model, tokenizer, prompt="The capital of France is", max_tokens=30)
 # GENERATED: 'Paris.\nThe city of Paris.\nThe city of Paris...'
 ```
 
@@ -334,7 +334,7 @@ could fall into the same way.
 ```python
 def measure(setup_fn):
     mx.clear_cache()
-    model, tokenizer = mlx_lm.load('mlx-community/Llama-3.2-1B-Instruct-4bit')
+    model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-1B-Instruct-4bit")
     setup_fn(model)
     mx.reset_peak_memory()
     mlx_lm.generate(model, tokenizer, prompt=prompt, max_tokens=100, verbose=False)
