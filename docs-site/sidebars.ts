@@ -74,6 +74,7 @@ const sidebars: SidebarsConfig = {
       label: 'Guides',
       collapsed: false,
       items: [
+        'guides/control-panel',
         'guides/mlx-lm-integration',
         'guides/metal-kernels',
         'guides/calibration',

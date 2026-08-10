@@ -72,6 +72,9 @@ where = ["."]
 include = ["veloxquant_mlx*"]
 
 [tool.setuptools.package-data]
+# The control panel's frontend is plain static files with no build step, so
+# they must be shipped in the wheel alongside the Python sources.
+"veloxquant_mlx.ui" = ["static/*"]
 veloxquant_mlx = ["metal/src/*.metal"]
 
 [tool.pytest.ini_options]
