@@ -75,6 +75,7 @@
       <li><a href="#benchmarks">Benchmarks</a></li>
       <li><a href="#quality">Quality cost</a></li>
       <li><a href="playground.html">Playground</a></li>
+      <li><a href="#faq">FAQ</a></li>
       <li><a href="#install">Install</a></li>
       <li><a href="/docs/" rel="noopener">Docs</a></li>
       <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
@@ -721,15 +722,6 @@
           </thead>
           <tbody>
             <tr>
-              <td data-th="Model">SmolLM2-135M</td>
-              <td data-th="FP16">250.4</td>
-              <td data-th="RVQ" class="td-highlight">188.5</td>
-              <td data-th="RVQ ratio" class="td-highlight">7.1×</td>
-              <td data-th="VecInfer" class="td-highlight">175.8</td>
-              <td data-th="VecInfer ratio" class="td-purple">16×</td>
-              <td data-th="Best pick" class="td-muted">RVQ-1bit</td>
-            </tr>
-            <tr>
               <td data-th="Model">Llama-3.2-1B</td>
               <td data-th="FP16">105.4</td>
               <td data-th="RVQ" class="td-highlight">104.3</td>
@@ -832,6 +824,68 @@
   </section>
 
   <div class="divider"></div>
+
+  <!-- ── §10 FAQ ── -->
+  <section id="faq">
+    <p class="section-label">FAQ</p>
+    <h2 class="section-title">Common questions.</h2>
+
+    <div class="faq-list">
+      <details class="faq-item fade-in">
+        <summary>How is VeloxQuant-MLX different from llama.cpp/Ollama's quantization?</summary>
+        <div class="faq-item-body">
+          llama.cpp bakes the KV cache into one fixed scheme (<code class="inline">q8_0</code> or
+          <code class="inline">q4_0</code>) applied uniformly across the whole model. VeloxQuant-MLX
+          ships 41 methods — pick per model, and some support per-layer bit allocation instead of
+          one setting for everything. It also includes 11 token-eviction methods (drop low-value
+          tokens entirely) and cross-layer methods (XQuant, MiniCache, xKV) that llama.cpp,
+          plain <code class="inline">mlx_lm</code>, and oMLX don't have. See the
+          <a href="#compare">full comparison table</a> above.
+        </div>
+      </details>
+      <details class="faq-item fade-in">
+        <summary>Does compression actually reduce my Mac's RAM usage?</summary>
+        <div class="faq-item-body">
+          For eviction and true-latent methods (marked 🔻RSS in the
+          <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">method table</a>) — yes,
+          today. For most quantization methods — not yet by default. The compression ratios quoted
+          here are bit-width accounting (the theoretical byte count), not measured process RSS:
+          those methods still store full fp16 tensors under the hood on the default
+          <code class="inline">mlx_lm</code> serving path, so Activity Monitor won't drop by the
+          same factor until the
+          <a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/27" target="_blank" rel="noopener">packed-storage roadmap</a>
+          lands. We'd rather say this plainly than quote a number that won't show up on your machine.
+        </div>
+      </details>
+      <details class="faq-item fade-in">
+        <summary>What hardware do I need?</summary>
+        <div class="faq-item-body">
+          Apple Silicon M1 or later (M2/M3/M4 recommended), Python 3.11 or 3.12, MLX ≥ 0.18. It's
+          a pure-Python library with optional Metal-accelerated kernels — no separate app to
+          install, no GPU beyond what's already in your Mac.
+        </div>
+      </details>
+      <details class="faq-item fade-in">
+        <summary>Do I need to re-download or convert my models?</summary>
+        <div class="faq-item-body">
+          No. VeloxQuant-MLX wraps the KV cache of any model you've already loaded with
+          <code class="inline">mlx_lm</code> — same MLX safetensors format, no conversion step.
+          Swap in a compressed cache with three lines of code; the model weights themselves are
+          untouched.
+        </div>
+      </details>
+      <details class="faq-item fade-in">
+        <summary>Which method should I start with?</summary>
+        <div class="faq-item-body">
+          <code class="inline">turboquant_rvq</code> at 1-bit — zero calibration, 7.5× compression,
+          the library default. If you need maximum compression on Qwen2.5/Gemma-family models,
+          <code class="inline">vecinfer</code> at 1-bit reaches 16× with Metal acceleration. See the
+          <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">method library</a>
+          for the full decision guide.
+        </div>
+      </details>
+    </div>
+  </section>
 
   <!-- ── §11 INSTALL ── -->
   <section id="install">

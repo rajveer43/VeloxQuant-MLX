@@ -3028,6 +3028,42 @@ pre .diff-ctx { opacity: 0.75; }
 .reveal > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .reveal-body { margin-top: 1rem; }
 
+/* ── FAQ accordion ── */
+.faq-list { border-top: 1px solid var(--border); }
+.faq-item {
+  border-bottom: 1px solid var(--border);
+}
+.faq-item > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  list-style: none;
+  user-select: none;
+}
+.faq-item > summary::-webkit-details-marker { display: none; }
+.faq-item > summary::after {
+  content: '\25BE';
+  flex: none;
+  font-size: 0.8em;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.faq-item[open] > summary::after { transform: rotate(180deg); }
+.faq-item > summary:hover { color: var(--accent); }
+.faq-item > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.faq-item-body {
+  color: var(--muted);
+  max-width: 720px;
+  padding-bottom: 1.25rem;
+  line-height: 1.6;
+}
+.faq-item-body code.inline { font-size: 0.9em; }
+
 /* ── Reproduce line ── */
 .repro {
   margin-top: 1rem;
