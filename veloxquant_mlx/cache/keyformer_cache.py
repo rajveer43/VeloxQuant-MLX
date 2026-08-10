@@ -17,21 +17,37 @@ Where it sits: the repo's proxy-attention scorer family (SnapKV / H2O / TOVA /
 PyramidKV / SqueezeAttention / ChunkKV / CaM). Structurally the H2O pair with a
 Gumbel-noise regularizer layered on the eviction ranking.
 
+FIXED, CONFIRMED-BY-PAPER-COMPARISON GAP #1 — no temperature annealing. The
+paper's Section 3.3.1/Equation 10 anneals the Gumbel temperature from
+``tau_init`` (paper default 1, prompt phase) to ``tau_end`` (paper default 2,
+as decoding discards more tokens) over ``anneal_steps`` update steps. A single
+constant ``keyformer_tau`` cannot represent this schedule. Fixed via
+``keyformer_tau_init`` / ``keyformer_tau_end`` / ``keyformer_anneal_steps`` —
+see ``quantizers/keyformer.py``'s module docstring. ``keyformer_tau`` is kept
+as a backward-compatible alias for a constant (non-annealed) temperature.
+
+FIXED, CONFIRMED-BY-PAPER-COMPARISON GAP #2 — no RoPE position tracking. This
+cache never tracked which absolute position each kept key was rotated at, so
+an interior eviction silently desynced survivors' storage index from the
+rotation baked into their keys — the same bug class H2O-adapted had and fixed
+(see ``cache/h2o_cache.py``). Fixed the same way: positions are now tracked
+and re-rotated on eviction via ``rope_remap_positions``. See
+``keyformer_rope_base`` below.
+
 THE HONESTY CRUX:
   1. Proxy query — the incoming KEY stands in for the unseen query (as H2O /
      SnapKV-adapted).
   2. Frozen deterministic per-position Gumbel, seeded by a per-head running
-     position — NOT the paper's redrawn-and-annealed schedule. Preserves the
+     position — NOT the paper's redrawn-every-step sampling. Preserves the
      "don't doom a borderline token on one low reading" intent while staying
-     reproducible; not claimed equivalent to the paper's annealing.
+     reproducible; not claimed equivalent to the paper's redraw.
   3. Not validated on a trained model; the regularizer's benefit is measured
      only under constructed late-riser geometry, with a null control.
 
 Adaptation limitations (stated plainly):
   - Key-as-query proxy (crux 1).
-  - Frozen per-position Gumbel, no annealing (crux 2).
-  - No RoPE position-ID remapping after eviction.
-  - Uniform budget / n_sink / tau across all heads.
+  - Frozen per-position Gumbel, not redrawn each step (crux 2).
+  - Uniform budget / n_sink / tau schedule across all heads.
   - ``keyformer_recent`` (trailing protected window) is an extension, off by
     default.
 
@@ -65,11 +81,20 @@ class KeyformerKVCache(_MLXKVCache):
 
     Args:
         config: :class:`KVCacheConfig`. Fields consumed:
-            ``keyformer_budget`` (int, default 512) — max tokens kept (incl. sinks),
-            ``keyformer_n_sink`` (int, default 4)   — leading positions never evicted,
-            ``keyformer_recent`` (int, default 0)   — trailing protected window (extension),
-            ``keyformer_tau`` (float, default 1.0)  — Gumbel temperature; 0 = H2O-adapted,
-            ``keyformer_seed`` (int, default 0)     — base seed for the frozen noise.
+            ``keyformer_budget`` (int, default 512)      — max tokens kept (incl. sinks),
+            ``keyformer_n_sink`` (int, default 4)        — leading positions never evicted,
+            ``keyformer_recent`` (int, default 0)        — trailing protected window (extension),
+            ``keyformer_tau`` (float, default 1.0)       — constant-temperature alias;
+                sets both ``tau_init``/``tau_end`` and disables annealing when set,
+            ``keyformer_tau_init`` (float, default 1.0)  — Gumbel temperature at
+                ``pos == 0`` (paper default 1); ignored if ``keyformer_tau`` is set,
+            ``keyformer_tau_end`` (float, default 1.0)   — Gumbel temperature once
+                annealing completes (paper default 2); ignored if ``keyformer_tau`` is set,
+            ``keyformer_anneal_steps`` (int, default 0)  — steps to ramp ``tau_init`` ->
+                ``tau_end`` over (Equation 10); 0 = constant temperature,
+            ``keyformer_rope_base`` (float, default 10000.0) — RoPE base for
+                post-eviction position remap; must match the model's own,
+            ``keyformer_seed`` (int, default 0)          — base seed for the frozen noise.
 
     Notes:
         No ``.bits`` attribute — stores and returns fp16 K/V directly.
@@ -91,12 +116,27 @@ class KeyformerKVCache(_MLXKVCache):
         self._budget = int(getattr(config, "keyformer_budget", 512))
         self._n_sink = int(getattr(config, "keyformer_n_sink", 4))
         self._recent = int(getattr(config, "keyformer_recent", 0))
-        self._tau = float(getattr(config, "keyformer_tau", 1.0))
+        _tau_const = getattr(config, "keyformer_tau", None)
+        self._tau_init = float(getattr(config, "keyformer_tau_init", 1.0))
+        self._tau_end = float(getattr(config, "keyformer_tau_end", 1.0))
+        if _tau_const is not None:
+            self._tau_init = float(_tau_const)
+            self._tau_end = float(_tau_const)
+        self._anneal_steps = int(getattr(config, "keyformer_anneal_steps", 0))
+        self._rope_base = float(getattr(config, "keyformer_rope_base", 10000.0))
         self._seed = int(getattr(config, "keyformer_seed", 0))
 
         # Fail at build time with clear messages (delegates the guards).
         init_keyformer_state(
-            self._n_sink, self._budget, 1, recent=self._recent, tau=self._tau, seed=self._seed
+            self._n_sink,
+            self._budget,
+            1,
+            recent=self._recent,
+            tau_init=self._tau_init,
+            tau_end=self._tau_end,
+            anneal_steps=self._anneal_steps,
+            rope_base=self._rope_base,
+            seed=self._seed,
         )
 
         self._head_dim: int = 0
@@ -122,7 +162,10 @@ class KeyformerKVCache(_MLXKVCache):
                     self._budget,
                     D,
                     recent=self._recent,
-                    tau=self._tau,
+                    tau_init=self._tau_init,
+                    tau_end=self._tau_end,
+                    anneal_steps=self._anneal_steps,
+                    rope_base=self._rope_base,
                     seed=self._seed + hh,
                 )
                 for hh in range(B * H)

@@ -269,7 +269,13 @@ class KVCacheConfig:
     keyformer_budget: int = 512  # max tokens kept (incl. sinks)
     keyformer_n_sink: int = 4  # leading positions never evicted
     keyformer_recent: int = 0  # trailing protected window (extension, off)
-    keyformer_tau: float = 1.0  # Gumbel temperature; 0 = H2O-adapted (ablation)
+    keyformer_tau: Optional[float] = (
+        None  # constant-temperature alias; overrides tau_init/tau_end (disables annealing) if set
+    )
+    keyformer_tau_init: float = 1.0  # Gumbel temperature at pos=0 (paper default 1)
+    keyformer_tau_end: float = 1.0  # Gumbel temperature once annealed (paper default 2)
+    keyformer_anneal_steps: int = 0  # steps to ramp tau_init -> tau_end; 0 = constant temperature
+    keyformer_rope_base: float = 10000.0  # RoPE base for post-eviction position remap
     keyformer_seed: int = 0  # base seed for the frozen per-position noise
     # --- MorphKV-adapted configuration (recent-window correlation retention) --
     morphkv_budget: int = 512  # max tokens kept (incl. sinks)

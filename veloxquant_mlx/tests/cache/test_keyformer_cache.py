@@ -53,7 +53,24 @@ def test_construction_guard_no_evictable_room():
 def test_config_defaults_propagate():
     cache = _make()
     assert cache._budget == 512 and cache._n_sink == 4
-    assert cache._recent == 0 and cache._tau == 1.0 and cache._seed == 0
+    assert cache._recent == 0 and cache._seed == 0
+    assert cache._tau_init == 1.0 and cache._tau_end == 1.0 and cache._anneal_steps == 0
+    assert cache._rope_base == 10000.0
+
+
+def test_keyformer_tau_alias_overrides_init_end():
+    cache = _make(keyformer_tau=3.0, keyformer_tau_init=1.0, keyformer_tau_end=2.0)
+    assert cache._tau_init == 3.0 and cache._tau_end == 3.0
+
+
+def test_tau_init_end_annealing_propagates():
+    cache = _make(keyformer_tau_init=1.0, keyformer_tau_end=2.0, keyformer_anneal_steps=50)
+    assert cache._tau_init == 1.0 and cache._tau_end == 2.0 and cache._anneal_steps == 50
+
+
+def test_rope_base_propagates():
+    cache = _make(keyformer_rope_base=500000.0)
+    assert cache._rope_base == 500000.0
 
 
 # ---------------------------------------------------------------------------
@@ -136,3 +153,42 @@ def test_tau_zero_seed_invariant_at_cache_level():
         return K
 
     assert bool(mx.all(run(0) == run(999)).item())
+
+
+# ---------------------------------------------------------------------------
+# temperature annealing propagates and evolves per-head at the cache level
+# ---------------------------------------------------------------------------
+def test_annealing_changes_kept_set_vs_constant_tau():
+    ks = [_kv(1, 2, 1, 16, seed=i) for i in range(60)]
+
+    def run(**kw):
+        cache = _make(keyformer_budget=10, keyformer_n_sink=2, keyformer_seed=0, **kw)
+        for k, v in ks:
+            K, _ = cache.update_and_fetch(k, v)
+        return K
+
+    constant = run(keyformer_tau=1.0)
+    annealed = run(keyformer_tau_init=1.0, keyformer_tau_end=6.0, keyformer_anneal_steps=30)
+    # Different effective temperature schedule -> different eviction decisions
+    # across 60 steps is expected (not a bit-for-bit equivalence claim).
+    assert constant.shape == annealed.shape
+    assert not bool(mx.all(constant == annealed).item())
+
+
+def test_annealing_is_reproducible_per_head():
+    ks = [_kv(1, 3, 1, 16, seed=i) for i in range(40)]
+
+    def run():
+        cache = _make(
+            keyformer_budget=8,
+            keyformer_n_sink=1,
+            keyformer_tau_init=1.0,
+            keyformer_tau_end=3.0,
+            keyformer_anneal_steps=20,
+            keyformer_seed=5,
+        )
+        for k, v in ks:
+            K, _ = cache.update_and_fetch(k, v)
+        return K
+
+    assert bool(mx.all(run() == run()).item())
