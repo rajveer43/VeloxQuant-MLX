@@ -61,7 +61,7 @@ Repository       = "https://github.com/rajveer43/VeloxQuant-MLX"
 "Bug Tracker" = "https://github.com/rajveer43/VeloxQuant-MLX/issues"
 Author        = "https://github.com/rajveer43"
 Changelog     = "https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md"
-Documentation = "https://github.com/rajveer43/VeloxQuant-MLX#readme"
+Documentation = "https://veloxquant-mlx.netlify.app/"
 
 [project.scripts]
 veloxquant = "veloxquant_mlx.__main__:main"
