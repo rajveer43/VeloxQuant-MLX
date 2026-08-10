@@ -53,6 +53,27 @@ equivalent between the two. ``h2o_grace=0`` reproduces the original
 (paper-faithful, freeze-prone) behavior exactly, for anyone who wants to
 study or reproduce that failure mode.
 
+SECOND FIXED, CONFIRMED-ON-REAL-MODELS PROBLEM (found while verifying the
+fix above): fixing the freeze is necessary but not sufficient for coherent
+output at tight budgets. Scores are a running sum that never shrinks, so an
+old token's total lifetime attention mass grows with its age regardless of
+current relevance — confirmed empirically (correlation of -0.97 between
+token age and score in a synthetic run). An old survivor could therefore
+outscore every recently-graduated (post-grace) token forever, so the
+eviction argmin thinned the *rest* of the budget into a sparse, gapped kept
+window instead of a contiguous recent block — generation still degraded,
+just via broken local coherence from the gaps rather than the original
+permanent freeze.
+
+Fixed via ``h2o_decay`` (default 0.98): every existing score is
+multiplicatively decayed each update step, before new attention mass is
+added, so old tokens' scores fade instead of accumulating forever. Applied
+identically in both the per-token loop and the vectorized batch-absorb path
+(:func:`veloxquant_mlx.quantizers.h2o._batch_absorb_no_eviction`) — verified
+numerically equivalent between the two (fp32-rounding-only difference).
+``h2o_decay=1.0`` reproduces the original (paper-faithful, staleness-prone)
+behavior exactly.
+
 RoPE position remapping (a separate, narrower, and now-fixed correctness
 issue found during the same investigation — real, but NOT the cause of the
 freeze above, since interior eviction rarely happens once the freeze sets
@@ -138,6 +159,14 @@ class H2OKVCache(_MLXKVCache):
             starting score of 0.0 makes it almost always the eviction target
             the instant the cache is full, freezing the kept set on whichever
             tokens filled the budget first.
+            ``h2o_decay`` (float, default 0.98) — multiplicative per-step
+            decay on existing scores, applied before new attention mass is
+            added. Fixes a second real, confirmed-on-real-models problem
+            (see module docstring): without this, scores only ever grow, so
+            old tokens permanently outrank newer ones regardless of current
+            relevance, thinning the kept window into a sparse, gapped
+            trickle instead of a contiguous local context even with grace
+            fixing the freeze. Must be in ``(0, 1]``; ``1.0`` disables decay.
 
     Notes:
         No ``.bits`` attribute — stores and returns fp16 K/V directly.
@@ -168,6 +197,7 @@ class H2OKVCache(_MLXKVCache):
         self._n_sink = int(getattr(config, "h2o_n_sink", 4))
         self._rope_base = float(getattr(config, "h2o_rope_base", 10000.0))
         self._grace = int(getattr(config, "h2o_grace", 16))
+        self._decay = float(getattr(config, "h2o_decay", 0.98))
 
         self._head_dim: int = 0
         self._states: list[H2OState] = []
@@ -187,7 +217,12 @@ class H2OKVCache(_MLXKVCache):
             self._head_dim = D
             self._states = [
                 init_h2o_state(
-                    self._n_sink, self._budget, D, rope_base=self._rope_base, grace=self._grace
+                    self._n_sink,
+                    self._budget,
+                    D,
+                    rope_base=self._rope_base,
+                    grace=self._grace,
+                    decay=self._decay,
                 )
                 for _ in range(B * H)
             ]

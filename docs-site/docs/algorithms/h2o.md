@@ -4,34 +4,49 @@
 (Zhang et al., ICLR 2024) — **H2O-adapted (VeloxQuant-MLX implementation)**,
 not a faithful port.
 
-:::warning[Freeze mechanism fixed via `h2o_grace` — but tight budgets still degrade output]
+:::warning[Two real bugs fixed (`h2o_grace`, `h2o_decay`) — tight budgets and a separate eviction-quality issue remain]
 Real-model testing (below) originally found that eviction corrupted output —
 as few as one or two evictions could send generation into repetition loops,
-and heavier eviction caused total collapse. Root cause: the scoring formula
-gives every newly-arrived token a starting score of exactly `0`, and the
-eviction rule removes the *global minimum* score — so the brand-new token
-was (almost always) its own eviction target the instant the cache filled,
-before it ever accumulated attention mass. The kept set froze on whichever
-tokens filled the budget first (typically the prompt) and never admitted
-anything generated afterward.
+and heavier eviction caused total collapse. Root cause #1: the scoring
+formula gives every newly-arrived token a starting score of exactly `0`, and
+the eviction rule removes the *global minimum* score — so the brand-new
+token was (almost always) its own eviction target the instant the cache
+filled, before it ever accumulated attention mass. The kept set froze on
+whichever tokens filled the budget first (typically the prompt) and never
+admitted anything generated afterward.
 
 **Fixed** via `h2o_grace` (default `16`): the most-recently-arrived `grace`
 tokens are protected from eviction the same way sink tokens are, giving
 every new token `grace` update steps to actually compete before it can be
-evicted. Verified structurally on real models: the kept-position window now
-genuinely advances with generation instead of freezing at `[0, budget-1]`
-forever — see [grace-period testing](#grace-period-testing-fixes-the-freeze-mechanism-coherence-still-needs-budget-headroom).
+evicted.
 
-**Not fully solved:** fixing the freeze mechanism is necessary but not
-sufficient for *coherent* output. When `h2o_budget` is tight relative to
-`h2o_n_sink + h2o_grace` plus how much of the prompt needs to survive,
-eviction is forced to thin out old tokens into a sparse, gapped window
-(e.g. keeping positions `..., 37, 39, 41, 43, ...` instead of a contiguous
-range) to make room — and generation still degrades under that regime, just
-via a different mechanism (broken local coherence from the gaps) rather than
-the original freeze. Give `h2o_budget` real headroom over `h2o_n_sink +
-h2o_grace` for coherent output; see the table below for what "enough" looks
-like in practice.
+Fixing the freeze exposed root cause #2: scores are a running sum that never
+shrinks, so a token's total lifetime attention mass grows with its age
+regardless of current relevance. An old survivor can outscore every
+recently-graduated token forever, so — even with the freeze fixed — the kept
+window stayed pinned near the *start* of generation for hundreds of decode
+steps instead of tracking the current position (verified: after 400 decode
+steps at `h2o_budget=64, h2o_grace=16`, the kept window without decay was
+still `[4..74]`, essentially the prompt, while the model had moved on to
+position 415).
+
+**Fixed** via `h2o_decay` (default `0.98`): existing scores are
+multiplicatively decayed each update step before new mass is added, so old
+tokens' scores fade instead of accumulating forever. Verified: the same
+400-step run with decay advances the kept window to `[297..415]` — tracking
+current generation instead of being stuck near the prompt.
+
+**Not fully solved:** with both fixes, the kept window is a genuinely
+*recent*, mostly-contiguous set — but a separate, deeper issue remains at
+very tight budgets: eviction can still remove a token whose local context
+the model needs mid-generation (confirmed: identical output with
+`h2o_decay=1.0` and `h2o_decay=0.98` at `budget=128, grace=32` diverges from
+the no-eviction baseline at the exact point eviction starts, breaking
+`"thylakoid"` into `"th th th th..."`). This is **not** a grace or decay
+problem — a no-eviction control run on the same prompt stays coherent for
+the full 300 tokens — it's a remaining gap in the eviction *quality* itself.
+See [grace-and-decay testing](#grace-and-decay-testing-fixes-window-advancement-eviction-quality-at-tight-budgets-remains-open)
+for the full data.
 :::
 
 H2O-adapted is the library's **third eviction axis** and the first based on
@@ -60,6 +75,7 @@ config = KVCacheConfig(
     h2o_budget=512,  # max tokens retained at any time (sinks + grace + non-sinks)
     h2o_n_sink=4,  # initial positions never evicted (attention sinks)
     h2o_grace=16,  # most-recent tokens never evicted (fixes the early-token freeze)
+    h2o_decay=0.98,  # per-step score decay (fixes old tokens permanently outranking new ones)
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches
@@ -72,6 +88,7 @@ model.make_cache = lambda *_a, **_k: caches
 | `h2o_budget` | `512` | Maximum token positions retained at any time. When the cache exceeds this count, the lowest-score non-sink, non-grace token is permanently evicted. |
 | `h2o_n_sink` | `4` | Number of initial token positions always retained (attention-sink tokens never eligible for eviction). |
 | `h2o_grace` | `16` | Number of most-recently-arrived tokens always retained, giving each new token this many update steps to accumulate real attention mass before it becomes eviction-eligible. `0` reproduces the original paper-faithful (but freeze-prone) behavior. `h2o_n_sink + h2o_grace` must be `< h2o_budget`. |
+| `h2o_decay` | `0.98` | Multiplicative decay applied to every existing score each update step, before new attention mass is added. Fixes old tokens permanently outranking newer ones (scores otherwise only ever grow). Must be in `(0, 1]`; `1.0` disables decay and reproduces the original paper-faithful (but staleness-prone) behavior. |
 
 ## How it works
 
@@ -81,9 +98,12 @@ For every incoming token (both prefill and decode), per head:
    proxy query and attends to all currently stored key rows via scaled dot-product
    softmax: `attn = softmax(K_stored @ k_i / sqrt(D))`. This gives `[n_kept]`
    softmax weights for the existing cache entries.
-2. **Score accumulation.** The weights are added to the existing per-token cumulative
-   score vector: `scores += attn`. New tokens start with score 0 and begin
-   accumulating on subsequent steps.
+2. **Score accumulation, with decay.** Existing scores are first multiplied by
+   `h2o_decay` (default `0.98`), then the new weights are added:
+   `scores = scores * h2o_decay + attn`. New tokens start with score 0 and
+   begin accumulating on subsequent steps. Without decay (`h2o_decay=1.0`),
+   scores are a pure running sum that never shrinks — see the warning above
+   for why that lets old tokens permanently outrank newer ones.
 3. **Eviction (if over budget).** If the total token count exceeds `h2o_budget`, a
    protected score view is constructed: the first `h2o_n_sink` positions
    receive `+inf` (attention sinks), and the last `h2o_grace` positions — the
@@ -125,14 +145,16 @@ Documented as "H2O-adapted (key-as-query proxy)" throughout — never claimed as
 faithful port.
 
 **Not a fidelity gap, but a consequence of the formula itself:** the paper's
-own scoring rule (new tokens start at score 0, minimum gets evicted) is what
-produces the early-token freeze described below — implementing it exactly as
-specified is what causes the practical problem, not a deviation from it.
-`h2o_grace` (default `16`, see [How it works](#how-it-works)) is this
-library's own addition on top of Algorithm 1 to make the method usable in
-practice; the paper itself does not specify a grace period, so `h2o_grace=0`
-is the fidelity-preserving setting if you want to study the paper's
-mechanism exactly as published.
+own scoring rule (new tokens start at score 0, minimum gets evicted, scores
+accumulate as an unbounded running sum) is what produces both the
+early-token freeze and the score-staleness problem described below —
+implementing it exactly as specified is what causes the practical problems,
+not a deviation from it. `h2o_grace` (default `16`) and `h2o_decay` (default
+`0.98`, see [How it works](#how-it-works)) are this library's own additions
+on top of Algorithm 1 to make the method usable in practice; the paper
+itself specifies neither a grace period nor score decay, so `h2o_grace=0,
+h2o_decay=1.0` is the fidelity-preserving setting if you want to study the
+paper's mechanism exactly as published.
 
 ## Evidence
 
@@ -161,7 +183,9 @@ All claims trace to passing tests in
 - The vectorized below-budget batch path matches the sequential per-token loop it replaces bit-for-bit within fp16 rounding, including for a single call whose batch straddles the below-budget/over-budget boundary
 - A 4,000-token single-call absorption (no eviction) completes without error — the regression test for the prefill scalability crash
 - `h2o_grace` defaults to a nonzero value in `KVCacheConfig`; grace-protected tokens survive even when they hold the lowest score, verified against a synthetic case where `h2o_grace=0` would evict the newest tokens
-- The fused Metal eviction kernel (`veloxquant_mlx/tests/metal/test_h2o_evict.py`, 18 tests) matches the pure-MLX eviction path bit-for-bit, including sink+grace protection, interior eviction, tie-break-matches-`mx.argmin`, and bit-identical untouched rows
+- `h2o_decay` defaults to `< 1.0` in `KVCacheConfig`; `decay=1.0` is bit-for-bit identical to omitting decay; with decay, an old token's score after many later updates is strictly lower than without it, and a later token can out-score an earlier one (impossible under pure accumulation, where a 60-step synthetic run shows a -0.97 correlation between token age and score)
+- The vectorized batch-absorb path applies decay identically to the sequential per-token loop it replaces, verified to fp32-rounding precision in both the from-empty and nonempty-prior-state branches (the exponentiated per-row decay power is the highest-risk part of the decay implementation)
+- The fused Metal eviction kernel (`veloxquant_mlx/tests/metal/test_h2o_evict.py`, 18 tests) matches the pure-MLX eviction path bit-for-bit, including sink+grace protection, interior eviction, tie-break-matches-`mx.argmin`, and bit-identical untouched rows — decay is applied entirely in the score-accumulation step before either eviction path runs, so no kernel changes were needed for it
 
 The offline harness in `benchmark_scripts/benchmark_h2o.py` sweeps
 `(seq_len, budget, n_sink)` and reports latency and compression ratio —
@@ -176,8 +200,8 @@ and `mlx-community/Mistral-7B-Instruct-v0.3-4bit` (`head_dim=128`,
 theoretical caveat. This section documents the **`h2o_grace=0` behavior**
 (the library's default before the grace-period fix, and still what you get
 if you explicitly set `h2o_grace=0` to study the paper's mechanism exactly
-as published). See [grace-period testing](#grace-period-testing-fixes-the-freeze-mechanism-coherence-still-needs-budget-headroom)
-below for the current default (`h2o_grace=16`) behavior.
+as published). See [grace-and-decay testing](#grace-and-decay-testing-fixes-window-advancement-eviction-quality-at-tight-budgets-remains-open)
+below for the current default (`h2o_grace=16, h2o_decay=0.98`) behavior.
 
 :::danger[grace=0: eviction corrupts generation quality — this is not tuning, it collapses almost immediately]
 The moment eviction actually fires (as little as **one or two evictions**,
@@ -239,48 +263,73 @@ here as a historical record and as an explicit opt-in
 published, including its practical failure mode at tight budgets. For real
 usage, see the grace-period results next.
 
-### Grace-period testing: fixes the freeze mechanism, coherence still needs budget headroom
+### Grace-and-decay testing: fixes window advancement, eviction quality at tight budgets remains open
 
-Re-ran the same real-model methodology with `h2o_grace > 0` to check whether
-protecting recently-arrived tokens actually fixes the freeze — and to be
-honest about what it does and doesn't fix.
+Re-ran the same real-model methodology with `h2o_grace > 0` and, once that
+exposed a second problem, with `h2o_decay < 1.0` on top of it — to check
+whether each fix does what it claims, and to be honest about what's still
+unsolved.
 
-**The freeze mechanism itself is fixed, structurally verified.** With
+**The freeze mechanism is fixed, structurally verified.** With
 `h2o_grace=8` and a short prompt (13 tokens, `h2o_budget=14`), the kept
 position set — which with `h2o_grace=0` stayed frozen at `[0..13]` forever —
 now genuinely advances: `[0, 1, 2, 3, 4, 5, 27, 29, 31, 33, 35, 37, 39, 41]`.
 Generated tokens are finally entering and surviving in the cache, which
 never happened at `h2o_grace=0`.
 
-**But structural advancement alone doesn't guarantee coherent output.** At
-that same tight budget, the kept window has gaps every other position
-(`27, 29, 31, ...`) to make room for both `h2o_grace` and ongoing eviction —
-and generation degrades anyway, just via a different mechanism (broken local
-context from the gaps) rather than the original freeze:
+**But grace alone doesn't mean the window tracks the *current* position.**
+Scores are a running sum that never shrinks, so a token that survived its
+grace window early in generation can keep outscoring every token that
+graduates afterward, indefinitely. Direct measurement at `h2o_budget=64,
+h2o_n_sink=4, h2o_grace=16`, generating 400 tokens: with `h2o_decay=1.0`
+(no decay), the kept window after 400 decode steps was
+`[4, 5, ..., 21, 24, 26, ..., 74]` plus a handful of the very latest
+tokens — essentially still the prompt, 300+ positions behind where
+generation actually was. With `h2o_decay=0.98`, the same run's kept window
+was `[297, 299, ..., 415]` — genuinely tracking the current position instead
+of clinging to the prompt.
 
-| `h2o_grace` | `h2o_budget` | Kept positions (tail) | Output |
+**Decay fixes window *advancement*, not the earlier gapped-window
+degradation by itself.** At the original tight-budget case from the freeze
+investigation (`h2o_budget=14, h2o_n_sink=2, h2o_grace=8`), the non-sink
+kept window has a steady gap-of-2 pattern (`..., 47, 49, 51, 53`) **with or
+without decay** — this specific pattern turned out to be a structural
+consequence of `h2o_budget - h2o_n_sink - h2o_grace` being very small (only
+4 "competable" slots), not a staleness artifact: the token that has *just*
+graduated out of the grace window is always the newest possible competable
+token, so it is close to sole minimum by construction regardless of decay
+strength. Confirmed with a controlled A/B (`h2o_budget=128, h2o_n_sink=2,
+h2o_grace=32` — enough headroom that this effect is negligible): the *kept
+positions and final generated text were byte-for-byte identical* between
+`h2o_decay=1.0` and `h2o_decay=0.98`, even though the underlying score
+magnitudes differed by ~8x (max score `24.16` vs `2.97`) — decay changed
+score *scale*, not eviction *order*, at this budget.
+
+**A separate, deeper issue remains, independent of grace and decay.** At
+`h2o_budget=128, h2o_n_sink=2, h2o_grace=32`, generation is coherent for a
+while and then breaks mid-word: `"...occurs in the th th th th..."` instead
+of `"...occurs in the thylakoid membranes..."`. This is identical between
+`h2o_decay=1.0` and `h2o_decay=0.98` (ruling out decay as cause or fix), and
+a **no-eviction control run** (`h2o_budget=10000`, same prompt, same seed)
+stays fully coherent for the entire 300-token generation — proving this
+specific break is caused by *an* eviction decision (some token whose local
+context the model needed was dropped at exactly the wrong moment), not by
+the freeze or staleness mechanisms already fixed, and not a general property
+of long generation on this model.
+
+| Fix | What it corrects | Verified how | Still not covered |
 |---|---|---|---|
-| `0` | 14 | `[0..13]` (frozen) | `Paris.\nThe\nThe answer in French...` |
-| `8` | 14 | `[..., 27, 29, 31, 33, 35, 37, 39, 41]` (gapped, but advancing) | `Paris.\nTheTheTheThe...` (still degenerates) |
-| `0` | 32 | `[0..31]` (frozen) | Long but eventually repetitive |
-| `16` | 32 | `[..., 21, 23, 25, ..., 51]` (gapped) | `...the largest largest largest...` (different repetition, still broken) |
-| `32` | 128 | `[..., 110, 111, ..., 119]` (**contiguous** — enough headroom that eviction barely fired) | **Coherent, on-topic** photosynthesis explanation |
+| `h2o_grace` | New tokens evicted before they can compete (starting score `0.0` is the global min) | Kept window structurally advances past `[0, budget-1]` | Doesn't stop *old* tokens from permanently dominating *newer* ones |
+| `h2o_decay` | Old tokens permanently outrank newer ones (scores never shrink) | Kept window tracks current position (`[297..415]` vs `[4..74]` at 400 steps) | Doesn't change eviction order once headroom is generous, and doesn't touch the gap-of-2 conveyor effect at very tight `budget - n_sink - grace` |
+| *(neither)* | A single eviction dropping context the model needed mid-generation | Ruled OUT grace/decay as cause via A/B + no-eviction control | **Open** — see [When to use it](#when-to-use-it) |
 
-The pattern: **give `h2o_budget` real headroom over `h2o_n_sink + h2o_grace`
-plus how much of the prompt/generation actually needs to be live at once.**
-When there's enough room that eviction rarely or never fires (the
-`grace=32, budget=128` row), output is coherent. When budget is so tight
-that eviction must skip every other position just to keep the grace window
-open, local coherence breaks down regardless of whether the freeze mechanism
-itself is fixed — a token's neighbors matter for coherent local generation,
-not just "is it in the cache at all."
-
-**Practical guidance:** `h2o_grace` (default `16`) fixes the specific,
-provable bug (permanent freeze on the first `budget` tokens). It does not
-turn H2O into a cache that works well at very tight budgets — that was
-never really about the freeze alone. Size `h2o_budget` generously if you
-want coherent long-form generation; treat H2O at very tight budgets as still
-experimental.
+**Practical guidance:** `h2o_grace` (default `16`) and `h2o_decay` (default
+`0.98`) fix two specific, provable bugs — permanent freeze and score
+staleness — and both are on by default. They do not turn H2O into a cache
+that is safe at very tight budgets: give `h2o_budget` real headroom over
+`h2o_n_sink + h2o_grace` (so the gap-of-2 conveyor effect stays negligible),
+and treat occasional mid-generation quality loss from a single bad eviction
+as a known, open limitation rather than a solved problem.
 
 ### Long-context testing: the freeze holds at scale, plus a scalability bug (now fixed)
 
@@ -344,17 +393,24 @@ large enough to avoid heavy early eviction.
 
 ## When to use it
 
-**With `h2o_grace` at its default (`16`) and `h2o_budget` sized with real
-headroom** (see [grace-period testing](#grace-period-testing-fixes-the-freeze-mechanism-coherence-still-needs-budget-headroom) —
+**With `h2o_grace` and `h2o_decay` at their defaults (`16`, `0.98`) and
+`h2o_budget` sized with real headroom** (see
+[grace-and-decay testing](#grace-and-decay-testing-fixes-window-advancement-eviction-quality-at-tight-budgets-remains-open) —
 budget comfortably above `h2o_n_sink + h2o_grace` plus expected live context),
 H2O-adapted is a **budget-bounded cache that improves over recency-only
 eviction** (StreamingLLM) by using attention signal rather than position —
-heavy-hitter tokens (those consistently attended to) survive; recency is not
-the only criterion for retention.
+heavy-hitter tokens (those consistently attended to) survive, the kept
+window tracks the current generation position rather than freezing near the
+prompt, and recency is not the only criterion for retention.
 
-**At very tight budgets**, treat it as still experimental: the permanent
-freeze is fixed, but coherent output at aggressive compression ratios is not
-guaranteed — see the gapped-window failure mode above.
+**At very tight budgets, or for long generations where any single eviction
+mattering is a real risk**, treat it as still experimental: the permanent
+freeze and score-staleness bugs are fixed, but a single eviction can still
+remove context the model needed mid-generation, and very tight
+`h2o_budget - h2o_n_sink - h2o_grace` headroom reintroduces a structural
+gapped-window pattern independent of decay — see
+[grace-and-decay testing](#grace-and-decay-testing-fixes-window-advancement-eviction-quality-at-tight-budgets-remains-open)
+above.
 
 | Scenario | Recommended method |
 |----------|-------------------|
@@ -362,7 +418,7 @@ guaranteed — see the gapped-window failure mode above.
 | Hard cap on tokens, evict at prefill only | SnapKV-adapted |
 | Constant-memory, position-based eviction | StreamingLLM-adapted |
 | Constant-memory, importance-based eviction (continuous), budget has headroom | H2O-adapted |
-| Constant-memory, importance-based eviction at very tight budgets | Still experimental — see grace-period findings above |
+| Constant-memory, importance-based eviction at very tight budgets | Still experimental — see grace-and-decay findings above |
 | Recover quality from aggressive quantization | GEAR |
 
 **See also:** [CaM-adapted](./cam) makes the same eviction choice as H2O but

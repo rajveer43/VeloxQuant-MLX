@@ -69,6 +69,31 @@ def test_init_state_rejects_n_sink_above_budget() -> None:
         init_h2o_state(n_sink=8, budget=4, head_dim=32)
 
 
+def test_init_state_decay_defaults_to_no_op() -> None:
+    st = init_h2o_state(n_sink=0, budget=16, head_dim=32)
+    assert st.decay == 1.0
+
+
+def test_init_state_rejects_decay_zero() -> None:
+    with pytest.raises(ValueError, match="decay"):
+        init_h2o_state(n_sink=0, budget=16, head_dim=32, decay=0.0)
+
+
+def test_init_state_rejects_decay_negative() -> None:
+    with pytest.raises(ValueError, match="decay"):
+        init_h2o_state(n_sink=0, budget=16, head_dim=32, decay=-0.5)
+
+
+def test_init_state_rejects_decay_above_one() -> None:
+    with pytest.raises(ValueError, match="decay"):
+        init_h2o_state(n_sink=0, budget=16, head_dim=32, decay=1.5)
+
+
+def test_init_state_accepts_decay_equal_one() -> None:
+    st = init_h2o_state(n_sink=0, budget=16, head_dim=32, decay=1.0)
+    assert st.decay == 1.0
+
+
 # ---------------------------------------------------------------------------
 # h2o_get_kv — empty state
 # ---------------------------------------------------------------------------
@@ -225,6 +250,71 @@ def test_scores_accumulate_over_steps() -> None:
     scores_after_2 = np.array(st2.scores[: len(scores_after_1)].tolist())
     # Softmax weights are positive, so at least total mass increased
     assert scores_after_2.sum() >= scores_after_1.sum() - 1e-4
+
+
+# ---------------------------------------------------------------------------
+# decay — fixes score staleness (old tokens permanently outranking new ones)
+# ---------------------------------------------------------------------------
+
+
+def test_decay_one_reproduces_no_decay_behavior() -> None:
+    """decay=1.0 must be bit-for-bit identical to omitting decay entirely —
+    it is the explicit opt-out, not just 'close to' the original behavior."""
+    D = 16
+    budget = 1000
+    k, v = _rand_kv(S=30, D=D, seed=3)
+
+    st_default = init_h2o_state(n_sink=0, budget=budget, head_dim=D)
+    st_default = h2o_update(st_default, k, v)
+
+    st_explicit = init_h2o_state(n_sink=0, budget=budget, head_dim=D, decay=1.0)
+    st_explicit = h2o_update(st_explicit, k, v)
+
+    assert bool(mx.all(st_default.scores == st_explicit.scores).item())
+
+
+def test_decay_shrinks_old_scores_relative_to_no_decay() -> None:
+    """With decay < 1.0, an old token's score after many later updates must
+    be strictly lower than with decay=1.0 (its earlier mass fades)."""
+    D = 16
+    budget = 1000
+    k, v = _rand_kv(S=1, D=D, seed=0)
+
+    st_nodecay = init_h2o_state(n_sink=0, budget=budget, head_dim=D, decay=1.0)
+    st_nodecay = h2o_update(st_nodecay, k, v)
+    st_decay = init_h2o_state(n_sink=0, budget=budget, head_dim=D, decay=0.9)
+    st_decay = h2o_update(st_decay, k, v)
+
+    for step in range(1, 20):
+        k_i, v_i = _rand_kv(S=1, D=D, seed=step)
+        st_nodecay = h2o_update(st_nodecay, k_i, v_i)
+        st_decay = h2o_update(st_decay, k_i, v_i)
+
+    assert float(st_decay.scores[0].item()) < float(st_nodecay.scores[0].item())
+
+
+def test_decay_prevents_old_token_from_permanently_outranking_recent_ones() -> None:
+    """The actual bug being fixed: without decay, an old survivor's
+    cumulative score can exceed every recently-graduated token's score
+    forever, forcing eviction to thin the rest of the budget into a sparse
+    trickle. With decay, a long-enough run should let a later, currently
+    high-scoring token exceed an early token's (now-decayed) score."""
+    D = 16
+    budget = 1000
+    n_sink = 0
+
+    st = init_h2o_state(n_sink=n_sink, budget=budget, head_dim=D, decay=0.8)
+    for step in range(40):
+        k_i, v_i = _rand_kv(S=1, D=D, seed=step)
+        st = h2o_update(st, k_i, v_i)
+
+    scores_np = np.array(st.scores.tolist())
+    # With decay, score should NOT be monotonically non-increasing in
+    # position the way it is without decay (see module docstring: -0.97
+    # correlation with no decay) — at least one later token should beat an
+    # earlier one, showing old dominance has been broken.
+    beats_earlier = any(scores_np[j] > scores_np[0] for j in range(1, len(scores_np) - 1))
+    assert beats_earlier
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +552,56 @@ def test_batch_absorb_matches_sequential_with_prior_tokens() -> None:
     vectorized = _batch_absorb_no_eviction(st2.keys.astype(mx.float32), st2.scores, mx.array(new))
     err = float(mx.max(mx.abs(vectorized - st.scores)).item())
     assert err < 1e-3, f"batch vs sequential score mismatch: {err}"
+
+
+def test_batch_absorb_with_decay_matches_sequential_from_empty() -> None:
+    """decay must be applied identically in the vectorized batch path and
+    the sequential per-token loop it replaces — this is the highest-risk
+    piece of the decay fix (exponentiated decay powers per batch row)."""
+    D = 8
+    S = 6
+    decay = 0.9
+    rng = np.random.default_rng(2)
+    keys = mx.array(rng.standard_normal((S, D)).astype(np.float32))
+
+    st = init_h2o_state(n_sink=0, budget=1000, head_dim=D, decay=decay)
+    for i in range(S):
+        st = h2o_update(st, keys[i][None].astype(mx.float16), keys[i][None].astype(mx.float16))
+
+    vectorized = _batch_absorb_no_eviction(None, None, keys, decay=decay)
+    err = float(mx.max(mx.abs(vectorized - st.scores)).item())
+    assert err < 1e-3, f"batch-with-decay vs sequential score mismatch: {err}"
+
+
+def test_batch_absorb_with_decay_matches_sequential_with_prior_tokens() -> None:
+    """Same as above but exercising the non-empty-prior branch of
+    _batch_absorb_no_eviction, which decays prior_scores by decay**S in
+    addition to decaying each batch row's own contribution."""
+    D = 8
+    P = 3
+    S = 4
+    decay = 0.9
+    rng = np.random.default_rng(3)
+    prior = rng.standard_normal((P, D)).astype(np.float32)
+    new = rng.standard_normal((S, D)).astype(np.float32)
+
+    st = init_h2o_state(n_sink=0, budget=1000, head_dim=D, decay=decay)
+    for i in range(P):
+        k = mx.array(prior[i][None].astype(np.float16))
+        st = h2o_update(st, k, k)
+    for i in range(S):
+        k = mx.array(new[i][None].astype(np.float16))
+        st = h2o_update(st, k, k)
+
+    st2 = init_h2o_state(n_sink=0, budget=1000, head_dim=D, decay=decay)
+    for i in range(P):
+        k = mx.array(prior[i][None].astype(np.float16))
+        st2 = h2o_update(st2, k, k)
+    vectorized = _batch_absorb_no_eviction(
+        st2.keys.astype(mx.float32), st2.scores, mx.array(new), decay=decay
+    )
+    err = float(mx.max(mx.abs(vectorized - st.scores)).item())
+    assert err < 1e-3, f"batch-with-decay vs sequential score mismatch: {err}"
 
 
 def test_h2o_update_single_call_matches_many_single_token_calls() -> None:
