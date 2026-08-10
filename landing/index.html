@@ -67,12 +67,13 @@
       <span></span><span></span><span></span>
     </button>
     <ul class="nav-links" id="nav-links">
+      <li><a href="#scenarios">Start here</a></li>
       <li><a href="#calculator">Calculator</a></li>
+      <li><a href="#methods">Methods</a></li>
       <li><a href="#quickstart">Quickstart</a></li>
       <li><a href="#compare">Compare</a></li>
       <li><a href="#benchmarks">Benchmarks</a></li>
       <li><a href="#quality">Quality cost</a></li>
-      <li><a href="#methods">Methods</a></li>
       <li><a href="playground.html">Playground</a></li>
       <li><a href="#install">Install</a></li>
       <li><a href="/docs/" rel="noopener">Docs</a></li>
@@ -121,6 +122,18 @@
         <span class="hero-pill">100% fp16 tok/s @ 16× — Qwen2.5-7B</span>
         <span class="hero-pill">Apple Silicon only</span>
       </div>
+
+      <!-- Accounting vs resident RAM: compression ratios are bit-width accounting,
+           not measured process RSS. Most quantization methods still store dequantized
+           fp16 tensors on the default mlx_lm serving path today (see GitHub #27). Only
+           eviction/true-latent methods reduce resident memory today. -->
+      <p class="hero-disclaimer">
+        Compression ratios are bit-width accounting, not measured RAM. Methods that shrink
+        <strong>resident</strong> memory today are marked 🔻RSS in the
+        <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">method table</a>;
+        others reduce precision at equal fp16 storage for now
+        (<a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/27" target="_blank" rel="noopener">packed-storage roadmap</a>).
+      </p>
 
       <div class="install-block" id="hero-install" title="Click to copy">
         <span class="dollar">$</span>
@@ -257,7 +270,59 @@
 
   <div class="divider"></div>
 
-  <!-- ── §5 THE 3-LINE DIFF ── -->
+  <!-- ── §5 METHOD PICKER ── -->
+  <section id="methods">
+    <div class="section-head-center">
+      <p class="section-label">Which method</p>
+      <h2 class="section-title">41 methods, one decision</h2>
+      <p class="section-desc">
+        Most people need one of six. Pick by what you're optimising for —
+        the full catalogue lives in the docs.
+      </p>
+    </div>
+
+    <div class="picker-list fade-in">
+      <div class="picker-row is-default">
+        <p class="picker-goal">Balanced, nothing to calibrate
+          <small>The default. Works on any model, no setup pass.</small></p>
+        <p class="picker-pick"><a href="#quickstart" class="picker-tab-link" data-tab="rvq"><code class="inline plain">turboquant_rvq</code></a><small>7.5× keys</small></p>
+      </div>
+      <div class="picker-row is-max">
+        <p class="picker-goal">Maximum compression, quality secondary
+          <small>Needs a one-time codebook calibration.</small></p>
+        <p class="picker-pick"><a href="#quickstart" class="picker-tab-link" data-tab="vecinfer"><code class="inline plain">vecinfer</code></a><small>16× keys</small></p>
+      </div>
+      <div class="picker-row">
+        <p class="picker-goal">Longest context in fixed RAM
+          <small>Compresses keys <em>and</em> values — real resident savings.</small></p>
+        <p class="picker-pick"><code class="inline plain">rabitq</code><small>6× full KV</small></p>
+      </div>
+      <div class="picker-row">
+        <p class="picker-goal">Quality-critical work
+          <small>Per-channel keys, per-token values, fp16 residual window.</small></p>
+        <p class="picker-pick"><code class="inline plain">kivi</code><small>~4× full KV</small></p>
+      </div>
+      <div class="picker-row">
+        <p class="picker-goal">Bounded memory regardless of length
+          <small>Drops stale tokens. Quality depends on the task.</small></p>
+        <p class="picker-pick"><code class="inline plain">streaming_llm</code> / <code class="inline plain">h2o</code><small>eviction</small></p>
+      </div>
+      <div class="picker-row">
+        <p class="picker-goal">Everything else
+          <small>35 more, including cross-layer merging and spectral rotation.</small></p>
+        <p class="picker-pick"><a href="/docs/algorithms/overview" class="t-accent">algorithm reference →</a></p>
+      </div>
+    </div>
+
+    <p class="section-desc" style="margin-top:1.5rem;font-size:0.82rem;opacity:0.7">
+      Picked one? <a href="#quickstart" class="t-accent">Jump to the code →</a> ·
+      <a href="#install" class="t-accent">or install and go →</a>
+    </p>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- ── §6 THE 3-LINE DIFF ── -->
   <section id="quickstart" class="code-section">
     <p class="section-label">Quickstart</p>
     <h2 class="section-title">Three lines on top of <code class="inline max">mlx_lm</code></h2>
@@ -368,53 +433,6 @@
       Vision-language support covers single-prompt generation —
       <a href="/docs/guides/mlx-lm-integration" class="t-accent">integration guide →</a>
     </p>
-  </section>
-
-  <div class="divider"></div>
-
-  <!-- ── §6 METHOD PICKER ── -->
-  <section id="methods">
-    <div class="section-head-center">
-      <p class="section-label">Which method</p>
-      <h2 class="section-title">41 methods, one decision</h2>
-      <p class="section-desc">
-        Most people need one of six. Pick by what you're optimising for —
-        the full catalogue lives in the docs.
-      </p>
-    </div>
-
-    <div class="picker-list fade-in">
-      <div class="picker-row is-default">
-        <p class="picker-goal">Balanced, nothing to calibrate
-          <small>The default. Works on any model, no setup pass.</small></p>
-        <p class="picker-pick"><code class="inline plain">turboquant_rvq</code><small>7.5× keys</small></p>
-      </div>
-      <div class="picker-row is-max">
-        <p class="picker-goal">Maximum compression, quality secondary
-          <small>Needs a one-time codebook calibration.</small></p>
-        <p class="picker-pick"><code class="inline plain">vecinfer</code><small>16× keys</small></p>
-      </div>
-      <div class="picker-row">
-        <p class="picker-goal">Longest context in fixed RAM
-          <small>Compresses keys <em>and</em> values — real resident savings.</small></p>
-        <p class="picker-pick"><code class="inline plain">rabitq</code><small>6× full KV</small></p>
-      </div>
-      <div class="picker-row">
-        <p class="picker-goal">Quality-critical work
-          <small>Per-channel keys, per-token values, fp16 residual window.</small></p>
-        <p class="picker-pick"><code class="inline plain">kivi</code><small>~4× full KV</small></p>
-      </div>
-      <div class="picker-row">
-        <p class="picker-goal">Bounded memory regardless of length
-          <small>Drops stale tokens. Quality depends on the task.</small></p>
-        <p class="picker-pick"><code class="inline plain">streaming_llm</code> / <code class="inline plain">h2o</code><small>eviction</small></p>
-      </div>
-      <div class="picker-row">
-        <p class="picker-goal">Everything else
-          <small>35 more, including cross-layer merging and spectral rotation.</small></p>
-        <p class="picker-pick"><a href="/docs/algorithms/overview" class="t-accent">algorithm reference →</a></p>
-      </div>
-    </div>
   </section>
 
   <div class="divider"></div>
@@ -647,7 +665,9 @@
 
     <p class="section-desc" style="margin-top:1.5rem;font-size:0.82rem;opacity:0.65">
       No head-to-head throughput numbers against llama.cpp's cache are published here — different runtime,
-      different hardware paths. The honest comparison today is architectural, not a benchmark race.
+      different hardware paths. The honest comparison today is architectural, not a benchmark race. For this
+      library's own tok/s and compression numbers across 12 models, see
+      <a href="#benchmarks" class="t-accent">benchmarks →</a>.
       <a href="/docs/getting-started/comparison" class="t-accent">Full write-up →</a>
       <br /><br />
       A note on oMLX + "TurboQuant": some articles describe oMLX as shipping TurboQuant KV cache support.
@@ -805,44 +825,15 @@
       Metal kernel benchmarks and memory measurements live in the
       <a href="playground.html" class="t-accent">playground →</a>
     </p>
-  </section>
 
-  <div class="divider"></div>
-
-  <!-- ── §11 PROOF OF MAINTENANCE ── -->
-  <section id="proof">
-    <div class="section-head-center">
-      <p class="section-label">Is it maintained?</p>
-      <h2 class="section-title">Verifiable, not asserted</h2>
-    </div>
-    <div class="proof-row">
-      <a class="proof-item fade-in" href="https://github.com/rajveer43/VeloxQuant-MLX/actions" target="_blank" rel="noopener">
-        <div class="proof-val"><span data-count>1484</span> / 1484</div>
-        <div class="proof-label">tests passing in CI</div>
-      </a>
-      <a class="proof-item fade-in" href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md" target="_blank" rel="noopener">
-        <div class="proof-val">v0.42.1</div>
-        <div class="proof-label">released, semantic-release</div>
-      </a>
-      <a class="proof-item fade-in" href="https://doi.org/10.5281/zenodo.20647294" target="_blank" rel="noopener">
-        <div class="proof-val">DOI</div>
-        <div class="proof-label">10.5281/zenodo.20647294 — citable</div>
-      </a>
-      <a class="proof-item fade-in" href="https://github.com/rajveer43/VeloxQuant-MLX/tree/master/benchmark_scripts" target="_blank" rel="noopener">
-        <div class="proof-val"><span data-count>12</span> models</div>
-        <div class="proof-label">validated end-to-end</div>
-      </a>
-    </div>
-    <p class="section-desc" style="margin-top:1.5rem;font-size:0.85rem;opacity:0.75">
-      Built on 40+ peer-reviewed &amp; preprint methods — SIGMOD, ICLR, ICML, NeurIPS and more.
-      Methods marked <strong class="t-strong">"-adapted"</strong> deviate from their source paper in a
-      documented way. <a href="/docs/algorithms/overview" class="t-accent">Algorithm reference →</a>
+    <p class="section-desc" style="margin-top:1rem;font-size:0.82rem;opacity:0.7">
+      Picked a method from the numbers above? <a href="#install" class="t-accent">Install and go →</a>
     </p>
   </section>
 
   <div class="divider"></div>
 
-  <!-- ── §12 INSTALL ── -->
+  <!-- ── §11 INSTALL ── -->
   <section id="install">
     <p class="section-label">Installation</p>
     <h2 class="section-title">Get started in seconds</h2>

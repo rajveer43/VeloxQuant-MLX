@@ -167,6 +167,38 @@ def test_hi_fraction_one_no_error() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Regression for #78: zipcache_reconstruct hardcoded group_size=32, silently
+# desyncing dequant grouping from the group_size actually used at compress
+# time for any non-default zipcache_group_size.
+# ---------------------------------------------------------------------------
+
+
+def test_state_stores_compress_time_group_size() -> None:
+    x = _rand((40, 8))
+    state = zipcache_compress(x, hi_bits=4, lo_bits=2, hi_fraction=0.2, group_size=8)
+    assert state.group_size == 8
+
+
+def test_reconstruct_uses_matching_group_size_not_hardcoded_32() -> None:
+    """A non-default group_size must reconstruct with error comparable to the
+    default group_size=32 case, not the ~2.6x-higher error a hardcoded
+    mismatched grouping produces (the exact repro from #78)."""
+    x = _rand((40, 8), seed=0)
+
+    state_gs8 = zipcache_compress(x, hi_bits=4, lo_bits=2, hi_fraction=0.2, group_size=8)
+    recon_gs8 = zipcache_reconstruct(state_gs8)
+    mse_gs8 = _mse(recon_gs8, x)
+
+    state_gs32 = zipcache_compress(x, hi_bits=4, lo_bits=2, hi_fraction=0.2, group_size=32)
+    recon_gs32 = zipcache_reconstruct(state_gs32)
+    mse_gs32 = _mse(recon_gs32, x)
+
+    # Both are ordinary quantization noise, same order of magnitude — not the
+    # inflated error a group_size mismatch produces.
+    assert mse_gs8 < mse_gs32 * 2
+
+
+# ---------------------------------------------------------------------------
 # Byte accounting
 # ---------------------------------------------------------------------------
 
