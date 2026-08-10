@@ -4,6 +4,14 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 <!-- version list -->
 
+## v0.45.0 (2026-08-10)
+
+### Features
+
+- **keyformer**: Annealing, RoPE remap, fused Metal kernel, real-model validation
+  ([`ab82606`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ab826068c56dc4d726c0f4fa0eff8ea4c82071d7))
+
+
 ## v0.44.4 (2026-08-10)
 
 ### Bug Fixes

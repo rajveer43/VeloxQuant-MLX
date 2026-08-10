@@ -71,4 +71,4 @@ __all__ = [
     "KeyNormReport",
 ]
 
-__version__ = "0.44.4"
+__version__ = "0.45.0"
