@@ -444,13 +444,35 @@ Deep-dive writeups live in [`blogs/`](blogs/) and are also published on the docs
 
 ---
 
+## Beyond compression: cross-model KV transfer
+
+One capability in this repo is **not** a compression method and is deliberately
+not in the 41: [**cross-model KV cache transfer**](https://veloxquant-mlx.netlify.app/algorithms/cross-model-transfer)
+(`veloxquant_mlx.transfer`). Instead of shrinking one model's cache, it maps a
+*source* model's already-prefilled KV into a *target* model's format, so the
+receiver can skip prefill when you swap between two models in the same family.
+Cache size is unchanged; what you save is prefill compute.
+
+It lives in its own subsystem rather than behind `method="..."` because it
+needs two models, an offline per-pair fit, and a multi-GB artifact — none of
+which the single-model cache contract can express. Adapted from
+[Cross-Model KV Cache Transfer (NVIDIA, arXiv:2608.03893)](https://arxiv.org/abs/2608.03893);
+the paper's retention and speedup figures are its own, measured on datacenter-scale
+pairs, and are not reproduced here. See the
+[docs page](https://veloxquant-mlx.netlify.app/algorithms/cross-model-transfer)
+for the caveats before relying on it.
+
+---
+
 ## References
 
 41 methods, each adapted from a published paper with documented deviations
 (39 from a verified peer-reviewed venue; 2, NestedKV-adapted and AMC-adapted,
 from unpublished preprints as one-time, stated exceptions — see
 [CITATIONS.md](CITATIONS.md)) — full bibliography (implemented methods,
-related work, and survey papers): **[CITATIONS.md](CITATIONS.md)**.
+related work, and survey papers): **[CITATIONS.md](CITATIONS.md)**. The
+cross-model transfer subsystem above is counted separately, as it compresses
+nothing.
 
 Headline references: [TurboQuant (ICLR 2026)](https://arxiv.org/abs/2504.19874), [VecInfer (2024)](https://arxiv.org/abs/2510.06175), [RaBitQ (SIGMOD 2024)](https://arxiv.org/abs/2402.02855), [CommVQ (ICML 2025)](https://arxiv.org/abs/2506.18879), [KVzip (NeurIPS 2025)](https://arxiv.org/abs/2505.23416), [KVTC (ICLR 2026)](https://arxiv.org/abs/2511.01815), [CurDKV (NeurIPS 2025)](https://arxiv.org/abs/2509.15038), [NestedKV (preprint, arXiv:2605.26678)](https://arxiv.org/abs/2605.26678), [AMC (preprint, arXiv:2607.10109)](https://arxiv.org/abs/2607.10109), [A2ATS (ACL 2025 Findings)](https://aclanthology.org/2025.findings-acl.644/). Built on [Apple MLX](https://github.com/ml-explore/mlx).
 
