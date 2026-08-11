@@ -235,3 +235,108 @@ def test_factory_smoke_compression_ratio_positive_both_kv() -> None:
     assert ko.shape[2] <= 8
     assert vo.shape[2] <= 8
     assert c.compression_ratio > 1.0
+
+
+# ---------------------------------------------------------------------------
+# RoPE offset tracking (real-model regression)
+# ---------------------------------------------------------------------------
+#
+# See veloxquant_mlx/quantizers/curdkv.py module docstring's FIXED,
+# CONFIRMED-ON-REAL-MODELS PROBLEM: mlx_lm's attention module rotates the
+# next query/key using self.rope(x, offset=cache.offset) BEFORE
+# update_and_fetch is ever called, so self.offset must always equal the true
+# absolute step count, not the physically-stored row count. The original
+# implementation reset self.offset to the post-eviction kept-row count every
+# call, which undercounts the true position by however many tokens have been
+# evicted so far -- confirmed via a real Llama-3.2-1B generation producing
+# severely corrupted output even at ~1% eviction, traced to a single
+# mismatched key row whose rotation used the wrong absolute position.
+
+
+def test_offset_tracks_true_position_not_kept_count() -> None:
+    """After eviction, self.offset must exceed the physically stored row
+    count — it tracks true elapsed steps, which is what mlx_lm's attention
+    module uses to rotate the NEXT query and key correctly."""
+    budget = 4
+    c = _make(curdkv_budget=budget, curdkv_n_sink=0)
+    for i in range(10):
+        k, v = _rand_kv(S=1, H=1, D=32, seed=i)
+        c.update_and_fetch(k, v)
+    assert c.keys.shape[2] <= budget
+    assert c.offset == 10
+    assert c.offset > c.keys.shape[2]
+
+
+def test_state_property_returns_exactly_kept_rows() -> None:
+    """cache.state (read by mlx_lm.generate during chunked prefill) must
+    return exactly the stored rows, not a slice sized by self.offset."""
+    budget = 4
+    c = _make(curdkv_budget=budget, curdkv_n_sink=0)
+    for i in range(10):
+        k, v = _rand_kv(S=1, H=1, D=32, seed=i)
+        c.update_and_fetch(k, v)
+    keys_state, values_state = c.state
+    assert keys_state.shape[2] == c.keys.shape[2] <= budget
+    assert values_state.shape[2] == c.values.shape[2] <= budget
+
+
+def test_size_returns_kept_count_not_offset() -> None:
+    budget = 4
+    c = _make(curdkv_budget=budget, curdkv_n_sink=0)
+    for i in range(10):
+        k, v = _rand_kv(S=1, H=1, D=32, seed=i)
+        c.update_and_fetch(k, v)
+    assert c.size() == c.keys.shape[2] <= budget
+    assert c.size() != c.offset
+
+
+def test_two_call_split_matches_single_bulk_call_when_no_further_eviction() -> None:
+    """Minimal reproduction of the real-model bug: mlx_lm.generate() always
+    processes the prompt as (bulk prefill call) + (final token folded into
+    the first decode step) rather than one single call. If an eviction
+    happened during the bulk call, the second call's self.offset must still
+    equal the true absolute position — not the post-eviction kept-row count
+    — or the model computes RoPE for that final token at the wrong angle.
+
+    Verified here at the RAW ROPE-AWARE level: build a real RoPE-rotated key
+    sequence directly (bypassing a full model forward pass), feed it through
+    the cache as (a) one single bulk call and (b) a bulk call split into
+    (S-1) + (1) tokens the way mlx_lm.generate() does, and confirm every
+    kept row's key is bit-identical between the two paths. Before the fix,
+    the split path's last row diverged from the single-call path because
+    self.offset was wrong (kept-row count) instead of true position.
+    """
+    from veloxquant_mlx.quantizers.a2ats_rope import a2ats_apply_exact_rope
+
+    D = 16
+    budget = 8
+    n_sink = 1
+    n_tokens = 12  # > budget, so eviction happens during the bulk portion
+
+    rng = np.random.default_rng(0)
+    raw = rng.standard_normal((n_tokens, D)).astype(np.float32)
+    positions = mx.arange(n_tokens, dtype=mx.int32)
+    rotated = a2ats_apply_exact_rope(mx.array(raw), positions, base=10000.0)  # [n_tokens, D]
+    values = mx.array(rng.standard_normal((n_tokens, D)).astype(np.float16))
+
+    def as_bhsd(k_or_v: mx.array) -> mx.array:
+        return k_or_v[None, None, :, :]  # [B=1, H=1, S, D]
+
+    # Path A: single bulk call with all n_tokens at once.
+    c_bulk = _make(curdkv_budget=budget, curdkv_n_sink=n_sink, head_dim=D)
+    ko_bulk, _ = c_bulk.update_and_fetch(as_bhsd(rotated), as_bhsd(values))
+
+    # Path B: split exactly like mlx_lm.generate() does — bulk call with the
+    # first n_tokens-1, then a SEPARATE single-token call for the last one.
+    c_split = _make(curdkv_budget=budget, curdkv_n_sink=n_sink, head_dim=D)
+    c_split.update_and_fetch(as_bhsd(rotated[:-1]), as_bhsd(values[:-1]))
+    ko_split, _ = c_split.update_and_fetch(as_bhsd(rotated[-1:]), as_bhsd(values[-1:]))
+
+    assert c_bulk.offset == c_split.offset == n_tokens
+    assert ko_bulk.shape == ko_split.shape
+
+    diff = float(mx.max(mx.abs(ko_bulk.astype(mx.float32) - ko_split.astype(mx.float32))).item())
+    assert diff < 1e-3, (
+        f"split-call path diverged from single-call path (max diff={diff}) — "
+        "self.offset likely desynced from the true absolute position again"
+    )

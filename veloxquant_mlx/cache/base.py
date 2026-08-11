@@ -295,6 +295,7 @@ class KVCacheConfig:
     curdkv_budget: int = 512  # max tokens kept at any time (sinks + non-sinks)
     curdkv_n_sink: int = 4  # initial positions protected from eviction (attention sinks)
     curdkv_rank_cap: int = 16  # SVD rank cap for leverage-score estimation
+    curdkv_rope_base: float = 10000.0  # RoPE base for post-eviction position remap; match the model
     # --- NestedKV-adapted configuration (multi-scale ensembled prefill eviction; no verified venue) --
     nestedkv_budget: int = 512  # per-head-equivalent budget (total layer budget = this * n_heads)
     nestedkv_n_sink: int = 4  # initial positions protected from eviction (attention sinks)

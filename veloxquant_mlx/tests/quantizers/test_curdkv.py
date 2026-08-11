@@ -481,6 +481,14 @@ def test_high_value_newcomer_not_evicted_on_arrival() -> None:
     old-but-mild survivor could out-score a new-but-critical token purely by
     having been in the cache longer. Eviction must compare MEAN per-step
     leverage (cumulative score / steps survived) instead.
+
+    Identifies the newcomer by ``n_updates == 1`` (it has been through
+    exactly one accumulation step) rather than matching raw key values: once
+    RoPE-remapping was added (see the FIXED, CONFIRMED-ON-REAL-MODELS
+    PROBLEM in the module docstring), a survivor whose storage index shifts
+    due to an unrelated eviction gets its key rotated to a new position, so
+    exact fp16 key-value matching is no longer a reliable way to track "the
+    same logical token" across an update call.
     """
     D = 16
     budget = 4
@@ -500,12 +508,11 @@ def test_high_value_newcomer_not_evicted_on_arrival() -> None:
     v_important = mx.array(rng.standard_normal((1, D)).astype(np.float16)) * 100.0
     st = curdkv_update(st, k_important, v_important)
 
-    important_key_fp16 = k_important[0].astype(mx.float16)
-    retained = any(
-        float(mx.sum(mx.abs(st.keys[r] - important_key_fp16)).item()) < 1e-3
-        for r in range(st.keys.shape[0])
+    n_updates = np.array(st.n_updates.tolist())
+    newcomer_rows = np.where(n_updates == 1.0)[0]
+    assert len(newcomer_rows) == 1, (
+        "high-value newcomer was evicted purely due to accumulation-age bias"
     )
-    assert retained, "high-value newcomer was evicted purely due to accumulation-age bias"
 
 
 # ---------------------------------------------------------------------------
