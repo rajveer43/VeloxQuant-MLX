@@ -14,6 +14,7 @@ Kernels are organized into focused submodules:
   _rabitq_values — Nibble packing for 4-bit value indices
   _h2o_evict     — Fused H2O eviction: sink-protected argmin + evict + RoPE-remap
   _keyformer_evict — Fused Keyformer eviction: Gumbel-regularized argmin + evict + RoPE-remap
+  _crosskv_rope    — Cross-model KV transfer: fused source→target RoPE re-encode
 """
 
 from __future__ import annotations
@@ -67,8 +68,12 @@ from veloxquant_mlx.metal._h2o_evict import (
 from veloxquant_mlx.metal._keyformer_evict import (
     keyformer_fused_evict,
 )
+from veloxquant_mlx.metal._crosskv_rope import (
+    crosskv_rope_recode,
+)
 
 __all__ = [
+    "crosskv_rope_recode",
     "vecinfer_dequant_metal",
     "vecinfer_quantize_metal",
     "vecinfer_encode_decode_metal",
