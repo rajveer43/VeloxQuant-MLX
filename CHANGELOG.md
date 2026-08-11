@@ -4,6 +4,47 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 <!-- version list -->
 
+## v0.46.0 (2026-08-11)
+
+### Bug Fixes
+
+- **pyproject**: Point Documentation URL at the Netlify docs site
+  ([`06300d9`](https://github.com/rajveer43/VeloxQuant-MLX/commit/06300d968cc241fe67d6355b1b7edced58db4664))
+
+- **registry**: Distinguish not-trimmable from crash-tier, unblocking releases
+  ([`c90c3de`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c90c3de2e81d7ab87f5a857dea7b2b2aef9098d2))
+
+- **release**: Sync the landing hero badge to the real markup, not a dead main.js pattern
+  ([`eef8a32`](https://github.com/rajveer43/VeloxQuant-MLX/commit/eef8a3274e2ac53f800826b5b3ee9e6bccd0e068))
+
+### Code Style
+
+- Satisfy ruff format on the new docs page and a pre-existing test
+  ([`1a9f16b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1a9f16b096ab8aebb84bfcde7aa7d81eef689fbe))
+
+### Documentation
+
+- **readme**: Condense method library, tighten caveats, add project context
+  ([`b2efe24`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b2efe24c3cb0f0843050c26ecb3431a2712dadb5))
+
+- **readme**: Drop SmolLM2-135M from benchmark tables
+  ([`5f3d37f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5f3d37f06c10a5ac5705a3d4e53e65581b4be9de))
+
+- **readme**: Loosen research-paper-dense prose into plain developer language
+  ([`515db67`](https://github.com/rajveer43/VeloxQuant-MLX/commit/515db6793b3186bd412f015ab906991e0c68f9de))
+
+- **transfer**: Correct the Metal kernel speedup, 12.9x was not reproducible
+  ([`1ff8e42`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1ff8e42451ec866a39704d15bba3652124100af1))
+
+### Features
+
+- **landing**: Add FAQ section, drop SmolLM2-135M from benchmark table
+  ([`2693639`](https://github.com/rajveer43/VeloxQuant-MLX/commit/26936395ce7146e89bbde836c41f9dc89ab54157))
+
+- **transfer**: Cross-model KV cache transfer via closed-form ridge mapper
+  ([`f3fdf3f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f3fdf3ff37d2e71b3e4c8b86786de0fcb1ca99a2))
+
+
 ## v0.45.0 (2026-08-10)
 
 ### Features
