@@ -382,11 +382,19 @@ knobs={'bit_width_inlier': 1, 'seed': 42}
 key_accounting_ratio≈7.5x
 resident_savings_likely=False
 kv_fp16_mb≈512.0  kv_compressed_mb_est≈68.27
-rationale: Zero-calibration default. Key accounting ~7.5x at head_dim=128.
-           Default path dequantizes into parent fp16 cache.
+rationale: The safe everyday pick: it works out of the box with no setup
+           step, and shrinks the key half of the cache by about 7.5x. It
+           unpacks each value back to full precision as it is read, so this
+           is a size measurement rather than a drop in live memory use.
 warnings:
-  - Tight RAM with a mid/large model: consider goal=max_context (rabitq)
-    or goal=constant_memory (eviction) for long prompts.
+  - RAM is tight for a model this size. For long prompts you will get more
+    out of 'Fit the longest conversation' (rabitq), which compresses the
+    whole cache, or 'Never grow past a fixed memory limit' (streaming_llm),
+    which caps it outright.
+  - This method measures smaller but may not free much actual RAM on short
+    prompts, because its default path unpacks values back to full precision
+    as it reads them. The size figure is real; treat it as a measure of how
+    well the data compresses, not as RAM you get back.
 ```
 
 Goals: `everyday`, `max_key_accounting`, `max_context`, `best_quality`, `constant_memory`. Add `--json` for machine-readable output, or `--seq-len` / `--n-layers` / `--n-kv-heads` / `--head-dim` to match a specific model. Also available in the browser via the [Compression Lab](https://veloxquant-mlx.netlify.app/playground.html).
