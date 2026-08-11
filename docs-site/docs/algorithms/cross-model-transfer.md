@@ -126,7 +126,10 @@ tgt_spec = ModelKVSpec.from_model(target_model)
 # source_kv / target_kv: {layer: (keys, values)} of [n_kv_heads, N, head_dim],
 # keys post-RoPE as the model stores them, over the same calibration tokens.
 mapper = fit_mapper(
-    source_kv, target_kv, src_spec, tgt_spec,
+    source_kv,
+    target_kv,
+    src_spec,
+    tgt_spec,
     positions=mx.arange(n_tokens),
     config=MapperConfig(k=8, ridge_lambda=0.01),
 )

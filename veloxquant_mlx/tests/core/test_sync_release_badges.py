@@ -77,8 +77,7 @@ class TestSyncLandingPill:
         sync_release_badges._sync_landing_pill("0.45.0")
 
         assert any(
-            "0.42.1 -> 0.45.0" in w and "headline prose" in w
-            for w in sync_release_badges._warnings
+            "0.42.1 -> 0.45.0" in w and "headline prose" in w for w in sync_release_badges._warnings
         )
 
     def test_no_warning_when_version_unchanged(self, tmp_path, monkeypatch) -> None:
