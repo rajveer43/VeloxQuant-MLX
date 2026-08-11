@@ -419,6 +419,51 @@ def test_leverage_scores_falls_back_when_svd_does_not_converge() -> None:
     assert scores_np.sum() == pytest.approx(1.0, abs=1e-4)
 
 
+def test_leverage_scores_does_not_hang_when_gesvd_fallback_stalls() -> None:
+    """The scipy ``gesvd`` fallback (see previous test) is itself not
+    guaranteed to return promptly on every input — a real-model validation
+    run observed an 11+ minute stall on a single call that normally
+    completes in under a second (issue #147). ``_robust_svd`` bounds the
+    fallback with a watchdog timeout (``_GESVD_TIMEOUT_S``) so a stalled
+    ``gesvd`` call can never hang the eviction loop: on timeout it returns
+    an all-zero result, which ``_leverage_scores`` already treats the same
+    as its existing degenerate-all-zero-value-block case.
+
+    This test forces BOTH ``np.linalg.svd`` to fail AND the ``gesvd``
+    fallback to hang (mocked as an indefinite sleep), and asserts the call
+    returns well within the timeout budget instead of hanging, with a
+    finite, valid (all-zero) result.
+    """
+    import time
+
+    from veloxquant_mlx.quantizers.curdkv import _GESVD_TIMEOUT_S, _leverage_scores
+
+    D = 16
+    n = 10
+    rng = np.random.default_rng(0)
+    keys = mx.array(rng.standard_normal((n, D)).astype(np.float32))
+    values = mx.array(rng.standard_normal((n, D)).astype(np.float32))
+    query = mx.array(rng.standard_normal(D).astype(np.float32))
+
+    def _hang_forever(*_a, **_k):
+        time.sleep(_GESVD_TIMEOUT_S * 100)
+        raise AssertionError("should never actually finish sleeping in this test")
+
+    t0 = time.time()
+    with patch("numpy.linalg.svd", side_effect=np.linalg.LinAlgError("SVD did not converge")):
+        with patch("scipy.linalg.svd", side_effect=_hang_forever):
+            scores = _leverage_scores(query, keys, values, rank_cap=8)
+    elapsed = time.time() - t0
+
+    assert elapsed < _GESVD_TIMEOUT_S * 2, (
+        f"_leverage_scores took {elapsed:.2f}s — should return near the "
+        f"{_GESVD_TIMEOUT_S}s watchdog budget, not hang indefinitely"
+    )
+    scores_np = np.array(scores.tolist())
+    assert np.all(np.isfinite(scores_np))
+    assert np.all(scores_np == 0.0)
+
+
 # ---------------------------------------------------------------------------
 # Age-bias regression: newcomer vs. long-lived survivor eviction fairness
 # ---------------------------------------------------------------------------

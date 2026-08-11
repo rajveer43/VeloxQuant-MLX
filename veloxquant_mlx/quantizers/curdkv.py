@@ -42,11 +42,22 @@ full_curdkv_fp16_bytes — hypothetical cost without eviction
 from __future__ import annotations
 
 import math
+import threading
 from dataclasses import dataclass
 
 import mlx.core as mx
 import numpy as np
 import scipy.linalg
+
+# Hard wall-clock budget for the scipy `gesvd` fallback in `_robust_svd`.
+# `gesvd` is the numerically-robust remedy for `gesdd` non-convergence (see
+# https://github.com/rajveer43/VeloxQuant-MLX/issues/147), but on some
+# inputs it can itself run far longer than the per-token cost this eviction
+# loop is built around. A watchdog thread enforces this budget: on timeout
+# we abandon waiting on the (harmless, GIL-released, side-effect-free)
+# worker thread and fall back to a zero result, which `_leverage_scores`
+# already treats identically to its existing degenerate-all-zero case.
+_GESVD_TIMEOUT_S = 5.0
 
 
 @dataclass
@@ -126,6 +137,31 @@ def _attention_weights(query_proxy: mx.array, keys: mx.array) -> mx.array:
     return mx.softmax(logits, axis=-1)
 
 
+def _gesvd_with_timeout(a: np.ndarray, timeout_s: float) -> tuple[np.ndarray, np.ndarray] | None:
+    """Run scipy's ``gesvd`` driver on a worker thread, bounded by ``timeout_s``.
+
+    Returns ``(u, s)`` on success within the budget, or ``None`` on timeout.
+    ``gesvd`` releases the GIL during its LAPACK call, so a watchdog thread
+    can enforce a wall-clock bound even though Python cannot forcibly kill a
+    thread: on timeout we simply stop waiting and let the orphaned worker
+    finish in the background — it has no shared mutable state, so it cannot
+    corrupt anything, and its (discarded) result is garbage-collected once
+    it completes.
+    """
+    result: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+
+    def _worker() -> None:
+        u, s, _ = scipy.linalg.svd(a, full_matrices=False, lapack_driver="gesvd")
+        result["value"] = (u, s)
+
+    worker = threading.Thread(target=_worker, daemon=True)
+    worker.start()
+    worker.join(timeout=timeout_s)
+    if worker.is_alive():
+        return None
+    return result.get("value")
+
+
 def _robust_svd(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """SVD of ``a``, robust to LAPACK's ``gesdd`` driver occasionally failing
     to converge on real (non-adversarial) floating-point input — an observed,
@@ -135,18 +171,33 @@ def _robust_svd(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     failure; the common case pays no extra cost. See
     https://github.com/rajveer43/VeloxQuant-MLX/issues/147 for the
     real-model repro (rare, data-dependent, not reproducible via synthetic
-    ill-conditioning) — that issue also flags an unconfirmed risk that the
-    ``gesvd`` fallback itself may stall on some inputs rather than crash;
-    not yet root-caused.
+    ill-conditioning).
+
+    The ``gesvd`` fallback is itself bounded by ``_GESVD_TIMEOUT_S``: on some
+    inputs it can run far longer than this per-token eviction loop is built
+    for (observed: an 11+ minute stall on a call that normally completes in
+    under a second — see issue #147). If it doesn't return in time, this
+    falls back to an all-zero ``(u, s)``, which ``_leverage_scores`` already
+    treats identically to its existing degenerate-all-zero-value-block case
+    (uniform/zero leverage for this token this step) rather than hanging or
+    crashing the caller.
 
     Returns:
         ``(u, s)`` — left singular vectors and singular values, ``full_matrices=False``.
     """
     try:
         u, s, _ = np.linalg.svd(a, full_matrices=False)
+        return u, s
     except np.linalg.LinAlgError:
-        u, s, _ = scipy.linalg.svd(a, full_matrices=False, lapack_driver="gesvd")
-    return u, s
+        pass
+
+    fallback = _gesvd_with_timeout(a, _GESVD_TIMEOUT_S)
+    if fallback is not None:
+        return fallback
+
+    n, d = a.shape
+    k = min(n, d)
+    return np.zeros((n, k)), np.zeros((k,))
 
 
 def _leverage_scores(
