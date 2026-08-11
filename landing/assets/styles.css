@@ -1878,6 +1878,36 @@ footer {
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
+/* Plain-language primer — collapsed by default so it never gets between a
+   returning visitor and the controls, but defines "KV cache" for a newcomer
+   before any control asks them to care about it. */
+.pg-primer {
+  max-width: 640px;
+  margin: 1.4rem auto 0;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card-bg, var(--bg));
+}
+.pg-primer summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.7rem 1rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.pg-primer summary::-webkit-details-marker { display: none; }
+.pg-primer summary::before { content: "▸ "; color: var(--accent); }
+.pg-primer[open] summary::before { content: "▾ "; }
+.pg-primer p {
+  margin: 0 1rem 0.9rem;
+  font-size: 0.86rem;
+  color: var(--muted);
+  line-height: 1.65;
+}
+.pg-primer strong { color: var(--text); }
+
 .pg-trust {
   max-width: 660px;
   margin: 0.9rem auto 0;
@@ -1916,6 +1946,9 @@ footer {
   gap: 0.9rem;
 }
 .pg-field-chip { flex: 1 1 150px; }
+/* The goal labels are full phrases now, not enum names — give the select
+   room to show them instead of truncating mid-sentence. */
+.pg-field-goal { flex: 2 1 260px; }
 .pg-share-btn {
   margin-left: auto;
   align-self: flex-end;
@@ -1992,8 +2025,27 @@ footer {
 .pg-preset-custom { font-style: italic; }
 .pg-preset-custom.active { font-style: normal; }
 
+/* Conversation length — promoted out of Advanced, so it sits in the main bar
+   with a plain-language hint underneath translating tokens into pages. */
+.pg-field-seq { margin-top: 0.9rem; }
+.pg-seq-control { display: flex; align-items: center; gap: 0.5rem; }
+.pg-seq-control input { flex: 0 1 10rem; }
+.pg-seq-unit { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+.pg-seq-hint {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
 /* Advanced disclosure */
 .pg-advanced { margin-top: 0.9rem; border-top: 1px solid var(--border); padding-top: 0.75rem; }
+.pg-adv-note {
+  margin: 0.7rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
 .pg-advanced summary {
   display: flex;
   align-items: baseline;
@@ -2172,6 +2224,17 @@ footer {
 .pg-hero-metric-lbl { color: var(--muted); font-size: 0.9rem; }
 
 .pg-rationale { color: var(--muted); line-height: 1.6; margin-bottom: 0.85rem; }
+/* The raw compression ratio, demoted here from the hero stat row. */
+.pg-rationale-tech {
+  font-size: 0.84rem;
+  color: var(--muted);
+  margin-bottom: 0.85rem;
+}
+.pg-rationale-tech strong {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
 .pg-ratio { font-weight: 600; color: var(--text); font-family: 'JetBrains Mono', monospace; }
 
 /* Knob chips */
@@ -2476,7 +2539,8 @@ footer {
 #playground .pg-copy:focus-visible,
 #playground .pg-share-btn:focus-visible,
 #playground .pg-tip:focus-visible,
-#playground .pg-advanced summary:focus-visible {
+#playground .pg-advanced summary:focus-visible,
+#playground .pg-primer summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -2492,7 +2556,7 @@ footer {
   .pg-token-grid { grid-template-columns: 1fr; }
   .pg-membar-label { flex-basis: 66px; }
   .pg-membar-val { flex-basis: 76px; }
-  .pg-field-chip { flex-basis: 100%; }
+  .pg-field-chip, .pg-field-goal { flex-basis: 100%; }
   .pg-hero-head { justify-content: flex-start; }
   .pg-cta { flex: 1 1 100%; text-align: center; }
 }

@@ -7,7 +7,7 @@
   <title>Playground — VeloxQuant-MLX</title>
   <link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=2" />
   <link rel="shortcut icon" href="assets/favicon.svg?v=2" />
-  <meta name="description" content="Interactive VeloxQuant-MLX playground: pick your Mac chip, RAM, model size and goal to get a recommended KV-cache compression method, explore how much context fits in your RAM, and browse real measured Metal / RaBitQ / KIVI benchmarks — all computed in your browser." />
+  <meta name="description" content="Pick your Mac and the model you want to run, and see which VeloxQuant-MLX setting to use, how long a conversation fits in your RAM, and the measured benchmarks behind it — all worked out in your browser, nothing sent anywhere." />
   <!-- Fonts are self-hosted in styles.css (assets/fonts/*.woff2) — no
        third-party hop, no render-blocking preconnect. -->
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
@@ -56,20 +56,39 @@
   <!-- ── PLAYGROUND ── -->
   <main id="playground">
     <header class="pg-header">
-      <span class="pg-eyebrow">Interactive · runs in your browser</span>
-      <h1>Feel the power of <span>VeloxQuant-MLX</span></h1>
+      <span class="pg-eyebrow">Free · runs in your browser · nothing is sent anywhere</span>
+      <h1>Run bigger models on the <span>Mac you already have</span></h1>
       <p class="pg-sub">
-        Dial in your Mac, model and goal — see the recommended compression method,
-        how much more context fits in your RAM, and real measured benchmarks.
+        Tell us your Mac and what you want to run. We'll show you which setting
+        to use and how long a conversation will fit in your memory.
       </p>
       <p class="pg-headline" id="pg-headline" aria-live="polite">
         <!-- animated headline metric injected by playground.js -->
       </p>
+
+      <!-- Plain-language primer: the page's central noun, defined once, up
+           front, before any control asks the visitor to care about it. -->
+      <details class="pg-primer">
+        <summary>New here? What this actually does</summary>
+        <p>
+          As a chatbot reads your conversation it keeps notes on every word so
+          far, so it doesn't have to re-read everything to write the next word.
+          Those notes are called the <strong>KV cache</strong>, and they live in
+          your Mac's memory. The longer the conversation, the bigger they get —
+          and on a Mac, memory is the wall you hit first.
+        </p>
+        <p>
+          VeloxQuant-MLX stores those notes in a more compact form. Smaller
+          notes mean longer conversations, or a bigger model, in the same Mac.
+          This page works out which approach suits your machine.
+        </p>
+      </details>
+
       <p class="pg-trust">
-        Every number is computed live from the same heuristic that ships in
-        <code>veloxquant recommend</code> — a direct port of
-        <code>mac_recommender.py</code> — or read from committed benchmark data.
-        <strong>Nothing is faked.</strong>
+        Every number here is worked out live from the same code that ships in the
+        tool itself, or read from real benchmark runs we've committed to the
+        repository. <strong>Nothing is made up</strong>, and where a number is an
+        estimate rather than a measurement, we say so.
       </p>
     </header>
 
@@ -98,39 +117,59 @@
             <option value="128">128 GB</option>
           </select>
         </div>
-        <div class="pg-field pg-field-chip">
-          <label for="pg-goal">Goal</label>
+        <div class="pg-field pg-field-goal">
+          <label for="pg-goal">What matters most</label>
+          <!-- Values are the recommender's own goal enum and must not change:
+               they are the API contract and the ?goal= share-link key. Only
+               the visible labels are consumer-facing. -->
           <select id="pg-goal">
-            <option value="everyday" selected>Everyday (zero-calibration)</option>
-            <option value="max_key_accounting">Max key accounting (~16×)</option>
-            <option value="max_context">Max context (full-KV)</option>
-            <option value="best_quality">Best quality</option>
-            <option value="constant_memory">Constant memory (eviction)</option>
+            <option value="everyday" selected>Just work well by default</option>
+            <option value="max_key_accounting">Squeeze the cache as small as possible</option>
+            <option value="max_context">Fit the longest conversation</option>
+            <option value="best_quality">Keep answers as accurate as possible</option>
+            <option value="constant_memory">Never grow past a fixed memory limit</option>
           </select>
         </div>
         <button type="button" class="pg-share-btn" id="pg-share-btn"
-                title="Copy a link that restores this exact setup">
-          <span aria-hidden="true">🔗</span> Copy my setup
+                title="Copy a link that brings you back to exactly this setup">
+          <span aria-hidden="true">🔗</span> Save my setup
         </button>
       </div>
 
       <!-- Model presets — one click fills the shape fields -->
-      <div class="pg-presets" role="group" aria-label="Start from a model">
-        <span class="pg-presets-label">Start from a model</span>
+      <div class="pg-presets" role="group" aria-label="Pick the model you want to run">
+        <span class="pg-presets-label">Which model do you want to run?</span>
         <div class="pg-preset-row" id="pg-preset-row">
           <!-- chips injected by playground.js -->
         </div>
       </div>
 
+      <!-- Conversation length lives in the main bar, not under Advanced: it is
+           the most intuitive knob on the page and the one a newcomer most wants
+           to move. The id and its ?seq= share-link key are unchanged. -->
+      <div class="pg-field pg-field-seq">
+        <label for="pg-seqlen">How long is your conversation?</label>
+        <div class="pg-seq-control">
+          <input id="pg-seqlen" type="number" min="1" step="256" value="4096"
+                 inputmode="numeric" aria-describedby="pg-seq-hint" />
+          <span class="pg-seq-unit" aria-hidden="true">words-ish</span>
+        </div>
+        <span id="pg-seq-hint" class="pg-seq-hint" aria-live="polite"></span>
+      </div>
+
       <!-- Advanced disclosure — raw architecture fields -->
       <details class="pg-advanced" id="pg-advanced">
         <summary>
-          <span class="pg-adv-label">Advanced — architecture shape</span>
+          <span class="pg-adv-label">Advanced — exact model shape</span>
           <span class="pg-adv-hint" id="pg-adv-hint"></span>
         </summary>
+        <p class="pg-adv-note">
+          Only needed if your model isn't listed above. Picking a model sets
+          these for you.
+        </p>
         <div class="pg-adv-grid">
           <div class="pg-field">
-            <label for="pg-model">Model class</label>
+            <label for="pg-model">Model size</label>
             <select id="pg-model">
               <option value="1B">1B</option>
               <option value="3B">3B</option>
@@ -138,10 +177,6 @@
               <option value="14B">14B</option>
               <option value="32B">32B</option>
             </select>
-          </div>
-          <div class="pg-field">
-            <label for="pg-seqlen">Sequence length</label>
-            <input id="pg-seqlen" type="number" min="1" step="256" value="4096" inputmode="numeric" />
           </div>
           <div class="pg-field">
             <label for="pg-layers">Layers</label>
@@ -152,7 +187,7 @@
             <input id="pg-heads" type="number" min="1" step="1" value="8" inputmode="numeric" />
           </div>
           <div class="pg-field">
-            <label for="pg-headdim">Head dim</label>
+            <label for="pg-headdim">Head dimension</label>
             <input id="pg-headdim" type="number" min="1" step="8" value="128" inputmode="numeric" />
           </div>
         </div>
@@ -164,17 +199,17 @@
       <button class="pg-step active" data-pgtab="rec" role="tab" id="pg-tab-rec"
               aria-selected="true" aria-controls="pg-panel-rec">
         <span class="pg-step-num">1</span>
-        <span class="pg-step-txt"><strong>Recommend</strong><em>a method for your setup</em></span>
+        <span class="pg-step-txt"><strong>What should I use?</strong><em>the right setting for your Mac</em></span>
       </button>
       <button class="pg-step" data-pgtab="lab" role="tab" id="pg-tab-lab"
               aria-selected="false" aria-controls="pg-panel-lab" tabindex="-1">
         <span class="pg-step-num">2</span>
-        <span class="pg-step-txt"><strong>Explore</strong><em>context you can fit</em></span>
+        <span class="pg-step-txt"><strong>How much fits?</strong><em>conversation length in your RAM</em></span>
       </button>
       <button class="pg-step" data-pgtab="bench" role="tab" id="pg-tab-bench"
               aria-selected="false" aria-controls="pg-panel-bench" tabindex="-1">
         <span class="pg-step-num">3</span>
-        <span class="pg-step-txt"><strong>Verify</strong><em>real measured benchmarks</em></span>
+        <span class="pg-step-txt"><strong>Is this real?</strong><em>benchmarks we measured</em></span>
       </button>
     </div>
 
@@ -188,7 +223,7 @@
     <section class="pg-panel" id="pg-panel-lab" role="tabpanel"
              aria-labelledby="pg-tab-lab" tabindex="0">
       <div class="pg-lab-controls">
-        <span class="pg-controls-label" id="pg-method-label">Method</span>
+        <span class="pg-controls-label" id="pg-method-label">Try a different approach</span>
         <!-- Hidden input holds the selected method so URL state, the engine,
              and the recommender CTA can all read/write one source of truth. -->
         <input type="hidden" id="pg-cmethod" value="turboquant_rvq" />
@@ -197,7 +232,7 @@
           <!-- method cards injected by playground.js -->
         </div>
         <div class="pg-field pg-field-budget">
-          <label for="pg-budget-input" id="pg-budget-label">RAM budget for KV</label>
+          <label for="pg-budget-input" id="pg-budget-label">Memory you can spare</label>
           <!-- Hidden input remains the single source of truth for URL state + engine. -->
           <input type="hidden" id="pg-budget" value="" />
           <div class="pg-budget-control">
@@ -206,7 +241,7 @@
             <span class="pg-budget-unit" aria-hidden="true">GB</span>
             <button type="button" id="pg-budget-auto" class="pg-budget-auto"
                     aria-pressed="true"
-                    title="Match the RAM free for KV on your selected Mac">Auto</button>
+                    title="Work this out from the Mac you picked above">Auto</button>
           </div>
           <span id="pg-budget-src" class="pg-budget-src" aria-live="polite"></span>
         </div>
@@ -219,7 +254,7 @@
              aria-labelledby="pg-tab-bench" tabindex="0">
       <div class="pg-lab-controls">
         <div class="pg-field pg-field-bench">
-          <label id="pg-bench-label">Benchmark</label>
+          <label id="pg-bench-label">Which result?</label>
           <!-- Hidden input remains the single source of truth (URL state,
                engine, hero CTA all read/write it); the segmented control
                below is the accessible view over it. -->
@@ -241,12 +276,15 @@
     </section>
 
     <p class="pg-disclaimer">
-      Recommender + compression estimates are transparent heuristics (a direct port of
-      <code>veloxquant_mlx/tools/mac_recommender.py</code>) — they state when resident RAM
-      savings are unlikely. Token counts and the book comparison are linear KV
-      extrapolations, labelled as approximations. Benchmark charts read measured values
-      committed under <code>figures/</code>. For live numbers on your own machine, run
-      <code>python -m veloxquant_mlx benchmark</code>.
+      <strong>Where these numbers come from.</strong> The recommendation and the
+      cache sizes are calculated, not measured — they use the same rules as the
+      <code>veloxquant recommend</code> command
+      (<code>veloxquant_mlx/tools/mac_recommender.py</code>), and they tell you
+      when a method is unlikely to free real memory rather than quietly
+      overstating it. Conversation lengths and the page comparison are estimates
+      that assume memory grows evenly with length. The charts in step 3 are real
+      measurements committed under <code>figures/</code>. To measure your own Mac
+      instead of estimating, run <code>python -m veloxquant_mlx benchmark</code>.
     </p>
   </main>
 
