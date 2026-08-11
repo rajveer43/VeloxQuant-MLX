@@ -4,6 +4,19 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 <!-- version list -->
 
+## v0.47.0 (2026-08-11)
+
+### Documentation
+
+- **landing**: Rewrite the playground for a non-expert audience
+  ([`052df5a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/052df5adcb6d7c3da9940a95273b1f9fb4771a06))
+
+### Features
+
+- **landing**: Add GoatCounter privacy-friendly analytics
+  ([`8977926`](https://github.com/rajveer43/VeloxQuant-MLX/commit/897792686d260ec43c1d777ad92a2a18ebb38b44))
+
+
 ## v0.46.0 (2026-08-11)
 
 ### Bug Fixes
