@@ -14,7 +14,6 @@ import sys
 from veloxquant_mlx.cache.registry import (
     DEFAULT_SERVE_METHOD,
     MethodFamily,
-    ServeTier,
     TelemetryCoverage,
     list_methods,
 )
@@ -85,7 +84,10 @@ def main() -> None:
             print(f"    deviation: {info.paper_deviation}")
         print()
 
-    if any(i.serve_tier is ServeTier.ACCOUNTING_ONLY for i in infos):
+    # Keyed on is_servable, not on ACCOUNTING_ONLY specifically: NOT_TRIMMABLE
+    # methods are servable and equally accounting-only, so testing one tier
+    # would drop this caveat for the whole eviction family (#152).
+    if any(i.serve_tier.is_servable for i in infos):
         print(
             "Note: servable methods are accounting-only — byte counters measure "
             "compression\nfidelity, not runtime memory saved. See issue #27."
