@@ -120,7 +120,8 @@ def recode_rope(
 
     On a 3-D ``[BH, N, D]`` input with Metal available this dispatches to
     :func:`~veloxquant_mlx.metal._crosskv_rope.crosskv_rope_recode`, which
-    fuses the whole thing into one kernel (~13× faster at 8K context). Any
+    fuses the whole thing into one kernel (measured 4.6–9.6× faster depending
+    on shape, ~6–9× at long context — see the docs page for the table). Any
     other rank, or no GPU, falls back to the MLX path below; both compute the
     same angles, so results agree to floating-point rounding.
 

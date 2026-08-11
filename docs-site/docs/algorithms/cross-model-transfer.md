@@ -181,9 +181,27 @@ angle = p · (θ_t^(-d/half) − θ_s^(-d/half))
 so the kernel does one `sincos` and one 2×2 rotation per pair, with no
 intermediate array and no materialized cos/sin tables.
 
-**Measured: 12.9× faster than the two-pass MLX path** at 8K context
-(8 groups × 8192 tokens × 128 dims, fp16: 8.76 ms → 0.68 ms on M-series),
-agreeing with the reference to fp16 resolution.
+**Measured 4.6×–9.6× faster than the two-pass MLX path**, depending on shape —
+roughly 6–9× at long context. Apple Silicon (arm64), MLX 0.32.0,
+`θ_s=1e4 → θ_t=1e6`, median of 7 samples × 25 iterations after 15 warmup
+iterations, with `mx.synchronize()` on both sides of each timing window:
+
+| shape `[BH, N, D]` | dtype | two-pass | fused | speedup |
+|---|---|---|---|---|
+| `(8, 1024, 128)` | fp16 | 1.29 ms | 0.28 ms | 4.57× |
+| `(8, 4096, 128)` | fp16 | 5.85 ms | 1.02 ms | 5.74× |
+| `(8, 8192, 128)` | fp16 | 9.21 ms | 0.96 ms | 9.63× |
+| `(4, 16384, 128)` | fp16 | 12.04 ms | 1.63 ms | 7.39× |
+| `(8, 8192, 128)` | fp32 | 7.72 ms | 1.25 ms | 6.17× |
+
+Output agrees with the MLX reference to fp16 storage precision (max elementwise
+deviation 3.9e-03 in fp16, 1.8e-03 in fp32 — one ULP at these magnitudes).
+Expect real run-to-run variance on a thermally unconstrained laptop GPU; treat
+the range, not any single cell, as the result.
+
+**This accelerates the cheap half.** The dominant cost of this subsystem is the
+offline ridge fit, which this kernel does not touch — a 6–9× win on the RoPE
+re-encode does not make transfer 6–9× faster end to end.
 
 This differs from the RoPE remap in the [H2O](../algorithms/h2o) eviction
 kernel: there the base is *shared*, so the angles collapse to
