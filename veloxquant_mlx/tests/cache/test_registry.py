@@ -34,6 +34,29 @@ EXPECTED_CRASHING = {
     "spectral",
 }
 
+# Eviction/compression caches that deliberately return is_trimmable() -> False
+# (17e83c3): trim() would roll back the base class's offset bookkeeping without
+# reverting internal per-token eviction state. They serve correctly — the probe
+# used to misreport them as CRASHES, which told users 15 working methods were
+# unavailable (#152).
+EXPECTED_NOT_TRIMMABLE = {
+    "amc",
+    "cam",
+    "chunkkv",
+    "curdkv",
+    "h2o",
+    "keyformer",
+    "knorm",
+    "kvzip",
+    "morphkv",
+    "nestedkv",
+    "pyramidkv",
+    "qfilters",
+    "squeeze",
+    "streaming_llm",
+    "tova",
+}
+
 
 def test_all_methods_discovered():
     assert len(all_method_names()) == EXPECTED_TOTAL
@@ -52,6 +75,39 @@ def test_crash_tier_matches_issue_27():
     assert len(servable) == EXPECTED_TOTAL - len(EXPECTED_CRASHING)
 
 
+def test_not_trimmable_methods_are_servable():
+    """The 15 eviction caches serve correctly; only trim() is unavailable (#152).
+
+    This is the regression guard for the bug that blocked the release gate:
+    the probe conflated "refuses to be trimmed" with "crashes", so these
+    methods were reported as unavailable in the control panel and gated out
+    of `veloxquant serve`.
+    """
+    not_trimmable = {i.name for i in list_methods() if i.serve_tier is ServeTier.NOT_TRIMMABLE}
+    assert not_trimmable == EXPECTED_NOT_TRIMMABLE
+
+    for info in list_methods():
+        if info.serve_tier is ServeTier.NOT_TRIMMABLE:
+            assert info.serve_tier.is_servable, f"{info.name} must remain servable"
+            assert not info.serve_tier.is_trimmable
+            assert info.unsupported_reason, f"{info.name} must explain the limitation"
+
+
+def test_servable_and_trimmable_are_independent():
+    """A tier may be servable-but-not-trimmable; only CRASHES is unservable."""
+    assert ServeTier.NOT_TRIMMABLE.is_servable
+    assert not ServeTier.NOT_TRIMMABLE.is_trimmable
+    assert not ServeTier.CRASHES.is_servable
+    assert ServeTier.ACCOUNTING_ONLY.is_servable
+    assert ServeTier.ACCOUNTING_ONLY.is_trimmable
+
+
+def test_not_trimmable_label_does_not_read_as_unavailable():
+    """The UI string must not tell users a working method is unavailable."""
+    label = ServeTier.NOT_TRIMMABLE.label
+    assert "available" in label and "not available" not in label
+
+
 def test_no_method_claims_honest_bytes_yet():
     """Guards #27's credibility rule.
 
@@ -63,22 +119,36 @@ def test_no_method_claims_honest_bytes_yet():
 
 
 def test_every_servable_method_is_accounting_only():
+    """No servable method may claim honest compressed bytes yet (#27 option (d)).
+
+    NOT_TRIMMABLE is accepted alongside ACCOUNTING_ONLY: it is an orthogonal
+    fact about ``trim()`` support, not a byte-accounting claim (#152). What
+    this test actually guards is that nothing reaches HONEST_BYTES early.
+    """
     for info in list_methods(servable_only=True):
-        assert info.serve_tier is ServeTier.ACCOUNTING_ONLY
+        assert info.serve_tier in (
+            ServeTier.ACCOUNTING_ONLY,
+            ServeTier.NOT_TRIMMABLE,
+        ), f"{info.name} is servable at unexpected tier {info.serve_tier}"
 
 
 def test_default_serve_method_is_servable():
-    """The launcher default must work, and must differ from the library default."""
-    info = get_method(DEFAULT_SERVE_METHOD)
-    assert info.serve_tier.is_servable
+    """The launcher default must work under ``mlx_lm.server``.
+
+    This used to also assert the *library* default was crash-tier, which was
+    true when the library defaulted to ``turboquant_prod``. Since f6e9434 it
+    defaults to ``turboquant_rvq``, which is servable — so that assertion was
+    pinning a fact that had already stopped being true rather than protecting
+    anything. What matters is only that the serve default itself is servable.
+    """
+    assert get_method(DEFAULT_SERVE_METHOD).serve_tier.is_servable
 
     from veloxquant_mlx.cache.base import KVCacheConfig
 
-    assert KVCacheConfig().method in EXPECTED_CRASHING, (
-        "library default is expected to be crash-tier; if that changed, the "
-        "serve default and its accompanying docs note should be revisited"
-    )
-    assert DEFAULT_SERVE_METHOD != KVCacheConfig().method
+    # The library default must also be servable — if it ever regresses to a
+    # crash-tier method, `veloxquant serve` and the three-line README example
+    # would disagree about what works.
+    assert get_method(KVCacheConfig().method).serve_tier.is_servable
 
 
 def test_unsupported_methods_explain_themselves():
