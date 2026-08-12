@@ -80,19 +80,27 @@ Source: `figures/kivi/<model>/results.json`.
 | Model | KIVI-2bit key comp. | full-KV comp. | throughput vs fp16 |
 |---|---|---|---|
 | Llama-3.2-3B-4bit | 5.46× | 4.84× | 101% |
-| Qwen2.5-7B-4bit | _pending re-run_ | _pending re-run_ | _pending re-run_ |
-| Mistral-7B-4bit | _pending re-run_ | _pending re-run_ | _pending re-run_ |
+| Qwen2.5-7B-4bit | 5.46× | 4.85× | 101% |
+| Mistral-7B-v0.3-4bit | 5.46× | 4.85× | 103% |
 
 Full-KV compression includes the fp16 residual window, so it is not inflated.
 
 :::note[Re-measured after #162]
-The Llama row was re-measured on Apple M4 after the residual-buffer fix
+All three rows were re-measured on Apple M4 after the residual-buffer fix
 ([#162](https://github.com/rajveer43/VeloxQuant-MLX/issues/162)). Before that
 fix, decode-time keys were quantized one token at a time, which collapsed each
 per-channel group to a single element and left those keys bit-exact fp16 while
 still billing them as 2-bit — so the earlier numbers in this table were not
-reproducible from the code. The remaining rows are pending a re-run.
+reproducible from the code.
 :::
+
+The compression ratio is **identical across all three models**, and that is
+expected rather than suspicious: it is a function of `bit_width_inlier`,
+`kivi_group_size`, `residual_length`, and `head_dim` — all three models have
+`head_dim=128` — not of the model's identity. What differs between models is
+`n_kv_heads` and `n_layers`, which scale the absolute KV bytes up and down
+together and cancel in the ratio. Throughput differences (101–103%) are the
+real per-model signal.
 
 ## Honest scope
 

@@ -234,3 +234,62 @@ def test_key_accounting_beats_fp16() -> None:
     ratio = cache.fp16_key_bytes / cache.compressed_key_bytes
     assert ratio > 1.0, f"key compression ratio {ratio:.2f}x is worse than fp16"
     assert cache.effective_compression_ratio > 1.0
+
+
+# ---------------------------------------------------------------------------
+# Cross-model shape coverage
+# ---------------------------------------------------------------------------
+
+# (label, n_kv_heads, n_layers) for the model geometries in the docs table.
+# All three share head_dim=128; they differ in KV-head count and depth.
+_DOC_MODELS = [
+    ("Llama-3.2-3B-Instruct-4bit", 8, 28, 31),
+    ("Qwen2.5-7B-Instruct-4bit", 4, 28, 32),
+    ("Mistral-7B-Instruct-v0.3-4bit", 8, 32, 33),
+]
+
+
+@pytest.mark.parametrize("label,n_kv_heads,n_layers,seed", _DOC_MODELS)
+def test_doc_model_geometries_quantize(
+    label: str, n_kv_heads: int, n_layers: int, seed: int
+) -> None:
+    """The documented model geometries must all quantize on the decode path.
+
+    Guards the #162 failure mode across the real head counts rather than a
+    single synthetic shape: grouped-query models (Qwen, 4 KV heads) exercise
+    a different [B, H, S, D] layout than the 8-KV-head models.
+    """
+    D = 128
+    cache = _make(head_dim=D, bit_width_inlier=2, residual_length=32, kivi_group_size=32)
+    k, v = _kv(1, n_kv_heads, 64, D, seed=seed)
+    cache.update_and_fetch(k, v)
+    for t in range(96):
+        k1, v1 = _kv(1, n_kv_heads, 1, D, seed=600 + t)
+        ko, vo = cache.update_and_fetch(k1, v1)
+    mx.eval(ko, vo)
+
+    assert cache._n_quantized % 32 == 0
+    assert cache.compressed_key_bytes > 0
+    assert cache.fp16_key_bytes / cache.compressed_key_bytes > 1.0
+
+
+def test_compression_ratio_is_model_independent() -> None:
+    """Compression depends on (b, group_size, residual_length, head_dim) —
+    not on n_kv_heads or n_layers.
+
+    The docs table reports the same 5.46x key ratio for Llama, Qwen and
+    Mistral; this pins that down as a property of the accounting rather than
+    a copy-paste error. Head count scales the compressed and fp16 byte pools
+    together, so it cancels in the ratio.
+    """
+    D, S = 128, 160
+    ratios = set()
+    for _, n_kv_heads, _, _ in _DOC_MODELS:
+        cache = _make(head_dim=D, bit_width_inlier=2, residual_length=32, kivi_group_size=32)
+        k, v = _kv(1, n_kv_heads, 32, D, seed=21)
+        cache.update_and_fetch(k, v)
+        for t in range(S - 32):
+            k1, v1 = _kv(1, n_kv_heads, 1, D, seed=700 + t)
+            cache.update_and_fetch(k1, v1)
+        ratios.add(round(cache.fp16_key_bytes / cache.compressed_key_bytes, 6))
+    assert len(ratios) == 1, f"key compression varied across head counts: {ratios}"
