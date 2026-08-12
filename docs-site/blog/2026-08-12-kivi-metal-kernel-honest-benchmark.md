@@ -1,6 +1,6 @@
 ---
 slug: kivi-metal-kernel-honest-benchmark
-title: "A 5.65× Metal Kernel That Made My LLM 0% Faster"
+title: "A 5.65× Metal Kernel"
 date: 2026-08-12
 authors: rajveer
 tags: [metal, apple-silicon, mlx, gpu, performance, kivi, benchmarking]
