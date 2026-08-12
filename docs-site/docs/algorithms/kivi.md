@@ -32,6 +32,13 @@ KIVI's insight is **asymmetry** between keys and values:
 3. **fp16 residual window** — the most recent `residual_length` tokens are kept
    at full precision. Newly generated tokens dominate attention and are cheap
    to keep exact; they are quantized only once they age out of the window.
+4. **Group-aligned flushes** — aged-out tokens are quantized in blocks that are
+   whole multiples of `kivi_group_size`, per the paper's Algorithm 1. This is
+   what makes per-channel key groups meaningful: flushing one token at a time
+   would put a single element in every group, making `min == max` and the
+   round-trip lossless-but-uncompressed. It also makes the result independent
+   of chunking — one-shot prefill and token-by-token decode produce
+   bit-identical caches.
 
 Each group uses asymmetric min/max quantization:
 
@@ -72,11 +79,20 @@ Source: `figures/kivi/<model>/results.json`.
 
 | Model | KIVI-2bit key comp. | full-KV comp. | throughput vs fp16 |
 |---|---|---|---|
-| Llama-3.2-3B-4bit | 5.79× | 3.98× | 102% |
-| Qwen2.5-7B-4bit | 5.78× | 3.98× | 100% |
-| Mistral-7B-4bit | 5.76× | 4.03× | 106% |
+| Llama-3.2-3B-4bit | 5.46× | 4.84× | 101% |
+| Qwen2.5-7B-4bit | _pending re-run_ | _pending re-run_ | _pending re-run_ |
+| Mistral-7B-4bit | _pending re-run_ | _pending re-run_ | _pending re-run_ |
 
 Full-KV compression includes the fp16 residual window, so it is not inflated.
+
+:::note[Re-measured after #162]
+The Llama row was re-measured on Apple M4 after the residual-buffer fix
+([#162](https://github.com/rajveer43/VeloxQuant-MLX/issues/162)). Before that
+fix, decode-time keys were quantized one token at a time, which collapsed each
+per-channel group to a single element and left those keys bit-exact fp16 while
+still billing them as 2-bit — so the earlier numbers in this table were not
+reproducible from the code. The remaining rows are pending a re-run.
+:::
 
 ## Honest scope
 

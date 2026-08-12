@@ -130,9 +130,107 @@ def test_decode_tokens_age_out_of_residual_window() -> None:
 
     assert cache.offset == 60
     D, H, B = 128, 1, 1
-    expected_residual = 4 * D * 2 * 2 * H * B  # residual_length * K+V * fp16 bytes
+    # Tokens wait in fp16 until they can form a whole group_size block, so the
+    # live fp16 tail is residual_length plus the partial group still buffered.
+    n_res = cache.offset - cache._n_quantized
+    assert n_res <= 4 + 4, f"fp16 tail {n_res} should stay bounded by residual + one group"
+    expected_residual = n_res * D * 2 * 2 * H * B  # K+V fp16 bytes
     assert cache.residual_fp16_bytes == expected_residual, (
         f"residual_fp16_bytes={cache.residual_fp16_bytes} did not plateau at "
         f"{expected_residual} after 50 decode steps past the residual window"
     )
     assert cache.compressed_key_bytes > 0
+
+
+# ---------------------------------------------------------------------------
+# Regression: paper-faithful residual buffering (#162)
+# ---------------------------------------------------------------------------
+
+
+def test_decode_quantized_keys_are_actually_lossy() -> None:
+    """Regression for #162: keys quantized during single-token decode must be
+    genuinely lossy.
+
+    KIVI quantizes keys *per channel* — the group runs along the token axis —
+    so flushing one token at a time puts a single element in every group,
+    making min == max and the round-trip bit-exact. The residual buffer must
+    hold tokens until a whole ``group_size`` block can be flushed.
+    """
+    g, r = 8, 8
+    cache = _make(residual_length=r, kivi_group_size=g, bit_width_inlier=2)
+    k, v = _kv(1, 1, 8, 128, seed=11)
+    cache.update_and_fetch(k, v)
+
+    ks, vs = [k], [v]
+    for t in range(56):  # single-token decode steps
+        k1, v1 = _kv(1, 1, 1, 128, seed=300 + t)
+        ko, vo = cache.update_and_fetch(k1, v1)
+        ks.append(k1)
+        vs.append(v1)
+    mx.eval(ko, vo)
+
+    k_in = np.array(mx.concatenate(ks, axis=2))
+    k_out = np.array(ko)
+    n_q = cache._n_quantized
+    assert n_q > 0, "nothing was ever quantized during decode"
+    err = np.abs(k_out[:, :, :n_q, :] - k_in[:, :, :n_q, :]).mean()
+    assert err > 1e-3, (
+        f"decode-quantized keys are bit-exact (mean err {err:.2e}) — per-channel "
+        f"groups collapsed to a single token, so 2-bit quantization was a no-op"
+    )
+
+
+def test_quantization_flushes_are_group_aligned() -> None:
+    """The quantized prefix must always be a whole multiple of group_size, so
+    no per-channel key group is ever built from a partial token block."""
+    g = 16
+    cache = _make(residual_length=8, kivi_group_size=g)
+    k, v = _kv(1, 1, 5, 128, seed=12)
+    cache.update_and_fetch(k, v)
+    for t in range(70):
+        k1, v1 = _kv(1, 1, 1, 128, seed=400 + t)
+        cache.update_and_fetch(k1, v1)
+        assert cache._n_quantized % g == 0, (
+            f"quantized prefix {cache._n_quantized} is not a multiple of group_size {g}"
+        )
+
+
+def test_prefill_and_decode_are_equivalent() -> None:
+    """Chunking must not change the result: feeding a sequence one-shot and
+    token-by-token must quantize the same positions with the same group
+    boundaries, hence produce bit-identical output."""
+    g, r = 8, 8
+    S = 48
+    k, v = _kv(1, 2, S, 128, seed=13)
+
+    one_shot = _make(residual_length=r, kivi_group_size=g)
+    ko1, vo1 = one_shot.update_and_fetch(k, v)
+    mx.eval(ko1, vo1)
+
+    streamed = _make(residual_length=r, kivi_group_size=g)
+    for t in range(S):
+        ko2, vo2 = streamed.update_and_fetch(k[:, :, t : t + 1, :], v[:, :, t : t + 1, :])
+    mx.eval(ko2, vo2)
+
+    assert np.array_equal(np.array(ko1), np.array(ko2)), "keys differ between prefill and decode"
+    assert np.array_equal(np.array(vo1), np.array(vo2)), "values differ between prefill and decode"
+    assert one_shot._n_quantized == streamed._n_quantized
+
+
+def test_key_accounting_beats_fp16() -> None:
+    """Regression for #162: key bytes must never be billed above fp16.
+
+    With 1-token groups the per-group (scale, zero) overhead exceeded the
+    codes themselves and the reported key ratio inverted to 0.56x — i.e. the
+    accounting claimed a *loss* for data that was in fact stored as fp16.
+    """
+    cache = _make(bit_width_inlier=2, residual_length=32, kivi_group_size=32)
+    k, v = _kv(1, 1, 32, 64, seed=14)
+    cache.update_and_fetch(k, v)
+    for t in range(168):
+        k1, v1 = _kv(1, 1, 1, 64, seed=500 + t)
+        cache.update_and_fetch(k1, v1)
+
+    ratio = cache.fp16_key_bytes / cache.compressed_key_bytes
+    assert ratio > 1.0, f"key compression ratio {ratio:.2f}x is worse than fp16"
+    assert cache.effective_compression_ratio > 1.0
