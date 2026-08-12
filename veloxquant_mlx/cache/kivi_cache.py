@@ -40,6 +40,9 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.metal import metal_available
+from veloxquant_mlx.metal.kernels import kivi_group_quant_dequant as _kivi_group_quant_dequant
+
 
 class KIVIKVCache(_MLXKVCache):
     """KV cache implementing KIVI asymmetric group quantization.
@@ -71,6 +74,25 @@ class KIVIKVCache(_MLXKVCache):
         self._levels = (1 << self._b) - 1
         self._eps = 1e-8
 
+        # Resolve Metal acceleration flag (#164).  Three-state, matching
+        # VecInferKVCache:
+        #   None  → auto-detect (silent fallback)
+        #   True  → require (raise if unavailable)
+        #   False → forced pure-MLX path
+        # The kernels are bit-identical to the MLX path, so this is a pure
+        # performance knob — it can never change a numeric result.  Measured
+        # 1.3x-4.4x on Apple M4 across both KIVI schemes, widening with the
+        # flush size; see the benchmark in
+        # ``tests/metal/test_kivi_quant.py::test_kivi_quant_benchmark``.
+        requested = getattr(config, "use_metal_kernels", None)
+        available = metal_available()
+        if requested is True and not available:
+            raise RuntimeError(
+                "KIVIKVCache: use_metal_kernels=True but Metal kernels "
+                "are not available on this build of mlx."
+            )
+        self._use_metal: bool = bool(available if requested is None else requested) and available
+
         # Byte accounting
         self._key_bytes_compressed = 0
         self._key_bytes_fp16 = 0
@@ -95,7 +117,29 @@ class KIVIKVCache(_MLXKVCache):
         the quantization axis within those: -2 == per-channel (group along
         tokens, KIVI keys), -1 == per-token (group along channels, values).
         Groups partition the chosen axis into blocks of ``group_size``.
+
+        Dispatches to a fused Metal kernel when one is available (#164),
+        falling back to the pure-MLX path below otherwise.  The two are
+        **bit-identical**, not merely close — see
+        ``tests/metal/test_kivi_quant.py`` — so enabling or disabling the
+        kernel can never change a benchmark result or a cached value.
         """
+        if self._use_metal:
+            try:
+                return _kivi_group_quant_dequant(
+                    x,
+                    axis=axis,
+                    group_size=self._group_size,
+                    levels=self._levels,
+                    eps=self._eps,
+                )
+            except Exception:
+                # Any kernel-side failure (unsupported dtype, compile error,
+                # driver issue) degrades to the MLX path rather than taking
+                # down generation.  Latch it off so we don't re-pay the
+                # failure on every subsequent flush.
+                self._use_metal = False
+
         gs = self._group_size
         x32 = x.astype(mx.float32)
         L = x32.shape[axis]
