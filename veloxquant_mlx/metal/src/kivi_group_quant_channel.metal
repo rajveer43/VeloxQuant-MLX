@@ -53,10 +53,10 @@
     const uint s1   = min(s0 + GROUP_SIZE, S);
 
     // Deliberately re-reads in the quantize pass below rather than caching the
-    // group in registers. Caching was measured *slower* (0.76x at S=2048): a
-    // whole group is GROUP_SIZE floats per thread, and the occupancy that costs
-    // outweighs the saved loads, which hit cache anyway. The token kernel
-    // caches because there it is only ceil(g/32) values per lane.
+    // group in registers. Caching was measured *slower* here (0.76x at S=2048):
+    // a whole group is GROUP_SIZE floats per thread, and the occupancy that
+    // costs outweighs the saved loads, which hit cache anyway. Tried and
+    // rejected in the token kernel too, where it measured exactly neutral.
     float gmin =  INFINITY;
     float gmax = -INFINITY;
     for (uint s = s0; s < s1; ++s) {
