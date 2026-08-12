@@ -4,6 +4,25 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 <!-- version list -->
 
+## v0.47.1 (2026-08-12)
+
+### Bug Fixes
+
+- **kivi**: Buffer residual to group_size-aligned flushes
+  ([#162](https://github.com/rajveer43/VeloxQuant-MLX/pull/162),
+  [`d8922a8`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d8922a84652146e9c8ff81c62c9cb99dc210693b))
+
+### Documentation
+
+- **landing**: Rewrite the method picker for a non-expert audience
+  ([`efb1ca3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/efb1ca3bcc832cf702180ee7e988903d52315ff9))
+
+### Testing
+
+- **kivi**: Cover the documented model geometries; fill in the docs table
+  ([`cbaef08`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cbaef08abfca3780fce987350c40a266199eb241))
+
+
 ## v0.47.0 (2026-08-11)
 
 ### Documentation
