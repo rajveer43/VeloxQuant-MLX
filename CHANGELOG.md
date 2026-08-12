@@ -4,6 +4,24 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 <!-- version list -->
 
+## v0.48.0 (2026-08-12)
+
+### Documentation
+
+- **kivi**: Correct stale register-caching note in channel kernel
+  ([`1a23cd3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1a23cd36d7c715864b46555092139aa708c70d84))
+
+### Features
+
+- **kivi**: Fused Metal kernel for asymmetric group quantization
+  ([`0aeeead`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0aeeead8717d4ff5175800ea70bc32d362f0a8cb))
+
+### Performance Improvements
+
+- **kivi**: Split into layout-specific kernels, drop the transpose
+  ([`3b3eca6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3b3eca67cc3ecf328a1e678d480b03e8c3e1bc8d))
+
+
 ## v0.47.1 (2026-08-12)
 
 ### Bug Fixes
