@@ -1,33 +1,40 @@
-"""KIVI asymmetric group quantization Metal kernel.
+"""KIVI asymmetric group quantization Metal kernels.
 
 Fuses the whole ``KIVIKVCache._quant_dequant_along`` round-trip — ``moveaxis``
 -> pad -> reshape -> ``min``/``max`` -> ``round``/``clip`` -> reconstruct ->
 ``moveaxis`` back — into a single Metal dispatch (issue #164).
 
-The MLX path materializes several full-size intermediates (the moved-axis
-copy, the padded copy, the reshaped group view, the codes, the reconstruction)
-for what is arithmetically a single streaming pass. This kernel keeps the group
-in registers and writes one output.
+The MLX path materializes several full-size intermediates (the moved-axis copy,
+the padded copy, the reshaped group view, the codes, the reconstruction) for
+what is arithmetically a single streaming pass.
 
-**Axis-agnostic by construction.** KIVI quantizes keys per channel (group runs
-along the *token* axis, ``axis=-2``) and values per token (group runs along the
-*channel* axis, ``axis=-1``). Rather than branch inside the shader, the wrapper
-moves the quantization axis last and flattens to ``[R, L]``; the kernel always
-groups along ``L``. The ``moveaxis`` is a cheap strided copy that MLX fuses,
-and it keeps one shader serving both KIVI schemes.
+**Two kernels, because KIVI's two schemes have opposite memory layouts.** The
+cache stores ``[..., S, D]`` row-contiguous, so:
+
+* *Per-token* values (``axis=-1``) group along ``D``, the **contiguous** axis.
+  One SIMD group per quantization group: lanes split the group, loads coalesce,
+  and a ``simd_shuffle_xor`` butterfly reduces without barriers.
+* *Per-channel* keys (``axis=-2``) group along ``S``, the **strided** axis. Here
+  one thread owns a whole group and consecutive threads take consecutive
+  channels — loads still coalesce, and owning the group outright removes the
+  cross-thread reduction entirely.
+
+The obvious alternative for keys — transpose so the token axis becomes
+contiguous, then reuse the value kernel — is what this replaces. That transpose
+is a full-size materializing copy, and it costs more memory traffic than the
+arithmetic being fused; it made the fused kernel a net loss on the key path.
 
 **Bit-exactness with the MLX path** requires three details that are easy to get
 wrong, all of which the parity tests pin:
 
-1. *Padding replicates the last live element.* When ``L`` is not a multiple of
-   ``group_size``, the MLX path pads with copies of ``x[..., -1:]``. Padding
-   with zeros instead would change the final group's ``min``/``max`` and
+1. *Padding replicates the last live element.* When the quantized axis is not a
+   multiple of ``group_size``, the MLX path pads with copies of ``x[..., -1:]``.
+   Padding with zeros instead would change the final group's ``min``/``max`` and
    silently shift every reconstruction in that group.
 2. *Rounding is half-to-even.* ``mx.round`` is half-to-even; Metal's ``rint()``
-   is too under the default rounding mode, but ``metal::round()`` is
-   half-away-from-zero and would disagree on exact ``.5`` codes — which are
-   common here, since ``(v - gmin) / scale`` lands on exact halves whenever a
-   group's range divides evenly.
+   is too, but ``metal::round()`` is half-away-from-zero and would disagree on
+   exact ``.5`` codes — which are common here, since ``(v - gmin) / scale``
+   lands on exact halves whenever a group's range divides evenly.
 3. *``eps`` floors the scale.* Degenerate groups (``min == max``, e.g. a
    single-element group) must divide by ``eps``, not zero.
 
@@ -37,14 +44,18 @@ Public API:
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import mlx.core as mx
 
-# Threads per threadgroup. One threadgroup owns one group, so this is the
-# reduction width, not the group size — the kernel grid-strides when
-# group_size > _THREADS. Power of two: the tree reduction halves it.
-_THREADS = 32
+# Threads per threadgroup for the per-token kernel: one SIMD group, so the
+# butterfly reduction stays within a warp and needs no barriers.
+_SIMD_WIDTH = 32
+
+# Occupancy knob for the per-channel kernel. Threads there never cooperate, so
+# this only affects scheduling granularity.
+_CHANNEL_TG = 256
 
 _MLX_TO_METAL_DTYPE = {
     mx.float16: "half",
@@ -62,48 +73,55 @@ _cache: dict = {}
 
 
 # ===========================================================================
-# Metal source — fused group quantize + dequantize
+# Metal source — per-channel (KIVI keys) and per-token (KIVI values)
 # ===========================================================================
-# Grid:        (n_row_groups * THREADS, 1, 1) — one threadgroup per (row, group).
-# Threadgroup: (THREADS, 1, 1).
+# GROUP_SIZE, LEVELS, EPS, DHEAD and the element type T are compile-time
+# #defines. DHEAD is the model's head_dim — fixed per cache, and making it
+# constant turns the index math into shifts/masks.
 #
-# GROUP_SIZE, LEVELS, EPS, THREADS and the element type T are injected as
-# compile-time #defines so the tree reduction unrolls. The array shape (R, L)
-# is a runtime buffer, not a #define — see _group_quant_kernel.
+# The sequence length is deliberately NOT specialized: it grows every decode
+# step, so baking it in would compile a fresh shader per token. It arrives via
+# MLX's automatic ``x_shape`` buffer instead.
 
-_KIVI_GROUP_QUANT_SRC = _read_kernel_source("kivi_group_quant.metal")
+_KIVI_QUANT_CHANNEL_SRC = _read_kernel_source("kivi_group_quant_channel.metal")
+_KIVI_QUANT_TOKEN_SRC = _read_kernel_source("kivi_group_quant_token.metal")
 
 
 # ---------------------------------------------------------------------------
-# Kernel factory
+# Kernel factories
 # ---------------------------------------------------------------------------
 
 
-def _group_quant_kernel(group_size: int, levels: int, eps: float, dtype_name: str):
+def _header(group_size: int, levels: int, eps: float, head_dim: int, dtype_name: str) -> str:
+    return (
+        f"#define GROUP_SIZE {group_size}u\n"
+        f"#define LEVELS {levels}\n"
+        f"#define EPS {eps!r}f\n"
+        f"#define DHEAD {head_dim}u\n"
+        f"#define T {dtype_name}\n"
+    )
+
+
+def _quant_kernel(
+    axis: int, group_size: int, levels: int, eps: float, head_dim: int, dtype_name: str
+):
     """Compile (once) the shader variant for this quantization configuration.
 
-    Deliberately **not** keyed on the array shape: ``R``/``L`` are passed as a
-    runtime ``shape`` buffer instead of ``#define``\\ s. Specializing on shape
-    would compile a new shader for every distinct sequence length — one per
-    decode step — so the cache would grow without bound and every step would
-    pay a shader compile. The key here spans a handful of values that are
-    fixed by the cache's config, so the cache stays tiny.
+    Keyed on values that are fixed by the cache's config — never on the
+    sequence length. Specializing on shape would compile a new shader for every
+    distinct sequence length (one per decode step), so the cache would grow
+    without bound and every step would pay a shader compile.
     """
-    key = ("kivi_group_quant", group_size, levels, eps, dtype_name)
+    key = ("kivi_group_quant", axis, group_size, levels, eps, head_dim, dtype_name)
     if key not in _cache:
-        header = (
-            f"#define GROUP_SIZE {group_size}u\n"
-            f"#define LEVELS {levels}\n"
-            f"#define EPS {eps!r}f\n"
-            f"#define THREADS {_THREADS}u\n"
-            f"#define T {dtype_name}\n"
-        )
+        per_channel = axis == -2
         _cache[key] = mx.fast.metal_kernel(
-            name=f"kivi_group_quant_g{group_size}_l{levels}",
-            input_names=["x", "shape"],
+            name=("kivi_group_quant_channel" if per_channel else "kivi_group_quant_token")
+            + f"_g{group_size}_l{levels}_d{head_dim}",
+            input_names=["x"],
             output_names=["out"],
-            header=header,
-            source=_KIVI_GROUP_QUANT_SRC,
+            header=_header(group_size, levels, eps, head_dim, dtype_name),
+            source=_KIVI_QUANT_CHANNEL_SRC if per_channel else _KIVI_QUANT_TOKEN_SRC,
             ensure_row_contiguous=True,
         )
     return _cache[key]
@@ -156,28 +174,33 @@ def kivi_group_quant_dequant(
         return x
 
     orig_shape = x.shape
-    # Move the quant axis last so the kernel always groups along the fastest-
-    # varying dimension, then flatten everything else into rows.
-    xm = mx.moveaxis(x, axis, -1) if axis != -1 else x
-    moved_shape = xm.shape
-    L = moved_shape[-1]
-    R = xm.size // L
-    flat = mx.contiguous(xm.reshape(R, L))
+    S, D = orig_shape[-2], orig_shape[-1]
+    BH = x.size // (S * D)
+    # Free for a contiguous array: this only flattens leading dims, it does not
+    # move the quantization axis. Nothing here materializes a transpose.
+    flat = mx.contiguous(x.reshape(BH, S, D))
 
-    n_groups = (L + group_size - 1) // group_size
-    n_tg = R * n_groups
+    kernel = _quant_kernel(axis, group_size, levels, eps, D, _MLX_TO_METAL_DTYPE[x.dtype])
 
-    (out,) = _group_quant_kernel(group_size, levels, eps, _MLX_TO_METAL_DTYPE[x.dtype])(
-        inputs=[flat, mx.array([R, L], dtype=mx.uint32)],
-        grid=(n_tg * _THREADS, 1, 1),
-        threadgroup=(_THREADS, 1, 1),
-        output_shapes=[(R, L)],
+    if axis == -2:
+        # One thread per (bh, token-group, channel).
+        n_threads = BH * math.ceil(S / group_size) * D
+        tg = min(_CHANNEL_TG, n_threads)
+        grid = (math.ceil(n_threads / tg) * tg, 1, 1)
+        threadgroup = (tg, 1, 1)
+    else:
+        # One SIMD group per (bh, token, channel-group).
+        n_groups = BH * S * math.ceil(D / group_size)
+        grid = (n_groups * _SIMD_WIDTH, 1, 1)
+        threadgroup = (_SIMD_WIDTH, 1, 1)
+
+    (out,) = kernel(
+        inputs=[flat],
+        grid=grid,
+        threadgroup=threadgroup,
+        output_shapes=[(BH, S, D)],
         output_dtypes=[x.dtype],
     )
-
-    out = out.reshape(moved_shape)
-    if axis != -1:
-        out = mx.moveaxis(out, -1, axis)
     return out.reshape(orig_shape)
 
 

@@ -1,9 +1,15 @@
-"""Parity tests for the fused KIVI group-quantization Metal kernel (#164).
+"""Parity tests for the fused KIVI group-quantization Metal kernels (#164).
 
-The kernel must reproduce ``KIVIKVCache._quant_dequant_along`` **bit-for-bit**,
-not merely within tolerance: KIVI is the repo's reference baseline, so a kernel
-that shifted results by an ULP would silently move every published KIVI number
-and make benchmarks depend on whether Metal happened to be enabled.
+There are **two** kernels, because KIVI's two schemes have opposite memory
+layouts in a ``[..., S, D]`` row-contiguous cache: per-token values group along
+the contiguous axis (SIMD group per group, butterfly reduction), per-channel
+keys group along the strided axis (one thread owns a whole group, no reduction).
+Both are exercised here through the same public entry point.
+
+They must reproduce ``KIVIKVCache._quant_dequant_along`` **bit-for-bit**, not
+merely within tolerance: KIVI is the repo's reference baseline, so a kernel that
+shifted results by an ULP would silently move every published KIVI number and
+make benchmarks depend on whether Metal happened to be enabled.
 
 Three details make bit-exactness non-trivial, and each has a test below:
   * edge-replication padding for a ragged final group,
@@ -11,8 +17,8 @@ Three details make bit-exactness non-trivial, and each has a test below:
   * an un-fused ``q*scale + gmin`` (an ``fma`` contraction changes ~0.02% of
     elements by 1 ULP).
 
-Also guards the shape-specialization regression: ``R``/``L`` must stay runtime
-arguments, or the dispatch cache compiles one shader per sequence length and
+Also guards the shape-specialization regression: the sequence length must stay a
+runtime value, or the dispatch cache compiles one shader per sequence length and
 decode grinds to a halt.
 """
 
@@ -156,12 +162,15 @@ def test_single_element_groups_are_lossless():
 
 
 def test_dispatch_cache_does_not_grow_with_sequence_length():
-    """Regression: R/L must be runtime args, not #defines.
+    """Regression: the sequence length must be a runtime value, not a #define.
 
-    When they were baked into the kernel header, every distinct sequence
-    length compiled a new shader — so a decode loop compiled one shader per
-    token and effectively hung. One config must map to exactly one variant
-    no matter how many shapes pass through it.
+    When the array shape was baked into the kernel header, every distinct
+    sequence length compiled a new shader — so a decode loop compiled one shader
+    per token and effectively hung. One config must map to exactly one variant
+    per axis, no matter how many sequence lengths pass through it.
+
+    ``head_dim`` *is* specialized, deliberately: it is fixed for the lifetime of
+    a cache, so it contributes a constant, not growth.
     """
     saved = dict(_kivi_quant._cache)
     _kivi_quant._cache.clear()
@@ -169,10 +178,11 @@ def test_dispatch_cache_does_not_grow_with_sequence_length():
         rng = np.random.default_rng(0)
         for L in range(16, 400, 7):  # 55 distinct sequence lengths
             x = mx.array(rng.standard_normal((1, 4, L, 128)).astype(np.float16))
-            mx.eval(kivi_group_quant_dequant(x, axis=-2, group_size=32, levels=3))
-        assert len(_kivi_quant._cache) == 1, (
-            f"expected 1 compiled variant for 55 shapes, got {len(_kivi_quant._cache)}: "
-            f"{list(_kivi_quant._cache)}"
+            for axis in (-2, -1):
+                mx.eval(kivi_group_quant_dequant(x, axis=axis, group_size=32, levels=3))
+        assert len(_kivi_quant._cache) == 2, (
+            f"expected 2 compiled variants (one per axis) for 55 sequence lengths, "
+            f"got {len(_kivi_quant._cache)}: {list(_kivi_quant._cache)}"
         )
     finally:
         _kivi_quant._cache.clear()
@@ -342,6 +352,8 @@ def test_kivi_quant_benchmark(capsys):
             print(f"| {S} | {axis} | {scheme} | {t_mlx:.4f} | {t_ker:.4f} | {t_mlx / t_ker:.2f}x |")
         print(
             "\nMedians of interleaved samples over a rotating input pool. The win\n"
-            "grows with block size: the kernel replaces ~8 full-size MLX\n"
-            "intermediates with one pass, so it scales with the bytes moved."
+            "grows with block size: the kernels replace several full-size MLX\n"
+            "intermediates with one pass, so they scale with the bytes moved.\n"
+            "Prefill (one large group-aligned flush) is where this matters;\n"
+            "decode flushes only group_size tokens at a time."
         )

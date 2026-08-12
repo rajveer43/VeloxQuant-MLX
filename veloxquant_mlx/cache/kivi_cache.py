@@ -79,9 +79,10 @@ class KIVIKVCache(_MLXKVCache):
         #   None  → auto-detect (silent fallback)
         #   True  → require (raise if unavailable)
         #   False → forced pure-MLX path
-        # The kernel is bit-identical to the MLX path, so this is a pure
+        # The kernels are bit-identical to the MLX path, so this is a pure
         # performance knob — it can never change a numeric result.  Measured
-        # 1.4x-2.1x on Apple M4 across both KIVI schemes; see the benchmark in
+        # 1.3x-4.4x on Apple M4 across both KIVI schemes, widening with the
+        # flush size; see the benchmark in
         # ``tests/metal/test_kivi_quant.py::test_kivi_quant_benchmark``.
         requested = getattr(config, "use_metal_kernels", None)
         available = metal_available()
