@@ -9,7 +9,7 @@
   "residual_length": 32,
   "prompt": "The key-value cache stores the attention keys and values of every past token so the model need not recompute them. Its size grows linearly with context length and, on Apple Silicon unified memory, it ...",
   "hardware": {
-    "platform": "macOS-26.5-arm64-arm-64bit",
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
     "machine": "arm64",
     "chip": "Apple M4",
     "ram_gb": 24.0
@@ -17,43 +17,43 @@
   "results": [
     {
       "name": "fp16-baseline",
-      "throughput_tok_s": 6.449040552492141,
+      "throughput_tok_s": 6.50004324003749,
       "peak_mb": 4664.516876220703,
       "key_compression": 1.0,
       "full_kv_compression": 1.0,
       "avg_bits": 16.0,
       "tokens_generated": 122,
-      "elapsed_s": 18.917542695999146
+      "elapsed_s": 18.769105911254883
     },
     {
       "name": "KIVI-2bit",
-      "throughput_tok_s": 6.751008907601838,
+      "throughput_tok_s": 6.701269353422466,
       "peak_mb": 4693.141948699951,
-      "key_compression": 5.761574074074074,
-      "full_kv_compression": 4.034035656401945,
+      "key_compression": 5.458333333333333,
+      "full_kv_compression": 4.851851851851852,
       "avg_bits": 2.0,
       "tokens_generated": 122,
-      "elapsed_s": 18.071372985839844
+      "elapsed_s": 18.205506086349487
     },
     {
       "name": "KIVI-3bit",
-      "throughput_tok_s": 6.675098417914351,
+      "throughput_tok_s": 6.499024920991656,
       "peak_mb": 4693.141948699951,
-      "key_compression": 4.321180555555555,
-      "full_kv_compression": 3.270696452036794,
+      "key_compression": 4.09375,
+      "full_kv_compression": 3.742857142857143,
       "avg_bits": 3.0,
       "tokens_generated": 122,
-      "elapsed_s": 18.276884078979492
+      "elapsed_s": 18.7720468044281
     },
     {
       "name": "KIVI-4bit",
-      "throughput_tok_s": 6.7066353167458495,
+      "throughput_tok_s": 6.85345810244271,
       "peak_mb": 4693.141948699951,
-      "key_compression": 3.4569444444444444,
-      "full_kv_compression": 2.7502762430939227,
+      "key_compression": 3.275,
+      "full_kv_compression": 3.046511627906977,
       "avg_bits": 4.0,
       "tokens_generated": 122,
-      "elapsed_s": 18.190939903259277
+      "elapsed_s": 17.80123233795166
     }
   ]
 }

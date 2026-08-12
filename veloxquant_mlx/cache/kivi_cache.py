@@ -119,6 +119,30 @@ class KIVIKVCache(_MLXKVCache):
         return recon.astype(x.dtype)
 
     # ------------------------------------------------------------------
+    # Residual-buffer boundary (Algorithm 1)
+    # ------------------------------------------------------------------
+    def _quantization_boundary(self) -> int:
+        """Absolute position up to which tokens may be quantized *now*.
+
+        Paper Algorithm 1 buffers arriving keys in ``X_Kr`` and flushes only
+        once that buffer holds ``R`` tokens, quantizing the whole ``R x D``
+        block at once.  The effect that matters numerically: because keys
+        are quantized **per channel** (the group runs along the *token*
+        axis), a flush must carry at least ``group_size`` tokens or every
+        group degenerates to a single element — ``min == max``, ``scale``
+        collapses to ``eps``, and the "quantized" round-trip is bit-exact
+        (#162).
+
+        So the boundary is snapped **down to a multiple of ``group_size``**:
+        tokens wait in the fp16 residual until they can form whole groups.
+        This also makes the result independent of how the sequence was
+        chunked — one-shot prefill and token-by-token decode quantize
+        exactly the same positions with exactly the same group boundaries.
+        """
+        aged = max(0, self.offset - self._residual_length)
+        return (aged // self._group_size) * self._group_size
+
+    # ------------------------------------------------------------------
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys, values):
@@ -127,11 +151,10 @@ class KIVIKVCache(_MLXKVCache):
         Tokens age out based on their **true cumulative position** in the
         sequence, not this call's own ``S``: after every call, the most
         recent ``residual_length`` tokens (of the *entire* history) stay
-        fp16 and everything older is quantized. During decode (S==1) that
-        means each new token starts in the residual window and gets
-        quantized ``residual_length`` steps later, once it actually ages
-        out — not never, as a per-call ``S <= residual_length`` check would
-        imply.
+        fp16 and everything older becomes eligible.  Eligible tokens are
+        then flushed in ``group_size``-aligned blocks per
+        :meth:`_quantization_boundary`, so per-channel key groups always
+        span a full ``group_size`` tokens.
 
         Implementation: store the incoming block via the parent cache
         first (so ``self.offset``/``self.keys``/``self.values`` reflect the
@@ -139,10 +162,9 @@ class KIVIKVCache(_MLXKVCache):
         leading slice of that stored buffer that hasn't been quantized yet.
         """
         B, H, S, D = keys.shape
-        r = self._residual_length
         k_all, v_all = super().update_and_fetch(keys, values)
 
-        new_boundary = max(0, self.offset - r)
+        new_boundary = self._quantization_boundary()
         n_quant_now = new_boundary - self._n_quantized
         if n_quant_now > 0:
             lo, hi = self._n_quantized, new_boundary
@@ -158,8 +180,10 @@ class KIVIKVCache(_MLXKVCache):
 
     def _account_bytes(self, B: int, H: int, S: int, D: int, n_quant_now: int) -> None:
         gs = self._group_size
-        # Quantized keys: per-channel — D channels, ceil(n_quant/gs) groups,
-        # b bits/code + (scale, zero) fp16 per (group, channel).
+        # Quantized keys: per-channel — D channels, n_quant/gs groups, b
+        # bits/code + (scale, zero) fp16 per (group, channel).  Flushes are
+        # group_size-aligned (see _quantization_boundary), so this divides
+        # evenly and no group is charged for tokens it doesn't hold.
         if n_quant_now > 0:
             k_groups = math.ceil(n_quant_now / gs)
             k_code_bytes = math.ceil(n_quant_now * D * self._b / 8) * H * B
@@ -201,7 +225,13 @@ class KIVIKVCache(_MLXKVCache):
 
     @property
     def residual_fp16_bytes(self) -> int:
-        """Bytes held in the fp16 residual window (keys + values)."""
+        """Bytes held in fp16 and not yet quantized (keys + values).
+
+        This is the ``residual_length`` window **plus** any partial group
+        still waiting for enough tokens to form a whole ``group_size``
+        block, so it is bounded by ``residual_length + group_size - 1``
+        tokens rather than exactly ``residual_length``.
+        """
         return self._residual_fp16_bytes
 
     @property
@@ -211,6 +241,23 @@ class KIVIKVCache(_MLXKVCache):
         use ``(compressed_*_bytes + residual_fp16_bytes) / fp16_*_bytes``.
         """
         return float(self._b)
+
+    @property
+    def effective_compression_ratio(self) -> float:
+        """End-to-end KV byte ratio vs fp16, residual window included.
+
+        This is the honest number: quantized codes + per-group (scale, zero)
+        + the still-fp16 residual tail, against the fp16 cost of every token
+        seen.  Reporting ``compressed_*`` alone overstates the win because
+        it silently omits the fp16 residual (#162).
+        """
+        total_fp16 = self._key_bytes_fp16 + self._value_bytes_fp16
+        if total_fp16 == 0:
+            return 1.0
+        total = (
+            self._key_bytes_compressed + self._value_bytes_compressed + self._residual_fp16_bytes
+        )
+        return total_fp16 / total if total else 1.0
 
 
 __all__ = ["KIVIKVCache"]

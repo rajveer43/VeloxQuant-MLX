@@ -17,43 +17,43 @@
   "results": [
     {
       "name": "fp16-baseline",
-      "throughput_tok_s": 16.050295211629795,
+      "throughput_tok_s": 15.82810229046954,
       "peak_mb": 2483.724925994873,
       "key_compression": 1.0,
       "full_kv_compression": 1.0,
       "avg_bits": 16.0,
       "tokens_generated": 121,
-      "elapsed_s": 7.538802146911621
+      "elapsed_s": 7.6446309089660645
     },
     {
       "name": "KIVI-2bit",
-      "throughput_tok_s": 16.36635291234271,
+      "throughput_tok_s": 16.0439917855243,
       "peak_mb": 2600.0995178222656,
-      "key_compression": 5.785407725321888,
-      "full_kv_compression": 3.9801750500896342,
+      "key_compression": 5.460648148148148,
+      "full_kv_compression": 4.84394250513347,
       "avg_bits": 2.0,
       "tokens_generated": 121,
-      "elapsed_s": 7.393217086791992
+      "elapsed_s": 7.5417640209198
     },
     {
       "name": "KIVI-3bit",
-      "throughput_tok_s": 16.111365487147182,
+      "throughput_tok_s": 15.36928158660188,
       "peak_mb": 2600.0995178222656,
-      "key_compression": 4.339388365141412,
-      "full_kv_compression": 3.237882817191387,
+      "key_compression": 4.095486111111111,
+      "full_kv_compression": 3.73851030110935,
       "avg_bits": 3.0,
       "tokens_generated": 121,
-      "elapsed_s": 7.510226249694824
+      "elapsed_s": 7.872846841812134
     },
     {
       "name": "KIVI-4bit",
-      "throughput_tok_s": 15.989503799056882,
+      "throughput_tok_s": 15.342485644499941,
       "peak_mb": 2600.0995178222656,
-      "key_compression": 3.471670345842531,
-      "full_kv_compression": 2.728942231219724,
+      "key_compression": 3.276388888888889,
+      "full_kv_compression": 3.0438709677419356,
       "avg_bits": 4.0,
       "tokens_generated": 121,
-      "elapsed_s": 7.567464351654053
+      "elapsed_s": 7.886596918106079
     }
   ]
 }
