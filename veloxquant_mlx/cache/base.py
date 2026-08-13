@@ -242,6 +242,7 @@ class KVCacheConfig:
         "sim_weighted"  # merge rule: "sim_weighted" | "mean" | "drop" (drop == H2O bit-for-bit)
     )
     cam_merge_keys: bool = False  # merge keys too (values are always merged)
+    cam_merge_gate: bool = True  # Eq. 14 Bernoulli merge gate (False = unconditional merge, the paper's ablated config)
     # --- xKV configuration (cross-layer shared-subspace key compression) -
     xkv_group_size: int = 2  # layers per shared-subspace group (2 = pairs)
     xkv_rank: Optional[int] = None  # explicit shared rank; None → energy threshold
