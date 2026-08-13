@@ -141,7 +141,9 @@ def symbol_entropy_bits(symbols: mx.array) -> float:
     return float(ent.item())
 
 
-def entropy_coded_bytes(stream: CodeStream, use_delta: bool = True, per_channel: bool = True) -> int:
+def entropy_coded_bytes(
+    stream: CodeStream, use_delta: bool = True, per_channel: bool = True
+) -> int:
     """Estimate the entropy-coded size (bytes) of a CodeStream's codes.
 
     Models a real arithmetic coder by measuring the Shannon entropy of the

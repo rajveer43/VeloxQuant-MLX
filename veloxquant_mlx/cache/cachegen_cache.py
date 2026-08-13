@@ -58,7 +58,9 @@ class CacheGenKVCache(_MLXKVCache):
     def __init__(self, config: Any) -> None:
         super().__init__()
         resolved = getattr(config, "cachegen_resolved_bits", None)
-        self._bits = int(resolved) if resolved is not None else int(getattr(config, "cachegen_bits", 4))
+        self._bits = (
+            int(resolved) if resolved is not None else int(getattr(config, "cachegen_bits", 4))
+        )
         self._gs = int(getattr(config, "cachegen_group_size", 32))
         self._use_delta = bool(getattr(config, "cachegen_use_delta", True))
         self._per_channel = bool(getattr(config, "cachegen_per_channel", True))
