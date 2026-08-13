@@ -39,19 +39,34 @@ function recommend(req) {
     // Match Python's float repr (e.g. "2.0", "18.0"): the reference message
     // uses `~{weight_gb} GB` where weight_gb is always a float.
     const weightStr = Number.isInteger(weightGb) ? weightGb.toFixed(1) : String(weightGb);
-    warnings.push(
-      `${req.model_class} 4-bit weights (~${weightStr} GB) leave little ` +
-      `headroom on ${req.ram_gb} GB (est. headroom ${headroomGb.toFixed(1)} GB). ` +
-      "Prefer a smaller model, eviction, or full-KV compression."
-    );
+    // Negative headroom means the weights alone overrun the machine, so say
+    // "will not fit" rather than "barely fits" — the softer phrasing would
+    // read as a caution about a setup that is in fact impossible.
+    if (headroomGb < 0) {
+      warnings.push(
+        `A ${req.model_class} model will not fit in ${req.ram_gb} GB. Its ` +
+        `weights alone need ~${weightStr} GB, which is more than this Mac ` +
+        "has once macOS takes its share — you are about " +
+        `${Math.abs(headroomGb).toFixed(1)} GB short of any headroom. Pick a smaller ` +
+        "model."
+      );
+    } else {
+      warnings.push(
+        `A ${req.model_class} model barely fits in ${req.ram_gb} GB. Its ` +
+        `weights alone take ~${weightStr} GB, leaving about ` +
+        `${headroomGb.toFixed(1)} GB of headroom for everything else. Try a ` +
+        "smaller model, or pick a goal that caps memory."
+      );
+    }
   }
 
   const kvFp16 = estimateKvFp16Mb(req.n_layers, req.n_kv_heads, req.head_dim, req.seq_len);
 
   if (req.model_class === "1B") {
     warnings.push(
-      "Metal kernel launch overhead can dominate on tiny models; " +
-      "prefer RVQ or disable Metal if tok/s drops."
+      "On a model this small the GPU spends more time starting work than " +
+      "doing it, so compression can actually slow generation down. If speed " +
+      "drops, switch to turboquant_rvq or turn the Metal kernels off."
     );
   }
 
@@ -64,12 +79,16 @@ function recommend(req) {
     ratio = 7.5;
     resident = false;
     rationale =
-      "Zero-calibration default. Key accounting ~7.5x at head_dim=128. " +
-      "Default path dequantizes into parent fp16 cache.";
+      "The safe everyday pick: it works out of the box with no setup step, " +
+      "and shrinks the key half of the cache by about 7.5x. It unpacks each " +
+      "value back to full precision as it is read, so this is a size " +
+      "measurement rather than a drop in live memory use.";
     if (tight && ["7B", "14B", "32B"].includes(req.model_class)) {
       warnings.push(
-        "Tight RAM with a mid/large model: consider goal=max_context " +
-        "(rabitq) or goal=constant_memory (eviction) for long prompts."
+        "RAM is tight for a model this size. For long prompts you will get " +
+        "more out of 'Fit the longest conversation' (rabitq), which " +
+        "compresses the whole cache, or 'Never grow past a fixed memory " +
+        "limit' (streaming_llm), which caps it outright."
       );
     }
   } else if (req.goal === "max_key_accounting") {
@@ -78,41 +97,49 @@ function recommend(req) {
       key_codebook_bits: 8, value_codebook_bits: 8,
       key_sub_dim: 8, value_sub_dim: 8,
       use_metal_kernels: null,
-      note: "Requires one-time codebook calibration",
+      note: "Needs a one-time setup pass over sample data before first use",
     };
     ratio = 16.0;
     resident = false;
     rationale =
-      "Product VQ 1-bit path targets ~16x key accounting when " +
-      "head_dim is divisible by sub_dim=8. Needs calibration.";
+      "The smallest key cache on offer, around 16x. The trade is a one-time " +
+      "setup pass over sample data before you can use it, and the same " +
+      "unpack-on-read caveat as the everyday option.";
     if (req.head_dim % 8 !== 0) {
       warnings.push(
-        `head_dim=${req.head_dim} is not divisible by 8; ` +
-        "VecInfer sub_dim must divide head_dim."
+        "This model will not work with vecinfer: it splits each vector " +
+        `into groups of 8, and this model's head dimension ` +
+        `(${req.head_dim}) does not divide evenly by 8.`
       );
     }
   } else if (req.goal === "best_quality") {
     method = "spectral";
-    knobs = { bit_width_inlier: 3, note: "Requires spectral rotation calibration" };
+    knobs = {
+      bit_width_inlier: 3,
+      note: "Needs a one-time setup pass over sample data before first use",
+    };
     ratio = 5.3;
     resident = false;
     rationale =
-      "SpectralQuant targets better reconstruction at moderate " +
-      "compression via eigenbasis rotation (calibration required).";
+      "Compresses less (about 5.3x) but reconstructs the cache more " +
+      "faithfully, so answers stay closest to the uncompressed model. " +
+      "Needs a one-time setup pass over sample data.";
   } else if (req.goal === "max_context") {
     method = "rabitq";
     ratio = 6.0;
     resident = true;
     if (tight) {
-      knobs = { note: "1-bit keys + MSE-b4 values; prefer fused Metal path when available" };
+      knobs = { note: "Compresses the whole cache; turn on the Metal kernels if available" };
       rationale =
-        "Full-KV compression is more likely to free resident memory " +
-        "than key-only accounting methods on tight RAM.";
+        "Compresses both halves of the cache, so it genuinely gives RAM " +
+        "back rather than only measuring smaller. That matters most on a " +
+        "machine as tight as this one.";
     } else {
-      knobs = { note: "Full KV compression for longer context in fixed RAM" };
+      knobs = { note: "Compresses the whole cache, for longer chats in the same memory" };
       rationale =
-        "RaBitQ compresses keys and values. Better candidate for " +
-        "real context capacity gains than key-only RVQ accounting.";
+        "Compresses both halves of the cache, not just the keys, so the " +
+        "space it frees is real. That makes it the better choice when you " +
+        "want the longest possible conversation in the RAM you have.";
     }
   } else if (req.goal === "constant_memory") {
     method = "streaming_llm";
@@ -120,11 +147,14 @@ function recommend(req) {
     ratio = 1.0;
     resident = true;
     rationale =
-      "Structural eviction keeps a fixed sink + window. Cache token " +
-      "count stays bounded regardless of generation length.";
+      "Keeps the first few tokens plus a sliding window of recent ones and " +
+      "discards the rest, so memory use stops growing no matter how long " +
+      "the conversation runs.";
     warnings.push(
-      "Eviction drops tokens; quality depends on the task. " +
-      "For importance-based eviction try method=h2o instead."
+      "This works by forgetting older tokens, so the model can lose track of " +
+      "things said early in a long conversation. How much that hurts depends " +
+      "on the task. To drop the least-used tokens instead of simply the " +
+      "oldest, try method=h2o."
     );
   } else {
     throw new Error(`Unknown goal: ${req.goal}`);
@@ -132,16 +162,19 @@ function recommend(req) {
 
   if (["M1", "M2"].includes(req.chip) && ["14B", "32B"].includes(req.model_class)) {
     warnings.push(
-      `${req.chip} with ${req.model_class}: expect lower tok/s; ` +
-      "memory fit still depends mainly on unified RAM."
+      `A ${req.model_class} model on an ${req.chip} will generate text more ` +
+      "slowly than on a newer chip. Whether it fits at all, though, comes " +
+      "down to how much RAM you have rather than which chip it is."
     );
   }
 
   const compressedMb = ratio > 0 ? kvFp16 / ratio : kvFp16;
   if (!resident) {
     warnings.push(
-      "Resident RSS savings are unlikely at short context for this " +
-      "method's default path (accounting ratio still valid)."
+      "This method measures smaller but may not free much actual RAM on " +
+      "short prompts, because its default path unpacks values back to full " +
+      "precision as it reads them. The size figure is real; treat it as a " +
+      "measure of how well the data compresses, not as RAM you get back."
     );
   }
 
@@ -186,12 +219,12 @@ function renderPresets() {
     MODEL_PRESETS.map(
       (p) =>
         `<button type="button" class="pg-preset-chip" data-preset="${p.id}"
-           title="${p.n_layers} layers · ${p.n_kv_heads} KV heads · head_dim ${p.head_dim}">
+           title="Sets the exact shape for ${p.name}: ${p.n_layers} layers, ${p.n_kv_heads} KV heads, head dimension ${p.head_dim}">
            ${p.name}
          </button>`
     ).join("") +
     `<button type="button" class="pg-preset-chip pg-preset-custom" data-preset="custom"
-       title="Your own model shape">Custom</button>`;
+       title="Something else — set it up under Advanced">Something else</button>`;
 
   row.querySelectorAll("[data-preset]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -249,7 +282,7 @@ const METHODS = {
   turboquant_rvq: {
     label: "TurboQuant-RVQ (everyday, zero-calibration)",
     short: "TurboQuant-RVQ",
-    blurb: "Zero-calibration everyday default.",
+    blurb: "Works out of the box. Start here.",
     ratio: 7.5,
     resident: false,
     config: 'KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)',
@@ -257,7 +290,7 @@ const METHODS = {
   vecinfer: {
     label: "VecInfer (max key accounting, ~16×)",
     short: "VecInfer",
-    blurb: "Max key accounting; needs calibration.",
+    blurb: "Smallest of all, but needs a setup step first.",
     ratio: 16.0,
     resident: false,
     config: 'KVCacheConfig(method="vecinfer", key_codebook_bits=8, key_sub_dim=8)',
@@ -265,7 +298,7 @@ const METHODS = {
   rabitq: {
     label: "RaBitQ (full-KV, long context)",
     short: "RaBitQ",
-    blurb: "Full-KV compression for long context.",
+    blurb: "Frees real memory. Best for long chats.",
     ratio: 6.0,
     resident: true,
     config: 'KVCacheConfig(method="rabitq")',
@@ -273,7 +306,7 @@ const METHODS = {
   spectral: {
     label: "SpectralQuant (best quality, ~5.3×)",
     short: "SpectralQuant",
-    blurb: "Best reconstruction quality.",
+    blurb: "Keeps answers closest to the original.",
     ratio: 5.3,
     resident: false,
     config: 'KVCacheConfig(method="spectral", bit_width_inlier=3)',
@@ -281,7 +314,7 @@ const METHODS = {
   kivi: {
     label: "KIVI-2bit (per-channel keys, ~4× full-KV)",
     short: "KIVI-2bit",
-    blurb: "Per-channel keys, throughput-neutral.",
+    blurb: "Compresses less, but doesn't slow you down.",
     ratio: 4.0,
     resident: false,
     config: 'KVCacheConfig(method="kivi", bit_width_inlier=2)',
@@ -350,17 +383,19 @@ function readSharedShape() {
 // estimateKvFp16Mb and render "NaN MB" / "NaN%" across every card and bar.
 // Throws a clear, field-named message the panels surface as .pg-error —
 // the same failure path runRecommender already uses for the engine's throws.
+// Labels here must match what the field is actually called on screen, or the
+// error names a control the reader cannot find.
 const SHAPE_FIELDS = [
   ["n_layers", "Layers"],
   ["n_kv_heads", "KV heads"],
-  ["head_dim", "Head dim"],
-  ["seq_len", "Sequence length"],
+  ["head_dim", "Head dimension"],
+  ["seq_len", "Conversation length"],
 ];
 function assertValidShape(shape) {
   for (const [key, label] of SHAPE_FIELDS) {
     const v = shape[key];
     if (!Number.isFinite(v) || v < 1) {
-      throw new Error(`${label} must be a whole number ≥ 1.`);
+      throw new Error(`${label} needs to be a whole number, 1 or more.`);
     }
   }
   return shape;
@@ -588,6 +623,9 @@ function runRecommender() {
   const savedPct = Math.round((1 - res.kv_compressed_mb_estimate / res.kv_fp16_mb) * 100);
   const resident = res.resident_savings_likely;
   const cli = buildCliCommand(req);
+  // The raw ratio still ships — demoted out of the hero into "Why this one".
+  const r = res.key_accounting_ratio;
+  const ratioStr = Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1);
 
   const warnHtml = res.warnings.length
     ? `<div class="pg-callouts">${res.warnings
@@ -599,26 +637,28 @@ function runRecommender() {
         .join("")}</div>`
     : `<div class="pg-callouts"><div class="pg-callout pg-callout-ok">
         <span class="pg-callout-ic" aria-hidden="true">✓</span>
-        <span>No warnings for this configuration.</span></div></div>`;
+        <span>Nothing to watch out for — this setup is a comfortable fit.</span></div></div>`;
 
-  // Pattern 1 — headline stat-card row (ratio · saved · resident state).
+  // Pattern 1 — headline stat-card row. Leads with the percentage because it
+  // is true for every method (see updateHeadline); the raw key-accounting
+  // ratio is demoted into the "How this works" band below, where the
+  // technical detail belongs.
   const statRow = renderStatRow(
     renderStatCard({
-      label: "Key-accounting ratio",
-      value: "0×",
-      id: "pg-hero-ratio",
-      to: res.key_accounting_ratio,
-    }) +
-    renderStatCard({
-      label: "KV cache saved",
+      label: "Smaller by",
       value: "0%",
+      hi: true,
       id: "pg-hero-saved",
       to: savedPct,
     }) +
+    renderStatCard({
+      label: "Notes take up",
+      value: `${fmtMb(res.kv_fp16_mb)} → ${fmtMb(res.kv_compressed_mb_estimate)}`,
+    }) +
     renderStatStatus({
-      label: "Resident RAM",
-      text: resident ? "Frees RAM" : "Accounting-only",
-      sub: resident ? "full-KV path" : "ratio still valid",
+      label: "Frees actual RAM?",
+      text: resident ? "Yes" : "Not on short chats",
+      sub: resident ? "shrinks live memory too" : "but the size drop is real",
       ok: resident,
     })
   );
@@ -626,67 +666,65 @@ function runRecommender() {
   // Pattern 3 — split-metric MODEL SHAPE readout above the memory bar.
   const splitCard = `<div class="pg-split">
     <div class="pg-split-cell">
-      <span class="pg-stat-lbl">KV @ fp16</span>
+      <span class="pg-stat-lbl">Without VeloxQuant</span>
       <span class="pg-stat-num">${esc(fmtMb(res.kv_fp16_mb))}</span>
     </div>
     <div class="pg-split-cell">
-      <span class="pg-stat-lbl">KV compressed</span>
+      <span class="pg-stat-lbl">With VeloxQuant</span>
       <span class="pg-stat-num">${esc(fmtMb(res.kv_compressed_mb_estimate))}</span>
     </div>
   </div>`;
 
   // Pattern 4 — copyable rows: reproduce-in-terminal CLI + knobs.
   const reproRows =
-    renderCopyRow("Reproduce in terminal", cli, "Copy CLI command") +
-    (knobsInline ? renderCopyRow("Knobs", knobsInline, "Copy knobs") : "");
+    renderCopyRow("Check this on your own Mac", cli, "Copy the command") +
+    (knobsInline ? renderCopyRow("Settings used", knobsInline, "Copy the settings") : "");
 
   $("rec-output").innerHTML = `
     <div class="pg-hero">
       <div class="pg-hero-head">
         <div class="pg-hero-badge">
-          <span class="pg-hero-badge-k">Recommended</span>
+          <span class="pg-hero-badge-k">Use this</span>
           <span class="pg-badge-method">${esc(res.method)}</span>
         </div>
         <span class="pg-pill ${resident ? "pg-pill-ok" : "pg-pill-muted"}">
-          ${resident ? "frees resident RAM" : "accounting-only"}
+          ${resident ? "gives memory back" : "smaller, but not always freed"}
           <button type="button" class="pg-tip" tabindex="0"
             aria-label="What does this mean?"
             data-tip="${resident
-              ? "This path actually shrinks the resident KV footprint in RAM, not just the accounting ratio."
-              : "The compression ratio is real, but the default path may keep an fp16 parent cache — so resident RAM may not drop at short context."}">?</button>
+              ? "This one shrinks the notes in memory as well as on paper, so your Mac really does get the space back."
+              : "The size drop is real, but this method unpacks each value again as it reads it — so on short chats your Mac may not actually free that memory."}">?</button>
         </span>
       </div>
 
       ${statRow}
 
-      ${renderBand("Recommended method", "cpu",
-        `<p class="pg-rationale">${esc(res.rationale)}</p>${knobsHtml}`)}
+      ${renderBand("Why this one", "cpu",
+        `<p class="pg-rationale">${esc(res.rationale)}</p>
+         <p class="pg-rationale-tech">Shrinks the key half of the cache about
+           <strong>${ratioStr}×</strong>.</p>${knobsHtml}`)}
 
-      ${renderBand("Memory vs context", "memory",
+      ${renderBand("How much space this saves", "memory",
         splitCard + renderMemoryBar(res.kv_fp16_mb, res.kv_compressed_mb_estimate, savedPct, "rec"))}
 
-      ${renderBand("Reproduce", "terminal", `<div class="pg-rows">${reproRows}</div>`)}
+      ${renderBand("Run this yourself", "terminal", `<div class="pg-rows">${reproRows}</div>`)}
 
-      ${renderBand("Notes & warnings", "warning", warnHtml)}
+      ${renderBand("Things to know", "warning", warnHtml)}
 
       <div class="pg-cta-row">
         <button type="button" class="pg-cta pg-cta-primary" id="pg-cta-lab"
           data-method="${esc(REC_TO_LAB_METHOD[res.method] || "turboquant_rvq")}">
-          Open in Compression Lab →
+          See how much fits →
         </button>
         <button type="button" class="pg-cta pg-cta-ghost" id="pg-cta-bench"
           data-bench="${esc(METHOD_TO_BENCH[res.method] || "metal")}">
-          See the benchmark →
+          Show me the proof →
         </button>
       </div>
     </div>
   `;
 
-  // Count the stat cards up and animate the bar after paint.
-  countUp($("pg-hero-ratio"), res.key_accounting_ratio, (v) => {
-    const r = Math.round(v * 10) / 10;
-    return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1)) + "×";
-  });
+  // Count the stat card up and animate the bar after paint.
   countUp($("pg-hero-saved"), savedPct, (v) => Math.round(v) + "%");
   animateMemoryBar("rec", savedPct);
   wireCopyRows($("rec-output"));
@@ -715,18 +753,18 @@ function renderMemoryBar(fp16Mb, compMb, savedPct, scope) {
   return `
     <div class="pg-membar" data-scope="${scope}" data-comp-pct="${compPct.toFixed(2)}">
       <div class="pg-membar-row">
-        <span class="pg-membar-label">fp16 KV</span>
+        <span class="pg-membar-label">normally</span>
         <div class="pg-membar-track"><div class="pg-membar-fill fp16" style="width:100%"></div></div>
         <span class="pg-membar-val">${fmtMb(fp16Mb)}</span>
       </div>
       <div class="pg-membar-row">
-        <span class="pg-membar-label">compressed</span>
+        <span class="pg-membar-label">with VeloxQuant</span>
         <div class="pg-membar-track">
           <div class="pg-membar-fill comp" style="width:${startPct}%"></div>
         </div>
         <span class="pg-membar-val">${fmtMb(compMb)}</span>
       </div>
-      <p class="pg-saved">≈ <strong class="pg-saved-num" id="pg-saved-${scope}">${savedPct}%</strong> smaller KV cache</p>
+      <p class="pg-saved">≈ <strong class="pg-saved-num" id="pg-saved-${scope}">${savedPct}%</strong> less memory for the same conversation</p>
     </div>`;
 }
 
@@ -752,15 +790,18 @@ function animateMemoryBar(scope, savedPct) {
   countUp(savedEl, savedPct, (v) => Math.round(v) + "%");
 }
 
-/* Animated headline metric — "Fit up to N× more context on your Mac".
-   N is the recommender's own ratio; null clears it (on an input error). */
+/* Animated headline metric — "Your chatbot's notes get N% smaller."
+   Deliberately states the *size reduction*, not a context multiplier: the
+   percentage is unconditionally true for every method, whereas "N× more
+   context" is only true when resident_savings_likely, so the old headline
+   made a claim the accounting-only caveat further down had to walk back. */
 function updateHeadline(res) {
   const el = $("pg-headline");
   if (!el) return;
   if (!res) { el.textContent = ""; return; }
-  const r = res.key_accounting_ratio;
-  const rStr = Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1);
-  el.innerHTML = `Fit up to <strong>${rStr}×</strong> more context on your Mac.`;
+  const savedPct = Math.round((1 - res.kv_compressed_mb_estimate / res.kv_fp16_mb) * 100);
+  el.innerHTML =
+    `Your chatbot's notes get <strong>${savedPct}% smaller</strong>.`;
 }
 
 /* ---------- Tab 2: Compression lab ---------- */
@@ -838,8 +879,8 @@ function writeBudget(gb, isAuto) {
   btn.classList.toggle("active", isAuto);
   const src = $("pg-budget-src");
   src.textContent = isAuto
-    ? `from ${parseInt($("pg-ram").value, 10)} GB Mac · auto`
-    : "manual";
+    ? `worked out from your ${parseInt($("pg-ram").value, 10)} GB Mac`
+    : "your own figure";
 }
 
 // User edited the number directly → drop to manual and recompute.
@@ -876,7 +917,7 @@ function runCompressionLab() {
   // framing the README uses for RaBitQ ("~103k tokens at 8 GB").
   const budgetGb = parseFloat($("pg-budget").value);
   if (!Number.isFinite(budgetGb) || budgetGb < MIN_KV_BUDGET_GB) {
-    $("lab-output").innerHTML = `<p class="pg-error">RAM budget for KV must be a number ≥ ${MIN_KV_BUDGET_GB} GB.</p>`;
+    $("lab-output").innerHTML = `<p class="pg-error">Memory you can spare needs to be ${MIN_KV_BUDGET_GB} GB or more.</p>`;
     return;
   }
   const budgetMb = budgetGb * 1024;
@@ -894,27 +935,30 @@ function runCompressionLab() {
   // mirroring resident_savings_likely in the recommender. Label it either way
   // so the lab keeps the same "nothing is faked" promise as the recommender.
   const residentCaveat = m.resident
-    ? `<p class="pg-lab-caveat is-ok">Full-KV path — this ${ratio}× reflects real resident-RAM savings.</p>`
-    : `<p class="pg-lab-caveat is-warn"><strong>Accounting-only:</strong> the ${ratio}× is a key-accounting bound.
-        This method's default path may keep an fp16 parent cache, so resident RAM
-        may not drop by the full factor at short context.</p>`;
+    ? `<p class="pg-lab-caveat is-ok">This method compresses the whole cache, so
+        your Mac really does get this memory back.</p>`
+    : `<p class="pg-lab-caveat is-warn"><strong>Worth knowing:</strong> this method
+        unpacks each value again as it reads it, so on shorter chats your Mac may
+        not free the full ${ratio}×. The size figure is honest — treat it as how well
+        the data compresses, not as memory handed back.</p>`;
 
   // At the derived floor, weights + OS reserve leave almost nothing for KV —
   // surface why, using the same framing as the recommender's headroom warning.
   const budgetFloorCaveat =
     autoBudget && deriveKvBudgetGb(parseInt($("pg-ram").value, 10), $("pg-model").value) <= MIN_KV_BUDGET_GB
-      ? `<p class="pg-lab-caveat is-warn">On this machine, weights + OS reserve leave little RAM for KV —
-          consider a smaller model, more RAM, or eviction (goal = constant memory).</p>`
+      ? `<p class="pg-lab-caveat is-warn">On this Mac, the model itself plus macOS leave
+          very little memory for the notes. Consider a smaller model, a Mac with more
+          memory, or the "never grow past a fixed memory limit" option.</p>`
       : "";
 
   // Pattern 1 — headline 2-card stat row: tokens @ fp16 vs with <method>.
   const statRow = renderStatRow(
     renderStatCard({
-      label: `Tokens @ fp16 · ${budgetGb} GB`,
+      label: `Words that fit in ${budgetGb} GB — normally`,
       value: tokensFp16.toLocaleString(),
     }) +
     renderStatCard({
-      label: `Tokens with ${m.short} · ${budgetGb} GB`,
+      label: `Words that fit with ${m.short}`,
       value: tokensComp.toLocaleString(),
       hi: true,
       id: "pg-tok-comp",
@@ -930,20 +974,20 @@ function runCompressionLab() {
 
     ${statRow}
 
-    ${renderBand("Context that fits", "chart",
+    ${renderBand("How long a conversation fits", "chart",
       `<p class="pg-book">≈ <strong>${book.pages.toLocaleString()} pages</strong> — about ${book.tangible}
-        <span class="pg-approx">approx · ~${TOKENS_PER_PAGE} tokens/page</span></p>
-       <p class="pg-saved">${ratio}× more context in the same RAM budget (KV-only linear estimate).</p>
+        <span class="pg-approx">rough estimate · counting ~${TOKENS_PER_PAGE} words a page</span></p>
+       <p class="pg-saved">That's ${ratio}× longer than you'd fit without it, in the same memory.</p>
        ${residentCaveat}
        ${budgetFloorCaveat}`)}
 
-    ${renderBand("Memory", "memory",
+    ${renderBand("Space used", "memory",
       renderMemoryBar(round2(fp16Mb), round2(compMb), savedPct, "lab"))}
 
-    ${renderBand("Integration snippet", "code",
+    ${renderBand("Add this to your code", "code",
       `<div class="pg-snippet">
         <div class="pg-snippet-head">
-          <span class="pg-snippet-note">Runs on any <code>mlx_lm</code> model</span>
+          <span class="pg-snippet-note">Three lines. Works with any <code>mlx_lm</code> model.</span>
           <button class="pg-copy" data-snippet>Copy</button>
         </div>
         <pre><code class="pg-code">${highlightSnippet(snippetFor(methodKey))}</code></pre>
@@ -1083,14 +1127,14 @@ async function runBenchViewer() {
     out.innerHTML = `<div class="pg-skeleton" aria-hidden="true">
       <div class="pg-skel-legend"><span></span><span></span></div>
       <div class="pg-skel-chart"></div>
-    </div><p class="pg-caption pg-muted">Loading measured benchmark data…</p>`;
+    </div><p class="pg-caption pg-muted">Loading the measured results…</p>`;
   }
 
   let data;
   try {
     data = await loadBench();
   } catch (e) {
-    out.innerHTML = `<p class="pg-error">Could not load benchmark data.</p>`;
+    out.innerHTML = `<p class="pg-error">Couldn't load the benchmark results. Try refreshing the page.</p>`;
     return;
   }
 
@@ -1107,7 +1151,8 @@ async function runBenchViewer() {
       yLabel: "speedup ×",
       valFmt: (v) => v.toFixed(1) + "×",
     });
-    caption = "Hand-written Metal quantize kernel vs pure-MLX, by sequence length S (B=1, H=8, D=128).";
+    caption = "How much faster our hand-written Apple GPU code compresses the cache, compared " +
+      "with doing the same work in plain MLX. Higher is better; S is the conversation length.";
     source = "figures/metal/results.json";
   } else if (which === "rabitq") {
     const rows = data.rabitq_falcon_memory;
@@ -1123,7 +1168,8 @@ async function runBenchViewer() {
       yLabel: "KV size (MB)",
       valFmt: (v) => v.toFixed(0),
     });
-    caption = "Full-KV memory, Falcon3-7B shape: fp16 vs RaBitQ (~5.95× smaller).";
+    caption = "Actual memory used by the notes on a Falcon3-7B model, with and without " +
+      "RaBitQ — about 5.95× smaller. Shorter bars are better.";
     source = "figures/RaBitQ/falcon/results.json";
   } else {
     // KIVI per-model throughput retention
@@ -1141,13 +1187,15 @@ async function runBenchViewer() {
       yLabel: "value",
       valFmt: (v) => (v >= 20 ? v.toFixed(0) : v.toFixed(2)),
     });
-    caption = `KIVI on ${model} (${m.chip}, ${m.ram_gb} GB): throughput retention vs key compression.`;
+    caption = `KIVI running ${model} on an ${m.chip} with ${m.ram_gb} GB. Blue shows how much ` +
+      "of the original speed is kept; purple shows how much smaller the cache got.";
     source = "figures/kivi/results_summary.json";
   }
 
-  out.innerHTML = `${renderBand("Chart", "chart", chart)}
+  out.innerHTML = `${renderBand("Measured results", "chart", chart)}
     <p class="pg-provenance"><span class="pg-prov-dot" aria-hidden="true"></span>
-      Measured on real hardware · source <code>${source}</code></p>
+      Measured on a real Mac, not estimated · you can check the raw numbers in
+      <code>${source}</code></p>
     <p class="pg-caption">${caption}</p>`;
 
   growBars(out);
@@ -1248,6 +1296,21 @@ function selectBench(key) {
   runBenchViewer();
 }
 
+// Translate the raw conversation length into pages, so the number under the
+// field means something without knowing what a token is. Reuses bookScale so
+// the page count here and in the lab can never disagree.
+function updateSeqHint() {
+  const hint = $("pg-seq-hint");
+  if (!hint) return;
+  const seq = parseInt($("pg-seqlen").value, 10);
+  if (!Number.isFinite(seq) || seq < 1) {
+    hint.textContent = "";
+    return;
+  }
+  const { pages } = bookScale(seq);
+  hint.textContent = `${seq.toLocaleString()} words ≈ ${pages.toLocaleString()} page${pages === 1 ? "" : "s"}`;
+}
+
 // Reflect the current architecture shape in the collapsed Advanced summary,
 // so a newcomer sees what's inside without expanding it.
 function updateAdvancedHint() {
@@ -1266,6 +1329,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const recompute = () => {
     markActivePreset();
     updateAdvancedHint();
+    updateSeqHint();
     runRecommender();
     runCompressionLab();
   };
@@ -1352,6 +1416,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   markActivePreset();
   updateAdvancedHint();
+  updateSeqHint();
   renderSegmentedBench(); // reflects any restored ?bench= value
   syncBenchModelPicker();
   runRecommender();

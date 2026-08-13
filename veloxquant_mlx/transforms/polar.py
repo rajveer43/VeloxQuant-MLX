@@ -74,8 +74,15 @@ class RecursivePolarTransform(Transform):
             # Compute angle: atan2(y, x)
             a = mx.arctan2(r_pairs[:, :, 1], r_pairs[:, :, 0])  # (batch, n_pairs)
 
-            # For level >= 2, fold angles into [0, pi/2]
-            if ell >= 1:
+            if ell == 0:
+                # Level 1: atan2's native range is (-pi, pi], but the
+                # level-1 codebook/PDF (distributions.py, strategies.py)
+                # assume [0, 2*pi) -- fold negative angles up so forward()
+                # actually produces the range the rest of the pipeline
+                # expects (#69).
+                a = a % (2 * math.pi)
+            else:
+                # For level >= 2, fold angles into [0, pi/2]
                 a = mx.abs(a % (math.pi / 2))
 
             angles.append(a.astype(x.dtype))

@@ -96,6 +96,12 @@ class NestedKVKVCache(_MLXKVCache):
         Single-layer (no coordinator); ``KVCacheBuilder.for_model()``
         propagates all ``nestedkv_*`` fields automatically via
         ``dataclasses.replace``.
+        Writes through to the base ``mlx_lm`` ``KVCache``'s ``self.keys`` /
+        ``self.values`` / ``self.offset`` on every call so ``.state`` stays
+        valid (mlx_lm's ``generate()`` reads it unconditionally during
+        chunked prefill); ``is_trimmable()`` reports ``False`` since the
+        internal per-token state can't be rolled back by a base-class
+        ``trim()`` (see #83).
     """
 
     def __init__(self, config: Any) -> None:
@@ -243,7 +249,25 @@ class NestedKVKVCache(_MLXKVCache):
 
         self._nestedkv_kept_bytes = sum(nestedkv_fp16_bytes(st) for st in self._states)
 
-        return K_out, V_out
+        # K_out/V_out is the full retained state every call (front-padded to
+        # a common per-head length by _pad_heads_to_common_length), not a
+        # delta — reset so the base class's append-only buffer starts fresh
+        # instead of stacking on top of the previous call's rows. Without
+        # this, self.keys/self.values/self.offset stay at __init__ defaults
+        # forever, and mlx_lm's generate() crashes on `cache.state` during
+        # chunked prefill (see #83).
+        self.keys = None
+        self.values = None
+        self.offset = 0
+        return super().update_and_fetch(K_out, V_out)
+
+    # ------------------------------------------------------------------
+    def is_trimmable(self) -> bool:
+        """False: trim() would only roll back base-class offset bookkeeping,
+        not the internal per-token eviction/compression state that actually
+        determines what gets returned, silently corrupting future calls.
+        """
+        return False
 
     # ------------------------------------------------------------------
     @property

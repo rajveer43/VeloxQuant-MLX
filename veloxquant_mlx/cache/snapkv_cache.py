@@ -10,6 +10,13 @@ a per-token importance score. Only the top-``snap_budget`` tokens (plus the
 first ``snap_n_sink`` sink positions) are retained as fp16. All subsequent
 decode tokens (S == 1) are always appended — never evicted.
 
+mlx_lm's chunked prefill calls ``update_and_fetch`` once per
+``prefill_step_size`` chunk for prompts longer than one chunk. Every S > 1
+call re-enforces the budget against the *accumulated* kept set (prior kept
+tokens concatenated with the new chunk), not just that chunk in isolation —
+otherwise the retained count would grow by up to ``snap_budget`` per chunk
+instead of staying capped (see #84).
+
 This is the repo's first **eviction** method. Every other method compresses
 all tokens to fewer bits; SnapKV-adapted stores fewer tokens at full fp16
 precision. The two axes compose: wrap a quantizer cache around the selected
@@ -55,10 +62,14 @@ class SnapKVKVCache(_MLXKVCache):
         No ``.bits`` attribute — stores and returns fp16 K/V directly.
         Single-layer (no coordinator); ``for_model`` propagates all ``snap_*``
         fields automatically via ``dataclasses.replace``.
-        Eviction happens once at prefill (S > 1). Decode tokens (S == 1) are
-        always kept. Accumulated decode tokens grow the cache beyond the initial
-        budget in the decode phase — consistent with the paper's design (the
-        budget constrains prefill history, not the decode stream).
+        Eviction happens at every prefill chunk (S > 1) — mlx_lm's chunked
+        prefill (``prefill_step_size``) calls ``update_and_fetch`` once per
+        chunk for prompts longer than one chunk, so budget enforcement must
+        re-run over the accumulated kept set, not just each chunk in
+        isolation (see #84). Decode tokens (S == 1) are always kept.
+        Accumulated decode tokens grow the cache beyond the initial budget in
+        the decode phase — consistent with the paper's design (the budget
+        constrains prefill history, not the decode stream).
     """
 
     def __init__(self, config: Any) -> None:
@@ -73,6 +84,13 @@ class SnapKVKVCache(_MLXKVCache):
         self._full_value_bytes = 0
         self._tokens_kept = 0
         self._tokens_total = 0
+
+        # True once the first S>1 (prefill) call has been processed. Any
+        # later S>1 call is a subsequent chunk of the *same* prompt (mlx_lm
+        # chunked prefill), not a fresh prefill, and must re-enforce the
+        # budget against the accumulated kept set rather than compressing
+        # the new chunk in isolation and appending.
+        self._prefill_done = False
 
     # ------------------------------------------------------------------
     def _evict_head(self, keys: mx.array, values: mx.array) -> tuple[mx.array, mx.array, int]:
@@ -119,11 +137,67 @@ class SnapKVKVCache(_MLXKVCache):
         self._tokens_total += B * H * S
         return keys.astype(mx.float16), values.astype(mx.float16)
 
+    def _process_prefill_chunk(self, keys: mx.array, values: mx.array):
+        """Re-enforce the budget for a later chunk of the same prefill.
+
+        Concatenates each head's already-kept tokens (``self.keys`` /
+        ``self.values`` from prior chunks, sink-anchored at true position 0)
+        with the new chunk, then re-runs ``snapkv_compress`` over that
+        concatenation so the total retained count stays capped at
+        ``self._budget`` instead of growing by up to ``budget`` per chunk.
+
+        Byte/token accounting: this recomputed kept set *replaces* what was
+        previously counted as kept for this (b, h) (the prior chunk's kept
+        rows are being re-selected from, not kept in addition to), so the
+        prior per-(b, h) kept contribution is subtracted before adding the
+        new one. ``tokens_total`` only grows by this chunk's ``S`` (prior
+        chunks' totals were already counted when first seen).
+        """
+        B, H, S, D = keys.shape
+        prev_kept = self.offset
+        prev_kept_bytes = prev_kept * D * 2  # per (b, h), K or V alone
+        k_out_b, v_out_b = [], []
+        for b in range(B):
+            k_out_h, v_out_h = [], []
+            for h in range(H):
+                prior_k = self.keys[b, h, :prev_kept, :]
+                prior_v = self.values[b, h, :prev_kept, :]
+                cat_k = mx.concatenate([prior_k, keys[b, h]], axis=0)
+                cat_v = mx.concatenate([prior_v, values[b, h]], axis=0)
+                k_h, v_h, n_kept = self._evict_head(cat_k, cat_v)
+                k_out_h.append(k_h)
+                v_out_h.append(v_h)
+                kept_bytes = n_kept * D * 2
+                self._evicted_key_bytes += kept_bytes - prev_kept_bytes
+                self._evicted_value_bytes += kept_bytes - prev_kept_bytes
+                self._tokens_kept += n_kept - prev_kept
+            k_out_b.append(mx.stack(k_out_h, axis=0))
+            v_out_b.append(mx.stack(v_out_h, axis=0))
+        k_out = mx.stack(k_out_b, axis=0)
+        v_out = mx.stack(v_out_b, axis=0)
+
+        self._full_key_bytes += B * H * S * D * 2
+        self._full_value_bytes += B * H * S * D * 2
+        self._tokens_total += B * H * S
+
+        # The recomputed kept set replaces (not appends to) what's stored:
+        # reset so the base class's append-only update_and_fetch starts a
+        # fresh buffer instead of stacking this chunk's output on top of
+        # the pre-recompression rows still sitting in self.keys/values.
+        self.offset = 0
+        self.keys = None
+        self.values = None
+        return k_out, v_out
+
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
         is_prefill = keys.shape[2] > 1
         if is_prefill:
-            k_out, v_out = self._process_prefill(keys, values)
+            if not self._prefill_done:
+                k_out, v_out = self._process_prefill(keys, values)
+                self._prefill_done = True
+            else:
+                k_out, v_out = self._process_prefill_chunk(keys, values)
         else:
             k_out, v_out = self._process_decode(keys, values)
         return super().update_and_fetch(k_out, v_out)

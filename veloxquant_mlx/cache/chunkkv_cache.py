@@ -12,11 +12,18 @@ surviving context stays locally coherent. Chunk importance is a pooled proxy ove
 an existing per-token signal: cumulative attention mass (``score="attn_mass"``,
 the H2O scorer) or mean key L2 norm (``score="key_norm"``).
 
-Like H2O/TOVA and unlike XQuant/MiniCache/SqueezeAttention, ChunkKV needs **no
-runtime coordinator** — every layer/head resolves its own chunks independently,
-so the default ``KVCacheBuilder.for_model`` path (one ``ChunkKVCache`` per layer)
-is all it needs. When ``chunk_size == 1`` the method reduces bit-for-bit to
+By default every layer/head resolves its own chunks independently, so the
+standard ``KVCacheBuilder.for_model`` path (one ``ChunkKVCache`` per layer) is
+all it needs. When ``chunk_size == 1`` the method reduces bit-for-bit to
 H2O-adapted (each chunk is one token).
+
+Optionally, setting ``chunkkv_reuse_layers > 1`` enables the paper's Algorithm 2
+(layer-wise index reuse): layers are grouped into consecutive blocks of that
+size, only the first ("leader") layer per block runs eviction, and the rest
+("follower" layers) reuse the leader's exact kept-token positions via a shared
+``ChunkKVIndexReuseCoordinator`` (injected at ``for_model`` build time, mirroring
+``SqueezeCoordinator``'s pattern but publishing every step rather than once at
+prefill, since eviction can recur at any step).
 
 This is the seventh distinct eviction configuration in VeloxQuant-MLX:
   - SnapKV-adapted     : score-based, once at prefill end.
@@ -32,8 +39,6 @@ Adaptation limitations (stated plainly):
   - Key-as-query proxy (same as H2O-adapted / SnapKV-adapted).
   - Pooled per-token score as a proxy for the paper's attention-over-chunk
     importance (mean-pooled, same chunk-granular decision).
-  - No layer-wise kept-index reuse (a decode-speed trick in the paper); each
-    layer resolves chunks independently.
   - Streaming eviction (drop a chunk once the cache exceeds budget by a chunk)
     rather than a single one-shot prefill compression.
   - No RoPE position-ID remapping after eviction.
@@ -46,17 +51,20 @@ Byte accounting:
     tokens_seen        — total token positions ever passed to update_and_fetch
     tokens_kept        — tokens currently in the first (B=0, H=0) head's cache
     chunk_size         — this cache's eviction granularity (diagnostic)
+    is_index_reuse_leader — whether this layer evicts (leader) or reuses (follower)
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.cache.chunkkv_coordinator import ChunkKVIndexReuseCoordinator
 from veloxquant_mlx.quantizers.chunkkv import (
     ChunkKVState,
+    chunkkv_apply_reuse_indices,
     chunkkv_fp16_bytes,
     chunkkv_get_kv,
     chunkkv_trim_to,
@@ -75,19 +83,41 @@ class ChunkKVCache(_MLXKVCache):
                 ``1`` reduces to H2O-adapted exactly.
             ``chunkkv_n_sink`` (int, default 4)       — leading positions never evicted.
             ``chunkkv_score`` (str, default "attn_mass") — "attn_mass" | "key_norm".
+        layer_id: This layer's index (used to resolve leader/follower role and
+            report/query the coordinator). ``None`` for single-cache
+            construction — the layer then always runs its own eviction (as if
+            it were its own leader).
+        coordinator: Shared :class:`ChunkKVIndexReuseCoordinator`, or ``None``.
+            When present and ``layer_id`` is not the block's leader, this layer
+            reuses the leader's kept-token positions instead of evicting itself.
 
     Notes:
         No ``.bits`` attribute — stores and returns fp16 K/V directly.
         Both prefill (S > 1) and decode (S == 1) tokens go through the same
         eviction loop. Per-head state is lazily initialised on the first call.
+        Writes through to the base ``mlx_lm`` ``KVCache``'s ``self.keys`` /
+        ``self.values`` / ``self.offset`` on every call so ``.state`` stays
+        valid (mlx_lm's ``generate()`` reads it unconditionally during
+        chunked prefill); ``is_trimmable()`` reports ``False`` since the
+        internal per-token state can't be rolled back by a base-class
+        ``trim()`` (see #83).
     """
 
-    def __init__(self, config: Any) -> None:
+    def __init__(
+        self,
+        config: Any,
+        layer_id: Optional[int] = None,
+        coordinator: Optional[ChunkKVIndexReuseCoordinator] = None,
+    ) -> None:
         super().__init__()
         self._budget = int(getattr(config, "chunkkv_budget", 512))
         self._chunk_size = int(getattr(config, "chunkkv_chunk_size", 8))
         self._n_sink = int(getattr(config, "chunkkv_n_sink", 4))
         self._score_mode = str(getattr(config, "chunkkv_score", "attn_mass"))
+
+        self._layer_id = layer_id
+        self._coordinator = coordinator
+        self._is_leader = coordinator is None or layer_id is None or coordinator.is_leader(layer_id)
 
         self._head_dim: int = 0
         self._states: list[ChunkKVState] = []
@@ -137,22 +167,36 @@ class ChunkKVCache(_MLXKVCache):
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
-        # 1) Update every head's state independently.
+        # 1) Update every head's state — leaders evict and publish their kept
+        #    positions; followers reuse their leader's positions (Algorithm 2).
         for b in range(B):
             for h in range(H):
                 idx = self._head_idx(b, h)
-                self._states[idx] = chunkkv_update(
-                    self._states[idx],
-                    keys[b, h].astype(mx.float16),
-                    values[b, h].astype(mx.float16),
-                )
+                if self._is_leader:
+                    self._states[idx], kept = chunkkv_update(
+                        self._states[idx],
+                        keys[b, h].astype(mx.float16),
+                        values[b, h].astype(mx.float16),
+                        record_kept_positions=True,
+                    )
+                    if self._coordinator is not None and self._layer_id is not None:
+                        self._coordinator.publish(self._layer_id, h, kept)
+                else:
+                    kept = self._coordinator.fetch(self._layer_id, h)
+                    self._states[idx] = chunkkv_apply_reuse_indices(
+                        self._states[idx],
+                        keys[b, h].astype(mx.float16),
+                        values[b, h].astype(mx.float16),
+                        kept,
+                    )
 
         # 2) Whole-chunk retention lets heads keep slightly different token counts;
         #    the MLX attention path needs a rectangular [B, H, n_kept, D] output,
         #    so align every head to the common minimum kept-length by dropping each
         #    head's oldest non-sink tokens down to that length. When chunk_size=1
         #    all heads already hold exactly `budget`, so no trimming occurs and the
-        #    H2O equivalence is preserved.
+        #    H2O equivalence is preserved. Follower heads already mirror their
+        #    leader's kept-length exactly, so this is a no-op for them in practice.
         min_kept = min(
             (chunkkv_get_kv(st)[0].shape[0] for st in self._states),
             default=0,
@@ -176,7 +220,24 @@ class ChunkKVCache(_MLXKVCache):
         # Byte accounting: sum across all head states.
         self._chunkkv_kept_bytes = sum(chunkkv_fp16_bytes(st) for st in self._states)
 
-        return K_out, V_out
+        # K_out/V_out is the full retained state every call, not a delta —
+        # reset so the base class's append-only buffer starts fresh instead
+        # of stacking on top of the previous call's rows. Without this,
+        # self.keys/self.values/self.offset stay at __init__ defaults
+        # forever, and mlx_lm's generate() crashes on `cache.state` during
+        # chunked prefill (see #83).
+        self.keys = None
+        self.values = None
+        self.offset = 0
+        return super().update_and_fetch(K_out, V_out)
+
+    # ------------------------------------------------------------------
+    def is_trimmable(self) -> bool:
+        """False: trim() would only roll back base-class offset bookkeeping,
+        not the internal per-token eviction/compression state that actually
+        determines what gets returned, silently corrupting future calls.
+        """
+        return False
 
     # ------------------------------------------------------------------
     @property
@@ -188,6 +249,11 @@ class ChunkKVCache(_MLXKVCache):
     def chunk_size(self) -> int:
         """This cache's eviction granularity ``C`` (diagnostic)."""
         return self._chunk_size
+
+    @property
+    def is_index_reuse_leader(self) -> bool:
+        """True if this layer runs its own eviction (leader, or reuse disabled)."""
+        return self._is_leader
 
     @property
     def chunkkv_kept_bytes(self) -> int:

@@ -56,6 +56,9 @@ class XQuantKVCache(_MLXKVCache):
         role: ``"anchor"`` or ``"reuse"`` (default ``"anchor"``).
         group_id: Cross-layer group this layer belongs to.
         coordinator: Shared :class:`XQuantCoordinator` (None → degenerate anchor).
+        n_readers: Number of reuse layers in this anchor's group (group_size - 1).
+            Only meaningful for ``role="anchor"``; tells the coordinator how many
+            fetches to expect before a published segment can be reclaimed.
     """
 
     def __init__(
@@ -64,11 +67,13 @@ class XQuantKVCache(_MLXKVCache):
         role: str = "anchor",
         group_id: int = 0,
         coordinator: Optional[XQuantCoordinator] = None,
+        n_readers: int = 1,
     ) -> None:
         super().__init__()
         self._role: str = role if coordinator is not None else "anchor"
         self._group_id: int = int(group_id)
         self._coord: Optional[XQuantCoordinator] = coordinator
+        self._n_readers: int = int(n_readers)
 
         self._base_bits: int = int(getattr(config, "xquant_base_bits", 2))
         self._residual_bits: int = int(getattr(config, "xquant_residual_bits", 0))
@@ -146,6 +151,7 @@ class XQuantKVCache(_MLXKVCache):
                     S,
                     codes=(k_codes, v_codes),
                     params=GroupParams(scale=None, zero=None, n_rows=S, bits=self._base_bits),
+                    n_readers=self._n_readers,
                 )
             self._account_anchor(B, H, S, D)
         else:

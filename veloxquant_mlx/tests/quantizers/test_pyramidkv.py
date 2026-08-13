@@ -97,6 +97,45 @@ def test_budgets_beta_below_1_raises() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Regression for #76: mean must stay ~avg_budget for beta > 2.0, not just
+# beta <= 2.0 -- the floor clamp used to only pull the low end up with no
+# compensating reduction, silently inflating the mean (up to +17.5% at
+# beta=3.0 in the issue's exact repro).
+# ---------------------------------------------------------------------------
+def test_budgets_mean_approx_avg_for_beta_above_two() -> None:
+    """Issue #76's exact repro shape: mean must stay within a tight tolerance
+    of avg_budget for beta in (2.0, 3.0], not drift up to +17.5%."""
+    for beta in [2.1, 2.5, 3.0]:
+        b = pyramid_budgets(n_layers=8, avg_budget=128, n_sink=2, beta=beta)
+        mean = sum(b) / len(b)
+        assert abs(mean - 128) / 128 < 0.01, f"beta={beta}: mean {mean} vs avg 128"
+
+
+def test_budgets_mean_approx_avg_across_beta_sweep() -> None:
+    """Broader sweep: mean tracks avg_budget for every beta from flat to
+    very steep, across several (n_layers, avg_budget, n_sink) combinations."""
+    for n_layers, avg, n_sink in [(8, 128, 2), (16, 256, 4), (32, 512, 8), (6, 64, 1)]:
+        for beta in [1.0, 1.5, 2.0, 2.5, 3.0, 5.0, 10.0]:
+            b = pyramid_budgets(n_layers=n_layers, avg_budget=avg, n_sink=n_sink, beta=beta)
+            mean = sum(b) / len(b)
+            assert abs(mean - avg) / avg < 0.05, (
+                f"n_layers={n_layers} avg={avg} n_sink={n_sink} beta={beta}: "
+                f"mean {mean} vs avg {avg}"
+            )
+
+
+def test_budgets_still_monotonic_and_floored_for_steep_beta() -> None:
+    """The water-filling renormalization must not break monotonicity or the
+    floor guarantee it's layered on top of."""
+    n_sink = 4
+    for beta in [2.5, 3.0, 5.0, 10.0]:
+        b = pyramid_budgets(n_layers=16, avg_budget=128, n_sink=n_sink, beta=beta)
+        assert all(x >= n_sink + 1 for x in b), (beta, b)
+        for i in range(len(b) - 1):
+            assert b[i] >= b[i + 1], (beta, i, b)
+
+
+# ---------------------------------------------------------------------------
 # init_pyramid_state
 # ---------------------------------------------------------------------------
 

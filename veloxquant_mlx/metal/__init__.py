@@ -63,11 +63,14 @@ def __getattr__(name: str):
         "turboquant_scalar_quantize",
         "turboquant_scalar_dequantize",
         "turboquant_hadamard_quantize",
+        "kivi_group_quant_dequant",
         "qjl_encode",
         "qjl_inner_product",
         "turboquant_fused_rvq_decode_attend",
         "comm_vq_decode_metal",
         "rabitq_hamming_score",
+        "h2o_fused_evict",
+        "keyformer_fused_evict",
     }
     if name in _turboquant_names:
         from . import kernels as _k
@@ -90,9 +93,12 @@ __all__ = [
     "turboquant_scalar_quantize",
     "turboquant_scalar_dequantize",
     "turboquant_hadamard_quantize",
+    "kivi_group_quant_dequant",
     "qjl_encode",
     "qjl_inner_product",
     "turboquant_fused_rvq_decode_attend",
     "comm_vq_decode_metal",
     "rabitq_hamming_score",
+    "h2o_fused_evict",
+    "keyformer_fused_evict",
 ]

@@ -16,6 +16,7 @@ from veloxquant_mlx.quantizers.chunkkv import (
     ChunkKVState,
     chunk_partition,
     chunk_scores,
+    chunkkv_apply_reuse_indices,
     chunkkv_fp16_bytes,
     chunkkv_get_kv,
     chunkkv_keep_mask,
@@ -207,3 +208,49 @@ def test_chunk_size_one_reduces_to_h2o(seed):
     assert ck.shape == hk.shape
     assert bool(mx.all(ck == hk).item())
     assert bool(mx.all(cv == hv).item())
+
+
+# ======================================================================
+# Layer-wise index reuse (Algorithm 2): chunkkv_update recording +
+# chunkkv_apply_reuse_indices
+# ======================================================================
+
+
+def test_record_kept_positions_returns_one_entry_per_token():
+    st = init_chunkkv_state(n_sink=2, budget=10, head_dim=8, chunk_size=4)
+    k, v = _kv(25, 8, seed=20)
+    st, kept = chunkkv_update(st, k, v, record_kept_positions=True)
+    assert len(kept) == 25
+    # final entry's kept count matches the resulting state length
+    assert len(kept[-1]) == int(st.keys.shape[0])
+
+
+def test_apply_reuse_indices_matches_leader_exactly():
+    """A follower fed the leader's kept_positions must end up bit-identical."""
+    S, D, budget, n_sink, chunk_size = 40, 8, 12, 2, 4
+    k, v = _kv(S, D, seed=21)
+
+    leader = init_chunkkv_state(n_sink, budget, D, chunk_size=chunk_size)
+    leader, kept = chunkkv_update(leader, k, v, record_kept_positions=True)
+
+    follower = init_chunkkv_state(n_sink, budget, D, chunk_size=chunk_size)
+    follower = chunkkv_apply_reuse_indices(follower, k, v, kept)
+
+    assert leader.keys.shape == follower.keys.shape
+    assert bool(mx.all(leader.keys == follower.keys).item())
+    assert bool(mx.all(leader.values == follower.values).item())
+
+
+def test_apply_reuse_indices_rejects_length_mismatch():
+    st = init_chunkkv_state(n_sink=2, budget=10, head_dim=8, chunk_size=4)
+    k, v = _kv(5, 8, seed=22)
+    with pytest.raises(ValueError):
+        chunkkv_apply_reuse_indices(st, k, v, kept_positions=[[0]] * 3)
+
+
+def test_apply_reuse_indices_bootstraps_first_token():
+    st = init_chunkkv_state(n_sink=1, budget=8, head_dim=4, chunk_size=2)
+    k, v = _kv(1, 4, seed=23)
+    st = chunkkv_apply_reuse_indices(st, k, v, kept_positions=[[0]])
+    assert int(st.keys.shape[0]) == 1
+    assert bool(mx.all(st.keys[0] == k[0].astype(mx.float16)).item())

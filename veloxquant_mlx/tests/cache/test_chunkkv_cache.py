@@ -15,6 +15,7 @@ import pytest
 
 from veloxquant_mlx.cache import KVCacheBuilder, KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.chunkkv_cache import ChunkKVCache
+from veloxquant_mlx.cache.chunkkv_coordinator import ChunkKVIndexReuseCoordinator
 from veloxquant_mlx.cache.h2o_cache import H2OKVCache
 
 
@@ -204,9 +205,140 @@ def test_cache_chunk_size_one_matches_h2o(seed):
     )
     Kc, Vc = cc.update_and_fetch(k, v)
 
-    hc = H2OKVCache(KVCacheConfig(method="h2o", head_dim=D, h2o_budget=budget, h2o_n_sink=n_sink))
+    hc = H2OKVCache(
+        KVCacheConfig(
+            method="h2o",
+            head_dim=D,
+            h2o_budget=budget,
+            h2o_n_sink=n_sink,
+            h2o_grace=0,
+            h2o_decay=1.0,
+        )
+    )
     Kh, Vh = hc.update_and_fetch(k, v)
 
     assert Kc.shape == Kh.shape
     assert bool(mx.all(Kc == Kh).item())
     assert bool(mx.all(Vc == Vh).item())
+
+
+# ======================================================================
+# Layer-wise index reuse (Algorithm 2)
+# ======================================================================
+
+
+def test_no_coordinator_is_always_leader():
+    cfg = KVCacheConfig(method="chunkkv", head_dim=8, chunkkv_budget=12, chunkkv_n_sink=2)
+    cache = ChunkKVCache(cfg)
+    assert cache.is_index_reuse_leader is True
+
+
+def test_coordinator_leader_role_by_layer_id():
+    coord = ChunkKVIndexReuseCoordinator(n_layers=4, reuse_layers=2)
+    cfg = KVCacheConfig(method="chunkkv", head_dim=8, chunkkv_budget=12, chunkkv_n_sink=2)
+    leader = ChunkKVCache(cfg, layer_id=0, coordinator=coord)
+    follower = ChunkKVCache(cfg, layer_id=1, coordinator=coord)
+    next_leader = ChunkKVCache(cfg, layer_id=2, coordinator=coord)
+    assert leader.is_index_reuse_leader is True
+    assert follower.is_index_reuse_leader is False
+    assert next_leader.is_index_reuse_leader is True
+
+
+def test_follower_mirrors_leader_kv_exactly():
+    """A follower layer's output must be bit-identical to its leader's."""
+    B, H, S, D, budget, n_sink, chunk_size = 1, 2, 50, 16, 12, 2, 4
+    coord = ChunkKVIndexReuseCoordinator(n_layers=2, reuse_layers=2)
+    cfg = KVCacheConfig(
+        method="chunkkv",
+        head_dim=D,
+        chunkkv_budget=budget,
+        chunkkv_n_sink=n_sink,
+        chunkkv_chunk_size=chunk_size,
+    )
+    leader = ChunkKVCache(cfg, layer_id=0, coordinator=coord)
+    follower = ChunkKVCache(cfg, layer_id=1, coordinator=coord)
+
+    k, v = _kv(B, H, S, D, seed=30)
+    # Leader must update first so its indices are published before the
+    # follower fetches them, matching for_model's construction order.
+    Kl, Vl = leader.update_and_fetch(k, v)
+    Kf, Vf = follower.update_and_fetch(k, v)
+
+    assert Kl.shape == Kf.shape
+    assert bool(mx.all(Kl == Kf).item())
+    assert bool(mx.all(Vl == Vf).item())
+
+
+def test_follower_mirrors_leader_across_decode_steps():
+    """Reuse must stay correct across multiple prefill + decode steps."""
+    B, H, D, budget, n_sink, chunk_size = 1, 1, 8, 10, 2, 3
+    coord = ChunkKVIndexReuseCoordinator(n_layers=2, reuse_layers=2)
+    cfg = KVCacheConfig(
+        method="chunkkv",
+        head_dim=D,
+        chunkkv_budget=budget,
+        chunkkv_n_sink=n_sink,
+        chunkkv_chunk_size=chunk_size,
+    )
+    leader = ChunkKVCache(cfg, layer_id=0, coordinator=coord)
+    follower = ChunkKVCache(cfg, layer_id=1, coordinator=coord)
+
+    k0, v0 = _kv(B, H, 20, D, seed=31)
+    leader.update_and_fetch(k0, v0)
+    follower.update_and_fetch(k0, v0)
+
+    for step in range(6):
+        kd, vd = _kv(B, H, 1, D, seed=100 + step)
+        Kl, Vl = leader.update_and_fetch(kd, vd)
+        Kf, Vf = follower.update_and_fetch(kd, vd)
+        assert Kl.shape == Kf.shape
+        assert bool(mx.all(Kl == Kf).item())
+        assert bool(mx.all(Vl == Vf).item())
+
+
+def test_for_model_builds_leader_follower_blocks():
+    cfg = KVCacheConfig(
+        method="chunkkv",
+        head_dim=16,
+        chunkkv_budget=16,
+        chunkkv_n_sink=2,
+        chunkkv_reuse_layers=2,
+    )
+    caches = KVCacheBuilder.for_model(_MockModel(4, 16), cfg)
+    assert all(isinstance(c, ChunkKVCache) for c in caches)
+    # blocks of 2: layer 0 leads {0,1}, layer 2 leads {2,3}
+    assert [c.is_index_reuse_leader for c in caches] == [True, False, True, False]
+
+
+def test_for_model_reuse_disabled_all_leaders():
+    cfg = KVCacheConfig(
+        method="chunkkv", head_dim=16, chunkkv_budget=16, chunkkv_n_sink=2, chunkkv_reuse_layers=1
+    )
+    caches = KVCacheBuilder.for_model(_MockModel(3, 16), cfg)
+    assert all(c.is_index_reuse_leader for c in caches)
+
+
+def test_for_model_reuse_matches_no_reuse_kv():
+    """for_model with reuse enabled must produce bit-identical K/V per layer
+    to running each layer independently, since reuse blocks share identical
+    config (same budget/chunk_size/n_sink/score) — only *which* layer computes
+    the eviction differs, not the eviction itself for the leader, and the
+    follower is defined to mirror the leader exactly."""
+    n_layers, hd = 4, 16
+    cfg = KVCacheConfig(
+        method="chunkkv",
+        head_dim=hd,
+        chunkkv_budget=14,
+        chunkkv_n_sink=2,
+        chunkkv_chunk_size=3,
+        chunkkv_reuse_layers=2,
+    )
+    caches = KVCacheBuilder.for_model(_MockModel(n_layers, hd), cfg)
+    k, v = _kv(1, 2, 40, hd, seed=40)
+    outputs = [c.update_and_fetch(k, v) for c in caches]
+    # layer 0 (leader) and layer 1 (follower) must match; layer 2 (leader) and
+    # layer 3 (follower) must match.
+    assert bool(mx.all(outputs[0][0] == outputs[1][0]).item())
+    assert bool(mx.all(outputs[0][1] == outputs[1][1]).item())
+    assert bool(mx.all(outputs[2][0] == outputs[3][0]).item())
+    assert bool(mx.all(outputs[2][1] == outputs[3][1]).item())

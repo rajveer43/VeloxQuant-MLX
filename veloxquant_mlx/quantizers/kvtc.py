@@ -70,6 +70,21 @@ Compress (``kvtc_compress``):
 Decompress (``kvtc_decompress``): entropy-decode, dequantize each surviving
 component, zero-fill dropped components, un-project
 (``latents @ V.T + mean``), return ``[S, D]``.
+
+Entropy-coding fallback (#77)
+------------------------------
+Order-0 Huffman only beats fixed-width packing when the symbol distribution
+is meaningfully non-uniform. Quantized PCA-latent codes from Gaussian-ish KV
+data land close to uniform across their ``2**bits`` levels (the point of
+min/max affine quantization is to spread values evenly), so Huffman coding
+routinely has *nothing* to gain — and its per-call code table is pure
+overhead on top of that. ``kvtc_compress`` therefore compares the realized
+Huffman-coded size (payload + table) against plain fixed-width packing and
+keeps whichever is smaller, recording the choice on
+``KVTCArtifact.is_entropy_coded`` so ``kvtc_decompress`` knows which path to
+invert. This mirrors the "never worse than fixed-width" guarantee
+``quantizers/cachegen.py::entropy_coded_bytes`` already provides for its own
+(estimate-only) accounting.
 """
 
 from __future__ import annotations
@@ -105,13 +120,22 @@ class KVTCArtifact:
             dropped (all-zero) columns of the right shape.
         n_survived: Number of components with ``bit_allocation > 0``
             (``== (bit_allocation > 0).sum()``, cached for convenience).
-        entropy_payload: The Huffman-coded bitstream for all surviving
-            components' codes, concatenated component-major (see
-            ``kvtc_compress``) — **one combined blob**, not per-component,
-            to amortize the (small) fixed per-call table overhead.
+        entropy_payload: The coded bitstream for all surviving components'
+            codes, concatenated component-major (see ``kvtc_compress``) —
+            **one combined blob**, not per-component, to amortize the
+            (small) fixed per-call table overhead. Huffman-coded when
+            ``is_entropy_coded`` is True, else fixed-width packed (each
+            component's ``S`` codes packed at its own bit-width, byte-aligned
+            per component — see :func:`_pack_fixed_width`).
         entropy_table: The Huffman code table returned alongside
-            ``entropy_payload`` (``dict[int, str]``). Its storage cost is
-            counted in ``kvtc_fp16_bytes`` — never hidden.
+            ``entropy_payload`` when ``is_entropy_coded`` is True
+            (``dict[int, str]``); empty when fixed-width packing was used
+            instead. Its storage cost is counted in ``kvtc_fp16_bytes`` —
+            never hidden.
+        is_entropy_coded: Whether ``entropy_payload`` is Huffman-coded
+            (True) or fixed-width packed (False). ``kvtc_compress`` picks
+            whichever is smaller — Huffman coding only wins on real,
+            non-uniform code distributions; see the module docstring (#77).
         quant_min: Per-surviving-component min value used for dequant,
             shape ``[n_survived]`` fp32.
         quant_scale: Per-surviving-component quantization scale, shape
@@ -130,6 +154,7 @@ class KVTCArtifact:
     quant_min: np.ndarray
     quant_scale: np.ndarray
     survived_idx: np.ndarray
+    is_entropy_coded: bool = True
 
 
 def quantize_component(col: np.ndarray, bits: int) -> tuple[np.ndarray, float, float]:
@@ -145,6 +170,64 @@ def quantize_component(col: np.ndarray, bits: int) -> tuple[np.ndarray, float, f
     scale = max((hi - lo) / levels, _EPS)
     codes = np.clip(np.round((col - lo) / scale), 0, levels).astype(np.int64)
     return codes, lo, scale
+
+
+def _pack_fixed_width(codes: np.ndarray, bits: int) -> bytes:
+    """Pack a ``[S]`` array of non-negative integer codes at ``bits`` bits each.
+
+    Byte-aligned (padded with trailing zero bits to a whole byte) so a
+    multi-component concatenation of these packs stays trivially seekable —
+    matches the per-component ``ceil(S * bits / 8)`` accounting already used
+    by :func:`kvtc_pre_entropy_bytes`.
+    """
+    if codes.shape[0] == 0 or bits == 0:
+        return b""
+    bitstring = "".join(format(int(c), f"0{bits}b") for c in codes.tolist())
+    pad = (-len(bitstring)) % 8
+    bitstring += "0" * pad
+    return int(bitstring, 2).to_bytes(len(bitstring) // 8, byteorder="big")
+
+
+def _unpack_fixed_width(payload: bytes, bits: int, n: int) -> np.ndarray:
+    """Exact inverse of :func:`_pack_fixed_width` for ``n`` codes at ``bits`` bits."""
+    if n == 0 or bits == 0:
+        return np.zeros((n,), dtype=np.int64)
+    n_bits = len(payload) * 8
+    bitstring = bin(int.from_bytes(payload, byteorder="big"))[2:].zfill(n_bits)
+    out = np.empty((n,), dtype=np.int64)
+    for i in range(n):
+        out[i] = int(bitstring[i * bits : (i + 1) * bits], 2)
+    return out
+
+
+def _encode_survived_codes(
+    all_codes: list[np.ndarray], bits_per_component: list[int]
+) -> tuple[bytes, dict, bool]:
+    """Encode surviving components' codes, falling back to fixed-width packing
+    when Huffman coding doesn't pay for itself (#77).
+
+    Args:
+        all_codes: Per-surviving-component ``[S]`` int64 code arrays.
+        bits_per_component: The bit-width used to quantize each entry of
+            ``all_codes`` (parallel list, same length).
+
+    Returns:
+        ``(payload, table, is_entropy_coded)``. ``table`` is ``{}`` when
+        fixed-width packing was chosen.
+    """
+    flat_codes = np.concatenate(all_codes) if all_codes else np.zeros((0,), dtype=np.int64)
+
+    entropy_payload, entropy_table = entropy_encode(flat_codes)
+    entropy_total = len(entropy_payload) + table_nbytes(entropy_table)
+
+    fixed_payload = b"".join(
+        _pack_fixed_width(codes, bits) for codes, bits in zip(all_codes, bits_per_component)
+    )
+    fixed_total = len(fixed_payload)
+
+    if fixed_total < entropy_total:
+        return fixed_payload, {}, False
+    return entropy_payload, entropy_table, True
 
 
 def kvtc_compress(
@@ -200,6 +283,7 @@ def kvtc_compress(
     all_codes: list[np.ndarray] = []
     mins: list[float] = []
     scales: list[float] = []
+    bits_per_component: list[int] = []
     for i in survived_idx:
         col = L_np[:, i]
         bits = int(bit_alloc[i])
@@ -207,13 +291,9 @@ def kvtc_compress(
         all_codes.append(codes)
         mins.append(lo)
         scales.append(scale)
+        bits_per_component.append(bits)
 
-    if all_codes:
-        flat_codes = np.concatenate(all_codes)
-    else:
-        flat_codes = np.zeros((0,), dtype=np.int64)
-
-    payload, table = entropy_encode(flat_codes)
+    payload, table, is_entropy_coded = _encode_survived_codes(all_codes, bits_per_component)
 
     return KVTCArtifact(
         V=V,
@@ -226,13 +306,15 @@ def kvtc_compress(
         quant_min=np.asarray(mins, dtype=np.float64),
         quant_scale=np.asarray(scales, dtype=np.float64),
         survived_idx=survived_idx,
+        is_entropy_coded=is_entropy_coded,
     )
 
 
 def kvtc_decompress(artifact: KVTCArtifact) -> mx.array:
     """Inverse of :func:`kvtc_compress`. Returns ``[S, D]`` fp16.
 
-    Entropy-decodes the combined code stream, dequantizes each surviving
+    Decodes the combined code stream (Huffman or fixed-width, per
+    ``artifact.is_entropy_coded`` — see #77), dequantizes each surviving
     component, zero-fills dropped components, and un-projects:
     ``latents @ V.T + mean``.
     """
@@ -241,7 +323,20 @@ def kvtc_decompress(artifact: KVTCArtifact) -> mx.array:
     D = int(artifact.V.shape[0])
 
     n_survived = artifact.n_survived
-    flat_codes = entropy_decode(artifact.entropy_payload, artifact.entropy_table, n_survived * S)
+    if artifact.is_entropy_coded:
+        flat_codes = entropy_decode(
+            artifact.entropy_payload, artifact.entropy_table, n_survived * S
+        )
+    else:
+        payload = artifact.entropy_payload
+        pieces = []
+        offset = 0
+        for i in artifact.survived_idx:
+            bits = int(artifact.bit_allocation[i])
+            nbytes = -(-(S * bits) // 8)  # ceil division, matches _pack_fixed_width's padding
+            pieces.append(_unpack_fixed_width(payload[offset : offset + nbytes], bits, S))
+            offset += nbytes
+        flat_codes = np.concatenate(pieces) if pieces else np.zeros((0,), dtype=np.int64)
 
     L_np = np.zeros((S, r), dtype=np.float64)
     for k, i in enumerate(artifact.survived_idx):
