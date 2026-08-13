@@ -6,6 +6,45 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ### Fixed
 
+**A2ATS-adapted paper-fidelity fixes** ([#29](https://github.com/rajveer43/VeloxQuant-MLX/issues/29)) —
+four deviations from the source paper (He et al., ACL 2025 Findings), three
+of which contradicted its equations rather than knowingly adapting them:
+
+- **Far keys are no longer rotated.** `a2ats_apply_windowed_rope` applied a
+  fixed `R_window` rotation to out-of-window keys. Paper Eq. (12) leaves them
+  **unrotated** (`k̃_i = k_i`), with the constant `R_b` belonging on the
+  *query* (Eq. 11, `u_ij = q_i R_b k_j^T`). The old form computed
+  `q_i R_w^T k_j^T` — wrong operand, wrong direction — and left far keys in a
+  rotated frame, defeating the position-decoupling that makes a shared
+  codebook viable (§3.1, Observation 2). Adds `a2ats_apply_far_query_rope`
+  for the query-side half, exposed as `A2ATSKVCache.far_query_rope`.
+- **`b` is now independent of `w`.** The far-token offset was derived from
+  `a2ats_window`, hardcoding `b == w`; the paper's §5.1 uses `w=64`,
+  `b=2048`. New `a2ats_b` config field (default `2048`).
+- **Distance gating tracks the decode position.** Rotated keys were written
+  into the parent `KVCache`, which never revisits them — freezing each
+  token's near/far class at write time, so a token classified "near" during
+  prefill kept exact RoPE forever. The cache now stores *pre-RoPE*
+  reconstructions and re-applies windowed RoPE to the accumulated cache each
+  step, against the current query position. Costs an `O(total_tokens)` pass
+  per step, inherent to honest gating under this protocol.
+- **The paper's Eq. (14) assignment is now implemented.** Adds
+  `a2ats_query_second_moment`, `a2ats_cholesky_factor`, and
+  `a2ats_h_weighted_assignment` — the `H`-weighted quadratic form, computed
+  exactly via the Eq. (15)–(18) Cholesky identity. Enabled by the new
+  `a2ats_query_h` config field. The previous cosine blend is retained as a
+  documented *substitute* for the decode path (no calibrated `H` available),
+  not relabeled as the paper's estimator.
+
+Benchmark now measures **attention-score** error rather than key-vector
+error — under Eq. (12) far keys are intentionally unrotated, so the old
+target scored the method's design as error. Windowed RoPE still loses to
+always-exact in both geometries (2.9x / 8.3x), and this **survived** the
+fixes: the near bucket is now numerically identical to always-exact (max gap
+`5e-07`), so the entire penalty is far tokens (~92–96% of the sequence).
+Sweeping `b` does not remove it. Tests: 51 → 67, including the strengthened
+Eq. (12) assertion that the old `R_window` bug slipped past.
+
 **AdaKV-proxy: the default configuration was not adaptive** ([#31](https://github.com/rajveer43/VeloxQuant-MLX/issues/31)) —
 `adakv_target_avg_bits` defaulted to `2.0` while `adakv_lo_bit` defaulted to
 `2`. Because per-head adaptation requires headroom on both sides of the target
