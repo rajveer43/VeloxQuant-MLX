@@ -16,21 +16,26 @@ Config per method mirrors each method's own dedicated test file's ``_make``
 helper, kept minimal here since only the base-class bookkeeping contract is
 under test — not each method's compression/eviction quality.
 
-H2O is a documented, deliberate EXCEPTION to the ``offset == shape[2]``
-assertion the other 16 methods satisfy (see ``_OFFSET_EQUALS_SHAPE_METHODS``
-below). Investigation (see docs-site/docs/algorithms/h2o.md and
-cache/h2o_cache.py's module docstring) found that this equality is exactly
-what caused a real, confirmed-on-real-models generation-corruption bug:
-``mlx_lm``'s attention module rotates the query and next incoming key using
+H2O and CurDKV are documented, deliberate EXCEPTIONS to the
+``offset == shape[2]`` assertion the other 15 methods satisfy (see
+``_OFFSET_EQUALS_SHAPE_METHODS`` below). Investigation (see
+docs-site/docs/algorithms/h2o.md and cache/h2o_cache.py's module docstring)
+found that this equality is exactly what caused a real,
+confirmed-on-real-models generation-corruption bug: ``mlx_lm``'s attention
+module rotates the query and next incoming key using
 ``self.rope(x, offset=cache.offset)`` *before* ``update_and_fetch`` is ever
 called, so once eviction makes ``shape[2] < true elapsed steps``, resetting
-``offset`` to ``shape[2]`` (what the other 16 methods do) silently rotates
-future queries/keys at the wrong absolute position. H2OKVCache fixes this by
+``offset`` to ``shape[2]`` (what the other 15 methods do) silently rotates
+future queries/keys at the wrong absolute position. H2OKVCache fixed this by
 keeping ``offset`` equal to the true step count instead, which necessarily
-makes ``offset != shape[2]`` once eviction has occurred — the *other* 16
-eviction methods are NOT yet known to be free of this same bug; they were not
-in scope for this fix and are tracked separately (see the linked follow-up
-issue in this repo's issue tracker) rather than silently assumed safe.
+makes ``offset != shape[2]`` once eviction has occurred; CurDKVKVCache was
+given the same fix afterwards (commit fdc8e8e, "fix(curdkv): track true
+absolute position for RoPE, not kept-row count") for the same
+confirmed-on-Llama-3.2-1B corruption, and so moved into the same exception
+group. The *other* 15 eviction methods are NOT yet known to be free of this
+same bug; they were not in scope for those fixes and are tracked separately
+(see the linked follow-up issue in this repo's issue tracker) rather than
+silently assumed safe.
 """
 
 from __future__ import annotations
@@ -70,11 +75,12 @@ _CASE_C_METHODS = ["palu", "kvtc"]
 ALL_METHODS = list(_CONFIGS)
 
 # Methods whose cache.offset must equal shape[2] (stored row count) at all
-# times. H2O is the sole documented exception: offset tracks the TRUE
+# times. H2O and CurDKV are the documented exceptions: offset tracks the TRUE
 # absolute step count instead, so mlx_lm's rope(x, offset=cache.offset) call
 # on the query/next key rotates correctly even after eviction has made
 # shape[2] < true step count — see module docstring above.
-_OFFSET_EQUALS_SHAPE_METHODS = [m for m in ALL_METHODS if m != "h2o"]
+_TRUE_STEP_COUNT_OFFSET_METHODS = ["h2o", "curdkv"]
+_OFFSET_EQUALS_SHAPE_METHODS = [m for m in ALL_METHODS if m not in _TRUE_STEP_COUNT_OFFSET_METHODS]
 
 
 def _make(method: str, head_dim: int = 8, **extra):
@@ -116,8 +122,9 @@ def test_state_shape_matches_offset(method: str) -> None:
     """cache.state's seq-length dim must equal cache.offset, mirroring the
     base KVCache contract mlx_lm relies on elsewhere (e.g. make_mask).
 
-    H2O is excluded — see module docstring for why offset intentionally
-    tracks true elapsed steps instead of shape[2] for that method.
+    H2O and CurDKV are excluded — see module docstring for why offset
+    intentionally tracks true elapsed steps instead of shape[2] for those
+    methods, and test_state_shape_at_or_below_offset for their counterpart.
     """
     cache = _make(method)
     k, v = _rand_kv(S=6)
@@ -129,13 +136,14 @@ def test_state_shape_matches_offset(method: str) -> None:
     assert v_state.shape[2] == cache.offset
 
 
-def test_h2o_state_shape_at_or_below_offset() -> None:
-    """H2O's counterpart to test_state_shape_matches_offset: shape[2] (rows
-    actually stored) must never EXCEED offset (true elapsed steps) — the
+@pytest.mark.parametrize("method", _TRUE_STEP_COUNT_OFFSET_METHODS)
+def test_state_shape_at_or_below_offset(method: str) -> None:
+    """H2O/CurDKV's counterpart to test_state_shape_matches_offset: shape[2]
+    (rows actually stored) must never EXCEED offset (true elapsed steps) — the
     reverse inequality would mean more rows are stored than steps have
     occurred, which is impossible — but may be strictly less once eviction
     has dropped rows. See module docstring."""
-    cache = _make("h2o")
+    cache = _make(method)
     k, v = _rand_kv(S=6)
     cache.update_and_fetch(k, v)
 
@@ -156,7 +164,8 @@ def test_state_accessible_across_chunked_prefill(method: str) -> None:
     per prefill_step_size chunk), each followed by a .state access (mirrors
     generate.py's `mx.eval([c.state for c in cache])` after every chunk).
 
-    H2O is excluded — see module docstring / test_h2o_state_shape_at_or_below_offset.
+    H2O and CurDKV are excluded — see module docstring /
+    test_state_shape_at_or_below_offset.
     """
     cache = _make(method)
     for seed in range(3):
@@ -167,10 +176,11 @@ def test_state_accessible_across_chunked_prefill(method: str) -> None:
         assert k_state.shape[2] == cache.offset
 
 
-def test_h2o_state_accessible_across_chunked_prefill() -> None:
-    """H2O counterpart: .state must stay accessible and shape[2] <= offset
-    throughout chunked prefill (mirrors the scenario above)."""
-    cache = _make("h2o")
+@pytest.mark.parametrize("method", _TRUE_STEP_COUNT_OFFSET_METHODS)
+def test_true_step_offset_state_accessible_across_chunked_prefill(method: str) -> None:
+    """H2O/CurDKV counterpart: .state must stay accessible and shape[2] <=
+    offset throughout chunked prefill (mirrors the scenario above)."""
+    cache = _make(method)
     for seed in range(3):
         k, v = _rand_kv(S=5, seed=seed)
         cache.update_and_fetch(k, v)
@@ -184,7 +194,8 @@ def test_state_accessible_after_decode_steps(method: str) -> None:
     """Prefill followed by several S==1 decode steps; .state must stay
     accessible and consistent with offset throughout.
 
-    H2O is excluded — see module docstring / test_h2o_state_shape_at_or_below_offset.
+    H2O and CurDKV are excluded — see module docstring /
+    test_state_shape_at_or_below_offset.
     """
     cache = _make(method)
     k, v = _rand_kv(S=5)
@@ -198,11 +209,13 @@ def test_state_accessible_after_decode_steps(method: str) -> None:
         assert k_state.shape[2] == cache.offset
 
 
-def test_h2o_state_accessible_after_decode_steps() -> None:
-    """H2O counterpart: .state stays accessible and shape[2] <= offset
-    throughout decode, and offset keeps climbing even once eviction caps
-    shape[2] — the whole point of the fix."""
-    cache = _make("h2o")
+@pytest.mark.parametrize("method", _TRUE_STEP_COUNT_OFFSET_METHODS)
+def test_true_step_offset_state_accessible_after_decode_steps(method: str) -> None:
+    """H2O/CurDKV counterpart: .state stays accessible and shape[2] <= offset
+    throughout decode, and offset keeps climbing by exactly one per decode
+    step even once eviction caps shape[2] — the whole point of the fix, since
+    mlx_lm rotates the next query/key at rope(x, offset=cache.offset)."""
+    cache = _make(method)
     k, v = _rand_kv(S=5)
     cache.update_and_fetch(k, v)
 
