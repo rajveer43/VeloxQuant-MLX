@@ -101,6 +101,19 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.48.5 (2026-08-13)
+
+### Code Style
+
+- Apply ruff 0.16.3 formatting to CAM docs and tests
+  ([`445d0c0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/445d0c0b22a96085b564d8729295ce22bbb7a77b))
+
+### Testing
+
+- Fix two release-workflow failures on master
+  ([`cd5aa6f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cd5aa6f119b26bd86408cbfcc888eb87c8ae7fe3))
+
+
 ## v0.48.4 (2026-08-13)
 
 ### Code Style
