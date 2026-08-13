@@ -101,6 +101,9 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.48.3 (2026-08-13)
+
+
 ## v0.48.2 (2026-08-13)
 
 ### Code Style
