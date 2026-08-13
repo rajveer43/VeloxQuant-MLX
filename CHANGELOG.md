@@ -4,6 +4,14 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 <!-- version list -->
 
+## v0.48.1 (2026-08-13)
+
+### Bug Fixes
+
+- **kvquant**: Correct outlier selection, decode protection, and add sink-aware quantization
+  ([`24fad52`](https://github.com/rajveer43/VeloxQuant-MLX/commit/24fad5281ab1e6ad39db16b1ab7ea139720b2c3f))
+
+
 ## v0.48.0 (2026-08-12)
 
 ### Documentation
