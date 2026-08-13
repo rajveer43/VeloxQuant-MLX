@@ -51,13 +51,12 @@ model, tokenizer = load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 
 config = KVCacheConfig(
     method="adakv",
-    head_dim=128,               # your model's head dimension
+    head_dim=128,  # your model's head dimension
     adakv_target_avg_bits=2.5,  # must be strictly inside (lo_bit, hi_bit)
 )
 caches = KVCacheBuilder.for_model(model, config)
 
-output = generate(model, tokenizer, prompt="Tell me about KV caches",
-                  kv_cache=caches)
+output = generate(model, tokenizer, prompt="Tell me about KV caches", kv_cache=caches)
 ```
 
 There's no calibration step and no artifact to train — the method measures what
@@ -192,10 +191,10 @@ quantization at its assigned width, and reconstructed to fp16 for attention.
 
 ```python
 cache = caches[0]
-print(cache.head_bits)           # e.g. [2, 4, 3, 2, ...] per-head assignment
-print(cache.assigned_avg_bits)   # should land near your target
-print(cache.head_importance)     # the scores driving the split
-print(cache.importance_mode)     # which signal is active
+print(cache.head_bits)  # e.g. [2, 4, 3, 2, ...] per-head assignment
+print(cache.assigned_avg_bits)  # should land near your target
+print(cache.head_importance)  # the scores driving the split
+print(cache.importance_mode)  # which signal is active
 ```
 
 If `head_bits` comes back all-identical, your target is at an endpoint — see the

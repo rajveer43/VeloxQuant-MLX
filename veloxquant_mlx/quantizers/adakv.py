@@ -150,13 +150,13 @@ def compute_head_attention_entropy(
 
     w = min(max(int(obs_window), 1), S)
     k32 = keys.astype(mx.float32)
-    q_proxy = k32[:, :, -w:, :]                              # [B, H, w, D]
-    logits = (q_proxy @ mx.swapaxes(k32, -1, -2)) / math.sqrt(D)   # [B, H, w, S]
-    attn = mx.softmax(logits, axis=-1)                       # rows sum to 1
-    avg = mx.mean(attn, axis=2)                              # [B, H, S]
-    ent = -mx.sum(avg * mx.log(avg + 1e-12), axis=-1)        # [B, H]
-    ent = ent / float(math.log(S))                           # normalise to [0, 1]
-    return mx.mean(ent, axis=0).astype(mx.float32)           # [H]
+    q_proxy = k32[:, :, -w:, :]  # [B, H, w, D]
+    logits = (q_proxy @ mx.swapaxes(k32, -1, -2)) / math.sqrt(D)  # [B, H, w, S]
+    attn = mx.softmax(logits, axis=-1)  # rows sum to 1
+    avg = mx.mean(attn, axis=2)  # [B, H, S]
+    ent = -mx.sum(avg * mx.log(avg + 1e-12), axis=-1)  # [B, H]
+    ent = ent / float(math.log(S))  # normalise to [0, 1]
+    return mx.mean(ent, axis=0).astype(mx.float32)  # [H]
 
 
 def _rank_normalize(values: Sequence[float]) -> list[float]:
@@ -178,7 +178,7 @@ def _rank_normalize(values: Sequence[float]) -> list[float]:
         j = i
         while j + 1 < n and values[order[j + 1]] == values[order[i]]:
             j += 1
-        avg_rank = (i + j) / 2.0          # average rank across the tie group
+        avg_rank = (i + j) / 2.0  # average rank across the tie group
         for k in range(i, j + 1):
             ranks[order[k]] = avg_rank
         i = j + 1
@@ -294,7 +294,7 @@ def allocate_head_bits(
     headroom_up = (hi - target) / z_max if z_max > 1e-12 else float("inf")
     headroom_dn = (target - lo) / (-z_min) if z_min < -1e-12 else float("inf")
     spread = min(headroom_up, headroom_dn)
-    if spread == float("inf"):          # all heads tied -> no spread to apply
+    if spread == float("inf"):  # all heads tied -> no spread to apply
         spread = 0.0
 
     real = [min(max(target + spread * zh, float(lo)), float(hi)) for zh in z]

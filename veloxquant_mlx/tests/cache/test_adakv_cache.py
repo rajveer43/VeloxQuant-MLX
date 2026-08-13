@@ -310,6 +310,7 @@ def test_determinism():
 # Regression tests for issue #31 — allocator paper-fidelity fixes
 # ===========================================================================
 
+
 # ---------------------------------------------------------------------------
 # Test 15 — adaptation is non-trivial at the DEFAULT config
 # ---------------------------------------------------------------------------
@@ -322,7 +323,7 @@ def test_default_config_is_adaptive():
     vector — silently identical to plain KIVI while the docs advertised
     per-head adaptation. No prior test exercised the default.
     """
-    cache = AdaKVCache(_make_cfg())          # defaults only — no overrides
+    cache = AdaKVCache(_make_cfg())  # defaults only — no overrides
     k = _heterogeneous_keys(B=1, H=8, S=64, D=64, seed=31)
     v = _values(B=1, H=8, S=64, D=64, seed=32)
     cache.update_and_fetch(k, v)
@@ -343,7 +344,7 @@ def test_degenerate_target_warns_and_is_uniform():
     """
     import pytest
 
-    for target in (2.0, 4.0):               # lo and hi of {2, 3, 4}
+    for target in (2.0, 4.0):  # lo and hi of {2, 3, 4}
         with pytest.warns(UserWarning, match="no per-head"):
             bits = allocate_head_bits(
                 head_importance=[100.0, 1.0, 1.0, 1.0],
@@ -375,8 +376,7 @@ def test_allocation_monotone_in_importance():
             n_heads=8,
         )
         assert bits[0] >= prev, (
-            f"imp0={imp0} lowered head 0 from {prev} to {bits[0]} bits "
-            f"despite higher importance"
+            f"imp0={imp0} lowered head 0 from {prev} to {bits[0]} bits despite higher importance"
         )
         prev = bits[0]
         seen.add(tuple(bits))
@@ -452,13 +452,13 @@ def test_attention_entropy_ranks_dispersed_above_sparse():
     u = rng.standard_normal(D).astype(np.float32)
     u /= np.linalg.norm(u)
     sparse = rng.standard_normal((S, D)).astype(np.float32) * 0.3
-    sparse[:5] = u * 8.0            # a few dominant keys
-    sparse[-32:] = u * 3.0          # obs window points at them
+    sparse[:5] = u * 8.0  # a few dominant keys
+    sparse[-32:] = u * 3.0  # obs window points at them
 
     dispersed = rng.standard_normal((S, D)).astype(np.float32)
     dispersed /= np.linalg.norm(dispersed, axis=1, keepdims=True)
 
-    keys = mx.array(np.stack([sparse, dispersed]))[None]   # [1, 2, S, D]
+    keys = mx.array(np.stack([sparse, dispersed]))[None]  # [1, 2, S, D]
     ent = compute_head_attention_entropy(keys, obs_window=32)
 
     assert ent[1].item() > ent[0].item(), (
@@ -522,9 +522,7 @@ def test_entropy_importance_mode_end_to_end():
     k1 = _keys(B=1, H=8, S=1, D=64, seed=43)
     v1 = _values(B=1, H=8, S=1, D=64, seed=44)
     cache.update_and_fetch(k1, v1)
-    assert cache.head_bits == before, (
-        "decode step discarded the prefill entropy estimate"
-    )
+    assert cache.head_bits == before, "decode step discarded the prefill entropy estimate"
 
 
 def test_invalid_importance_mode_rejected():

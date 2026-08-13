@@ -83,9 +83,7 @@ class AdaKVCache(_MLXKVCache):
         self._hi_bit: int = int(getattr(config, "adakv_hi_bit", 4))
         self._group_size: int = int(getattr(config, "adakv_group_size", 32))
         self._update_interval: int = max(1, int(getattr(config, "adakv_update_interval", 1)))
-        self._importance_mode: str = str(
-            getattr(config, "adakv_importance", "norm_variance")
-        )
+        self._importance_mode: str = str(getattr(config, "adakv_importance", "norm_variance"))
         self._obs_window: int = int(getattr(config, "adakv_obs_window", 32))
         if self._importance_mode not in ("norm_variance", "attention_entropy"):
             raise ValueError(
@@ -107,7 +105,7 @@ class AdaKVCache(_MLXKVCache):
         # per-token quantities — so it is recomputed from whatever key block
         # the current call carries. At decode (S == 1) a single row carries no
         # attention distribution, so the prefill estimate is retained.
-        self._entropy: Optional[mx.array] = None       # [H] fp32
+        self._entropy: Optional[mx.array] = None  # [H] fp32
 
         # Current per-head bit assignment ([H] ints). Set on first update.
         self._head_bits: Optional[list[int]] = None

@@ -121,7 +121,11 @@ class KVQuantKVCache(_MLXKVCache):
         recon = dequant_nuq(codes, levels).astype(mx.float32)
         mask = ds.outlier_mask
         vals = ds.outlier_vals
-        if k_sd.shape[0] < 2 and self._outlier_fraction > 0.0 and self._key_outlier_thresh is not None:
+        if (
+            k_sd.shape[0] < 2
+            and self._outlier_fraction > 0.0
+            and self._key_outlier_thresh is not None
+        ):
             # Decode: reuse the frozen per-channel threshold from prefill.
             k32 = k_sd.astype(mx.float32)
             mask = mx.abs(k32) >= self._key_outlier_thresh
@@ -229,8 +233,12 @@ class KVQuantKVCache(_MLXKVCache):
         # positions of the *whole sequence* are sinks, so this applies on the
         # prefill call (n_tokens == 0), never to mid-stream decode tokens.
         if n_sink > 0:
-            k_out = mx.concatenate([keys[:, :, :n_sink, :].astype(mx.float16), k_out[:, :, n_sink:, :]], axis=2)
-            v_out = mx.concatenate([values[:, :, :n_sink, :].astype(mx.float16), v_out[:, :, n_sink:, :]], axis=2)
+            k_out = mx.concatenate(
+                [keys[:, :, :n_sink, :].astype(mx.float16), k_out[:, :, n_sink:, :]], axis=2
+            )
+            v_out = mx.concatenate(
+                [values[:, :, :n_sink, :].astype(mx.float16), v_out[:, :, n_sink:, :]], axis=2
+            )
             self._sink_kept = n_sink
 
         return k_out, v_out
@@ -268,11 +276,11 @@ class KVQuantKVCache(_MLXKVCache):
         sink_bytes = n_sink * D * 2  # exact fp16 sink rows
 
         self._compressed_key_bytes += (
-            code_bytes + key_table_bytes + outlier_bytes + sink_bytes
-        ) * B * H
+            (code_bytes + key_table_bytes + outlier_bytes + sink_bytes) * B * H
+        )
         self._compressed_value_bytes += (
-            code_bytes + val_table_bytes + outlier_bytes + sink_bytes
-        ) * B * H
+            (code_bytes + val_table_bytes + outlier_bytes + sink_bytes) * B * H
+        )
         self._fp16_key_bytes += B * H * S * D * 2
         self._fp16_value_bytes += B * H * S * D * 2
 
