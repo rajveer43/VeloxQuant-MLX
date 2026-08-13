@@ -61,10 +61,10 @@ match the paper's recommended configuration.
 
 ```python
 cache = caches[0]
-cache.merge_mode        # "sim_weighted" | "mean" | "drop"
-cache.merge_gate        # whether the Eq. 14 gate is active
+cache.merge_mode  # "sim_weighted" | "mean" | "drop"
+cache.merge_gate  # whether the Eq. 14 gate is active
 cache.compression_ratio  # full_seq_bytes / cam_kept_bytes, > 1 = savings
-cache.tokens_kept        # tokens currently retained (diagnostic, head 0)
+cache.tokens_kept  # tokens currently retained (diagnostic, head 0)
 ```
 
 ## Tuning

@@ -161,9 +161,7 @@ def test_merge_changes_values_vs_drop():
     # about whether the gate fires.
     k, v = _kv(50, 8, seed=7)
     drop = cam_update(init_cam_state(2, 10, 8, merge_mode="drop", merge_gate=False), k, v)
-    sim = cam_update(
-        init_cam_state(2, 10, 8, merge_mode="sim_weighted", merge_gate=False), k, v
-    )
+    sim = cam_update(init_cam_state(2, 10, 8, merge_mode="sim_weighted", merge_gate=False), k, v)
     # same kept count, but the merged values differ from the dropped ones
     assert drop.keys.shape == sim.keys.shape
     assert not bool(mx.all(drop.values == sim.values).item())
