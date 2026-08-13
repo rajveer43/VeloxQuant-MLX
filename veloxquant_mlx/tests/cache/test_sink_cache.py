@@ -89,8 +89,13 @@ def test_byte_accounting_no_double_count() -> None:
     c.update_and_fetch(mx.array(K), mx.array(V))
     B, H, D = 1, 4, 128
     fp16_tok = D * 2 * 2 * H * B  # K+V bytes per token at fp16
-    # 64 tokens: 8 residual, 3 sinks (all in quantized region), 53 compressed.
-    assert c.residual_fp16_bytes == 8 * fp16_tok
+    # Quantization flushes are group_size-aligned (#162), so the fp16 tail is
+    # the residual window plus whatever partial group is still buffered: with
+    # S=64, r=8, g=32 the boundary snaps 56 -> 32, leaving 32 tokens fp16.
+    # 3 of the 32 quantized tokens are sinks, so 29 are compressed.
+    n_res = c.offset - c._n_quantized
+    assert n_res == 32
+    assert c.residual_fp16_bytes == n_res * fp16_tok
     assert c.sink_fp16_bytes == 3 * fp16_tok
     assert c.fp16_key_bytes == H * B * 64 * D * 2
     total = (
@@ -121,6 +126,65 @@ def test_decode_steps_after_prefill() -> None:
         ko, vo = c.update_and_fetch(k1, v1)
         mx.eval(ko, vo)
     assert c.offset == 45
+
+
+def test_sinks_tracked_independently_per_batch_element() -> None:
+    """Regression for #85: sink selection must not collapse the batch
+    dimension to element 0. A batch-1-only outlier at position 5 must be
+    detected and protected for batch element 1, independent of batch 0's
+    (different) sinks."""
+    cache = _make(head_dim=8, n_sink_tokens=2, kivi_group_size=4, residual_length=4)
+
+    B, H, S, D = 2, 1, 20, 8
+    rng = np.random.default_rng(1)
+    keys_np = rng.standard_normal((B, H, S, D)).astype(np.float32)
+    keys_np[1, 0, 5, :] = 50.0  # huge outlier only in batch element 1, token 5
+    values_np = rng.standard_normal((B, H, S, D)).astype(np.float32)
+    keys = mx.array(keys_np.astype(np.float16))
+    values = mx.array(values_np.astype(np.float16))
+
+    ko, vo = cache.update_and_fetch(keys, values)
+    mx.eval(ko, vo)
+
+    assert 5 in cache.sink_positions_for(1), (
+        "batch element 1's true outlier (position 5) must be in its own sink set"
+    )
+    ko_np = np.array(ko)
+    assert np.array_equal(ko_np[1, :, 5, :], keys_np[1, :, 5, :].astype(np.float16)), (
+        "batch element 1's protected sink token must be preserved exactly (fp16)"
+    )
+    # Batch 0 has no planted outlier: position 5 there is ordinary-magnitude
+    # noise, so it must NOT be preserved bit-exact the way a true sink is —
+    # if batch 0's sink set were being applied to batch 1 (the pre-fix bug)
+    # or vice versa, this quantized value would coincidentally match, which
+    # position 5's huge magnitude in batch 1 makes exceedingly unlikely here.
+    assert not np.array_equal(ko_np[0, :, 5, :], keys_np[0, :, 5, :].astype(np.float16)), (
+        "batch element 0's ordinary token 5 should be quantized, not sink-protected"
+    )
+
+
+def test_decode_tokens_age_out_of_residual_window() -> None:
+    """Regression for #86 (inherited via KIVIKVCache.update_and_fetch):
+    with S==1 every decode step, tokens must still age out of the fp16
+    residual window once cumulative length exceeds residual_length."""
+    c = _make(residual_length=4, n_sink_tokens=1, kivi_group_size=4)
+    K, V = _kv_with_sinks(S=10, H=1, D=128, sink_pos=(0,))
+    c.update_and_fetch(mx.array(K), mx.array(V))
+
+    rng = np.random.default_rng(11)
+    for _ in range(50):
+        k1 = mx.array(rng.standard_normal((1, 1, 1, 128)).astype(np.float16))
+        v1 = mx.array(rng.standard_normal((1, 1, 1, 128)).astype(np.float16))
+        c.update_and_fetch(k1, v1)
+
+    assert c.offset == 60
+    D, H, B = 128, 1, 1
+    expected_residual = 4 * D * 2 * 2 * H * B
+    assert c.residual_fp16_bytes == expected_residual, (
+        f"residual_fp16_bytes={c.residual_fp16_bytes} did not plateau at "
+        f"{expected_residual} after 50 decode steps past the residual window"
+    )
+    assert c.compressed_key_bytes > 0
 
 
 def _recon_err(cache, K, V):
@@ -160,7 +224,7 @@ def test_dynamic_selection_vs_pfn_equal_budget() -> None:
     # PFN-5 emulation: force the sink set to positions 0..4 by planting
     # nothing and protecting first-5 via a cache whose selection we bypass.
     pfn = _make(n_sink_tokens=5, residual_length=8)
-    pfn._sink_norms = {i: float("inf") for i in range(5)}
-    pfn._update_sinks = lambda keys, start: set(pfn._sink_norms)  # freeze
+    pfn._sink_norms = [{i: float("inf") for i in range(5)}]
+    pfn._update_sinks = lambda keys, start: [set(pfn._sink_norms[0])]  # freeze, B=1
     err_pfn = _recon_err(pfn, K, V)
     assert err_dyn < err_pfn, f"dynamic MSE {err_dyn:.5f} not < PFN-5 {err_pfn:.5f}"

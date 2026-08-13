@@ -11,7 +11,15 @@ TurboQuantMSE, TurboQuantRVQ, and the Hadamard preconditioner:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import mlx.core as mx
+
+
+def _read_kernel_source(filename: str) -> str:
+    """Read a standalone .metal kernel source file from metal/src/."""
+    return (Path(__file__).parent / "src" / filename).read_text()
+
 
 _cache: dict = {}
 
@@ -25,21 +33,7 @@ _cache: dict = {}
 # Template <int B_BITS> lets the compiler statically unroll the centroid scan
 # (max 16 centroids for b=4, all fit in registers).
 
-_SCALAR_QUANTIZE_SRC = r"""
-    constexpr int N_CENTS = 1 << B_BITS;
-
-    uint  elem     = thread_position_in_grid.x;
-    float val      = float(x[elem]);
-    int   best     = 0;
-    float best_dist = INFINITY;
-
-    for (int j = 0; j < N_CENTS; ++j) {
-        float d    = val - centroids[j];
-        float dist = d * d;
-        if (dist < best_dist) { best_dist = dist; best = j; }
-    }
-    indices[elem] = uint8_t(best);
-"""
+_SCALAR_QUANTIZE_SRC = _read_kernel_source("scalar_quantize.metal")
 
 
 # ===========================================================================
@@ -48,10 +42,7 @@ _SCALAR_QUANTIZE_SRC = r"""
 # Grid: (N, 1, 1) — one thread per element.
 # Simple gather: x_hat[i] = fp16(centroids[indices[i]]).
 
-_SCALAR_DEQUANTIZE_SRC = r"""
-    uint elem    = thread_position_in_grid.x;
-    x_hat[elem]  = half(centroids[uint(indices[elem])]);
-"""
+_SCALAR_DEQUANTIZE_SRC = _read_kernel_source("scalar_dequantize.metal")
 
 
 # ===========================================================================
@@ -71,46 +62,7 @@ _SCALAR_DEQUANTIZE_SRC = r"""
 #   3. Scale by 1/√D (rsqrt for speed).
 #   4. Nearest-centroid argmin in registers → write uint8 index.
 
-_HADAMARD_QUANTIZE_SRC = r"""
-    constexpr int N_CENTS = 1 << B_BITS;
-
-    threadgroup float buf[MAX_D];
-
-    uint tg   = threadgroup_position_in_grid.x;
-    uint lane = thread_position_in_threadgroup.x;
-    uint D    = uint(MAX_D);
-
-    // 1. Load + diagonal sign flip
-    float v = float(x[tg * D + lane]);
-    v *= float(diag[lane]);
-    buf[lane] = v;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    // 2. In-place WHT: range-based parallel butterfly
-    for (uint stride = 1; stride < D; stride <<= 1) {
-        uint local    = lane % (stride << 1u);
-        bool is_upper = local >= stride;
-        uint partner  = is_upper ? (lane - stride) : (lane + stride);
-        float a = buf[lane];
-        float b = buf[partner];
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        buf[lane] = is_upper ? (b - a) : (a + b);
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-    }
-
-    // 3. Scale
-    float y = buf[lane] * metal::rsqrt(float(D));
-
-    // 4. Nearest-centroid argmin (register-local scan)
-    int   best      = 0;
-    float best_dist = INFINITY;
-    for (int j = 0; j < N_CENTS; ++j) {
-        float d    = y - centroids[j];
-        float dist = d * d;
-        if (dist < best_dist) { best_dist = dist; best = j; }
-    }
-    indices[tg * D + lane] = uint8_t(best);
-"""
+_HADAMARD_QUANTIZE_SRC = _read_kernel_source("hadamard_quantize.metal")
 
 
 # ---------------------------------------------------------------------------

@@ -74,6 +74,12 @@ class AMCKVCache(_MLXKVCache):
         CurDKV's key-as-query-proxy) — when enabled, the mean of the current
         step's keys is used as a proxy query, disclosed here as the same
         category of approximation as the eviction methods' proxy queries.
+        Writes through to the base ``mlx_lm`` ``KVCache``'s ``self.keys`` /
+        ``self.values`` / ``self.offset`` on every call so ``.state`` stays
+        valid (mlx_lm's ``generate()`` reads it unconditionally during
+        chunked prefill); ``is_trimmable()`` reports ``False`` since the
+        internal per-token state can't be rolled back by a base-class
+        ``trim()`` (see #83).
     """
 
     def __init__(self, config: Any) -> None:
@@ -225,7 +231,24 @@ class AMCKVCache(_MLXKVCache):
 
         self._amc_kept_bytes = amc_fp16_bytes(self._tier_counts, self._head_dim)
 
-        return K_out, V_out
+        # K_out/V_out is the full retained state (AMC never evicts), not a
+        # delta — reset so the base class's append-only buffer starts fresh
+        # each call instead of stacking on top of the previous call's rows.
+        # Without this, self.keys/self.values/self.offset stay at their
+        # __init__ defaults (None/None/0) forever, and mlx_lm's generate()
+        # crashes on `cache.state` during chunked prefill (see #83).
+        self.keys = None
+        self.values = None
+        self.offset = 0
+        return super().update_and_fetch(K_out, V_out)
+
+    # ------------------------------------------------------------------
+    def is_trimmable(self) -> bool:
+        """False: trim() would only roll back base-class offset bookkeeping,
+        not the internal per-token eviction/compression state that actually
+        determines what gets returned, silently corrupting future calls.
+        """
+        return False
 
     def _compress_step(self, x: mx.array, tiers: List[int], head_dim: int) -> mx.array:
         """Apply per-token rank mask + quantization according to each token's tier."""

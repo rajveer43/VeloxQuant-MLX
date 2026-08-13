@@ -127,6 +127,7 @@ class EncodedVector:
         total += _arr_bytes(self.signs)
         total += _arr_bytes(self.residual_norm)
         total += _arr_bytes(self.final_radius)
+        total += _arr_bytes(self.outlier_idx)
         if self.angles:
             for a in self.angles:
                 total += _arr_bytes(a)

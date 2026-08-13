@@ -1,7 +1,8 @@
 """Tests for CaMKVCache — cache-merging eviction (merge, don't drop).
 
 Covers the single-layer cache (budget enforcement, sink preservation, byte
-accounting, diagnostics, all merge modes), the factory route, the default
+accounting, diagnostics, all merge modes), the Eq. 14 merge gate (default-on,
+disableable, deterministic across runs), the factory route, the default
 for_model path (one cache per layer, no coordinator), and the drop-mode == H2O
 cache-level equivalence. All data is synthetic — no model loading.
 """
@@ -181,9 +182,56 @@ def test_cache_drop_mode_matches_h2o(seed):
     )
     Kc, Vc = cc.update_and_fetch(k, v)
 
-    hc = H2OKVCache(KVCacheConfig(method="h2o", head_dim=D, h2o_budget=budget, h2o_n_sink=n_sink))
+    hc = H2OKVCache(
+        KVCacheConfig(
+            method="h2o",
+            head_dim=D,
+            h2o_budget=budget,
+            h2o_n_sink=n_sink,
+            h2o_grace=0,
+            h2o_decay=1.0,
+        )
+    )
     Kh, Vh = hc.update_and_fetch(k, v)
 
     assert Kc.shape == Kh.shape
     assert bool(mx.all(Kc == Kh).item())
     assert bool(mx.all(Vc == Vh).item())
+
+
+# ======================================================================
+# Merge gate (Eq. 14 Bernoulli mask)
+# ======================================================================
+
+
+def test_cache_merge_gate_default_on():
+    cfg = KVCacheConfig(method="cam", head_dim=16, cam_budget=16)
+    cache = CaMKVCache(cfg)
+    assert cache.merge_gate is True
+
+
+def test_cache_merge_gate_off_reports_false():
+    cfg = KVCacheConfig(method="cam", head_dim=16, cam_budget=16, cam_merge_gate=False)
+    cache = CaMKVCache(cfg)
+    assert cache.merge_gate is False
+
+
+def test_cache_gate_off_matches_old_unconditional_merge_shape():
+    """merge_gate=False still enforces budget the same way as gated merging."""
+    cfg_gated = KVCacheConfig(method="cam", head_dim=16, cam_budget=12, cam_n_sink=2)
+    cfg_ungated = KVCacheConfig(
+        method="cam", head_dim=16, cam_budget=12, cam_n_sink=2, cam_merge_gate=False
+    )
+    k, v = _kv(1, 2, 50, 16, seed=15)
+    Kg, Vg = CaMKVCache(cfg_gated).update_and_fetch(k, v)
+    Ku, Vu = CaMKVCache(cfg_ungated).update_and_fetch(k, v)
+    assert Kg.shape == Ku.shape == (1, 2, 12, 16)
+
+
+def test_cache_gate_is_deterministic_across_runs():
+    cfg = KVCacheConfig(method="cam", head_dim=16, cam_budget=12, cam_n_sink=2, seed=42)
+    k, v = _kv(1, 2, 50, 16, seed=15)
+    K1, V1 = CaMKVCache(cfg).update_and_fetch(k, v)
+    K2, V2 = CaMKVCache(cfg).update_and_fetch(k, v)
+    assert bool(mx.all(K1 == K2).item())
+    assert bool(mx.all(V1 == V2).item())

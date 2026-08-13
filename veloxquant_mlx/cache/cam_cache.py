@@ -30,13 +30,23 @@ This is the eighth distinct eviction configuration in VeloxQuant-MLX:
   - CaM-adapted        : H2O scoring + eviction, but the loser is MERGED into a
     survivor (cosine-weighted) rather than dropped.
 
+Merge gate (Eq. 14): the paper does not merge every over-budget loser
+unconditionally — it first samples a Bernoulli mask whose probability scales
+with the loser's accumulated attention mass relative to its merge target.
+This is on by default (``cam_merge_gate=True``) and is load-bearing per the
+paper's own ablation (Table 2: unconditional merging underperforms plain
+eviction). Set ``cam_merge_gate=False`` to reproduce unconditional merging.
+
 Adaptation limitations (stated plainly):
   - Key-as-query proxy (same as H2O-adapted) for both the importance score and
     the merge-target similarity.
-  - Cosine-similarity merge weight rather than the paper's attention-prominence
-    weight (which is ~0 for a just-appended token that overflows before it
-    accumulates mass — the common case at the streaming eviction boundary).
-  - Single nearest-survivor merge (no multi-target soft assignment / sampling).
+  - Cosine-similarity merge *weight* rather than the paper's attention-
+    prominence weight (which is ~0 for a just-appended token that overflows
+    before it accumulates mass — the common case at the streaming eviction
+    boundary). The merge *gate* still uses accumulated attention mass, per
+    the paper.
+  - Single nearest-survivor merge target (cosine nearest-neighbour), not the
+    paper's local window of ``m`` contiguous tokens.
   - No RoPE position-ID remapping after merge.
   - Uniform budget across heads within a layer.
 
@@ -76,6 +86,11 @@ class CaMKVCache(_MLXKVCache):
                 "mean" | "drop"; "drop" reduces bit-for-bit to H2O-adapted.
             ``cam_merge_keys`` (bool, default False) — merge keys too (values are
                 always merged).
+            ``cam_merge_gate`` (bool, default True) — apply the paper's Eq. 14
+                Bernoulli merge gate (whether to merge at all, not just how
+                strongly). False unconditionally merges every over-budget loser
+                (the paper's ablated "w.o. Merge Mask" configuration).
+            ``seed`` (int) — base seed for the gate's deterministic draws.
 
     Notes:
         No ``.bits`` attribute — stores and returns fp16 K/V directly.
@@ -84,6 +99,12 @@ class CaMKVCache(_MLXKVCache):
         Because CaM merges (not drops) it always trims to exactly ``budget`` — the
         output is rectangular ``[B, H, budget, D]`` once past budget, so no
         cross-head alignment is needed.
+        Writes through to the base ``mlx_lm`` ``KVCache``'s ``self.keys`` /
+        ``self.values`` / ``self.offset`` on every call so ``.state`` stays
+        valid (mlx_lm's ``generate()`` reads it unconditionally during
+        chunked prefill); ``is_trimmable()`` reports ``False`` since the
+        internal per-token merge state can't be rolled back by a base-class
+        ``trim()`` (see #83).
     """
 
     def __init__(self, config: Any) -> None:
@@ -92,6 +113,8 @@ class CaMKVCache(_MLXKVCache):
         self._n_sink = int(getattr(config, "cam_n_sink", 4))
         self._merge_mode = str(getattr(config, "cam_merge", "sim_weighted"))
         self._merge_keys = bool(getattr(config, "cam_merge_keys", False))
+        self._merge_gate = bool(getattr(config, "cam_merge_gate", True))
+        self._seed = int(getattr(config, "seed", 0))
 
         self._head_dim: int = 0
         self._states: list[CaMState] = []
@@ -116,8 +139,10 @@ class CaMKVCache(_MLXKVCache):
                     D,
                     merge_mode=self._merge_mode,
                     merge_keys=self._merge_keys,
+                    merge_gate=self._merge_gate,
+                    seed=self._seed + head_idx,  # distinct draw stream per head
                 )
-                for _ in range(B * H)
+                for head_idx in range(B * H)
             ]
 
     def _head_idx(self, b: int, h: int) -> int:
@@ -165,7 +190,24 @@ class CaMKVCache(_MLXKVCache):
         # Byte accounting: sum across all head states.
         self._cam_kept_bytes = sum(cam_fp16_bytes(st) for st in self._states)
 
-        return K_out, V_out
+        # K_out/V_out is the full retained state every call, not a delta —
+        # reset so the base class's append-only buffer starts fresh instead
+        # of stacking on top of the previous call's rows. Without this,
+        # self.keys/self.values/self.offset stay at __init__ defaults
+        # forever, and mlx_lm's generate() crashes on `cache.state` during
+        # chunked prefill (see #83).
+        self.keys = None
+        self.values = None
+        self.offset = 0
+        return super().update_and_fetch(K_out, V_out)
+
+    # ------------------------------------------------------------------
+    def is_trimmable(self) -> bool:
+        """False: trim() would only roll back base-class offset bookkeeping,
+        not the internal per-token eviction/compression state that actually
+        determines what gets returned, silently corrupting future calls.
+        """
+        return False
 
     # ------------------------------------------------------------------
     @property
@@ -177,6 +219,11 @@ class CaMKVCache(_MLXKVCache):
     def merge_mode(self) -> str:
         """This cache's merge disposition (diagnostic)."""
         return self._merge_mode
+
+    @property
+    def merge_gate(self) -> bool:
+        """Whether the Eq. 14 Bernoulli merge gate is active (diagnostic)."""
+        return self._merge_gate
 
     @property
     def cam_kept_bytes(self) -> int:

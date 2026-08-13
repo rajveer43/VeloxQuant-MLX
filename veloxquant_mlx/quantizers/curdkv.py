@@ -18,7 +18,60 @@ Adaptation limitations (stated plainly):
     (Mahoney & Drineas-style), not a reproduction of the paper's specific
     sketching routine.
   - Uniform budget across all heads (same convention as H2O-adapted).
-  - No RoPE position-ID remapping after eviction.
+
+FIXED, CONFIRMED-ON-REAL-MODELS PROBLEM: real end-to-end generation testing
+on Llama-3.2-1B showed severely corrupted output (garbled tokens, off-topic
+drift) even at very light eviction (98.6% of tokens retained). Root cause,
+traced to a single mismatched key row: ``mlx_lm``'s attention module rotates
+both the query and each incoming key using ``self.rope(x, offset=cache.offset)``
+inside the model's forward pass, before ``update_and_fetch`` is ever called.
+The base ``mlx_lm.models.cache.KVCache`` assumes ``offset`` always equals the
+number of rows physically stored — true only when nothing is ever evicted.
+The original ``CurDKVKVCache.update_and_fetch`` reset ``self.offset`` to the
+post-eviction *kept-row count* every call, which undercounts the true
+absolute sequence position by however many tokens have been evicted so far.
+``mlx_lm.generate()`` always makes at least two calls per generation (a bulk
+prefill call, then the final prompt token processed jointly with the first
+decode step) — the moment even one eviction happens in the first call, the
+second call's ``offset`` desyncs from the true position, and the model
+computes RoPE for that token (and every subsequent one) at the wrong angle.
+Traced precisely: verified via a minimal two-call reproduction that the
+single corrupted row's nearest match in an uncompressed reference cache was
+its true position, but at nonzero distance — a rotation-angle error, not a
+storage or ordering bug (row order and all other row values were bit-exact).
+
+Fixed by adopting H2O-adapted's already-proven pattern (see
+``docs-site/docs/algorithms/h2o.md`` and ``cache/h2o_cache.py`` module
+docstring for that original investigation): track each kept row's absolute
+``position`` explicitly, keep ``self.offset`` equal to the *true absolute
+step count* (not the kept-row count) rather than delegating to the base
+class's append-only buffer, and re-rotate (via
+:func:`veloxquant_mlx.quantizers.a2ats_rope.rope_remap_positions`) whichever
+survivors shifted storage index when an eviction closed a gap. Verified via
+a synthetic two-call-split reproduction (mirroring ``mlx_lm.generate()``'s
+bulk-prefill-then-final-token call pattern) that ``self.offset`` now equals
+the true absolute position and that de-rotated/re-rotated keys exactly
+match a single uninterrupted call, across multiple heads.
+
+KNOWN, NOT-YET-FIXED LIMITATION found while verifying the fix above on a
+real model: ``rope_remap_positions`` implements plain RoPE
+(``inv_freq = base ** (-i/half)``), matching ``mlx_lm``'s default rotation.
+Llama-3-family models (including every Llama checkpoint used in this
+repo's own testing) instead use ``rope_scaling={"rope_type": "llama3", ...}``
+— a piecewise, per-frequency-band rescaling (see ``mlx_lm.models.rope_utils
+.Llama3RoPE``) that plain RoPE math does not reproduce. Confirmed on a real
+Llama-3.2-1B generation: rows never touched by an eviction remained
+bit-exact against an uncompressed reference cache, but every row that WAS
+re-rotated by an eviction (regardless of which ``rope_base`` value is
+passed to ``curdkv_rope_base``) came out numerically wrong, and generation
+quality was correspondingly still degraded even with the offset-desync bug
+fixed. Passing the model's true ``rope_theta`` alone does not fix this — a
+correct fix needs the same piecewise Llama-3 scaling ``Llama3RoPE`` applies,
+which ``rope_remap_positions`` does not implement. This affects H2O-adapted
+identically (same primitive, same untested-on-Llama3-scaling gap) — not
+introduced by this fix, but newly confirmed by it. Scoped as a separate
+follow-up rather than folded into this fix — see
+https://github.com/rajveer43/VeloxQuant-MLX/issues/148.
 
 The mechanism gap this closes: every other eviction method in this repo
 (H2O, SnapKV, TOVA, PyramidKV, Keyformer, MorphKV, KVzip, ...) scores a token
@@ -42,10 +95,24 @@ full_curdkv_fp16_bytes — hypothetical cost without eviction
 from __future__ import annotations
 
 import math
+import threading
 from dataclasses import dataclass
 
 import mlx.core as mx
 import numpy as np
+import scipy.linalg
+
+from veloxquant_mlx.quantizers.a2ats_rope import rope_remap_positions
+
+# Hard wall-clock budget for the scipy `gesvd` fallback in `_robust_svd`.
+# `gesvd` is the numerically-robust remedy for `gesdd` non-convergence (see
+# https://github.com/rajveer43/VeloxQuant-MLX/issues/147), but on some
+# inputs it can itself run far longer than the per-token cost this eviction
+# loop is built around. A watchdog thread enforces this budget: on timeout
+# we abandon waiting on the (harmless, GIL-released, side-effect-free)
+# worker thread and fall back to a zero result, which `_leverage_scores`
+# already treats identically to its existing degenerate-all-zero case.
+_GESVD_TIMEOUT_S = 5.0
 
 
 @dataclass
@@ -53,24 +120,54 @@ class CurDKVState:
     """Per-head sliding CurDKV state.
 
     Attributes:
-        keys:   [n_kept, D] fp16 stored key rows, or None before first update.
+        keys:   [n_kept, D] fp16 stored key rows, RoPE'd at ``positions``
+                (contiguous 0..n_kept-1 after any eviction), or None before
+                first update.
         values: [n_kept, D] fp16 stored value rows, or None before first update.
         leverage_scores: [n_kept] cumulative leverage-score estimate
                          (float32), or None.
+        n_updates: [n_kept] number of accumulation steps each token's score
+                   has been through so far (float32), including its own
+                   self-leverage seed. Used to compare tokens of different
+                   ages on a fair per-step-average basis at eviction time —
+                   see honesty crux point 4 in the docs for why a raw
+                   cumulative-sum comparison is scale-biased against
+                   newcomers. `None` before the first update.
+        positions: [n_kept] int32 absolute positions each kept key is
+                   currently rotated at. Reassigned to a contiguous range
+                   whenever eviction changes which rows survive, and each
+                   key is re-rotated (via ``rope_remap_positions``) to match
+                   — see module docstring's FIXED, CONFIRMED-ON-REAL-MODELS
+                   PROBLEM for why this matters. `None` before first update.
         n_sink: Number of leading sink positions — never evicted.
         budget: Maximum tokens to keep at any time (including sinks).
         rank_cap: SVD rank cap used for leverage-score estimation.
+        rope_base: RoPE frequency base used to de-rotate/re-rotate kept keys
+                   — must match the model's own RoPE base.
+        next_pos:  Absolute position the next incoming token will occupy —
+                   tracks true sequence position across calls, independent
+                   of how many rows have been evicted so far.
     """
 
     keys: mx.array | None
     values: mx.array | None
     leverage_scores: mx.array | None
+    n_updates: mx.array | None
+    positions: mx.array | None
     n_sink: int
     budget: int
     rank_cap: int
+    rope_base: float
+    next_pos: int
 
 
-def init_curdkv_state(n_sink: int, budget: int, head_dim: int, rank_cap: int = 16) -> CurDKVState:  # noqa: ARG001
+def init_curdkv_state(
+    n_sink: int,
+    budget: int,
+    head_dim: int,  # noqa: ARG001
+    rank_cap: int = 16,
+    rope_base: float = 10000.0,
+) -> CurDKVState:
     """Create an empty CurDKVState before any tokens arrive.
 
     Args:
@@ -79,6 +176,10 @@ def init_curdkv_state(n_sink: int, budget: int, head_dim: int, rank_cap: int = 1
         head_dim: Head dimension D (unused here; accepted for API symmetry
                   with H2O's init_h2o_state).
         rank_cap: Maximum SVD rank used when estimating leverage scores.
+        rope_base: RoPE frequency base — must match the base the model's own
+                   attention module actually uses, or post-eviction position
+                   remapping will not cancel out the original rotation
+                   correctly.
 
     Raises:
         ValueError: if there are sink positions to protect but they leave no
@@ -95,9 +196,13 @@ def init_curdkv_state(n_sink: int, budget: int, head_dim: int, rank_cap: int = 1
         keys=None,
         values=None,
         leverage_scores=None,
+        n_updates=None,
+        positions=None,
         n_sink=n_sink,
         budget=budget,
         rank_cap=rank_cap,
+        rope_base=rope_base,
+        next_pos=0,
     )
 
 
@@ -114,6 +219,69 @@ def _attention_weights(query_proxy: mx.array, keys: mx.array) -> mx.array:
     scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
     logits = (keys @ query_proxy) * scale  # [n]
     return mx.softmax(logits, axis=-1)
+
+
+def _gesvd_with_timeout(a: np.ndarray, timeout_s: float) -> tuple[np.ndarray, np.ndarray] | None:
+    """Run scipy's ``gesvd`` driver on a worker thread, bounded by ``timeout_s``.
+
+    Returns ``(u, s)`` on success within the budget, or ``None`` on timeout.
+    ``gesvd`` releases the GIL during its LAPACK call, so a watchdog thread
+    can enforce a wall-clock bound even though Python cannot forcibly kill a
+    thread: on timeout we simply stop waiting and let the orphaned worker
+    finish in the background — it has no shared mutable state, so it cannot
+    corrupt anything, and its (discarded) result is garbage-collected once
+    it completes.
+    """
+    result: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+
+    def _worker() -> None:
+        u, s, _ = scipy.linalg.svd(a, full_matrices=False, lapack_driver="gesvd")
+        result["value"] = (u, s)
+
+    worker = threading.Thread(target=_worker, daemon=True)
+    worker.start()
+    worker.join(timeout=timeout_s)
+    if worker.is_alive():
+        return None
+    return result.get("value")
+
+
+def _robust_svd(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """SVD of ``a``, robust to LAPACK's ``gesdd`` driver occasionally failing
+    to converge on real (non-adversarial) floating-point input — an observed,
+    documented ``gesdd`` flakiness on Apple's Accelerate LAPACK backend, not
+    a property of any particular matrix being "bad." Falls back to scipy's
+    ``gesvd`` driver (slower, essentially always converges) only on that
+    failure; the common case pays no extra cost. See
+    https://github.com/rajveer43/VeloxQuant-MLX/issues/147 for the
+    real-model repro (rare, data-dependent, not reproducible via synthetic
+    ill-conditioning).
+
+    The ``gesvd`` fallback is itself bounded by ``_GESVD_TIMEOUT_S``: on some
+    inputs it can run far longer than this per-token eviction loop is built
+    for (observed: an 11+ minute stall on a call that normally completes in
+    under a second — see issue #147). If it doesn't return in time, this
+    falls back to an all-zero ``(u, s)``, which ``_leverage_scores`` already
+    treats identically to its existing degenerate-all-zero-value-block case
+    (uniform/zero leverage for this token this step) rather than hanging or
+    crashing the caller.
+
+    Returns:
+        ``(u, s)`` — left singular vectors and singular values, ``full_matrices=False``.
+    """
+    try:
+        u, s, _ = np.linalg.svd(a, full_matrices=False)
+        return u, s
+    except np.linalg.LinAlgError:
+        pass
+
+    fallback = _gesvd_with_timeout(a, _GESVD_TIMEOUT_S)
+    if fallback is not None:
+        return fallback
+
+    n, d = a.shape
+    k = min(n, d)
+    return np.zeros((n, k)), np.zeros((k,))
 
 
 def _leverage_scores(
@@ -161,7 +329,7 @@ def _leverage_scores(
         return mx.zeros((n,), dtype=mx.float32)
 
     # Full SVD is fine at these sizes (n, d are small per-head cache blocks).
-    u, s, _ = np.linalg.svd(wv_np, full_matrices=False)
+    u, s = _robust_svd(wv_np)
     k = max(1, min(rank_cap, n, d))
     u_k = u[:, :k]  # [n, k]
     s_k = s[:k]  # [k]
@@ -203,7 +371,20 @@ def curdkv_update(
          a negligible-value newcomer be evicted immediately instead of
          parking at a permanent tie.
       4. If total tokens > budget: permanently evict the non-sink token with the
-         lowest cumulative leverage score.
+         lowest MEAN per-step leverage score (cumulative score / number of
+         accumulation steps), not the raw cumulative sum. A raw-sum
+         comparison is scale-biased against newcomers: an old survivor's
+         score is a sum over every step it has been in the cache, while a
+         brand-new token's score is a single self-leverage sample — so a
+         newcomer with a far larger, more output-relevant value than
+         anything currently cached could otherwise be evicted on the very
+         step it arrives, purely because it hasn't had time to accumulate,
+         defeating the point of value-aware retention.
+      5. If eviction happened: re-rotate (RoPE) whichever surviving rows
+         shifted storage index to close the gap left by the evicted row —
+         see module docstring's FIXED, CONFIRMED-ON-REAL-MODELS PROBLEM.
+         Rows before the gap keep their exact original rotation (nothing
+         about their true position changed); only rows after the gap shift.
 
     Args:
         state:      Current CurDKVState for this head.
@@ -218,6 +399,7 @@ def curdkv_update(
     for i in range(S):
         k_i = new_keys[i]  # [D]
         v_i = new_values[i]  # [D]
+        cur_pos = state.next_pos
 
         if state.keys is None:
             # Bootstrap: first token ever — no eviction needed.
@@ -225,9 +407,13 @@ def curdkv_update(
                 keys=k_i[None].astype(mx.float16),
                 values=v_i[None].astype(mx.float16),
                 leverage_scores=mx.ones((1,), dtype=mx.float32),
+                n_updates=mx.ones((1,), dtype=mx.float32),
+                positions=mx.array([cur_pos], dtype=mx.int32),
                 n_sink=state.n_sink,
                 budget=state.budget,
                 rank_cap=state.rank_cap,
+                rope_base=state.rope_base,
+                next_pos=cur_pos + 1,
             )
             continue
 
@@ -239,6 +425,7 @@ def curdkv_update(
             state.rank_cap,
         )
         updated_scores = state.leverage_scores + lev  # [n_kept]
+        updated_n_updates = state.n_updates + 1.0  # [n_kept]
 
         # --- append new token, seeded with its own leverage within the
         # resulting (existing + new) block (see docstring: not a flat 0) ---
@@ -251,31 +438,60 @@ def curdkv_update(
             state.rank_cap,
         )[-1:]
         scores_cat = mx.concatenate([updated_scores, self_lev], axis=0)
+        n_updates_cat = mx.concatenate([updated_n_updates, mx.ones((1,), dtype=mx.float32)], axis=0)
+        positions_cat = mx.concatenate(
+            [state.positions, mx.array([cur_pos], dtype=mx.int32)], axis=0
+        )
 
         n_total = keys_cat.shape[0]
 
         if n_total > state.budget:
+            # Compare MEAN per-step leverage, not the raw cumulative sum —
+            # an old survivor's sum grows with every step it has survived,
+            # so comparing raw sums is biased against newcomers regardless
+            # of their actual value (see docstring point 4 above).
+            mean_scores = scores_cat / n_updates_cat
+
             # Build eviction-protected score view: sinks get +inf
             n_sink_eff = min(state.n_sink, n_total)
             if n_sink_eff > 0:
                 inf_block = mx.full((n_sink_eff,), float("inf"), dtype=mx.float32)
-                protected = mx.concatenate([inf_block, scores_cat[n_sink_eff:]], axis=0)
+                protected = mx.concatenate([inf_block, mean_scores[n_sink_eff:]], axis=0)
             else:
-                protected = scores_cat
+                protected = mean_scores
 
             evict_idx = int(mx.argmin(protected).item())
+            evicted_pos = int(positions_cat[evict_idx].item())
             keep_indices = [j for j in range(n_total) if j != evict_idx]
             keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
             scores_cat = scores_cat[keep_indices]
+            n_updates_cat = n_updates_cat[keep_indices]
+            old_positions_kept = positions_cat[keep_indices]
+
+            # Evicting `evict_idx` leaves a size-1 gap at `evicted_pos`. Rows
+            # before the gap keep their exact original position; rows after
+            # shift down by exactly one each, closing the gap so the stored
+            # layout stays contiguous — matching what the model's own
+            # position bookkeeping (offset == next_pos) assumes. Only rows
+            # after the gap need re-rotating.
+            shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
+            positions_cat = old_positions_kept + shift
+            keys_cat = rope_remap_positions(
+                keys_cat, old_positions_kept, positions_cat, base=state.rope_base
+            )
 
         state = CurDKVState(
             keys=keys_cat,
             values=values_cat,
             leverage_scores=scores_cat,
+            n_updates=n_updates_cat,
+            positions=positions_cat,
             n_sink=state.n_sink,
             budget=state.budget,
             rank_cap=state.rank_cap,
+            rope_base=state.rope_base,
+            next_pos=cur_pos + 1,
         )
 
     return state

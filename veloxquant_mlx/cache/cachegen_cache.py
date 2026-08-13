@@ -11,9 +11,10 @@ code stream and reports ``compressed_*_bytes`` from that, modelling an ideal
 arithmetic coder. This captures the token-wise-locality storage win without
 shipping a serial range codec that would bottleneck MLX decode.
 
-Per-layer bit-width is configurable (``cachegen_bits``); the builder can apply a
-layer-wise schedule (deeper layers fewer bits — CacheGen's layer-sensitivity
-observation) by passing a per-layer ``cachegen_bits`` through ``for_model``.
+Per-layer bit-width is configurable (``cachegen_bits``); ``KVCacheBuilder.for_model``
+applies a real layer-wise schedule (deeper layers get fewer bits — CacheGen's
+layer-sensitivity observation, §5.1.2) via ``layer_group_bits``, injected per layer
+as ``cachegen_resolved_bits`` (see ``KVCacheBuilder._build_cachegen``).
 
 Byte accounting:
     compressed_key_bytes / compressed_value_bytes — entropy-coded estimate
@@ -41,9 +42,14 @@ class CacheGenKVCache(_MLXKVCache):
 
     Args:
         config: :class:`KVCacheConfig`. Fields consumed:
-            ``cachegen_bits``       (int, default 4),
-            ``cachegen_group_size`` (int, default 32),
-            ``cachegen_use_delta``  (bool, default True — token-delta transform).
+            ``cachegen_bits``            (int, default 4) — base/uniform bit-width.
+            ``cachegen_resolved_bits``   (int or None) — per-layer bit-width injected
+                by ``KVCacheBuilder.for_model`` (§5.1.2 layer-wise schedule); falls
+                back to ``cachegen_bits`` when None (uniform behaviour).
+            ``cachegen_group_size``      (int, default 32),
+            ``cachegen_use_delta``       (bool, default True — token-delta transform),
+            ``cachegen_per_channel``     (bool, default True — group entropy estimate
+                by channel per §5.1.3 instead of pooling all channels).
 
     Notes:
         No ``.bits`` attribute — keeps mlx_lm SDPA on the clean fp16 path.
@@ -51,9 +57,13 @@ class CacheGenKVCache(_MLXKVCache):
 
     def __init__(self, config: Any) -> None:
         super().__init__()
-        self._bits = int(getattr(config, "cachegen_bits", 4))
+        resolved = getattr(config, "cachegen_resolved_bits", None)
+        self._bits = (
+            int(resolved) if resolved is not None else int(getattr(config, "cachegen_bits", 4))
+        )
         self._gs = int(getattr(config, "cachegen_group_size", 32))
         self._use_delta = bool(getattr(config, "cachegen_use_delta", True))
+        self._per_channel = bool(getattr(config, "cachegen_per_channel", True))
 
         self._compressed_key_bytes = 0
         self._compressed_value_bytes = 0
@@ -74,7 +84,9 @@ class CacheGenKVCache(_MLXKVCache):
             for h in range(H):
                 stream = quantize_to_codes(t[b, h], self._bits, self._gs)
                 recon_h.append(dequant_codes(stream))
-                comp += entropy_coded_bytes(stream, use_delta=self._use_delta)
+                comp += entropy_coded_bytes(
+                    stream, use_delta=self._use_delta, per_channel=self._per_channel
+                )
                 fixed += fixed_width_bytes(stream)
             recon_b.append(mx.stack(recon_h, axis=0))
         out = mx.stack(recon_b, axis=0)

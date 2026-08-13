@@ -11,9 +11,14 @@ by reconstructing what it threw away, via the three-part decomposition
 
     X  ~=  Quant_b(X)  +  L . R  +  S
 
-  1. ``Quant_b(X)`` — base: most entries at ultra-low precision. We borrow the
-     repo's asymmetric min/max group quant (``cachegen.quantize_to_codes``), so
-     GEAR composes over an existing, already-tested quantizer.
+  1. ``Quant_b(X)`` — base: most entries at ultra-low precision. The paper's
+     backbone is **KCVT**: keys quantized **per-channel** (§2, "Group-wise
+     Quantization"), values quantized **per-token**, both without KIVI's
+     fine-grained residual buffer. We reuse the repo's asymmetric min/max group
+     quant (``cachegen.quantize_to_codes``) but apply it along the axis KCVT
+     specifies — ``base_axis="channel"`` for keys, ``"token"`` for values — so
+     GEAR composes over an existing, already-tested quantizer with the paper's
+     actual backbone rather than a generic per-token quantizer for both.
   2. ``L . R``      — a low-rank approximation of the quantization residual
      ``E = X - dequant(Quant_b(X))``. The residual of a coherent KV matrix is
      itself low-rank, so a small rank recovers most of the lost signal cheaply.
@@ -24,6 +29,11 @@ by reconstructing what it threw away, via the three-part decomposition
 Adaptation:
   * The residual SVD is computed on the prefill batch (the cache wrapper owns the
     prefill-vs-decode orchestration), reusing the SVDq/PALU prefill-SVD pattern.
+    The paper additionally uses a smaller rank (r=2) for streaming decode-only
+    updates via a token buffer (§3, "Streaming Buffer") purely as a speed
+    optimization — the reconstruction target is unaffected, so we compute the
+    same low-rank recovery on whatever batch the cache holds. Not ported: no
+    perf claim depends on it.
   * We do **not** ship GEAR's fused streaming-dequant CUDA kernel. The wrapper
     reconstructs fp16 then calls MLX SDPA; stored size shrinks, attend-time peak
     memory does not. Documented as a known simplification.
@@ -31,9 +41,10 @@ Adaptation:
     byte model): the reported ``compressed_*_bytes`` AND the values the model
     sees both reflect the error-feedback layers.
 
-This module holds the pure numerics: base quant (borrowed), residual,
-residual-low-rank, sparse-outlier extraction, full compress/reconstruct, and an
-honest byte estimator. The cache wrapper owns the per-layer prefill/decode state.
+This module holds the pure numerics: base quant (borrowed, KCVT-axis-aware),
+residual, residual-low-rank, sparse-outlier extraction, full
+compress/reconstruct, and an honest byte estimator. The cache wrapper owns the
+per-layer prefill/decode state.
 """
 
 from __future__ import annotations
@@ -44,7 +55,7 @@ from typing import NamedTuple, Optional
 import mlx.core as mx
 
 from veloxquant_mlx.quantizers._quant_utils import _truncated_svd
-from veloxquant_mlx.quantizers.cachegen import dequant_codes, quantize_to_codes
+from veloxquant_mlx.quantizers.cachegen import CodeStream, dequant_codes, quantize_to_codes
 
 
 class GEARState(NamedTuple):
@@ -58,9 +69,16 @@ class GEARState(NamedTuple):
         R:      [r, D] fp32 low-rank residual right factor (or None if rank==0).
         sp_idx: [nnz] int32 flattened indices into the [N, D] residual (or None).
         sp_val: [nnz] fp16 outlier residual values (or None).
-        n_rows: int original (pre-pad) token count.
+        n_rows: int original (pre-pad) token count (the ``X.shape[0]`` GEAR was
+            given — NOT necessarily the row count of ``codes``, see ``axis``).
         bits:   int base bit-width.
         rank:   int residual low-rank (0 = no low-rank term).
+        axis:   str base quant axis — "channel" (KCVT key scheme) or "token"
+            (KCVT value scheme). ``codes``/``scale``/``zero`` are channel-major
+            (transposed, row count == ``d_cols``) when ``axis == "channel"``.
+        d_cols: int original channel count ``D`` — the row count of ``codes``
+            when ``axis == "channel"`` (unused, equals ``codes.shape[-1]``,
+            when ``axis == "token"``).
     """
 
     codes: mx.array
@@ -73,16 +91,54 @@ class GEARState(NamedTuple):
     n_rows: int
     bits: int
     rank: int
+    axis: str = "token"
+    d_cols: int = 0
 
 
-def quantize_base(x: mx.array, bits: int, group_size: int = 32):
+def quantize_base(x: mx.array, bits: int, group_size: int = 32, axis: str = "token"):
     """Base ultra-low-bit group quant. Returns ``(CodeStream, base_recon[N, D])``.
 
-    Borrows the repo's shared asymmetric min/max group quant so GEAR's base layer
-    is identical to KIVI/CacheGen-style quant (no new quant logic).
+    Borrows the repo's shared asymmetric min/max group quant (the same math
+    KIVI/CacheGen use) so GEAR's base layer is not new quant logic — only the
+    *axis* it groups along is chosen here, per the paper's KCVT backbone.
+
+    Args:
+        x: ``[N, D]`` one head's keys or values.
+        bits: base bit-width.
+        group_size: group size along the quantization axis.
+        axis: ``"channel"`` (paper's Key scheme — group along the token axis,
+            one ``(scale, zero)`` per channel) or ``"token"`` (paper's Value
+            scheme — group along the channel axis, one ``(scale, zero)`` per
+            token; also the default, matching this module's pre-KCVT behavior
+            for callers that do not pass ``axis``).
     """
-    stream = quantize_to_codes(x, bits, group_size)
-    return stream, dequant_codes(stream)
+    if axis not in ("channel", "token"):
+        raise ValueError(f"quantize_base: axis={axis!r} must be 'channel' or 'token'.")
+    if axis == "token":
+        stream = quantize_to_codes(x, bits, group_size)
+        return stream, dequant_codes(stream)
+    # channel: transpose so channels become rows, group along them, transpose back.
+    stream_t = quantize_to_codes(x.T, bits, group_size)
+    recon = dequant_codes(stream_t).T
+    # stream_t is already channel-major: codes [d_groups, group_size, n],
+    # stream_t.n_rows == d (the channel count). Pass it through as-is — the
+    # caller (gear_compress) stores GEARState.d_cols separately so
+    # gear_reconstruct can rebuild this exact channel-major view.
+    return stream_t, recon
+
+
+def _dequant_axis(stream: CodeStream, axis: str) -> mx.array:
+    """Dequantize a ``CodeStream`` produced by :func:`quantize_base`, axis-aware.
+
+    ``stream.n_rows`` must already be set to the row count *of that stream*
+    (tokens for ``"token"``, channels for ``"channel"``) — callers rebuild the
+    view with the right count rather than reusing ``GEARState.n_rows`` (which
+    is always the original token count, ambiguous for the channel axis).
+    """
+    if axis == "token":
+        return dequant_codes(stream)
+    # channel: stream is channel-major; dequant then transpose back to [N, D].
+    return dequant_codes(stream).T
 
 
 def residual(x: mx.array, base_recon: mx.array) -> mx.array:
@@ -156,15 +212,20 @@ def gear_compress(
     sparse_frac: float = 0.01,
     group_size: int = 32,
     energy_threshold: float = 0.90,
+    base_axis: str = "token",
 ) -> GEARState:
     """Full GEAR compression of one head's K/V matrix ``[N, D]`` → ``GEARState``.
 
-    Pipeline: base group quant → residual → low-rank residual → sparse outliers
-    of the *post-low-rank* residual.
+    Pipeline: base group quant (KCVT-axis-aware) → residual → low-rank residual
+    → sparse outliers of the *post-low-rank* residual.
+
+    Args:
+        base_axis: ``"channel"`` for keys, ``"token"`` for values, per the
+            paper's KCVT backbone. See :func:`quantize_base`.
     """
     x32 = x.astype(mx.float32)
-    n = int(x32.shape[0])
-    stream, base_recon = quantize_base(x32, bits, group_size)
+    n, d = int(x32.shape[0]), int(x32.shape[1])
+    stream, base_recon = quantize_base(x32, bits, group_size, axis=base_axis)
     E = residual(x32, base_recon)  # [N, D]
 
     L, R = lowrank_error(E, rank, energy_threshold)
@@ -188,15 +249,16 @@ def gear_compress(
         n_rows=n,
         bits=bits,
         rank=r,
+        axis=base_axis,
+        d_cols=d,
     )
 
 
 def gear_reconstruct(state: GEARState) -> mx.array:
     """Reconstruct fp16 ``[n_rows, D]`` from a GEARState (base + low-rank + sparse)."""
-    base = dequant_codes(
-        # rebuild a CodeStream view for dequant; dequant_codes only needs these
-        _CodeStreamView(state.codes, state.scale, state.zero, state.n_rows, state.bits)
-    ).astype(mx.float32)
+    stream_rows = state.d_cols if state.axis == "channel" else state.n_rows
+    stream = _CodeStreamView(state.codes, state.scale, state.zero, stream_rows, state.bits)
+    base = _dequant_axis(stream, state.axis).astype(mx.float32)
     out = base
     if state.L is not None and state.R is not None:
         out = out + (state.L @ state.R)
@@ -218,15 +280,30 @@ class _CodeStreamView(NamedTuple):
     bits: int
 
 
+def _base_code_and_param_bytes(state: GEARState) -> tuple[int, int]:
+    """Shared base-layer byte math, correct for either KCVT axis.
+
+    ``state.codes`` is ``[n_groups, group_size, W]`` where ``W`` is the
+    *stream's own* column count — the original token count ``n_rows`` when
+    ``axis == "token"``, or the original channel count ``d_cols`` when
+    ``axis == "channel"``. Either way ``total elements == n_rows * d_cols``,
+    so code size is axis-independent; only ``param_bytes`` (one scale/zero per
+    group per stream-column) needs the stream's own width ``W``.
+    """
+    n_groups, _gs, w = state.codes.shape
+    total_elems = state.n_rows * state.d_cols
+    code_bytes = math.ceil(total_elems * state.bits / 8)
+    param_bytes = n_groups * w * 2 * 2  # scale + zero, fp16
+    return code_bytes, param_bytes
+
+
 def gear_bytes(state: GEARState) -> int:
     """Honest stored size (bytes) of a GEARState.
 
     base codes (fixed-width packed) + fp16 group params + fp16 ``L,R`` factors +
     sparse triples (int32 index + fp16 value per nnz).
     """
-    n_groups, gs, d = state.codes.shape
-    code_bytes = math.ceil(state.n_rows * d * state.bits / 8)
-    param_bytes = n_groups * d * 2 * 2  # scale + zero, fp16
+    code_bytes, param_bytes = _base_code_and_param_bytes(state)
     lr_bytes = 0
     if state.L is not None and state.R is not None:
         lr_bytes = (state.L.shape[0] * state.L.shape[1] + state.R.shape[0] * state.R.shape[1]) * 2
@@ -239,9 +316,7 @@ def gear_bytes(state: GEARState) -> int:
 
 def base_only_bytes(state: GEARState) -> int:
     """Stored size of the base codes alone (no error-feedback) — the baseline."""
-    n_groups, gs, d = state.codes.shape
-    code_bytes = math.ceil(state.n_rows * d * state.bits / 8)
-    param_bytes = n_groups * d * 2 * 2
+    code_bytes, param_bytes = _base_code_and_param_bytes(state)
     return int(code_bytes + param_bytes)
 
 
@@ -252,9 +327,12 @@ def gear_quant_dequant(
     sparse_frac: float = 0.01,
     group_size: int = 32,
     energy_threshold: float = 0.90,
+    base_axis: str = "token",
 ) -> mx.array:
     """Drop-in quant→dequant: full GEAR reconstruction of ``[N, D]`` → fp16."""
-    return gear_reconstruct(gear_compress(x, bits, rank, sparse_frac, group_size, energy_threshold))
+    return gear_reconstruct(
+        gear_compress(x, bits, rank, sparse_frac, group_size, energy_threshold, base_axis)
+    )
 
 
 __all__ = [

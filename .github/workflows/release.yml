@@ -44,11 +44,6 @@ jobs:
       - name: Install package + dev/release dependencies
         run: |
           pip install -e ".[dev]"
-          # mlx_lm is not in [project.dependencies] but 35 non-test modules
-          # (including veloxquant_mlx/__init__.py's own import chain) import
-          # it at module level, so the package cannot even be imported
-          # without it -- required here for the test suite to collect at all.
-          pip install mlx-lm
 
       - name: Run test suite (release gate)
         run: python -m pytest veloxquant_mlx/tests -q
@@ -60,6 +55,8 @@ jobs:
 
       - name: Determine next version (dry run)
         id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Do NOT discard stderr or swallow the exit code here. PSR exits 2
           # with "no release will be made" when there is genuinely nothing to
@@ -77,6 +74,18 @@ jobs:
             exit 1
           fi
 
+          # "No release will be made" still prints the *current* (unchanged)
+          # version to stdout, not an empty string -- e.g. "0.43.6" when
+          # 0.43.6 was already released and nothing since qualifies (a
+          # docs-only merge landing right after a real release). Treating
+          # that as next_version made every downstream step run again for
+          # a version that was never actually bumped: "Commit, tag, and
+          # push" found nothing staged (README/CHANGELOG/pyproject.toml
+          # were already at that version) and failed on an empty commit.
+          if grep -qi "no release will be made" version_err.txt; then
+            NEXT_VERSION=""
+          fi
+
           echo "next_version=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: No release needed
@@ -85,6 +94,8 @@ jobs:
 
       - name: Bump pyproject.toml/__init__.py and prepend CHANGELOG entry (no commit yet)
         if: steps.version.outputs.next_version != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: semantic-release version --no-commit --no-tag --no-push --no-vcs-release
 
       - name: Sync README badges + landing page (version + live test count)
@@ -94,11 +105,11 @@ jobs:
       - name: Commit, tag, and push the release
         if: steps.version.outputs.next_version != ''
         run: |
-          # landing/ is included because sync_release_badges.py rewrites the
-          # hero pill version and the meta-description/test-count claims there;
-          # omitting it would silently discard that sync every release.
+          # landing/index.html is included because sync_release_badges.py rewrites
+          # the hero badge version and the meta-description/test-count claims
+          # there; omitting it would silently discard that sync every release.
           git add pyproject.toml veloxquant_mlx/__init__.py CHANGELOG.md README.md \
-                  landing/index.html landing/assets/main.js
+                  landing/index.html
           git commit -m "chore(release): ${{ steps.version.outputs.next_version }} [skip ci]"
           # Annotated (-a), not lightweight: `git push --follow-tags` pushes ONLY
           # annotated tags, so a lightweight tag here is created locally on the
@@ -114,6 +125,110 @@ jobs:
 
       - name: Publish GitHub Release
         if: steps.version.outputs.next_version != ''
-        run: semantic-release publish
+        run: |
+          # `semantic-release publish` does NOT create a GitHub Release --
+          # it only uploads build artifacts to one that already exists. With
+          # --no-vcs-release on the bump step (deliberate: this workflow tags
+          # and pushes manually, see the step above), nothing ever created
+          # the release itself, so `publish` logged "No release corresponds
+          # to tag ..., can't upload dists" and exited 0 -- a silent no-op
+          # that looked like success. Create the release directly instead,
+          # extracting this version's section from CHANGELOG.md for the
+          # release notes (the same content `semantic-release version` just
+          # prepended there).
+          # semantic-release's auto-generated heading is "## v<version> (<date>)"
+          # (no brackets) -- distinct from this file's older hand-written
+          # "## [<version>] — <date>" entries. Match either so a future
+          # switch back to hand-editing doesn't silently break this again.
+          VERSION="${{ steps.version.outputs.next_version }}"
+          awk -v v1="## v${VERSION} " -v v2="## [${VERSION}]" '
+            (index($0, v1) == 1 || index($0, v2) == 1) { found=1; print; next }
+            found && index($0, "## ") == 1 { exit }
+            found { print }
+          ' CHANGELOG.md > release_notes.md
+
+          if [ ! -s release_notes.md ]; then
+            echo "::warning::No CHANGELOG.md section found for v${VERSION}; publishing release with an empty body."
+          fi
+
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --notes-file release_notes.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build sdist + wheel
+        if: steps.version.outputs.next_version != ''
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+          ls -la dist/
+
+      - name: Upload dist/ for the publish jobs
+        if: steps.version.outputs.next_version != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dist
+          path: dist/
+          retention-days: 7
+
+    outputs:
+      # Empty when the "release" job's own `if:` skips it entirely (a
+      # [skip ci] push) or when it ran but found no releasable commits --
+      # either way, both publish jobs below no-op via their own `if:`.
+      next_version: ${{ steps.version.outputs.next_version }}
+
+  # Trusted Publishing (OIDC): no PyPI/TestPyPI API token is stored anywhere
+  # in this repo. Each job below authenticates via a short-lived OIDC token
+  # GitHub mints for the run, which PyPI/TestPyPI trust because this
+  # repo+workflow+environment combination was registered as a trusted
+  # publisher on each index ahead of time (pypi.org / test.pypi.org ->
+  # project -> Publishing -> Add a new publisher). The `environment:` name
+  # here must exactly match what was registered there.
+  publish-testpypi:
+    needs: release
+    if: needs.release.outputs.next_version != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/VeloxQuant-MLX
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          # TestPyPI is a shared, non-authoritative sandbox that does not
+          # get wiped per-release -- a version collision there (e.g. a
+          # manual test upload of the same version) should not block the
+          # real PyPI publish below.
+          skip-existing: true
+
+  # Real PyPI. Gated on TestPyPI succeeding first (needs: includes
+  # publish-testpypi) -- this is the "test run before the real release"
+  # requested. No skip-existing here: a collision on real PyPI means
+  # something is wrong (e.g. this version was already published by a
+  # different run) and should fail loudly, not silently no-op.
+  publish-pypi:
+    needs: [release, publish-testpypi]
+    if: needs.release.outputs.next_version != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/VeloxQuant-MLX
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

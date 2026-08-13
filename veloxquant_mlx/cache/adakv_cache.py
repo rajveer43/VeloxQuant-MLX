@@ -43,6 +43,7 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.adakv import (
     allocate_head_bits,
+    compute_head_attention_entropy,
     compute_head_norm_variance,
     quantize_head,
 )
@@ -53,22 +54,42 @@ class AdaKVCache(_MLXKVCache):
 
     Args:
         config: :class:`KVCacheConfig`.  Fields consumed:
-            ``adakv_target_avg_bits`` (float, default 2.0),
+            ``adakv_target_avg_bits`` (float, default 2.5),
             ``adakv_lo_bit``          (int, default 2),
             ``adakv_mid_bit``         (int, default 3),
             ``adakv_hi_bit``          (int, default 4),
             ``adakv_group_size``      (int, default 32),
-            ``adakv_update_interval`` (int, default 1).
+            ``adakv_update_interval`` (int, default 1),
+            ``adakv_importance``      (str, default ``"norm_variance"``),
+            ``adakv_obs_window``      (int, default 32).
+
+    Importance signals:
+        ``"norm_variance"`` — inter-token key-norm variance. Measures
+        *quantization sensitivity*, and is anti-correlated with the paper's
+        attention-dispersion criterion.
+
+        ``"attention_entropy"`` — observation-window attention entropy, which
+        carries Ada-KV's own sign (dispersed heads get more budget). Costs one
+        ``[w, S]`` attention matrix per head at prefill.
+
+        See :mod:`veloxquant_mlx.quantizers.adakv` for why these differ.
     """
 
     def __init__(self, config: Any) -> None:
         super().__init__()
-        self._target_avg_bits: float = float(getattr(config, "adakv_target_avg_bits", 2.0))
+        self._target_avg_bits: float = float(getattr(config, "adakv_target_avg_bits", 2.5))
         self._lo_bit: int = int(getattr(config, "adakv_lo_bit", 2))
         self._mid_bit: int = int(getattr(config, "adakv_mid_bit", 3))
         self._hi_bit: int = int(getattr(config, "adakv_hi_bit", 4))
         self._group_size: int = int(getattr(config, "adakv_group_size", 32))
         self._update_interval: int = max(1, int(getattr(config, "adakv_update_interval", 1)))
+        self._importance_mode: str = str(getattr(config, "adakv_importance", "norm_variance"))
+        self._obs_window: int = int(getattr(config, "adakv_obs_window", 32))
+        if self._importance_mode not in ("norm_variance", "attention_entropy"):
+            raise ValueError(
+                f"AdaKVCache: adakv_importance must be 'norm_variance' or "
+                f"'attention_entropy', got {self._importance_mode!r}."
+            )
 
         # Allowed bit set (dedup + sort). mid==hi collapses to a 2-tier set.
         self._allowed_bits: list[int] = sorted({self._lo_bit, self._mid_bit, self._hi_bit})
@@ -78,8 +99,19 @@ class AdaKVCache(_MLXKVCache):
         self._norm_sq_sum: Optional[mx.array] = None  # [H] fp32
         self._n_tokens: int = 0  # total tokens seen
 
+        # Last observed per-head attention entropy ([H] fp32), for the
+        # "attention_entropy" mode. Unlike norm variance this cannot be folded
+        # into a running scalar accumulator — entropy is not a mean of
+        # per-token quantities — so it is recomputed from whatever key block
+        # the current call carries. At decode (S == 1) a single row carries no
+        # attention distribution, so the prefill estimate is retained.
+        self._entropy: Optional[mx.array] = None  # [H] fp32
+
         # Current per-head bit assignment ([H] ints). Set on first update.
         self._head_bits: Optional[list[int]] = None
+
+        # Degenerate-target warning is emitted at most once per cache.
+        self._warned_degenerate: bool = False
 
         # Byte accounting
         self._compressed_key_bytes: int = 0
@@ -122,15 +154,29 @@ class AdaKVCache(_MLXKVCache):
         mean = self._norm_sum / n
         return mx.maximum(self._norm_sq_sum / n - mean * mean, 0.0)
 
+    def _current_importance(self, n_heads: int) -> mx.array:
+        """Per-head importance under the configured signal ([H] fp32)."""
+        if self._importance_mode == "attention_entropy":
+            if self._entropy is not None:
+                return self._entropy
+            return mx.zeros((n_heads,), dtype=mx.float32)
+        return self._running_head_importance()
+
     def _recompute_head_bits(self, n_heads: int) -> None:
         """Recompute the per-head bit assignment from current statistics."""
-        importance = self._running_head_importance()
+        importance = self._current_importance(n_heads)
         self._head_bits = allocate_head_bits(
             importance,
             target_avg_bits=self._target_avg_bits,
             allowed_bits=self._allowed_bits,
             n_heads=n_heads,
+            # The degenerate-target warning is a configuration diagnostic; the
+            # cache emits it once at construction-time behaviour rather than on
+            # every decode step.
+            warn_degenerate=not self._warned_degenerate,
         )
+        if not (self._allowed_bits[0] < self._target_avg_bits < self._allowed_bits[-1]):
+            self._warned_degenerate = True
 
     # ------------------------------------------------------------------
     # Core quantization
@@ -155,6 +201,12 @@ class AdaKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
 
         self._update_norm_accumulators(keys)
+        if self._importance_mode == "attention_entropy" and S > 1:
+            # Only a multi-token block carries an attention distribution; at
+            # decode (S == 1) the prefill estimate is kept.
+            ent = compute_head_attention_entropy(keys, self._obs_window)
+            mx.eval(ent)
+            self._entropy = ent
         self._recompute_head_bits(H)
         k_out = self._quantize_per_head(keys)
 
@@ -189,8 +241,14 @@ class AdaKVCache(_MLXKVCache):
 
     @property
     def head_importance(self) -> list[float]:
-        """Current per-head norm-variance importance ([H] floats)."""
-        return self._running_head_importance().tolist()
+        """Current per-head importance under the configured signal ([H] floats)."""
+        n = len(self._head_bits) if self._head_bits else 0
+        return self._current_importance(n).tolist()
+
+    @property
+    def importance_mode(self) -> str:
+        """Which importance signal drives allocation."""
+        return self._importance_mode
 
     @property
     def compressed_key_bytes(self) -> int:

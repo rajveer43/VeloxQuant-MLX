@@ -16,8 +16,9 @@ resident memory during decode, versus accounting-only counters.
 
 | Method | Default stores packed? | Notes |
 | --- | --- | --- |
-| `turboquant_rvq` | No | Dequant into parent fp16 cache; counters are accounting |
-| `vecinfer` | No (default) | Optional `fused_sdpa` / index ring buffer exists |
+| `turboquant_rvq` | **Yes** (since v0.44.0+, see below) | Keys stored as two bit-packed uint32 RVQ index streams; dequantized transiently on fetch. Measured (not accounting): -12.8% peak memory vs. fp16 baseline, -44.7% vs. mlx-lm's own native `QuantizedKVCache(bits=4)`, at a 4002-token prompt on Llama-3.2-1B-Instruct-4bit. Full methodology and every intermediate finding (including two false starts in the measurement itself) in `docs/RVQ_PACKED_STORAGE_FINDINGS.md`. `nbytes`/`compressed_key_bytes` now reflect true packed size. |
+| `vecinfer` | No (default) | Optional `fused_sdpa` / index ring buffer exists — not yet converted to the packed-storage pattern used for `turboquant_rvq` |
+| `kivi` | No | Named alongside `turboquant_rvq`/`vecinfer` as a #27 tier-1 target; not yet converted |
 | `rabitq` | Partial / fused path | Fused encode/attend Metal path aims to avoid materializing K/V |
 | Eviction methods | N/A | Reduce token count (`offset`), not bit-width |
 

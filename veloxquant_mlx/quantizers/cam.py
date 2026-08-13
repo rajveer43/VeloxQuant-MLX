@@ -12,14 +12,33 @@ the dropped token still carried mass. So instead of dropping the loser, CaM
 blend), then removes only the now-redundant slot. The information is compressed
 into a neighbour rather than thrown away.
 
-This module holds two things:
+This module holds three things:
   1. ``most_similar_survivor`` / ``merge_pair`` — the pure merge machinery:
      pick the retained non-sink token whose key is closest (cosine) to the
      evicted one, and blend the two K/V rows by their cosine similarity.
-  2. ``CaMState`` + ``cam_update`` — the per-head loop. It reuses H2O's
+  2. ``merge_gate_probability`` — the paper's Eq. 14 sampling gate: whether to
+     merge at all, not just how strongly.
+  3. ``CaMState`` + ``cam_update`` — the per-head loop. It reuses H2O's
      key-as-query cumulative-attention-mass scorer and sink protection verbatim;
      the *only* change is the over-budget step, which merges the lowest-score
      non-sink token into a survivor (``merge`` modes) rather than dropping it.
+
+Merge gate (Eq. 14 / Algorithm 1 line 6):
+  The paper does not merge unconditionally. It first samples a binary mask
+  ``M = Bernoulli(clamp(Ā_i / avg(Ā_j:j+m), 0, 1))`` — the probability of
+  merging scales with how much accumulated attention mass the loser (``i``)
+  carries relative to its merge target(s) (``j:j+m``). A loser with little
+  mass relative to its target is *not* merged (behaves like plain eviction);
+  a loser with comparable or greater mass is merged with high probability.
+  The paper's own ablation (Table 2, "w.o. Merge Mask": unconditional merging)
+  shows this gate is load-bearing — removing it drops performance *below* the
+  no-merge baseline, because indiscriminately merging low-signal losers can
+  perturb the survivor more than dropping the loser would have (Theorem 3.3).
+  Earlier revisions of this module always merged (gate probability implicitly
+  1.0), which is exactly this ablated, non-recommended configuration. The gate
+  is now implemented and on by default (``cam_merge_gate=True``); it can be
+  disabled to reproduce the old unconditional-merge behaviour or to isolate the
+  gate's effect, mirroring the paper's own ablation.
 
 Relationship to H2O:
   CaM-adapted reuses H2O's scorer, sink protection, and eviction *choice*
@@ -29,14 +48,18 @@ Relationship to H2O:
   the analogue of "``chunk_size=1`` == H2O" (ChunkKV) and "``strength=0`` == H2O"
   (SqueezeAttention), and is asserted by a dedicated equivalence test.
 
-Why not attention-mass weighting:
-  CaM's paper weights the merge by the discarded token's attention prominence.
-  At the streaming eviction boundary the evicted token is frequently the token
-  just appended (score 0, before it accumulates any mass), so an attention-mass
-  weight would make the merge a no-op. We therefore weight by **key cosine
-  similarity** — always meaningful, cache-observable, and faithful to CaM's
-  intent (fold a token into the neighbour it most resembles). Documented, not a
-  faithful port.
+Why not attention-mass weighting for the blend:
+  CaM's paper weights the *blend* by the discarded token's attention
+  prominence. At the streaming eviction boundary the evicted token is
+  frequently the token just appended (score 0, before it accumulates any
+  mass), so an attention-mass blend weight would make the merge a no-op. We
+  therefore weight the blend by **key cosine similarity** — always
+  meaningful, cache-observable, and faithful to CaM's intent (fold a token
+  into the neighbour it most resembles). Documented, not a faithful port.
+  Note this is a different quantity from the merge *gate* above: a
+  just-appended, zero-score loser correctly gets gate probability ≈0 (drop
+  it, it hasn't proven any importance yet) — that is the paper's intended
+  behaviour, not the failure mode the cosine substitution was built to avoid.
 
 Merge modes:
   - ``"sim_weighted"`` (default) — blend by the cosine similarity between the
@@ -60,8 +83,10 @@ Adaptation limitations (stated plainly):
   - Key-as-query proxy (same as H2O-adapted): both the importance score and the
     merge-similarity are computed from the key vectors the cache holds, not the
     true query / attention maps the paper reads.
-  - Single most-similar-survivor merge (no multi-target soft assignment / the
-    paper's sampling over discarded locations); nearest neighbour by cosine.
+  - Single most-similar-survivor merge target (nearest neighbour by cosine),
+    not the paper's local window of ``m`` contiguous tokens (``j:j+m``); the
+    gate's ``survivor_score`` is this one neighbour's score, standing in for
+    the paper's ``avg(Ā_j:j+m)``.
   - No RoPE position-ID remapping after merge.
   - Uniform budget across heads within a layer.
 
@@ -178,6 +203,54 @@ def merge_pair(
     return k_new, v_new
 
 
+def merge_gate_probability(evicted_score: float, survivor_score: float) -> float:
+    """Probability of merging the loser at all — the paper's Eq. 14 gate.
+
+    ``p = clamp(evicted_score / survivor_score, 0, 1)``. A loser with little
+    accumulated attention mass relative to its merge target is unlikely to be
+    merged (it behaves like plain eviction); a loser with comparable or
+    greater mass is merged with high (up to certain) probability.
+
+    Args:
+        evicted_score: cumulative attention mass of the loser (``Ā_i``).
+        survivor_score: cumulative attention mass of the merge target
+            (``avg(Ā_j:j+m)`` in the paper; here the single nearest
+            survivor's score, consistent with this module's single-target
+            adaptation of the paper's local-window average).
+
+    Returns:
+        Merge probability in ``[0, 1]``.
+    """
+    if survivor_score <= 0.0:
+        return 1.0 if evicted_score > 0.0 else 0.0
+    return min(max(evicted_score / survivor_score, 0.0), 1.0)
+
+
+def sample_merge_gate(probability: float, seed: int, draw_id: int) -> bool:
+    """Deterministic Bernoulli draw for the merge gate, reproducible by (seed, draw_id).
+
+    Mirrors the Keyformer-adapted module's seeded-Gumbel pattern: the same
+    ``(seed, draw_id)`` always yields the same draw, so results are
+    reproducible without threading RNG state through ``CaMState``.
+
+    Args:
+        probability: merge probability from ``merge_gate_probability``.
+        seed: base seed (``KVCacheConfig.seed``).
+        draw_id: monotonically increasing counter, unique per gate draw within
+            a run (e.g. total tokens absorbed so far).
+
+    Returns:
+        True → proceed with the merge; False → drop the loser instead (no blend).
+    """
+    if probability <= 0.0:
+        return False
+    if probability >= 1.0:
+        return True
+    key = mx.random.key(seed * 1_000_003 + draw_id)
+    u = float(mx.random.uniform(low=0.0, high=1.0, key=key).item())
+    return u < probability
+
+
 @dataclass
 class CaMState:
     """Per-head CaM-adapted eviction/merge state for one layer.
@@ -187,13 +260,19 @@ class CaMState:
     differs.
 
     Attributes:
-        keys:       [n_kept, D] fp16 stored key rows, or None before first update.
-        values:     [n_kept, D] fp16 stored value rows, or None before first update.
-        scores:     [n_kept] cumulative softmax attention mass (float32), or None.
-        n_sink:     Number of leading sink positions — never evicted or merged.
-        budget:     Maximum tokens to keep at any time (including sinks).
-        merge_mode: ``"sim_weighted"`` | ``"mean"`` | ``"drop"`` (drop == H2O).
-        merge_keys: Whether keys are merged too (values always are).
+        keys:        [n_kept, D] fp16 stored key rows, or None before first update.
+        values:      [n_kept, D] fp16 stored value rows, or None before first update.
+        scores:      [n_kept] cumulative softmax attention mass (float32), or None.
+        n_sink:      Number of leading sink positions — never evicted or merged.
+        budget:      Maximum tokens to keep at any time (including sinks).
+        merge_mode:  ``"sim_weighted"`` | ``"mean"`` | ``"drop"`` (drop == H2O).
+        merge_keys:  Whether keys are merged too (values always are).
+        merge_gate:  Whether the Eq. 14 Bernoulli gate decides *whether* to
+            merge (True, default) or every over-budget loser is unconditionally
+            merged (False — the paper's ablated, non-recommended configuration).
+        seed:        Base seed for the gate's deterministic Bernoulli draws.
+        draw_count:  Running count of gate draws made so far (advances the
+            deterministic RNG stream; not user-facing).
     """
 
     keys: mx.array | None
@@ -203,6 +282,9 @@ class CaMState:
     budget: int
     merge_mode: str
     merge_keys: bool
+    merge_gate: bool
+    seed: int
+    draw_count: int
 
 
 def init_cam_state(
@@ -211,6 +293,8 @@ def init_cam_state(
     head_dim: int,  # noqa: ARG001
     merge_mode: str = "sim_weighted",
     merge_keys: bool = False,
+    merge_gate: bool = True,
+    seed: int = 0,
 ) -> CaMState:
     """Create an empty CaMState before any tokens arrive.
 
@@ -220,6 +304,12 @@ def init_cam_state(
         head_dim:   Head dimension D (unused here; accepted for API symmetry).
         merge_mode: ``"sim_weighted"`` (default), ``"mean"``, or ``"drop"``.
         merge_keys: Merge keys as well as values (default False → values only).
+        merge_gate: Apply the Eq. 14 Bernoulli merge gate (default True — the
+            paper's recommended configuration). False unconditionally merges
+            every over-budget loser (the paper's ablated "w.o. Merge Mask"
+            configuration, which the paper's own Table 2 shows underperforms
+            plain eviction).
+        seed:       Base seed for the gate's deterministic Bernoulli draws.
 
     Raises:
         ValueError: if ``merge_mode`` is unknown, or if there are sink
@@ -246,6 +336,9 @@ def init_cam_state(
         budget=budget,
         merge_mode=merge_mode,
         merge_keys=bool(merge_keys),
+        merge_gate=bool(merge_gate),
+        seed=int(seed),
+        draw_count=0,
     )
 
 
@@ -277,10 +370,13 @@ def cam_update(
       2. Append the new token with score 0.
       3. If over budget: pick the lowest-score non-sink token (H2O's ``argmin`` with
          sinks masked to +inf); find its most-similar surviving non-sink neighbour;
-         **merge** the loser's K/V into that neighbour by cosine similarity
-         (``merge_pair``), transfer the loser's accumulated score to the neighbour,
-         then remove the loser's slot. With ``merge_mode="drop"`` the neighbour is
-         untouched and this is exactly H2O.
+         if ``state.merge_gate`` is set, sample the Eq. 14 Bernoulli gate from the
+         loser's score relative to the survivor's — on failure the loser is simply
+         dropped (no blend), on success (or when the gate is disabled) it is
+         **merged** into that neighbour by cosine similarity (``merge_pair``),
+         transferring the loser's accumulated score to the neighbour. Either way
+         the loser's slot is then removed. With ``merge_mode="drop"`` the neighbour
+         is never touched and this is exactly H2O regardless of the gate.
 
     Args:
         state:      Current CaMState for this head.
@@ -306,6 +402,9 @@ def cam_update(
                 budget=state.budget,
                 merge_mode=state.merge_mode,
                 merge_keys=state.merge_keys,
+                merge_gate=state.merge_gate,
+                seed=state.seed,
+                draw_count=state.draw_count,
             )
             continue
 
@@ -329,38 +428,49 @@ def cam_update(
             else:
                 protected = scores_cat
             evict_idx = int(mx.argmin(protected).item())
+            draw_count = state.draw_count
 
             # Merge the loser into its most-similar survivor (unless drop mode).
             if state.merge_mode != "drop":
                 tgt = most_similar_survivor(keys_cat[evict_idx], keys_cat, evict_idx, n_sink_eff)
                 if tgt >= 0:
-                    k_new, v_new = merge_pair(
-                        keys_cat[tgt],
-                        values_cat[tgt],
-                        keys_cat[evict_idx],
-                        values_cat[evict_idx],
-                        state.merge_mode,
-                        state.merge_keys,
-                    )
-                    # Write the merged rows back into the survivor slot.
-                    keys_cat = mx.concatenate(
-                        [keys_cat[:tgt], k_new[None], keys_cat[tgt + 1 :]], axis=0
-                    )
-                    values_cat = mx.concatenate(
-                        [values_cat[:tgt], v_new[None], values_cat[tgt + 1 :]], axis=0
-                    )
-                    # Survivor inherits the loser's mass.
-                    merged_score = scores_cat[tgt] + scores_cat[evict_idx]
-                    scores_cat = mx.concatenate(
-                        [scores_cat[:tgt], merged_score[None], scores_cat[tgt + 1 :]],
-                        axis=0,
-                    )
+                    do_merge = True
+                    if state.merge_gate:
+                        p = merge_gate_probability(
+                            float(scores_cat[evict_idx].item()), float(scores_cat[tgt].item())
+                        )
+                        do_merge = sample_merge_gate(p, state.seed, draw_count)
+                        draw_count += 1
+                    if do_merge:
+                        k_new, v_new = merge_pair(
+                            keys_cat[tgt],
+                            values_cat[tgt],
+                            keys_cat[evict_idx],
+                            values_cat[evict_idx],
+                            state.merge_mode,
+                            state.merge_keys,
+                        )
+                        # Write the merged rows back into the survivor slot.
+                        keys_cat = mx.concatenate(
+                            [keys_cat[:tgt], k_new[None], keys_cat[tgt + 1 :]], axis=0
+                        )
+                        values_cat = mx.concatenate(
+                            [values_cat[:tgt], v_new[None], values_cat[tgt + 1 :]], axis=0
+                        )
+                        # Survivor inherits the loser's mass.
+                        merged_score = scores_cat[tgt] + scores_cat[evict_idx]
+                        scores_cat = mx.concatenate(
+                            [scores_cat[:tgt], merged_score[None], scores_cat[tgt + 1 :]],
+                            axis=0,
+                        )
 
             # Remove the loser's slot.
             keep_indices = [j for j in range(n_total) if j != evict_idx]
             keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
             scores_cat = scores_cat[keep_indices]
+        else:
+            draw_count = state.draw_count
 
         state = CaMState(
             keys=keys_cat,
@@ -370,6 +480,9 @@ def cam_update(
             budget=state.budget,
             merge_mode=state.merge_mode,
             merge_keys=state.merge_keys,
+            merge_gate=state.merge_gate,
+            seed=state.seed,
+            draw_count=draw_count,
         )
 
     return state
@@ -402,6 +515,8 @@ def full_cam_fp16_bytes(tokens_seen: int, head_dim: int) -> int:
 __all__ = [
     "most_similar_survivor",
     "merge_pair",
+    "merge_gate_probability",
+    "sample_merge_gate",
     "CaMState",
     "init_cam_state",
     "cam_update",

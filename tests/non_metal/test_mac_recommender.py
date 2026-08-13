@@ -1,4 +1,8 @@
-"""Unit tests for the Mac / RAM method recommender (no MLX required)."""
+"""Unit tests for the Mac / RAM method recommender (no MLX required).
+
+Lives outside veloxquant_mlx/tests/ on purpose — see
+docs/CI_AND_TESTING.md#two-test-directories-and-why.
+"""
 
 from __future__ import annotations
 

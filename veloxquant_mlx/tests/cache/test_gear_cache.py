@@ -141,6 +141,52 @@ def test_deterministic() -> None:
     assert float(mx.mean((ko1.astype(mx.float32) - ko2.astype(mx.float32)) ** 2).item()) == 0.0
 
 
+# ------------------------------------------------------------------
+# KCVT backbone: keys per-channel, values per-token (paper's actual scheme)
+# ------------------------------------------------------------------
+
+
+def test_cache_uses_kcvt_axes_for_keys_and_values() -> None:
+    """The wrapper compresses keys with base_axis='channel' and values with
+    base_axis='token', per the paper's KCVT backbone — not the same axis for
+    both, which was this wrapper's behavior before KCVT was wired in."""
+    from veloxquant_mlx.quantizers import gear as gear_mod
+
+    seen_axes = {"key": None, "value": None}
+    orig = gear_mod.gear_compress
+
+    def _spy(mat, *, bits, rank, sparse_frac, group_size, energy_threshold, base_axis):
+        # First call per update_and_fetch is keys (is_key=True → channel),
+        # tag by axis value directly since that's what we're verifying.
+        if seen_axes["key"] is None:
+            seen_axes["key"] = base_axis
+        else:
+            seen_axes["value"] = base_axis
+        return orig(
+            mat,
+            bits=bits,
+            rank=rank,
+            sparse_frac=sparse_frac,
+            group_size=group_size,
+            energy_threshold=energy_threshold,
+            base_axis=base_axis,
+        )
+
+    import veloxquant_mlx.cache.gear_cache as gear_cache_mod
+
+    monkey_target = gear_cache_mod.gear_compress
+    gear_cache_mod.gear_compress = _spy
+    try:
+        c = _make()
+        k, v = _lowrank_kv(H=1)
+        c.update_and_fetch(k, v)
+    finally:
+        gear_cache_mod.gear_compress = monkey_target
+
+    assert seen_axes["key"] == "channel"
+    assert seen_axes["value"] == "token"
+
+
 def test_build_via_for_model_propagates_config() -> None:
     """KVCacheBuilder.for_model must carry the gear_* fields (replace path)."""
     from veloxquant_mlx.cache.base import KVCacheBuilder
