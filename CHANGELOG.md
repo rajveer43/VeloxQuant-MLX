@@ -2,7 +2,222 @@
 
 All notable changes to **VeloxQuant-MLX** are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+**A2ATS-adapted paper-fidelity fixes** ([#29](https://github.com/rajveer43/VeloxQuant-MLX/issues/29)) —
+four deviations from the source paper (He et al., ACL 2025 Findings), three
+of which contradicted its equations rather than knowingly adapting them:
+
+- **Far keys are no longer rotated.** `a2ats_apply_windowed_rope` applied a
+  fixed `R_window` rotation to out-of-window keys. Paper Eq. (12) leaves them
+  **unrotated** (`k̃_i = k_i`), with the constant `R_b` belonging on the
+  *query* (Eq. 11, `u_ij = q_i R_b k_j^T`). The old form computed
+  `q_i R_w^T k_j^T` — wrong operand, wrong direction — and left far keys in a
+  rotated frame, defeating the position-decoupling that makes a shared
+  codebook viable (§3.1, Observation 2). Adds `a2ats_apply_far_query_rope`
+  for the query-side half, exposed as `A2ATSKVCache.far_query_rope`.
+- **`b` is now independent of `w`.** The far-token offset was derived from
+  `a2ats_window`, hardcoding `b == w`; the paper's §5.1 uses `w=64`,
+  `b=2048`. New `a2ats_b` config field (default `2048`).
+- **Distance gating tracks the decode position.** Rotated keys were written
+  into the parent `KVCache`, which never revisits them — freezing each
+  token's near/far class at write time, so a token classified "near" during
+  prefill kept exact RoPE forever. The cache now stores *pre-RoPE*
+  reconstructions and re-applies windowed RoPE to the accumulated cache each
+  step, against the current query position. Costs an `O(total_tokens)` pass
+  per step, inherent to honest gating under this protocol.
+- **The paper's Eq. (14) assignment is now implemented.** Adds
+  `a2ats_query_second_moment`, `a2ats_cholesky_factor`, and
+  `a2ats_h_weighted_assignment` — the `H`-weighted quadratic form, computed
+  exactly via the Eq. (15)–(18) Cholesky identity. Enabled by the new
+  `a2ats_query_h` config field. The previous cosine blend is retained as a
+  documented *substitute* for the decode path (no calibrated `H` available),
+  not relabeled as the paper's estimator.
+
+Benchmark now measures **attention-score** error rather than key-vector
+error — under Eq. (12) far keys are intentionally unrotated, so the old
+target scored the method's design as error. Windowed RoPE still loses to
+always-exact in both geometries (2.9x / 8.3x), and this **survived** the
+fixes: the near bucket is now numerically identical to always-exact (max gap
+`5e-07`), so the entire penalty is far tokens (~92–96% of the sequence).
+Sweeping `b` does not remove it. Tests: 51 → 67, including the strengthened
+Eq. (12) assertion that the old `R_window` bug slipped past.
+
+**AdaKV-proxy: the default configuration was not adaptive** ([#31](https://github.com/rajveer43/VeloxQuant-MLX/issues/31)) —
+`adakv_target_avg_bits` defaulted to `2.0` while `adakv_lo_bit` defaulted to
+`2`. Because per-head adaptation requires headroom on both sides of the target
+(raising one head must be payable by lowering another), a target sitting exactly
+on the floor forced *every* head to `lo_bit` for every possible importance
+vector. The shipped default was therefore bit-identical to plain KIVI while the
+docs advertised per-head adaptation. The default is now `2.5`, and
+`allocate_head_bits` emits a `UserWarning` when the target sits at or outside an
+endpoint of the allowed set rather than silently flattening.
+
+**AdaKV-proxy: clamp-before-normalize saturated the allocation** — the
+real-valued per-head budget was computed as
+`clip(importance_share × H × target, lo, hi)`. Since raw key-norm variances span
+orders of magnitude, this pinned nearly every head to `lo` or `hi` and discarded
+the interior ordering that the snap and greedy-correction passes exist to act
+on: importance vectors differing by 10 000× produced byte-identical allocations.
+Replaced with rank-normalisation to a bounded, mean-centred spread placed around
+the target, so the mean lands on the budget by construction and no single
+extreme head can flatten the result.
+
+**AdaKV-proxy: allocation depended on head ordering** — greedy correction scanned
+heads in index order and kept the first strict minimum, so `[10,1,1,1]` and
+`[1,1,1,10]` starved different heads. Ties are now broken on importance, making
+the allocation permutation-equivariant for distinct importances. (With exact ties
+and an indivisible budget some tied head must still lose a bit — an
+integer-allocation fact, now documented rather than incidental.)
+
+**AdaKV-proxy: corrected an inverted claim about the importance signal** — the
+docstring and docs described inter-token key-norm variance as "a proxy for high
+attention entropy". It is the opposite: high norm-variance indicates a few
+outlier-magnitude tokens dominating the logits, i.e. an attention-*sparse* head,
+which Ada-KV (§3.3, Fig. 1b) would give *less* budget. The signal is sound for
+allocating bits — it measures quantization sensitivity — but it is a *different*
+criterion from the paper's, not an approximation of it. Now stated plainly and
+pinned by a test.
+
+### Added
+
+**`compute_head_attention_entropy`** — an AdaKV-proxy importance signal that
+carries Ada-KV's own sign: dispersed heads score higher and receive more budget.
+Estimates per-head attention entropy over an observation window using the
+keys-as-proxy-queries substitution already established by SnapKV-adapted,
+normalised by `ln(S)`. Select via `adakv_importance="attention_entropy"`;
+window size via `adakv_obs_window` (default 32).
+
+**`KVCacheConfig`** — new fields `adakv_importance`
+(default `"norm_variance"`) and `adakv_obs_window` (default `32`).
+
+### Changed
+
+- `adakv_target_avg_bits` default `2.0` → `2.5` (see above).
+- `benchmark_scripts/benchmark_adakv.py` now sweeps targets inside the adaptive
+  range and adds an `attention_entropy` arm at matched budget.
+
 <!-- version list -->
+
+## v0.48.4 (2026-08-13)
+
+### Code Style
+
+- Apply ruff 0.16.3 formatting to cache/base.py
+  ([`088334a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/088334a1a0b9724f3b796a68a4de74f22775793b))
+
+
+## v0.48.3 (2026-08-13)
+
+
+## v0.48.2 (2026-08-13)
+
+### Code Style
+
+- Satisfy ruff 0.16.3 format across the AdaKV changes
+  ([`7000e98`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7000e9801e5b22d32b0c38f1be3b1b814f3ff558))
+
+
+## v0.48.1 (2026-08-13)
+
+### Bug Fixes
+
+- **kvquant**: Correct outlier selection, decode protection, and add sink-aware quantization
+  ([`24fad52`](https://github.com/rajveer43/VeloxQuant-MLX/commit/24fad5281ab1e6ad39db16b1ab7ea139720b2c3f))
+
+
+## v0.48.0 (2026-08-12)
+
+### Documentation
+
+- **kivi**: Correct stale register-caching note in channel kernel
+  ([`1a23cd3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1a23cd36d7c715864b46555092139aa708c70d84))
+
+### Features
+
+- **kivi**: Fused Metal kernel for asymmetric group quantization
+  ([`0aeeead`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0aeeead8717d4ff5175800ea70bc32d362f0a8cb))
+
+### Performance Improvements
+
+- **kivi**: Split into layout-specific kernels, drop the transpose
+  ([`3b3eca6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3b3eca67cc3ecf328a1e678d480b03e8c3e1bc8d))
+
+
+## v0.47.1 (2026-08-12)
+
+### Bug Fixes
+
+- **kivi**: Buffer residual to group_size-aligned flushes
+  ([#162](https://github.com/rajveer43/VeloxQuant-MLX/pull/162),
+  [`d8922a8`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d8922a84652146e9c8ff81c62c9cb99dc210693b))
+
+### Documentation
+
+- **landing**: Rewrite the method picker for a non-expert audience
+  ([`efb1ca3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/efb1ca3bcc832cf702180ee7e988903d52315ff9))
+
+### Testing
+
+- **kivi**: Cover the documented model geometries; fill in the docs table
+  ([`cbaef08`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cbaef08abfca3780fce987350c40a266199eb241))
+
+
+## v0.47.0 (2026-08-11)
+
+### Documentation
+
+- **landing**: Rewrite the playground for a non-expert audience
+  ([`052df5a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/052df5adcb6d7c3da9940a95273b1f9fb4771a06))
+
+### Features
+
+- **landing**: Add GoatCounter privacy-friendly analytics
+  ([`8977926`](https://github.com/rajveer43/VeloxQuant-MLX/commit/897792686d260ec43c1d777ad92a2a18ebb38b44))
+
+
+## v0.46.0 (2026-08-11)
+
+### Bug Fixes
+
+- **pyproject**: Point Documentation URL at the Netlify docs site
+  ([`06300d9`](https://github.com/rajveer43/VeloxQuant-MLX/commit/06300d968cc241fe67d6355b1b7edced58db4664))
+
+- **registry**: Distinguish not-trimmable from crash-tier, unblocking releases
+  ([`c90c3de`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c90c3de2e81d7ab87f5a857dea7b2b2aef9098d2))
+
+- **release**: Sync the landing hero badge to the real markup, not a dead main.js pattern
+  ([`eef8a32`](https://github.com/rajveer43/VeloxQuant-MLX/commit/eef8a3274e2ac53f800826b5b3ee9e6bccd0e068))
+
+### Code Style
+
+- Satisfy ruff format on the new docs page and a pre-existing test
+  ([`1a9f16b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1a9f16b096ab8aebb84bfcde7aa7d81eef689fbe))
+
+### Documentation
+
+- **readme**: Condense method library, tighten caveats, add project context
+  ([`b2efe24`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b2efe24c3cb0f0843050c26ecb3431a2712dadb5))
+
+- **readme**: Drop SmolLM2-135M from benchmark tables
+  ([`5f3d37f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5f3d37f06c10a5ac5705a3d4e53e65581b4be9de))
+
+- **readme**: Loosen research-paper-dense prose into plain developer language
+  ([`515db67`](https://github.com/rajveer43/VeloxQuant-MLX/commit/515db6793b3186bd412f015ab906991e0c68f9de))
+
+- **transfer**: Correct the Metal kernel speedup, 12.9x was not reproducible
+  ([`1ff8e42`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1ff8e42451ec866a39704d15bba3652124100af1))
+
+### Features
+
+- **landing**: Add FAQ section, drop SmolLM2-135M from benchmark table
+  ([`2693639`](https://github.com/rajveer43/VeloxQuant-MLX/commit/26936395ce7146e89bbde836c41f9dc89ab54157))
+
+- **transfer**: Cross-model KV cache transfer via closed-form ridge mapper
+  ([`f3fdf3f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f3fdf3ff37d2e71b3e4c8b86786de0fcb1ca99a2))
+
 
 ## v0.45.0 (2026-08-10)
 

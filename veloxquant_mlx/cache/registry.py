@@ -46,8 +46,11 @@ __all__ = [
 DOCS_BASE = "https://veloxquant-mlx.netlify.app/algorithms"
 
 #: What ``veloxquant serve`` starts with when the user does not pick a method.
-#: Deliberately *not* ``KVCacheConfig``'s default (``turboquant_prod``), which
-#: is in the CRASHES tier — see #27 and the note in ``veloxquant_mlx/cli/serve.py``.
+#: This was originally chosen because ``KVCacheConfig`` defaulted to
+#: ``turboquant_prod``, which is CRASHES-tier (#27). Since f6e9434 the library
+#: default is ``turboquant_rvq`` — the same method — so the two now agree;
+#: the constant is kept so the launcher default stays explicit rather than
+#: silently tracking whatever the library default becomes next.
 DEFAULT_SERVE_METHOD = "turboquant_rvq"
 
 
@@ -58,10 +61,19 @@ class ServeTier(str, Enum):
     unreachable — it becomes reachable only when compressed storage is real
     (#27 option (d)). It exists so the UI has somewhere to put a method once
     that lands, instead of needing a new tier at that point.
+
+    ``NOT_TRIMMABLE`` exists because "cannot be trimmed" and "crashes" are
+    different facts and were previously conflated (#152). Every eviction cache
+    deliberately returns ``is_trimmable() -> False`` — ``trim()`` would roll
+    back only the base class's offset bookkeeping and not the internal
+    per-token eviction state, silently corrupting later calls. Those caches
+    serve correctly; only prompt-cache trimming is unavailable, so they must
+    not be reported to users as unavailable methods.
     """
 
     HONEST_BYTES = "honest_bytes"
     ACCOUNTING_ONLY = "accounting_only"
+    NOT_TRIMMABLE = "not_trimmable"
     CRASHES = "crashes"
 
     @property
@@ -69,10 +81,20 @@ class ServeTier(str, Enum):
         return self is not ServeTier.CRASHES
 
     @property
+    def is_trimmable(self) -> bool:
+        """False when ``mlx_lm.server`` must not call ``trim()`` on this cache.
+
+        Servable and trimmable are independent: a method can serve every
+        request correctly while refusing to have its prompt cache trimmed.
+        """
+        return self is not ServeTier.NOT_TRIMMABLE
+
+    @property
     def label(self) -> str:
         return {
             ServeTier.HONEST_BYTES: "available",
             ServeTier.ACCOUNTING_ONLY: "available",
+            ServeTier.NOT_TRIMMABLE: "available (no prompt-cache trimming)",
             ServeTier.CRASHES: "not available yet",
         }[self]
 
@@ -451,9 +473,16 @@ def _run_probe(method: str) -> tuple["ServeTier", Optional[str]]:
     except Exception as exc:
         return ServeTier.CRASHES, f"update_and_fetch failed: {type(exc).__name__}: {exc}"
 
+    # Not-trimmable is a *capability limit*, not a crash (#152). Every eviction
+    # cache returns is_trimmable() -> False on purpose, because trim() would
+    # roll back base-class offset bookkeeping without touching the internal
+    # per-token eviction state. Such a cache still serves every request
+    # correctly, so record the finding and keep probing rather than returning
+    # early — a cache that is both not-trimmable *and* fails deepcopy is still
+    # CRASHES, and returning here would hide that.
+    trimmable = True
     try:
-        if not can_trim_prompt_cache([cache]):
-            return ServeTier.CRASHES, "cache reports itself as not trimmable"
+        trimmable = bool(can_trim_prompt_cache([cache]))
     except Exception as exc:
         return ServeTier.CRASHES, f"trim probe failed: {type(exc).__name__}: {exc}"
 
@@ -464,6 +493,15 @@ def _run_probe(method: str) -> tuple["ServeTier", Optional[str]]:
             ServeTier.CRASHES,
             f"deepcopy failed ({type(exc).__name__}: {exc}); mlx_lm.server "
             "deepcopies cache entries per request.",
+        )
+
+    if not trimmable:
+        return (
+            ServeTier.NOT_TRIMMABLE,
+            "serves correctly, but reports is_trimmable() == False, so "
+            "mlx_lm.server cannot trim its prompt cache — trim() would roll "
+            "back offset bookkeeping without reverting internal eviction "
+            "state. Expected for eviction/compression caches (#152).",
         )
 
     # Serves correctly, but stores dequantized fp16 and so over-reports nbytes.

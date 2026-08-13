@@ -23,13 +23,13 @@
   <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/release.yml?branch=master&style=flat-square&label=release%20%2B%20full%20test%20suite&logo=github" alt="Release build status"/></a>
   <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/non-metal-unit.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/non-metal-unit.yml?branch=master&style=flat-square&label=non-metal%20unit&logo=github" alt="Non-Metal unit tests"/></a>
   <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/lint.yml?branch=master&style=flat-square&label=lint&logo=github" alt="Lint status"/></a>
-  <img src="https://img.shields.io/badge/tests-1862%20passing-22c55e?style=flat-square" alt="Tests"/>
+  <img src="https://img.shields.io/badge/tests-2124%20passing-22c55e?style=flat-square" alt="Tests"/>
 </p>
 
 <p>
   <a href="https://veloxquant-mlx.netlify.app/"><img src="https://img.shields.io/badge/landing%20page-veloxquant--mlx.netlify.app-7c3aed?style=flat-square" alt="Landing"/></a>
   <a href="https://veloxquant-mlx.netlify.app/playground.html"><img src="https://img.shields.io/badge/playground-try%20it%20live-00d4ff?style=flat-square" alt="Playground"/></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.45.0-64748b?style=flat-square" alt="Changelog"/></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.48.4-64748b?style=flat-square" alt="Changelog"/></a>
   <a href="blogs/metal-kernels.md"><img src="https://img.shields.io/badge/blog-Metal%20kernels%20v1-f97316?style=flat-square" alt="Blog"/></a>
   <a href="blogs/turboquant-metal-kernels.md"><img src="https://img.shields.io/badge/blog-TurboQuant%20Metal%20kernels-f97316?style=flat-square" alt="Blog v2"/></a>
   <a href="https://ko-fi.com/rajveer43"><img src="https://img.shields.io/badge/Ko--fi-support-ff5e5b?style=flat-square&logo=ko-fi&logoColor=white" alt="Ko-fi"/></a>
@@ -382,11 +382,19 @@ knobs={'bit_width_inlier': 1, 'seed': 42}
 key_accounting_ratio≈7.5x
 resident_savings_likely=False
 kv_fp16_mb≈512.0  kv_compressed_mb_est≈68.27
-rationale: Zero-calibration default. Key accounting ~7.5x at head_dim=128.
-           Default path dequantizes into parent fp16 cache.
+rationale: The safe everyday pick: it works out of the box with no setup
+           step, and shrinks the key half of the cache by about 7.5x. It
+           unpacks each value back to full precision as it is read, so this
+           is a size measurement rather than a drop in live memory use.
 warnings:
-  - Tight RAM with a mid/large model: consider goal=max_context (rabitq)
-    or goal=constant_memory (eviction) for long prompts.
+  - RAM is tight for a model this size. For long prompts you will get more
+    out of 'Fit the longest conversation' (rabitq), which compresses the
+    whole cache, or 'Never grow past a fixed memory limit' (streaming_llm),
+    which caps it outright.
+  - This method measures smaller but may not free much actual RAM on short
+    prompts, because its default path unpacks values back to full precision
+    as it reads them. The size figure is real; treat it as a measure of how
+    well the data compresses, not as RAM you get back.
 ```
 
 Goals: `everyday`, `max_key_accounting`, `max_context`, `best_quality`, `constant_memory`. Add `--json` for machine-readable output, or `--seq-len` / `--n-layers` / `--n-kv-heads` / `--head-dim` to match a specific model. Also available in the browser via the [Compression Lab](https://veloxquant-mlx.netlify.app/playground.html).
@@ -444,13 +452,35 @@ Deep-dive writeups live in [`blogs/`](blogs/) and are also published on the docs
 
 ---
 
+## Beyond compression: cross-model KV transfer
+
+One capability in this repo is **not** a compression method and is deliberately
+not in the 41: [**cross-model KV cache transfer**](https://veloxquant-mlx.netlify.app/algorithms/cross-model-transfer)
+(`veloxquant_mlx.transfer`). Instead of shrinking one model's cache, it maps a
+*source* model's already-prefilled KV into a *target* model's format, so the
+receiver can skip prefill when you swap between two models in the same family.
+Cache size is unchanged; what you save is prefill compute.
+
+It lives in its own subsystem rather than behind `method="..."` because it
+needs two models, an offline per-pair fit, and a multi-GB artifact — none of
+which the single-model cache contract can express. Adapted from
+[Cross-Model KV Cache Transfer (NVIDIA, arXiv:2608.03893)](https://arxiv.org/abs/2608.03893);
+the paper's retention and speedup figures are its own, measured on datacenter-scale
+pairs, and are not reproduced here. See the
+[docs page](https://veloxquant-mlx.netlify.app/algorithms/cross-model-transfer)
+for the caveats before relying on it.
+
+---
+
 ## References
 
 41 methods, each adapted from a published paper with documented deviations
 (39 from a verified peer-reviewed venue; 2, NestedKV-adapted and AMC-adapted,
 from unpublished preprints as one-time, stated exceptions — see
 [CITATIONS.md](CITATIONS.md)) — full bibliography (implemented methods,
-related work, and survey papers): **[CITATIONS.md](CITATIONS.md)**.
+related work, and survey papers): **[CITATIONS.md](CITATIONS.md)**. The
+cross-model transfer subsystem above is counted separately, as it compresses
+nothing.
 
 Headline references: [TurboQuant (ICLR 2026)](https://arxiv.org/abs/2504.19874), [VecInfer (2024)](https://arxiv.org/abs/2510.06175), [RaBitQ (SIGMOD 2024)](https://arxiv.org/abs/2402.02855), [CommVQ (ICML 2025)](https://arxiv.org/abs/2506.18879), [KVzip (NeurIPS 2025)](https://arxiv.org/abs/2505.23416), [KVTC (ICLR 2026)](https://arxiv.org/abs/2511.01815), [CurDKV (NeurIPS 2025)](https://arxiv.org/abs/2509.15038), [NestedKV (preprint, arXiv:2605.26678)](https://arxiv.org/abs/2605.26678), [AMC (preprint, arXiv:2607.10109)](https://arxiv.org/abs/2607.10109), [A2ATS (ACL 2025 Findings)](https://aclanthology.org/2025.findings-acl.644/). Built on [Apple MLX](https://github.com/ml-explore/mlx).
 

@@ -17,6 +17,10 @@ into a smaller bitstream. Its three observations:
      CacheGen spends fewer bits on later layers.
   3. **Arithmetic coding** — the delta symbol stream, being low-entropy, is
      compressed with an entropy coder down toward its Shannon entropy.
+  4. **Channel/layer grouping** — fitting a separate symbol distribution per
+     channel (§5.1.3) yields much lower entropy than pooling all channels
+     together; layer separation is already implicit (each cache instance
+     owns one layer).
 
 Adaptation:
   * The reconstruction path is the existing asymmetric min/max group quant — the
@@ -137,7 +141,9 @@ def symbol_entropy_bits(symbols: mx.array) -> float:
     return float(ent.item())
 
 
-def entropy_coded_bytes(stream: CodeStream, use_delta: bool = True) -> int:
+def entropy_coded_bytes(
+    stream: CodeStream, use_delta: bool = True, per_channel: bool = True
+) -> int:
     """Estimate the entropy-coded size (bytes) of a CodeStream's codes.
 
     Models a real arithmetic coder by measuring the Shannon entropy of the
@@ -147,6 +153,11 @@ def entropy_coded_bytes(stream: CodeStream, use_delta: bool = True) -> int:
     Args:
         stream: the quantized CodeStream.
         use_delta: apply the token-delta transform before measuring entropy.
+        per_channel: fit a separate probability distribution per channel
+            before measuring entropy (§5.1.3: grouping by channel/layer gives
+            much lower entropy than pooling all channels together — the paper
+            reports up to 53% smaller bitstreams from this). If False, all
+            channels are pooled into one distribution (the coarser estimate).
 
     Returns:
         Estimated compressed size in bytes (codes via entropy + fp16 params).
@@ -157,11 +168,15 @@ def entropy_coded_bytes(stream: CodeStream, use_delta: bool = True) -> int:
     n_groups, gs, d = stream.codes.shape
     flat = stream.codes.reshape(n_groups * gs, d)[: stream.n_rows]  # [N, D]
     symbols = token_delta(flat) if use_delta else flat
-    bits_per_sym = symbol_entropy_bits(symbols)
-    n_symbols = int(stream.n_rows * d)
-    # A real coder never spends more than the fixed bit-width per symbol.
-    bits_per_sym = min(bits_per_sym, float(stream.bits))
-    code_bytes = math.ceil(n_symbols * bits_per_sym / 8)
+    if per_channel:
+        code_bits = 0.0
+        for c in range(d):
+            bits_per_sym = min(symbol_entropy_bits(symbols[:, c]), float(stream.bits))
+            code_bits += bits_per_sym * stream.n_rows
+    else:
+        bits_per_sym = min(symbol_entropy_bits(symbols), float(stream.bits))
+        code_bits = bits_per_sym * stream.n_rows * d
+    code_bytes = math.ceil(code_bits / 8)
     param_bytes = n_groups * d * 2 * 2  # scale + zero, fp16
     return code_bytes + param_bytes
 
@@ -172,6 +187,39 @@ def fixed_width_bytes(stream: CodeStream) -> int:
     code_bytes = math.ceil(stream.n_rows * d * stream.bits / 8)
     param_bytes = n_groups * d * 2 * 2
     return code_bytes + param_bytes
+
+
+def layer_group_bits(n_layers: int, base_bits: int, n_groups: int = 3) -> list[int]:
+    """Per-layer bit-width schedule from the paper's layer-wise sensitivity insight (§5.1.2/§5.2).
+
+    Splits the ``n_layers`` transformer layers into ``n_groups`` contiguous
+    groups (earliest first) and assigns progressively *fewer* bits to deeper
+    groups: ``base_bits`` to the first third, ``base_bits - 1`` to the middle
+    third, ``base_bits - 2`` to the last third (floored at 2 bits). This
+    mirrors the paper's finding that output quality is far more sensitive to
+    precision loss in shallow layers than in deep ones (Figure 4), so shallow
+    layers get conservative (higher-bit) quantization and deep layers get
+    coarser quantization.
+
+    Args:
+        n_layers: number of attention-bearing layers.
+        base_bits: bit-width assigned to the shallowest layer group (also the
+            ceiling — no layer is assigned more than this).
+        n_groups: number of contiguous layer groups (paper uses 3).
+
+    Returns:
+        Length-``n_layers`` list of per-layer bit-widths, non-increasing with depth.
+    """
+    if n_layers <= 0:
+        return []
+    n_groups = min(n_groups, n_layers)
+    bounds = [round(n_layers * g / n_groups) for g in range(n_groups + 1)]
+    bounds[-1] = n_layers
+    schedule = []
+    for i in range(n_layers):
+        group = next(g for g in range(n_groups) if bounds[g] <= i < bounds[g + 1])
+        schedule.append(max(2, base_bits - group))
+    return schedule
 
 
 def cachegen_quant_dequant(x: mx.array, bits: int, group_size: int = 32) -> mx.array:
@@ -191,5 +239,6 @@ __all__ = [
     "symbol_entropy_bits",
     "entropy_coded_bytes",
     "fixed_width_bytes",
+    "layer_group_bits",
     "cachegen_quant_dequant",
 ]

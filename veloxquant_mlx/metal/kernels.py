@@ -5,6 +5,7 @@ Kernels are organized into focused submodules:
   _bit_packing   — TurboQuant b-bit index pack/unpack
   _scalar_quant  — TurboQuant scalar quantize/dequantize + fused Hadamard
   _scalar_attend — Fused group-affine (KIVI-style) decode + attention
+  _kivi_quant    — Fused KIVI asymmetric group quantize+dequantize round-trip
   _qjl           — QJL encode and inner product
   _rvq_attend    — Fused RVQ decode + attention
   _comm_vq       — CommVQ RoPE-commutative decode
@@ -14,6 +15,7 @@ Kernels are organized into focused submodules:
   _rabitq_values — Nibble packing for 4-bit value indices
   _h2o_evict     — Fused H2O eviction: sink-protected argmin + evict + RoPE-remap
   _keyformer_evict — Fused Keyformer eviction: Gumbel-regularized argmin + evict + RoPE-remap
+  _crosskv_rope    — Cross-model KV transfer: fused source→target RoPE re-encode
 """
 
 from __future__ import annotations
@@ -35,6 +37,9 @@ from veloxquant_mlx.metal._scalar_quant import (
 )
 from veloxquant_mlx.metal._scalar_attend import (
     scalar_fused_decode_attend,
+)
+from veloxquant_mlx.metal._kivi_quant import (
+    kivi_group_quant_dequant,
 )
 from veloxquant_mlx.metal._qjl import (
     qjl_encode,
@@ -67,8 +72,12 @@ from veloxquant_mlx.metal._h2o_evict import (
 from veloxquant_mlx.metal._keyformer_evict import (
     keyformer_fused_evict,
 )
+from veloxquant_mlx.metal._crosskv_rope import (
+    crosskv_rope_recode,
+)
 
 __all__ = [
+    "crosskv_rope_recode",
     "vecinfer_dequant_metal",
     "vecinfer_quantize_metal",
     "vecinfer_encode_decode_metal",
@@ -79,6 +88,7 @@ __all__ = [
     "turboquant_scalar_dequantize",
     "turboquant_hadamard_quantize",
     "scalar_fused_decode_attend",
+    "kivi_group_quant_dequant",
     "qjl_encode",
     "qjl_inner_product",
     "turboquant_fused_rvq_decode_attend",

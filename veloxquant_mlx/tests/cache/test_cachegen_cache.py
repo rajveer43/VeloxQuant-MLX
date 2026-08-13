@@ -3,7 +3,9 @@
 CacheGen's reconstructed K/V are identical to plain group quant; its
 contribution is the entropy-coded *byte accounting*. These tests cover the
 lossless-reconstruction property, the token-locality entropy win, the
-never-worse-than-fixed-width cap, and the usual factory/shape/accounting checks.
+never-worse-than-fixed-width cap, the usual factory/shape/accounting checks,
+and — the distinguishing feature — for_model producing per-layer caches with
+a non-increasing bit-width schedule (§5.1.2/§5.2 layer-wise sensitivity).
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ import mlx.core as mx
 import numpy as np
 import pytest
 
-from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
+from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.cachegen_cache import CacheGenKVCache
 
 
@@ -27,6 +29,20 @@ def _rand_kv(S=128, H=2, D=64, seed=0):
     K = rng.standard_normal((1, H, S, D)).astype(np.float16)
     V = rng.standard_normal((1, H, S, D)).astype(np.float16)
     return mx.array(K), mx.array(V)
+
+
+class _Attn:
+    head_dim = 64
+
+
+class _Layer:
+    def __init__(self):
+        self.self_attn = _Attn()
+
+
+class _Model:
+    def __init__(self, n):
+        self.layers = [_Layer() for _ in range(n)]
 
 
 def _corr_kv(S=128, H=2, D=64, seed=0):
@@ -172,3 +188,41 @@ def test_determinism() -> None:
     mx.eval(ko1, ko2)
     assert np.allclose(np.array(ko1), np.array(ko2), atol=1e-4)
     assert c1.compressed_key_bytes == c2.compressed_key_bytes
+
+
+# ------------------------------------------------------------------
+# Single-layer fallback (== uniform cachegen_bits)
+# ------------------------------------------------------------------
+
+
+def test_single_layer_falls_back_to_uniform_bits() -> None:
+    """Factory.create (no layer context) uses cachegen_bits as the bit-width."""
+    c = _make(cachegen_bits=5)
+    assert c._bits == 5
+
+
+# ------------------------------------------------------------------
+# for_model — per-layer bit-width schedule (§5.1.2/§5.2, the distinguishing feature)
+# ------------------------------------------------------------------
+
+
+def test_for_model_returns_cachegen_caches() -> None:
+    cfg = KVCacheConfig(method="cachegen", head_dim=64, cachegen_bits=4)
+    caches = KVCacheBuilder.for_model(_Model(8), cfg)
+    assert len(caches) == 8
+    assert all(isinstance(c, CacheGenKVCache) for c in caches)
+
+
+def test_for_model_bits_non_increasing_with_depth() -> None:
+    cfg = KVCacheConfig(method="cachegen", head_dim=64, cachegen_bits=4, cachegen_layer_groups=3)
+    caches = KVCacheBuilder.for_model(_Model(12), cfg)
+    bits = [c._bits for c in caches]
+    assert bits == sorted(bits, reverse=True)
+    assert bits[0] == 4
+    assert bits[-1] < bits[0]
+
+
+def test_for_model_shallow_layer_keeps_base_bits() -> None:
+    cfg = KVCacheConfig(method="cachegen", head_dim=64, cachegen_bits=6)
+    caches = KVCacheBuilder.for_model(_Model(9), cfg)
+    assert caches[0]._bits == 6

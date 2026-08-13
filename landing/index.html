@@ -104,7 +104,7 @@
       <div class="particle"></div>
     </div>
     <div class="hero-content">
-      <div class="badge" id="hero-badge" data-text="v0.42.1 — fused KIVI-style Metal attention kernel shipped">v0.42.1 — fused KIVI-style Metal attention kernel shipped</div>
+      <div class="badge" id="hero-badge" data-text="v0.48.4 — fused KIVI-style Metal attention kernel shipped">v0.48.4 — fused KIVI-style Metal attention kernel shipped</div>
 
       <h1>Your Mac runs out of memory<br>before it runs out of <span>context</span></h1>
 
@@ -277,40 +277,40 @@
       <p class="section-label">Which method</p>
       <h2 class="section-title">41 methods, one decision</h2>
       <p class="section-desc">
-        Most people need one of six. Pick by what you're optimising for —
-        the full catalogue lives in the docs.
+        You only need one. Find the row that sounds like your situation —
+        that's your answer. The other 35 are in the docs when you want them.
       </p>
     </div>
 
     <div class="picker-list fade-in">
       <div class="picker-row is-default">
-        <p class="picker-goal">Balanced, nothing to calibrate
-          <small>The default. Works on any model, no setup pass.</small></p>
-        <p class="picker-pick"><a href="#quickstart" class="picker-tab-link" data-tab="rvq"><code class="inline plain">turboquant_rvq</code></a><small>7.5× keys</small></p>
+        <p class="picker-goal">I just want it to work
+          <small>Start here. No setup step, works on any model.</small></p>
+        <p class="picker-pick"><a href="#quickstart" class="picker-tab-link" data-tab="rvq"><code class="inline plain">turboquant_rvq</code></a><small>7.5× on half the cache</small></p>
       </div>
       <div class="picker-row is-max">
-        <p class="picker-goal">Maximum compression, quality secondary
-          <small>Needs a one-time codebook calibration.</small></p>
-        <p class="picker-pick"><a href="#quickstart" class="picker-tab-link" data-tab="vecinfer"><code class="inline plain">vecinfer</code></a><small>16× keys</small></p>
+        <p class="picker-goal">I want it as small as possible
+          <small>The most compression on offer, if you can spare a one-time setup pass.</small></p>
+        <p class="picker-pick"><a href="#quickstart" class="picker-tab-link" data-tab="vecinfer"><code class="inline plain">vecinfer</code></a><small>16× on half the cache</small></p>
       </div>
       <div class="picker-row">
-        <p class="picker-goal">Longest context in fixed RAM
-          <small>Compresses keys <em>and</em> values — real resident savings.</small></p>
-        <p class="picker-pick"><code class="inline plain">rabitq</code><small>6× full KV</small></p>
+        <p class="picker-goal">I want the longest possible conversation
+          <small>The only picks here that hand real RAM back, not just smaller numbers.</small></p>
+        <p class="picker-pick"><code class="inline plain">rabitq</code><small>6× on the whole cache</small></p>
       </div>
       <div class="picker-row">
-        <p class="picker-goal">Quality-critical work
-          <small>Per-channel keys, per-token values, fp16 residual window.</small></p>
-        <p class="picker-pick"><code class="inline plain">kivi</code><small>~4× full KV</small></p>
+        <p class="picker-goal">I need the answers to stay accurate
+          <small>Compresses least, stays closest to the original model.</small></p>
+        <p class="picker-pick"><code class="inline plain">kivi</code><small>~4× on the whole cache</small></p>
       </div>
       <div class="picker-row">
-        <p class="picker-goal">Bounded memory regardless of length
-          <small>Drops stale tokens. Quality depends on the task.</small></p>
-        <p class="picker-pick"><code class="inline plain">streaming_llm</code> / <code class="inline plain">h2o</code><small>eviction</small></p>
+        <p class="picker-goal">I never want it to run out of memory
+          <small>Forgets older messages to hold memory flat. Fine for chat, risky for long documents.</small></p>
+        <p class="picker-pick"><code class="inline plain">streaming_llm</code> / <code class="inline plain">h2o</code><small>fixed size</small></p>
       </div>
       <div class="picker-row">
-        <p class="picker-goal">Everything else
-          <small>35 more, including cross-layer merging and spectral rotation.</small></p>
+        <p class="picker-goal">None of these are my problem
+          <small>35 more methods, each from a published paper.</small></p>
         <p class="picker-pick"><a href="/docs/algorithms/overview" class="t-accent">algorithm reference →</a></p>
       </div>
     </div>
@@ -968,5 +968,11 @@ pip install -e ".[dev]"</span></pre>
 
   <script src="assets/calc.js" defer></script>
   <script src="assets/main.js" defer></script>
+
+  <!-- GoatCounter: privacy-friendly, cookieless page counts. Client-side, so
+       it records browsers rather than crawlers — expect it to read lower than
+       server-side request counts. -->
+  <script data-goatcounter="https://veloxquant.goatcounter.com/count"
+          async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>

@@ -132,12 +132,17 @@ class KVCacheConfig:
     kitty_lo_bit: int = 2  # bits for low-variance channels
     kitty_group_size: int = 32  # group size for channel quantization
     # --- AdaKV-proxy configuration (per-head adaptive bit allocation) ----
-    adakv_target_avg_bits: float = 2.0  # global average bits/element target
+    # NOTE: target must lie strictly inside (lo_bit, hi_bit) for per-head
+    # adaptation to be possible at all — at either endpoint the budget forces a
+    # uniform allocation (equivalent to plain KIVI). Default 2.5, not 2.0.
+    adakv_target_avg_bits: float = 2.5  # global average bits/element target
     adakv_lo_bit: int = 2  # minimum bits any head can get
     adakv_mid_bit: int = 3  # middle tier (set == hi for a 2-tier set)
     adakv_hi_bit: int = 4  # maximum bits any head can get
     adakv_group_size: int = 32  # group size for per-head quantization
     adakv_update_interval: int = 1  # recompute allocation every N tokens (1 = every step)
+    adakv_importance: str = "norm_variance"  # "norm_variance" | "attention_entropy"
+    adakv_obs_window: int = 32  # obs-window size for attention_entropy
     # --- XQuant configuration (cross-layer KV cache reuse) ---------------
     xquant_group_size: int = 2  # layers per anchor/reuse group (2 = pairs)
     xquant_base_bits: int = 2  # anchor quantizer bit-width
@@ -150,6 +155,7 @@ class KVCacheConfig:
     kvquant_group_size: int = 32  # group size for per-channel/per-token fitting
     kvquant_lloyd_iters: int = 8  # Lloyd-Max iterations for level fitting
     kvquant_refit_interval: int = 0  # refit levels every N decode steps (0 = freeze prefill)
+    kvquant_n_sink: int = 1  # leading attention-sink tokens kept fp16 (paper §3.5; 0 = off)
     # --- PALU configuration (true-latent low-rank K *and* V) -------------
     palu_rank: Optional[int] = None  # explicit latent rank; None → energy threshold
     palu_energy_threshold: float = 0.90  # singular-value energy to retain
@@ -160,9 +166,14 @@ class KVCacheConfig:
     palu_group_size: int = 32  # token group size for latent quantization
     palu_quantize_values: bool = True  # low-rank + mixed-bit values too (False = LR-only)
     # --- CacheGen configuration (entropy-coded byte model over group quant) ----
-    cachegen_bits: int = 4  # base group-quant bit-width
+    cachegen_bits: int = 4  # base group-quant bit-width (shallowest layer group)
     cachegen_group_size: int = 32  # token group size
     cachegen_use_delta: bool = True  # token-delta transform before entropy coding
+    cachegen_per_channel: bool = True  # group entropy estimate by channel (§5.1.3)
+    cachegen_layer_groups: int = 3  # number of layer-depth groups for the bit schedule
+    cachegen_resolved_bits: Optional[int] = (
+        None  # per-layer bit-width injected by for_model (None → uniform cachegen_bits)
+    )
     # --- MiniCache configuration (cross-layer depth-dimension SLERP merge) -----
     minicache_start_frac: float = 0.5  # depth fraction below which layers are never merged
     minicache_group_size: int = 2  # layers per merge group (2 = pairs)
@@ -223,6 +234,7 @@ class KVCacheConfig:
     chunkkv_score: str = (
         "attn_mass"  # chunk-importance proxy: "attn_mass" (H2O scorer) | "key_norm"
     )
+    chunkkv_reuse_layers: int = 1  # Algorithm 2: layers per reuse block; 1 = disabled
     # --- CaM-adapted configuration (cache merging — merge evicted tokens, not drop) ---
     cam_budget: int = 512  # max tokens kept per layer (sinks included)
     cam_n_sink: int = 4  # initial positions protected from eviction (attention sinks)
@@ -323,11 +335,15 @@ class KVCacheConfig:
     # --- A2ATS-adapted configuration (windowed RoPE + query-aware VQ) --
     a2ats_codebook_bits: int = 8  # codebook size 2^bits
     a2ats_sub_dim: int = 8  # VQ sub-vector width
-    a2ats_window: int = 128  # trailing exact-RoPE window (positions)
+    a2ats_window: int = 128  # trailing exact-RoPE window w (positions)
+    # constant far-token relative position b (Eq. 11); independent of w
+    a2ats_b: int = 2048
     a2ats_use_query_aware: bool = True  # paper's primary reported path (default ON)
     a2ats_beta: float = 0.5  # query/reconstruction blend, in [0, 1]
     a2ats_retrieval_fraction: float = 0.20  # fraction of tokens routed to query-aware assignment
     a2ats_rope_base: float = 10000.0  # RoPE frequency base
+    # [sub_dim, sub_dim] query second-moment H (Eq. 10); enables the paper's Eq. 14 assignment
+    a2ats_query_h: Any = None
     a2ats_codebook: Any = None  # mx.array | np.ndarray | None (random init if absent)
     # --- KVSink-adapted sink protection (method="kivi_sink") -----------
     n_sink_tokens: int = 5  # top-k high-key-norm tokens kept fp16
@@ -877,6 +893,10 @@ class KVCacheBuilder:
         if config.method == "pyramidkv":
             return KVCacheBuilder._build_pyramidkv(layers, args, config, _FallbackCache)
 
+        # --- CacheGen: per-layer bit-width schedule injected at build time -----
+        if config.method == "cachegen":
+            return KVCacheBuilder._build_cachegen(layers, args, config, _FallbackCache)
+
         # --- SqueezeAttention: shared coordinator re-budgets after prefill -----
         if config.method == "squeeze":
             return KVCacheBuilder._build_squeeze(layers, args, config, _FallbackCache)
@@ -884,6 +904,10 @@ class KVCacheBuilder:
         # --- xKV: cross-layer shared-subspace SVD needs a shared coordinator --
         if config.method == "xkv":
             return KVCacheBuilder._build_xkv(layers, args, config, _FallbackCache)
+
+        # --- ChunkKV: layer-wise index reuse needs a shared coordinator -------
+        if config.method == "chunkkv" and config.chunkkv_reuse_layers > 1:
+            return KVCacheBuilder._build_chunkkv(layers, args, config, _FallbackCache)
 
         caches = []
         attn_idx = 0  # index into b_spec, advances only for attention layers
@@ -1170,6 +1194,57 @@ class KVCacheBuilder:
         return caches
 
     @staticmethod
+    def _build_cachegen(layers, args, config: "KVCacheConfig", fallback_cls) -> list:
+        """Build per-layer CacheGen caches with a layer-wise bit-width schedule.
+
+        Implements the paper's layer-sensitivity observation (§5.1.2/§5.2):
+        output quality is more sensitive to precision loss in shallow layers
+        than in deep ones, so shallow layers get ``cachegen_bits`` and deeper
+        layer groups get progressively fewer bits (``layer_group_bits``). Each
+        attention layer receives its own resolved bit-width via
+        ``cachegen_resolved_bits``; no runtime coordinator is needed.
+        """
+        from veloxquant_mlx.cache.cachegen_cache import CacheGenKVCache
+        from veloxquant_mlx.quantizers.cachegen import layer_group_bits
+
+        def _head_dim(layer):
+            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+            if attn is None:
+                return None
+            hd = getattr(attn, "head_dim", None)
+            if hd is None and args is not None:
+                hd = getattr(args, "head_dim", None) or (
+                    args.hidden_size // args.num_attention_heads
+                )
+            return hd
+
+        attn_layer_idx = [i for i, L in enumerate(layers) if _head_dim(L) is not None]
+        schedule = layer_group_bits(
+            n_layers=len(attn_layer_idx),
+            base_bits=config.cachegen_bits,
+            n_groups=config.cachegen_layer_groups,
+        )
+        bits_by_layer: dict[int, int] = {
+            attn_layer_idx[k]: schedule[k] for k in range(len(attn_layer_idx))
+        }
+
+        caches = []
+        for i, layer in enumerate(layers):
+            hd = _head_dim(layer)
+            if hd is None:
+                caches.append(fallback_cls())
+                continue
+            layer_cfg = dataclasses_replace(
+                config,
+                head_dim=hd,
+                seed=config.seed + i,
+                store=config.store,
+                cachegen_resolved_bits=bits_by_layer[i],
+            )
+            caches.append(CacheGenKVCache(layer_cfg))
+        return caches
+
+    @staticmethod
     def _build_squeeze(layers, args, config: "KVCacheConfig", fallback_cls) -> list:
         """Build one shared SqueezeCoordinator and per-layer SqueezeAttention caches.
 
@@ -1215,6 +1290,56 @@ class KVCacheBuilder:
                 store=config.store,
             )
             caches.append(SqueezeAttentionCache(layer_cfg, layer_id=i, coordinator=coordinator))
+        return caches
+
+    @staticmethod
+    def _build_chunkkv(layers, args, config: "KVCacheConfig", fallback_cls) -> list:
+        """Build per-layer ChunkKV caches sharing a layer-wise index-reuse coordinator.
+
+        Implements the paper's Algorithm 2: attention-bearing layers are grouped
+        into consecutive blocks of ``chunkkv_reuse_layers``; the leader of each
+        block runs its own eviction and publishes the kept-token positions every
+        step, and the remaining layers in the block reuse those positions instead
+        of scoring and evicting independently. Layer ids passed to the coordinator
+        are indices into the attention-bearing layer sequence (0, 1, 2, ...), not
+        raw model layer indices, so blocks are contiguous even when non-attention
+        layers are interleaved.
+        """
+        from veloxquant_mlx.cache.chunkkv_cache import ChunkKVCache
+        from veloxquant_mlx.cache.chunkkv_coordinator import ChunkKVIndexReuseCoordinator
+
+        def _head_dim(layer):
+            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+            if attn is None:
+                return None
+            hd = getattr(attn, "head_dim", None)
+            if hd is None and args is not None:
+                hd = getattr(args, "head_dim", None) or (
+                    args.hidden_size // args.num_attention_heads
+                )
+            return hd
+
+        attn_layer_idx = [i for i, L in enumerate(layers) if _head_dim(L) is not None]
+        coordinator = ChunkKVIndexReuseCoordinator(
+            n_layers=len(attn_layer_idx),
+            reuse_layers=config.chunkkv_reuse_layers,
+        )
+
+        caches = []
+        attn_pos = 0  # 0-based index among attention-bearing layers only
+        for i, layer in enumerate(layers):
+            hd = _head_dim(layer)
+            if hd is None:
+                caches.append(fallback_cls())
+                continue
+            layer_cfg = dataclasses_replace(
+                config,
+                head_dim=hd,
+                seed=config.seed + i,
+                store=config.store,
+            )
+            caches.append(ChunkKVCache(layer_cfg, layer_id=attn_pos, coordinator=coordinator))
+            attn_pos += 1
         return caches
 
     def __repr__(self) -> str:
