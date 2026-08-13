@@ -1,0 +1,134 @@
+{
+  "model": "mlx-community/Llama-3.2-3B-Instruct-4bit",
+  "metal_available": true,
+  "long_prefill": [
+    {
+      "label": "budget=128 tau=constant",
+      "budget": 128,
+      "tau_mode": "constant",
+      "status": "OK",
+      "elapsed_s": 86.5811004999996,
+      "n_generated": 41,
+      "kept": 128,
+      "n_prompt_tokens": 3156
+    },
+    {
+      "label": "budget=128 tau=annealed",
+      "budget": 128,
+      "tau_mode": "annealed",
+      "status": "OK",
+      "elapsed_s": 86.92787645800126,
+      "n_generated": 39,
+      "kept": 128,
+      "n_prompt_tokens": 3156
+    },
+    {
+      "label": "budget=256 tau=constant",
+      "budget": 256,
+      "tau_mode": "constant",
+      "status": "OK",
+      "elapsed_s": 85.16240795799968,
+      "n_generated": 34,
+      "kept": 256,
+      "n_prompt_tokens": 3156
+    }
+  ],
+  "prefill_vs_decode": [
+    {
+      "tau_mode": "constant",
+      "kept": 128,
+      "budget_ok": true,
+      "n_generated": 121,
+      "coherent": true,
+      "elapsed_s": 6.744740125002863,
+      "response_preview": "Photosynthesis is the process by which plants, algae, and some bacteria convert light energy from the sun into chemical energy in the form of organic compounds, such as glucose. This process is essential for life on Earth, as as as as as as as as as as as as as as as as as as as as as as as as as as"
+    },
+    {
+      "tau_mode": "annealed",
+      "kept": 128,
+      "budget_ok": true,
+      "n_generated": 121,
+      "coherent": true,
+      "elapsed_s": 6.887696541001787,
+      "response_preview": "Photosynthesis is the process by which plants, algae, and some bacteria convert light energy from the sun into chemical energy in the form of organic compounds, such as glucose. This process is essential for life on Earth, as as as as as as as as as as as as as as as as as as as as as as as as as as"
+    }
+  ],
+  "coherence_tight_budget": [
+    {
+      "label": "TIGHT (known-degradation zone), constant tau",
+      "budget": 24,
+      "kept": 24,
+      "n_generated": 201,
+      "max_4gram_repeat": 197,
+      "frozen_loop": true,
+      "response_preview": "a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a"
+    },
+    {
+      "label": "TIGHT (known-degradation zone), annealed tau",
+      "budget": 24,
+      "kept": 24,
+      "n_generated": 201,
+      "max_4gram_repeat": 0,
+      "frozen_loop": false,
+      "response_preview": "I\nI\n\nI\n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n"
+    },
+    {
+      "label": "realistic budget, constant tau",
+      "budget": 128,
+      "kept": 128,
+      "n_generated": 201,
+      "max_4gram_repeat": 113,
+      "frozen_loop": true,
+      "response_preview": "It was a stormy night, the winds howling and the rain lashing against the small island where the lighthouse keeper, Emily, resided. She had been stationed here for five years, tending to the light that guided ships safely into the harbor.\n\nAs she climbed the winding staircase to the lantern room, the creaking of the wooden steps echoed through the darkness. The beam of light cast anemic glow glow "
+    },
+    {
+      "label": "realistic budget, annealed tau",
+      "budget": 128,
+      "kept": 128,
+      "n_generated": 201,
+      "max_4gram_repeat": 113,
+      "frozen_loop": true,
+      "response_preview": "It was a stormy night, the winds howling and the rain lashing against the small island where the lighthouse keeper, Emily, resided. She had been stationed here for five years, tending to the light that guided ships safely into the harbor.\n\nAs she climbed the winding staircase to the lantern room, the creaking of the wooden steps echoed through the darkness. The beam of light cast anemic glow glow "
+    },
+    {
+      "label": "realistic budget, tau=0 (H2O-adapted collapse)",
+      "budget": 128,
+      "kept": 128,
+      "n_generated": 201,
+      "max_4gram_repeat": 112,
+      "frozen_loop": true,
+      "response_preview": "It was a stormy night, the winds howling and the rain lashing against the small island where the lighthouse keeper, Emily, resided. She had been stationed here for five years, tending to the light that guided ships safely into the harbor.\n\nAs she climbed the winding staircase to the lantern room, the creaking of the wooden steps echoed through the darkness. The beam of light cast anemic rays out o"
+    }
+  ],
+  "tau_zero_vs_h2o": {
+    "keyformer_response": "A hash table is a data structure that stores key-value pairs in an array, where each key is mapped to a unique index in the array, allowing for efficient lookups, insertions, and deletions of data. The \"hash\" part refers to the mathematical function used to convert the key into",
+    "h2o_response": "A hash table is a data structure that stores key-value pairs in an array, where each key is mapped to a unique index in the array, allowing for efficient lookups, insertions, and deletions of data. The \"hash\" part refers to the mathematical function used to convert the key into",
+    "exact_match": true,
+    "keyformer_kept": 106,
+    "h2o_kept": 106
+  },
+  "metal_speedup": [
+    {
+      "budget": 128,
+      "t_mlx_s": 28.7593527909994,
+      "t_metal_s": 10.892798084001697,
+      "speedup": 2.6402171938942294,
+      "mlx_tok_per_s": 7.684456656798087,
+      "metal_tok_per_s": 20.288634591013277,
+      "kept_metal": 128,
+      "kept_mlx": 128,
+      "evictions_happened": true
+    },
+    {
+      "budget": 192,
+      "t_mlx_s": 30.900885874994856,
+      "t_metal_s": 16.411887541995384,
+      "speedup": 1.8828355846287914,
+      "mlx_tok_per_s": 8.446359792267394,
+      "metal_tok_per_s": 15.903106777458895,
+      "kept_metal": 192,
+      "kept_mlx": 192,
+      "evictions_happened": true
+    }
+  ]
+}

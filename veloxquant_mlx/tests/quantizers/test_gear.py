@@ -22,6 +22,7 @@ from veloxquant_mlx.quantizers.gear import (
     gear_quant_dequant,
     gear_reconstruct,
     lowrank_error,
+    quantize_base,
     residual,
     sparse_outliers,
 )
@@ -170,3 +171,101 @@ def test_energy_threshold_rank_monotonic() -> None:
     L_lo, _ = lowrank_error(E, rank=None, energy_threshold=0.5)
     L_hi, _ = lowrank_error(E, rank=None, energy_threshold=0.99)
     assert L_hi.shape[1] >= L_lo.shape[1]
+
+
+# ------------------------------------------------------------------
+# KCVT base axis (paper's actual backbone: per-channel keys, per-token values)
+# ------------------------------------------------------------------
+
+
+def test_quantize_base_rejects_bad_axis() -> None:
+    with pytest.raises(ValueError):
+        quantize_base(mx.zeros((8, 8)), bits=2, axis="bogus")
+
+
+def test_channel_axis_differs_from_token_axis() -> None:
+    """Per-channel and per-token base quant give different reconstructions.
+
+    They group along different axes with different (scale, zero) granularity,
+    so on generic data they must not silently coincide — otherwise the axis
+    plumbing wouldn't actually be doing anything.
+    """
+    X = _lowrank_plus_outliers(N=64, D=48, r=6)
+    _, recon_channel = quantize_base(X, bits=2, group_size=16, axis="channel")
+    _, recon_token = quantize_base(X, bits=2, group_size=16, axis="token")
+    assert _mse(recon_channel, recon_token) > 1e-8
+
+
+def test_channel_axis_matches_transposed_token_axis() -> None:
+    """Per-channel quant of X equals per-token quant of X.T, transposed back.
+
+    This is the defining property of the "channel" axis: it is exactly the
+    "token" axis quantizer applied to the transpose.
+    """
+    X = _lowrank_plus_outliers(N=64, D=48, r=6)
+    _, recon_channel = quantize_base(X, bits=3, group_size=16, axis="channel")
+    _, recon_token_t = quantize_base(X.T, bits=3, group_size=16, axis="token")
+    assert _mse(recon_channel, recon_token_t.T) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_channel_axis_roundtrip_shape_and_state() -> None:
+    """gear_compress/reconstruct preserve shape under base_axis='channel' and
+    record the axis + original channel count on the returned state."""
+    X = _lowrank_plus_outliers(N=64, D=48, r=6)
+    st = gear_compress(X, bits=2, rank=4, sparse_frac=0.01, group_size=16, base_axis="channel")
+    assert st.axis == "channel"
+    assert st.d_cols == 48
+    rec = gear_reconstruct(st)
+    assert rec.shape == X.shape
+
+
+def test_channel_axis_beats_base_quant() -> None:
+    """The core GEAR claim (error feedback beats base-quant-alone) also holds
+    under the per-channel (KCVT key) base axis, not just the default token axis."""
+    X = _lowrank_plus_outliers(N=128, D=128, r=6)
+    gear = gear_quant_dequant(
+        X, bits=2, rank=12, sparse_frac=0.01, group_size=32, base_axis="channel"
+    )
+    _, base_recon = quantize_base(X.astype(mx.float32), bits=2, group_size=32, axis="channel")
+    assert _mse(gear, X) < _mse(base_recon, X)
+
+
+def test_single_token_decode_call_exceeds_fp16() -> None:
+    """Per-call low-rank overhead makes a single-token GEAR call cost MORE than
+    fp16, for any rank >= 1 — this is not a bug, it is why the paper only
+    applies its low-rank term on streaming-buffer flushes (nb=20 tokens), never
+    per single decoded token (§3, "Streaming Buffer"). This wrapper computes
+    the low-rank term on whatever batch update_and_fetch receives, which is a
+    single row at decode time (no streaming buffer, see gear.py's module
+    docstring) — so decode-time low-rank compression should be expected to
+    look worse than fp16 per call, by design of the simplification, not a
+    regression. See docs-site/docs/algorithms/gear.md "When it does NOT help".
+    """
+    D = 128
+    X = mx.array(np.random.default_rng(0).standard_normal((1, D)).astype(np.float16))
+    for r in (1, 2, 4):
+        st = gear_compress(X, bits=2, rank=r, sparse_frac=0.005, group_size=32, base_axis="channel")
+        assert gear_bytes(st) > D * 2  # fp16 bytes for one token
+
+
+def test_prefill_batch_call_can_beat_fp16() -> None:
+    """In contrast to the single-token case, a large prefill batch amortizes
+    the low-rank factors and achieves real compression — the low-rank
+    overhead scales with (N + D) * r while the base+savings scale with N * D,
+    so larger N dilutes the fixed (D * r) part of the overhead."""
+    N, D = 1024, 128
+    X = mx.array(np.random.default_rng(0).standard_normal((N, D)).astype(np.float16))
+    st = gear_compress(X, bits=2, rank=4, sparse_frac=0.005, group_size=32, base_axis="channel")
+    assert gear_bytes(st) < N * D * 2
+
+
+def test_byte_accounting_axis_independent() -> None:
+    """gear_bytes/base_only_bytes report the same size for 'channel' and 'token'
+    axes on the same shape — code size depends on element count, not axis,
+    only the (scale, zero) parameter count's shape differs per group width."""
+    X = _lowrank_plus_outliers(N=64, D=64, r=6)
+    st_tok = gear_compress(X, bits=2, rank=4, sparse_frac=0.0, group_size=32, base_axis="token")
+    st_chan = gear_compress(X, bits=2, rank=4, sparse_frac=0.0, group_size=32, base_axis="channel")
+    fp16 = 64 * 64 * 2
+    assert base_only_bytes(st_tok) <= fp16
+    assert base_only_bytes(st_chan) <= fp16

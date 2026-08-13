@@ -105,23 +105,27 @@ class SinkProtectedKVCache(KIVIKVCache):
     def update_and_fetch(self, keys, values):
         """Quantize aged-out tokens except sinks; keep residual + sinks fp16.
 
-        Ages tokens out based on **true cumulative position** (mirrors the
-        fix in ``KIVIKVCache.update_and_fetch``): store the incoming block
-        via the parent first, then quantize-in-place the newly-aged leading
-        slice ``[self._n_quantized, self.offset - residual_length)`` of the
+        Ages tokens out based on **true cumulative position** (mirrors
+        ``KIVIKVCache.update_and_fetch``): store the incoming block via the
+        parent first, then quantize-in-place the newly-aged leading slice
+        ``[self._n_quantized, KIVIKVCache._quantization_boundary())`` of the
         accumulated buffer, skipping any position still marked a sink **for
         that batch element** — sink selection and exclusion are computed
         independently per batch index (#85), since each sequence's own
         outlier tokens generally sit at different positions.
+
+        The boundary comes from the shared
+        :meth:`KIVIKVCache._quantization_boundary`, so this path inherits
+        the ``group_size``-aligned flush and never degenerates to 1-token
+        per-channel key groups (#162).
         """
         B, H, S, D = keys.shape
-        r = self._residual_length
         start = self.offset  # absolute position of keys[:, :, 0, :]
 
         sinks_per_batch = self._update_sinks(keys, start)
         k_all, v_all = super(KIVIKVCache, self).update_and_fetch(keys, values)
 
-        new_boundary = max(0, self.offset - r)
+        new_boundary = self._quantization_boundary()
         n_quant_now = new_boundary - self._n_quantized
         n_sink_in_block = 0
         if n_quant_now > 0:

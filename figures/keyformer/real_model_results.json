@@ -1,0 +1,102 @@
+{
+  "model": "mlx-community/Llama-3.2-1B-Instruct-4bit",
+  "metal_available": true,
+  "prefill_vs_decode": [
+    {
+      "tau_mode": "constant",
+      "kept": 128,
+      "budget_ok": true,
+      "n_generated": 121,
+      "coherent": true,
+      "elapsed_s": 3.7137816659960663,
+      "response_preview": "Photosynthesis is the process by which plants, algae, and some bacteria convert light energy from the sun into chemical energy in the form of glucose (C6H12A2). This complex process is essential for life for for for for for for for for for for for for for for for for for for for for for for for for "
+    },
+    {
+      "tau_mode": "annealed",
+      "kept": 128,
+      "budget_ok": true,
+      "n_generated": 121,
+      "coherent": true,
+      "elapsed_s": 3.7965644580035587,
+      "response_preview": "Photosynthesis is the process by which plants, algae, and some bacteria convert light energy from the sun into chemical energy in the form of glucose (C6H12A2). This complex process is essential for life for for for for for for for for for for for for for for for for for for for for for for for for "
+    }
+  ],
+  "coherence_tight_budget": [
+    {
+      "label": "TIGHT (known-degradation zone), constant tau",
+      "budget": 24,
+      "kept": 24,
+      "n_generated": 7,
+      "max_4gram_repeat": 0,
+      "frozen_loop": false,
+      "response_preview": "################################################################################################################################################################################################################################################################################################################################################################################################################"
+    },
+    {
+      "label": "TIGHT (known-degradation zone), annealed tau",
+      "budget": 24,
+      "kept": 24,
+      "n_generated": 7,
+      "max_4gram_repeat": 0,
+      "frozen_loop": false,
+      "response_preview": "################################################################################################################################################################################################################################################################################################################################################################################################################"
+    },
+    {
+      "label": "realistic budget, constant tau",
+      "budget": 128,
+      "kept": 128,
+      "n_generated": 201,
+      "max_4gram_repeat": 113,
+      "frozen_loop": true,
+      "response_preview": "Here's a short story about a lighthouse keeper:\n\nThe sun was setting over the rugged coastline, casting a golden glow over the waves as they crashed against the rocky shore. Jack had been the keeper of this lighthouse for over 20 years, and he knew every inch of its stone walls and winding staircase.\n\nAs he made his way to the lantern room, the sound of the waves grew louder, and Jack's eyes eyes "
+    },
+    {
+      "label": "realistic budget, annealed tau",
+      "budget": 128,
+      "kept": 128,
+      "n_generated": 201,
+      "max_4gram_repeat": 113,
+      "frozen_loop": true,
+      "response_preview": "Here's a short story about a lighthouse keeper:\n\nThe sun was setting over the rugged coastline, casting a golden glow over the waves as they crashed against the rocky shore. Jack had been the keeper of this lighthouse for over 20 years, and he knew every inch of its stone walls and winding staircase.\n\nAs he made his way to the lantern room, the sound of the waves grew louder, and Jack's eyes eyes "
+    },
+    {
+      "label": "realistic budget, tau=0 (H2O-adapted collapse)",
+      "budget": 128,
+      "kept": 128,
+      "n_generated": 201,
+      "max_4gram_repeat": 113,
+      "frozen_loop": true,
+      "response_preview": "Here's a short story about a lighthouse keeper:\n\nThe sun was setting over the rugged coastline, casting a golden glow over the waves as they crashed against the rocky shore. Jack had been the keeper of this lighthouse for over 20 years, and he knew every inch of its stone walls and winding staircase.\n\nAs he made his way to the lantern room, the sound of the waves grew louder, and Jack's eyes eyes "
+    }
+  ],
+  "tau_zero_vs_h2o": {
+    "keyformer_response": "A hash table is a data structure that uses a hash function to map keys (or items) to specific values or locations, allowing for efficient lookup, insertion, and deletion of items. It's a crucial component in many programming languages, including C++, Java, and Python, as it enables fast and",
+    "h2o_response": "A hash table is a data structure that uses a hash function to map keys (or items) to specific values or locations, allowing for efficient lookup, insertion, and deletion of items. It's a crucial component in many programming languages, including C++, Java, and Python, as it enables fast and",
+    "exact_match": true,
+    "keyformer_kept": 106,
+    "h2o_kept": 106
+  },
+  "metal_speedup": [
+    {
+      "budget": 128,
+      "t_mlx_s": 17.07265287500195,
+      "t_metal_s": 5.711517167001148,
+      "speedup": 2.9891624897217994,
+      "mlx_tok_per_s": 12.944678347182453,
+      "metal_tok_per_s": 38.693746956911774,
+      "kept_metal": 128,
+      "kept_mlx": 128,
+      "evictions_happened": true
+    },
+    {
+      "budget": 192,
+      "t_mlx_s": 17.615168457996333,
+      "t_metal_s": 8.055695584000205,
+      "speedup": 2.186672556617289,
+      "mlx_tok_per_s": 14.816775702279482,
+      "metal_tok_per_s": 32.399436805728406,
+      "kept_metal": 192,
+      "kept_mlx": 192,
+      "evictions_happened": true
+    }
+  ]
+}

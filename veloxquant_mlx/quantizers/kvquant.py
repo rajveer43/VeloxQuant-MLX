@@ -64,11 +64,21 @@ def split_dense_sparse(x: mx.array, outlier_fraction: float) -> DenseSparse:
 
     k = max(1, int(round(n * outlier_fraction)))
     k = min(k, n - 1)  # always keep at least one inlier per column
-    # Per-column magnitude threshold = k-th largest |x| (descending sort).
+    # Per-column top-k by magnitude, selected by *rank* rather than by comparing
+    # against the k-th largest value. A value threshold (`mag >= thresh`) breaks
+    # on ties: a constant column has every element equal to the threshold, so it
+    # would flag all N elements as outliers instead of k — sending the whole
+    # column to the fp16 side-channel while byte accounting charges only k.
+    # argsort gives each element a distinct rank, so exactly k are selected.
     mag = mx.abs(x32)
-    sorted_desc = mx.sort(mag, axis=0)[::-1]  # [N, D] descending per col
-    thresh = sorted_desc[k - 1 : k, :]  # [1, D] k-th largest
-    mask = mag >= thresh  # [N, D] bool (>= keeps ties)
+    order = mx.argsort(-mag, axis=0)  # [N, D] indices, descending magnitude
+    rank = mx.put_along_axis(
+        mx.zeros_like(order),
+        order,
+        mx.broadcast_to(mx.arange(n, dtype=order.dtype)[:, None], order.shape),
+        axis=0,
+    )  # rank[i, d] = position of element i within column d's descending order
+    mask = rank < k  # [N, D] bool — exactly k True per column
     col_mean = mx.mean(x32, axis=0, keepdims=True)  # [1, D]
     inliers = mx.where(mask, mx.broadcast_to(col_mean, x32.shape), x32)
     outlier_vals = mx.where(mask, x32, mx.zeros_like(x32))

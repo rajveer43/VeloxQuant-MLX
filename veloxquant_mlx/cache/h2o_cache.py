@@ -20,12 +20,100 @@ Adaptation limitations (stated plainly):
   - Key-as-query proxy: attention weights are computed using the new key vector
     in place of the true query (not visible at cache level). Same approximation
     as SnapKV-adapted.
-  - No RoPE position-ID remapping after eviction; original positions are
-    preserved in returned rows.
   - Uniform budget and n_sink across all heads.
   - Scores accumulate as a running sum of softmax weights; the paper accumulates
     unnormalised attention logits in some variants — this may diverge at very
     low budgets.
+  - RoPE remapping assumes ``traditional=False`` (NeoX-style) rotation, MLX's
+    default and what Llama/Mistral/Qwen use — see
+    :func:`veloxquant_mlx.quantizers.a2ats_rope.rope_remap_positions`.
+
+FIXED, CONFIRMED-ON-REAL-MODELS PROBLEM (see docs-site/docs/algorithms/h2o.md
+for the full writeup): real end-to-end generation testing on Llama-3.2-1B
+and Mistral-7B showed generation degrading into repetition loops (mild) or
+total collapse (severe) once the cache filled. Root cause, verified
+precisely: every newly-arrived token started at score 0.0, and eviction
+removes the global-minimum-score token, so the brand-new token was (almost
+always) its own eviction target the moment the budget was full — before it
+ever accumulated attention mass. Traced directly: after 43 true decode steps
+on Llama-3.2-1B, the kept set was still exactly the original prompt's
+positions; the model generated the entire time with zero visibility into its
+own output. This was what implementing the paper's own scoring formula
+without any grace period produces at tight budgets — not a deviation from
+the paper (the paper doesn't specify one either), but a real practical gap.
+
+Fixed via ``h2o_grace`` (default 16): the most-recently-arrived ``grace``
+tokens are protected from eviction the same way sink tokens are (treated as
++inf in the eviction argmin), giving every new token ``grace`` update steps
+to accumulate real attention mass before it becomes eviction-eligible at
+all. Implemented identically in both the pure-MLX eviction path
+(:func:`veloxquant_mlx.quantizers.h2o._evict_via_mlx`) and the fused Metal
+kernel (:func:`veloxquant_mlx.metal.h2o_fused_evict`) — verified bit-for-bit
+equivalent between the two. ``h2o_grace=0`` reproduces the original
+(paper-faithful, freeze-prone) behavior exactly, for anyone who wants to
+study or reproduce that failure mode.
+
+SECOND FIXED, CONFIRMED-ON-REAL-MODELS PROBLEM (found while verifying the
+fix above): fixing the freeze is necessary but not sufficient for coherent
+output at tight budgets. Scores are a running sum that never shrinks, so an
+old token's total lifetime attention mass grows with its age regardless of
+current relevance — confirmed empirically (correlation of -0.97 between
+token age and score in a synthetic run). An old survivor could therefore
+outscore every recently-graduated (post-grace) token forever, so the
+eviction argmin thinned the *rest* of the budget into a sparse, gapped kept
+window instead of a contiguous recent block — generation still degraded,
+just via broken local coherence from the gaps rather than the original
+permanent freeze.
+
+Fixed via ``h2o_decay`` (default 0.98): every existing score is
+multiplicatively decayed each update step, before new attention mass is
+added, so old tokens' scores fade instead of accumulating forever. Applied
+identically in both the per-token loop and the vectorized batch-absorb path
+(:func:`veloxquant_mlx.quantizers.h2o._batch_absorb_no_eviction`) — verified
+numerically equivalent between the two (fp32-rounding-only difference).
+``h2o_decay=1.0`` reproduces the original (paper-faithful, staleness-prone)
+behavior exactly.
+
+RoPE position remapping (a separate, narrower, and now-fixed correctness
+issue found during the same investigation — real, but NOT the cause of the
+freeze above, since interior eviction rarely happens once the freeze sets
+in). Two distinct causes, both fixed, for the case interior eviction *does*
+occur (e.g. with ``h2o_n_sink > 0``, where sink rows are permanently
+protected while later rows can still eventually be evicted, opening a real
+gap):
+
+  1. Stored keys arrive already RoPE-rotated for their true absolute
+     position. Dropping a middle row leaves survivors' storage index out of
+     sync with that baked-in rotation. Fixed by de-rotating and re-rotating
+     kept keys to a gap-free layout (``rope_remap_positions``) whenever
+     eviction changes the kept set — see ``h2o_update`` in
+     :mod:`veloxquant_mlx.quantizers.h2o`.
+  2. ``mlx_lm``'s attention module rotates BOTH the query and the incoming
+     key using ``self.rope(x, offset=cache.offset)``, entirely inside the
+     model's forward pass, before ``update_and_fetch`` is ever called — this
+     cache cannot intercept or correct the query's rotation after the fact.
+     The only way to make that rotation correct is for ``self.offset`` itself
+     to always equal the true absolute step count rather than the number of
+     rows this cache has kept. Fixed by managing ``self.keys``/``self.values``/
+     ``self.offset`` directly (not delegating to the base class's
+     append-only buffer, which assumes ``offset == stored row count``) — see
+     ``update_and_fetch`` below.
+
+Verified via a synthetic fingerprinted-token test that forces an interior
+eviction and confirms every surviving key de-rotates back to its exact
+original unrotated value. ``h2o_rope_base`` must match the model's own RoPE
+base for cause (1)'s correction to cancel out the original rotation
+correctly.
+
+Scalability fix (found while testing long context, independent of the RoPE
+issues above): a genuinely long prefill (~3200 tokens) with no eviction yet
+triggered previously crashed with ``RuntimeError: [metal::malloc] Resource
+limit (499000) exceeded`` before generation could even start, because
+``h2o_update``'s per-token Python loop issued 4 separate ``mx.concatenate``
+calls per token. Fixed in :mod:`veloxquant_mlx.quantizers.h2o` by batching
+whichever leading portion of an incoming batch is guaranteed not to trigger
+eviction into one vectorized call; verified numerically equivalent to the
+sequential loop it replaces.
 
 Byte accounting:
     h2o_kept_bytes    — fp16 bytes for currently retained K + V tokens
@@ -42,6 +130,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.quantizers.a2ats_rope import rope_remap_positions
 from veloxquant_mlx.quantizers.h2o import (
     H2OState,
     full_h2o_fp16_bytes,
@@ -58,7 +147,26 @@ class H2OKVCache(_MLXKVCache):
     Args:
         config: :class:`KVCacheConfig`. Fields consumed:
             ``h2o_budget`` (int, default 512) — maximum tokens retained at any time,
-            ``h2o_n_sink`` (int, default 4)   — leading positions never evicted.
+            ``h2o_n_sink`` (int, default 4)   — leading positions never evicted,
+            ``h2o_rope_base`` (float, default 10000.0) — RoPE frequency base,
+            must match the model's own attention RoPE base for post-eviction
+            position remapping to cancel out the original rotation correctly,
+            ``h2o_grace`` (int, default 16) — most-recently-arrived tokens
+            protected from eviction, giving each new token this many update
+            steps to accumulate real attention mass before it becomes
+            eviction-eligible. Fixes a real, confirmed-on-real-models problem
+            (see module docstring): without this, a brand-new token's
+            starting score of 0.0 makes it almost always the eviction target
+            the instant the cache is full, freezing the kept set on whichever
+            tokens filled the budget first.
+            ``h2o_decay`` (float, default 0.98) — multiplicative per-step
+            decay on existing scores, applied before new attention mass is
+            added. Fixes a second real, confirmed-on-real-models problem
+            (see module docstring): without this, scores only ever grow, so
+            old tokens permanently outrank newer ones regardless of current
+            relevance, thinning the kept window into a sparse, gapped
+            trickle instead of a contiguous local context even with grace
+            fixing the freeze. Must be in ``(0, 1]``; ``1.0`` disables decay.
 
     Notes:
         No ``.bits`` attribute — stores and returns fp16 K/V directly.
@@ -68,18 +176,28 @@ class H2OKVCache(_MLXKVCache):
         all ``h2o_*`` fields automatically via ``dataclasses.replace``.
         The per-head state is lazily initialised on the first call to
         ``update_and_fetch`` when shapes are known.
-        Writes through to the base ``mlx_lm`` ``KVCache``'s ``self.keys`` /
-        ``self.values`` / ``self.offset`` on every call so ``.state`` stays
-        valid (mlx_lm's ``generate()`` reads it unconditionally during
-        chunked prefill); ``is_trimmable()`` reports ``False`` since the
-        internal per-token eviction state can't be rolled back by a
-        base-class ``trim()`` (see #83).
+        Does NOT delegate to the base ``mlx_lm`` ``KVCache.update_and_fetch``:
+        that implementation assumes ``self.offset`` always equals the number
+        of rows physically stored, which eviction breaks. Instead
+        ``self.keys``/``self.values`` hold exactly the ``n_kept`` retained
+        rows and ``self.offset`` is kept equal to the *true absolute step
+        count*, so ``mlx_lm``'s ``self.rope(x, offset=cache.offset)`` call —
+        made on both the query and the next incoming key, entirely inside the
+        model's attention module, before this cache ever sees them — rotates
+        at the correct position without this cache needing to intercept the
+        query at all. ``.state``/``.size()``/``is_trimmable()`` are overridden
+        to keep this contract explicit rather than relying on the base
+        class's coincidentally-compatible slicing behavior (see #83 for the
+        historical reason ``.state`` must stay valid across chunked prefill).
     """
 
     def __init__(self, config: Any) -> None:
         super().__init__()
         self._budget = int(getattr(config, "h2o_budget", 512))
         self._n_sink = int(getattr(config, "h2o_n_sink", 4))
+        self._rope_base = float(getattr(config, "h2o_rope_base", 10000.0))
+        self._grace = int(getattr(config, "h2o_grace", 16))
+        self._decay = float(getattr(config, "h2o_decay", 0.98))
 
         self._head_dim: int = 0
         self._states: list[H2OState] = []
@@ -97,14 +215,60 @@ class H2OKVCache(_MLXKVCache):
             self._B = B
             self._H = H
             self._head_dim = D
-            self._states = [init_h2o_state(self._n_sink, self._budget, D) for _ in range(B * H)]
+            self._states = [
+                init_h2o_state(
+                    self._n_sink,
+                    self._budget,
+                    D,
+                    rope_base=self._rope_base,
+                    grace=self._grace,
+                    decay=self._decay,
+                )
+                for _ in range(B * H)
+            ]
 
     def _head_idx(self, b: int, h: int) -> int:
         return b * self._H + h
 
+    def _fix_incoming_rope(self, keys: mx.array, offset_before: int, next_pos: int) -> mx.array:
+        """Re-rotate incoming keys if the model rotated them at the wrong
+        absolute position.
+
+        Only matters as a defensive fallback: with ``self.offset`` now always
+        equal to the true absolute step count (see the class docstring),
+        ``offset_before`` and ``next_pos`` should already agree, and this is a
+        no-op. Kept so that a future change which reintroduces an
+        offset/position desync fails safe (corrects it) rather than silently
+        corrupting generation again like the original bug this cache had.
+        """
+        if offset_before == next_pos:
+            return keys
+        B, H, S, D = keys.shape
+        old_positions = mx.arange(offset_before, offset_before + S, dtype=mx.int32)
+        new_positions = mx.arange(next_pos, next_pos + S, dtype=mx.int32)
+        out_b = []
+        for b in range(B):
+            out_h = []
+            for h in range(H):
+                base = self._states[self._head_idx(b, h)].rope_base
+                out_h.append(
+                    rope_remap_positions(keys[b, h], old_positions, new_positions, base=base)
+                )
+            out_b.append(mx.stack(out_h, axis=0))
+        return mx.stack(out_b, axis=0)
+
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
         """Absorb new K/V tokens, apply H2O eviction, return retained window.
+
+        Manages ``self.keys`` / ``self.values`` / ``self.offset`` directly
+        instead of delegating to the base class's append-only buffer, because
+        that buffer assumes ``offset`` always equals the stored row count —
+        false here the moment eviction drops a row. Keeping ``self.offset``
+        equal to the *true absolute step count* (not the kept-row count) is
+        what keeps ``mlx_lm``'s attention module rotating the next query and
+        incoming key at the correct position — see the class/module
+        docstrings for why getting this wrong silently corrupted generation.
 
         Args:
             keys:   ``[B, H, S, D]`` new key tokens (any dtype; cast to fp16).
@@ -117,8 +281,13 @@ class H2OKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
 
+        offset_before = self.offset
+        next_pos = self._states[0].next_pos  # identical across heads (see class docstring)
+
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
+
+        keys_fixed = self._fix_incoming_rope(keys.astype(mx.float16), offset_before, next_pos)
 
         k_out_b, v_out_b = [], []
         for b in range(B):
@@ -128,7 +297,7 @@ class H2OKVCache(_MLXKVCache):
                 st = self._states[idx]
                 st = h2o_update(
                     st,
-                    keys[b, h].astype(mx.float16),
+                    keys_fixed[b, h],
                     values[b, h].astype(mx.float16),
                 )
                 self._states[idx] = st
@@ -144,16 +313,16 @@ class H2OKVCache(_MLXKVCache):
         # Byte accounting: sum across all head states
         self._h2o_kept_bytes = sum(h2o_fp16_bytes(st) for st in self._states)
 
-        # K_out/V_out is the full retained state every call, not a delta —
-        # reset so the base class's append-only buffer starts fresh instead
-        # of stacking on top of the previous call's rows. Without this,
-        # self.keys/self.values/self.offset stay at __init__ defaults
-        # forever, and mlx_lm's generate() crashes on `cache.state` during
-        # chunked prefill (see #83).
-        self.keys = None
-        self.values = None
-        self.offset = 0
-        return super().update_and_fetch(K_out, V_out)
+        # Store exactly the n_kept retained rows — NOT delegated to the base
+        # class's update_and_fetch, whose growing-buffer bookkeeping assumes
+        # offset == stored row count. self.offset instead tracks the true
+        # absolute step count, so the model's NEXT rope(..., offset=self.offset)
+        # call rotates correctly even though fewer than `offset` rows are
+        # physically stored.
+        self.keys = K_out
+        self.values = V_out
+        self.offset = self._states[0].next_pos
+        return K_out, V_out
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:
@@ -162,6 +331,38 @@ class H2OKVCache(_MLXKVCache):
         determines what gets returned, silently corrupting future calls.
         """
         return False
+
+    def size(self) -> int:
+        """Rows actually stored (``n_kept``), NOT ``self.offset`` (the true
+        absolute step count) — the base class conflates the two, which is
+        exactly the assumption this cache must not make. Overridden
+        explicitly rather than relying on the base class's coincidentally
+        harmless behavior here."""
+        return 0 if self.keys is None else self.keys.shape[2]
+
+    @property
+    def state(self):
+        """``(keys, values)`` — always exactly the ``n_kept`` stored rows.
+
+        Not delegated to the base class's getter: it slices
+        ``self.keys[..., :self.offset, :]``, and since ``self.offset`` is the
+        true absolute step count (usually > n_kept once eviction has
+        happened), that would silently clamp to all stored rows anyway via
+        MLX's slice semantics — correct by coincidence, not by contract. Made
+        explicit here instead.
+        """
+        return self.keys, self.values
+
+    @state.setter
+    def state(self, v):
+        """Restoring from a saved state cannot recover the true step count
+        that produced it (H2O's own eviction history is not persisted), so
+        ``self.offset`` is set to the stored row count as the least-wrong
+        available estimate. Loading a saved H2O cache mid-eviction-history is
+        not a supported/tested path.
+        """
+        self.keys, self.values = v
+        self.offset = 0 if self.keys is None else self.keys.shape[2]
 
     # ------------------------------------------------------------------
     @property

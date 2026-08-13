@@ -132,12 +132,17 @@ class KVCacheConfig:
     kitty_lo_bit: int = 2  # bits for low-variance channels
     kitty_group_size: int = 32  # group size for channel quantization
     # --- AdaKV-proxy configuration (per-head adaptive bit allocation) ----
-    adakv_target_avg_bits: float = 2.0  # global average bits/element target
+    # NOTE: target must lie strictly inside (lo_bit, hi_bit) for per-head
+    # adaptation to be possible at all — at either endpoint the budget forces a
+    # uniform allocation (equivalent to plain KIVI). Default 2.5, not 2.0.
+    adakv_target_avg_bits: float = 2.5  # global average bits/element target
     adakv_lo_bit: int = 2  # minimum bits any head can get
     adakv_mid_bit: int = 3  # middle tier (set == hi for a 2-tier set)
     adakv_hi_bit: int = 4  # maximum bits any head can get
     adakv_group_size: int = 32  # group size for per-head quantization
     adakv_update_interval: int = 1  # recompute allocation every N tokens (1 = every step)
+    adakv_importance: str = "norm_variance"  # "norm_variance" | "attention_entropy"
+    adakv_obs_window: int = 32  # obs-window size for attention_entropy
     # --- XQuant configuration (cross-layer KV cache reuse) ---------------
     xquant_group_size: int = 2  # layers per anchor/reuse group (2 = pairs)
     xquant_base_bits: int = 2  # anchor quantizer bit-width
@@ -150,6 +155,7 @@ class KVCacheConfig:
     kvquant_group_size: int = 32  # group size for per-channel/per-token fitting
     kvquant_lloyd_iters: int = 8  # Lloyd-Max iterations for level fitting
     kvquant_refit_interval: int = 0  # refit levels every N decode steps (0 = freeze prefill)
+    kvquant_n_sink: int = 1  # leading attention-sink tokens kept fp16 (paper §3.5; 0 = off)
     # --- PALU configuration (true-latent low-rank K *and* V) -------------
     palu_rank: Optional[int] = None  # explicit latent rank; None → energy threshold
     palu_energy_threshold: float = 0.90  # singular-value energy to retain
@@ -192,6 +198,11 @@ class KVCacheConfig:
     # --- H2O-adapted configuration (cumulative attention-mass heavy-hitter eviction) ---
     h2o_budget: int = 512  # max tokens kept at any time (sinks + non-sinks)
     h2o_n_sink: int = 4  # initial positions protected from eviction (attention sinks)
+    h2o_rope_base: float = 10000.0  # RoPE base for post-eviction position remap; match the model
+    h2o_grace: int = 16  # most-recent tokens protected from eviction; fixes the early-token freeze
+    h2o_decay: float = (
+        0.98  # per-step multiplicative decay on existing scores; fixes score staleness
+    )
     # --- TOVA-adapted configuration (current-step attention-weight eviction, memoryless) ---
     tova_budget: int = 512  # max tokens kept at any time (sinks + non-sinks)
     tova_n_sink: int = 4  # initial positions protected from eviction (attention sinks)
@@ -265,7 +276,13 @@ class KVCacheConfig:
     keyformer_budget: int = 512  # max tokens kept (incl. sinks)
     keyformer_n_sink: int = 4  # leading positions never evicted
     keyformer_recent: int = 0  # trailing protected window (extension, off)
-    keyformer_tau: float = 1.0  # Gumbel temperature; 0 = H2O-adapted (ablation)
+    keyformer_tau: Optional[float] = (
+        None  # constant-temperature alias; overrides tau_init/tau_end (disables annealing) if set
+    )
+    keyformer_tau_init: float = 1.0  # Gumbel temperature at pos=0 (paper default 1)
+    keyformer_tau_end: float = 1.0  # Gumbel temperature once annealed (paper default 2)
+    keyformer_anneal_steps: int = 0  # steps to ramp tau_init -> tau_end; 0 = constant temperature
+    keyformer_rope_base: float = 10000.0  # RoPE base for post-eviction position remap
     keyformer_seed: int = 0  # base seed for the frozen per-position noise
     # --- MorphKV-adapted configuration (recent-window correlation retention) --
     morphkv_budget: int = 512  # max tokens kept (incl. sinks)
@@ -312,11 +329,15 @@ class KVCacheConfig:
     # --- A2ATS-adapted configuration (windowed RoPE + query-aware VQ) --
     a2ats_codebook_bits: int = 8  # codebook size 2^bits
     a2ats_sub_dim: int = 8  # VQ sub-vector width
-    a2ats_window: int = 128  # trailing exact-RoPE window (positions)
+    a2ats_window: int = 128  # trailing exact-RoPE window w (positions)
+    # constant far-token relative position b (Eq. 11); independent of w
+    a2ats_b: int = 2048
     a2ats_use_query_aware: bool = True  # paper's primary reported path (default ON)
     a2ats_beta: float = 0.5  # query/reconstruction blend, in [0, 1]
     a2ats_retrieval_fraction: float = 0.20  # fraction of tokens routed to query-aware assignment
     a2ats_rope_base: float = 10000.0  # RoPE frequency base
+    # [sub_dim, sub_dim] query second-moment H (Eq. 10); enables the paper's Eq. 14 assignment
+    a2ats_query_h: Any = None
     a2ats_codebook: Any = None  # mx.array | np.ndarray | None (random init if absent)
     # --- KVSink-adapted sink protection (method="kivi_sink") -----------
     n_sink_tokens: int = 5  # top-k high-key-norm tokens kept fp16

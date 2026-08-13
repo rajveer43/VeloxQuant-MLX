@@ -179,9 +179,7 @@ class TurboQuantRVQKVCache(_MLXKVCache):
 
     def _grow(self, B: int, H: int, num_steps: int) -> None:
         prev = self.offset
-        needs_grow = (
-            self._packed1 is None or (prev + num_steps) > self._packed1.shape[2]
-        )
+        needs_grow = self._packed1 is None or (prev + num_steps) > self._packed1.shape[2]
         if not needs_grow:
             return
 
@@ -272,9 +270,7 @@ class TurboQuantRVQKVCache(_MLXKVCache):
             signs=idx2.astype(mx.int8),
         )
         k_unit_hat = self._quantizer.decode(ev)  # (B*H*n, D) fp16
-        k_hat = (k_unit_hat.astype(kdtype) * norms.astype(kdtype)).reshape(
-            B, H, n, self._head_dim
-        )
+        k_hat = (k_unit_hat.astype(kdtype) * norms.astype(kdtype)).reshape(B, H, n, self._head_dim)
         return k_hat
 
     @property

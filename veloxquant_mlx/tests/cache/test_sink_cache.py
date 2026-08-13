@@ -89,8 +89,13 @@ def test_byte_accounting_no_double_count() -> None:
     c.update_and_fetch(mx.array(K), mx.array(V))
     B, H, D = 1, 4, 128
     fp16_tok = D * 2 * 2 * H * B  # K+V bytes per token at fp16
-    # 64 tokens: 8 residual, 3 sinks (all in quantized region), 53 compressed.
-    assert c.residual_fp16_bytes == 8 * fp16_tok
+    # Quantization flushes are group_size-aligned (#162), so the fp16 tail is
+    # the residual window plus whatever partial group is still buffered: with
+    # S=64, r=8, g=32 the boundary snaps 56 -> 32, leaving 32 tokens fp16.
+    # 3 of the 32 quantized tokens are sinks, so 29 are compressed.
+    n_res = c.offset - c._n_quantized
+    assert n_res == 32
+    assert c.residual_fp16_bytes == n_res * fp16_tok
     assert c.sink_fp16_bytes == 3 * fp16_tok
     assert c.fp16_key_bytes == H * B * 64 * D * 2
     total = (

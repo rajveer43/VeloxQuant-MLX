@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "VeloxQuant-MLX"
-version = "0.44.2"
+version = "0.48.3"
 description = "Fast KV-cache quantization for Apple Silicon (MLX) — 41 research-adapted compression methods, from TurboQuant and KIVI to A2ATS, with Metal kernels"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -61,7 +61,7 @@ Repository       = "https://github.com/rajveer43/VeloxQuant-MLX"
 "Bug Tracker" = "https://github.com/rajveer43/VeloxQuant-MLX/issues"
 Author        = "https://github.com/rajveer43"
 Changelog     = "https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md"
-Documentation = "https://github.com/rajveer43/VeloxQuant-MLX#readme"
+Documentation = "https://veloxquant-mlx.netlify.app/"
 
 [project.scripts]
 veloxquant = "veloxquant_mlx.__main__:main"
@@ -72,6 +72,9 @@ where = ["."]
 include = ["veloxquant_mlx*"]
 
 [tool.setuptools.package-data]
+# The control panel's frontend is plain static files with no build step, so
+# they must be shipped in the wheel alongside the Python sources.
+"veloxquant_mlx.ui" = ["static/*"]
 veloxquant_mlx = ["metal/src/*.metal"]
 
 [tool.pytest.ini_options]
