@@ -101,6 +101,14 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.48.4 (2026-08-13)
+
+### Code Style
+
+- Apply ruff 0.16.3 formatting to cache/base.py
+  ([`088334a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/088334a1a0b9724f3b796a68a4de74f22775793b))
+
+
 ## v0.48.3 (2026-08-13)
 
 
