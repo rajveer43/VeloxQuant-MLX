@@ -37,13 +37,19 @@ Adaptation limitations (stated plainly):
   - Pooled-score proxy for the paper's chunk importance: the paper ranks chunks
     by observed attention over the chunk; we pool a per-token proxy score (mean)
     into a per-chunk score. Different signal, same chunk-granular decision.
-  - No layer-wise index-reuse optimisation from the paper (a decode-speed trick
-    that reuses one layer's kept-chunk indices at the next); each layer/head here
-    resolves its own chunks independently.
   - Streaming eviction (a chunk is dropped as soon as the cache exceeds budget by
     a chunk) rather than a single one-shot prefill compression.
   - No RoPE position-ID remapping after eviction.
   - Uniform budget across heads within a layer.
+
+Layer-wise index reuse (Algorithm 2 of the paper) IS implemented — see
+``chunkkv_apply_reuse_indices`` below and ``ChunkKVIndexReuseCoordinator`` in
+``cache/chunkkv_cache.py``. The paper observes that ChunkKV's kept-chunk indices
+are far more similar between adjacent layers than token-level methods' (Table 2:
+44-58% Jaccard similarity vs 15-28%), so a "leader" layer's indices can be reused
+by the next ``Nreuse - 1`` layers instead of each running its own eviction,
+cutting compression overhead (the paper reports 20.7% latency / 26.5% throughput
+improvement) at a small (<0.6%) task-performance cost.
 
 Public API
 ----------
@@ -57,6 +63,8 @@ chunkkv_trim_to       — trim a state to a common length (keeps sinks + recent 
 chunkkv_get_kv        — extract current (keys, values) arrays
 chunkkv_fp16_bytes    — bytes stored in current state
 full_chunkkv_fp16_bytes — hypothetical cost without eviction
+chunkkv_apply_reuse_indices — absorb S new tokens using a leader layer's kept-token
+                              positions instead of running independent eviction
 """
 
 from __future__ import annotations
@@ -291,7 +299,8 @@ def chunkkv_update(
     state: ChunkKVState,
     new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
-) -> ChunkKVState:
+    record_kept_positions: bool = False,
+) -> ChunkKVState | tuple[ChunkKVState, list[list[int]]]:
     """Absorb S new tokens, evicting the lowest-score chunk if over budget.
 
     For each of the S incoming tokens:
@@ -312,11 +321,19 @@ def chunkkv_update(
         state:      Current ChunkKVState for this head.
         new_keys:   [S, D] fp16 new key rows.
         new_values: [S, D] fp16 new value rows.
+        record_kept_positions: If True, also return the list of kept-index sets
+            (one per absorbed token, relative to that token's pre-eviction
+            concatenated sequence) — used by the layer-wise index-reuse
+            coordinator to publish a leader layer's eviction decisions.
 
     Returns:
-        Updated ChunkKVState with at most ``state.budget`` tokens.
+        Updated ``ChunkKVState`` with at most ``state.budget`` tokens, or, when
+        ``record_kept_positions=True``, ``(state, kept_positions)`` where
+        ``kept_positions`` has one entry per input token: the sorted list of
+        indices retained after that token's append-and-evict step.
     """
     S = new_keys.shape[0]
+    kept_positions: list[list[int]] = []
 
     for i in range(S):
         k_i = new_keys[i]  # [D]
@@ -337,6 +354,7 @@ def chunkkv_update(
                 chunk_size=state.chunk_size,
                 score_mode=state.score_mode,
             )
+            kept_positions.append([0])
             continue
 
         # --- score update --------------------------------------------------
@@ -355,6 +373,7 @@ def chunkkv_update(
         scores_cat = mx.concatenate([updated_scores, new_score], axis=0)
 
         n_total = keys_cat.shape[0]
+        surviving = list(range(n_total))  # tracks positions in the pre-evict frame
 
         # --- chunk-aligned eviction while over budget ----------------------
         while keys_cat.shape[0] > state.budget:
@@ -368,11 +387,90 @@ def chunkkv_update(
             keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
             scores_cat = scores_cat[keep_indices]
+            surviving = [surviving[j] for j in keep_indices]
 
+        kept_positions.append(surviving)
         state = ChunkKVState(
             keys=keys_cat,
             values=values_cat,
             scores=scores_cat,
+            n_sink=state.n_sink,
+            budget=state.budget,
+            chunk_size=state.chunk_size,
+            score_mode=state.score_mode,
+        )
+
+    if record_kept_positions:
+        return state, kept_positions
+    return state
+
+
+def chunkkv_apply_reuse_indices(
+    state: ChunkKVState,
+    new_keys: mx.array,  # [S, D] fp16
+    new_values: mx.array,  # [S, D] fp16
+    kept_positions: list[list[int]],
+) -> ChunkKVState:
+    """Absorb S new tokens by reusing a leader layer's kept-index decisions.
+
+    Implements the follower side of the paper's Algorithm 2 (layer-wise index
+    reuse): rather than scoring and evicting independently, each incoming token
+    is appended and then the exact index set the leader layer kept at that step
+    (``kept_positions[i]``, indices into the pre-eviction concatenated sequence)
+    is applied here too. This assumes the follower's pre-step token count matches
+    the leader's — true when both run the same absorption schedule under the same
+    ``chunkkv_reuse_layers`` grouping.
+
+    No score bookkeeping is needed: only the leader's scores drive eviction
+    decisions, so this state's ``scores`` field is not meaningfully maintained
+    (kept at a length-matching placeholder) — followers never evict on their own.
+
+    Args:
+        state:          Current ChunkKVState for this (follower) head.
+        new_keys:       [S, D] fp16 new key rows.
+        new_values:     [S, D] fp16 new value rows.
+        kept_positions: One entry per input token — the leader's surviving-index
+            list for that step, as returned by
+            ``chunkkv_update(..., record_kept_positions=True)``.
+
+    Returns:
+        Updated ChunkKVState mirroring the leader's kept-token positions.
+
+    Raises:
+        ValueError: if ``len(kept_positions) != new_keys.shape[0]``.
+    """
+    S = new_keys.shape[0]
+    if len(kept_positions) != S:
+        raise ValueError(
+            f"chunkkv_apply_reuse_indices: kept_positions has {len(kept_positions)} "
+            f"entries but {S} tokens were supplied."
+        )
+
+    for i in range(S):
+        k_i = new_keys[i]
+        v_i = new_values[i]
+
+        if state.keys is None:
+            state = ChunkKVState(
+                keys=k_i[None].astype(mx.float16),
+                values=v_i[None].astype(mx.float16),
+                scores=mx.ones((1,), dtype=mx.float32),
+                n_sink=state.n_sink,
+                budget=state.budget,
+                chunk_size=state.chunk_size,
+                score_mode=state.score_mode,
+            )
+            continue
+
+        keys_cat = mx.concatenate([state.keys, k_i[None].astype(mx.float16)], axis=0)
+        values_cat = mx.concatenate([state.values, v_i[None].astype(mx.float16)], axis=0)
+        scores_cat = mx.concatenate([state.scores, mx.zeros((1,), dtype=mx.float32)], axis=0)
+
+        keep = kept_positions[i]
+        state = ChunkKVState(
+            keys=keys_cat[keep],
+            values=values_cat[keep],
+            scores=scores_cat[keep],
             n_sink=state.n_sink,
             budget=state.budget,
             chunk_size=state.chunk_size,
@@ -452,6 +550,7 @@ __all__ = [
     "ChunkKVState",
     "init_chunkkv_state",
     "chunkkv_update",
+    "chunkkv_apply_reuse_indices",
     "chunkkv_trim_to",
     "chunkkv_get_kv",
     "chunkkv_fp16_bytes",
