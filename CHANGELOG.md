@@ -62,6 +62,14 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.48.2 (2026-08-13)
+
+### Code Style
+
+- Satisfy ruff 0.16.3 format across the AdaKV changes
+  ([`7000e98`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7000e9801e5b22d32b0c38f1be3b1b814f3ff558))
+
+
 ## v0.48.1 (2026-08-13)
 
 ### Bug Fixes
