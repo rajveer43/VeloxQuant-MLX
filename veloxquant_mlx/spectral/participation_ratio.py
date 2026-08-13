@@ -19,7 +19,7 @@ def compute_participation_ratio(vectors: np.ndarray) -> float:
     eigenvalues = np.linalg.eigvalsh(cov)
     eigenvalues = np.clip(eigenvalues, 0, None)
     sum_sq = float(np.sum(eigenvalues) ** 2)
-    sq_sum = float(np.sum(eigenvalues ** 2))
+    sq_sum = float(np.sum(eigenvalues**2))
     if sq_sum < 1e-12:
         return 1.0
     return sum_sq / sq_sum

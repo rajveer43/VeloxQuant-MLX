@@ -22,8 +22,8 @@ build/
 htmlcov/
 *.egg
 
-# Precomputed artifacts
-artifacts/
+# Precomputed artifacts (top-level output dir only -- not veloxquant_mlx/artifacts/, the source package)
+/artifacts/
 *.npy
 
 

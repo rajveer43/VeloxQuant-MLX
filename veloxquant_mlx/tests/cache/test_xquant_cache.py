@@ -18,6 +18,7 @@
   15. group_size=3 (1 anchor -> 2 reusers) pairing + reconstruction
   16. Determinism
 """
+
 from __future__ import annotations
 
 import pytest
@@ -82,7 +83,7 @@ class _MockModel:
 def test_factory_dispatch():
     cache = KVCacheFactory.create(_cfg())
     assert isinstance(cache, XQuantKVCache)
-    assert cache.role == "anchor"   # no coordinator → degenerate anchor
+    assert cache.role == "anchor"  # no coordinator → degenerate anchor
 
 
 # ---------------------------------------------------------------------------
@@ -94,9 +95,12 @@ def test_for_model_pairing():
     assert len(caches) == 6
     roles = [(c.role, c.group_id) for c in caches]
     assert roles == [
-        ("anchor", 0), ("reuse", 0),
-        ("anchor", 1), ("reuse", 1),
-        ("anchor", 2), ("reuse", 2),
+        ("anchor", 0),
+        ("reuse", 0),
+        ("anchor", 1),
+        ("reuse", 1),
+        ("anchor", 2),
+        ("reuse", 2),
     ]
     # All share one coordinator instance
     coords = {id(c._coord) for c in caches}
@@ -109,14 +113,17 @@ def test_for_model_pairing():
 def test_coordinator_round_trip():
     coord = XQuantCoordinator()
     codes, params = quantize_codes(_rand(1, 1, 16, 64)[0, 0], bits=2, group_size=32)
-    coord.register_anchor(0, token_start=0, n_tokens=16, codes=codes, params=params)
+    coord.register_anchor(0, token_start=0, n_tokens=16, codes=codes, params=params, n_readers=1)
+    assert coord.published_tokens(0) == 16
     seg = coord.fetch_anchor(0, 0)
     assert seg is not None
-    np.testing.assert_array_equal(
-        np.array(seg.codes.tolist()), np.array(codes.tolist())
-    )
-    assert coord.published_tokens(0) == 16
-    assert coord.fetch_anchor(0, 999) is None   # missing offset
+    np.testing.assert_array_equal(np.array(seg.codes.tolist()), np.array(codes.tolist()))
+    # Regression for #80: once the single expected reader has fetched it, the
+    # segment is reclaimed and its tokens credited back — published_tokens
+    # tracks live (unconsumed) tokens, not a lifetime total.
+    assert coord.published_tokens(0) == 0
+    assert coord.fetch_anchor(0, 999) is None  # missing offset
+    assert coord.fetch_anchor(0, 0) is None  # already reclaimed
 
 
 # ---------------------------------------------------------------------------
@@ -137,12 +144,14 @@ def test_anchor_shape_prefill_decode():
 def test_reuse_shape_prefill_decode():
     coord = XQuantCoordinator()
     a, r = _pair(coord)
-    k = _rand(1, 2, 32, 64); v = _rand(1, 2, 32, 64, seed=1)
+    k = _rand(1, 2, 32, 64)
+    v = _rand(1, 2, 32, 64, seed=1)
     a.update_and_fetch(k, v)
     ko, vo = r.update_and_fetch(k, v)
     assert ko.shape == (1, 2, 32, 64) and vo.shape == (1, 2, 32, 64)
     # decode step
-    kd = _rand(1, 2, 1, 64, seed=5); vd = _rand(1, 2, 1, 64, seed=6)
+    kd = _rand(1, 2, 1, 64, seed=5)
+    vd = _rand(1, 2, 1, 64, seed=6)
     a.update_and_fetch(kd, vd)
     ko2, _ = r.update_and_fetch(kd, vd)
     assert ko2.shape == (1, 2, 33, 64)
@@ -154,7 +163,8 @@ def test_reuse_shape_prefill_decode():
 def test_values_reconstructed():
     coord = XQuantCoordinator()
     a, r = _pair(coord)
-    k = _rand(1, 2, 32, 64); v = _rand(1, 2, 32, 64, seed=1)
+    k = _rand(1, 2, 32, 64)
+    v = _rand(1, 2, 32, 64, seed=1)
     a.update_and_fetch(k, v)
     _, vo = r.update_and_fetch(k, v)
     assert vo.shape == v.shape
@@ -171,7 +181,7 @@ def test_reuse_residual0_within_tolerance():
     base = rng.standard_normal((1, 2, 64, 64)).astype(np.float32)
     k = mx.array(base.astype(np.float16))
     a.update_and_fetch(k, k)
-    ko, _ = r.update_and_fetch(k, k)   # identical layer → reuse is essentially own quant
+    ko, _ = r.update_and_fetch(k, k)  # identical layer → reuse is essentially own quant
     self_q = _group_quant_dequant(k[0, 0], 2, 32)
     mse_reuse = _mse(ko[0, 0], k[0, 0])
     mse_self = _mse(self_q, k[0, 0])
@@ -251,7 +261,8 @@ def test_uncorrelated_residual_recovers():
 def test_byte_accounting_reuse_less_than_anchor():
     coord = XQuantCoordinator()
     a, r = _pair(coord)
-    k = _rand(1, 2, 64, 64); v = _rand(1, 2, 64, 64, seed=1)
+    k = _rand(1, 2, 64, 64)
+    v = _rand(1, 2, 64, 64, seed=1)
     a.update_and_fetch(k, v)
     r.update_and_fetch(k, v)
     assert r.compressed_key_bytes < a.compressed_key_bytes
@@ -264,7 +275,8 @@ def test_byte_accounting_reuse_less_than_anchor():
 def test_effective_pair_bits_below_base():
     coord = XQuantCoordinator()
     a, r = _pair(coord, base_bits=2, residual_bits=0)
-    k = _rand(1, 2, 64, 64); v = _rand(1, 2, 64, 64, seed=1)
+    k = _rand(1, 2, 64, 64)
+    v = _rand(1, 2, 64, 64, seed=1)
     a.update_and_fetch(k, v)
     r.update_and_fetch(k, v)
     assert r.effective_pair_bits < 2.0, f"reuse effective bits {r.effective_pair_bits}"
@@ -285,7 +297,10 @@ def test_decode_synchronization():
         ko, _ = r.update_and_fetch(kd, vd)
         expected_S = 20 + step + 1
         assert ko.shape[2] == expected_S
-    assert coord.published_tokens(0) == 25
+    # Regression for #80: the sole reuse layer consumes each segment right
+    # after the anchor publishes it, so nothing stays live across steps —
+    # published_tokens tracks unconsumed tokens, not a lifetime total.
+    assert coord.published_tokens(0) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +309,7 @@ def test_decode_synchronization():
 def test_coordinator_budget_raises():
     coord = XQuantCoordinator(max_ctx=16)
     a, _ = _pair(coord)
-    a.update_and_fetch(_rand(1, 2, 16, 64), _rand(1, 2, 16, 64, seed=1))   # fills budget
+    a.update_and_fetch(_rand(1, 2, 16, 64), _rand(1, 2, 16, 64, seed=1))  # fills budget
     with pytest.raises(RuntimeError, match="max_ctx"):
         a.update_and_fetch(_rand(1, 2, 1, 64, seed=2), _rand(1, 2, 1, 64, seed=3))
 
@@ -304,16 +319,21 @@ def test_coordinator_budget_raises():
 # ---------------------------------------------------------------------------
 def test_group_size_three():
     assert pair_layers(6, 3) == [
-        ("anchor", 0), ("reuse", 0), ("reuse", 0),
-        ("anchor", 1), ("reuse", 1), ("reuse", 1),
+        ("anchor", 0),
+        ("reuse", 0),
+        ("reuse", 0),
+        ("anchor", 1),
+        ("reuse", 1),
+        ("reuse", 1),
     ]
     model = _MockModel(n_layers=6, head_dim=64)
     caches = KVCacheBuilder.for_model(model, _cfg(xquant_group_size=3))
     # one anchor feeds two reusers in group 0
-    k = _rand(1, 2, 32, 64); v = _rand(1, 2, 32, 64, seed=1)
-    out0, _ = caches[0].update_and_fetch(k, v)   # anchor
-    out1, _ = caches[1].update_and_fetch(k, v)   # reuse
-    out2, _ = caches[2].update_and_fetch(k, v)   # reuse
+    k = _rand(1, 2, 32, 64)
+    v = _rand(1, 2, 32, 64, seed=1)
+    out0, _ = caches[0].update_and_fetch(k, v)  # anchor
+    out1, _ = caches[1].update_and_fetch(k, v)  # reuse
+    out2, _ = caches[2].update_and_fetch(k, v)  # reuse
     assert out0.shape == out1.shape == out2.shape == (1, 2, 32, 64)
     assert caches[1].role == "reuse" and caches[2].role == "reuse"
 
@@ -322,7 +342,8 @@ def test_group_size_three():
 # Test 16 — determinism
 # ---------------------------------------------------------------------------
 def test_determinism():
-    k = _rand(1, 2, 32, 64, seed=77); v = _rand(1, 2, 32, 64, seed=88)
+    k = _rand(1, 2, 32, 64, seed=77)
+    v = _rand(1, 2, 32, 64, seed=88)
 
     def run():
         coord = XQuantCoordinator()
@@ -335,3 +356,75 @@ def test_determinism():
     k2, v2 = run()
     np.testing.assert_array_equal(k1, k2)
     np.testing.assert_array_equal(v1, v2)
+
+
+# ---------------------------------------------------------------------------
+# Regression for #80: XQuantCoordinator never reclaimed published anchor
+# segments, so cumulative anchor-published tokens hit xquant_max_ctx and
+# register_anchor raised RuntimeError on every subsequent decode step, even
+# though each segment is read exactly once (one step later) and is dead
+# weight afterward.
+# ---------------------------------------------------------------------------
+def test_decode_past_max_ctx_does_not_raise():
+    """A generation whose *cumulative* anchor-published tokens exceed
+    max_ctx must not crash, as long as the reuse layer stays in lockstep
+    (the normal generate() pattern) so each segment is reclaimed before the
+    next one is published."""
+    coord = XQuantCoordinator(max_ctx=8)
+    a, r = _pair(coord)
+    # Prefill within budget.
+    a.update_and_fetch(_rand(1, 2, 4, 64), _rand(1, 2, 4, 64, seed=1))
+    r.update_and_fetch(_rand(1, 2, 4, 64), _rand(1, 2, 4, 64, seed=1))
+    # 20 decode steps of 1 token each — far more than max_ctx=8 lifetime
+    # tokens would allow under the old (never-reclaimed) accounting.
+    for step in range(20):
+        kd = _rand(1, 2, 1, 64, seed=100 + step)
+        vd = _rand(1, 2, 1, 64, seed=200 + step)
+        a.update_and_fetch(kd, vd)  # must not raise
+        r.update_and_fetch(kd, vd)
+    assert coord.published_tokens(0) == 0
+
+
+def test_group_size_three_both_reusers_consume_before_reclaim():
+    """With one anchor feeding two reusers (group_size=3), the coordinator
+    must not reclaim a segment until *both* reusers have fetched it — and
+    must reclaim (not leak) once they have."""
+    coord = XQuantCoordinator()
+    cfg = _cfg(xquant_base_bits=2)
+    a = XQuantKVCache(cfg, role="anchor", group_id=0, coordinator=coord, n_readers=2)
+    r1 = XQuantKVCache(cfg, role="reuse", group_id=0, coordinator=coord, n_readers=2)
+    r2 = XQuantKVCache(cfg, role="reuse", group_id=0, coordinator=coord, n_readers=2)
+
+    k = _rand(1, 2, 16, 64)
+    v = _rand(1, 2, 16, 64, seed=1)
+    a.update_and_fetch(k, v)
+    assert coord.published_tokens(0) == 16  # still live: 0 of 2 readers fetched
+
+    r1.update_and_fetch(k, v)
+    assert coord.published_tokens(0) == 16  # still live: 1 of 2 readers fetched
+
+    r2.update_and_fetch(k, v)
+    assert coord.published_tokens(0) == 0  # reclaimed: both readers fetched
+
+
+def test_for_model_pairing_survives_past_max_ctx():
+    """End-to-end via KVCacheBuilder.for_model: a generation whose cumulative
+    anchor tokens exceed xquant_max_ctx must not crash, matching the issue's
+    exact repro path (method="xquant" built through for_model)."""
+    model = _MockModel(n_layers=6, head_dim=64)
+    cfg = _cfg(xquant_group_size=2, xquant_max_ctx=8)
+    caches = KVCacheBuilder.for_model(model, cfg)
+    anchors_reuses = [(caches[i], caches[i + 1]) for i in range(0, 6, 2)]
+
+    k = _rand(1, 2, 4, 64)
+    v = _rand(1, 2, 4, 64, seed=1)
+    for a, r in anchors_reuses:
+        a.update_and_fetch(k, v)
+        r.update_and_fetch(k, v)
+
+    for step in range(20):
+        kd = _rand(1, 2, 1, 64, seed=300 + step)
+        vd = _rand(1, 2, 1, 64, seed=400 + step)
+        for a, r in anchors_reuses:
+            a.update_and_fetch(kd, vd)  # must not raise past max_ctx=8
+            r.update_and_fetch(kd, vd)

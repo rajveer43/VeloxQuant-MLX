@@ -29,7 +29,7 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="streaming_llm",
     head_dim=128,
-    stream_n_sink=4,         # initial token positions always kept (attention sinks)
+    stream_n_sink=4,  # initial token positions always kept (attention sinks)
     stream_window_size=512,  # FIFO capacity for most-recent tokens
 )
 caches = KVCacheBuilder.for_model(model, config)

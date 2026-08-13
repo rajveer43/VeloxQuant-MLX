@@ -9,6 +9,7 @@ bit-flip allowance for values that land within float rounding of zero.
 A third feeds the encoder's outputs straight into rabitq_fused_attend
 to prove the two kernels compose end-to-end.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -27,6 +28,7 @@ pytestmark = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 # Reference implementation (numpy float32, same op tree as the kernel)
 # ---------------------------------------------------------------------------
+
 
 def _wht_butterfly(x: np.ndarray) -> np.ndarray:
     """Sequential Sylvester-order Walsh-Hadamard transform (unscaled)."""
@@ -63,6 +65,7 @@ def _make_inputs(N, D, seed=0):
 # ---------------------------------------------------------------------------
 # Parity vs identical-op-tree reference
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("D", [8, 32, 64, 128, 256])
 @pytest.mark.parametrize("N", [1, 33, 512])
@@ -115,6 +118,7 @@ def test_rabitq_encode_matches_production_rotation():
 # End-to-end: encode output feeds the attend kernel
 # ---------------------------------------------------------------------------
 
+
 def test_rabitq_encode_feeds_fused_attend():
     B, H, S_q, S_kv, D = 1, 2, 1, 64, 128
     rng = np.random.default_rng(3)
@@ -133,14 +137,19 @@ def test_rabitq_encode_feeds_fused_attend():
     v_cents = np.sort(rng.standard_normal(16)).astype(np.float32)
 
     out = rabitq_fused_attend(
-        mx.array(q), mx.array(q_scale), mx.array(k_bits), mx.array(k_mag),
-        mx.array(k_const), mx.array(v_idx), mx.array(v_cents),
+        mx.array(q),
+        mx.array(q_scale),
+        mx.array(k_bits),
+        mx.array(k_mag),
+        mx.array(k_const),
+        mx.array(v_idx),
+        mx.array(v_cents),
     )
     mx.eval(out)
 
     # Reference attend computed from the encoder's own outputs.
     D_f = float(D)
-    q_bits = (q >= 0)
+    q_bits = q >= 0
     k_unpacked = np.unpackbits(k_bits, axis=-1, count=D, bitorder="little").astype(bool)
     ham = (q_bits[:, :, :, None, :] ^ k_unpacked[:, :, None, :, :]).sum(-1)
     scores = (D_f - 2.0 * ham) * q_scale[..., None] * k_mag[:, :, None, :]
@@ -149,14 +158,13 @@ def test_rabitq_encode_feeds_fused_attend():
     w /= w.sum(-1, keepdims=True)
     expected = np.einsum("bhqs,bhsd->bhqd", w, v_cents[v_idx])
 
-    np.testing.assert_allclose(
-        np.array(out, dtype=np.float32), expected, atol=1e-2, rtol=1e-2
-    )
+    np.testing.assert_allclose(np.array(out, dtype=np.float32), expected, atol=1e-2, rtol=1e-2)
 
 
 # ---------------------------------------------------------------------------
 # Input validation
 # ---------------------------------------------------------------------------
+
 
 def test_rabitq_encode_rejects_bad_shapes():
     keys, diag = _make_inputs(4, 64)

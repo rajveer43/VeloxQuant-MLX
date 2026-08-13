@@ -127,9 +127,9 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="curdkv",
     head_dim=128,
-    curdkv_budget=512,     # max tokens kept at any time (sinks + non-sinks)
-    curdkv_n_sink=4,       # leading positions never evicted
-    curdkv_rank_cap=16,    # leading singular directions considered per leverage-score estimate
+    curdkv_budget=512,  # max tokens kept at any time (sinks + non-sinks)
+    curdkv_n_sink=4,  # leading positions never evicted
+    curdkv_rank_cap=16,  # leading singular directions considered per leverage-score estimate
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

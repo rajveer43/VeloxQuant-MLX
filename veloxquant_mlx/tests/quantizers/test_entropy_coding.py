@@ -4,6 +4,7 @@ Covers: lossless round-trip on random integer code arrays across several
 alphabet sizes/lengths, the code table's byte cost being counted (not
 hidden), and degenerate single-symbol / empty inputs not crashing.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -19,14 +20,17 @@ from veloxquant_mlx.quantizers._entropy_coding import (
 # ---------------------------------------------------------------------------
 # round-trip losslessness
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("seed,n,alphabet", [
-    (0, 1, 2),
-    (1, 10, 3),
-    (2, 200, 16),
-    (3, 1000, 256),
-    (4, 500, 5),
-    (5, 37, 64),
-])
+@pytest.mark.parametrize(
+    "seed,n,alphabet",
+    [
+        (0, 1, 2),
+        (1, 10, 3),
+        (2, 200, 16),
+        (3, 1000, 256),
+        (4, 500, 5),
+        (5, 37, 64),
+    ],
+)
 def test_round_trip_lossless(seed, n, alphabet):
     rng = np.random.default_rng(seed)
     codes = rng.integers(0, alphabet, size=n)

@@ -51,13 +51,9 @@ class QuantizerFactory:
             KeyError: If method is not registered.
         """
         if not math.log2(d).is_integer():
-            raise QuantizerConfigError(
-                f"QuantizerFactory: d={d} must be a power of 2"
-            )
+            raise QuantizerConfigError(f"QuantizerFactory: d={d} must be a power of 2")
         if b < 1:
-            raise QuantizerConfigError(
-                f"QuantizerFactory: b={b} must be >= 1"
-            )
+            raise QuantizerConfigError(f"QuantizerFactory: b={b} must be >= 1")
 
         if m is None:
             m = d

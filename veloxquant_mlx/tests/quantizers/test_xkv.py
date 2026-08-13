@@ -7,6 +7,7 @@ Covers:
   - project_into_shared_basis / reconstruct_from_shared_basis: round-trip recovery
   - quantize_latents_uniform: byte-shape sanity via the shared group-quant primitive
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -27,20 +28,25 @@ from veloxquant_mlx.quantizers.xkv import (
 # pair_layers_grouped
 # ------------------------------------------------------------------
 
+
 def test_pair_layers_grouped_contiguous_pairs() -> None:
     roles = pair_layers_grouped(4, group_size=2)
     assert roles == [
-        (0, 0, 2), (1, 0, 2),
-        (0, 1, 2), (1, 1, 2),
+        (0, 0, 2),
+        (1, 0, 2),
+        (0, 1, 2),
+        (1, 1, 2),
     ]
 
 
 def test_pair_layers_grouped_trailing_partial_group() -> None:
     roles = pair_layers_grouped(5, group_size=2)
     assert roles == [
-        (0, 0, 2), (1, 0, 2),
-        (0, 1, 2), (1, 1, 2),
-        (0, 2, 1),   # trailing group of size 1
+        (0, 0, 2),
+        (1, 0, 2),
+        (0, 1, 2),
+        (1, 1, 2),
+        (0, 2, 1),  # trailing group of size 1
     ]
 
 
@@ -58,6 +64,7 @@ def test_pair_layers_grouped_rejects_zero_group_size() -> None:
 # joint_svd_compress
 # ------------------------------------------------------------------
 
+
 def _rand_matrix(S=64, D=32, seed=0, scale=1.0):
     rng = np.random.default_rng(seed)
     return mx.array((rng.standard_normal((S, D)) * scale).astype(np.float32))
@@ -70,9 +77,7 @@ def test_joint_svd_group_of_one_matches_plain_svd() -> None:
 
     # Same input, same rank -> numerically close shared basis and mean.
     np.testing.assert_allclose(np.array(K_mean_g), np.array(K_mean_ref), atol=1e-4)
-    np.testing.assert_allclose(
-        np.abs(np.array(s_g)), np.abs(np.array(s_ref)), atol=1e-3
-    )
+    np.testing.assert_allclose(np.abs(np.array(s_g)), np.abs(np.array(s_ref)), atol=1e-3)
     # Right singular vectors may differ by sign per column; compare |V^T V| ~ I direction.
     assert V_g.shape == V_ref.shape
 
@@ -129,19 +134,19 @@ def test_joint_svd_shared_structure_helps_reconstruction() -> None:
 # project_into_shared_basis / reconstruct_from_shared_basis round-trip
 # ------------------------------------------------------------------
 
+
 def test_round_trip_recovers_without_quantization() -> None:
     k = _rand_matrix(S=48, D=16, seed=3)
     V_g, K_mean_g, _ = joint_svd_compress([k], rank=16)  # full rank -> near-exact
     L = project_into_shared_basis(k, V_g, K_mean_g)
     recon = reconstruct_from_shared_basis(L, V_g, K_mean_g)
-    np.testing.assert_allclose(
-        np.array(recon.astype(mx.float32)), np.array(k), atol=1e-2
-    )
+    np.testing.assert_allclose(np.array(recon.astype(mx.float32)), np.array(k), atol=1e-2)
 
 
 # ------------------------------------------------------------------
 # quantize_latents_uniform
 # ------------------------------------------------------------------
+
 
 def test_quantize_latents_uniform_shape_preserved() -> None:
     L = _rand_matrix(S=40, D=8, seed=5)

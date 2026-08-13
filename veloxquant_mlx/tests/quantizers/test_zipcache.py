@@ -6,6 +6,7 @@ correctness, channel quant round-trips, compress/reconstruct shapes,
 uniform-bits edge cases, byte ordering, values-off path, and determinism.
 All data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import math
@@ -40,6 +41,7 @@ def _mse(a: mx.array, b: mx.array) -> float:
 # ---------------------------------------------------------------------------
 # Saliency helpers
 # ---------------------------------------------------------------------------
+
 
 def test_token_key_norms_shape() -> None:
     x = _rand((16, 64))
@@ -86,13 +88,16 @@ def test_saliency_mask_full_fraction() -> None:
 # channel_quant / channel_dequant
 # ---------------------------------------------------------------------------
 
+
 def test_channel_quant_4bit_near_lossless() -> None:
     """4-bit channel quant round-trip has cosine > 0.995 on smooth data."""
     x = _rand((64, 128), seed=2, scale=1.0)
     codes, scales, zeros = channel_quant(x, bits=4, group_size=32)
     recon = channel_dequant(codes, scales, zeros, group_size=32)
     x_norm = x / (mx.linalg.norm(x.reshape(-1)) + 1e-8)
-    r_norm = recon.astype(mx.float32) / (mx.linalg.norm(recon.astype(mx.float32).reshape(-1)) + 1e-8)
+    r_norm = recon.astype(mx.float32) / (
+        mx.linalg.norm(recon.astype(mx.float32).reshape(-1)) + 1e-8
+    )
     cosine = float((x_norm.reshape(-1) * r_norm.reshape(-1)).sum().item())
     assert cosine > 0.995
 
@@ -103,7 +108,9 @@ def test_channel_quant_2bit_lossy_bounded() -> None:
     codes, scales, zeros = channel_quant(x, bits=2, group_size=32)
     recon = channel_dequant(codes, scales, zeros, group_size=32)
     x_norm = x / (mx.linalg.norm(x.reshape(-1)) + 1e-8)
-    r_norm = recon.astype(mx.float32) / (mx.linalg.norm(recon.astype(mx.float32).reshape(-1)) + 1e-8)
+    r_norm = recon.astype(mx.float32) / (
+        mx.linalg.norm(recon.astype(mx.float32).reshape(-1)) + 1e-8
+    )
     cosine = float((x_norm.reshape(-1) * r_norm.reshape(-1)).sum().item())
     assert cosine > 0.8
 
@@ -118,6 +125,7 @@ def test_channel_quant_empty_input() -> None:
 # ---------------------------------------------------------------------------
 # zipcache_compress / zipcache_reconstruct
 # ---------------------------------------------------------------------------
+
 
 def test_compress_returns_state() -> None:
     x = _rand((32, 64))
@@ -159,8 +167,41 @@ def test_hi_fraction_one_no_error() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Regression for #78: zipcache_reconstruct hardcoded group_size=32, silently
+# desyncing dequant grouping from the group_size actually used at compress
+# time for any non-default zipcache_group_size.
+# ---------------------------------------------------------------------------
+
+
+def test_state_stores_compress_time_group_size() -> None:
+    x = _rand((40, 8))
+    state = zipcache_compress(x, hi_bits=4, lo_bits=2, hi_fraction=0.2, group_size=8)
+    assert state.group_size == 8
+
+
+def test_reconstruct_uses_matching_group_size_not_hardcoded_32() -> None:
+    """A non-default group_size must reconstruct with error comparable to the
+    default group_size=32 case, not the ~2.6x-higher error a hardcoded
+    mismatched grouping produces (the exact repro from #78)."""
+    x = _rand((40, 8), seed=0)
+
+    state_gs8 = zipcache_compress(x, hi_bits=4, lo_bits=2, hi_fraction=0.2, group_size=8)
+    recon_gs8 = zipcache_reconstruct(state_gs8)
+    mse_gs8 = _mse(recon_gs8, x)
+
+    state_gs32 = zipcache_compress(x, hi_bits=4, lo_bits=2, hi_fraction=0.2, group_size=32)
+    recon_gs32 = zipcache_reconstruct(state_gs32)
+    mse_gs32 = _mse(recon_gs32, x)
+
+    # Both are ordinary quantization noise, same order of magnitude — not the
+    # inflated error a group_size mismatch produces.
+    assert mse_gs8 < mse_gs32 * 2
+
+
+# ---------------------------------------------------------------------------
 # Byte accounting
 # ---------------------------------------------------------------------------
+
 
 def test_byte_ordering_compressed_lt_fp16() -> None:
     """Mixed-bit stored size is strictly below fp16."""
@@ -187,6 +228,7 @@ def test_byte_ordering_between_lo_and_fp16() -> None:
 # ---------------------------------------------------------------------------
 # Determinism
 # ---------------------------------------------------------------------------
+
 
 def test_deterministic() -> None:
     x = _rand((64, 128), seed=7)

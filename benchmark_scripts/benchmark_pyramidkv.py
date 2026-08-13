@@ -11,6 +11,7 @@ Usage
 
 Results print a table and save a JSON summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -26,12 +27,12 @@ from veloxquant_mlx.quantizers.pyramidkv import pyramid_budgets
 
 # ── sweep configuration ──────────────────────────────────────────────────────
 N_LAYERS_LIST = [12, 32]
-SEQ_LENS      = [512, 1024]
-AVG_BUDGETS   = [128, 256]
-BETAS         = [1.0, 2.0, 3.0]
-N_HEADS       = 8
-HEAD_DIM      = 128
-N_SINK        = 4
+SEQ_LENS = [512, 1024]
+AVG_BUDGETS = [128, 256]
+BETAS = [1.0, 2.0, 3.0]
+N_HEADS = 8
+HEAD_DIM = 128
+N_SINK = 4
 
 
 class _Attn:
@@ -82,15 +83,15 @@ def _run_once(n_layers: int, seq_len: int, avg_budget: int, beta: float) -> dict
     ratio = total_full / total_kept if total_kept else 1.0
 
     return {
-        "n_layers":        n_layers,
-        "seq_len":         seq_len,
-        "avg_budget":      avg_budget,
-        "beta":            beta,
-        "budget_first":    schedule[0],
-        "budget_last":     schedule[-1],
-        "budget_mean":     round(sum(schedule) / len(schedule), 1),
-        "kept_first":      kept[0],
-        "kept_last":       kept[-1],
+        "n_layers": n_layers,
+        "seq_len": seq_len,
+        "avg_budget": avg_budget,
+        "beta": beta,
+        "budget_first": schedule[0],
+        "budget_last": schedule[-1],
+        "budget_mean": round(sum(schedule) / len(schedule), 1),
+        "kept_first": kept[0],
+        "kept_last": kept[-1],
         "compression_ratio": round(ratio, 3),
         "latency_ms_all_layers": round(latency_ms, 2),
     }
@@ -100,16 +101,16 @@ def main() -> None:
     print("PyramidKV-adapted KV Cache — offline synthetic benchmark")
     print(f"  n_heads={N_HEADS}  head_dim={HEAD_DIM}  n_sink={N_SINK}")
     print()
-    header = (f"{'layers':>6}  {'seq':>5}  {'avg':>5}  {'beta':>4}  "
-              f"{'b_first':>7}  {'b_last':>6}  {'kept_1st':>8}  {'kept_last':>9}  "
-              f"{'ratio':>6}  {'ms':>7}")
+    header = (
+        f"{'layers':>6}  {'seq':>5}  {'avg':>5}  {'beta':>4}  "
+        f"{'b_first':>7}  {'b_last':>6}  {'kept_1st':>8}  {'kept_last':>9}  "
+        f"{'ratio':>6}  {'ms':>7}"
+    )
     print(header)
     print("-" * len(header))
 
     results = []
-    for n_layers, seq_len, avg_budget, beta in product(
-        N_LAYERS_LIST, SEQ_LENS, AVG_BUDGETS, BETAS
-    ):
+    for n_layers, seq_len, avg_budget, beta in product(N_LAYERS_LIST, SEQ_LENS, AVG_BUDGETS, BETAS):
         if avg_budget > seq_len:
             continue
         row = _run_once(n_layers, seq_len, avg_budget, beta)

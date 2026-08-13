@@ -1,4 +1,5 @@
 """Tests for the VecInfer algorithmic primitives."""
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -48,8 +49,9 @@ def test_dual_transform_preserves_inner_product() -> None:
     for h in range(n_heads):
         orig = np.asarray(q[0, h] @ K[:, h].T)
         transformed = np.asarray(q_tilde[0, h] @ K_tilde[:, h].T)
-        assert np.allclose(orig, transformed, atol=1e-3), \
+        assert np.allclose(orig, transformed, atol=1e-3), (
             f"head {h}: max diff {np.max(np.abs(orig - transformed))}"
+        )
 
 
 def test_calibrate_smooth_factors_shape() -> None:
@@ -94,8 +96,9 @@ def test_train_codebook_converges() -> None:
     d2 = np.einsum("ijk,ijk->ij", diff, diff)
     rand_inertia = np.min(d2, axis=1).sum()
 
-    assert trained_inertia < rand_inertia, \
+    assert trained_inertia < rand_inertia, (
         f"trained {trained_inertia:.2f} should be < random {rand_inertia:.2f}"
+    )
 
 
 def test_quantize_dequantize_roundtrip_error_decreases_with_b() -> None:
@@ -108,7 +111,7 @@ def test_quantize_dequantize_roundtrip_error_decreases_with_b() -> None:
 
     errors = []
     for b in (4, 6, 8):
-        cb = train_codebook(train_x, n_centroids=2 ** b, max_iter=20, seed=0)
+        cb = train_codebook(train_x, n_centroids=2**b, max_iter=20, seed=0)
         idx = quantize_vq(x, cb, sub_dim)
         recon = dequantize_vq(idx, cb)
         mse = float(mx.mean((recon - x) ** 2))
@@ -133,12 +136,11 @@ def test_compute_query_lut_matches_explicit_dot() -> None:
     lut = compute_query_lut(q, cb, sub_dim)  # [n_sub, n_centroids]
     lut_np = np.asarray(lut)
     idx_np = np.asarray(idx)  # [5, n_sub]
-    via_lut = np.array([
-        sum(lut_np[s, idx_np[t, s]] for s in range(D // sub_dim))
-        for t in range(5)
-    ], dtype=np.float32)
-    assert np.allclose(explicit, via_lut, atol=1e-4), \
-        f"explicit {explicit} vs lut {via_lut}"
+    via_lut = np.array(
+        [sum(lut_np[s, idx_np[t, s]] for s in range(D // sub_dim)) for t in range(5)],
+        dtype=np.float32,
+    )
+    assert np.allclose(explicit, via_lut, atol=1e-4), f"explicit {explicit} vs lut {via_lut}"
 
 
 def test_dual_transform_with_1d_smooth() -> None:
@@ -156,3 +158,79 @@ def test_dual_transform_with_1d_smooth() -> None:
     orig = np.asarray(q @ K.T)
     new = np.asarray(q_t @ K_t.T)
     assert np.allclose(orig, new, atol=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# Regression for #74: a genuine 3D per-head layout [n_heads, seq, head_dim]
+# (a natural single-batch-item shape, matching the head axis at -3 the same
+# as 4D [B, H, S, D]) used to require K.ndim >= 4 to reach the per-head
+# broadcast branch, so it silently fell into the GQA head-averaging branch
+# instead -- producing a plausible-looking but numerically wrong result with
+# no error.
+# ---------------------------------------------------------------------------
+def test_dual_transform_keys_3d_per_head_matches_per_head_math() -> None:
+    d, n_heads, seq = 8, 3, 5
+    rng = np.random.default_rng(1)
+    K3d = mx.array(rng.standard_normal((n_heads, seq, d)).astype(np.float32))
+    smooth2d = mx.array(rng.uniform(0.5, 2.0, size=(n_heads, d)).astype(np.float32))
+    H = walsh_hadamard_matrix(d)
+
+    out = apply_dual_transform_keys(K3d, smooth2d, H)
+
+    correct = (np.asarray(K3d) / np.asarray(smooth2d)[:, None, :]) @ np.asarray(H)
+    assert np.allclose(correct, np.asarray(out), atol=1e-5)
+
+    # Must NOT match the (incorrect) averaged-across-heads result.
+    averaged = (np.asarray(K3d) / np.asarray(smooth2d).mean(axis=0)) @ np.asarray(H)
+    assert not np.allclose(averaged, np.asarray(out), atol=1e-5)
+
+
+def test_dual_transform_queries_3d_per_head_matches_per_head_math() -> None:
+    d, n_heads, seq = 8, 3, 5
+    rng = np.random.default_rng(2)
+    q3d = mx.array(rng.standard_normal((n_heads, seq, d)).astype(np.float32))
+    smooth2d = mx.array(rng.uniform(0.5, 2.0, size=(n_heads, d)).astype(np.float32))
+    H = walsh_hadamard_matrix(d)
+
+    out = apply_dual_transform_queries(q3d, smooth2d, H)
+
+    correct = (np.asarray(q3d) * np.asarray(smooth2d)[:, None, :]) @ np.asarray(H)
+    assert np.allclose(correct, np.asarray(out), atol=1e-5)
+
+    averaged = (np.asarray(q3d) * np.asarray(smooth2d).mean(axis=0)) @ np.asarray(H)
+    assert not np.allclose(averaged, np.asarray(out), atol=1e-5)
+
+
+def test_dual_transform_keys_3d_per_head_preserves_inner_product() -> None:
+    """End-to-end: 3D per-head K/q with the dual transform still preserves
+    q @ K.T per head, the actual invariant the transform exists for."""
+    d, n_heads, seq = 16, 4, 6
+    rng = np.random.default_rng(3)
+    K3d = mx.array(rng.standard_normal((n_heads, seq, d)).astype(np.float32))
+    q3d = mx.array(rng.standard_normal((n_heads, 1, d)).astype(np.float32))
+    smooth2d = mx.array(rng.uniform(0.5, 2.0, size=(n_heads, d)).astype(np.float32))
+    H = walsh_hadamard_matrix(d)
+
+    K_t = apply_dual_transform_keys(K3d, smooth2d, H)
+    q_t = apply_dual_transform_queries(q3d, smooth2d, H)
+
+    for h in range(n_heads):
+        orig = np.asarray(q3d[h] @ K3d[h].T)
+        transformed = np.asarray(q_t[h] @ K_t[h].T)
+        assert np.allclose(orig, transformed, atol=1e-3), f"head {h} mismatch"
+
+
+def test_dual_transform_keys_genuine_gqa_head_mismatch_still_averages() -> None:
+    """A real head-count mismatch (e.g. GQA: smooth has more heads than K)
+    must still fall through to the averaging branch -- this is the case the
+    branch is actually for, and must not regress."""
+    d, n_kv_heads, n_q_heads, seq = 8, 2, 6, 5
+    rng = np.random.default_rng(4)
+    K3d = mx.array(rng.standard_normal((n_kv_heads, seq, d)).astype(np.float32))
+    smooth2d = mx.array(rng.uniform(0.5, 2.0, size=(n_q_heads, d)).astype(np.float32))
+    H = walsh_hadamard_matrix(d)
+
+    out = apply_dual_transform_keys(K3d, smooth2d, H)
+
+    averaged = (np.asarray(K3d) / np.asarray(smooth2d).mean(axis=0)) @ np.asarray(H)
+    assert np.allclose(averaged, np.asarray(out), atol=1e-5)

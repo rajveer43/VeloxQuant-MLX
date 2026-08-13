@@ -31,61 +31,68 @@ def water_fill_bits(
     ev_sum = ev.sum()
 
     if ev_sum < 1e-12 or total_bit_budget <= 0:
+        # No signal to water-fill proportionally to (or nothing to allocate):
+        # start from a uniform allocation and fall through to the same
+        # "final fix" remainder-distribution below, rather than returning
+        # floor(total_bit_budget / d) directly -- that silently dropped
+        # total_bit_budget % d bits whenever it didn't divide evenly (#75).
         uniform = max(min_bits, min(max_bits, total_bit_budget // d))
-        return np.full(d, uniform, dtype=np.int32)
+        bits = np.full(d, uniform, dtype=np.int32)
+    else:
+        # Iterative water-filling: proportionally allocate, then redistribute
+        # bits from capped dims to uncapped dims until convergence.
+        bits = np.full(d, min_bits, dtype=np.int32)
+        remaining_budget = total_bit_budget - d * min_bits
+        active = np.ones(d, dtype=bool)  # dims that can still receive more bits
 
-    # Iterative water-filling: proportionally allocate, then redistribute
-    # bits from capped dims to uncapped dims until convergence.
-    bits = np.full(d, min_bits, dtype=np.int32)
-    remaining_budget = total_bit_budget - d * min_bits
-    active = np.ones(d, dtype=bool)  # dims that can still receive more bits
-
-    for _ in range(d + 2):  # at most d iterations to converge
-        if remaining_budget <= 0:
-            break
-        active_ev = ev.copy()
-        active_ev[~active] = 0.0
-        active_sum = active_ev.sum()
-        if active_sum < 1e-12:
-            # Distribute remaining bits uniformly across still-active dims
-            active_indices = np.where(active)[0]
-            if len(active_indices) == 0:
+        for _ in range(d + 2):  # at most d iterations to converge
+            if remaining_budget <= 0:
                 break
-            per_dim = remaining_budget // len(active_indices)
-            for i in active_indices:
-                add = min(per_dim, max_bits - bits[i])
-                bits[i] += add
-                remaining_budget -= add
-            break
-
-        proportions = active_ev / active_sum
-        alloc = proportions * remaining_budget
-        proposed = bits.copy()
-        proposed[active] += np.round(alloc[active]).astype(np.int32)
-        proposed = np.clip(proposed, min_bits, max_bits)
-
-        # Find newly capped dims
-        newly_capped = active & (proposed >= max_bits)
-        bits[newly_capped] = max_bits
-        remaining_budget -= int((bits * newly_capped).sum()) - int((bits * ~active * newly_capped).sum())
-
-        # Recompute remaining budget from scratch
-        bits = np.where(newly_capped, max_bits, bits)
-        remaining_budget = total_bit_budget - int(bits.sum())
-        active[newly_capped] = False
-
-        if not newly_capped.any():
-            # No new caps: do final allocation
-            active_ev2 = ev.copy()
-            active_ev2[~active] = 0.0
-            s2 = active_ev2.sum()
-            if s2 > 1e-12:
-                raw = active_ev2 / s2 * remaining_budget
-                for i in np.where(active)[0]:
-                    add = int(round(raw[i]))
-                    add = max(0, min(add, max_bits - bits[i]))
+            active_ev = ev.copy()
+            active_ev[~active] = 0.0
+            active_sum = active_ev.sum()
+            if active_sum < 1e-12:
+                # Distribute remaining bits uniformly across still-active dims
+                active_indices = np.where(active)[0]
+                if len(active_indices) == 0:
+                    break
+                per_dim = remaining_budget // len(active_indices)
+                for i in active_indices:
+                    add = min(per_dim, max_bits - bits[i])
                     bits[i] += add
-            break
+                    remaining_budget -= add
+                break
+
+            proportions = active_ev / active_sum
+            alloc = proportions * remaining_budget
+            proposed = bits.copy()
+            proposed[active] += np.round(alloc[active]).astype(np.int32)
+            proposed = np.clip(proposed, min_bits, max_bits)
+
+            # Find newly capped dims
+            newly_capped = active & (proposed >= max_bits)
+            bits[newly_capped] = max_bits
+            remaining_budget -= int((bits * newly_capped).sum()) - int(
+                (bits * ~active * newly_capped).sum()
+            )
+
+            # Recompute remaining budget from scratch
+            bits = np.where(newly_capped, max_bits, bits)
+            remaining_budget = total_bit_budget - int(bits.sum())
+            active[newly_capped] = False
+
+            if not newly_capped.any():
+                # No new caps: do final allocation
+                active_ev2 = ev.copy()
+                active_ev2[~active] = 0.0
+                s2 = active_ev2.sum()
+                if s2 > 1e-12:
+                    raw = active_ev2 / s2 * remaining_budget
+                    for i in np.where(active)[0]:
+                        add = int(round(raw[i]))
+                        add = max(0, min(add, max_bits - bits[i]))
+                        bits[i] += add
+                break
 
     # Final fix: exact budget correction with greedy adjustment
     diff = total_bit_budget - int(bits.sum())

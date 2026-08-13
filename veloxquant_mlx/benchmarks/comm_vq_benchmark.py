@@ -3,6 +3,7 @@
 Sweeps S_kv = [64, 128, 256, 512, 1024, 2048, 4096] for H=8, D=128, n_cb=4.
 Saves figures to figures/metal/comm_vq/.
 """
+
 from __future__ import annotations
 
 import json
@@ -10,6 +11,7 @@ import time
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import mlx.core as mx
@@ -24,6 +26,7 @@ FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 # ---------------------------------------------------------------------------
 # Timing helpers
 # ---------------------------------------------------------------------------
+
 
 def _bench_mlx(fn, n_warmup: int = 5, n_iter: int = 30) -> float:
     """Return mean ms per call (MLX lazy evaluation — forces with mx.eval)."""
@@ -51,6 +54,7 @@ def _bench_np(fn, n_warmup: int = 5, n_iter: int = 30) -> float:
 # Build a trained CommVQ quantizer once
 # ---------------------------------------------------------------------------
 
+
 def _build_quantizer(D: int = 128, n_cb: int = 4, b: int = 4) -> CommVQQuantizer:
     q = CommVQQuantizer(d=D, b=b, n_codebooks=n_cb, seed=42)
     rng = np.random.default_rng(0)
@@ -63,10 +67,11 @@ def _build_quantizer(D: int = 128, n_cb: int = 4, b: int = 4) -> CommVQQuantizer
 # NumPy reference decode (no Metal)
 # ---------------------------------------------------------------------------
 
+
 def _numpy_comm_vq_decode(
-    indices_np: np.ndarray,       # [N, n_cb] uint8
-    codebook_np: np.ndarray,      # [n_cb, K, sub_dim] float32
-    positions_np: np.ndarray,     # [N] int32
+    indices_np: np.ndarray,  # [N, n_cb] uint8
+    codebook_np: np.ndarray,  # [n_cb, K, sub_dim] float32
+    positions_np: np.ndarray,  # [N] int32
     D: int,
     rope_base: float = 10000.0,
 ) -> np.ndarray:
@@ -78,16 +83,16 @@ def _numpy_comm_vq_decode(
     out = np.zeros((N, D), dtype=np.float32)
     for cb_i in range(n_cb):
         start = cb_i * sub_dim
-        cb    = codebook_np[cb_i]                    # [K, sub_dim]
-        idxs  = indices_np[:, cb_i].astype(np.int32) # [N]
-        out[:, start:start + sub_dim] = cb[idxs]
+        cb = codebook_np[cb_i]  # [K, sub_dim]
+        idxs = indices_np[:, cb_i].astype(np.int32)  # [N]
+        out[:, start : start + sub_dim] = cb[idxs]
 
     # Apply RoPE
     inv_freq = 1.0 / (rope_base ** (np.arange(half, dtype=np.float32) / half))
-    angles   = positions_np[:, None].astype(np.float32) * inv_freq[None, :]
+    angles = positions_np[:, None].astype(np.float32) * inv_freq[None, :]
     cos_v, sin_v = np.cos(angles), np.sin(angles)
     x1, x2 = out[:, :half], out[:, half:]
-    result  = np.concatenate([x1 * cos_v - x2 * sin_v, x1 * sin_v + x2 * cos_v], axis=1)
+    result = np.concatenate([x1 * cos_v - x2 * sin_v, x1 * sin_v + x2 * cos_v], axis=1)
     return result.astype(np.float16)
 
 
@@ -95,19 +100,20 @@ def _numpy_comm_vq_decode(
 # Main benchmark
 # ---------------------------------------------------------------------------
 
+
 def run_benchmark(n_iter: int = 30) -> dict:
-    D    = 128
-    H    = 8
+    D = 128
+    H = 8
     n_cb = 4
-    b    = 4
+    b = 4
 
     S_kvs = [64, 128, 256, 512, 1024, 2048, 4096]
 
     print(f"Building CommVQ quantizer (D={D}, n_cb={n_cb}, b={b})...")
     q = _build_quantizer(D=D, n_cb=n_cb, b=b)
     assert q.trained
-    cb_np = np.array(q._codebooks, dtype=np.float32)      # [n_cb, K, sub_dim]
-    cb_mx = q._codebooks_mx                               # [n_cb, K, sub_dim] fp16
+    cb_np = np.array(q._codebooks, dtype=np.float32)  # [n_cb, K, sub_dim]
+    cb_mx = q._codebooks_mx  # [n_cb, K, sub_dim] fp16
 
     results = {
         "config": {"D": D, "H": H, "n_cb": n_cb, "b": b},
@@ -121,13 +127,13 @@ def run_benchmark(n_iter: int = 30) -> dict:
     print("-" * 44)
 
     for S_kv in S_kvs:
-        N = H * S_kv     # total tokens across all heads
+        N = H * S_kv  # total tokens across all heads
         rng = np.random.default_rng(S_kv)
         keys_np = rng.standard_normal((N, D)).astype(np.float16)
-        pos_np  = np.tile(np.arange(S_kv, dtype=np.int32), H)
+        pos_np = np.tile(np.arange(S_kv, dtype=np.int32), H)
 
         keys_mx = mx.array(keys_np)
-        pos_mx  = mx.array(pos_np)
+        pos_mx = mx.array(pos_np)
 
         # Encode once (common setup)
         ev = q.encode(keys_mx, positions=pos_mx)
@@ -144,7 +150,7 @@ def run_benchmark(n_iter: int = 30) -> dict:
             return _numpy_comm_vq_decode(indices_np, cb_np, pos_np, D)
 
         t_mlx = _bench_mlx(_mlx_decode, n_iter=n_iter)
-        t_np  = _bench_np(_np_decode,   n_iter=n_iter)
+        t_np = _bench_np(_np_decode, n_iter=n_iter)
         speedup = t_np / t_mlx
 
         results["mlx_decode_ms"].append(round(t_mlx, 3))
@@ -160,16 +166,17 @@ def run_benchmark(n_iter: int = 30) -> dict:
 # Figures
 # ---------------------------------------------------------------------------
 
+
 def save_figures(results: dict) -> None:
-    S_kvs  = results["S_kvs"]
-    t_mlx  = results["mlx_decode_ms"]
-    t_np   = results["numpy_decode_ms"]
-    speedup= results["speedup"]
+    S_kvs = results["S_kvs"]
+    t_mlx = results["mlx_decode_ms"]
+    t_np = results["numpy_decode_ms"]
+    speedup = results["speedup"]
 
     # Fig 1: Latency comparison
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(S_kvs, t_mlx, "o-", label="MLX decode (Python)")
-    ax.plot(S_kvs, t_np,  "s--", label="NumPy decode (CPU)")
+    ax.plot(S_kvs, t_np, "s--", label="NumPy decode (CPU)")
     ax.set_xlabel("KV sequence length (S_kv × H heads)")
     ax.set_ylabel("Latency (ms)")
     ax.set_title("CommVQ Decode Latency: MLX vs NumPy\n(D=128, n_cb=4, b=4, H=8)")
@@ -206,7 +213,9 @@ def save_figures(results: dict) -> None:
     bars = ax.bar(labels, values, color=colors, alpha=0.85)
     ax.bar_label(bars, fmt="%d bytes/token", padding=3)
     ax.set_ylabel("Bytes per token")
-    ax.set_title(f"CommVQ Memory: {compression:.0f}× compression\n(D={D}, n_cb={n_cb}, b={results['config']['b']})")
+    ax.set_title(
+        f"CommVQ Memory: {compression:.0f}× compression\n(D={D}, n_cb={n_cb}, b={results['config']['b']})"
+    )
     ax.grid(True, axis="y", alpha=0.3)
     fig.tight_layout()
     fig.savefig(FIGURES_DIR / "fig3_memory.png", dpi=150)
@@ -220,6 +229,7 @@ def save_figures(results: dict) -> None:
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser(description="CommVQ benchmark")
     parser.add_argument("--n_iter", type=int, default=30)
     args = parser.parse_args()

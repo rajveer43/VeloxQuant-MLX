@@ -10,6 +10,7 @@ Covers:
   - values are passed through fp16 unchanged
   - assigned_avg_bits is sub-2-bit at default settings
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -24,7 +25,7 @@ def _make(**cfg):
     base = dict(
         method="svdq",
         head_dim=64,
-        svdq_rank=16,          # explicit rank for deterministic tests
+        svdq_rank=16,  # explicit rank for deterministic tests
         svdq_hi_bit=4,
         svdq_lo_bit=2,
         svdq_hi_fraction=0.25,
@@ -45,6 +46,7 @@ def _rand_kv(S=128, H=2, D=64, seed=0):
 # Factory and interface
 # ------------------------------------------------------------------
 
+
 def test_factory_dispatch() -> None:
     c = _make()
     assert isinstance(c, SVDqKVCache)
@@ -59,6 +61,7 @@ def test_no_bits_attribute() -> None:
 # ------------------------------------------------------------------
 # SVD projection correctness
 # ------------------------------------------------------------------
+
 
 def test_svd_rank_stored_after_prefill() -> None:
     c = _make(svdq_rank=16)
@@ -119,6 +122,7 @@ def test_reconstruction_lower_mse_than_raw_2bit() -> None:
 # Values pass-through
 # ------------------------------------------------------------------
 
+
 def test_values_unchanged() -> None:
     """Values must be passed through without modification."""
     c = _make()
@@ -133,6 +137,7 @@ def test_values_unchanged() -> None:
 # ------------------------------------------------------------------
 # Decode accumulation
 # ------------------------------------------------------------------
+
 
 def test_decode_after_prefill() -> None:
     """Decode calls after prefill must produce valid fp16 output."""
@@ -152,6 +157,7 @@ def test_decode_after_prefill() -> None:
 # ------------------------------------------------------------------
 # Byte accounting
 # ------------------------------------------------------------------
+
 
 def test_compressed_bytes_less_than_fp16() -> None:
     c = _make(svdq_rank=16)
@@ -173,6 +179,7 @@ def test_value_fp16_bytes_positive() -> None:
 # Effective bit-width
 # ------------------------------------------------------------------
 
+
 def test_assigned_avg_bits_sub_2() -> None:
     """Default settings should give effective key bit-width well below 2."""
     c = _make(head_dim=128, svdq_rank=32)
@@ -185,6 +192,7 @@ def test_assigned_avg_bits_sub_2() -> None:
 # ------------------------------------------------------------------
 # Energy threshold rank selection
 # ------------------------------------------------------------------
+
 
 def test_energy_threshold_rank_selection() -> None:
     """With svdq_rank=None, rank should be determined by energy threshold."""
@@ -208,6 +216,7 @@ def test_determinism() -> None:
 # ---------------------------------------------------------------------------
 # Config validation — svdq_hi_fraction must be in [0, 1]
 # ---------------------------------------------------------------------------
+
 
 def test_hi_fraction_above_one_rejected() -> None:
     with pytest.raises(ValueError, match="svdq_hi_fraction"):

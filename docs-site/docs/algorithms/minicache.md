@@ -37,10 +37,10 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="minicache",
     head_dim=128,
-    minicache_start_frac=0.5,           # only merge layers past mid-depth
-    minicache_group_size=2,             # merge adjacent pairs
+    minicache_start_frac=0.5,  # only merge layers past mid-depth
+    minicache_group_size=2,  # merge adjacent pairs
     minicache_retention_threshold=0.9,  # cosine below which a token pair is kept
-    minicache_slerp_t=0.5,              # SLERP midpoint
+    minicache_slerp_t=0.5,  # SLERP midpoint
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

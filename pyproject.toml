@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "VeloxQuant-MLX"
-version = "0.42.1"
+version = "0.48.1"
 description = "Fast KV-cache quantization for Apple Silicon (MLX) — 41 research-adapted compression methods, from TurboQuant and KIVI to A2ATS, with Metal kernels"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -35,11 +35,14 @@ classifiers = [
 ]
 dependencies = [
     "mlx>=0.18",
+    "mlx-lm>=0.31.3",
     "numpy>=1.26",
-    "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]
+plots = [
+    "matplotlib>=3.8",
+]
 dev = [
     "pytest>=8.0",
     "pytest-xdist",
@@ -48,6 +51,8 @@ dev = [
     "build>=1.2",
     "twine>=5.0",
     "python-semantic-release>=9.15",
+    "pre-commit>=3.7",
+    "ruff>=0.6",
 ]
 
 [project.urls]
@@ -56,7 +61,7 @@ Repository       = "https://github.com/rajveer43/VeloxQuant-MLX"
 "Bug Tracker" = "https://github.com/rajveer43/VeloxQuant-MLX/issues"
 Author        = "https://github.com/rajveer43"
 Changelog     = "https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md"
-Documentation = "https://github.com/rajveer43/VeloxQuant-MLX#readme"
+Documentation = "https://veloxquant-mlx.netlify.app/"
 
 [project.scripts]
 veloxquant = "veloxquant_mlx.__main__:main"
@@ -66,6 +71,12 @@ mlx-kv-quant = "veloxquant_mlx.__main__:main"
 where = ["."]
 include = ["veloxquant_mlx*"]
 
+[tool.setuptools.package-data]
+# The control panel's frontend is plain static files with no build step, so
+# they must be shipped in the wheel alongside the Python sources.
+"veloxquant_mlx.ui" = ["static/*"]
+veloxquant_mlx = ["metal/src/*.metal"]
+
 [tool.pytest.ini_options]
 testpaths = ["veloxquant_mlx/tests"]
 addopts = "-v"
@@ -74,6 +85,17 @@ filterwarnings = ["ignore::DeprecationWarning"]
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["veloxquant_mlx"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
@@ -101,6 +123,13 @@ changelog_file = "CHANGELOG.md"
 exclude_commit_patterns = [
     "^chore\\(release\\):",
 ]
+# Default mode is "init" -- regenerate-from-scratch, only if CHANGELOG.md
+# doesn't already exist. This repo's CHANGELOG.md was hand-authored before
+# any release ran, so every release silently no-op'd on it forever (no
+# error, no diff) until this was set. "update" prepends each new version's
+# section above the `<!-- version list -->` marker in the existing file.
+mode = "update"
+insertion_flag = "<!-- version list -->"
 
 [tool.semantic_release.changelog.default_templates]
 changelog_file = "CHANGELOG.md"

@@ -5,6 +5,7 @@ protection, the prefill-vs-decode bit-for-bit path-independence invariant,
 the keep="low"/"high" ablation knob, the mechanism test under paper-like
 geometry, byte accounting, build-time validation, and for_model wiring.
 """
+
 from __future__ import annotations
 
 import math
@@ -34,6 +35,7 @@ def _make(**cfg):
 # Protocol basics
 # ------------------------------------------------------------------
 
+
 def test_factory_dispatch() -> None:
     assert isinstance(_make(), L2NormKVCache)
 
@@ -43,7 +45,7 @@ def test_shape_dtype_preserved() -> None:
     k, v = _kv(1, 4, 64, 64)
     ko, vo = cache.update_and_fetch(k, v)
     mx.eval(ko, vo)
-    assert ko.shape == (1, 4, 64, 64)   # under budget: everything kept
+    assert ko.shape == (1, 4, 64, 64)  # under budget: everything kept
     assert vo.shape == (1, 4, 64, 64)
     assert ko.dtype == mx.float16
 
@@ -65,6 +67,7 @@ def test_under_budget_bitfor_bit_passthrough() -> None:
 # Eviction behavior
 # ------------------------------------------------------------------
 
+
 def test_budget_enforced_after_long_prefill() -> None:
     cache = _make(knorm_budget=16)
     k, v = _kv(1, 2, 200, 64, seed=2)
@@ -77,7 +80,7 @@ def test_sinks_retained_across_heavy_eviction() -> None:
     B, H, S, D, n_sink = 1, 1, 100, 64, 3
     rng = np.random.default_rng(3)
     k = rng.standard_normal((B, H, S, D)).astype(np.float16)
-    k[:, :, :n_sink, :] *= 40.0   # sinks have enormous norms
+    k[:, :, :n_sink, :] *= 40.0  # sinks have enormous norms
     v = rng.standard_normal((B, H, S, D)).astype(np.float16)
     cache = _make(knorm_budget=8, knorm_n_sink=n_sink)
     ko, _ = cache.update_and_fetch(mx.array(k), mx.array(v))
@@ -90,7 +93,7 @@ def test_decode_accumulation_caps_at_budget() -> None:
         k, v = _kv(1, 2, 1, 64, seed=100 + t)
         ko, vo = cache.update_and_fetch(k, v)
     assert ko.shape[2] == 8
-    assert cache.tokens_seen == 24 * 2   # per-head positions summed
+    assert cache.tokens_seen == 24 * 2  # per-head positions summed
 
 
 def test_prefill_decode_bit_for_bit_equivalence() -> None:
@@ -104,9 +107,7 @@ def test_prefill_decode_bit_for_bit_equivalence() -> None:
 
     stream = _make(knorm_budget=12, knorm_n_sink=2)
     for t in range(S):
-        kb, vb = stream.update_and_fetch(
-            k[:, :, t : t + 1, :], v[:, :, t : t + 1, :]
-        )
+        kb, vb = stream.update_and_fetch(k[:, :, t : t + 1, :], v[:, :, t : t + 1, :])
     mx.eval(ka, va, kb, vb)
     assert np.array_equal(np.array(ka), np.array(kb))
     assert np.array_equal(np.array(va), np.array(vb))
@@ -125,6 +126,7 @@ def test_keep_high_differs_and_respects_budget() -> None:
 # ------------------------------------------------------------------
 # Mechanism test under paper-like geometry
 # ------------------------------------------------------------------
+
 
 def _attn_out(q, k, v):
     scale = 1.0 / math.sqrt(float(k.shape[-1]))
@@ -158,11 +160,9 @@ def test_keep_low_beats_keep_high_under_paper_geometry() -> None:
     ref = _attn_out(mx.array(q), mx.array(k), mx.array(v))
 
     def perturbation(keep: str) -> float:
-        cache = _make(knorm_budget=n_imp + 4, knorm_n_sink=0,
-                      knorm_keep=keep, head_dim=D)
+        cache = _make(knorm_budget=n_imp + 4, knorm_n_sink=0, knorm_keep=keep, head_dim=D)
         ko, vo = cache.update_and_fetch(kk, vv)
-        out = _attn_out(mx.array(q), ko[0, 0].astype(mx.float32),
-                        vo[0, 0].astype(mx.float32))
+        out = _attn_out(mx.array(q), ko[0, 0].astype(mx.float32), vo[0, 0].astype(mx.float32))
         rn = ref / (mx.sqrt(mx.sum(ref * ref, -1, keepdims=True)) + 1e-8)
         on = out / (mx.sqrt(mx.sum(out * out, -1, keepdims=True)) + 1e-8)
         return float(mx.mean(1.0 - mx.sum(rn * on, -1)).item())
@@ -174,11 +174,12 @@ def test_keep_low_beats_keep_high_under_paper_geometry() -> None:
 # Accounting / validation / wiring
 # ------------------------------------------------------------------
 
+
 def test_compression_ratio_math() -> None:
     cache = _make(knorm_budget=16)
     k, v = _kv(1, 2, 128, 64, seed=7)
     cache.update_and_fetch(k, v)
-    assert cache.knorm_kept_bytes == 2 * 16 * 64 * 2 * 2   # 2 heads
+    assert cache.knorm_kept_bytes == 2 * 16 * 64 * 2 * 2  # 2 heads
     assert cache.full_seq_bytes == 2 * 128 * 64 * 2 * 2
     assert abs(cache.compression_ratio - 8.0) < 1e-9
 
@@ -227,9 +228,7 @@ class _ToyModel:
 def test_for_model_wiring_and_fallback() -> None:
     from mlx_lm.models.cache import KVCache as _FallbackCache
 
-    caches = KVCacheBuilder.for_model(
-        _ToyModel(), KVCacheConfig(method="knorm", head_dim=64)
-    )
+    caches = KVCacheBuilder.for_model(_ToyModel(), KVCacheConfig(method="knorm", head_dim=64))
     assert len(caches) == 3
     assert isinstance(caches[0], L2NormKVCache)
     assert type(caches[1]) is _FallbackCache

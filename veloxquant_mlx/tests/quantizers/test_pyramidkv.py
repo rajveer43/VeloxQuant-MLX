@@ -8,6 +8,7 @@ and pyramid_update / state mechanics (bootstrap, budget enforcement, sink
 protection, byte accounting, determinism). All data is synthetic — no model
 loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -36,6 +37,7 @@ def _rand_kv(S: int, D: int = 32, seed: int = 0):
 # pyramid_budgets — the allocator (the distinguishing feature)
 # ---------------------------------------------------------------------------
 
+
 def test_budgets_length_matches_layers() -> None:
     b = pyramid_budgets(n_layers=12, avg_budget=512, n_sink=4, beta=2.0)
     assert len(b) == 12
@@ -45,8 +47,8 @@ def test_budgets_monotonically_decreasing() -> None:
     """Early layers get more budget than deep layers."""
     b = pyramid_budgets(n_layers=16, avg_budget=256, n_sink=4, beta=2.0)
     for i in range(len(b) - 1):
-        assert b[i] >= b[i + 1], f"layer {i}={b[i]} < layer {i+1}={b[i+1]}"
-    assert b[0] > b[-1]   # strictly decreasing overall
+        assert b[i] >= b[i + 1], f"layer {i}={b[i]} < layer {i + 1}={b[i + 1]}"
+    assert b[0] > b[-1]  # strictly decreasing overall
 
 
 def test_budgets_mean_approx_avg() -> None:
@@ -95,8 +97,48 @@ def test_budgets_beta_below_1_raises() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Regression for #76: mean must stay ~avg_budget for beta > 2.0, not just
+# beta <= 2.0 -- the floor clamp used to only pull the low end up with no
+# compensating reduction, silently inflating the mean (up to +17.5% at
+# beta=3.0 in the issue's exact repro).
+# ---------------------------------------------------------------------------
+def test_budgets_mean_approx_avg_for_beta_above_two() -> None:
+    """Issue #76's exact repro shape: mean must stay within a tight tolerance
+    of avg_budget for beta in (2.0, 3.0], not drift up to +17.5%."""
+    for beta in [2.1, 2.5, 3.0]:
+        b = pyramid_budgets(n_layers=8, avg_budget=128, n_sink=2, beta=beta)
+        mean = sum(b) / len(b)
+        assert abs(mean - 128) / 128 < 0.01, f"beta={beta}: mean {mean} vs avg 128"
+
+
+def test_budgets_mean_approx_avg_across_beta_sweep() -> None:
+    """Broader sweep: mean tracks avg_budget for every beta from flat to
+    very steep, across several (n_layers, avg_budget, n_sink) combinations."""
+    for n_layers, avg, n_sink in [(8, 128, 2), (16, 256, 4), (32, 512, 8), (6, 64, 1)]:
+        for beta in [1.0, 1.5, 2.0, 2.5, 3.0, 5.0, 10.0]:
+            b = pyramid_budgets(n_layers=n_layers, avg_budget=avg, n_sink=n_sink, beta=beta)
+            mean = sum(b) / len(b)
+            assert abs(mean - avg) / avg < 0.05, (
+                f"n_layers={n_layers} avg={avg} n_sink={n_sink} beta={beta}: "
+                f"mean {mean} vs avg {avg}"
+            )
+
+
+def test_budgets_still_monotonic_and_floored_for_steep_beta() -> None:
+    """The water-filling renormalization must not break monotonicity or the
+    floor guarantee it's layered on top of."""
+    n_sink = 4
+    for beta in [2.5, 3.0, 5.0, 10.0]:
+        b = pyramid_budgets(n_layers=16, avg_budget=128, n_sink=n_sink, beta=beta)
+        assert all(x >= n_sink + 1 for x in b), (beta, b)
+        for i in range(len(b) - 1):
+            assert b[i] >= b[i + 1], (beta, i, b)
+
+
+# ---------------------------------------------------------------------------
 # init_pyramid_state
 # ---------------------------------------------------------------------------
+
 
 def test_init_state_fields() -> None:
     st = init_pyramid_state(n_sink=4, budget=128, head_dim=64)
@@ -130,6 +172,7 @@ def test_init_state_allows_disabled_cache() -> None:
 # pyramid_get_kv — empty state
 # ---------------------------------------------------------------------------
 
+
 def test_get_kv_empty_returns_zero_rows() -> None:
     st = init_pyramid_state(n_sink=4, budget=16, head_dim=32)
     k, v = pyramid_get_kv(st)
@@ -140,6 +183,7 @@ def test_get_kv_empty_returns_zero_rows() -> None:
 # ---------------------------------------------------------------------------
 # pyramid_update — eviction bounded by the per-layer budget
 # ---------------------------------------------------------------------------
+
 
 def test_single_token_absorbed() -> None:
     D = 32
@@ -192,6 +236,7 @@ def test_different_budgets_give_different_kept_counts() -> None:
 # Sink protection
 # ---------------------------------------------------------------------------
 
+
 def test_sinks_never_evicted() -> None:
     D = 8
     n_sink = 3
@@ -222,6 +267,7 @@ def test_n_sink_zero_allows_all_evictions() -> None:
 # Score accumulation (inherited from H2O scorer)
 # ---------------------------------------------------------------------------
 
+
 def test_scores_non_negative() -> None:
     D = 32
     st = init_pyramid_state(n_sink=2, budget=8, head_dim=D)
@@ -242,6 +288,7 @@ def test_score_array_length_matches_keys() -> None:
 # ---------------------------------------------------------------------------
 # Byte accounting
 # ---------------------------------------------------------------------------
+
 
 def test_pyramid_fp16_bytes_formula() -> None:
     D = 64
@@ -264,6 +311,7 @@ def test_full_pyramid_fp16_bytes_formula() -> None:
 # ---------------------------------------------------------------------------
 # Determinism
 # ---------------------------------------------------------------------------
+
 
 def test_deterministic_across_identical_inputs() -> None:
     D = 32

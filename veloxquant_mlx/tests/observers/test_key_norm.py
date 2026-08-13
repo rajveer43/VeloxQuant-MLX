@@ -1,4 +1,5 @@
 """Tests for KeyNormObserver."""
+
 from __future__ import annotations
 
 from veloxquant_mlx import KeyNormObserver
@@ -6,9 +7,7 @@ from veloxquant_mlx.observers import QuantizationEvent
 
 
 def _event(norm_sq) -> QuantizationEvent:
-    return QuantizationEvent(
-        stage="test", input_shape=(1,), metadata={"key_l2_norm_sq": norm_sq}
-    )
+    return QuantizationEvent(stage="test", input_shape=(1,), metadata={"key_l2_norm_sq": norm_sq})
 
 
 def test_empty_report() -> None:

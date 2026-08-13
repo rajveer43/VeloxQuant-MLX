@@ -25,6 +25,7 @@ Regression tests for issue #31 (allocator paper-fidelity fixes):
       anti-correlated with it (pinned as a documented distinction)
   20. attention_entropy mode wired end-to-end; invalid mode rejected
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -220,8 +221,8 @@ def test_running_norm_accumulator_correctness():
     keys = mx.array(data)
 
     # Ground-truth inter-token norm variance per head.
-    norms = np.sqrt((data[0] ** 2).sum(axis=-1))   # [H, S]
-    gt_var = norms.var(axis=1)                       # [H]
+    norms = np.sqrt((data[0] ** 2).sum(axis=-1))  # [H, S]
+    gt_var = norms.var(axis=1)  # [H]
 
     cache = AdaKVCache(_make_cfg(head_dim=D))
     cache._update_norm_accumulators(keys)
@@ -267,8 +268,7 @@ def test_byte_accounting_compressed_less_than_fp16():
 # ---------------------------------------------------------------------------
 def test_assigned_avg_bits_in_range():
     cache = AdaKVCache(_make_cfg(adakv_target_avg_bits=3.0))
-    cache.update_and_fetch(_heterogeneous_keys(B=1, H=4, S=64, D=64),
-                           _values(B=1, H=4, S=64, D=64))
+    cache.update_and_fetch(_heterogeneous_keys(B=1, H=4, S=64, D=64), _values(B=1, H=4, S=64, D=64))
     avg = cache.assigned_avg_bits
     assert cache._lo_bit <= avg <= cache._hi_bit, (
         f"assigned_avg_bits={avg} out of range [{cache._lo_bit}, {cache._hi_bit}]"

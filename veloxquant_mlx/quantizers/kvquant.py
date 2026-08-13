@@ -22,6 +22,7 @@ This module holds the pure, side-effect-free numerics; the cache wrapper in
 ``kvquant_cache.py`` applies them per-channel (keys) / per-token (values) and
 manages the outlier side-channel.
 """
+
 from __future__ import annotations
 
 from typing import NamedTuple
@@ -39,6 +40,7 @@ class DenseSparse(NamedTuple):
         outlier_mask: [N, D] bool — True at outlier positions.
         outlier_vals: [N, D] fp32 — original values at outlier positions, 0 else.
     """
+
     inliers: mx.array
     outlier_mask: mx.array
     outlier_vals: mx.array
@@ -61,13 +63,23 @@ def split_dense_sparse(x: mx.array, outlier_fraction: float) -> DenseSparse:
         return DenseSparse(x32, zeros.astype(mx.bool_), zeros)
 
     k = max(1, int(round(n * outlier_fraction)))
-    k = min(k, n - 1)   # always keep at least one inlier per column
-    # Per-column magnitude threshold = k-th largest |x| (descending sort).
+    k = min(k, n - 1)  # always keep at least one inlier per column
+    # Per-column top-k by magnitude, selected by *rank* rather than by comparing
+    # against the k-th largest value. A value threshold (`mag >= thresh`) breaks
+    # on ties: a constant column has every element equal to the threshold, so it
+    # would flag all N elements as outliers instead of k — sending the whole
+    # column to the fp16 side-channel while byte accounting charges only k.
+    # argsort gives each element a distinct rank, so exactly k are selected.
     mag = mx.abs(x32)
-    sorted_desc = mx.sort(mag, axis=0)[::-1]            # [N, D] descending per col
-    thresh = sorted_desc[k - 1:k, :]                    # [1, D] k-th largest
-    mask = mag >= thresh                                # [N, D] bool (>= keeps ties)
-    col_mean = mx.mean(x32, axis=0, keepdims=True)      # [1, D]
+    order = mx.argsort(-mag, axis=0)  # [N, D] indices, descending magnitude
+    rank = mx.put_along_axis(
+        mx.zeros_like(order),
+        order,
+        mx.broadcast_to(mx.arange(n, dtype=order.dtype)[:, None], order.shape),
+        axis=0,
+    )  # rank[i, d] = position of element i within column d's descending order
+    mask = rank < k  # [N, D] bool — exactly k True per column
+    col_mean = mx.mean(x32, axis=0, keepdims=True)  # [1, D]
     inliers = mx.where(mask, mx.broadcast_to(col_mean, x32.shape), x32)
     outlier_vals = mx.where(mask, x32, mx.zeros_like(x32))
     return DenseSparse(inliers, mask, outlier_vals)
@@ -93,24 +105,24 @@ def fit_nuq_levels(x: mx.array, bits: int, n_iters: int = 8) -> mx.array:
     L = 1 << bits
 
     # Quantile init: L evenly spaced quantiles per column → ascending, distinct-ish.
-    xs = mx.sort(x32, axis=0)                            # [N, D] ascending
-    qpos = (mx.arange(L, dtype=mx.float32) + 0.5) / L    # [L] centers of L bins
+    xs = mx.sort(x32, axis=0)  # [N, D] ascending
+    qpos = (mx.arange(L, dtype=mx.float32) + 0.5) / L  # [L] centers of L bins
     idx = mx.clip(mx.round(qpos * (n - 1)), 0, n - 1).astype(mx.int32)  # [L]
-    levels = xs[idx, :]                                  # [L, D]
+    levels = xs[idx, :]  # [L, D]
 
     for _ in range(max(1, n_iters)):
         # Assign: nearest level per element. dist[n, l, d] = |x - level|.
         # Vectorize over L with broadcasting: x[N,1,D] vs levels[1,L,D].
-        diff = mx.abs(x32[:, None, :] - levels[None, :, :])   # [N, L, D]
-        assign = mx.argmin(diff, axis=1)                       # [N, D] in [0, L)
+        diff = mx.abs(x32[:, None, :] - levels[None, :, :])  # [N, L, D]
+        assign = mx.argmin(diff, axis=1)  # [N, D] in [0, L)
 
         # Update: per-(level, column) mean of assigned inliers.
         # one_hot[N, L, D] = (assign == l)
-        lr = mx.arange(L)[None, :, None]                       # [1, L, 1]
+        lr = mx.arange(L)[None, :, None]  # [1, L, 1]
         one_hot = (assign[:, None, :] == lr).astype(mx.float32)  # [N, L, D]
-        counts = mx.sum(one_hot, axis=0)                        # [L, D]
-        sums = mx.sum(one_hot * x32[:, None, :], axis=0)        # [L, D]
-        new_levels = sums / mx.maximum(counts, 1.0)             # [L, D]
+        counts = mx.sum(one_hot, axis=0)  # [L, D]
+        sums = mx.sum(one_hot * x32[:, None, :], axis=0)  # [L, D]
+        new_levels = sums / mx.maximum(counts, 1.0)  # [L, D]
         # Empty clusters (count 0) keep the old level.
         levels = mx.where(counts > 0, new_levels, levels)
         mx.eval(levels)
@@ -130,8 +142,8 @@ def quantize_nuq(x: mx.array, levels: mx.array) -> mx.array:
         codes: [N, D] int32 indices into ``levels`` (column-wise).
     """
     x32 = x.astype(mx.float32)
-    diff = mx.abs(x32[:, None, :] - levels[None, :, :])   # [N, L, D]
-    return mx.argmin(diff, axis=1).astype(mx.int32)        # [N, D]
+    diff = mx.abs(x32[:, None, :] - levels[None, :, :])  # [N, L, D]
+    return mx.argmin(diff, axis=1).astype(mx.int32)  # [N, D]
 
 
 def dequant_nuq(codes: mx.array, levels: mx.array) -> mx.array:
@@ -147,7 +159,7 @@ def dequant_nuq(codes: mx.array, levels: mx.array) -> mx.array:
     n, d = codes.shape
     L = levels.shape[0]
     # Gather levels[code[n,d], d] for each (n, d). take_along_axis over axis 0.
-    lev = mx.take_along_axis(levels, codes.astype(mx.int32), axis=0)   # [N, D]
+    lev = mx.take_along_axis(levels, codes.astype(mx.int32), axis=0)  # [N, D]
     return lev.astype(mx.float16)
 
 

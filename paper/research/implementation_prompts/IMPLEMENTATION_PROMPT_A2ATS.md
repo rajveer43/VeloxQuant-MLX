@@ -78,11 +78,12 @@ def a2ats_apply_exact_rope(x: mx.array, positions: mx.array, base: float = 10000
     # hand-roll a second RoPE implementation with different numerics).
     ...
 
+
 def a2ats_apply_windowed_rope(
-    x: mx.array,           # [N, D] token vectors
-    positions: mx.array,   # [N] absolute positions
-    query_position: int,   # current decode step's absolute position
-    window: int = 128,     # trailing exact-RoPE window size
+    x: mx.array,  # [N, D] token vectors
+    positions: mx.array,  # [N] absolute positions
+    query_position: int,  # current decode step's absolute position
+    window: int = 128,  # trailing exact-RoPE window size
     base: float = 10000.0,
 ) -> mx.array:
     # For tokens with (query_position - positions) < window: apply exact
@@ -109,11 +110,11 @@ that machinery is *which* codebook entry gets selected:
 
 ```python
 def a2ats_query_aware_assignment(
-    x: mx.array,          # [N, D] keys to quantize
-    codebook: mx.array,   # [K, D] candidate centroids
-    query: mx.array,      # [D] current query vector
-    beta: float = 0.5,    # blend coefficient, mirrors amc's alpha naming choice — confirm paper's actual symbol before finalizing
-) -> mx.array:            # [N] assigned centroid indices
+    x: mx.array,  # [N, D] keys to quantize
+    codebook: mx.array,  # [K, D] candidate centroids
+    query: mx.array,  # [D] current query vector
+    beta: float = 0.5,  # blend coefficient, mirrors amc's alpha naming choice — confirm paper's actual symbol before finalizing
+) -> mx.array:  # [N] assigned centroid indices
     # score = beta * (-reconstruction_error) + (1 - beta) * cosine_similarity(query, centroid)
     # i.e. prefer centroids that are both low-error AND query-relevant,
     # not pure nearest-centroid (that's what plain quantize_vq already does).
@@ -156,9 +157,9 @@ Config fields (add to `KVCacheConfig` in `cache/base.py`):
 ```python
 a2ats_codebook_bits: int = 8
 a2ats_sub_dim: int = 8
-a2ats_window: int = 128           # trailing exact-RoPE window
-a2ats_use_query_aware: bool = True   # paper's primary reported path — default ON, unlike AMC's off-by-default query path, since this is the paper's main contribution not an ablation extra; confirm against the paper's own default before finalizing
-a2ats_beta: float = 0.5           # query/reconstruction blend
+a2ats_window: int = 128  # trailing exact-RoPE window
+a2ats_use_query_aware: bool = True  # paper's primary reported path — default ON, unlike AMC's off-by-default query path, since this is the paper's main contribution not an ablation extra; confirm against the paper's own default before finalizing
+a2ats_beta: float = 0.5  # query/reconstruction blend
 a2ats_retrieval_fraction: float = 0.20  # fraction of tokens kept at high fidelity
 a2ats_rope_base: float = 10000.0
 ```

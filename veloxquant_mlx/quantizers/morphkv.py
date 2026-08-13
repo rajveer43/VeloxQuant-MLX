@@ -66,6 +66,7 @@ morphkv_get_kv      — extract current (keys, values) arrays
 morphkv_fp16_bytes  — bytes stored in current state
 full_morphkv_fp16_bytes — hypothetical cost without eviction
 """
+
 from __future__ import annotations
 
 import math
@@ -119,21 +120,21 @@ def init_morphkv_state(
     if window < 1:
         raise ValueError(f"morphkv: window must be >= 1, got {window!r}")
     if n_sink >= budget:
-        raise ValueError(
-            f"morphkv: n_sink ({n_sink}) must be < budget ({budget})"
-        )
+        raise ValueError(f"morphkv: n_sink ({n_sink}) must be < budget ({budget})")
     if window > budget:
-        raise ValueError(
-            f"morphkv: window ({window}) must be <= budget ({budget})"
-        )
+        raise ValueError(f"morphkv: window ({window}) must be <= budget ({budget})")
     if n_sink + window >= budget:
         raise ValueError(
             f"morphkv: n_sink ({n_sink}) + window ({window}) must be < "
             f"budget ({budget}) — no evictable positions remain"
         )
     return MorphKVState(
-        keys=None, values=None, pos=0,
-        n_sink=n_sink, budget=budget, window=window,
+        keys=None,
+        values=None,
+        pos=0,
+        n_sink=n_sink,
+        budget=budget,
+        window=window,
         head_dim=int(head_dim),
     )
 
@@ -152,7 +153,7 @@ def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
         [n] softmax weights summing to ~1.
     """
     scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
-    logits = (keys @ query_proxy) * scale   # [n]
+    logits = (keys @ query_proxy) * scale  # [n]
     return mx.softmax(logits, axis=-1)
 
 
@@ -185,7 +186,7 @@ def _recent_relevance(keys: mx.array, recent_keys: mx.array) -> mx.array:
 
 def morphkv_update(
     state: MorphKVState,
-    new_keys: mx.array,    # [S, D] fp16
+    new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
 ) -> MorphKVState:
     """Absorb S new tokens, evicting the least recent-relevant token if over budget.
@@ -205,7 +206,7 @@ def morphkv_update(
     S = int(new_keys.shape[0])
 
     for i in range(S):
-        k_i = new_keys[i].astype(mx.float16)    # [D]
+        k_i = new_keys[i].astype(mx.float16)  # [D]
         v_i = new_values[i].astype(mx.float16)  # [D]
 
         if state.keys is None:
@@ -213,13 +214,15 @@ def morphkv_update(
                 keys=k_i[None],
                 values=v_i[None],
                 pos=state.pos + 1,
-                n_sink=state.n_sink, budget=state.budget,
-                window=state.window, head_dim=state.head_dim,
+                n_sink=state.n_sink,
+                budget=state.budget,
+                window=state.window,
+                head_dim=state.head_dim,
             )
             continue
 
         # --- append new token ---------------------------------------------
-        keys_cat   = mx.concatenate([state.keys,   k_i[None]], axis=0)
+        keys_cat = mx.concatenate([state.keys, k_i[None]], axis=0)
         values_cat = mx.concatenate([state.values, v_i[None]], axis=0)
 
         n_total = int(keys_cat.shape[0])
@@ -227,8 +230,8 @@ def morphkv_update(
         if n_total > state.budget:
             # Recent window = last min(window, n_total) key rows.
             w_eff = min(state.window, n_total)
-            recent = keys_cat[n_total - w_eff:]
-            relevance = _recent_relevance(keys_cat, recent)   # [n_total]
+            recent = keys_cat[n_total - w_eff :]
+            relevance = _recent_relevance(keys_cat, recent)  # [n_total]
 
             # Protect sinks (leading) and the recent window (trailing) with +inf.
             n_sink_eff = min(state.n_sink, n_total)
@@ -236,20 +239,22 @@ def morphkv_update(
             if n_sink_eff > 0:
                 protect[:n_sink_eff] = float("inf")
             # Trailing recent window always protected (it drives the ranking).
-            protect[n_total - w_eff:] = float("inf")
+            protect[n_total - w_eff :] = float("inf")
             sel = relevance + protect
 
             evict_idx = int(mx.argmin(sel).item())
             keep = [j for j in range(n_total) if j != evict_idx]
-            keys_cat   = keys_cat[keep]
+            keys_cat = keys_cat[keep]
             values_cat = values_cat[keep]
 
         state = MorphKVState(
             keys=keys_cat,
             values=values_cat,
             pos=state.pos + 1,
-            n_sink=state.n_sink, budget=state.budget,
-            window=state.window, head_dim=state.head_dim,
+            n_sink=state.n_sink,
+            budget=state.budget,
+            window=state.window,
+            head_dim=state.head_dim,
         )
 
     return state
@@ -276,7 +281,7 @@ def morphkv_fp16_bytes(state: MorphKVState) -> int:
     if state.keys is None:
         return 0
     n, D = state.keys.shape
-    return n * D * 2 * 2   # K + V, 2 bytes each
+    return n * D * 2 * 2  # K + V, 2 bytes each
 
 
 def full_morphkv_fp16_bytes(tokens_seen: int, head_dim: int) -> int:

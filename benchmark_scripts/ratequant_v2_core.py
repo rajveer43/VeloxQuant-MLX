@@ -48,6 +48,7 @@ Public API
 - `RateQuantV2RVQMLXKVCache` — identical to RateQuantRVQMLXKVCache; the
   intelligence is in the allocation, not the cache itself.
 """
+
 from __future__ import annotations
 
 import math
@@ -65,6 +66,7 @@ from veloxquant_mlx.quantizers.turboquant_rvq import TurboQuantRVQ
 # Calibration: collect per-layer activation-norm sensitivities
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class _SensitivityProbeCache(_MLXKVCache):
     """KV cache that records per-token key-vector L2 norms during prefill.
 
@@ -79,17 +81,18 @@ class _SensitivityProbeCache(_MLXKVCache):
     We use it because gradient-based requires backprop through mlx_lm
     generation, which is not currently practical.
     """
+
     def __init__(self) -> None:
         super().__init__()
         self._norm_sq_sum = 0.0
-        self._n_tokens    = 0
+        self._n_tokens = 0
 
     def update_and_fetch(self, keys, values):
         # keys shape: (B, H, S, D)
         k_flat = keys.reshape(-1, keys.shape[-1]).astype(mx.float32)
         norms_sq = mx.sum(k_flat * k_flat, axis=-1)
         self._norm_sq_sum += float(mx.sum(norms_sq))
-        self._n_tokens    += int(k_flat.shape[0])
+        self._n_tokens += int(k_flat.shape[0])
         return super().update_and_fetch(keys, values)
 
     @property
@@ -114,9 +117,7 @@ def calibrate_layer_sensitivities(
     Returns: list[float] of length n_layers, each > 0.
     """
     rng = np.random.default_rng(seed)
-    layers = getattr(model, "layers", None) or getattr(
-        getattr(model, "model", None), "layers", []
-    )
+    layers = getattr(model, "layers", None) or getattr(getattr(model, "model", None), "layers", [])
     n_layers = len(layers)
     probes = [_SensitivityProbeCache() for _ in range(n_layers)]
 
@@ -147,8 +148,7 @@ def calibrate_layer_sensitivities(
         # Forward pass through the model — populates the probe caches
         _ = model(toks_mx, cache=probes)
         if verbose:
-            print(f"  [calib] sequence {i+1}/{len(calib_prompts)} "
-                  f"(len={len(toks)})", flush=True)
+            print(f"  [calib] sequence {i + 1}/{len(calib_prompts)} (len={len(toks)})", flush=True)
 
     # Restore make_cache
     if original_make_cache is not None:
@@ -157,14 +157,18 @@ def calibrate_layer_sensitivities(
     weights = [max(p.sensitivity, 1e-6) for p in probes]
     if verbose:
         lo, hi = min(weights), max(weights)
-        print(f"  [calib] per-layer sensitivity range: "
-              f"min={lo:.3f}, max={hi:.3f}, ratio={hi/lo:.2f}x", flush=True)
+        print(
+            f"  [calib] per-layer sensitivity range: "
+            f"min={lo:.3f}, max={hi:.3f}, ratio={hi / lo:.2f}x",
+            flush=True,
+        )
     return weights
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Quantizer-specific distortion calibration: fit D(b) = alpha * beta^-b on real keys
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def fit_distortion_on_keys(
     keys_mx: mx.array,
@@ -179,20 +183,19 @@ def fit_distortion_on_keys(
     d = keys_mx.shape[-1]
     # Normalize to unit vectors first (mirrors the cache encode path)
     norms = mx.linalg.norm(keys_mx.astype(mx.float32), axis=-1, keepdims=True)
-    safe  = mx.maximum(norms, mx.array(1e-4, dtype=mx.float32))
+    safe = mx.maximum(norms, mx.array(1e-4, dtype=mx.float32))
     x_unit = (keys_mx / safe.astype(keys_mx.dtype)).astype(mx.float16)
 
     mses = []
     for b in bit_choices:
-        q     = TurboQuantRVQ(d=d, b=b, seed=seed, use_hadamard=True)
-        ev    = q.encode(x_unit)
+        q = TurboQuantRVQ(d=d, b=b, seed=seed, use_hadamard=True)
+        ev = q.encode(x_unit)
         x_hat = q.decode(ev)
-        mse   = float(mx.mean((x_unit - x_hat) ** 2))
+        mse = float(mx.mean((x_unit - x_hat) ** 2))
         mses.append(max(mse, 1e-8))
 
     log_d = np.log(np.array(mses))
-    A     = np.stack([np.ones(len(bit_choices)),
-                      -np.array(bit_choices, dtype=float)], axis=1)
+    A = np.stack([np.ones(len(bit_choices)), -np.array(bit_choices, dtype=float)], axis=1)
     coef, *_ = np.linalg.lstsq(A, log_d, rcond=None)
     log_alpha, log_beta = coef
     return float(np.exp(log_alpha)), float(np.exp(log_beta))
@@ -201,6 +204,7 @@ def fit_distortion_on_keys(
 # ─────────────────────────────────────────────────────────────────────────────
 # Closed-form allocation (paper Theorem 2)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def allocate_bits_ratequant_v2(
     sensitivities: list[float],
@@ -231,7 +235,8 @@ def allocate_bits_ratequant_v2(
     b_continuous = b_bar + (log_w - log_w_bar) / max(np.log(beta), 1e-6)
 
     # Clamp to allowed range and round
-    b_min = min(bit_choices); b_max = max(bit_choices)
+    b_min = min(bit_choices)
+    b_max = max(bit_choices)
     b_clamped = np.clip(b_continuous, b_min, b_max)
     alloc = [int(round(b)) for b in b_clamped]
 
@@ -241,32 +246,38 @@ def allocate_bits_ratequant_v2(
 
     while current_total < target_total:
         # Bump the layer with the highest continuous-vs-allocated deficit
-        deficits = [(b_continuous[i] - alloc[i], i)
-                    for i in range(N) if alloc[i] < b_max]
-        if not deficits: break
+        deficits = [(b_continuous[i] - alloc[i], i) for i in range(N) if alloc[i] < b_max]
+        if not deficits:
+            break
         _, i = max(deficits)
-        alloc[i] += 1; current_total += 1
+        alloc[i] += 1
+        current_total += 1
 
     while current_total > target_total:
         # Remove from the layer with the smallest continuous deficit
-        surplus = [(alloc[i] - b_continuous[i], i)
-                   for i in range(N) if alloc[i] > b_min]
-        if not surplus: break
+        surplus = [(alloc[i] - b_continuous[i], i) for i in range(N) if alloc[i] > b_min]
+        if not surplus:
+            break
         _, i = max(surplus)
-        alloc[i] -= 1; current_total -= 1
+        alloc[i] -= 1
+        current_total -= 1
 
     if verbose:
         from collections import Counter
+
         counts = Counter(alloc)
         avg = sum(alloc) / len(alloc)
-        print(f"  [alloc] target b̄={b_bar:.2f}, achieved b̄={avg:.3f}, "
-              f"counts={dict(counts)}", flush=True)
+        print(
+            f"  [alloc] target b̄={b_bar:.2f}, achieved b̄={avg:.3f}, counts={dict(counts)}",
+            flush=True,
+        )
     return alloc
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # The cache class — identical to V1 RateQuant, intelligence is in allocation
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class RateQuantV2RVQMLXKVCache(_MLXKVCache):
     """RVQ KV cache that uses a pre-assigned (per-layer) bit-width.
@@ -275,32 +286,30 @@ class RateQuantV2RVQMLXKVCache(_MLXKVCache):
     based on real per-layer activation sensitivity.
     """
 
-    def __init__(self, n_kv_heads: int, head_dim: int,
-                 bits: int, seed: int = 42) -> None:
+    def __init__(self, n_kv_heads: int, head_dim: int, bits: int, seed: int = 42) -> None:
         super().__init__()
         self._n_kv_heads = n_kv_heads
-        self._head_dim   = head_dim
-        self._bits       = int(bits)
-        self._quantizer  = TurboQuantRVQ(d=head_dim, b=self._bits, seed=seed,
-                                          use_hadamard=True)
+        self._head_dim = head_dim
+        self._bits = int(bits)
+        self._quantizer = TurboQuantRVQ(d=head_dim, b=self._bits, seed=seed, use_hadamard=True)
         self._key_bytes_compressed = 0
-        self._key_bytes_fp16       = 0
+        self._key_bytes_fp16 = 0
 
     def update_and_fetch(self, keys, values):
         B, H, S, D = keys.shape
         kdtype = keys.dtype
         k_flat = keys.reshape(-1, D)
-        norms  = mx.linalg.norm(k_flat.astype(mx.float32), axis=-1, keepdims=True).astype(kdtype)
-        safe   = mx.maximum(norms, mx.array(1e-4, dtype=kdtype))
+        norms = mx.linalg.norm(k_flat.astype(mx.float32), axis=-1, keepdims=True).astype(kdtype)
+        safe = mx.maximum(norms, mx.array(1e-4, dtype=kdtype))
         k_unit = (k_flat / safe).astype(mx.float16)
 
-        ev      = self._quantizer.encode(k_unit)
+        ev = self._quantizer.encode(k_unit)
         k_hat_u = self._quantizer.decode(ev)
         k_dequant = (k_hat_u.astype(kdtype) * safe).reshape(B, H, S, D)
 
         per_tok = (math.ceil(self._head_dim * 2 * self._bits / 8) + 2) * H * B
         self._key_bytes_compressed += per_tok * S
-        self._key_bytes_fp16       += H * B * S * self._head_dim * 2
+        self._key_bytes_fp16 += H * B * S * self._head_dim * 2
         return super().update_and_fetch(k_dequant, values)
 
     @property

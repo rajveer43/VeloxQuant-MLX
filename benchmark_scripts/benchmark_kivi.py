@@ -17,6 +17,7 @@ Usage::
     PYTHONPATH=. python benchmark_scripts/benchmark_kivi.py \\
         --model mlx-community/Llama-3.2-3B-Instruct-4bit
 """
+
 from __future__ import annotations
 
 import argparse
@@ -57,7 +58,7 @@ def _ensure_path() -> None:
 
 def _peak_mb() -> float:
     try:
-        return float(mx.metal.get_peak_memory()) / (1024 ** 2)
+        return float(mx.metal.get_peak_memory()) / (1024**2)
     except Exception:
         return float("nan")
 
@@ -74,18 +75,23 @@ def _hardware() -> dict:
     info = {"platform": platform.platform(), "machine": platform.machine()}
     try:
         import subprocess
+
         chip = subprocess.run(
             ["sysctl", "-n", "machdep.cpu.brand_string"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout.strip()
         mem = subprocess.run(
             ["sysctl", "-n", "hw.memsize"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout.strip()
         if chip:
             info["chip"] = chip
         if mem:
-            info["ram_gb"] = round(int(mem) / (1024 ** 3), 1)
+            info["ram_gb"] = round(int(mem) / (1024**3), 1)
     except Exception:
         pass
     return info
@@ -117,8 +123,11 @@ def _build_kivi_caches(model, b: int, group_size: int, residual_length: int) -> 
             caches.append(_FallbackCache())
             continue
         cfg = KVCacheConfig(
-            method="kivi", head_dim=hd, bit_width_inlier=b,
-            kivi_group_size=group_size, residual_length=residual_length,
+            method="kivi",
+            head_dim=hd,
+            bit_width_inlier=b,
+            kivi_group_size=group_size,
+            residual_length=residual_length,
             seed=42 + i,
         )
         caches.append(KIVIKVCache(cfg))
@@ -127,21 +136,26 @@ def _build_kivi_caches(model, b: int, group_size: int, residual_length: int) -> 
 
 def _build_fp16_caches(model) -> list:
     from mlx_lm.models.cache import KVCache as _FallbackCache
+
     layers = getattr(model, "layers", None) or model.model.layers
     return [_FallbackCache() for _ in layers]
 
 
 def _generate(model, tokenizer, prompt: str, max_tokens: int, caches: list) -> tuple:
     from mlx_lm import generate
+
     t0 = time.time()
     try:
         out = generate(
-            model, tokenizer, prompt=prompt, max_tokens=max_tokens,
-            verbose=False, prompt_cache=caches,
+            model,
+            tokenizer,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            verbose=False,
+            prompt_cache=caches,
         )
     except TypeError:
-        out = generate(model, tokenizer, prompt=prompt,
-                       max_tokens=max_tokens, verbose=False)
+        out = generate(model, tokenizer, prompt=prompt, max_tokens=max_tokens, verbose=False)
     elapsed = time.time() - t0
     n_tok = len(tokenizer.encode(out)) if out else 0
     return n_tok, elapsed
@@ -175,8 +189,10 @@ def _run_config(model, tokenizer, name: str, build_caches_fn, max_tokens: int) -
     total_comp = key_compressed + val_compressed + residual_fp16
     full_kv_ratio = (total_fp16 / total_comp) if total_comp else 1.0
 
-    print(f"  {n_tok} tok in {elapsed:.2f}s ({throughput:.1f} tok/s)  "
-          f"peak={peak_mb:.0f}MB  key_x={key_ratio:.2f}  fullKV_x={full_kv_ratio:.2f}")
+    print(
+        f"  {n_tok} tok in {elapsed:.2f}s ({throughput:.1f} tok/s)  "
+        f"peak={peak_mb:.0f}MB  key_x={key_ratio:.2f}  fullKV_x={full_kv_ratio:.2f}"
+    )
 
     return {
         "name": name,
@@ -196,7 +212,7 @@ def _plot_summary(results: list, out_path: Path, model_label: str, hw: dict) -> 
     peaks = [r["peak_mb"] for r in results]
     kratio = [r["key_compression"] for r in results]
     fullkv = [r["full_kv_compression"] for r in results]
-    colors = ["#666", "#00d4ff", "#7c3aed", "#ff6b35", "#22c55e"][:len(names)]
+    colors = ["#666", "#00d4ff", "#7c3aed", "#ff6b35", "#22c55e"][: len(names)]
     chip = hw.get("chip", hw.get("machine", "Apple Silicon"))
 
     fig, axes = plt.subplots(1, 4, figsize=(20, 5))
@@ -230,8 +246,7 @@ def main() -> int:
     from mlx_lm import load
 
     model_stem = args.model.split("/")[-1]
-    out_dir = Path(args.output_dir) if args.output_dir else \
-        Path("figures/kivi") / model_stem
+    out_dir = Path(args.output_dir) if args.output_dir else Path("figures/kivi") / model_stem
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Loading {args.model}...", flush=True)
@@ -249,7 +264,8 @@ def main() -> int:
         margs.hidden_size // margs.num_attention_heads
     )
     n_kv_heads = getattr(margs, "num_key_value_heads", None) or getattr(
-        margs, "num_attention_heads", 1)
+        margs, "num_attention_heads", 1
+    )
     n_layers = len(layers)
     hw = _hardware()
     prompt_tokens = len(tokenizer.encode(PROMPT))
@@ -260,17 +276,25 @@ def main() -> int:
     # KIVI configs: (label, bits).  group_size + residual shared via CLI.
     configs = [("KIVI-2bit", 2), ("KIVI-3bit", 3), ("KIVI-4bit", 4)]
 
-    results = [_run_config(
-        model, tokenizer, "fp16-baseline",
-        lambda: _build_fp16_caches(model), args.max_tokens,
-    )]
-    for label, b in configs:
-        results.append(_run_config(
-            model, tokenizer, label,
-            lambda b=b: _build_kivi_caches(
-                model, b, args.group_size, args.residual_length),
+    results = [
+        _run_config(
+            model,
+            tokenizer,
+            "fp16-baseline",
+            lambda: _build_fp16_caches(model),
             args.max_tokens,
-        ))
+        )
+    ]
+    for label, b in configs:
+        results.append(
+            _run_config(
+                model,
+                tokenizer,
+                label,
+                lambda b=b: _build_kivi_caches(model, b, args.group_size, args.residual_length),
+                args.max_tokens,
+            )
+        )
 
     _plot_summary(results, out_dir / "kivi_summary.png", model_stem, hw)
 
@@ -293,9 +317,11 @@ def main() -> int:
 
     print(f"\nResults: {json_path}")
     for r in results:
-        print(f"  {r['name']:<16s} {r['throughput_tok_s']:6.1f} tok/s  "
-              f"{r['peak_mb']:7.1f} MB  key_x={r['key_compression']:.2f}  "
-              f"fullKV_x={r['full_kv_compression']:.2f}  toks={r['tokens_generated']}")
+        print(
+            f"  {r['name']:<16s} {r['throughput_tok_s']:6.1f} tok/s  "
+            f"{r['peak_mb']:7.1f} MB  key_x={r['key_compression']:.2f}  "
+            f"fullKV_x={r['full_kv_compression']:.2f}  toks={r['tokens_generated']}"
+        )
     return 0
 
 

@@ -58,17 +58,19 @@ value_bits = 8
 
 # In practice, collect these from the model's real key/value activations
 # over a calibration prompt set — shape [n_tokens, n_heads, head_dim].
-keys_calib = mx.array(np.random.default_rng(0).standard_normal(
-    (4096, 8, head_dim)).astype(np.float32))
-values_calib = mx.array(np.random.default_rng(1).standard_normal(
-    (4096, 8, head_dim)).astype(np.float32))
+keys_calib = mx.array(
+    np.random.default_rng(0).standard_normal((4096, 8, head_dim)).astype(np.float32)
+)
+values_calib = mx.array(
+    np.random.default_rng(1).standard_normal((4096, 8, head_dim)).astype(np.float32)
+)
 
 smooth_factors = calibrate_smooth_factors(keys_calib)
 
 k_subs = keys_calib.reshape(-1, key_sub_dim)
 v_subs = values_calib.reshape(-1, value_sub_dim)
-key_codebook = train_codebook(k_subs, n_centroids=2 ** key_bits, seed=42)
-value_codebook = train_codebook(v_subs, n_centroids=2 ** value_bits, seed=43)
+key_codebook = train_codebook(k_subs, n_centroids=2**key_bits, seed=42)
+value_codebook = train_codebook(v_subs, n_centroids=2**value_bits, seed=43)
 
 np.savez(
     "vecinfer_artifacts.npz",
@@ -103,7 +105,8 @@ config = KVCacheConfig(
 cache = KVCacheBuilder.build(model, config)
 
 response = mlx_lm.generate(
-    model, tokenizer,
+    model,
+    tokenizer,
     prompt="Summarise the history of calculus in 300 words.",
     max_tokens=400,
     kv_cache=cache,

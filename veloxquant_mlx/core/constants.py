@@ -6,7 +6,7 @@ import math
 SQRT_PI_OVER_2: float = math.sqrt(math.pi / 2)
 
 # TurboQuant theoretical MSE bounds: D_mse <= UPPER_MSE_FACTOR * 4^(-b)
-UPPER_MSE_FACTOR: float = math.sqrt(3 * math.pi) / 2   # ≈ 2.7207
+UPPER_MSE_FACTOR: float = math.sqrt(3 * math.pi) / 2  # ≈ 2.7207
 
 # Theoretical lower bound factor: D_mse >= 4^(-b)
 LOWER_MSE_FACTOR: float = 1.0

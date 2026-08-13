@@ -22,6 +22,7 @@ Outputs:
   * figures/updated_tests/qwen2_vl/key_stats/layer_NN_norms.png
   * figures/updated_tests/qwen2_vl/key_stats/layer_NN_rot_hist.png
 """
+
 from __future__ import annotations
 
 import argparse
@@ -41,12 +42,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from veloxquant_mlx.quantizers.turboquant_rvq import TurboQuantRVQ
 
 DEFAULT_MODEL = "mlx-community/Qwen2-VL-7B-Instruct-bf16"
-N_IMG = 256       # synthetic image patch count (typical ViT output for one image)
-N_TEXT = 32       # text tokens following the image
+N_IMG = 256  # synthetic image patch count (typical ViT output for one image)
+N_TEXT = 32  # text tokens following the image
 IMG_NORM_SCALE = 12.0  # image-token norm multiplier vs text-token norm
 OUT_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "figures", "updated_tests", "qwen2_vl", "key_stats",
+    "figures",
+    "updated_tests",
+    "qwen2_vl",
+    "key_stats",
 )
 
 
@@ -57,7 +61,7 @@ def _kurtosis(x: np.ndarray) -> float:
     var = x.var()
     if var < 1e-12:
         return 0.0
-    return float(((x - mu) ** 4).mean() / (var ** 2) - 3.0)
+    return float(((x - mu) ** 4).mean() / (var**2) - 3.0)
 
 
 def _to_numpy(arr: Any) -> np.ndarray:
@@ -93,9 +97,7 @@ def _synth_inputs(model, n_img: int, n_text: int, seed: int = 0):
     img_target_norm = IMG_NORM_SCALE * text_norm_mean
     img_np = raw * img_target_norm
 
-    embeds_np = np.concatenate(
-        [img_np, _to_numpy(text_embeds)], axis=0
-    ).astype(np.float32)
+    embeds_np = np.concatenate([img_np, _to_numpy(text_embeds)], axis=0).astype(np.float32)
     embeds = mx.array(embeds_np).astype(embed.weight.dtype)
     embeds = embeds.reshape(1, n_img + n_text, hidden)
 
@@ -106,8 +108,8 @@ def _synth_inputs(model, n_img: int, n_text: int, seed: int = 0):
 
 def _layer_stats(
     layer_idx: int,
-    keys_img: mx.array,      # (H, n_img, D) for one layer
-    keys_text: mx.array,     # (H, n_text, D)
+    keys_img: mx.array,  # (H, n_img, D) for one layer
+    keys_text: mx.array,  # (H, n_text, D)
     save_hists: bool,
     out_dir: str,
 ) -> dict:
@@ -136,11 +138,12 @@ def _layer_stats(
         # RVQ encode/decode:
         ev = quant.encode(unit)
         unit_hat = quant.decode(ev)
-        cos = float(mx.mean(
-            mx.sum(unit * unit_hat, axis=-1) /
-            (mx.linalg.norm(unit, axis=-1) * mx.linalg.norm(unit_hat, axis=-1)
-             + 1e-8)
-        ))
+        cos = float(
+            mx.mean(
+                mx.sum(unit * unit_hat, axis=-1)
+                / (mx.linalg.norm(unit, axis=-1) * mx.linalg.norm(unit_hat, axis=-1) + 1e-8)
+            )
+        )
         return cos, rot_np
 
     cos_img, rot_img = _q_cosine(keys_img)
@@ -152,26 +155,42 @@ def _layer_stats(
         os.makedirs(out_dir, exist_ok=True)
         # Norms histogram
         fig, ax = plt.subplots(figsize=(7, 3.5))
-        ax.hist(img_norms, bins=50, alpha=0.6, label=f"image (n={len(img_norms)})",
-                color="#C44E52")
-        ax.hist(text_norms, bins=50, alpha=0.6, label=f"text (n={len(text_norms)})",
-                color="#4C72B0")
-        ax.set_xlabel("L2 norm"); ax.set_ylabel("count")
+        ax.hist(img_norms, bins=50, alpha=0.6, label=f"image (n={len(img_norms)})", color="#C44E52")
+        ax.hist(
+            text_norms, bins=50, alpha=0.6, label=f"text (n={len(text_norms)})", color="#4C72B0"
+        )
+        ax.set_xlabel("L2 norm")
+        ax.set_ylabel("count")
         ax.set_title(f"Layer {layer_idx:02d}  Key Norms")
-        ax.legend(); plt.tight_layout()
+        ax.legend()
+        plt.tight_layout()
         fig.savefig(f"{out_dir}/layer_{layer_idx:02d}_norms.png", dpi=120)
         plt.close()
 
         # Post-rotation coord histogram
         fig, ax = plt.subplots(figsize=(7, 3.5))
         clip = np.percentile(np.concatenate([np.abs(rot_img), np.abs(rot_text)]), 99)
-        ax.hist(np.clip(rot_img, -clip, clip), bins=80, alpha=0.55,
-                label=f"image (kurt={kurt_img:+.2f})", color="#C44E52", density=True)
-        ax.hist(np.clip(rot_text, -clip, clip), bins=80, alpha=0.55,
-                label=f"text (kurt={kurt_text:+.2f})", color="#4C72B0", density=True)
-        ax.set_xlabel("post-rotation coord"); ax.set_ylabel("density")
+        ax.hist(
+            np.clip(rot_img, -clip, clip),
+            bins=80,
+            alpha=0.55,
+            label=f"image (kurt={kurt_img:+.2f})",
+            color="#C44E52",
+            density=True,
+        )
+        ax.hist(
+            np.clip(rot_text, -clip, clip),
+            bins=80,
+            alpha=0.55,
+            label=f"text (kurt={kurt_text:+.2f})",
+            color="#4C72B0",
+            density=True,
+        )
+        ax.set_xlabel("post-rotation coord")
+        ax.set_ylabel("density")
         ax.set_title(f"Layer {layer_idx:02d}  Rotated-Key Distribution")
-        ax.legend(); plt.tight_layout()
+        ax.legend()
+        plt.tight_layout()
         fig.savefig(f"{out_dir}/layer_{layer_idx:02d}_rot_hist.png", dpi=120)
         plt.close()
 
@@ -206,10 +225,12 @@ def diagnose(model_id: str, n_layers_to_plot: int = 4) -> None:
     captured: dict[int, mx.array] = {}
 
     from mlx_lm.models.cache import KVCache
+
     class _TapCache(KVCache):
         def __init__(self, idx):
             super().__init__()
             self._idx = idx
+
         def update_and_fetch(self, keys, values):
             captured[self._idx] = keys
             return super().update_and_fetch(keys, values)
@@ -229,9 +250,11 @@ def diagnose(model_id: str, n_layers_to_plot: int = 4) -> None:
         return
 
     # Per-layer stats
-    print(f"\n{'='*100}")
-    print(f"{'lyr':>3}  {'img_norm':>16}  {'text_norm':>16}  "
-          f"{'kurt(img)':>9}  {'kurt(txt)':>9}  {'cos(img)':>8}  {'cos(txt)':>8}")
+    print(f"\n{'=' * 100}")
+    print(
+        f"{'lyr':>3}  {'img_norm':>16}  {'text_norm':>16}  "
+        f"{'kurt(img)':>9}  {'kurt(txt)':>9}  {'cos(img)':>8}  {'cos(txt)':>8}"
+    )
     print("-" * 100)
     rows = []
     layers_to_plot = set(np.linspace(0, n_layers - 1, n_layers_to_plot, dtype=int))
@@ -240,29 +263,43 @@ def diagnose(model_id: str, n_layers_to_plot: int = 4) -> None:
         keys_img = k[:, :N_IMG, :]
         keys_text = k[:, N_IMG:, :]
         r = _layer_stats(
-            idx, keys_img, keys_text,
+            idx,
+            keys_img,
+            keys_text,
             save_hists=(idx in layers_to_plot),
             out_dir=OUT_DIR,
         )
         rows.append(r)
-        print(f"{r['layer']:>3}  "
-              f"{r['img_norm_mean']:>8.3f}±{r['img_norm_std']:<6.3f}  "
-              f"{r['text_norm_mean']:>8.3f}±{r['text_norm_std']:<6.3f}  "
-              f"{r['img_kurt']:>+9.3f}  {r['text_kurt']:>+9.3f}  "
-              f"{r['img_cos']:>8.4f}  {r['text_cos']:>8.4f}")
+        print(
+            f"{r['layer']:>3}  "
+            f"{r['img_norm_mean']:>8.3f}±{r['img_norm_std']:<6.3f}  "
+            f"{r['text_norm_mean']:>8.3f}±{r['text_norm_std']:<6.3f}  "
+            f"{r['img_kurt']:>+9.3f}  {r['text_kurt']:>+9.3f}  "
+            f"{r['img_cos']:>8.4f}  {r['text_cos']:>8.4f}"
+        )
     print("=" * 100)
 
     # Aggregate
-    arr = np.array([[r["img_norm_mean"], r["text_norm_mean"],
-                     r["img_kurt"], r["text_kurt"],
-                     r["img_cos"], r["text_cos"]] for r in rows])
+    arr = np.array(
+        [
+            [
+                r["img_norm_mean"],
+                r["text_norm_mean"],
+                r["img_kurt"],
+                r["text_kurt"],
+                r["img_cos"],
+                r["text_cos"],
+            ]
+            for r in rows
+        ]
+    )
     print(f"\nMEANS across layers:")
-    print(f"  img_norm   = {arr[:,0].mean():.3f}   (max={arr[:,0].max():.3f})")
-    print(f"  text_norm  = {arr[:,1].mean():.3f}   (max={arr[:,1].max():.3f})")
-    print(f"  kurt(img)  = {arr[:,2].mean():+.3f}")
-    print(f"  kurt(text) = {arr[:,3].mean():+.3f}")
-    print(f"  cos(img)   = {arr[:,4].mean():.4f}   (min={arr[:,4].min():.4f})")
-    print(f"  cos(text)  = {arr[:,5].mean():.4f}   (min={arr[:,5].min():.4f})")
+    print(f"  img_norm   = {arr[:, 0].mean():.3f}   (max={arr[:, 0].max():.3f})")
+    print(f"  text_norm  = {arr[:, 1].mean():.3f}   (max={arr[:, 1].max():.3f})")
+    print(f"  kurt(img)  = {arr[:, 2].mean():+.3f}")
+    print(f"  kurt(text) = {arr[:, 3].mean():+.3f}")
+    print(f"  cos(img)   = {arr[:, 4].mean():.4f}   (min={arr[:, 4].min():.4f})")
+    print(f"  cos(text)  = {arr[:, 5].mean():.4f}   (min={arr[:, 5].min():.4f})")
 
     print(f"\nHistogram plots saved to {OUT_DIR}/")
 
@@ -270,8 +307,9 @@ def diagnose(model_id: str, n_layers_to_plot: int = 4) -> None:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--plots", type=int, default=4,
-                        help="Number of evenly-spaced layers to plot")
+    parser.add_argument(
+        "--plots", type=int, default=4, help="Number of evenly-spaced layers to plot"
+    )
     args = parser.parse_args()
     diagnose(args.model, args.plots)
 

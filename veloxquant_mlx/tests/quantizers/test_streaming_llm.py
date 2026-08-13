@@ -7,6 +7,7 @@ window trimming, sink absorption, mixed sink+recent, large batch), stream_get_kv
 (shape/dtype, sink-only, recent-only, combined), byte accounting, and edge cases.
 All data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -34,6 +35,7 @@ def _rand_kv(S: int, D: int = 64, seed: int = 0):
 # init_streaming_window
 # ---------------------------------------------------------------------------
 
+
 def test_init_window_empty() -> None:
     w = init_streaming_window(n_sink=4, D=64)
     assert w.n_sink == 0
@@ -52,6 +54,7 @@ def test_init_window_shapes() -> None:
 # ---------------------------------------------------------------------------
 # stream_update — sink absorption
 # ---------------------------------------------------------------------------
+
 
 def test_sink_absorption_single_step() -> None:
     """First N tokens go into sinks."""
@@ -82,8 +85,8 @@ def test_sinks_are_frozen_after_fill() -> None:
     w = stream_update(w, k1, v1, n_sink=4, window_size=8)
     k2, v2 = _rand_kv(S=4, D=D, seed=1)
     w = stream_update(w, k2, v2, n_sink=4, window_size=8)
-    assert w.n_sink == 4       # unchanged
-    assert w.n_recent == 4     # new tokens went to recent window
+    assert w.n_sink == 4  # unchanged
+    assert w.n_recent == 4  # new tokens went to recent window
 
 
 def test_tokens_seen_accumulates() -> None:
@@ -100,6 +103,7 @@ def test_tokens_seen_accumulates() -> None:
 # ---------------------------------------------------------------------------
 # stream_update — recent-window trimming
 # ---------------------------------------------------------------------------
+
 
 def test_window_trim_at_capacity() -> None:
     """Recent window trims to last window_size tokens when exceeded."""
@@ -143,6 +147,7 @@ def test_total_in_window_bounded() -> None:
 # ---------------------------------------------------------------------------
 # stream_get_kv
 # ---------------------------------------------------------------------------
+
 
 def test_get_kv_combined_shape() -> None:
     """Returned K/V has n_sink + n_recent rows."""
@@ -192,6 +197,7 @@ def test_get_kv_sinks_first() -> None:
 # Byte accounting
 # ---------------------------------------------------------------------------
 
+
 def test_stream_fp16_bytes_formula() -> None:
     """stream_fp16_bytes = (n_sink + n_recent) * D * 4 (K+V, fp16)."""
     D = 64
@@ -222,6 +228,7 @@ def test_stream_fp16_bytes_after_trim() -> None:
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
+
 
 def test_n_sink_zero() -> None:
     """n_sink=0: all tokens go into recent window."""

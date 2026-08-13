@@ -42,6 +42,7 @@ Byte accounting (same names as H2OKVCache / KeyformerKVCache):
     tokens_seen        — total token positions ever passed to update_and_fetch
     tokens_kept        — tokens currently in the (B=0, H=0) head's cache
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -76,6 +77,12 @@ class MorphKVKVCache(_MLXKVCache):
         state is lazily initialised on the first ``update_and_fetch``. MorphKV is
         deterministic (no RNG). Validation (budget/window/sink bounds) happens at
         construction.
+        Writes through to the base ``mlx_lm`` ``KVCache``'s ``self.keys`` /
+        ``self.values`` / ``self.offset`` on every call so ``.state`` stays
+        valid (mlx_lm's ``generate()`` reads it unconditionally during
+        chunked prefill); ``is_trimmable()`` reports ``False`` since the
+        internal per-token state can't be rolled back by a base-class
+        ``trim()`` (see #83).
     """
 
     def __init__(self, config: Any) -> None:
@@ -103,8 +110,7 @@ class MorphKVKVCache(_MLXKVCache):
             self._H = H
             self._head_dim = D
             self._states = [
-                init_morphkv_state(self._n_sink, self._budget, D,
-                                   window=self._window)
+                init_morphkv_state(self._n_sink, self._budget, D, window=self._window)
                 for _ in range(B * H)
             ]
 
@@ -126,7 +132,7 @@ class MorphKVKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2   # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
         k_out_b, v_out_b = [], []
@@ -149,10 +155,26 @@ class MorphKVKVCache(_MLXKVCache):
         K_out = mx.stack(k_out_b, axis=0)
         V_out = mx.stack(v_out_b, axis=0)
 
-        self._morphkv_kept_bytes = sum(
-            morphkv_fp16_bytes(st) for st in self._states
-        )
-        return K_out, V_out
+        self._morphkv_kept_bytes = sum(morphkv_fp16_bytes(st) for st in self._states)
+
+        # K_out/V_out is the full retained state every call, not a delta —
+        # reset so the base class's append-only buffer starts fresh instead
+        # of stacking on top of the previous call's rows. Without this,
+        # self.keys/self.values/self.offset stay at __init__ defaults
+        # forever, and mlx_lm's generate() crashes on `cache.state` during
+        # chunked prefill (see #83).
+        self.keys = None
+        self.values = None
+        self.offset = 0
+        return super().update_and_fetch(K_out, V_out)
+
+    # ------------------------------------------------------------------
+    def is_trimmable(self) -> bool:
+        """False: trim() would only roll back base-class offset bookkeeping,
+        not the internal per-token eviction/compression state that actually
+        determines what gets returned, silently corrupting future calls.
+        """
+        return False
 
     # ------------------------------------------------------------------
     @property

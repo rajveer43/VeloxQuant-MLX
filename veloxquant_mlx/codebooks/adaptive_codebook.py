@@ -40,15 +40,18 @@ class AdaptiveScalarCodebook:
         n_calib: int = 64,
         default_codebook: ScalarCodebook | None = None,
         n_hist_bins: int = 64,
+        seed: int = 0,
     ) -> None:
         self._b = int(b)
         self._d = int(d)
-        self._k = 2 ** self._b
+        self._k = 2**self._b
         self._n_calib = int(n_calib)
         self._n_hist_bins = int(n_hist_bins)
+        self._rng = np.random.default_rng(seed)
 
         if default_codebook is None:
             from veloxquant_mlx.codebooks.base import CodebookFactory
+
             distribution = "gaussian" if d >= 64 else "beta"
             default_codebook = CodebookFactory.create(distribution, b=b, d=d)
         self._codebook: ScalarCodebook = default_codebook  # type: ignore[assignment]
@@ -76,15 +79,22 @@ class AdaptiveScalarCodebook:
         """
         c = self._codebook.centroids_numpy()
         c_sorted = np.sort(c)
-        boundaries = np.concatenate([
-            [-np.inf],
-            (c_sorted[:-1] + c_sorted[1:]) / 2.0,
-            [np.inf],
-        ])
+        boundaries = np.concatenate(
+            [
+                [-np.inf],
+                (c_sorted[:-1] + c_sorted[1:]) / 2.0,
+                [np.inf],
+            ]
+        )
         return c_sorted, boundaries
 
     def observe(self, y: Any) -> None:
         """Accumulate post-rotation vectors during calibration.
+
+        The full batch is buffered (not truncated to the first `remaining`
+        rows) so a single large call -- e.g. an entire prefill batch -- does
+        not silently bias calibration toward whichever rows happened to be
+        first. `_fit()` randomly subsamples the buffer down to `n_calib`.
 
         Args:
             y: Array of shape (batch, d), fp16 mx or numpy.
@@ -92,20 +102,19 @@ class AdaptiveScalarCodebook:
         if self._is_calibrated:
             return
         y_np = np.array(y, dtype=np.float32).reshape(-1, self._d)
-        remaining = self._n_calib - self._n_observed
-        if remaining <= 0:
-            self._fit()
-            return
-        take = y_np[:remaining]
-        self._buffer.append(take)
-        self._n_observed += take.shape[0]
+        self._buffer.append(y_np)
+        self._n_observed += y_np.shape[0]
         if self._n_observed >= self._n_calib:
             self._fit()
 
     def _fit(self) -> None:
         if self._is_calibrated:
             return
-        flat = np.concatenate(self._buffer, axis=0).reshape(-1).astype(np.float64)
+        buffered = np.concatenate(self._buffer, axis=0)
+        if buffered.shape[0] > self._n_calib:
+            idx = self._rng.choice(buffered.shape[0], size=self._n_calib, replace=False)
+            buffered = buffered[idx]
+        flat = buffered.reshape(-1).astype(np.float64)
         # Empirical PDF via histogram
         lo = float(np.quantile(flat, 0.001))
         hi = float(np.quantile(flat, 0.999))

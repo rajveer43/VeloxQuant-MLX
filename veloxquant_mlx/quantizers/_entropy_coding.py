@@ -31,6 +31,7 @@ entropy_encode(codes)              -> (payload_bytes, table)
 entropy_decode(payload, table, n)  -> codes  (exact inverse)
 table_nbytes(table)                -> int, the code table's own storage cost
 """
+
 from __future__ import annotations
 
 import heapq
@@ -56,9 +57,7 @@ def _build_huffman_codes(freqs: dict[int, int]) -> dict[int, str]:
     # tuples of node-lists are not orderable); a monotonically increasing
     # counter breaks ties deterministically without comparing payloads.
     tiebreak = _count()
-    heap = [
-        (freq, next(tiebreak), [[sym, ""]]) for sym, freq in freqs.items()
-    ]
+    heap = [(freq, next(tiebreak), [[sym, ""]]) for sym, freq in freqs.items()]
     heapq.heapify(heap)
 
     while len(heap) > 1:
@@ -151,8 +150,7 @@ def entropy_decode(payload: bytes, table: dict, n: int) -> np.ndarray:
             cur = ""
     if i != n:
         raise ValueError(
-            f"entropy_decode: expected {n} symbols, decoded {i} — "
-            "payload/table/n mismatch."
+            f"entropy_decode: expected {n} symbols, decoded {i} — payload/table/n mismatch."
         )
     return out
 

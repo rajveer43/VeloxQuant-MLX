@@ -34,6 +34,7 @@ it constant-memory for arbitrarily long generation once the window fills.
 This module holds the pure, side-effect-free numerics: concatenation, window trimming,
 and byte accounting.
 """
+
 from __future__ import annotations
 
 import math
@@ -54,6 +55,7 @@ class StreamingWindow(NamedTuple):
         n_recent:     int — current recent-window occupancy (<= window_size).
         tokens_seen:  int — total token positions seen since creation.
     """
+
     sink_keys: mx.array
     sink_values: mx.array
     recent_keys: mx.array
@@ -120,8 +122,8 @@ def stream_update(
 
     for i in range(S):
         token_idx = tokens_seen_before + i
-        k_tok = nk[i:i+1]   # [1, D]
-        v_tok = nv[i:i+1]
+        k_tok = nk[i : i + 1]  # [1, D]
+        v_tok = nv[i : i + 1]
 
         if current_sinks < n_sink:
             # Still absorbing into sink buffer
@@ -201,7 +203,7 @@ def stream_fp16_bytes(window: StreamingWindow) -> int:
     if n == 0:
         return 0
     D = int(window.sink_keys.shape[1]) if window.n_sink > 0 else int(window.recent_keys.shape[1])
-    return n * D * 2 * 2   # K + V, fp16 = 2 bytes/element
+    return n * D * 2 * 2  # K + V, fp16 = 2 bytes/element
 
 
 def full_stream_fp16_bytes(n_tokens: int, D: int) -> int:

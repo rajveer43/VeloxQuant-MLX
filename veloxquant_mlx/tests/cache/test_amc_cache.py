@@ -7,6 +7,7 @@ tokens seen, unlike every eviction method), output dtype fp16, tier-count
 observability, byte accounting, determinism, query-aware + adaptive-threshold
 opt-in paths, and for_model config propagation. All data is synthetic.
 """
+
 from __future__ import annotations
 
 import math
@@ -36,6 +37,7 @@ def _rand_kv(S: int = 4, H: int = 2, D: int = 32, seed: int = 0):
 # Factory and interface
 # ---------------------------------------------------------------------------
 
+
 def test_factory_dispatch() -> None:
     assert isinstance(_make(), AMCKVCache)
 
@@ -54,6 +56,7 @@ def test_no_bits_attribute() -> None:
 # ---------------------------------------------------------------------------
 # Shape and dtype — no eviction, output always == tokens seen
 # ---------------------------------------------------------------------------
+
 
 def test_output_shape_equals_tokens_seen_prefill() -> None:
     c = _make()
@@ -109,6 +112,7 @@ def test_output_batch_head_dims_preserved() -> None:
 # Tier distribution
 # ---------------------------------------------------------------------------
 
+
 def test_tier_counts_sum_to_tokens_seen() -> None:
     c = _make(amc_k_high=0.20, amc_k_mid=0.30)
     k, v = _rand_kv(S=20, H=2, D=32)
@@ -128,6 +132,7 @@ def test_tier_counts_roughly_match_percentiles() -> None:
 # ---------------------------------------------------------------------------
 # Byte accounting
 # ---------------------------------------------------------------------------
+
 
 def test_compression_ratio_gt_1() -> None:
     c = _make()
@@ -161,6 +166,7 @@ def test_tokens_kept_matches_tokens_per_head() -> None:
 # Determinism
 # ---------------------------------------------------------------------------
 
+
 def test_deterministic() -> None:
     k, v = _rand_kv(S=12, H=2, D=32)
     c1 = _make()
@@ -174,6 +180,7 @@ def test_deterministic() -> None:
 # ---------------------------------------------------------------------------
 # Opt-in paths: query-aware saliency, adaptive thresholds
 # ---------------------------------------------------------------------------
+
 
 def test_query_aware_saliency_opt_in_runs_without_crash() -> None:
     c = _make(amc_use_query_saliency=True, amc_query_alpha=0.4)
@@ -218,6 +225,7 @@ def test_adaptive_thresholds_opt_in_runs_without_crash() -> None:
 # for_model construction
 # ---------------------------------------------------------------------------
 
+
 def test_build_via_for_model_propagates_config() -> None:
     from veloxquant_mlx.cache.base import KVCacheBuilder
 
@@ -231,8 +239,11 @@ def test_build_via_for_model_propagates_config() -> None:
         layers = [_Layer(), _Layer(), _Layer()]
 
     cfg = KVCacheConfig(
-        method="amc", head_dim=32,
-        amc_k_high=0.15, amc_k_mid=0.35, amc_group_size=16,
+        method="amc",
+        head_dim=32,
+        amc_k_high=0.15,
+        amc_k_mid=0.35,
+        amc_group_size=16,
     )
     caches = KVCacheBuilder.for_model(_Model(), cfg)
     assert all(isinstance(c, AMCKVCache) for c in caches)

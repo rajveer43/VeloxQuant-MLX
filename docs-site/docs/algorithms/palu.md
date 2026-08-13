@@ -40,16 +40,16 @@ config = KVCacheConfig(
     method="palu",
     head_dim=128,
     # Rank selection — explicit or via energy threshold:
-    palu_rank=None,                  # None → use energy threshold
-    palu_energy_threshold=0.90,      # retain 90% of singular value energy
+    palu_rank=None,  # None → use energy threshold
+    palu_energy_threshold=0.90,  # retain 90% of singular value energy
     # Group-head low-rank decomposition:
-    palu_n_head_groups=4,            # heads per shared projection
+    palu_n_head_groups=4,  # heads per shared projection
     # Mixed-bit latent quantization:
-    palu_hi_bit=4,                   # top-25% latent channels (by singular value)
-    palu_lo_bit=2,                   # remaining 75%
+    palu_hi_bit=4,  # top-25% latent channels (by singular value)
+    palu_lo_bit=2,  # remaining 75%
     palu_hi_fraction=0.25,
     palu_group_size=32,
-    palu_quantize_values=True,       # False → low-rank-only (fp16 latents)
+    palu_quantize_values=True,  # False → low-rank-only (fp16 latents)
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches
@@ -61,8 +61,8 @@ For a fixed rank and low-rank-only values:
 config = KVCacheConfig(
     method="palu",
     head_dim=128,
-    palu_rank=32,                    # explicit rank
-    palu_quantize_values=False,      # values low-rank but fp16 latents
+    palu_rank=32,  # explicit rank
+    palu_quantize_values=False,  # values low-rank but fp16 latents
 )
 ```
 

@@ -45,6 +45,7 @@ pyramid_get_kv      — extract current (keys, values) arrays
 pyramid_fp16_bytes  — bytes stored in current state
 full_pyramid_fp16_bytes — hypothetical cost without eviction
 """
+
 from __future__ import annotations
 
 import math
@@ -68,7 +69,15 @@ def pyramid_budgets(
     (every layer gets ``avg_budget`` → reduces to uniform H2O).
 
     The minimum budget is floored at ``n_sink + 1`` so every layer can always
-    hold its sinks plus at least one token.
+    hold its sinks plus at least one token. For ``beta > 2.0`` the raw linear
+    taper's low end would fall below this floor; naively clamping only the
+    low layers up (with no compensating reduction elsewhere) would silently
+    inflate the realized mean above ``avg_budget`` (#76). Instead, any excess
+    from floor-clamping is redistributed away from the *unclamped* layers —
+    proportional to their slack above the floor, iterated until stable — so
+    the taper shape (steeper for larger ``beta``) is preserved while the mean
+    is pulled back to (approximately, subject to integer rounding)
+    ``avg_budget`` for every ``beta >= 1.0``, not just ``beta <= 2.0``.
 
     Args:
         n_layers:   Number of attention-bearing layers.
@@ -78,7 +87,7 @@ def pyramid_budgets(
 
     Returns:
         Length-``n_layers`` list of per-layer budgets (ints), decreasing, whose
-        mean is approximately ``avg_budget``.
+        mean is approximately ``avg_budget`` regardless of ``beta``.
     """
     if n_layers <= 0:
         return []
@@ -89,17 +98,42 @@ def pyramid_budgets(
 
     floor = n_sink + 1
     # Half-width of the taper around the mean: at beta=2 the top layer gets
-    # 2*avg above floor-adjusted centre; symmetric linear ramp keeps the mean.
+    # 2*avg above floor-adjusted centre; symmetric linear ramp keeps the mean
+    # (before floor-clamping is applied below).
     span = (avg_budget - floor) * (beta - 1.0)
     hi = avg_budget + span
     lo = avg_budget - span
 
-    budgets: list[int] = []
+    values = []
     for i in range(n_layers):
-        frac = i / (n_layers - 1)          # 0.0 at layer 0 → 1.0 at last layer
-        b = hi + (lo - hi) * frac          # linear taper hi → lo
-        budgets.append(max(int(round(b)), floor))
-    return budgets
+        frac = i / (n_layers - 1)  # 0.0 at layer 0 → 1.0 at last layer
+        b = hi + (lo - hi) * frac  # linear taper hi → lo
+        values.append(b)
+
+    # Water-filling renormalization: clamp sub-floor layers up to floor, then
+    # remove the resulting total excess (above avg_budget * n_layers) from
+    # the still-unclamped layers, proportional to their slack above floor.
+    # Reclamping can push additional layers to the floor, so repeat until no
+    # layer's value moves below floor between iterations (at most one newly
+    # clamped layer per pass, hence n_layers passes always suffice).
+    target_total = float(avg_budget) * n_layers
+    clamped = [False] * n_layers
+    for _ in range(n_layers):
+        for i in range(n_layers):
+            if values[i] < floor:
+                values[i] = float(floor)
+                clamped[i] = True
+        excess = sum(values) - target_total
+        if excess <= 1e-9:
+            break
+        free_idx = [i for i in range(n_layers) if not clamped[i]]
+        free_slack_total = sum(values[i] - floor for i in free_idx)
+        if not free_idx or free_slack_total <= 1e-9:
+            break
+        for i in free_idx:
+            values[i] -= excess * (values[i] - floor) / free_slack_total
+
+    return [max(int(round(v)), floor) for v in values]
 
 
 @dataclass
@@ -157,13 +191,13 @@ def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
         [n] softmax weights summing to ~1.
     """
     scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
-    logits = (keys @ query_proxy) * scale   # [n]
+    logits = (keys @ query_proxy) * scale  # [n]
     return mx.softmax(logits, axis=-1)
 
 
 def pyramid_update(
     state: PyramidState,
-    new_keys: mx.array,    # [S, D] fp16
+    new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
 ) -> PyramidState:
     """Absorb S new tokens, evicting the lowest-score non-sink token if over this layer's budget.
@@ -183,7 +217,7 @@ def pyramid_update(
     S = new_keys.shape[0]
 
     for i in range(S):
-        k_i = new_keys[i]    # [D]
+        k_i = new_keys[i]  # [D]
         v_i = new_values[i]  # [D]
 
         if state.keys is None:
@@ -199,10 +233,10 @@ def pyramid_update(
 
         # --- score update --------------------------------------------------
         attn = _attention_scores(k_i.astype(mx.float32), state.keys.astype(mx.float32))
-        updated_scores = state.scores + attn   # [n_kept]
+        updated_scores = state.scores + attn  # [n_kept]
 
         # --- append new token (score = 0; begins accumulating next step) ---
-        keys_cat   = mx.concatenate([state.keys,   k_i[None].astype(mx.float16)], axis=0)
+        keys_cat = mx.concatenate([state.keys, k_i[None].astype(mx.float16)], axis=0)
         values_cat = mx.concatenate([state.values, v_i[None].astype(mx.float16)], axis=0)
         scores_cat = mx.concatenate([updated_scores, mx.zeros((1,), dtype=mx.float32)], axis=0)
 
@@ -219,7 +253,7 @@ def pyramid_update(
 
             evict_idx = int(mx.argmin(protected).item())
             keep_indices = [j for j in range(n_total) if j != evict_idx]
-            keys_cat   = keys_cat[keep_indices]
+            keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
             scores_cat = scores_cat[keep_indices]
 
@@ -250,12 +284,12 @@ def pyramid_fp16_bytes(state: PyramidState) -> int:
     if state.keys is None:
         return 0
     n, D = state.keys.shape
-    return n * D * 2 * 2   # K + V, 2 bytes each
+    return n * D * 2 * 2  # K + V, 2 bytes each
 
 
 def full_pyramid_fp16_bytes(tokens_seen: int, head_dim: int) -> int:
     """Hypothetical fp16 K + V bytes if all ``tokens_seen`` were stored."""
-    return tokens_seen * head_dim * 2 * 2   # K + V, 2 bytes each
+    return tokens_seen * head_dim * 2 * 2  # K + V, 2 bytes each
 
 
 __all__ = [

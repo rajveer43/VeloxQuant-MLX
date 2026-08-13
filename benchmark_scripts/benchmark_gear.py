@@ -4,7 +4,8 @@ GEAR (arXiv:2403.05527-adapted, Kang et al.) makes a low-bit base quantizer
 near-lossless via a low-rank residual + sparse outlier correction. This harness
 is **fully offline** — it loads no model and allocates only small synthetic KV
 matrices — so it runs in a few hundred MB of RAM. It measures, on synthetic
-low-rank-plus-outlier data (the regime GEAR targets):
+low-rank-plus-outlier data (the regime GEAR targets), separately for the
+paper's KCVT backbone axes (keys: per-channel, values: per-token):
 
   - reconstruction MSE: GEAR vs base-quant-alone vs fp16
   - stored bytes: GEAR (codes + low-rank factors + sparse triples) vs base-only
@@ -21,6 +22,7 @@ Usage::
     PYTHONPATH=. python benchmark_scripts/benchmark_gear.py
     PYTHONPATH=. python benchmark_scripts/benchmark_gear.py --seq 256 --heads 8 --dim 128
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,12 +34,12 @@ from pathlib import Path
 import mlx.core as mx
 import numpy as np
 
-from veloxquant_mlx.quantizers.cachegen import cachegen_quant_dequant
 from veloxquant_mlx.quantizers.gear import (
     base_only_bytes,
     gear_bytes,
     gear_compress,
     gear_reconstruct,
+    quantize_base,
 )
 
 
@@ -65,47 +67,74 @@ def run(seq: int, heads: int, dim: int, signal_rank: int) -> dict:
         {"name": "gear_4bit_r4_sp0.2", "bits": 4, "rank": 4, "sparse": 0.002},
     ]
     n_out = max(1, int(seq * dim * 0.003))
-    heads_data = [
-        _synth_head(seq, dim, signal_rank, n_out, seed=h) for h in range(heads)
-    ]
+    heads_data = [_synth_head(seq, dim, signal_rank, n_out, seed=h) for h in range(heads)]
     fp16_bytes = seq * dim * 2
+    # KCVT backbone: keys quantized per-channel, values per-token (§2 of the
+    # paper). Benchmarked separately since they are genuinely different
+    # quantizers, not a cosmetic label — see gear.py's quantize_base.
+    axes = [("key", "channel"), ("value", "token")]
 
     results = []
     for cfg in configs:
-        mse_gear = mse_base = comp = base = 0.0
-        err_base_sq = err_after_sq = 0.0
-        t0 = time.perf_counter()
-        for X in heads_data:
-            st = gear_compress(X, bits=cfg["bits"], rank=cfg["rank"],
-                               sparse_frac=cfg["sparse"], group_size=32)
-            rec = gear_reconstruct(st)
-            base_rec = cachegen_quant_dequant(X, cfg["bits"], 32)
-            mse_gear += _mse(rec, X)
-            mse_base += _mse(base_rec, X)
-            comp += gear_bytes(st)
-            base += base_only_bytes(st)
-            err_base_sq += float(mx.sum((X.astype(mx.float32) - base_rec.astype(mx.float32)) ** 2).item())
-            err_after_sq += float(mx.sum((X.astype(mx.float32) - rec.astype(mx.float32)) ** 2).item())
-        mx.eval()
-        elapsed = time.perf_counter() - t0
+        for tensor_kind, base_axis in axes:
+            mse_gear = mse_base = comp = base = 0.0
+            err_base_sq = err_after_sq = 0.0
+            t0 = time.perf_counter()
+            for X in heads_data:
+                st = gear_compress(
+                    X,
+                    bits=cfg["bits"],
+                    rank=cfg["rank"],
+                    sparse_frac=cfg["sparse"],
+                    group_size=32,
+                    base_axis=base_axis,
+                )
+                rec = gear_reconstruct(st)
+                _, base_rec = quantize_base(X.astype(mx.float32), cfg["bits"], 32, axis=base_axis)
+                mse_gear += _mse(rec, X)
+                mse_base += _mse(base_rec, X)
+                comp += gear_bytes(st)
+                base += base_only_bytes(st)
+                err_base_sq += float(
+                    mx.sum((X.astype(mx.float32) - base_rec.astype(mx.float32)) ** 2).item()
+                )
+                err_after_sq += float(
+                    mx.sum((X.astype(mx.float32) - rec.astype(mx.float32)) ** 2).item()
+                )
+            mx.eval()
+            elapsed = time.perf_counter() - t0
 
-        results.append({
-            "config": cfg["name"],
-            "bits": cfg["bits"], "rank": cfg["rank"], "sparse_fraction": cfg["sparse"],
-            "mse_gear": mse_gear / heads,
-            "mse_base_only": mse_base / heads,
-            "mse_improvement_pct": round(100 * (1 - (mse_gear / mse_base)), 2) if mse_base else 0.0,
-            "stored_bytes_gear": int(comp),
-            "stored_bytes_base_only": int(base),
-            "stored_bytes_fp16": int(fp16_bytes * heads),
-            "effective_bits": round(16.0 * comp / (fp16_bytes * heads), 3),
-            "error_recovery_ratio": round(1 - err_after_sq / err_base_sq, 4) if err_base_sq else 0.0,
-            "compress_reconstruct_sec_per_head": round(elapsed / heads, 5),
-        })
+            results.append(
+                {
+                    "config": cfg["name"],
+                    "tensor_kind": tensor_kind,
+                    "base_axis": base_axis,
+                    "bits": cfg["bits"],
+                    "rank": cfg["rank"],
+                    "sparse_fraction": cfg["sparse"],
+                    "mse_gear": mse_gear / heads,
+                    "mse_base_only": mse_base / heads,
+                    "mse_improvement_pct": round(100 * (1 - (mse_gear / mse_base)), 2)
+                    if mse_base
+                    else 0.0,
+                    "stored_bytes_gear": int(comp),
+                    "stored_bytes_base_only": int(base),
+                    "stored_bytes_fp16": int(fp16_bytes * heads),
+                    "effective_bits": round(16.0 * comp / (fp16_bytes * heads), 3),
+                    "error_recovery_ratio": round(1 - err_after_sq / err_base_sq, 4)
+                    if err_base_sq
+                    else 0.0,
+                    "compress_reconstruct_sec_per_head": round(elapsed / heads, 5),
+                }
+            )
     return {
         "harness": "offline-synthetic (no model loaded)",
+        "backbone": "KCVT (keys per-channel, values per-token)",
         "platform": platform.platform(),
-        "seq": seq, "heads": heads, "dim": dim, "signal_rank": signal_rank,
+        "seq": seq,
+        "heads": heads,
+        "dim": dim,
+        "signal_rank": signal_rank,
         "results": results,
     }
 

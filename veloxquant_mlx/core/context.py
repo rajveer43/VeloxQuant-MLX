@@ -9,6 +9,7 @@ import numpy as np
 # Lazy MLX import to allow math/ subpackage to be MLX-free
 def _mx():
     import mlx.core as mx
+
     return mx
 
 
@@ -32,16 +33,16 @@ class QuantizationContext:
         metadata: Arbitrary stage-specific metadata.
     """
 
-    x_original: Any                               # mx.array (batch, d)
+    x_original: Any  # mx.array (batch, d)
     mode: Literal["encode", "decode"]
-    x_current: Any                                # mx.array (batch, d)
-    norm: Optional[Any] = None                    # mx.array (batch,)
-    rotated: Optional[Any] = None                 # mx.array (batch, d)
-    indices: Optional[Any] = None                 # mx.array (batch, d) uint8
-    signs: Optional[Any] = None                   # mx.array (batch, m) int8
-    residual_norm: Optional[Any] = None           # mx.array (batch,)
-    angles: Optional[List[Any]] = None            # list of mx.array per level
-    final_radius: Optional[Any] = None            # mx.array (batch,)
+    x_current: Any  # mx.array (batch, d)
+    norm: Optional[Any] = None  # mx.array (batch,)
+    rotated: Optional[Any] = None  # mx.array (batch, d)
+    indices: Optional[Any] = None  # mx.array (batch, d) uint8
+    signs: Optional[Any] = None  # mx.array (batch, m) int8
+    residual_norm: Optional[Any] = None  # mx.array (batch,)
+    angles: Optional[List[Any]] = None  # list of mx.array per level
+    final_radius: Optional[Any] = None  # mx.array (batch,)
     outlier_idx: Optional[np.ndarray] = None
     packed_bits: Optional[np.ndarray] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -106,12 +107,15 @@ class EncodedVector:
             # mx.array
             try:
                 import mlx.core as mx
+
                 size = 1
                 for s in arr.shape:
                     size *= s
                 itemsize = {
-                    mx.float16: 2, mx.float32: 4,
-                    mx.int8: 1, mx.uint8: 1,
+                    mx.float16: 2,
+                    mx.float32: 4,
+                    mx.int8: 1,
+                    mx.uint8: 1,
                     mx.bfloat16: 2,
                 }.get(arr.dtype, 4)
                 return size * itemsize
@@ -123,6 +127,7 @@ class EncodedVector:
         total += _arr_bytes(self.signs)
         total += _arr_bytes(self.residual_norm)
         total += _arr_bytes(self.final_radius)
+        total += _arr_bytes(self.outlier_idx)
         if self.angles:
             for a in self.angles:
                 total += _arr_bytes(a)
@@ -151,8 +156,8 @@ class TransformResult:
         n_levels: Number of polar recursion levels applied.
     """
 
-    angles: List[Any]       # list of mx.array
-    final_radius: Any       # mx.array (batch,)
+    angles: List[Any]  # list of mx.array
+    final_radius: Any  # mx.array (batch,)
     n_levels: int
 
     def __repr__(self) -> str:

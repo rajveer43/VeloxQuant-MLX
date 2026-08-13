@@ -6,6 +6,7 @@ Compares cosine similarity, SNR, and per-vector memory across:
   - TurboQuantRVQ (Change 2)
   - TurboQuantProd + AdaptiveScalarCodebook (Change 3)
 """
+
 from __future__ import annotations
 
 import math
@@ -43,13 +44,14 @@ def _gen_unit_norm(n: int, d: int, seed: int) -> mx.array:
 
 
 def _eval(name: str, x: mx.array, x_hat: mx.array, mem_bytes: int) -> dict:
-    cos = float(mx.mean(
-        mx.sum(x * x_hat, axis=1) /
-        (mx.linalg.norm(x, axis=1) * mx.linalg.norm(x_hat, axis=1))
-    ))
+    cos = float(
+        mx.mean(
+            mx.sum(x * x_hat, axis=1) / (mx.linalg.norm(x, axis=1) * mx.linalg.norm(x_hat, axis=1))
+        )
+    )
     err = (x - x_hat).astype(mx.float32)
     sig = float(mx.mean(x.astype(mx.float32) ** 2))
-    noise = float(mx.mean(err ** 2))
+    noise = float(mx.mean(err**2))
     snr = 10.0 * math.log10(max(sig / max(noise, 1e-12), 1e-12))
     return {"name": name, "cosine": cos, "snr_db": snr, "mem_bytes": mem_bytes}
 
@@ -74,57 +76,51 @@ def main() -> None:
     qp_base = TurboQuantProd(d=D, b=B, m=min(D, 64), seed=SEED)
     ev = qp_base.encode(x)
     x_hat = qp_base.decode(ev)
-    rows.append(_eval(
-        "Baseline TQ-Prod (m=64)", x, x_hat, _bytes_prod(D, B, min(D, 64))
-    ))
+    rows.append(_eval("Baseline TQ-Prod (m=64)", x, x_hat, _bytes_prod(D, B, min(D, 64))))
 
     # --- Change 1: TurboQuantProd m=d ---
     qp_m = TurboQuantProd(d=D, b=B, m=D, seed=SEED)
     ev = qp_m.encode(x)
     x_hat = qp_m.decode(ev)
-    rows.append(_eval(
-        "Change 1 TQ-Prod (m=d)", x, x_hat, _bytes_prod(D, B, D)
-    ))
+    rows.append(_eval("Change 1 TQ-Prod (m=d)", x, x_hat, _bytes_prod(D, B, D)))
 
     # --- Change 2: TurboQuantRVQ ---
     qrvq = TurboQuantRVQ(d=D, b=B, seed=SEED)
     ev = qrvq.encode(x)
     x_hat = qrvq.decode(ev)
-    rows.append(_eval(
-        "Change 2 TQ-RVQ (b=2 x2)", x, x_hat, _bytes_rvq(D, B)
-    ))
+    rows.append(_eval("Change 2 TQ-RVQ (b=2 x2)", x, x_hat, _bytes_rvq(D, B)))
 
     # --- Bonus: TurboQuantRVQ b=1 (sign quant + Laplacian residual correction) ---
     qrvq1 = TurboQuantRVQ(d=D, b=1, seed=SEED)
     ev = qrvq1.encode(x)
     x_hat = qrvq1.decode(ev)
-    rows.append(_eval(
-        "Extra   TQ-RVQ (b=1 x2)", x, x_hat, _bytes_rvq(D, 1)
-    ))
+    rows.append(_eval("Extra   TQ-RVQ (b=1 x2)", x, x_hat, _bytes_rvq(D, 1)))
 
     # --- Change 3: TurboQuantProd + AdaptiveScalarCodebook ---
     qp_ad = TurboQuantProd(
-        d=D, b=B, m=min(D, 64), seed=SEED,
-        use_adaptive_codebook=True, n_calib=N_CALIB,
+        d=D,
+        b=B,
+        m=min(D, 64),
+        seed=SEED,
+        use_adaptive_codebook=True,
+        n_calib=N_CALIB,
     )
     # Calibration pass: feed first N_CALIB vectors so codebook fits
     qp_ad.encode(x[:N_CALIB])
     # Evaluation pass on full set after calibration
     ev = qp_ad.encode(x)
     x_hat = qp_ad.decode(ev)
-    rows.append(_eval(
-        "Change 3 TQ-Prod (adaptive)", x, x_hat, _bytes_prod(D, B, min(D, 64))
-    ))
+    rows.append(_eval("Change 3 TQ-Prod (adaptive)", x, x_hat, _bytes_prod(D, B, min(D, 64))))
 
     # --- Print table ---
-    print(f"\n{'='*78}")
+    print(f"\n{'=' * 78}")
     print(f"2-bit TurboQuant accuracy comparison  (d={D}, b={B}, n={N})")
-    print(f"{'='*78}")
+    print(f"{'=' * 78}")
     print(f"{'Method':<32}  {'cosine':>8}  {'SNR (dB)':>9}  {'bytes/vec':>10}")
-    print(f"{'-'*78}")
+    print(f"{'-' * 78}")
     for r in rows:
         print(f"{r['name']:<32}  {r['cosine']:>8.4f}  {r['snr_db']:>9.2f}  {r['mem_bytes']:>10}")
-    print(f"{'='*78}\n")
+    print(f"{'=' * 78}\n")
 
     # --- Asserts ---
     by_name = {r["name"]: r for r in rows}
@@ -170,7 +166,7 @@ def test_vlm_keys():
     np.random.seed(7)
     D_vlm = 128
     S_vlm = 512  # typical image patch count
-    H_vlm = 8    # kv heads
+    H_vlm = 8  # kv heads
 
     # Simulate (B*H*S, D) batch as would arrive after reshape in update_and_fetch
     # Image keys tend to have larger norms than text keys (~5-20 range)
@@ -188,25 +184,30 @@ def test_vlm_keys():
     results = {}
     for label, quantizer in [
         ("TQ-Prod 4-bit", TurboQuantProd(d=D_vlm, b=4, m=64, seed=0, use_hadamard=True)),
-        ("TQ-RVQ 2-bit",  TurboQuantRVQ(d=D_vlm, b=2, seed=0, use_hadamard=True)),
+        ("TQ-RVQ 2-bit", TurboQuantRVQ(d=D_vlm, b=2, seed=0, use_hadamard=True)),
         ("TQ-Prod 2-bit", TurboQuantProd(d=D_vlm, b=2, m=D_vlm, seed=0, use_hadamard=True)),
     ]:
         ev = quantizer.encode(k_unit)
         k_hat = quantizer.decode(ev)
-        cos = float(mx.mean(
-            mx.sum(k_unit * k_hat, axis=-1) /
-            (mx.linalg.norm(k_unit, axis=-1) * mx.linalg.norm(k_hat, axis=-1) + 1e-8)
-        ))
+        cos = float(
+            mx.mean(
+                mx.sum(k_unit * k_hat, axis=-1)
+                / (mx.linalg.norm(k_unit, axis=-1) * mx.linalg.norm(k_hat, axis=-1) + 1e-8)
+            )
+        )
         results[label] = cos
         print(f"  {label:<22}  cosine = {cos:.4f}")
 
     print()
-    assert results["TQ-Prod 4-bit"] > 0.93, \
+    assert results["TQ-Prod 4-bit"] > 0.93, (
         f"TQ-Prod 4-bit VLM cosine {results['TQ-Prod 4-bit']:.4f} < 0.93"
-    assert results["TQ-RVQ 2-bit"] > 0.90, \
+    )
+    assert results["TQ-RVQ 2-bit"] > 0.90, (
         f"TQ-RVQ 2-bit VLM cosine {results['TQ-RVQ 2-bit']:.4f} < 0.90"
-    assert results["TQ-RVQ 2-bit"] > results["TQ-Prod 2-bit"], \
+    )
+    assert results["TQ-RVQ 2-bit"] > results["TQ-Prod 2-bit"], (
         f"RVQ 2-bit ({results['TQ-RVQ 2-bit']:.4f}) should beat single-pass 2-bit ({results['TQ-Prod 2-bit']:.4f})"
+    )
 
     print("VLM KEY TEST PASSED")
     print(f"  RVQ 2-bit cosine on image-like keys: {results['TQ-RVQ 2-bit']:.4f}")
@@ -218,6 +219,7 @@ def main_vlm():
 
 if __name__ == "__main__":
     import sys
+
     if "--vlm" in sys.argv:
         main_vlm()
     else:

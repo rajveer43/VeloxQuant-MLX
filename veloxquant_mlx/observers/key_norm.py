@@ -13,6 +13,7 @@ The observer expects events with ``metadata['key_l2_norm_sq']`` populated
 absent, the event is silently ignored — making the observer safe to
 attach to mixed pipelines.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ from veloxquant_mlx.observers.base import QuantizationEvent
 @dataclass
 class KeyNormReport:
     """Summary statistics produced by :class:`KeyNormObserver`."""
+
     n_tokens: int
     mean_norm_sq: float
     min_norm_sq: float
@@ -53,9 +55,9 @@ class KeyNormObserver(QuantizationObserver):
     """
 
     def __init__(self) -> None:
-        self._sum_sq  = 0.0
-        self._min_sq  = float("inf")
-        self._max_sq  = 0.0
+        self._sum_sq = 0.0
+        self._min_sq = float("inf")
+        self._max_sq = 0.0
         self._n_tokens = 0
 
     def on_event(self, event: QuantizationEvent) -> None:
@@ -72,8 +74,10 @@ class KeyNormObserver(QuantizationObserver):
             v = float(v)
             self._sum_sq += v
             self._n_tokens += 1
-            if v < self._min_sq: self._min_sq = v
-            if v > self._max_sq: self._max_sq = v
+            if v < self._min_sq:
+                self._min_sq = v
+            if v > self._max_sq:
+                self._max_sq = v
 
     def report(self) -> KeyNormReport:
         if self._n_tokens == 0:

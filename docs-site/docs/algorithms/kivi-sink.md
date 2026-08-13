@@ -24,7 +24,7 @@ config = KVCacheConfig(
     bit_width_inlier=2,
     kivi_group_size=32,
     residual_length=32,
-    n_sink_tokens=5,        # top-k high-key-norm tokens kept fp16
+    n_sink_tokens=5,  # top-k high-key-norm tokens kept fp16
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

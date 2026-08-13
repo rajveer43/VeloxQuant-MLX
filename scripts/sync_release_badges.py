@@ -7,10 +7,11 @@ the release, so the version this script reads is the new one.
 What is synced automatically:
   README.md            — tests badge, changelog-version badge
   landing/index.html   — "New in <version>:" in the meta description,
-                         the "<n>/<n> tests passing" spec-list claim
-  landing/assets/main.js — the hero pill's "v<version>" prefix
+                         the "<n>/<n> tests passing" spec-list claim,
+                         the hero badge's "v<version>" prefix (#hero-badge
+                         data-text attribute and its textContent fallback)
 
-What is NOT synced: the *prose* after "v<version> — " in the hero pill and
+What is NOT synced: the *prose* after "v<version> — " in the hero badge and
 after "New in <version>: " in the meta description. That copy describes what
 actually shipped and cannot be derived from a version number, so this script
 only rewrites the version itself and warns when the prose still references the
@@ -19,6 +20,7 @@ previous release. Update it by hand in the release PR.
 Usage:
     python scripts/sync_release_badges.py
 """
+
 from __future__ import annotations
 
 import re
@@ -31,7 +33,6 @@ ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
 PYPROJECT = ROOT / "pyproject.toml"
 LANDING_HTML = ROOT / "landing" / "index.html"
-LANDING_JS = ROOT / "landing" / "assets" / "main.js"
 
 _warnings: list[str] = []
 
@@ -124,27 +125,42 @@ def _sync_landing_html(version: str, test_count: int) -> None:
 
 
 def _sync_landing_pill(version: str) -> None:
-    """Sync the hero pill's version prefix in the typing-animation string."""
-    if not LANDING_JS.exists():
-        _warn(f"{LANDING_JS.relative_to(ROOT)} not found, skipping")
+    """Sync the hero badge's version prefix in landing/index.html.
+
+    The badge markup is:
+        <div class="badge" id="hero-badge" data-text="v0.41.0 — <prose> shipped">v0.41.0 — <prose> shipped</div>
+    `initBadgeTyping()` in landing/assets/main.js reads `dataset.text` (falling
+    back to `textContent`) to drive the typing animation, so both copies of the
+    string inside the tag must carry the same version — there is no separate
+    version constant in main.js to sync.
+    """
+    if not LANDING_HTML.exists():
+        _warn(f"{LANDING_HTML.relative_to(ROOT)} not found, skipping")
         return
 
-    text = LANDING_JS.read_text()
+    text = LANDING_HTML.read_text()
 
-    # const text = "v0.41.0 — <prose> shipped";
-    pattern = r'(const text = ")v([\d.]+)( — )'
-    match = re.search(pattern, text)
+    # Matches the id="hero-badge" div's opening tag through its inner text,
+    # capturing each "v<version> — " occurrence (data-text attribute, then
+    # the visible textContent) so both are rewritten together.
+    badge_pattern = re.compile(
+        r'(<div class="badge" id="hero-badge" data-text="v)([\d.]+)( — [^"]*">v)([\d.]+)( — )'
+    )
+    match = badge_pattern.search(text)
     if not match:
-        _warn("hero pill string not found in landing/assets/main.js, skipping")
+        _warn("hero badge not found in landing/index.html, skipping")
         return
 
     previous = match.group(2)
-    text = re.sub(pattern, rf"\g<1>v{version}\g<3>", text)
-    LANDING_JS.write_text(text)
+    text = badge_pattern.sub(
+        rf"\g<1>{version}\g<3>{version}\g<5>",
+        text,
+    )
+    LANDING_HTML.write_text(text)
 
     if previous != version:
         _warn(
-            f"hero pill bumped {previous} -> {version}, but its headline prose still "
+            f"hero badge bumped {previous} -> {version}, but its headline prose still "
             f"describes {previous} — update it by hand to name what shipped"
         )
 

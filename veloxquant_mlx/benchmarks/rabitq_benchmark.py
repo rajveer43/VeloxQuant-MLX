@@ -3,6 +3,7 @@
 Sweeps S_kv = [64, 128, 256, 512, 1024, 2048, 4096] for H=8, D=128.
 Saves 4 figures to figures/metal/rabitq/.
 """
+
 from __future__ import annotations
 
 import json
@@ -10,6 +11,7 @@ import time
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import mlx.core as mx
@@ -20,18 +22,19 @@ from veloxquant_mlx.quantizers.rabitq import RaBitQQuantizer
 FIGURES_DIR = Path(__file__).parents[2] / "figures" / "metal" / "rabitq"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-D       = 128
-H       = 8
-NLIST   = 64
-NPROBE  = 8
-RERANK  = 32
-TOP_K   = 10
-S_KVS   = [64, 128, 256, 512, 1024, 2048, 4096]
+D = 128
+H = 8
+NLIST = 64
+NPROBE = 8
+RERANK = 32
+TOP_K = 10
+S_KVS = [64, 128, 256, 512, 1024, 2048, 4096]
 
 
 # ---------------------------------------------------------------------------
 # Timing helpers
 # ---------------------------------------------------------------------------
+
 
 def _bench_mlx(fn, n_warmup: int = 5, n_iter: int = 20) -> float:
     for _ in range(n_warmup):
@@ -59,6 +62,7 @@ def _bench_np(fn, n_warmup: int = 5, n_iter: int = 20) -> float:
 # NumPy baseline: exact fp32 dot over all candidates
 # ---------------------------------------------------------------------------
 
+
 def _np_exact_search(corpus_np: np.ndarray, query_np: np.ndarray, top_k: int) -> np.ndarray:
     scores = corpus_np @ query_np
     return np.argsort(-scores)[:top_k]
@@ -68,6 +72,7 @@ def _np_exact_search(corpus_np: np.ndarray, query_np: np.ndarray, top_k: int) ->
 # Recall helper
 # ---------------------------------------------------------------------------
 
+
 def _recall_at_k(result: np.ndarray, true_top: np.ndarray, k: int) -> float:
     return len(set(result[:k].tolist()) & set(true_top[:k].tolist())) / k
 
@@ -75,6 +80,7 @@ def _recall_at_k(result: np.ndarray, true_top: np.ndarray, k: int) -> float:
 # ---------------------------------------------------------------------------
 # Build quantizer once
 # ---------------------------------------------------------------------------
+
 
 def _build_quantizer(calib_np: np.ndarray) -> RaBitQQuantizer:
     q = RaBitQQuantizer(d=D, nlist=NLIST, nprobe=NPROBE, rerank=RERANK, seed=42)
@@ -85,6 +91,7 @@ def _build_quantizer(calib_np: np.ndarray) -> RaBitQQuantizer:
 # ---------------------------------------------------------------------------
 # Main benchmark
 # ---------------------------------------------------------------------------
+
 
 def run_benchmark(n_iter: int = 20) -> dict:
     rng = np.random.default_rng(0)
@@ -102,16 +109,18 @@ def run_benchmark(n_iter: int = 20) -> dict:
         "recall_at_10": [],
     }
 
-    print(f"\n{'S_kv':>6}  {'RaBitQ(ms)':>11}  {'fp16(ms)':>9}  {'NumPy(ms)':>10}  {'Speedup':>8}  {'Recall@10':>10}")
+    print(
+        f"\n{'S_kv':>6}  {'RaBitQ(ms)':>11}  {'fp16(ms)':>9}  {'NumPy(ms)':>10}  {'Speedup':>8}  {'Recall@10':>10}"
+    )
     print("-" * 66)
 
     for S_kv in S_KVS:
         N = H * S_kv
-        rng2       = np.random.default_rng(S_kv + 1)
-        corpus_np  = rng2.standard_normal((N, D)).astype(np.float16)
-        query_np   = rng2.standard_normal(D).astype(np.float16)
-        corpus_mx  = mx.array(corpus_np)
-        query_mx   = mx.array(query_np)
+        rng2 = np.random.default_rng(S_kv + 1)
+        corpus_np = rng2.standard_normal((N, D)).astype(np.float16)
+        query_np = rng2.standard_normal(D).astype(np.float16)
+        corpus_mx = mx.array(corpus_np)
+        query_mx = mx.array(query_np)
 
         # Encode corpus
         ev = q.encode(corpus_mx)
@@ -128,20 +137,21 @@ def run_benchmark(n_iter: int = 20) -> dict:
 
         # --- NumPy exact ---
         corpus_f32 = corpus_np.astype(np.float32)
-        query_f32  = query_np.astype(np.float32)
+        query_f32 = query_np.astype(np.float32)
+
         def _np_exact():
             return _np_exact_search(corpus_f32, query_f32, TOP_K)
 
         t_rabitq = _bench_mlx(_rabitq, n_iter=n_iter)
-        t_fp16   = _bench_mlx(_fp16_exact, n_iter=n_iter)
-        t_np     = _bench_np(_np_exact, n_iter=n_iter)
-        speedup  = t_np / t_rabitq
+        t_fp16 = _bench_mlx(_fp16_exact, n_iter=n_iter)
+        t_np = _bench_np(_np_exact, n_iter=n_iter)
+        speedup = t_np / t_rabitq
 
         # Recall — RaBitQ approximates L2, so use L2 ground truth
         rabitq_result = np.array(q.search(query_mx, ev, top_k=TOP_K))
-        l2_dists      = np.sum((corpus_f32 - query_f32[None, :]) ** 2, axis=1)
-        true_top      = np.argsort(l2_dists)
-        recall        = _recall_at_k(rabitq_result, true_top, TOP_K)
+        l2_dists = np.sum((corpus_f32 - query_f32[None, :]) ** 2, axis=1)
+        true_top = np.argsort(l2_dists)
+        recall = _recall_at_k(rabitq_result, true_top, TOP_K)
 
         results["rabitq_ms"].append(round(t_rabitq, 3))
         results["fp16_exact_ms"].append(round(t_fp16, 3))
@@ -149,7 +159,9 @@ def run_benchmark(n_iter: int = 20) -> dict:
         results["speedup_vs_numpy"].append(round(speedup, 2))
         results["recall_at_10"].append(round(recall, 3))
 
-        print(f"{S_kv:>6}  {t_rabitq:>11.3f}  {t_fp16:>9.3f}  {t_np:>10.3f}  {speedup:>7.2f}x  {recall:>10.3f}")
+        print(
+            f"{S_kv:>6}  {t_rabitq:>11.3f}  {t_fp16:>9.3f}  {t_np:>10.3f}  {speedup:>7.2f}x  {recall:>10.3f}"
+        )
 
     return results
 
@@ -158,19 +170,20 @@ def run_benchmark(n_iter: int = 20) -> dict:
 # Figures
 # ---------------------------------------------------------------------------
 
+
 def save_figures(results: dict) -> None:
-    S_kvs    = results["S_kvs"]
-    t_rb     = results["rabitq_ms"]
-    t_fp16   = results["fp16_exact_ms"]
-    t_np     = results["numpy_exact_ms"]
-    speedup  = results["speedup_vs_numpy"]
-    recall   = results["recall_at_10"]
+    S_kvs = results["S_kvs"]
+    t_rb = results["rabitq_ms"]
+    t_fp16 = results["fp16_exact_ms"]
+    t_np = results["numpy_exact_ms"]
+    speedup = results["speedup_vs_numpy"]
+    recall = results["recall_at_10"]
 
     # Fig 1: Latency comparison
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(S_kvs, t_rb,   "o-",  label="RaBitQ (Metal)", color="steelblue")
+    ax.plot(S_kvs, t_rb, "o-", label="RaBitQ (Metal)", color="steelblue")
     ax.plot(S_kvs, t_fp16, "s--", label="fp16 exact (MLX)", color="darkorange")
-    ax.plot(S_kvs, t_np,   "^:", label="NumPy exact (CPU)", color="green")
+    ax.plot(S_kvs, t_np, "^:", label="NumPy exact (CPU)", color="green")
     ax.set_xlabel("KV sequence length (S_kv × H=8 heads)")
     ax.set_ylabel("Latency (ms)")
     ax.set_title(f"RaBitQ Search Latency vs Exact\n(D={D}, nlist={NLIST}, nprobe={NPROBE})")
@@ -216,8 +229,8 @@ def save_figures(results: dict) -> None:
     print(f"Saved {p}")
 
     # Fig 4: Memory comparison bar
-    d    = results["config"]["D"]
-    fp16_bytes  = d * 2
+    d = results["config"]["D"]
+    fp16_bytes = d * 2
     rbitq_bytes = d // 8
     cr = fp16_bytes / rbitq_bytes
     fig, ax = plt.subplots(figsize=(6, 4))
@@ -242,6 +255,7 @@ def save_figures(results: dict) -> None:
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser(description="RaBitQ benchmark")
     parser.add_argument("--n_iter", type=int, default=20)
     args = parser.parse_args()

@@ -49,9 +49,7 @@ class TurboQuantKVCache(KVCache):
             )
             b_mse = max(b - 1, 1)
         else:
-            self._key_quantizer = TurboQuantMSE(
-                d=d, b=b, seed=seed, store=store
-            )
+            self._key_quantizer = TurboQuantMSE(d=d, b=b, seed=seed, store=store)
             b_mse = b
 
         self._d = d
@@ -68,9 +66,7 @@ class TurboQuantKVCache(KVCache):
         self._sign_packed_len = int(math.ceil(self._m_eff / 8)) if use_prod else 0
         self._k_indices_packed = np.zeros((capacity, self._idx_packed_len), dtype=np.uint8)
         self._k_signs_packed = (
-            np.zeros((capacity, self._sign_packed_len), dtype=np.uint8)
-            if use_prod
-            else None
+            np.zeros((capacity, self._sign_packed_len), dtype=np.uint8) if use_prod else None
         )
         self._k_residual_norms = np.zeros((capacity,), dtype=np.float16)
         self._v_cache = np.zeros((capacity, self._d), dtype=np.int8)
@@ -81,16 +77,10 @@ class TurboQuantKVCache(KVCache):
         self._head = 0
 
         self._n_tokens: int = 0
-        self._enable_vectorized_attend = bool(
-            getattr(config, "enable_vectorized_attend", False)
-        )
-        self._enable_outlier_two_stream = bool(
-            getattr(config, "enable_outlier_two_stream", False)
-        )
+        self._enable_vectorized_attend = bool(getattr(config, "enable_vectorized_attend", False))
+        self._enable_outlier_two_stream = bool(getattr(config, "enable_outlier_two_stream", False))
         self._n_outliers = int(getattr(config, "n_outlier_channels", 0) or 0)
-        self._n_calib = int(
-            getattr(config, "n_calib_tokens", None) or DEFAULT_N_CALIB_TOKENS
-        )
+        self._n_calib = int(getattr(config, "n_calib_tokens", None) or DEFAULT_N_CALIB_TOKENS)
         self._outlier_detector = (
             OutlierDetector(n_outliers=self._n_outliers, n_calib=self._n_calib)
             if self._enable_outlier_two_stream and self._n_outliers > 0
@@ -175,7 +165,11 @@ class TurboQuantKVCache(KVCache):
                 self._outlier_idx = outlier_idx
                 all_idx = np.arange(self._d, dtype=np.int32)
                 self._inlier_idx = np.setdiff1d(all_idx, outlier_idx)
-            if self._outlier_idx is not None and self._outlier_cache is not None and self._outlier_scales is not None:
+            if (
+                self._outlier_idx is not None
+                and self._outlier_cache is not None
+                and self._outlier_scales is not None
+            ):
                 out = k_np[:, self._outlier_idx].reshape(-1)
                 abs_max = float(np.max(np.abs(out)))
                 o_scale = max(abs_max / INT8_MAX, 1e-8)
@@ -193,7 +187,11 @@ class TurboQuantKVCache(KVCache):
         idx_np = np.array(ev.indices[0], dtype=np.uint8)
         self._k_indices_packed[slot, :] = self._idx_packer.pack(idx_np)
 
-        if ev.signs is not None and self._sign_packer is not None and self._k_signs_packed is not None:
+        if (
+            ev.signs is not None
+            and self._sign_packer is not None
+            and self._k_signs_packed is not None
+        ):
             sign_np = np.array(ev.signs[0], dtype=np.int8)
             sign_bits = np.where(sign_np > 0, np.uint8(1), np.uint8(0))
             self._k_signs_packed[slot, :] = self._sign_packer.pack(sign_bits)
@@ -263,7 +261,11 @@ class TurboQuantKVCache(KVCache):
 
         # Estimate inner products
         scores_raw = self._key_quantizer.estimate_inner_product(q, ev)  # (n,)
-        if self._outlier_idx is not None and self._outlier_cache is not None and self._outlier_scales is not None:
+        if (
+            self._outlier_idx is not None
+            and self._outlier_cache is not None
+            and self._outlier_scales is not None
+        ):
             # MLX requires an mx.array index for fancy indexing on mx arrays.
             out_q = q[mx.array(self._outlier_idx)].astype(mx.float32)
             out_v = mx.array(self._outlier_cache[phys], dtype=mx.float32)

@@ -14,6 +14,7 @@ Pipeline (key cache):
        codebook; queries get the inverse transform q_tilde = (q * lambda) @ H
        so q_tilde @ K_tilde.T == q @ K.T (Eq. 7).
 """
+
 from __future__ import annotations
 
 import math
@@ -48,8 +49,7 @@ def calibrate_smooth_factors(keys_calib: mx.array, eps: float = 1e-4) -> mx.arra
         max_abs = mx.max(mx.abs(keys_calib), axis=0)
     else:
         raise ValueError(
-            f"calibrate_smooth_factors: keys_calib must be 2D or 3D, got "
-            f"shape {keys_calib.shape}"
+            f"calibrate_smooth_factors: keys_calib must be 2D or 3D, got shape {keys_calib.shape}"
         )
     max_abs = mx.maximum(max_abs, mx.array(eps, dtype=max_abs.dtype))
     return mx.sqrt(max_abs)
@@ -91,9 +91,7 @@ def walsh_hadamard_matrix(d: int, dtype=mx.float32) -> mx.array:
 # ---------------------------------------------------------------------------
 # 1c. Dual transformation
 # ---------------------------------------------------------------------------
-def apply_dual_transform_keys(
-    K: mx.array, smooth: mx.array, H: mx.array
-) -> mx.array:
+def apply_dual_transform_keys(K: mx.array, smooth: mx.array, H: mx.array) -> mx.array:
     """Apply ``K_tilde = (K / lambda) @ H`` (smooth then Hadamard).
 
     Args:
@@ -112,8 +110,13 @@ def apply_dual_transform_keys(
     elif smooth.ndim == 2:
         # smooth: [n_heads, head_dim]
         # K: [..., head_dim] (last axis is always head_dim).
-        # For 4D [B, H, S, D], broadcast smooth [H, D] -> [H, 1, D].
-        if K.ndim >= 4 and K.shape[-3] == smooth.shape[0]:
+        # The head axis is always -3, whether K is 3D [H, S, D] (single
+        # batch item) or 4D [B, H, S, D] -- checking K.ndim >= 4 used ndim
+        # as a proxy for "has a head axis" and silently fell through to the
+        # averaging branch for genuine 3D per-head input (#74). Require
+        # only that a -3 axis exists (ndim >= 3) and that it matches
+        # smooth's head count.
+        if K.ndim >= 3 and K.shape[-3] == smooth.shape[0]:
             sm = smooth[:, None, :].astype(K.dtype)
             K_sm = K / sm
         elif K.shape[-1] == smooth.shape[-1]:
@@ -125,17 +128,14 @@ def apply_dual_transform_keys(
             K_sm = K / sm_1d
         else:
             raise ValueError(
-                f"apply_dual_transform_keys: cannot broadcast smooth "
-                f"{smooth.shape} to K {K.shape}"
+                f"apply_dual_transform_keys: cannot broadcast smooth {smooth.shape} to K {K.shape}"
             )
     else:
         raise ValueError(f"smooth must be 1D or 2D, got {smooth.shape}")
     return K_sm @ H.astype(K.dtype)
 
 
-def apply_dual_transform_queries(
-    q: mx.array, smooth: mx.array, H: mx.array
-) -> mx.array:
+def apply_dual_transform_queries(q: mx.array, smooth: mx.array, H: mx.array) -> mx.array:
     """Apply ``q_tilde = (q * lambda) @ H`` so q_tilde @ K_tilde.T == q @ K.T.
 
     Args:
@@ -149,7 +149,9 @@ def apply_dual_transform_queries(
     if smooth.ndim == 1:
         q_sm = q * smooth.astype(q.dtype)
     elif smooth.ndim == 2:
-        if q.ndim >= 4 and q.shape[-3] == smooth.shape[0]:
+        # See apply_dual_transform_keys for why this checks ndim >= 3, not
+        # >= 4 (#74).
+        if q.ndim >= 3 and q.shape[-3] == smooth.shape[0]:
             sm = smooth[:, None, :].astype(q.dtype)
             q_sm = q * sm
         elif q.shape[-1] == smooth.shape[-1]:
@@ -235,9 +237,7 @@ def _kmeans_lloyd(
     return centroids.astype(np.float32)
 
 
-def train_codebook(
-    x: mx.array, n_centroids: int, max_iter: int = 30, seed: int = 42
-) -> mx.array:
+def train_codebook(x: mx.array, n_centroids: int, max_iter: int = 30, seed: int = 42) -> mx.array:
     """Train a VQ codebook on flat sub-vector samples.
 
     Args:
@@ -256,9 +256,7 @@ def train_codebook(
     return mx.array(codebook_np)
 
 
-def quantize_vq(
-    x: mx.array, codebook: mx.array, sub_dim: int
-) -> mx.array:
+def quantize_vq(x: mx.array, codebook: mx.array, sub_dim: int) -> mx.array:
     """Encode ``x`` as nearest-centroid indices in a product VQ scheme.
 
     Args:
@@ -271,9 +269,7 @@ def quantize_vq(
     """
     *leading, D = x.shape
     if D % sub_dim != 0:
-        raise ValueError(
-            f"quantize_vq: D={D} not divisible by sub_dim={sub_dim}"
-        )
+        raise ValueError(f"quantize_vq: D={D} not divisible by sub_dim={sub_dim}")
     n_sub = D // sub_dim
     # Reshape to [..., n_sub, sub_dim] then flatten leading dims for batched
     # nearest-centroid search.
@@ -324,9 +320,7 @@ def dequantize_vq(indices: mx.array, codebook: mx.array) -> mx.array:
 # ---------------------------------------------------------------------------
 # 1e. LUT-based query precomputation (optional fast path)
 # ---------------------------------------------------------------------------
-def compute_query_lut(
-    q_tilde: mx.array, codebook: mx.array, sub_dim: int
-) -> mx.array:
+def compute_query_lut(q_tilde: mx.array, codebook: mx.array, sub_dim: int) -> mx.array:
     """Precompute ``q_sub @ codebook.T`` so attention can be scored via lookup.
 
     Args:
@@ -340,9 +334,7 @@ def compute_query_lut(
     """
     *leading, D = q_tilde.shape
     if D % sub_dim != 0:
-        raise ValueError(
-            f"compute_query_lut: D={D} not divisible by sub_dim={sub_dim}"
-        )
+        raise ValueError(f"compute_query_lut: D={D} not divisible by sub_dim={sub_dim}")
     n_sub = D // sub_dim
     q_sub = q_tilde.reshape(*leading, n_sub, sub_dim)
     # [..., n_sub, n_centroids]

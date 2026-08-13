@@ -32,6 +32,13 @@ KIVI's insight is **asymmetry** between keys and values:
 3. **fp16 residual window** — the most recent `residual_length` tokens are kept
    at full precision. Newly generated tokens dominate attention and are cheap
    to keep exact; they are quantized only once they age out of the window.
+4. **Group-aligned flushes** — aged-out tokens are quantized in blocks that are
+   whole multiples of `kivi_group_size`, per the paper's Algorithm 1. This is
+   what makes per-channel key groups meaningful: flushing one token at a time
+   would put a single element in every group, making `min == max` and the
+   round-trip lossless-but-uncompressed. It also makes the result independent
+   of chunking — one-shot prefill and token-by-token decode produce
+   bit-identical caches.
 
 Each group uses asymmetric min/max quantization:
 
@@ -55,9 +62,9 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 
 config = KVCacheConfig(
     method="kivi",
-    bit_width_inlier=2,      # KIVI default
-    kivi_group_size=32,      # min/max group size
-    residual_length=32,      # recent tokens kept in fp16
+    bit_width_inlier=2,  # KIVI default
+    kivi_group_size=32,  # min/max group size
+    residual_length=32,  # recent tokens kept in fp16
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches
@@ -72,11 +79,28 @@ Source: `figures/kivi/<model>/results.json`.
 
 | Model | KIVI-2bit key comp. | full-KV comp. | throughput vs fp16 |
 |---|---|---|---|
-| Llama-3.2-3B-4bit | 5.79× | 3.98× | 102% |
-| Qwen2.5-7B-4bit | 5.78× | 3.98× | 100% |
-| Mistral-7B-4bit | 5.76× | 4.03× | 106% |
+| Llama-3.2-3B-4bit | 5.46× | 4.84× | 101% |
+| Qwen2.5-7B-4bit | 5.46× | 4.85× | 101% |
+| Mistral-7B-v0.3-4bit | 5.46× | 4.85× | 103% |
 
 Full-KV compression includes the fp16 residual window, so it is not inflated.
+
+:::note[Re-measured after #162]
+All three rows were re-measured on Apple M4 after the residual-buffer fix
+([#162](https://github.com/rajveer43/VeloxQuant-MLX/issues/162)). Before that
+fix, decode-time keys were quantized one token at a time, which collapsed each
+per-channel group to a single element and left those keys bit-exact fp16 while
+still billing them as 2-bit — so the earlier numbers in this table were not
+reproducible from the code.
+:::
+
+The compression ratio is **identical across all three models**, and that is
+expected rather than suspicious: it is a function of `bit_width_inlier`,
+`kivi_group_size`, `residual_length`, and `head_dim` — all three models have
+`head_dim=128` — not of the model's identity. What differs between models is
+`n_kv_heads` and `n_layers`, which scale the absolute KV bytes up and down
+together and cancel in the ratio. Throughput differences (101–103%) are the
+real per-model signal.
 
 ## Honest scope
 

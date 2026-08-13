@@ -10,6 +10,11 @@ reconstruction that **recovers quality** the base bit-width alone would lose:
 
     X  ~=  Quant_b(X)  +  L . R  +  S
 
+The base layer follows the paper's **KCVT** backbone: keys quantized
+per-channel, values quantized per-token (``gear_compress(..., base_axis=...)``)
+— not a generic per-token quantizer applied to both, which was this module's
+behavior before this backbone was wired in.
+
 The wrapper compresses each ``[B, H, S, D]`` head matrix with
 ``gear_compress`` / ``gear_reconstruct`` and hands the reconstructed fp16 K/V to
 the parent ``mlx_lm`` cache (so SDPA stays on the clean fp16 path — no ``.bits``
@@ -36,6 +41,7 @@ Byte accounting:
     base_only_key_bytes  / base_only_value_bytes    — base codes alone (baseline)
     fp16_key_bytes       / fp16_value_bytes          — uncompressed cost for the ratio
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -93,13 +99,14 @@ class GEARKVCache(_MLXKVCache):
     def _compress_and_account(self, t: mx.array, is_key: bool) -> mx.array:
         """Compress [B, H, S, D] per head with GEAR, accumulate accounting, return fp16."""
         B, H, S, D = t.shape
+        base_axis = "channel" if is_key else "token"  # KCVT: keys per-channel, values per-token
         recon_b = []
         comp = 0
         base = 0
         for b in range(B):
             recon_h = []
             for h in range(H):
-                mat = t[b, h]                          # [S, D]
+                mat = t[b, h]  # [S, D]
                 state = gear_compress(
                     mat,
                     bits=self._bits,
@@ -107,13 +114,14 @@ class GEARKVCache(_MLXKVCache):
                     sparse_frac=self._sparse_frac,
                     group_size=self._gs,
                     energy_threshold=self._energy,
+                    base_axis=base_axis,
                 )
                 rec = gear_reconstruct(state)
                 recon_h.append(rec)
                 comp += gear_bytes(state)
                 base += base_only_bytes(state)
                 if is_key:
-                    self._accumulate_error(mat, state, rec)
+                    self._accumulate_error(mat, state, rec, base_axis)
             recon_b.append(mx.stack(recon_h, axis=0))
         out = mx.stack(recon_b, axis=0)
 
@@ -128,12 +136,12 @@ class GEARKVCache(_MLXKVCache):
             self._fp16_value_bytes += fp16
         return out
 
-    def _accumulate_error(self, mat: mx.array, state, rec: mx.array) -> None:
+    def _accumulate_error(self, mat: mx.array, state, rec: mx.array, base_axis: str) -> None:
         """Track base-vs-GEAR squared residual for the error-recovery ratio."""
         from veloxquant_mlx.quantizers.gear import quantize_base
 
         x32 = mat.astype(mx.float32)
-        _, base_recon = quantize_base(x32, self._bits, self._gs)
+        _, base_recon = quantize_base(x32, self._bits, self._gs, axis=base_axis)
         self._err_base_sq += float(mx.sum((x32 - base_recon) ** 2).item())
         self._err_after_sq += float(mx.sum((x32 - rec.astype(mx.float32)) ** 2).item())
 

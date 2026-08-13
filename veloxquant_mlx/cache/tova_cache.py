@@ -40,6 +40,7 @@ Byte accounting:
     tokens_seen       — total token positions ever passed to update_and_fetch
     tokens_kept       — tokens currently in the first (B=0, H=0) head's cache
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -73,6 +74,12 @@ class TOVAKVCache(_MLXKVCache):
         all ``tova_*`` fields automatically via ``dataclasses.replace``.
         The per-head state is lazily initialised on the first call to
         ``update_and_fetch`` when shapes are known.
+        Writes through to the base ``mlx_lm`` ``KVCache``'s ``self.keys`` /
+        ``self.values`` / ``self.offset`` on every call so ``.state`` stays
+        valid (mlx_lm's ``generate()`` reads it unconditionally during
+        chunked prefill); ``is_trimmable()`` reports ``False`` since the
+        internal per-token state can't be rolled back by a base-class
+        ``trim()`` (see #83).
     """
 
     def __init__(self, config: Any) -> None:
@@ -96,10 +103,7 @@ class TOVAKVCache(_MLXKVCache):
             self._B = B
             self._H = H
             self._head_dim = D
-            self._states = [
-                init_tova_state(self._n_sink, self._budget, D)
-                for _ in range(B * H)
-            ]
+            self._states = [init_tova_state(self._n_sink, self._budget, D) for _ in range(B * H)]
 
     def _head_idx(self, b: int, h: int) -> int:
         return b * self._H + h
@@ -119,7 +123,7 @@ class TOVAKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2   # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
         k_out_b, v_out_b = [], []
@@ -135,18 +139,35 @@ class TOVAKVCache(_MLXKVCache):
                 )
                 self._states[idx] = st
                 k_h, v_h = tova_get_kv(st)
-                k_out_h.append(k_h)    # [n_kept, D]
+                k_out_h.append(k_h)  # [n_kept, D]
                 v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))   # [H, n_kept, D]
+            k_out_b.append(mx.stack(k_out_h, axis=0))  # [H, n_kept, D]
             v_out_b.append(mx.stack(v_out_h, axis=0))
 
-        K_out = mx.stack(k_out_b, axis=0)   # [B, H, n_kept, D]
+        K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_kept, D]
         V_out = mx.stack(v_out_b, axis=0)
 
         # Byte accounting: sum across all head states
         self._tova_kept_bytes = sum(tova_fp16_bytes(st) for st in self._states)
 
-        return K_out, V_out
+        # K_out/V_out is the full retained state every call, not a delta —
+        # reset so the base class's append-only buffer starts fresh instead
+        # of stacking on top of the previous call's rows. Without this,
+        # self.keys/self.values/self.offset stay at __init__ defaults
+        # forever, and mlx_lm's generate() crashes on `cache.state` during
+        # chunked prefill (see #83).
+        self.keys = None
+        self.values = None
+        self.offset = 0
+        return super().update_and_fetch(K_out, V_out)
+
+    # ------------------------------------------------------------------
+    def is_trimmable(self) -> bool:
+        """False: trim() would only roll back base-class offset bookkeeping,
+        not the internal per-token eviction/compression state that actually
+        determines what gets returned, silently corrupting future calls.
+        """
+        return False
 
     # ------------------------------------------------------------------
     @property

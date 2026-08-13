@@ -13,9 +13,18 @@ segment (token_start=0); each decode step writes a one-token segment at the next
 offset. A per-group token budget (``max_ctx``) bounds memory; exceeding it raises
 ``RuntimeError`` (mirrors the ``fused_sdpa_max_ctx`` guard in ``base.py``).
 
+Each published segment is consumed by a fixed number of reuse layers (one per
+non-anchor member of the group — usually 1, but ``xquant_group_size > 2`` means
+one anchor feeds multiple reusers). ``fetch_anchor`` counts reads per segment
+and only reclaims it (dropping it from ``_store`` and crediting its tokens back
+against ``_published_tokens``) once every expected reader has consumed it —
+so ``_published_tokens`` tracks live, unconsumed tokens rather than a lifetime
+total, and a long generation no longer exhausts ``max_ctx`` (#80).
+
 Single-threaded by construction (mlx generate is sequential), so a plain
 dict-of-segments needs no locking.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -28,13 +37,21 @@ from veloxquant_mlx.quantizers.xquant import GroupParams
 class _Segment:
     """One published anchor write: codes for a contiguous token range."""
 
-    __slots__ = ("token_start", "n_tokens", "codes", "params")
+    __slots__ = ("token_start", "n_tokens", "codes", "params", "reads_remaining")
 
-    def __init__(self, token_start: int, n_tokens: int, codes: mx.array, params: GroupParams):
+    def __init__(
+        self,
+        token_start: int,
+        n_tokens: int,
+        codes: mx.array,
+        params: GroupParams,
+        n_readers: int,
+    ):
         self.token_start = token_start
         self.n_tokens = n_tokens
-        self.codes = codes        # [B, H, n_groups, group_size, D] fp32 codes
-        self.params = params      # anchor GroupParams (per (B,H) not stored here; see cache)
+        self.codes = codes  # [B, H, n_groups, group_size, D] fp32 codes
+        self.params = params  # anchor GroupParams (per (B,H) not stored here; see cache)
+        self.reads_remaining = n_readers
 
 
 class XQuantCoordinator:
@@ -63,6 +80,7 @@ class XQuantCoordinator:
         n_tokens: int,
         codes: mx.array,
         params: GroupParams,
+        n_readers: int = 1,
     ) -> None:
         """Publish anchor codes for a token range.
 
@@ -72,6 +90,8 @@ class XQuantCoordinator:
             n_tokens: Number of tokens in this write.
             codes: Anchor integer codes (shape owned by the cache).
             params: Anchor GroupParams (for shape/bits reference).
+            n_readers: Number of reuse layers expected to fetch this segment
+                before it is reclaimed (group_size - 1; default 1).
         """
         published = self._published_tokens.get(group_id, 0)
         if published + n_tokens > self._max_ctx:
@@ -79,13 +99,24 @@ class XQuantCoordinator:
                 f"XQuantCoordinator: group {group_id} exceeds max_ctx={self._max_ctx} "
                 f"(have {published}, +{n_tokens}). Increase xquant_max_ctx."
             )
+        if n_readers <= 0:
+            # Degenerate anchor (no reusers in its group, e.g. a trailing
+            # partial group): nothing will ever call fetch_anchor for this
+            # segment, so storing it would leak forever. No-op — the caller
+            # doesn't need it back.
+            return
         self._store.setdefault(group_id, {})[token_start] = _Segment(
-            token_start, n_tokens, codes, params
+            token_start, n_tokens, codes, params, n_readers
         )
         self._published_tokens[group_id] = published + n_tokens
 
     def fetch_anchor(self, group_id: int, token_start: int) -> Optional[_Segment]:
         """Fetch the anchor segment a reuse layer needs for this step.
+
+        Once every expected reader (``n_readers`` passed to ``register_anchor``)
+        has fetched a segment, it is reclaimed: dropped from the store and its
+        tokens credited back against ``_published_tokens``, so a long-running
+        generation never exhausts ``max_ctx`` on live-but-consumed segments (#80).
 
         Args:
             group_id: The reuse layer's group.
@@ -95,7 +126,17 @@ class XQuantCoordinator:
             The matching ``_Segment``, or ``None`` if the anchor has not
             published it yet (e.g. mis-ordered iteration — caller must handle).
         """
-        return self._store.get(group_id, {}).get(token_start)
+        group_store = self._store.get(group_id, {})
+        seg = group_store.get(token_start)
+        if seg is None:
+            return None
+        seg.reads_remaining -= 1
+        if seg.reads_remaining <= 0:
+            del group_store[token_start]
+            self._published_tokens[group_id] = (
+                self._published_tokens.get(group_id, 0) - seg.n_tokens
+            )
+        return seg
 
     def published_tokens(self, group_id: int) -> int:
         """Total tokens the anchor of ``group_id`` has published."""

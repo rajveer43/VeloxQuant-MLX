@@ -7,6 +7,7 @@ accounting, the values-off path, decode accumulation, determinism, and
 construction via both KVCacheFactory.create and KVCacheBuilder.for_model. All
 data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -19,8 +20,12 @@ from veloxquant_mlx.cache.gear_cache import GEARKVCache
 
 def _make(**cfg):
     base = dict(
-        method="gear", head_dim=128, gear_bits=2, gear_rank=8,
-        gear_sparse_fraction=0.005, gear_group_size=32,
+        method="gear",
+        head_dim=128,
+        gear_bits=2,
+        gear_rank=8,
+        gear_sparse_fraction=0.005,
+        gear_group_size=32,
     )
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
@@ -39,6 +44,7 @@ def _lowrank_kv(S=128, H=2, D=128, r=6, seed=0):
 # ------------------------------------------------------------------
 # Factory and interface
 # ------------------------------------------------------------------
+
 
 def test_factory_dispatch() -> None:
     assert isinstance(_make(), GEARKVCache)
@@ -61,6 +67,7 @@ def test_output_shape_preserved() -> None:
 # Core claim: GEAR recovers quality the base bit-width loses
 # ------------------------------------------------------------------
 
+
 def test_error_recovery_positive() -> None:
     c = _make()
     k, v = _lowrank_kv()
@@ -79,16 +86,19 @@ def test_beats_naive_base_reconstruction() -> None:
     def mse(a, b):
         return float(mx.mean((a.astype(mx.float32) - b.astype(mx.float32)) ** 2).item())
 
-    base = mx.stack([
-        mx.stack([cachegen_quant_dequant(k[b, h], 2, 32) for h in range(k.shape[1])])
-        for b in range(k.shape[0])
-    ])
+    base = mx.stack(
+        [
+            mx.stack([cachegen_quant_dequant(k[b, h], 2, 32) for h in range(k.shape[1])])
+            for b in range(k.shape[0])
+        ]
+    )
     assert mse(ko, k) < mse(base, k)
 
 
 # ------------------------------------------------------------------
 # Byte accounting
 # ------------------------------------------------------------------
+
 
 def test_byte_accounting_ordering() -> None:
     c = _make()
@@ -112,6 +122,7 @@ def test_values_off_keeps_values_fp16() -> None:
 # Decode and robustness
 # ------------------------------------------------------------------
 
+
 def test_decode_accumulation() -> None:
     c = _make()
     k, v = _lowrank_kv(S=64)
@@ -130,6 +141,52 @@ def test_deterministic() -> None:
     assert float(mx.mean((ko1.astype(mx.float32) - ko2.astype(mx.float32)) ** 2).item()) == 0.0
 
 
+# ------------------------------------------------------------------
+# KCVT backbone: keys per-channel, values per-token (paper's actual scheme)
+# ------------------------------------------------------------------
+
+
+def test_cache_uses_kcvt_axes_for_keys_and_values() -> None:
+    """The wrapper compresses keys with base_axis='channel' and values with
+    base_axis='token', per the paper's KCVT backbone — not the same axis for
+    both, which was this wrapper's behavior before KCVT was wired in."""
+    from veloxquant_mlx.quantizers import gear as gear_mod
+
+    seen_axes = {"key": None, "value": None}
+    orig = gear_mod.gear_compress
+
+    def _spy(mat, *, bits, rank, sparse_frac, group_size, energy_threshold, base_axis):
+        # First call per update_and_fetch is keys (is_key=True → channel),
+        # tag by axis value directly since that's what we're verifying.
+        if seen_axes["key"] is None:
+            seen_axes["key"] = base_axis
+        else:
+            seen_axes["value"] = base_axis
+        return orig(
+            mat,
+            bits=bits,
+            rank=rank,
+            sparse_frac=sparse_frac,
+            group_size=group_size,
+            energy_threshold=energy_threshold,
+            base_axis=base_axis,
+        )
+
+    import veloxquant_mlx.cache.gear_cache as gear_cache_mod
+
+    monkey_target = gear_cache_mod.gear_compress
+    gear_cache_mod.gear_compress = _spy
+    try:
+        c = _make()
+        k, v = _lowrank_kv(H=1)
+        c.update_and_fetch(k, v)
+    finally:
+        gear_cache_mod.gear_compress = monkey_target
+
+    assert seen_axes["key"] == "channel"
+    assert seen_axes["value"] == "token"
+
+
 def test_build_via_for_model_propagates_config() -> None:
     """KVCacheBuilder.for_model must carry the gear_* fields (replace path)."""
     from veloxquant_mlx.cache.base import KVCacheBuilder
@@ -143,8 +200,9 @@ def test_build_via_for_model_propagates_config() -> None:
     class _Model:
         layers = [_Layer(), _Layer()]
 
-    cfg = KVCacheConfig(method="gear", head_dim=128, gear_bits=2, gear_rank=8,
-                        gear_sparse_fraction=0.005)
+    cfg = KVCacheConfig(
+        method="gear", head_dim=128, gear_bits=2, gear_rank=8, gear_sparse_fraction=0.005
+    )
     caches = KVCacheBuilder.for_model(_Model(), cfg)
     assert all(isinstance(c, GEARKVCache) for c in caches)
     assert caches[0]._rank == 8

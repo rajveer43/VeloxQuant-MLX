@@ -123,25 +123,36 @@ class SortedChannelIndex:
     """
 
     def __init__(self) -> None:
+        # Heap entries are (magnitude, (channel_idx, version)) so that
+        # re-insertions with an unchanged magnitude can still be told apart
+        # from the live entry by version rather than by value equality.
         self._heap: MaxHeap = MaxHeap()
-        # channel_idx -> current magnitude (for dedup / update)
-        self._magnitudes: dict[int, float] = {}
-        # channel_idx -> list of heap positions (lazy deletion)
-        # We use a "lazy" deletion strategy: outdated entries are ignored on pop.
-        self._valid: dict[int, float] = {}  # channel_idx -> latest magnitude
+        # channel_idx -> (latest magnitude, latest version) — used to
+        # recognize which heap entry for a channel is still live (lazy
+        # deletion) and to skip redundant re-inserts of unchanged values.
+        self._valid: dict[int, tuple[float, int]] = {}
+        self._next_version: int = 0
 
     def insert(self, channel_idx: int, magnitude: float) -> None:
         """Insert or update a channel's magnitude.
 
         If the channel already exists, the magnitude is updated (old entry
-        is lazily invalidated).
+        is lazily invalidated). Re-inserting the same magnitude for a
+        channel that already holds it is a no-op — this keeps the heap
+        bounded at O(number of distinct channels observed) instead of
+        growing by one entry per call.
 
         Args:
             channel_idx: Index of the channel (0-indexed).
             magnitude: Non-negative magnitude value.
         """
-        self._valid[channel_idx] = magnitude
-        self._heap.push(magnitude, channel_idx)
+        current = self._valid.get(channel_idx)
+        if current is not None and current[0] == magnitude:
+            return
+        version = self._next_version
+        self._next_version += 1
+        self._valid[channel_idx] = (magnitude, version)
+        self._heap.push(magnitude, (channel_idx, version))
 
     def update(self, channel_idx: int, new_magnitude: float) -> None:
         """Update the magnitude of an existing channel.
@@ -169,19 +180,23 @@ class SortedChannelIndex:
         """
         if k <= 0:
             return []
-        # Collect valid top-k by draining lazily and re-inserting
-        collected: List[Tuple[float, int]] = []
         result: List[int] = []
-        temp_heap = MaxHeap()
+        seen: set[int] = set()
 
         # Copy the heap data to a temporary structure to avoid mutation
         heap_copy = MaxHeap()
         heap_copy._data = list(self._heap._data)
 
         while len(heap_copy) > 0 and len(result) < k:
-            mag, ch = heap_copy.pop()
-            # Lazy deletion: skip if magnitude no longer current
-            if self._valid.get(ch) == mag:
+            mag, (ch, version) = heap_copy.pop()
+            # Lazy deletion: skip if this exact (magnitude, version) is no
+            # longer the live entry for the channel. Comparing by version
+            # (not just magnitude) means a re-insert with an unchanged
+            # value can never masquerade as a second, distinct live entry.
+            if ch in seen:
+                continue
+            if self._valid.get(ch) == (mag, version):
+                seen.add(ch)
                 result.append(ch)
 
         return result

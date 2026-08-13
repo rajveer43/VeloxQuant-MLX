@@ -64,11 +64,13 @@ def lloyd_max(
 
     for _ in range(n_iter):
         # a. Compute Voronoi boundaries as midpoints
-        boundaries = np.concatenate([
-            [-np.inf],
-            (centroids[:-1] + centroids[1:]) / 2.0,
-            [np.inf],
-        ])
+        boundaries = np.concatenate(
+            [
+                [-np.inf],
+                (centroids[:-1] + centroids[1:]) / 2.0,
+                [np.inf],
+            ]
+        )
 
         # b. Update centroids via trapezoid integration on grid
         new_centroids = np.empty(n_levels)
@@ -94,11 +96,13 @@ def lloyd_max(
             break
 
     # Final boundaries
-    boundaries = np.concatenate([
-        [-np.inf],
-        (centroids[:-1] + centroids[1:]) / 2.0,
-        [np.inf],
-    ])
+    boundaries = np.concatenate(
+        [
+            [-np.inf],
+            (centroids[:-1] + centroids[1:]) / 2.0,
+            [np.inf],
+        ]
+    )
 
     # Compute final MSE cost
     mse_cost = 0.0

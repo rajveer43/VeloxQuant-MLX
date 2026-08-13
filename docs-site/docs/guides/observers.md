@@ -30,14 +30,14 @@ All observers consume `QuantizationEvent` objects:
 from veloxquant_mlx.observers.base import QuantizationEvent
 
 event = QuantizationEvent(
-    stage="key_quantize",       # name of the pipeline stage
+    stage="key_quantize",  # name of the pipeline stage
     input_shape=(1, 8, 512, 128),
     elapsed_ms=1.23,
     memory_delta_bytes=4096,
     metadata={
-        "x_original": original_keys_np,       # for DistortionObserver
-        "x_reconstructed": decoded_keys_np,   # for DistortionObserver
-        "key_l2_norm_sq": key_norms_np,       # for KeyNormObserver
+        "x_original": original_keys_np,  # for DistortionObserver
+        "x_reconstructed": decoded_keys_np,  # for DistortionObserver
+        "key_l2_norm_sq": key_norms_np,  # for KeyNormObserver
     },
 )
 ```
@@ -55,11 +55,13 @@ from veloxquant_mlx.observers.base import QuantizationEvent
 observer = DistortionObserver(b=2, d=128)  # bit-width and dim, for the theoretical bound
 
 # Feed it events as you quantize/dequantize keys yourself
-observer.on_event(QuantizationEvent(
-    stage="key_quantize",
-    input_shape=original_keys.shape,
-    metadata={"x_original": original_keys, "x_reconstructed": decoded_keys},
-))
+observer.on_event(
+    QuantizationEvent(
+        stage="key_quantize",
+        input_shape=original_keys.shape,
+        metadata={"x_original": original_keys, "x_reconstructed": decoded_keys},
+    )
+)
 
 report = observer.report()
 print(f"Empirical MSE       : {report.empirical_mse:.6f}")
@@ -106,9 +108,11 @@ from veloxquant_mlx.observers.memory import MemoryObserver
 from veloxquant_mlx.observers.base import QuantizationEvent
 
 observer = MemoryObserver()
-observer.on_event(QuantizationEvent(stage="encode", input_shape=(512, 128), memory_delta_bytes=4096))
+observer.on_event(
+    QuantizationEvent(stage="encode", input_shape=(512, 128), memory_delta_bytes=4096)
+)
 
-report = observer.report()          # {"encode": 4096, ...} — sum of deltas per stage
+report = observer.report()  # {"encode": 4096, ...} — sum of deltas per stage
 peak = observer.peak_delta_bytes()  # largest single delta observed across all stages
 ```
 
@@ -122,11 +126,13 @@ from veloxquant_mlx.observers.base import QuantizationEvent
 
 observer = KeyNormObserver()  # zero-arg constructor
 
-observer.on_event(QuantizationEvent(
-    stage="key_norm",
-    input_shape=(512, 128),
-    metadata={"key_l2_norm_sq": per_token_norm_sq},  # scalar or iterable of floats
-))
+observer.on_event(
+    QuantizationEvent(
+        stage="key_norm",
+        input_shape=(512, 128),
+        metadata={"key_l2_norm_sq": per_token_norm_sq},  # scalar or iterable of floats
+    )
+)
 
 report = observer.report()
 print(f"Tokens observed : {report.n_tokens}")
