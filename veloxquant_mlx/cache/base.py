@@ -166,9 +166,14 @@ class KVCacheConfig:
     palu_group_size: int = 32  # token group size for latent quantization
     palu_quantize_values: bool = True  # low-rank + mixed-bit values too (False = LR-only)
     # --- CacheGen configuration (entropy-coded byte model over group quant) ----
-    cachegen_bits: int = 4  # base group-quant bit-width
+    cachegen_bits: int = 4  # base group-quant bit-width (shallowest layer group)
     cachegen_group_size: int = 32  # token group size
     cachegen_use_delta: bool = True  # token-delta transform before entropy coding
+    cachegen_per_channel: bool = True  # group entropy estimate by channel (§5.1.3)
+    cachegen_layer_groups: int = 3  # number of layer-depth groups for the bit schedule
+    cachegen_resolved_bits: Optional[int] = (
+        None  # per-layer bit-width injected by for_model (None → uniform cachegen_bits)
+    )
     # --- MiniCache configuration (cross-layer depth-dimension SLERP merge) -----
     minicache_start_frac: float = 0.5  # depth fraction below which layers are never merged
     minicache_group_size: int = 2  # layers per merge group (2 = pairs)
@@ -887,6 +892,10 @@ class KVCacheBuilder:
         if config.method == "pyramidkv":
             return KVCacheBuilder._build_pyramidkv(layers, args, config, _FallbackCache)
 
+        # --- CacheGen: per-layer bit-width schedule injected at build time -----
+        if config.method == "cachegen":
+            return KVCacheBuilder._build_cachegen(layers, args, config, _FallbackCache)
+
         # --- SqueezeAttention: shared coordinator re-budgets after prefill -----
         if config.method == "squeeze":
             return KVCacheBuilder._build_squeeze(layers, args, config, _FallbackCache)
@@ -1181,6 +1190,57 @@ class KVCacheBuilder:
                 pyramid_resolved_budget=budget_by_layer[i],
             )
             caches.append(PyramidKVCache(layer_cfg))
+        return caches
+
+    @staticmethod
+    def _build_cachegen(layers, args, config: "KVCacheConfig", fallback_cls) -> list:
+        """Build per-layer CacheGen caches with a layer-wise bit-width schedule.
+
+        Implements the paper's layer-sensitivity observation (§5.1.2/§5.2):
+        output quality is more sensitive to precision loss in shallow layers
+        than in deep ones, so shallow layers get ``cachegen_bits`` and deeper
+        layer groups get progressively fewer bits (``layer_group_bits``). Each
+        attention layer receives its own resolved bit-width via
+        ``cachegen_resolved_bits``; no runtime coordinator is needed.
+        """
+        from veloxquant_mlx.cache.cachegen_cache import CacheGenKVCache
+        from veloxquant_mlx.quantizers.cachegen import layer_group_bits
+
+        def _head_dim(layer):
+            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+            if attn is None:
+                return None
+            hd = getattr(attn, "head_dim", None)
+            if hd is None and args is not None:
+                hd = getattr(args, "head_dim", None) or (
+                    args.hidden_size // args.num_attention_heads
+                )
+            return hd
+
+        attn_layer_idx = [i for i, L in enumerate(layers) if _head_dim(L) is not None]
+        schedule = layer_group_bits(
+            n_layers=len(attn_layer_idx),
+            base_bits=config.cachegen_bits,
+            n_groups=config.cachegen_layer_groups,
+        )
+        bits_by_layer: dict[int, int] = {
+            attn_layer_idx[k]: schedule[k] for k in range(len(attn_layer_idx))
+        }
+
+        caches = []
+        for i, layer in enumerate(layers):
+            hd = _head_dim(layer)
+            if hd is None:
+                caches.append(fallback_cls())
+                continue
+            layer_cfg = dataclasses_replace(
+                config,
+                head_dim=hd,
+                seed=config.seed + i,
+                store=config.store,
+                cachegen_resolved_bits=bits_by_layer[i],
+            )
+            caches.append(CacheGenKVCache(layer_cfg))
         return caches
 
     @staticmethod
