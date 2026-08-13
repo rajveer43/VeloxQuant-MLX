@@ -45,7 +45,69 @@ fixes: the near bucket is now numerically identical to always-exact (max gap
 Sweeping `b` does not remove it. Tests: 51 → 67, including the strengthened
 Eq. (12) assertion that the old `R_window` bug slipped past.
 
+**AdaKV-proxy: the default configuration was not adaptive** ([#31](https://github.com/rajveer43/VeloxQuant-MLX/issues/31)) —
+`adakv_target_avg_bits` defaulted to `2.0` while `adakv_lo_bit` defaulted to
+`2`. Because per-head adaptation requires headroom on both sides of the target
+(raising one head must be payable by lowering another), a target sitting exactly
+on the floor forced *every* head to `lo_bit` for every possible importance
+vector. The shipped default was therefore bit-identical to plain KIVI while the
+docs advertised per-head adaptation. The default is now `2.5`, and
+`allocate_head_bits` emits a `UserWarning` when the target sits at or outside an
+endpoint of the allowed set rather than silently flattening.
+
+**AdaKV-proxy: clamp-before-normalize saturated the allocation** — the
+real-valued per-head budget was computed as
+`clip(importance_share × H × target, lo, hi)`. Since raw key-norm variances span
+orders of magnitude, this pinned nearly every head to `lo` or `hi` and discarded
+the interior ordering that the snap and greedy-correction passes exist to act
+on: importance vectors differing by 10 000× produced byte-identical allocations.
+Replaced with rank-normalisation to a bounded, mean-centred spread placed around
+the target, so the mean lands on the budget by construction and no single
+extreme head can flatten the result.
+
+**AdaKV-proxy: allocation depended on head ordering** — greedy correction scanned
+heads in index order and kept the first strict minimum, so `[10,1,1,1]` and
+`[1,1,1,10]` starved different heads. Ties are now broken on importance, making
+the allocation permutation-equivariant for distinct importances. (With exact ties
+and an indivisible budget some tied head must still lose a bit — an
+integer-allocation fact, now documented rather than incidental.)
+
+**AdaKV-proxy: corrected an inverted claim about the importance signal** — the
+docstring and docs described inter-token key-norm variance as "a proxy for high
+attention entropy". It is the opposite: high norm-variance indicates a few
+outlier-magnitude tokens dominating the logits, i.e. an attention-*sparse* head,
+which Ada-KV (§3.3, Fig. 1b) would give *less* budget. The signal is sound for
+allocating bits — it measures quantization sensitivity — but it is a *different*
+criterion from the paper's, not an approximation of it. Now stated plainly and
+pinned by a test.
+
+### Added
+
+**`compute_head_attention_entropy`** — an AdaKV-proxy importance signal that
+carries Ada-KV's own sign: dispersed heads score higher and receive more budget.
+Estimates per-head attention entropy over an observation window using the
+keys-as-proxy-queries substitution already established by SnapKV-adapted,
+normalised by `ln(S)`. Select via `adakv_importance="attention_entropy"`;
+window size via `adakv_obs_window` (default 32).
+
+**`KVCacheConfig`** — new fields `adakv_importance`
+(default `"norm_variance"`) and `adakv_obs_window` (default `32`).
+
+### Changed
+
+- `adakv_target_avg_bits` default `2.0` → `2.5` (see above).
+- `benchmark_scripts/benchmark_adakv.py` now sweeps targets inside the adaptive
+  range and adds an `attention_entropy` arm at matched budget.
+
 <!-- version list -->
+
+## v0.48.2 (2026-08-13)
+
+### Code Style
+
+- Satisfy ruff 0.16.3 format across the AdaKV changes
+  ([`7000e98`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7000e9801e5b22d32b0c38f1be3b1b814f3ff558))
+
 
 ## v0.48.1 (2026-08-13)
 
