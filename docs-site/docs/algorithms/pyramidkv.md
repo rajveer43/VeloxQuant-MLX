@@ -42,9 +42,9 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="pyramidkv",
     head_dim=128,
-    pyramid_budget=512,   # AVERAGE budget across layers (uniform-H2O baseline)
-    pyramid_n_sink=4,     # initial positions never evicted (attention sinks)
-    pyramid_beta=1.5,     # pyramid steepness: 1.0 = flat (== H2O), larger = steeper
+    pyramid_budget=512,  # AVERAGE budget across layers (uniform-H2O baseline)
+    pyramid_n_sink=4,  # initial positions never evicted (attention sinks)
+    pyramid_beta=1.5,  # pyramid steepness: 1.0 = flat (== H2O), larger = steeper
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

@@ -61,9 +61,9 @@ Here's what the pure-MLX implementation looks like (paraphrased):
 def quantize_vq(x, codebook, sub_dim):
     # x: [N, sub_dim]    -- the sub-vectors to encode
     # codebook: [n_centroids, sub_dim]
-    diff = x[:, None, :] - codebook[None, :, :]   # [N, n_centroids, sub_dim]
-    d2 = mx.sum(diff * diff, axis=-1)             # [N, n_centroids]
-    return mx.argmin(d2, axis=-1)                 # [N]
+    diff = x[:, None, :] - codebook[None, :, :]  # [N, n_centroids, sub_dim]
+    d2 = mx.sum(diff * diff, axis=-1)  # [N, n_centroids]
+    return mx.argmin(d2, axis=-1)  # [N]
 ```
 
 That `diff` tensor is the killer. Its shape is `[N, n_centroids, sub_dim]`. For Falcon3-7B-shape inputs:

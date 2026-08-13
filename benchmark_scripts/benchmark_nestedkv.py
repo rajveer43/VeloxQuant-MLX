@@ -70,6 +70,7 @@ Usage
 
 Prints tables and saves a JSON summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -150,7 +151,9 @@ def _synthetic(n: int, geometry: str, seed: int):
     return keys.astype(np.float16), values.astype(np.float16), anomaly_indices
 
 
-def _anomaly_retained(kept_keys: np.ndarray, original_keys: np.ndarray, anomaly_indices: list[int]) -> float:
+def _anomaly_retained(
+    kept_keys: np.ndarray, original_keys: np.ndarray, anomaly_indices: list[int]
+) -> float:
     """Fraction of planted anomalous tokens whose key survives in kept_keys
     (matched by nearest-neighbor L2 distance to the original anomalous key)."""
     if kept_keys.shape[0] == 0 or not anomaly_indices:
@@ -201,8 +204,7 @@ def main() -> None:
     print("  (anomaly_retention = fraction of planted anomalous tokens whose key survives")
     print("   eviction; higher = better at protecting the scale-specific outlier)")
     print()
-    header = (f"{'seq':>4} {'budget':>6} {'geometry':>22}  "
-              f"{'nestedkv':>10}  {'h2o':>6}")
+    header = f"{'seq':>4} {'budget':>6} {'geometry':>22}  {'nestedkv':>10}  {'h2o':>6}"
     print(header)
     print("-" * len(header))
 
@@ -210,8 +212,10 @@ def main() -> None:
     for seq_len, budget, geometry in product(SEQ_LENS, BUDGETS, GEOMETRIES):
         row = _run_once(seq_len, budget, geometry, seed=SEED + seq_len)
         results.append(row)
-        print(f"{row['seq_len']:>4} {row['budget']:>6} {row['geometry']:>22}  "
-              f"{row['anomaly_retention_nestedkv']:>10.4f}  {row['anomaly_retention_h2o']:>6.4f}")
+        print(
+            f"{row['seq_len']:>4} {row['budget']:>6} {row['geometry']:>22}  "
+            f"{row['anomaly_retention_nestedkv']:>10.4f}  {row['anomaly_retention_h2o']:>6.4f}"
+        )
 
     out_path = Path(__file__).parent.parent / "figures" / "nestedkv" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))

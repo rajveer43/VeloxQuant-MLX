@@ -42,6 +42,7 @@ rationale):
     reconstruct every layer on every fetch, like every other wrapper here.
   * Values — keys only, mirroring SVDq's precedent in this repo.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -115,12 +116,10 @@ def joint_svd_compress(
     if not key_stack:
         raise ValueError("joint_svd_compress: key_stack must be non-empty.")
     D = key_stack[0].shape[-1]
-    stacked = mx.concatenate(
-        [k.astype(mx.float32) for k in key_stack], axis=0
-    )  # [N*S, D]
+    stacked = mx.concatenate([k.astype(mx.float32) for k in key_stack], axis=0)  # [N*S, D]
 
-    K_mean_g = mx.mean(stacked, axis=0)          # [D]
-    centered = stacked - K_mean_g[None, :]        # [N*S, D]
+    K_mean_g = mx.mean(stacked, axis=0)  # [D]
+    centered = stacked - K_mean_g[None, :]  # [N*S, D]
 
     U, S_vals, Vt = mx.linalg.svd(centered, stream=mx.cpu)
     mx.eval(U, S_vals, Vt)
@@ -139,8 +138,8 @@ def joint_svd_compress(
                     break
     rank = min(rank, int(S_vals.shape[0]), D)
 
-    V_g = Vt[:rank, :].T                          # [D, r]
-    s_r = S_vals[:rank]                           # [r]
+    V_g = Vt[:rank, :].T  # [D, r]
+    s_r = S_vals[:rank]  # [r]
     return V_g, K_mean_g, s_r
 
 

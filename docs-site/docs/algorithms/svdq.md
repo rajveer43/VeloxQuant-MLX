@@ -21,11 +21,11 @@ config = KVCacheConfig(
     method="svdq",
     head_dim=128,
     # Rank selection — either explicit or via energy threshold:
-    svdq_rank=None,                  # None → use energy threshold
-    svdq_energy_threshold=0.95,      # retain 95% of singular value energy
+    svdq_rank=None,  # None → use energy threshold
+    svdq_energy_threshold=0.95,  # retain 95% of singular value energy
     # Mixed-precision latent quantization:
-    svdq_hi_bit=4,                   # top-25% channels (by singular value)
-    svdq_lo_bit=2,                   # remaining 75%
+    svdq_hi_bit=4,  # top-25% channels (by singular value)
+    svdq_lo_bit=2,  # remaining 75%
     svdq_hi_fraction=0.25,
     svdq_group_size=32,
 )
@@ -39,7 +39,7 @@ For a specific rank:
 config = KVCacheConfig(
     method="svdq",
     head_dim=128,
-    svdq_rank=32,   # explicit rank
+    svdq_rank=32,  # explicit rank
 )
 ```
 

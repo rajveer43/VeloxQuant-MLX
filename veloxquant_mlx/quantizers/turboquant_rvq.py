@@ -109,14 +109,14 @@ class TurboQuantRVQ(Quantizer):
         # sigma_q ≈ sqrt(1/d) * (sqrt(3*pi)/2) * 4^(-b). Use a Laplacian
         # whose scale matches that std (Laplacian std = scale * sqrt(2)).
         if residual_scale is None:
-            sigma_q = math.sqrt(1.0 / d) * (math.sqrt(3.0 * math.pi) / 2.0) * (4.0 ** -b)
+            sigma_q = math.sqrt(1.0 / d) * (math.sqrt(3.0 * math.pi) / 2.0) * (4.0**-b)
             residual_scale = max(sigma_q / math.sqrt(2.0), 1e-6)
         self._residual_scale = float(residual_scale)
         support_hi = 8.0 * self._residual_scale
         centroids2_np, _ = lloyd_max(
             _laplacian_pdf(self._residual_scale),
             support=(-support_hi, support_hi),
-            n_levels=2 ** b,
+            n_levels=2**b,
         )
         self._codebook2 = ScalarCodebook(centroids2_np.astype(np.float32))
 

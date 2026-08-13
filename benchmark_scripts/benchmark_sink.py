@@ -19,6 +19,7 @@ Usage::
     PYTHONPATH=. python benchmark_scripts/benchmark_sink.py \\
         --model mlx-community/Llama-3.2-3B-Instruct-4bit
 """
+
 from __future__ import annotations
 
 import argparse
@@ -53,7 +54,7 @@ def _ensure_path() -> None:
 
 def _peak_mb() -> float:
     try:
-        return float(mx.metal.get_peak_memory()) / (1024 ** 2)
+        return float(mx.metal.get_peak_memory()) / (1024**2)
     except Exception:
         return float("nan")
 
@@ -69,21 +70,25 @@ def _hardware() -> dict:
     info = {"platform": platform.platform(), "machine": platform.machine()}
     try:
         import subprocess
-        chip = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
-                              capture_output=True, text=True, timeout=5).stdout.strip()
-        mem = subprocess.run(["sysctl", "-n", "hw.memsize"],
-                             capture_output=True, text=True, timeout=5).stdout.strip()
+
+        chip = subprocess.run(
+            ["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+        mem = subprocess.run(
+            ["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=5
+        ).stdout.strip()
         if chip:
             info["chip"] = chip
         if mem:
-            info["ram_gb"] = round(int(mem) / (1024 ** 3), 1)
+            info["ram_gb"] = round(int(mem) / (1024**3), 1)
     except Exception:
         pass
     return info
 
 
-def _build_caches(model, method: str, b: int, group_size: int,
-                  residual_length: int, n_sink: int) -> list:
+def _build_caches(
+    model, method: str, b: int, group_size: int, residual_length: int, n_sink: int
+) -> list:
     from mlx_lm.models.cache import KVCache as _FallbackCache
     from veloxquant_mlx import KVCacheConfig, KVCacheFactory
 
@@ -101,14 +106,19 @@ def _build_caches(model, method: str, b: int, group_size: int,
             caches.append(_FallbackCache())
             continue
         hd = getattr(attn, "head_dim", None) or (
-            args.hidden_size // args.num_attention_heads if args else None)
+            args.hidden_size // args.num_attention_heads if args else None
+        )
         if hd is None:
             caches.append(_FallbackCache())
             continue
         cfg = KVCacheConfig(
-            method=method, head_dim=hd, bit_width_inlier=b,
-            kivi_group_size=group_size, residual_length=residual_length,
-            n_sink_tokens=n_sink, seed=42 + i,
+            method=method,
+            head_dim=hd,
+            bit_width_inlier=b,
+            kivi_group_size=group_size,
+            residual_length=residual_length,
+            n_sink_tokens=n_sink,
+            seed=42 + i,
         )
         caches.append(KVCacheFactory.create(cfg))
     return caches
@@ -116,15 +126,18 @@ def _build_caches(model, method: str, b: int, group_size: int,
 
 def _build_fp16_caches(model) -> list:
     from mlx_lm.models.cache import KVCache as _FallbackCache
+
     layers = getattr(model, "layers", None) or model.model.layers
     return [_FallbackCache() for _ in layers]
 
 
 def _generate(model, tokenizer, max_tokens: int, caches: list) -> tuple:
     from mlx_lm import generate
+
     t0 = time.time()
-    out = generate(model, tokenizer, prompt=PROMPT, max_tokens=max_tokens,
-                   verbose=False, prompt_cache=caches)
+    out = generate(
+        model, tokenizer, prompt=PROMPT, max_tokens=max_tokens, verbose=False, prompt_cache=caches
+    )
     elapsed = time.time() - t0
     n_tok = len(tokenizer.encode(out)) if out else 0
     return n_tok, elapsed
@@ -152,9 +165,11 @@ def _run_config(model, tokenizer, name: str, build_fn, max_tokens: int) -> dict:
     total_c = key_c + val_c + resid + sink
     full_kv = ((key_f + val_f) / total_c) if total_c else 1.0
 
-    print(f"  {n_tok} tok in {elapsed:.2f}s ({throughput:.1f} tok/s)  "
-          f"peak={peak_mb:.0f}MB  key_x={key_ratio:.2f}  fullKV_x={full_kv:.2f}  "
-          f"sink_fp16={sink}B")
+    print(
+        f"  {n_tok} tok in {elapsed:.2f}s ({throughput:.1f} tok/s)  "
+        f"peak={peak_mb:.0f}MB  key_x={key_ratio:.2f}  fullKV_x={full_kv:.2f}  "
+        f"sink_fp16={sink}B"
+    )
     return {
         "name": name,
         "throughput_tok_s": throughput,
@@ -169,11 +184,10 @@ def _run_config(model, tokenizer, name: str, build_fn, max_tokens: int) -> dict:
 
 def _plot(results: list, out_path: Path, model_label: str, hw: dict) -> None:
     names = [r["name"] for r in results]
-    colors = ["#666", "#00d4ff", "#22c55e", "#7c3aed"][:len(names)]
+    colors = ["#666", "#00d4ff", "#22c55e", "#7c3aed"][: len(names)]
     chip = hw.get("chip", "Apple Silicon")
     fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-    fig.suptitle(f"KVSink-adapted sink protection — {model_label} ({chip})",
-                 fontsize=13)
+    fig.suptitle(f"KVSink-adapted sink protection — {model_label} ({chip})", fontsize=13)
     for ax, key, title in [
         (axes[0], "throughput_tok_s", "Throughput (tok/s)"),
         (axes[1], "full_kv_compression", "Full-KV compression (×)"),
@@ -198,6 +212,7 @@ def main() -> int:
     args = p.parse_args()
 
     from mlx_lm import load
+
     model_stem = args.model.split("/")[-1]
     out_dir = Path("figures/kivi_sink") / model_stem
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -206,45 +221,65 @@ def main() -> int:
     model, tokenizer = load(args.model)
     layers = getattr(model, "layers", None) or model.model.layers
     margs = getattr(model, "args", None) or model.model.args
-    first_attn = next((getattr(L, "self_attn", None) or getattr(L, "attn", None)
-                       for L in layers
-                       if (getattr(L, "self_attn", None) or getattr(L, "attn", None))), None)
+    first_attn = next(
+        (
+            getattr(L, "self_attn", None) or getattr(L, "attn", None)
+            for L in layers
+            if (getattr(L, "self_attn", None) or getattr(L, "attn", None))
+        ),
+        None,
+    )
     head_dim = getattr(first_attn, "head_dim", None) or (
-        margs.hidden_size // margs.num_attention_heads)
-    n_kv = getattr(margs, "num_key_value_heads", None) or getattr(
-        margs, "num_attention_heads", 1)
+        margs.hidden_size // margs.num_attention_heads
+    )
+    n_kv = getattr(margs, "num_key_value_heads", None) or getattr(margs, "num_attention_heads", 1)
     hw = _hardware()
     prompt_tokens = len(tokenizer.encode(PROMPT))
-    print(f"  head_dim={head_dim} kv_heads={n_kv} layers={len(layers)} "
-          f"prompt_tok={prompt_tokens} hw={hw}")
+    print(
+        f"  head_dim={head_dim} kv_heads={n_kv} layers={len(layers)} "
+        f"prompt_tok={prompt_tokens} hw={hw}"
+    )
 
     runs = [
         ("fp16-baseline", lambda: _build_fp16_caches(model)),
-        ("KIVI-2bit", lambda: _build_caches(
-            model, "kivi", 2, args.group_size, args.residual_length, 0)),
-        ("KIVI-2bit+sink-k5", lambda: _build_caches(
-            model, "kivi_sink", 2, args.group_size, args.residual_length, 5)),
-        ("KIVI-2bit+sink-k20", lambda: _build_caches(
-            model, "kivi_sink", 2, args.group_size, args.residual_length, 20)),
+        (
+            "KIVI-2bit",
+            lambda: _build_caches(model, "kivi", 2, args.group_size, args.residual_length, 0),
+        ),
+        (
+            "KIVI-2bit+sink-k5",
+            lambda: _build_caches(model, "kivi_sink", 2, args.group_size, args.residual_length, 5),
+        ),
+        (
+            "KIVI-2bit+sink-k20",
+            lambda: _build_caches(model, "kivi_sink", 2, args.group_size, args.residual_length, 20),
+        ),
     ]
-    results = [_run_config(model, tokenizer, n, f, args.max_tokens)
-               for n, f in runs]
+    results = [_run_config(model, tokenizer, n, f, args.max_tokens) for n, f in runs]
 
     _plot(results, out_dir / "sink_summary.png", model_stem, hw)
     payload = {
-        "model": args.model, "head_dim": head_dim, "n_kv_heads": n_kv,
-        "n_layers": len(layers), "max_tokens": args.max_tokens,
-        "group_size": args.group_size, "residual_length": args.residual_length,
-        "prompt_tokens": prompt_tokens, "prompt": PROMPT[:200] + "...",
-        "hardware": hw, "results": results,
+        "model": args.model,
+        "head_dim": head_dim,
+        "n_kv_heads": n_kv,
+        "n_layers": len(layers),
+        "max_tokens": args.max_tokens,
+        "group_size": args.group_size,
+        "residual_length": args.residual_length,
+        "prompt_tokens": prompt_tokens,
+        "prompt": PROMPT[:200] + "...",
+        "hardware": hw,
+        "results": results,
     }
     with open(out_dir / "results.json", "w") as f:
         json.dump(payload, f, indent=2)
     print(f"\nResults: {out_dir / 'results.json'}")
     for r in results:
-        print(f"  {r['name']:<22s} {r['throughput_tok_s']:6.1f} tok/s  "
-              f"key_x={r['key_compression']:.2f}  fullKV_x={r['full_kv_compression']:.2f}  "
-              f"toks={r['tokens_generated']}")
+        print(
+            f"  {r['name']:<22s} {r['throughput_tok_s']:6.1f} tok/s  "
+            f"key_x={r['key_compression']:.2f}  fullKV_x={r['full_kv_compression']:.2f}  "
+            f"toks={r['tokens_generated']}"
+        )
     return 0
 
 

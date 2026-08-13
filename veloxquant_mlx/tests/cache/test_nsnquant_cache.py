@@ -5,6 +5,7 @@ semantics (prefill/decode path-independence, per-chunk statistics), byte
 accounting against the closed form, both K and V quantization, build-time
 validation, the max_ctx guard, and for_model wiring incl. the fallback path.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -20,9 +21,7 @@ from veloxquant_mlx.quantizers import nsnquant as _nsn_mod
 
 _TEST_SEED = 1234
 for _kind in ("signed", "magnitude"):
-    cb = _nsn_mod.build_universal_codebook(
-        seed=_TEST_SEED, n_samples=131_072, iters=15, kind=_kind
-    )
+    cb = _nsn_mod.build_universal_codebook(seed=_TEST_SEED, n_samples=131_072, iters=15, kind=_kind)
     _nsn_mod._CODEBOOK_CACHE[(256, 8, _TEST_SEED, _kind)] = cb
 
 
@@ -34,8 +33,9 @@ def _kv(B, H, S, D, seed=0):
 
 
 def _make(**cfg):
-    base = dict(method="nsnquant", head_dim=128, nsn_bits=2,
-                nsn_residual_length=16, nsn_seed=_TEST_SEED)
+    base = dict(
+        method="nsnquant", head_dim=128, nsn_bits=2, nsn_residual_length=16, nsn_seed=_TEST_SEED
+    )
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 
@@ -51,6 +51,7 @@ def _mean_cosine(a, b) -> float:
 # ------------------------------------------------------------------
 # Factory / protocol basics
 # ------------------------------------------------------------------
+
 
 def test_factory_dispatch() -> None:
     assert isinstance(_make(), NSNQuantKVCache)
@@ -75,6 +76,7 @@ def test_no_bits_leak() -> None:
 # ------------------------------------------------------------------
 # Reconstruction quality
 # ------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("bits,floor", [(2, 0.90), (1, 0.75)])
 def test_prefill_reconstruction_cosine_floor(bits: int, floor: float) -> None:
@@ -101,6 +103,7 @@ def test_residual_window_kept_fp16() -> None:
 # ------------------------------------------------------------------
 # Chunk-flush semantics
 # ------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("S", [47, 48, 49])
 def test_chunking_arithmetic_edges(S: int) -> None:
@@ -141,9 +144,7 @@ def test_prefill_decode_path_independence() -> None:
 
     decode = _make(nsn_residual_length=r)
     for t in range(S):
-        ko_b, vo_b = decode.update_and_fetch(
-            k[:, :, t : t + 1, :], v[:, :, t : t + 1, :]
-        )
+        ko_b, vo_b = decode.update_and_fetch(k[:, :, t : t + 1, :], v[:, :, t : t + 1, :])
     mx.eval(ko_a, vo_a, ko_b, vo_b)
     assert np.allclose(np.array(ko_a), np.array(ko_b), atol=1e-3)
     assert np.allclose(np.array(vo_a), np.array(vo_b), atol=1e-3)
@@ -180,6 +181,7 @@ def test_determinism() -> None:
 # Byte accounting
 # ------------------------------------------------------------------
 
+
 def test_byte_accounting_closed_form() -> None:
     B, H, D, r = 1, 2, 128, 16
     n_chunks = 4
@@ -187,8 +189,8 @@ def test_byte_accounting_closed_form() -> None:
     k, v = _kv(B, H, n_chunks * r, D, seed=7)
     cache.update_and_fetch(k, v)
     n_sub = D // 8
-    payload = r * n_sub * 2            # 2-bit: sign mask + index per subvector
-    metadata = r * 2 * 2 + D * 2       # fp16 s1+s2 per token, fp16 o per chunk
+    payload = r * n_sub * 2  # 2-bit: sign mask + index per subvector
+    metadata = r * 2 * 2 + D * 2  # fp16 s1+s2 per token, fp16 o per chunk
     expected = (payload + metadata) * B * H * n_chunks
     assert cache.compressed_key_bytes == expected
     assert cache.compressed_value_bytes == expected
@@ -204,7 +206,7 @@ def test_2bit_payload_double_of_1bit() -> None:
     c1.update_and_fetch(k, v)
     # Payload doubles; the shared fp16 metadata term keeps the total below 2x.
     assert c1.compressed_key_bytes < c2.compressed_key_bytes < 2 * c1.compressed_key_bytes
-    assert c2.assigned_avg_bits < 3.5   # ~2 bits payload + fp16 metadata
+    assert c2.assigned_avg_bits < 3.5  # ~2 bits payload + fp16 metadata
     assert c1.assigned_avg_bits < 2.5
 
 
@@ -213,15 +215,15 @@ def test_compression_ratio_beats_fp16_at_long_context() -> None:
     cache = _make(nsn_residual_length=r)
     k, v = _kv(1, 2, 512, 128, seed=9)
     cache.update_and_fetch(k, v)
-    total = (cache.compressed_key_bytes + cache.compressed_value_bytes
-             + cache.residual_fp16_bytes)
+    total = cache.compressed_key_bytes + cache.compressed_value_bytes + cache.residual_fp16_bytes
     fp16_total = cache.fp16_key_bytes + cache.fp16_value_bytes
-    assert total < fp16_total / 4      # comfortably past 4x at T >> r
+    assert total < fp16_total / 4  # comfortably past 4x at T >> r
 
 
 # ------------------------------------------------------------------
 # Guards and validation
 # ------------------------------------------------------------------
+
 
 def test_max_ctx_guard_raises() -> None:
     cache = _make(nsn_max_ctx=32)
@@ -236,9 +238,9 @@ def test_build_time_validation() -> None:
     with pytest.raises(ValueError, match="nsn_bits"):
         _make(nsn_bits=3)
     with pytest.raises(ValueError, match="divisible"):
-        _make(head_dim=100)   # 100 % 8 != 0
+        _make(head_dim=100)  # 100 % 8 != 0
     with pytest.raises(ValueError, match="hadamard"):
-        _make(head_dim=72)    # divisible by 8 but not Hadamard-compatible
+        _make(head_dim=72)  # divisible by 8 but not Hadamard-compatible
     with pytest.raises(ValueError, match="nsn_residual_length"):
         _make(nsn_residual_length=1)
 
@@ -246,6 +248,7 @@ def test_build_time_validation() -> None:
 # ------------------------------------------------------------------
 # for_model wiring
 # ------------------------------------------------------------------
+
 
 class _ToyAttn:
     def __init__(self, head_dim):
@@ -259,6 +262,7 @@ class _ToyLayer:
 
 class _ToyNorm:
     """Layer without attention — must get the fallback cache."""
+
     pass
 
 
@@ -283,7 +287,7 @@ def test_for_model_wiring_and_fallback() -> None:
     assert len(caches) == 4
     assert isinstance(caches[0], NSNQuantKVCache)
     assert isinstance(caches[1], NSNQuantKVCache)
-    assert type(caches[2]) is _FallbackCache      # non-attention layer
+    assert type(caches[2]) is _FallbackCache  # non-attention layer
     assert isinstance(caches[3], NSNQuantKVCache)
 
     # Fallback path unaffected: plain passthrough for the non-attention slot.

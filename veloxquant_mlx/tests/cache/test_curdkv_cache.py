@@ -10,6 +10,7 @@ accounting (compression_ratio, curdkv_kept_bytes), tokens_kept, n_sink=0
 edge case, determinism, and for_model config propagation. All data is
 synthetic.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -37,6 +38,7 @@ def _rand_kv(S: int = 4, H: int = 2, D: int = 32, seed: int = 0):
 # Factory and interface
 # ---------------------------------------------------------------------------
 
+
 def test_factory_dispatch() -> None:
     assert isinstance(_make(), CurDKVKVCache)
 
@@ -52,6 +54,7 @@ def test_no_bits_attribute() -> None:
 # ---------------------------------------------------------------------------
 # Shape and dtype
 # ---------------------------------------------------------------------------
+
 
 def test_output_shape_below_budget() -> None:
     """S < budget → all tokens returned."""
@@ -84,14 +87,15 @@ def test_output_batch_head_dims_preserved() -> None:
     c = _make(curdkv_budget=16, curdkv_n_sink=0)
     k, v = _rand_kv(S=4, H=4, D=32)
     ko, vo = c.update_and_fetch(k, v)
-    assert ko.shape[0] == 1   # B
-    assert ko.shape[1] == 4   # H
+    assert ko.shape[0] == 1  # B
+    assert ko.shape[1] == 4  # H
     assert ko.shape[3] == 32  # D
 
 
 # ---------------------------------------------------------------------------
 # Budget enforcement across steps (prefill + decode)
 # ---------------------------------------------------------------------------
+
 
 def test_budget_enforced_after_many_steps() -> None:
     """30 decode steps — output seq dim never exceeds budget."""
@@ -129,6 +133,7 @@ def test_tokens_kept_bounded_by_budget() -> None:
 # Sink protection
 # ---------------------------------------------------------------------------
 
+
 def test_n_sink_zero_still_enforces_budget() -> None:
     """With n_sink=0, all tokens may be evicted; budget still respected."""
     budget = 4
@@ -141,6 +146,7 @@ def test_n_sink_zero_still_enforces_budget() -> None:
 # ---------------------------------------------------------------------------
 # Byte accounting
 # ---------------------------------------------------------------------------
+
 
 def test_compression_ratio_equals_1_below_budget() -> None:
     """When tokens < budget, no eviction → ratio == 1."""
@@ -178,6 +184,7 @@ def test_curdkv_kept_bytes_positive_after_update() -> None:
 # Determinism
 # ---------------------------------------------------------------------------
 
+
 def test_deterministic() -> None:
     k, v = _rand_kv(S=12, H=2, D=32)
     c1 = _make()
@@ -192,6 +199,7 @@ def test_deterministic() -> None:
 # for_model construction
 # ---------------------------------------------------------------------------
 
+
 def test_build_via_for_model_propagates_config() -> None:
     from veloxquant_mlx.cache.base import KVCacheBuilder
 
@@ -205,8 +213,11 @@ def test_build_via_for_model_propagates_config() -> None:
         layers = [_Layer(), _Layer(), _Layer()]
 
     cfg = KVCacheConfig(
-        method="curdkv", head_dim=32,
-        curdkv_budget=64, curdkv_n_sink=8, curdkv_rank_cap=4,
+        method="curdkv",
+        head_dim=32,
+        curdkv_budget=64,
+        curdkv_n_sink=8,
+        curdkv_rank_cap=4,
     )
     caches = KVCacheBuilder.for_model(_Model(), cfg)
     assert all(isinstance(c, CurDKVKVCache) for c in caches)

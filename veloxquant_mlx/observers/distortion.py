@@ -83,13 +83,18 @@ class DistortionObserver(QuantizationObserver):
         x_orig = np.asarray(x_orig, dtype=np.float64)
         x_recon = np.asarray(x_recon, dtype=np.float64)
         diff = x_orig - x_recon
-        self._mse_sum += float(np.sum(diff ** 2, axis=-1).mean())
-        self._n += 1
+        # atleast_1d: a single unbatched vector (shape (d,)) reduces to a
+        # 0-d scalar under axis=-1 reduction otherwise, and still counts as
+        # one sample.
+        per_sample_sq_err = np.atleast_1d(np.sum(diff**2, axis=-1))  # shape (batch,)
+        batch_n = per_sample_sq_err.shape[0]
+        self._mse_sum += float(per_sample_sq_err.sum())
+        self._n += batch_n
 
         if self._query is not None:
-            true_ip = x_orig @ self._query
-            approx_ip = x_recon @ self._query
-            self._ip_sq_sum += float(np.mean((true_ip - approx_ip) ** 2))
+            true_ip = np.atleast_1d(x_orig @ self._query)
+            approx_ip = np.atleast_1d(x_recon @ self._query)
+            self._ip_sq_sum += float(np.sum((true_ip - approx_ip) ** 2))
 
     @staticmethod
     def theoretical_mse_upper(b: int) -> float:
@@ -157,8 +162,11 @@ class DistortionObserver(QuantizationObserver):
         if self._n > 0:
             current_report = self.report()
             ax.semilogy(
-                [self._b], [current_report.empirical_mse], "bo", markersize=8,
-                label=f"Empirical (b={self._b}, n={self._n})"
+                [self._b],
+                [current_report.empirical_mse],
+                "bo",
+                markersize=8,
+                label=f"Empirical (b={self._b}, n={self._n})",
             )
         ax.set_xlabel("Bit-width b")
         ax.set_ylabel("MSE Distortion D_mse")

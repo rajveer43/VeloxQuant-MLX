@@ -42,13 +42,14 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 
 config = KVCacheConfig(
     method="qjl",
-    jl_dim=64,   # sketch dimension (m). Larger = better quality, more memory.
-                 # Defaults to head_dim if left unset.
+    jl_dim=64,  # sketch dimension (m). Larger = better quality, more memory.
+    # Defaults to head_dim if left unset.
 )
 cache = KVCacheBuilder.build(model, config)
 
 response = mlx_lm.generate(
-    model, tokenizer,
+    model,
+    tokenizer,
     prompt="List 10 interesting facts about quantum computing.",
     max_tokens=300,
     kv_cache=cache,

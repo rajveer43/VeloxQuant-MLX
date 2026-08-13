@@ -63,9 +63,9 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="squeeze",
     head_dim=128,
-    squeeze_budget=512,     # AVERAGE budget across layers (uniform-H2O baseline)
-    squeeze_n_sink=4,       # initial positions never evicted (attention sinks)
-    squeeze_strength=1.0,   # 0.0 = uniform (== H2O), 1.0 = full inverse-concentration
+    squeeze_budget=512,  # AVERAGE budget across layers (uniform-H2O baseline)
+    squeeze_n_sink=4,  # initial positions never evicted (attention sinks)
+    squeeze_strength=1.0,  # 0.0 = uniform (== H2O), 1.0 = full inverse-concentration
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

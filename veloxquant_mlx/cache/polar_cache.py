@@ -25,12 +25,10 @@ class PolarQuantKVCache(KVCache):
         seed = config.seed
         store = config.store
 
-        self._key_quantizer = PolarQuantizer(
-            d=d, b=b, seed=seed, store=store
-        )
+        self._key_quantizer = PolarQuantizer(d=d, b=b, seed=seed, store=store)
 
         capacity = config.capacity or 1_000_000
-        self._k_angles: RingBuffer = RingBuffer(capacity)      # each item = list of angle arrays
+        self._k_angles: RingBuffer = RingBuffer(capacity)  # each item = list of angle arrays
         self._k_radii: RingBuffer = RingBuffer(capacity)
         self._v_cache: RingBuffer = RingBuffer(capacity)
         self._v_scales: RingBuffer = RingBuffer(capacity)
@@ -80,15 +78,14 @@ class PolarQuantKVCache(KVCache):
         """
         import mlx.core as mx
 
-        n = self._n_tokens
+        n = len(self._k_angles)
         if n == 0:
             return mx.zeros((self._d,), dtype=mx.float16)
 
         # Reconstruct batch EncodedVector from stored per-token encodings
         n_levels = len(self._k_angles[0]) if n > 0 else 0
         angles_batched = [
-            mx.stack([self._k_angles[i][ell] for i in range(n)])
-            for ell in range(n_levels)
+            mx.stack([self._k_angles[i][ell] for i in range(n)]) for ell in range(n_levels)
         ]
         radii_batched = mx.stack([self._k_radii[i] for i in range(n)])
         if radii_batched.ndim == 1:
@@ -114,7 +111,7 @@ class PolarQuantKVCache(KVCache):
 
     def memory_bytes(self) -> int:
         """Estimate memory footprint."""
-        n = self._n_tokens
+        n = len(self._k_angles)
         if n == 0:
             return 0
         d = self._d
@@ -128,7 +125,7 @@ class PolarQuantKVCache(KVCache):
         return angle_bytes + radius_bytes + v_bytes
 
     def __len__(self) -> int:
-        return self._n_tokens
+        return len(self._k_angles)
 
     def __repr__(self) -> str:
         return f"PolarQuantKVCache(d={self._d}, n_tokens={self._n_tokens})"

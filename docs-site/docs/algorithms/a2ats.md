@@ -92,14 +92,15 @@ data = np.load("a2ats_codebook.npz")
 config = KVCacheConfig(
     method="a2ats",
     head_dim=head_dim,
-    a2ats_window=128,     # recent tokens get exact position encoding
+    a2ats_window=128,  # recent tokens get exact position encoding
     a2ats_codebook=mx.array(data["codebook"]),
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches
 
 response = mlx_lm.generate(
-    model, tokenizer,
+    model,
+    tokenizer,
     prompt="Summarise this conversation so far.",
     max_tokens=200,
 )
@@ -176,17 +177,14 @@ import numpy as np
 import mlx.core as mx
 from veloxquant_mlx.allocators.vecinfer import train_codebook
 
-sub_dim = 8          # must match a2ats_sub_dim
-bits = 8             # must match a2ats_codebook_bits
+sub_dim = 8  # must match a2ats_sub_dim
+bits = 8  # must match a2ats_codebook_bits
 
 # Collect real key activations from a calibration prompt set —
 # shape [n_tokens, n_heads, head_dim].
-keys_calib = mx.array(np.random.default_rng(0).standard_normal(
-    (4096, 8, 128)).astype(np.float32))
+keys_calib = mx.array(np.random.default_rng(0).standard_normal((4096, 8, 128)).astype(np.float32))
 
-codebook = train_codebook(
-    keys_calib.reshape(-1, sub_dim), n_centroids=2 ** bits, seed=42
-)
+codebook = train_codebook(keys_calib.reshape(-1, sub_dim), n_centroids=2**bits, seed=42)
 np.savez("a2ats_codebook.npz", codebook=np.asarray(codebook))
 ```
 
@@ -214,8 +212,11 @@ from veloxquant_mlx.quantizers.a2ats import a2ats_query_second_moment
 h = a2ats_query_second_moment(collected_queries)
 
 config = KVCacheConfig(
-    method="a2ats", head_dim=128, a2ats_sub_dim=8,
-    a2ats_codebook=..., a2ats_query_h=h,
+    method="a2ats",
+    head_dim=128,
+    a2ats_sub_dim=8,
+    a2ats_codebook=...,
+    a2ats_query_h=h,
 )
 ```
 

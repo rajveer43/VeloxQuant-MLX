@@ -14,6 +14,7 @@ sink protection, budget enforcement, score accumulation), curdkv_get_kv
 budget=1, degenerate all-zero values). All data is synthetic — no model
 loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -41,6 +42,7 @@ def _rand_kv(S: int, D: int = 32, seed: int = 0):
 # ---------------------------------------------------------------------------
 # init_curdkv_state
 # ---------------------------------------------------------------------------
+
 
 def test_init_state_fields() -> None:
     st = init_curdkv_state(n_sink=4, budget=16, head_dim=64, rank_cap=8)
@@ -78,6 +80,7 @@ def test_init_state_rejects_n_sink_above_budget() -> None:
 # curdkv_get_kv — empty state
 # ---------------------------------------------------------------------------
 
+
 def test_get_kv_empty_returns_zero_rows() -> None:
     st = init_curdkv_state(n_sink=4, budget=16, head_dim=32)
     k, v = curdkv_get_kv(st)
@@ -88,6 +91,7 @@ def test_get_kv_empty_returns_zero_rows() -> None:
 # ---------------------------------------------------------------------------
 # curdkv_update — basic absorption
 # ---------------------------------------------------------------------------
+
 
 def test_single_token_absorbed() -> None:
     """First token bootstraps state with one row."""
@@ -125,6 +129,7 @@ def test_output_dtype_fp16() -> None:
 # curdkv_update — eviction when over budget
 # ---------------------------------------------------------------------------
 
+
 def test_budget_never_exceeded() -> None:
     """After many tokens, kept count never exceeds budget."""
     D = 32
@@ -160,6 +165,7 @@ def test_score_array_length_matches_keys() -> None:
 # ---------------------------------------------------------------------------
 # curdkv_update — sink protection
 # ---------------------------------------------------------------------------
+
 
 def test_sinks_never_evicted() -> None:
     """First n_sink tokens are always present in the output, even when their
@@ -199,6 +205,7 @@ def test_n_sink_zero_allows_all_evictions() -> None:
 # curdkv_update — leverage-score accumulation
 # ---------------------------------------------------------------------------
 
+
 def test_scores_non_negative() -> None:
     """Cumulative leverage scores are always >= 0."""
     D = 32
@@ -226,6 +233,7 @@ def test_degenerate_all_zero_values_no_nan() -> None:
 # The core new-mechanism tests: value-awareness
 # ---------------------------------------------------------------------------
 
+
 def test_identical_keys_different_values_diverge() -> None:
     """Two rows with IDENTICAL keys but DIFFERENT values must receive
     different leverage scores — direct proof the mechanism is value-aware,
@@ -238,10 +246,12 @@ def test_identical_keys_different_values_diverge() -> None:
 
     two_keys = mx.array(np.stack([shared_key, shared_key]))
     two_values_divergent = mx.array(
-        np.stack([
-            5.0 * rng.standard_normal(D).astype(np.float32),
-            np.zeros(D, dtype=np.float32),
-        ])
+        np.stack(
+            [
+                5.0 * rng.standard_normal(D).astype(np.float32),
+                np.zeros(D, dtype=np.float32),
+            ]
+        )
     )
     query = mx.array(shared_key)
     scores_divergent = _leverage_scores(query, two_keys, two_values_divergent, rank_cap=16)
@@ -377,6 +387,7 @@ def test_h2o_blind_spot_on_same_planted_geometry() -> None:
 # Byte accounting
 # ---------------------------------------------------------------------------
 
+
 def test_curdkv_fp16_bytes_formula() -> None:
     """curdkv_fp16_bytes = n_kept * D * 4 (K + V, fp16)."""
     D = 64
@@ -401,6 +412,7 @@ def test_full_curdkv_fp16_bytes_formula() -> None:
 # ---------------------------------------------------------------------------
 # Multi-step decode stress + determinism
 # ---------------------------------------------------------------------------
+
 
 def test_30_step_stress_budget_constant() -> None:
     """30 single-token decode steps — budget never exceeded."""

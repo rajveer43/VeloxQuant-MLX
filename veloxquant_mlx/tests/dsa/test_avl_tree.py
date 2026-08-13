@@ -1,4 +1,5 @@
 """Tests for AVLTree and VoronoiTree."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -9,13 +10,12 @@ from veloxquant_mlx.dsa.avl_tree import AVLTree, VoronoiTree
 
 def check_balance_invariant(tree: AVLTree) -> None:
     """Assert |balance_factor| <= 1 for every node."""
+
     def _check(node):
         if node is None:
             return
         bf = tree._balance_factor(node)
-        assert abs(bf) <= 1, (
-            f"Balance factor {bf} at node {node.key:.4f} violates AVL invariant"
-        )
+        assert abs(bf) <= 1, f"Balance factor {bf} at node {node.key:.4f} violates AVL invariant"
         _check(node.left)
         _check(node.right)
 

@@ -1,4 +1,5 @@
 """Tests for TurboQuantProd: unbiasedness and IP distortion bound."""
+
 from __future__ import annotations
 
 import math
@@ -47,9 +48,9 @@ def test_prod_unbiasedness(prod_quantizer) -> None:
     estimates = []
     for _ in range(n_trials):
         ev = prod_quantizer.encode(mx.array(k[None].astype(np.float16)))
-        est = float(prod_quantizer.estimate_inner_product(
-            mx.array(q.astype(np.float16)), ev
-        ).item())
+        est = float(
+            prod_quantizer.estimate_inner_product(mx.array(q.astype(np.float16)), ev).item()
+        )
         estimates.append(est)
 
     bias = abs(np.mean(estimates) - true_ip)

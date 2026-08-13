@@ -7,6 +7,7 @@ accumulation, output dtype, byte accounting, keep_rate, no-eviction short-seq
 edge case, n_sink=0 edge case, decode-only path, determinism, and for_model
 config propagation. All data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -19,8 +20,11 @@ from veloxquant_mlx.cache.snapkv_cache import SnapKVKVCache
 
 def _make(**cfg):
     base = dict(
-        method="snapkv", head_dim=128,
-        snap_budget=16, snap_obs_window=8, snap_n_sink=2,
+        method="snapkv",
+        head_dim=128,
+        snap_budget=16,
+        snap_obs_window=8,
+        snap_n_sink=2,
     )
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
@@ -37,6 +41,7 @@ def _rand_kv(S: int = 64, H: int = 2, D: int = 128, seed: int = 0):
 # Factory and interface
 # ---------------------------------------------------------------------------
 
+
 def test_factory_dispatch() -> None:
     assert isinstance(_make(), SnapKVKVCache)
 
@@ -51,6 +56,7 @@ def test_no_bits_attribute() -> None:
 # ---------------------------------------------------------------------------
 # Shape and dtype
 # ---------------------------------------------------------------------------
+
 
 def test_prefill_output_shape_evicted() -> None:
     """After prefill, seq dim should be min(budget, S)."""
@@ -80,14 +86,85 @@ def test_no_eviction_short_seq() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Chunked prefill (#84)
+# ---------------------------------------------------------------------------
+
+
+def test_chunked_prefill_budget_stays_capped() -> None:
+    """Regression for #84: mlx_lm's chunked prefill calls update_and_fetch
+    once per prefill_step_size chunk. The retained token count must stay
+    capped at snap_budget across multiple S>1 calls, not grow by up to
+    budget per chunk."""
+    c = _make(snap_budget=10, snap_obs_window=2, snap_n_sink=1)
+    k1, v1 = _rand_kv(S=50, H=1, D=8, seed=1)
+    k2, v2 = _rand_kv(S=50, H=1, D=8, seed=2)
+    k3, v3 = _rand_kv(S=50, H=1, D=8, seed=3)
+
+    ko1, _ = c.update_and_fetch(k1, v1)
+    assert ko1.shape[2] == 10
+
+    ko2, _ = c.update_and_fetch(k2, v2)
+    assert ko2.shape[2] == 10, (
+        f"budget violated after 2nd prefill chunk: kept {ko2.shape[2]} > snap_budget=10"
+    )
+
+    ko3, _ = c.update_and_fetch(k3, v3)
+    assert ko3.shape[2] == 10, (
+        f"budget violated after 3rd prefill chunk: kept {ko3.shape[2]} > snap_budget=10"
+    )
+    assert c.offset == 10
+
+
+def test_chunked_prefill_then_decode_appends() -> None:
+    """After multi-chunk prefill re-caps the budget, decode tokens (S==1)
+    must still always append, never evict."""
+    c = _make(snap_budget=10, snap_obs_window=2, snap_n_sink=1)
+    k1, v1 = _rand_kv(S=50, H=1, D=8, seed=1)
+    k2, v2 = _rand_kv(S=50, H=1, D=8, seed=2)
+    c.update_and_fetch(k1, v1)
+    c.update_and_fetch(k2, v2)
+    assert c.offset == 10
+
+    for i in range(5):
+        k1d, v1d = _rand_kv(S=1, H=1, D=8, seed=200 + i)
+        ko, _ = c.update_and_fetch(k1d, v1d)
+    assert ko.shape[2] == 15
+    assert c.offset == 15
+
+
+def test_chunked_prefill_sink_anchored_at_true_start() -> None:
+    """The sink token planted at true sequence position 0 must still be
+    protected after a later chunk re-runs eviction over the concatenated
+    kept + new tokens — sink anchoring must not drift to the chunk-local
+    position 0 of a later chunk."""
+    c = _make(snap_budget=10, snap_obs_window=2, snap_n_sink=1, head_dim=8)
+    rng = np.random.default_rng(7)
+    k1 = rng.standard_normal((1, 1, 50, 8)).astype(np.float32)
+    k1[:, :, 0, :] = 50.0  # true sequence-start sink token
+    v1 = rng.standard_normal((1, 1, 50, 8)).astype(np.float32)
+    k2 = rng.standard_normal((1, 1, 50, 8)).astype(np.float32)
+    v2 = rng.standard_normal((1, 1, 50, 8)).astype(np.float32)
+
+    c.update_and_fetch(mx.array(k1.astype(np.float16)), mx.array(v1.astype(np.float16)))
+    ko2, _ = c.update_and_fetch(mx.array(k2.astype(np.float16)), mx.array(v2.astype(np.float16)))
+    mx.eval(ko2)
+
+    ko2_np = np.array(ko2).astype(np.float32)
+    assert np.any(np.all(np.isclose(ko2_np[0, 0], k1[0, 0, 0, :], atol=1e-2), axis=-1)), (
+        "true sequence-start sink token must still be retained after a later chunk"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Decode accumulation
 # ---------------------------------------------------------------------------
+
 
 def test_decode_accumulation() -> None:
     """Decode tokens grow the seq dim by 1 each call."""
     c = _make(snap_budget=16, snap_obs_window=8, snap_n_sink=2)
     k, v = _rand_kv(S=64)
-    c.update_and_fetch(k, v)   # prefill → 16 tokens kept
+    c.update_and_fetch(k, v)  # prefill → 16 tokens kept
     for i in range(4):
         k1, v1 = _rand_kv(S=1, seed=100 + i)
         ko, vo = c.update_and_fetch(k1, v1)
@@ -97,6 +174,7 @@ def test_decode_accumulation() -> None:
 # ---------------------------------------------------------------------------
 # Byte accounting
 # ---------------------------------------------------------------------------
+
 
 def test_byte_ordering_eviction_ratio_gt_1() -> None:
     """After prefill with budget < S, eviction_ratio > 1."""
@@ -125,6 +203,7 @@ def test_keep_rate_no_eviction() -> None:
 # Edge cases
 # ---------------------------------------------------------------------------
 
+
 def test_n_sink_zero() -> None:
     """n_sink=0 runs without error."""
     c = _make(snap_n_sink=0, snap_budget=16)
@@ -146,6 +225,7 @@ def test_decode_only_no_eviction() -> None:
 # Determinism
 # ---------------------------------------------------------------------------
 
+
 def test_deterministic() -> None:
     k, v = _rand_kv(S=64)
     c1, c2 = _make(), _make()
@@ -158,6 +238,7 @@ def test_deterministic() -> None:
 # ---------------------------------------------------------------------------
 # for_model construction
 # ---------------------------------------------------------------------------
+
 
 def test_build_via_for_model_propagates_config() -> None:
     from veloxquant_mlx.cache.base import KVCacheBuilder
@@ -172,8 +253,11 @@ def test_build_via_for_model_propagates_config() -> None:
         layers = [_Layer(), _Layer()]
 
     cfg = KVCacheConfig(
-        method="snapkv", head_dim=128,
-        snap_budget=32, snap_obs_window=16, snap_n_sink=3,
+        method="snapkv",
+        head_dim=128,
+        snap_budget=32,
+        snap_obs_window=16,
+        snap_n_sink=3,
     )
     caches = KVCacheBuilder.for_model(_Model(), cfg)
     assert all(isinstance(c, SnapKVKVCache) for c in caches)

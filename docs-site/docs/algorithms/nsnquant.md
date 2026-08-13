@@ -40,12 +40,12 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="nsnquant",
     head_dim=128,
-    nsn_bits=2,               # 2 = sign mask + index (~2 b/elem), 1 = index only
-    nsn_residual_length=64,   # fp16 chunk buffer; paper suggests 128 for 1-bit
-    nsn_codebook_size=256,    # centroids (256 -> uint8 indices)
-    nsn_subvector_dim=8,      # VQ subvector dimension (paper: 8)
-    nsn_seed=1234,            # codebook RNG seed (synthetic Gaussian)
-    nsn_max_ctx=8192,         # per-layer token budget
+    nsn_bits=2,  # 2 = sign mask + index (~2 b/elem), 1 = index only
+    nsn_residual_length=64,  # fp16 chunk buffer; paper suggests 128 for 1-bit
+    nsn_codebook_size=256,  # centroids (256 -> uint8 indices)
+    nsn_subvector_dim=8,  # VQ subvector dimension (paper: 8)
+    nsn_seed=1234,  # codebook RNG seed (synthetic Gaussian)
+    nsn_max_ctx=8192,  # per-layer token budget
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

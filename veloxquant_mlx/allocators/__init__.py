@@ -22,6 +22,7 @@ Typical usage::
     )
     caches = KVCacheBuilder.for_model(model, config)
 """
+
 from __future__ import annotations
 
 from veloxquant_mlx.allocators.ratequant import (

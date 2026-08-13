@@ -6,6 +6,7 @@ unchanged across decode steps (the "not path-dependent" contrast with the
 eviction family — H2O/TOVA/MorphKV/KVzip), byte-accounting properties, and
 compression_ratio > 1 at a reasonable budget on structured (low-rank) data.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -148,6 +149,7 @@ def test_deterministic_same_call_pattern_same_output():
     determinism pin required because KVTC is explicitly NOT path-dependent
     like H2O/TOVA/MorphKV/KVzip.
     """
+
     def run():
         cache = _make(head_dim=16, kvtc_bit_budget=32)
         rng = np.random.default_rng(3)
@@ -157,7 +159,7 @@ def test_deterministic_same_call_pattern_same_output():
         K = V = None
         for t in range(10, 20):
             K, V = cache.update_and_fetch(
-                mx.array(k_all[:, :, t:t + 1]), mx.array(v_all[:, :, t:t + 1])
+                mx.array(k_all[:, :, t : t + 1]), mx.array(v_all[:, :, t : t + 1])
             )
         return K, V
 
@@ -195,6 +197,47 @@ def test_compression_ratio_above_one_on_structured_long_sequence():
     k, v = _low_rank_kv(1, 1, 512, 32, r_true=4, seed=7)
     cache.update_and_fetch(k, v)
     assert cache.compression_ratio > 1.0
+
+
+# ---------------------------------------------------------------------------
+# Regression for #77: the realized entropy-coded payload+table must never
+# exceed fixed-width packing, on both the prefill path (kvtc_compress) and
+# the decode/requantize path (_TensorKVTC._requantize in kvtc_cache.py,
+# which independently built the artifact and previously duplicated the
+# always-Huffman bug). Note: cache.entropy_coding_gain (pre_entropy_bytes /
+# kvtc_bytes) is a *different*, wider ratio that also carries the fixed
+# projection-basis (V) overhead unrelated to entropy coding, and can
+# legitimately stay < 1 even after this fix -- so we assert the actual
+# per-tensor-state guarantee the fix provides, not that wider ratio.
+# ---------------------------------------------------------------------------
+def _payload_never_exceeds_fixed_width(cache):
+    from veloxquant_mlx.quantizers._entropy_coding import table_nbytes
+
+    for state in [*cache._keys_states, *cache._vals_states]:
+        art = state._artifact
+        if art is None:
+            continue
+        stored = len(art.entropy_payload) + table_nbytes(art.entropy_table)
+        assert stored <= state.pre_entropy_bytes
+
+
+def test_entropy_payload_never_worse_than_fixed_width_after_prefill():
+    cache = _make(head_dim=128, kvtc_bit_budget=128 * 3)
+    k, v = _kv(1, 1, 512, 128, seed=11)
+    cache.update_and_fetch(k, v)
+    _payload_never_exceeds_fixed_width(cache)
+
+
+def test_entropy_payload_never_worse_than_fixed_width_after_decode_requantize():
+    """Prefill then several decode steps exercise _requantize -- the
+    guarantee must hold there too, not just at prefill."""
+    cache = _make(head_dim=64, kvtc_bit_budget=64 * 3)
+    k0, v0 = _kv(1, 1, 64, 64, seed=12)
+    cache.update_and_fetch(k0, v0)
+    for i in range(10):
+        k, v = _kv(1, 1, 1, 64, seed=100 + i)
+        cache.update_and_fetch(k, v)
+    _payload_never_exceeds_fixed_width(cache)
 
 
 # ---------------------------------------------------------------------------

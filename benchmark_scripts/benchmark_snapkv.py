@@ -22,6 +22,7 @@ Usage::
     PYTHONPATH=. python benchmark_scripts/benchmark_snapkv.py
     PYTHONPATH=. python benchmark_scripts/benchmark_snapkv.py --seq 512 --heads 4 --dim 128
 """
+
 from __future__ import annotations
 
 import argparse
@@ -46,6 +47,7 @@ from veloxquant_mlx.quantizers.snapkv import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _rand_kv(S: int, D: int, seed: int = 0) -> tuple[mx.array, mx.array]:
     rng = np.random.default_rng(seed)
     K = mx.array(rng.standard_normal((S, D)).astype(np.float32))
@@ -61,7 +63,7 @@ def _high_attention_outlier_kv(
     K = rng.standard_normal((S, D)).astype(np.float32)
     V = rng.standard_normal((S, D)).astype(np.float32)
     idx = rng.choice(S, size=n_outliers, replace=False)
-    K[idx] *= 6.0   # inflate norms → these tokens dominate self-attention
+    K[idx] *= 6.0  # inflate norms → these tokens dominate self-attention
     return mx.array(K), mx.array(V)
 
 
@@ -90,8 +92,11 @@ def _random_coverage(keys: mx.array, budget: int, obs_window: int, seed: int = 4
 
 
 def _benchmark_one(
-    keys: mx.array, values: mx.array,
-    budget: int, obs_window: int, n_sink: int,
+    keys: mx.array,
+    values: mx.array,
+    budget: int,
+    obs_window: int,
+    n_sink: int,
     n_rep: int = 10,
 ) -> dict:
     S, D = keys.shape
@@ -134,6 +139,7 @@ def _benchmark_one(
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="SnapKV-adapted offline benchmark")
     parser.add_argument("--seq", type=int, default=128, help="Base sequence length")
@@ -150,8 +156,10 @@ def main() -> None:
 
     results = []
     print(f"\nSnapKV-adapted offline benchmark  (NOT YET RUN on dedicated hardware)\n")
-    print(f"{'S':>6}  {'budget':>8}  {'kept':>6}  {'ratio':>8}  "
-          f"{'cov_snap':>10}  {'cov_rand':>10}  {'lift':>8}  {'ms/head':>9}")
+    print(
+        f"{'S':>6}  {'budget':>8}  {'kept':>6}  {'ratio':>8}  "
+        f"{'cov_snap':>10}  {'cov_rand':>10}  {'lift':>8}  {'ms/head':>9}"
+    )
     print("-" * 85)
 
     for S in seq_lens:
@@ -161,11 +169,13 @@ def main() -> None:
             keys, values = _high_attention_outlier_kv(S, D, seed=42, n_outliers=n_out)
             r = _benchmark_one(keys, values, budget, obs_window, n_sink, args.n_rep)
             results.append(r)
-            print(f"{S:>6}  {budget:>8}  {r['n_kept']:>6}  {r['eviction_ratio']:>8.3f}  "
-                  f"{r['attention_coverage_snapkv']:>10.4f}  "
-                  f"{r['attention_coverage_random']:>10.4f}  "
-                  f"{r['coverage_lift_vs_random']:>8.4f}  "
-                  f"{r['ms_per_head']:>9.4f}")
+            print(
+                f"{S:>6}  {budget:>8}  {r['n_kept']:>6}  {r['eviction_ratio']:>8.3f}  "
+                f"{r['attention_coverage_snapkv']:>10.4f}  "
+                f"{r['attention_coverage_random']:>10.4f}  "
+                f"{r['coverage_lift_vs_random']:>8.4f}  "
+                f"{r['ms_per_head']:>9.4f}"
+            )
 
     out_path = Path(__file__).parent / "results_snapkv.json"
     summary = {

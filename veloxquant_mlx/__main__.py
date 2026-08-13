@@ -1,4 +1,5 @@
 """Entry point for `python -m veloxquant_mlx <command>`."""
+
 from __future__ import annotations
 
 import sys
@@ -6,7 +7,7 @@ import sys
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: veloxquant {precompute|benchmark|recommend}")
+        print("Usage: veloxquant {precompute|benchmark|recommend|methods|serve|panel}")
         sys.exit(1)
 
     command = sys.argv[1]
@@ -15,17 +16,32 @@ def main() -> None:
 
     if command == "precompute":
         from veloxquant_mlx.cli.precompute import main as _main
+
         _main()
     elif command == "benchmark":
         from veloxquant_mlx.cli.benchmark import main as _main
+
         _main()
     elif command == "recommend":
         from veloxquant_mlx.cli.recommend import main as _main
+
+        _main()
+    elif command == "methods":
+        from veloxquant_mlx.cli.methods import main as _main
+
+        _main()
+    elif command == "serve":
+        from veloxquant_mlx.cli.serve import main as _main
+
+        _main()
+    elif command == "panel":
+        from veloxquant_mlx.cli.panel import main as _main
+
         _main()
     else:
         print(
             f"Unknown command: {command!r}. "
-            "Choices: precompute, benchmark, recommend"
+            "Choices: precompute, benchmark, recommend, methods, serve, panel"
         )
         sys.exit(1)
 

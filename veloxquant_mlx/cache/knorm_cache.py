@@ -37,6 +37,7 @@ Byte accounting (same names as H2OKVCache):
     tokens_seen       — total token positions ever passed to update_and_fetch
     tokens_kept       — tokens currently in the first (B=0, H=0) head's cache
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -70,6 +71,12 @@ class L2NormKVCache(_MLXKVCache):
         path returns one ``L2NormKVCache`` per attention layer. Per-head state
         is lazily initialised on the first ``update_and_fetch``. Validation
         (keep mode, sink/recent-vs-budget guard) happens at construction.
+        Writes through to the base ``mlx_lm`` ``KVCache``'s ``self.keys`` /
+        ``self.values`` / ``self.offset`` on every call so ``.state`` stays
+        valid (mlx_lm's ``generate()`` reads it unconditionally during
+        chunked prefill); ``is_trimmable()`` reports ``False`` since the
+        internal per-token state can't be rolled back by a base-class
+        ``trim()`` (see #83).
     """
 
     def __init__(self, config: Any) -> None:
@@ -80,8 +87,7 @@ class L2NormKVCache(_MLXKVCache):
         self._keep = str(getattr(config, "knorm_keep", "low"))
 
         # Fail at build time with clear messages (delegates the guards).
-        init_knorm_state(self._n_sink, self._budget, 1,
-                         recent=self._recent, keep=self._keep)
+        init_knorm_state(self._n_sink, self._budget, 1, recent=self._recent, keep=self._keep)
 
         self._head_dim: int = 0
         self._states: list[KnormState] = []
@@ -99,8 +105,9 @@ class L2NormKVCache(_MLXKVCache):
             self._H = H
             self._head_dim = D
             self._states = [
-                init_knorm_state(self._n_sink, self._budget, D,
-                                 recent=self._recent, keep=self._keep)
+                init_knorm_state(
+                    self._n_sink, self._budget, D, recent=self._recent, keep=self._keep
+                )
                 for _ in range(B * H)
             ]
 
@@ -122,7 +129,7 @@ class L2NormKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2   # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
         k_out_b, v_out_b = [], []
@@ -146,7 +153,25 @@ class L2NormKVCache(_MLXKVCache):
         V_out = mx.stack(v_out_b, axis=0)
 
         self._knorm_kept_bytes = sum(knorm_fp16_bytes(st) for st in self._states)
-        return K_out, V_out
+
+        # K_out/V_out is the full retained state every call, not a delta —
+        # reset so the base class's append-only buffer starts fresh instead
+        # of stacking on top of the previous call's rows. Without this,
+        # self.keys/self.values/self.offset stay at __init__ defaults
+        # forever, and mlx_lm's generate() crashes on `cache.state` during
+        # chunked prefill (see #83).
+        self.keys = None
+        self.values = None
+        self.offset = 0
+        return super().update_and_fetch(K_out, V_out)
+
+    # ------------------------------------------------------------------
+    def is_trimmable(self) -> bool:
+        """False: trim() would only roll back base-class offset bookkeeping,
+        not the internal per-token eviction/compression state that actually
+        determines what gets returned, silently corrupting future calls.
+        """
+        return False
 
     # ------------------------------------------------------------------
     @property

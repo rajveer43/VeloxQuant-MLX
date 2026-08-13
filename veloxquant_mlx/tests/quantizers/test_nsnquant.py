@@ -9,6 +9,7 @@ Covers:
     channel-biased input (the mechanism-validation test)
   - error paths (d % sub_d != 0) and odd shapes (T=1)
 """
+
 from __future__ import annotations
 
 import math
@@ -55,6 +56,7 @@ def _mean_cosine(a: mx.array, b: mx.array) -> float:
 # NSN transform
 # ------------------------------------------------------------------
 
+
 def test_nsn_roundtrip_exact_without_vq() -> None:
     mx.random.seed(0)
     x = mx.random.normal((2, 4, 37, 128)) * 3.0 + 0.5
@@ -96,6 +98,7 @@ def test_nsn_metadata_dtypes_and_shapes() -> None:
 # Hadamard wrappers
 # ------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("d", [64, 128])
 def test_hadamard_roundtrip(d: int) -> None:
     mx.random.seed(2)
@@ -115,6 +118,7 @@ def test_hadamard_rejects_incompatible_dim() -> None:
 # ------------------------------------------------------------------
 # Universal codebook
 # ------------------------------------------------------------------
+
 
 def test_codebook_deterministic() -> None:
     a = build_universal_codebook(seed=7, n_samples=32_768, iters=5)
@@ -143,6 +147,7 @@ def test_codebook_rejects_unknown_kind() -> None:
 # ------------------------------------------------------------------
 # VQ round-trips (floors calibrated empirically once, then pinned)
 # ------------------------------------------------------------------
+
 
 def test_vq_2bit_gaussian_cosine_floor() -> None:
     mx.random.seed(3)

@@ -1,4 +1,5 @@
 """Entry point: python -m veloxquant_mlx benchmark"""
+
 from __future__ import annotations
 
 import argparse
@@ -42,8 +43,12 @@ def main() -> None:
         prog="veloxquant_mlx benchmark",
         description="Benchmark KV cache encode/decode latency and memory.",
     )
-    parser.add_argument("--method", type=str, default="turboquant_prod",
-                        choices=["turboquant_prod", "turboquant_mse", "qjl", "polar"])
+    parser.add_argument(
+        "--method",
+        type=str,
+        default="turboquant_prod",
+        choices=["turboquant_prod", "turboquant_mse", "qjl", "polar"],
+    )
     parser.add_argument("--head_dim", type=int, default=128)
     parser.add_argument("--bits", type=int, default=3)
     parser.add_argument("--jl_dim", type=int, default=128)

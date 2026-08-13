@@ -26,6 +26,7 @@ Byte accounting:
     tokens_seen         — total positions ever passed to update_and_fetch (all heads avg)
     tokens_in_window    — current sink + recent positions in cache (first head)
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -59,6 +60,12 @@ class StreamingLLMKVCache(_MLXKVCache):
         adapted, which evicts only at prefill. StreamingLLM operates continuously.
         Single-layer (no coordinator); ``for_model`` propagates all ``stream_*``
         fields automatically via ``dataclasses.replace``.
+        Writes through to the base ``mlx_lm`` ``KVCache``'s ``self.keys`` /
+        ``self.values`` / ``self.offset`` on every call so ``.state`` stays
+        valid (mlx_lm's ``generate()`` reads it unconditionally during
+        chunked prefill); ``is_trimmable()`` reports ``False`` since the
+        internal per-token state can't be rolled back by a base-class
+        ``trim()`` (see #83).
     """
 
     def __init__(self, config: Any) -> None:
@@ -73,7 +80,7 @@ class StreamingLLMKVCache(_MLXKVCache):
 
         self._stream_kept_bytes: int = 0
         self._full_seq_bytes: int = 0
-        self._tokens_seen_total: int = 0   # sum over all (B, H) heads
+        self._tokens_seen_total: int = 0  # sum over all (B, H) heads
 
     # ------------------------------------------------------------------
     def _ensure_windows(self, B: int, H: int, D: int) -> None:
@@ -103,7 +110,7 @@ class StreamingLLMKVCache(_MLXKVCache):
         self._ensure_windows(B, H, D)
 
         # Byte accounting for this batch
-        fp16_new = B * H * S * D * 2 * 2   # K + V, fp16
+        fp16_new = B * H * S * D * 2 * 2  # K + V, fp16
         self._full_seq_bytes += fp16_new
         self._tokens_seen_total += B * H * S
 
@@ -123,22 +130,36 @@ class StreamingLLMKVCache(_MLXKVCache):
                 )
                 self._windows[idx] = w
                 k_h, v_h = stream_get_kv(w)
-                k_out_h.append(k_h)    # [n_keep, D]
+                k_out_h.append(k_h)  # [n_keep, D]
                 v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))   # [H, n_keep, D]
+            k_out_b.append(mx.stack(k_out_h, axis=0))  # [H, n_keep, D]
             v_out_b.append(mx.stack(v_out_h, axis=0))
 
-        K_out = mx.stack(k_out_b, axis=0)   # [B, H, n_keep, D]
+        K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_keep, D]
         V_out = mx.stack(v_out_b, axis=0)
 
         # Recount kept bytes from first (B=0, H=0) head as representative
         kept_bytes = stream_fp16_bytes(self._windows[0]) * B * H
-        self._stream_kept_bytes = kept_bytes   # snapshot (not cumulative; current state)
+        self._stream_kept_bytes = kept_bytes  # snapshot (not cumulative; current state)
 
-        # Pass through to parent's accumulator using the evicted slice
-        # We bypass the parent concatenation and manage state ourselves.
-        # Return directly — StreamingLLM manages its own complete K/V state.
-        return K_out, V_out
+        # K_out/V_out is the full sink+recent window every call, not a
+        # delta — reset so the base class's append-only buffer starts fresh
+        # instead of stacking on top of the previous call's rows. Without
+        # this, self.keys/self.values/self.offset stay at __init__ defaults
+        # forever, and mlx_lm's generate() crashes on `cache.state` during
+        # chunked prefill (see #83).
+        self.keys = None
+        self.values = None
+        self.offset = 0
+        return super().update_and_fetch(K_out, V_out)
+
+    # ------------------------------------------------------------------
+    def is_trimmable(self) -> bool:
+        """False: trim() would only roll back base-class offset bookkeeping,
+        not the internal per-token eviction/compression state that actually
+        determines what gets returned, silently corrupting future calls.
+        """
+        return False
 
     # ------------------------------------------------------------------
     @property

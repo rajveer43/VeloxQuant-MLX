@@ -24,9 +24,7 @@ class BitPackBuffer:
 
     def __init__(self, b: int) -> None:
         if b not in self._SUPPORTED_BITS:
-            raise ValueError(
-                f"BitPackBuffer: b must be in {self._SUPPORTED_BITS}, got {b}"
-            )
+            raise ValueError(f"BitPackBuffer: b must be in {self._SUPPORTED_BITS}, got {b}")
         self.b = b
         self._max_val = (1 << b) - 1
 
@@ -50,9 +48,7 @@ class BitPackBuffer:
         if indices.ndim != 1:
             raise ValueError("pack expects a 1-D array")
         if np.any(indices > self._max_val):
-            raise ValueError(
-                f"BitPackBuffer(b={self.b}): values must be < {self._max_val + 1}"
-            )
+            raise ValueError(f"BitPackBuffer(b={self.b}): values must be < {self._max_val + 1}")
 
         if self.b == 1:
             return self._pack_1bit(indices)
@@ -157,7 +153,12 @@ class BitPackBuffer:
         out = np.zeros(n_groups * 3, dtype=np.uint8)
         g = idx.reshape(n_groups, 8)
         out[0::3] = (g[:, 0] & 0x7) | ((g[:, 1] & 0x7) << 3) | ((g[:, 2] & 0x3) << 6)
-        out[1::3] = ((g[:, 2] >> 2) & 0x1) | ((g[:, 3] & 0x7) << 1) | ((g[:, 4] & 0x7) << 4) | ((g[:, 5] & 0x1) << 7)
+        out[1::3] = (
+            ((g[:, 2] >> 2) & 0x1)
+            | ((g[:, 3] & 0x7) << 1)
+            | ((g[:, 4] & 0x7) << 4)
+            | ((g[:, 5] & 0x1) << 7)
+        )
         out[2::3] = ((g[:, 5] >> 1) & 0x3) | ((g[:, 6] & 0x7) << 2) | ((g[:, 7] & 0x7) << 5)
         return out
 

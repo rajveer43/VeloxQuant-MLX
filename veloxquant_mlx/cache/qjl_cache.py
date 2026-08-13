@@ -76,7 +76,7 @@ class QJLKVCache(KVCache):
         """
         import mlx.core as mx
 
-        n = self._n_tokens
+        n = len(self._k_signs)
         if n == 0:
             return mx.zeros((self._d,), dtype=mx.float16)
 
@@ -103,7 +103,7 @@ class QJLKVCache(KVCache):
 
     def memory_bytes(self) -> int:
         """Estimate memory footprint."""
-        n = self._n_tokens
+        n = len(self._k_signs)
         if n == 0:
             return 0
         sign_bytes = n * self._m
@@ -112,7 +112,7 @@ class QJLKVCache(KVCache):
         return sign_bytes + norm_bytes + v_bytes
 
     def __len__(self) -> int:
-        return self._n_tokens
+        return len(self._k_signs)
 
     def __repr__(self) -> str:
         return f"QJLKVCache(d={self._d}, m={self._m}, n_tokens={self._n_tokens})"

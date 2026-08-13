@@ -37,6 +37,7 @@ Usage
 
 Prints tables and saves a JSON summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -56,15 +57,15 @@ if str(_repo_root) not in sys.path:
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
 # ── sweep configuration ──────────────────────────────────────────────────────
-SEQ_LENS   = [256, 512]
-BUDGETS    = [32, 64]
+SEQ_LENS = [256, 512]
+BUDGETS = [32, 64]
 GEOMETRIES = ["late_riser", "stable"]
-TAUS       = [0.0, 2.0, 6.0]       # 0.0 == H2O-adapted (the ablation baseline)
-HEAD_DIM   = 32
-N_SINK     = 2
-N_PROBES   = 16
-NOISE_SEEDS = [0, 1, 2, 3, 4]      # average the noisy arms over frozen-noise seeds
-SEED       = 11
+TAUS = [0.0, 2.0, 6.0]  # 0.0 == H2O-adapted (the ablation baseline)
+HEAD_DIM = 32
+N_SINK = 2
+N_PROBES = 16
+NOISE_SEEDS = [0, 1, 2, 3, 4]  # average the noisy arms over frozen-noise seeds
+SEED = 11
 
 
 def _synthetic(S: int, geometry: str, seed: int):
@@ -76,16 +77,17 @@ def _synthetic(S: int, geometry: str, seed: int):
     arrives.
     """
     rng = np.random.default_rng(seed)
-    axis = np.zeros(HEAD_DIM, dtype=np.float32); axis[0] = 1.0
+    axis = np.zeros(HEAD_DIM, dtype=np.float32)
+    axis[0] = 1.0
     v = rng.standard_normal((S, HEAD_DIM)).astype(np.float32)
 
     k = rng.standard_normal((S, HEAD_DIM)).astype(np.float32) * 0.3
-    k[:, 0] = 0.0                       # early filler orthogonal to axis
+    k[:, 0] = 0.0  # early filler orthogonal to axis
     # Plant the riser DEEP in the stream (well past the sink window) so that,
     # by the time the budget fills, greedy accumulation has a real chance to
     # evict it before any aligned traffic arrives.
     planted = int(S * 0.25)
-    k[planted] = 3.0 * axis             # the late/early riser token
+    k[planted] = 3.0 * axis  # the late/early riser token
 
     if geometry == "late_riser":
         # A burst aligned with axis arrives only in the LAST 10% of the stream,
@@ -135,10 +137,14 @@ def _run_cache(method_cfg: dict, k: np.ndarray, v: np.ndarray):
 def _random_evict(k: np.ndarray, v: np.ndarray, budget: int, seed: int):
     rng = np.random.default_rng(seed)
     S = k.shape[0]
-    keep = np.sort(np.concatenate([
-        np.arange(min(N_SINK, S)),
-        N_SINK + rng.choice(S - N_SINK, size=budget - N_SINK, replace=False),
-    ]))
+    keep = np.sort(
+        np.concatenate(
+            [
+                np.arange(min(N_SINK, S)),
+                N_SINK + rng.choice(S - N_SINK, size=budget - N_SINK, replace=False),
+            ]
+        )
+    )
     return mx.array(k[keep]), mx.array(v[keep])
 
 
@@ -153,21 +159,28 @@ def _run_once(S: int, budget: int, geometry: str, seed: int) -> dict:
     full_k, full_v = mx.array(k), mx.array(v)
 
     row = {
-        "seq_len":           S,
-        "budget":            budget,
-        "geometry":          geometry,
+        "seq_len": S,
+        "budget": budget,
+        "geometry": geometry,
         "compression_ratio": round(S / budget, 2),
     }
 
     # tau arms — noisy arms averaged over frozen-noise seeds
     for tau in TAUS:
         perts, survs, mss = [], [], []
-        seeds = NOISE_SEEDS if tau > 0 else [0]   # tau=0 is seed-invariant
+        seeds = NOISE_SEEDS if tau > 0 else [0]  # tau=0 is seed-invariant
         for ns in seeds:
             kk, vv, ms = _run_cache(
-                dict(method="keyformer", keyformer_budget=budget,
-                     keyformer_n_sink=N_SINK, keyformer_tau=tau,
-                     keyformer_seed=ns), k, v)
+                dict(
+                    method="keyformer",
+                    keyformer_budget=budget,
+                    keyformer_n_sink=N_SINK,
+                    keyformer_tau=tau,
+                    keyformer_seed=ns,
+                ),
+                k,
+                v,
+            )
             perts.append(_perturbation(qq, full_k, full_v, kk, vv))
             survs.append(1.0 if _planted_survived(kk, axis) else 0.0)
             mss.append(ms)
@@ -177,8 +190,7 @@ def _run_once(S: int, budget: int, geometry: str, seed: int) -> dict:
         row[f"ms_{tag}"] = round(float(np.mean(mss)), 2)
 
     # H2O reference (should equal tau=0 by construction — a cross-check)
-    kh, vh, _ = _run_cache(
-        dict(method="h2o", h2o_budget=budget, h2o_n_sink=N_SINK), k, v)
+    kh, vh, _ = _run_cache(dict(method="h2o", h2o_budget=budget, h2o_n_sink=N_SINK), k, v)
     row["pert_h2o"] = round(_perturbation(qq, full_k, full_v, kh, vh), 5)
 
     # random reference
@@ -195,10 +207,11 @@ def main() -> None:
     print("  (survrate = fraction of noise-seeds in which the planted riser survived)")
     print("  (tau=0 == H2O-adapted, the greedy ablation baseline)")
     print()
-    taucols = "  ".join(f"{('p_tau'+f'{t:g}'):>9}" for t in TAUS)
-    survcols = "  ".join(f"{('s_tau'+f'{t:g}'):>8}" for t in TAUS)
-    header = (f"{'seq':>4} {'bud':>4} {'geometry':>11}  {taucols}  "
-              f"{survcols}  {'h2o':>8}  {'random':>8}")
+    taucols = "  ".join(f"{('p_tau' + f'{t:g}'):>9}" for t in TAUS)
+    survcols = "  ".join(f"{('s_tau' + f'{t:g}'):>8}" for t in TAUS)
+    header = (
+        f"{'seq':>4} {'bud':>4} {'geometry':>11}  {taucols}  {survcols}  {'h2o':>8}  {'random':>8}"
+    )
     print(header)
     print("-" * len(header))
 
@@ -208,8 +221,10 @@ def main() -> None:
         results.append(row)
         pcells = "  ".join(f"{row[f'pert_tau{t:g}'.replace('.', '_')]:>9.5f}" for t in TAUS)
         scells = "  ".join(f"{row[f'survrate_tau{t:g}'.replace('.', '_')]:>8.3f}" for t in TAUS)
-        print(f"{row['seq_len']:>4} {row['budget']:>4} {row['geometry']:>11}  "
-              f"{pcells}  {scells}  {row['pert_h2o']:>8.5f}  {row['pert_random']:>8.5f}")
+        print(
+            f"{row['seq_len']:>4} {row['budget']:>4} {row['geometry']:>11}  "
+            f"{pcells}  {scells}  {row['pert_h2o']:>8.5f}  {row['pert_random']:>8.5f}"
+        )
 
     out_path = Path(__file__).parent.parent / "figures" / "keyformer" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
@@ -223,8 +238,12 @@ def main() -> None:
         greedy_s = np.mean([r["survrate_tau0"] for r in rows])
         noisy_s = np.mean([r[f"survrate_tau{best_tau:g}".replace(".", "_")] for r in rows])
         print(f"\nSummary ({geom}):")
-        print(f"  riser survival — greedy (tau=0): {greedy_s:.3f}   Gumbel (tau={best_tau:g}): {noisy_s:.3f}")
-        print(f"  perturbation   — greedy (tau=0): {greedy_p:.5f}   Gumbel (tau={best_tau:g}): {noisy_p:.5f}")
+        print(
+            f"  riser survival — greedy (tau=0): {greedy_s:.3f}   Gumbel (tau={best_tau:g}): {noisy_s:.3f}"
+        )
+        print(
+            f"  perturbation   — greedy (tau=0): {greedy_p:.5f}   Gumbel (tau={best_tau:g}): {noisy_p:.5f}"
+        )
 
     print("\n  (honest reading: the clean, defensible observable is RISER SURVIVAL.")
     print("   Greedy tau=0 (== H2O-adapted) evicts the planted late-riser 100% of the")

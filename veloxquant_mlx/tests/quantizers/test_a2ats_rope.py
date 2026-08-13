@@ -7,6 +7,7 @@ position; tokens outside it are left **unrotated** on the key side (Eq. 12,
 ``k̃_i = k_i``), with the constant ``R_b`` applied to the query instead
 (Eq. 11). All data is synthetic.
 """
+
 from __future__ import annotations
 
 import math
@@ -30,6 +31,7 @@ def _mat(n, d, seed=0):
 # ---------------------------------------------------------------------------
 # a2ats_apply_exact_rope
 # ---------------------------------------------------------------------------
+
 
 def test_exact_rope_preserves_shape_and_dtype() -> None:
     x = _mat(6, 16)
@@ -78,6 +80,7 @@ def test_exact_rope_matches_hand_computed_rotation() -> None:
 # a2ats_apply_windowed_rope — window boundary behavior
 # ---------------------------------------------------------------------------
 
+
 def test_windowed_rope_within_window_matches_exact_rope() -> None:
     """Tokens inside the trailing window get RoPE identical to the exact path."""
     x = _mat(10, 16, seed=1)
@@ -120,8 +123,8 @@ def test_windowed_rope_far_tokens_are_position_independent() -> None:
     This is what makes a single shared codebook viable across inputs
     (paper §3.1, Observation 2) — the entire reason WRoPE exists.
     """
-    x = mx.array(np.ones((5, 8), dtype=np.float32))   # identical inputs
-    positions = mx.array([0, 17, 133, 2040, 9001])    # wildly different positions
+    x = mx.array(np.ones((5, 8), dtype=np.float32))  # identical inputs
+    positions = mx.array([0, 17, 133, 2040, 9001])  # wildly different positions
     windowed = a2ats_apply_windowed_rope(x, positions, query_position=100_000, window=3)
     for i in range(1, 5):
         assert np.allclose(np.array(windowed[0]), np.array(windowed[i]), atol=1e-4)
@@ -175,6 +178,7 @@ def test_windowed_rope_no_nan_at_boundaries() -> None:
 # Coverage gap identified in :issue:`29`: nothing pinned `b` as a knob
 # independent of the window size `w`.
 # ---------------------------------------------------------------------------
+
 
 def test_far_query_rope_b_is_independent_of_window() -> None:
     """Paper §5.1 sets ``w=64`` and ``b=2048`` — a factor of 32 apart, so they

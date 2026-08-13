@@ -118,7 +118,8 @@ VeloxQuant-MLX caches work transparently with mlx_lm's streaming API:
 
 ```python
 for token in mlx_lm.stream_generate(
-    model, tokenizer,
+    model,
+    tokenizer,
     prompt="Tell me a very long story.",
     max_tokens=4096,
     kv_cache=cache,
@@ -141,9 +142,7 @@ turns = [
 ]
 
 for turn in turns:
-    response = mlx_lm.generate(
-        model, tokenizer, prompt=turn, max_tokens=200, kv_cache=cache
-    )
+    response = mlx_lm.generate(model, tokenizer, prompt=turn, max_tokens=200, kv_cache=cache)
     print(f"User: {turn}\nAssistant: {response}\n")
     # cache now contains compressed K/V for all prior turns
 ```

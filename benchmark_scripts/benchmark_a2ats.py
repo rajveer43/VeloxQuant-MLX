@@ -46,6 +46,7 @@ Usage
 
 Prints tables and saves a JSON summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -78,7 +79,7 @@ GEOMETRIES = ["local_recency", "long_range_dependent"]
 DATA_SEEDS = [0, 1, 2, 3, 4]
 SEED = 23
 WINDOW = 16
-B_CONST = 2048          # paper §5.1: b is independent of w (w=64, b=2048)
+B_CONST = 2048  # paper §5.1: b is independent of w (w=64, b=2048)
 RETRIEVAL_FRACTION = 0.20
 BETA = 0.5
 
@@ -132,27 +133,27 @@ def _rope_comparison(
     positions = mx.arange(n)
 
     idx = quantize_vq(keys_mx, codebook, SUB_DIM)
-    dequant = dequantize_vq(idx, codebook).astype(mx.float16)   # pre-RoPE reconstruction
+    dequant = dequantize_vq(idx, codebook).astype(mx.float16)  # pre-RoPE reconstruction
 
     # Ground truth: exact RoPE on both sides, unquantized keys (Eq. 3).
     true_k = a2ats_apply_exact_rope(keys_mx, positions).astype(mx.float32)
-    true_q = a2ats_apply_exact_rope(
-        query_mx[None, :], mx.array([query_position])
-    ).astype(mx.float32)[0]
-    true_scores = true_k @ true_q                      # [n]
+    true_q = a2ats_apply_exact_rope(query_mx[None, :], mx.array([query_position])).astype(
+        mx.float32
+    )[0]
+    true_scores = true_k @ true_q  # [n]
 
     # A2ATS: near keys exact, far keys unrotated (Eq. 12); query carries the
     # exact rotation for the near bucket and R_b for the far bucket (Eq. 11).
-    win_k = a2ats_apply_windowed_rope(
-        dequant, positions, query_position, window=WINDOW
-    ).astype(mx.float32)
+    win_k = a2ats_apply_windowed_rope(dequant, positions, query_position, window=WINDOW).astype(
+        mx.float32
+    )
     q_far = a2ats_apply_far_query_rope(query_mx, b=B_CONST).astype(mx.float32)
     distance = mx.array(query_position, dtype=mx.float32) - positions.astype(mx.float32)
-    near = (distance < float(WINDOW))[:, None]          # [n, 1]
+    near = (distance < float(WINDOW))[:, None]  # [n, 1]
     # Near tokens score against the exactly-rotated query; far tokens against
     # the R_b-rotated query (Eq. 11).
-    q_per_token = mx.where(near, true_q[None, :], q_far[None, :])   # [n, d]
-    win_scores = (win_k * q_per_token).sum(axis=-1)                 # [n]
+    q_per_token = mx.where(near, true_q[None, :], q_far[None, :])  # [n, d]
+    win_scores = (win_k * q_per_token).sum(axis=-1)  # [n]
 
     # Always-exact baseline: every key gets its own exact rotation.
     exact_k = a2ats_apply_windowed_rope(
@@ -214,7 +215,9 @@ def _assignment_comparison(keys_mx: mx.array, codebook: mx.array, query_mx: mx.a
         # Functional scatter: replace retrieval-set rows in the baseline
         # reconstruction with their query-aware reconstruction.
         update = mx.zeros_like(a2ats_recon)
-        update = update.at[retrieval_idx].add(ret_recon - mx.take(a2ats_recon, retrieval_idx, axis=0))
+        update = update.at[retrieval_idx].add(
+            ret_recon - mx.take(a2ats_recon, retrieval_idx, axis=0)
+        )
         a2ats_recon = a2ats_recon + update
 
     return {
@@ -239,12 +242,12 @@ def _run_once(seq_len: int, geometry: str, seed: int) -> dict:
         query_mx = mx.array(query_np)
 
         cb_train_data = keys_mx.reshape(-1, SUB_DIM)
-        codebook = train_codebook(cb_train_data, 2 ** CODEBOOK_BITS, max_iter=10, seed=seed + ds)
+        codebook = train_codebook(cb_train_data, 2**CODEBOOK_BITS, max_iter=10, seed=seed + ds)
 
         t0 = time.perf_counter()
         rope_res = _rope_comparison(keys_mx, query_mx, codebook, query_position=seq_len - 1)
         assign_res = _assignment_comparison(keys_mx, codebook, query_mx)
-        mx.eval(mx.array(0))   # force any lazy graph before timing stop
+        mx.eval(mx.array(0))  # force any lazy graph before timing stop
         ms_list.append((time.perf_counter() - t0) * 1_000)
 
         windowed_mses.append(rope_res["windowed_mse"])
@@ -276,12 +279,16 @@ def _run_once(seq_len: int, geometry: str, seed: int) -> dict:
 
 def main() -> None:
     print("A2ATS-adapted windowed RoPE + query-aware VQ — offline synthetic benchmark")
-    print(f"  head_dim={HEAD_DIM}  sub_dim={SUB_DIM}  codebook_bits={CODEBOOK_BITS}  "
-          f"window={WINDOW}  retrieval_fraction={RETRIEVAL_FRACTION}  beta={BETA}")
+    print(
+        f"  head_dim={HEAD_DIM}  sub_dim={SUB_DIM}  codebook_bits={CODEBOOK_BITS}  "
+        f"window={WINDOW}  retrieval_fraction={RETRIEVAL_FRACTION}  beta={BETA}"
+    )
     print("  (mse = mean squared reconstruction error; lower = better fidelity)")
     print()
-    header = (f"{'seq':>4} {'geometry':>20}  {'windowed':>10}  {'always_exact':>12}  "
-              f"{'a2ats_assign':>12}  {'plain_vq':>10}")
+    header = (
+        f"{'seq':>4} {'geometry':>20}  {'windowed':>10}  {'always_exact':>12}  "
+        f"{'a2ats_assign':>12}  {'plain_vq':>10}"
+    )
     print(header)
     print("-" * len(header))
 
@@ -289,9 +296,11 @@ def main() -> None:
     for seq_len, geometry in product(SEQ_LENS, GEOMETRIES):
         row = _run_once(seq_len, geometry, seed=SEED + seq_len)
         results.append(row)
-        print(f"{row['seq_len']:>4} {row['geometry']:>20}  {row['windowed_rope_mse']:>10.6f}  "
-              f"{row['always_exact_rope_mse']:>12.6f}  {row['a2ats_assignment_mse']:>12.6f}  "
-              f"{row['plain_vq_mse']:>10.6f}")
+        print(
+            f"{row['seq_len']:>4} {row['geometry']:>20}  {row['windowed_rope_mse']:>10.6f}  "
+            f"{row['always_exact_rope_mse']:>12.6f}  {row['a2ats_assignment_mse']:>12.6f}  "
+            f"{row['plain_vq_mse']:>10.6f}"
+        )
 
     out_path = Path(__file__).parent.parent / "figures" / "a2ats" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
@@ -310,11 +319,15 @@ def main() -> None:
         n_near = int(np.mean([r["n_near"] for r in rows]))
         n_far = int(np.mean([r["n_far"] for r in rows]))
         print(f"\nSummary ({geom}):")
-        print(f"  Attention-score MSE — windowed: {windowed:.6f}   always-exact: {exact:.6f}"
-              f"   ({windowed / exact:.2f}x)")
+        print(
+            f"  Attention-score MSE — windowed: {windowed:.6f}   always-exact: {exact:.6f}"
+            f"   ({windowed / exact:.2f}x)"
+        )
         print(f"    near bucket (n={n_near:>3}): windowed {near_w:.6f}  always-exact {near_e:.6f}")
         print(f"    far  bucket (n={n_far:>3}): windowed {far_w:.6f}  always-exact {far_e:.6f}")
-        print(f"  VQ reconstruction MSE   — a2ats query-aware: {a2ats_assign:.6f}   plain nearest-centroid: {plain:.6f}")
+        print(
+            f"  VQ reconstruction MSE   — a2ats query-aware: {a2ats_assign:.6f}   plain nearest-centroid: {plain:.6f}"
+        )
 
     _ratios = {
         g: (
@@ -324,18 +337,24 @@ def main() -> None:
         for g in GEOMETRIES
     }
     _near_gap = max(
-        abs(float(np.mean([r["near_windowed_mse"] for r in results if r["geometry"] == g]))
-            - float(np.mean([r["near_exact_mse"] for r in results if r["geometry"] == g])))
+        abs(
+            float(np.mean([r["near_windowed_mse"] for r in results if r["geometry"] == g]))
+            - float(np.mean([r["near_exact_mse"] for r in results if r["geometry"] == g]))
+        )
         for g in GEOMETRIES
     )
 
     print("\n  (honest reading, stated plainly rather than softened:")
     print()
     print("   1. Windowed RoPE is WORSE than always-exact RoPE in BOTH geometries measured")
-    print(f"      here, not just the long-range one — {_ratios['local_recency']:.1f}x higher"
-          " attention-score MSE on")
-    print(f"      local_recency and {_ratios['long_range_dependent']:.1f}x higher on"
-          " long_range_dependent. The cost is")
+    print(
+        f"      here, not just the long-range one — {_ratios['local_recency']:.1f}x higher"
+        " attention-score MSE on"
+    )
+    print(
+        f"      local_recency and {_ratios['long_range_dependent']:.1f}x higher on"
+        " long_range_dependent. The cost is"
+    )
     print("      REAL and INTRINSIC, not an artifact of the pre-#29 bugs: with Eq. (12)")
     print(f"      implemented correctly the NEAR bucket is now identical to always-exact")
     print(f"      (max gap {_near_gap:.2e}), so the entire penalty comes from FAR tokens —")

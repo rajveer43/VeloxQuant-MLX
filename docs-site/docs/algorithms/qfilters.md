@@ -62,11 +62,11 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="qfilters",
     head_dim=128,
-    qfilters_budget=512,        # max tokens kept (incl. sinks)
-    qfilters_n_sink=4,          # leading positions never evicted
-    qfilters_recent=0,          # trailing protected window (extension, off)
+    qfilters_budget=512,  # max tokens kept (incl. sinks)
+    qfilters_n_sink=4,  # leading positions never evicted
+    qfilters_recent=0,  # trailing protected window (extension, off)
     qfilters_calib_tokens=128,  # tokens observed before the filter freezes
-    qfilters_sign=1,            # +1 = paper direction; -1 = inverted ablation
+    qfilters_sign=1,  # +1 = paper direction; -1 = inverted ablation
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

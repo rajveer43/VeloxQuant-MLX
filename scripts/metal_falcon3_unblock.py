@@ -12,6 +12,7 @@ Run from repo root:
 Expected outcome: 120 tokens generated, peak memory significantly lower
 than the pure-MLX path would have hit.
 """
+
 from __future__ import annotations
 
 import time
@@ -27,10 +28,10 @@ MAX_TOKENS = 120
 
 def _peak_mb() -> float:
     try:
-        return float(mx.get_peak_memory()) / (1024 ** 2)
+        return float(mx.get_peak_memory()) / (1024**2)
     except Exception:
         try:
-            return float(mx.metal.get_peak_memory()) / (1024 ** 2)
+            return float(mx.metal.get_peak_memory()) / (1024**2)
         except Exception:
             return float("nan")
 
@@ -105,8 +106,11 @@ def main() -> int:
 
     t0 = time.perf_counter()
     response = generate(
-        model, tokenizer, prompt=prompt_txt,
-        max_tokens=MAX_TOKENS, verbose=False,
+        model,
+        tokenizer,
+        prompt=prompt_txt,
+        max_tokens=MAX_TOKENS,
+        verbose=False,
         prompt_cache=caches,
     )
     elapsed = time.perf_counter() - t0

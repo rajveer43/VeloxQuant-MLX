@@ -10,6 +10,7 @@ w.r.t. concentration, edge cases, strength bounds) and squeeze_update / state
 mechanics (bootstrap, budget enforcement, sink protection, byte accounting,
 determinism). All data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -38,6 +39,7 @@ def _rand_kv(S: int, D: int = 32, seed: int = 0):
 # ======================================================================
 # concentration_score
 # ======================================================================
+
 
 def test_concentration_identical_keys_is_one():
     """Rows all pointing the same direction → cosine 1 → max concentration."""
@@ -77,6 +79,7 @@ def test_concentration_in_range():
 # ======================================================================
 # squeeze_budgets — the allocator
 # ======================================================================
+
 
 def test_budgets_length_matches_layers():
     b = squeeze_budgets([0.1, 0.5, 0.9, 0.2], avg_budget=100, n_sink=4, strength=1.0)
@@ -167,6 +170,7 @@ def test_strength_out_of_range_raises():
 # init_squeeze_state
 # ======================================================================
 
+
 def test_init_state_rejects_n_sink_equal_budget() -> None:
     """n_sink >= budget leaves no evictable room — sinks would be evicted
     once the cache fills, defeating the sink guarantee."""
@@ -189,6 +193,7 @@ def test_init_state_allows_disabled_cache() -> None:
 # ======================================================================
 # squeeze_update — eviction mechanics (reuses H2O scorer)
 # ======================================================================
+
 
 def test_bootstrap_single_token():
     st = init_squeeze_state(n_sink=2, budget=8, head_dim=32)
@@ -264,6 +269,7 @@ def test_get_kv_placeholder_before_update():
 
 def test_determinism():
     """Identical inputs → identical retained state."""
+
     def run():
         st = init_squeeze_state(n_sink=3, budget=9, head_dim=16)
         for step in range(25):

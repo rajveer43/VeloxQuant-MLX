@@ -32,6 +32,7 @@ Usage
 
 Prints tables and saves a JSON summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -58,13 +59,13 @@ from veloxquant_mlx.quantizers.nsnquant import (
 )
 
 # ── sweep configuration ──────────────────────────────────────────────────────
-SEQ_LENS      = [256, 512]
-BIAS_STRENGTH = [4.0, 1.0, 0.0]   # channel-mean magnitude; 0.0 = already centered
-BITS          = [2, 1]
-N_HEADS       = 4
-HEAD_DIM      = 128
-RESIDUAL_LEN  = 64
-SEED          = 1234
+SEQ_LENS = [256, 512]
+BIAS_STRENGTH = [4.0, 1.0, 0.0]  # channel-mean magnitude; 0.0 = already centered
+BITS = [2, 1]
+N_HEADS = 4
+HEAD_DIM = 128
+RESIDUAL_LEN = 64
+SEED = 1234
 
 
 def _synthetic_kv(S: int, bias: float, seed: int):
@@ -76,7 +77,7 @@ def _synthetic_kv(S: int, bias: float, seed: int):
     def one(tag: int) -> mx.array:
         b = (rng.standard_normal((1, 1, 1, HEAD_DIM)) * bias).astype(np.float32)
         base = rng.standard_normal((1, N_HEADS, S, HEAD_DIM)).astype(np.float32)
-        base[..., : HEAD_DIM // 32] *= 15.0                     # outlier channels
+        base[..., : HEAD_DIM // 32] *= 15.0  # outlier channels
         tok = np.exp(rng.standard_normal((1, N_HEADS, S, 1)) * 0.8).astype(np.float32)
         return mx.array((base * tok + b).astype(np.float16))
 
@@ -98,8 +99,11 @@ def _mse(a: mx.array, b: mx.array) -> float:
 def _run_nsn_cache(k: mx.array, v: mx.array, bits: int):
     """Full NSNQuantKVCache path: reconstruction + honest byte accounting."""
     cfg = KVCacheConfig(
-        method="nsnquant", head_dim=HEAD_DIM, nsn_bits=bits,
-        nsn_residual_length=RESIDUAL_LEN, nsn_seed=SEED,
+        method="nsnquant",
+        head_dim=HEAD_DIM,
+        nsn_bits=bits,
+        nsn_residual_length=RESIDUAL_LEN,
+        nsn_seed=SEED,
     )
     cache = KVCacheFactory.create(cfg)
     t0 = time.perf_counter()
@@ -124,7 +128,9 @@ def _run_no_nsn_ablation(x: mx.array, bits: int) -> mx.array:
 def _run_kivi(k: mx.array, v: mx.array):
     """KIVI 2-bit baseline at a matched residual window."""
     cfg = KVCacheConfig(
-        method="kivi", head_dim=HEAD_DIM, bit_width_inlier=2,
+        method="kivi",
+        head_dim=HEAD_DIM,
+        bit_width_inlier=2,
         residual_length=RESIDUAL_LEN,
     )
     cache = KVCacheFactory.create(cfg)
@@ -153,36 +159,40 @@ def _run_once(S: int, bias: float, bits: int, seed: int) -> dict:
     # Bytes/token breakdown for the quantized region (keys, per head).
     n_sub = HEAD_DIM // 8
     payload_per_tok = n_sub * (2 if bits == 2 else 1)
-    meta_per_tok = 2 * 2 + (2 * HEAD_DIM) / RESIDUAL_LEN   # s1+s2 fp16, o amortized
+    meta_per_tok = 2 * 2 + (2 * HEAD_DIM) / RESIDUAL_LEN  # s1+s2 fp16, o amortized
     fp16_per_tok = HEAD_DIM * 2
 
     return {
-        "seq_len":            S,
-        "bias_strength":      bias,
-        "nsn_bits":           bits,
-        "cosine_with_nsn":    round(cos_nsn, 5),
-        "cosine_no_nsn":      round(cos_no_nsn, 5),
-        "cosine_kivi_2bit":   round(cos_kivi, 5),
-        "mse_with_nsn":       round(mse_nsn, 5),
-        "mse_no_nsn":         round(mse_no_nsn, 5),
-        "payload_bytes_per_token":  payload_per_tok,
+        "seq_len": S,
+        "bias_strength": bias,
+        "nsn_bits": bits,
+        "cosine_with_nsn": round(cos_nsn, 5),
+        "cosine_no_nsn": round(cos_no_nsn, 5),
+        "cosine_kivi_2bit": round(cos_kivi, 5),
+        "mse_with_nsn": round(mse_nsn, 5),
+        "mse_no_nsn": round(mse_no_nsn, 5),
+        "payload_bytes_per_token": payload_per_tok,
         "metadata_bytes_per_token": round(meta_per_tok, 2),
-        "fp16_bytes_per_token":     fp16_per_tok,
-        "effective_bits_per_elem":  round(cache.assigned_avg_bits, 3),
-        "compressed_key_bytes":     cache.compressed_key_bytes,
-        "residual_fp16_bytes":      cache.residual_fp16_bytes,
-        "latency_ms":               round(latency_ms, 2),
+        "fp16_bytes_per_token": fp16_per_tok,
+        "effective_bits_per_elem": round(cache.assigned_avg_bits, 3),
+        "compressed_key_bytes": cache.compressed_key_bytes,
+        "residual_fp16_bytes": cache.residual_fp16_bytes,
+        "latency_ms": round(latency_ms, 2),
     }
 
 
 def main() -> None:
     print("NSNQuant-adapted calibration-free universal-codebook VQ — offline synthetic benchmark")
-    print(f"  n_heads={N_HEADS}  head_dim={HEAD_DIM}  residual/chunk={RESIDUAL_LEN}  codebook=256x8")
+    print(
+        f"  n_heads={N_HEADS}  head_dim={HEAD_DIM}  residual/chunk={RESIDUAL_LEN}  codebook=256x8"
+    )
     print("  (cosine_with_nsn > cosine_no_nsn means the NSN step itself is earning its keep;")
     print("   honest expectation: the gap should shrink toward zero at bias_strength=0.0)")
     print()
-    header = (f"{'seq':>5}  {'bias':>5}  {'bits':>4}  {'cos_nsn':>8}  {'cos_no':>8}  "
-              f"{'cos_kivi2':>9}  {'eff_bits':>8}  {'ms':>7}")
+    header = (
+        f"{'seq':>5}  {'bias':>5}  {'bits':>4}  {'cos_nsn':>8}  {'cos_no':>8}  "
+        f"{'cos_kivi2':>9}  {'eff_bits':>8}  {'ms':>7}"
+    )
     print(header)
     print("-" * len(header))
 
@@ -202,7 +212,9 @@ def main() -> None:
     print(f"\nResults saved to {out_path}")
 
     for bits in BITS:
-        strong = [r for r in results if r["bias_strength"] == max(BIAS_STRENGTH) and r["nsn_bits"] == bits]
+        strong = [
+            r for r in results if r["bias_strength"] == max(BIAS_STRENGTH) and r["nsn_bits"] == bits
+        ]
         none_ = [r for r in results if r["bias_strength"] == 0.0 and r["nsn_bits"] == bits]
         d_strong = np.mean([r["cosine_with_nsn"] - r["cosine_no_nsn"] for r in strong])
         d_none = np.mean([r["cosine_with_nsn"] - r["cosine_no_nsn"] for r in none_])

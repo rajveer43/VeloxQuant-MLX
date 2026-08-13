@@ -1,4 +1,5 @@
 """Tests for TurboQuantMSE: MSE bound verification."""
+
 from __future__ import annotations
 
 import math

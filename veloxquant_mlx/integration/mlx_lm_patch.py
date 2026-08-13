@@ -14,14 +14,15 @@ Usage::
     from mlx_lm import generate
     response = generate(model, tokenizer, prompt="...", max_tokens=200)
 """
+
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any
 
 from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig
 
 
-def patch_model_kv_cache(model: Any, config: KVCacheConfig) -> List[Any]:
+def patch_model_kv_cache(model: Any, config: KVCacheConfig) -> list[Any]:
     """Wire a quantized KV cache into an mlx-lm model's generation path.
 
     ``mlx_lm.generate()`` builds its prompt cache via
@@ -35,14 +36,27 @@ def patch_model_kv_cache(model: Any, config: KVCacheConfig) -> List[Any]:
     ``KVCacheBuilder.for_model()`` (which already handles VLM wrappers,
     MoE-gate fallback layers, per-layer bit-width lists, and cross-layer
     methods like XQuant/MiniCache/PyramidKV) and overrides
-    ``model.make_cache`` so every subsequent call returns it.
+    ``model.make_cache`` so every call builds a *fresh* cache list —
+    matching :func:`veloxquant_mlx.integration.mlx_vlm_patch.patch_vlm_kv_cache`.
+    A prior version closed over a single cache list built once at patch
+    time, so a second ``generate()`` call on the same patched model would
+    reuse the first call's leftover KV state instead of starting clean.
 
     Args:
         model: A loaded mlx_lm model instance.
         config: KVCacheConfig describing the quantization scheme.
 
     Returns:
-        The list of KVCache instances now wired into ``model.make_cache``.
+        The first freshly built cache list (also validates the config
+        eagerly). Subsequent ``generate()`` calls receive their own fresh
+        lists via the installed ``make_cache`` hook.
+
+    Raises:
+        QuantizerConfigError: If ``config.method`` is a standalone method
+            (does not implement the mlx_lm KVCache serving contract — see
+            ``veloxquant_mlx.cache.base.STANDALONE_METHODS``). Raised
+            immediately by the underlying ``KVCacheBuilder.for_model()``
+            call, before ``model.make_cache`` is touched.
 
     Example::
 
@@ -53,7 +67,14 @@ def patch_model_kv_cache(model: Any, config: KVCacheConfig) -> List[Any]:
         )
         patch_model_kv_cache(model, config)
     """
-    caches = KVCacheBuilder.for_model(model, config)
-    model.make_cache = lambda *_a, **_k: caches
-    print(f"[veloxquant_mlx] Wired {len(caches)} layer cache(s) with {config.method!r}.")
+
+    def _make_cache(*_args: Any, **_kwargs: Any) -> list[Any]:
+        return KVCacheBuilder.for_model(model, config)
+
+    caches = _make_cache()
+    model.make_cache = _make_cache
+    print(
+        f"[veloxquant_mlx] Wired {len(caches)} layer cache(s) with "
+        f"{config.method!r} (fresh per call)."
+    )
     return caches

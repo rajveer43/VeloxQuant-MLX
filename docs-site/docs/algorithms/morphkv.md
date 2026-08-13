@@ -72,9 +72,9 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="morphkv",
     head_dim=128,
-    morphkv_budget=512,   # max tokens kept (incl. sinks)
-    morphkv_n_sink=4,     # leading positions never evicted
-    morphkv_window=8,     # trailing recent-attention window; 1 = latest-token (TOVA)
+    morphkv_budget=512,  # max tokens kept (incl. sinks)
+    morphkv_n_sink=4,  # leading positions never evicted
+    morphkv_window=8,  # trailing recent-attention window; 1 = latest-token (TOVA)
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

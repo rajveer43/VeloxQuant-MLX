@@ -27,6 +27,7 @@ group per generation (at prefill).
 Single-threaded by construction (mlx generate is sequential), so a plain
 dict-of-pending-publishes needs no locking.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -45,7 +46,7 @@ class _PendingGroup:
     def __init__(self, token_start: int, n_tokens: int):
         self.token_start = token_start
         self.n_tokens = n_tokens
-        self.member_keys: dict[int, mx.array] = {}   # member_idx -> [S, D]
+        self.member_keys: dict[int, mx.array] = {}  # member_idx -> [S, D]
         self.basis: Optional[tuple[mx.array, mx.array, mx.array]] = None
 
 

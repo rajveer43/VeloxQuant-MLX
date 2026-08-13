@@ -76,6 +76,7 @@ cam_get_kv            — extract current (keys, values) arrays
 cam_fp16_bytes        — bytes stored in current state
 full_cam_fp16_bytes   — hypothetical cost without eviction
 """
+
 from __future__ import annotations
 
 import math
@@ -110,9 +111,9 @@ def most_similar_survivor(
     n = int(keys.shape[0])
     k = keys.astype(mx.float32)
     e = evicted_key.astype(mx.float32)
-    e_norm = e / (mx.sqrt(mx.sum(e * e)) + 1e-8)                 # [D]
-    row_norms = mx.sqrt(mx.sum(k * k, axis=-1)) + 1e-8           # [n]
-    cos = (k @ e_norm) / row_norms                              # [n]
+    e_norm = e / (mx.sqrt(mx.sum(e * e)) + 1e-8)  # [D]
+    row_norms = mx.sqrt(mx.sum(k * k, axis=-1)) + 1e-8  # [n]
+    cos = (k @ e_norm) / row_norms  # [n]
 
     # Mask out sinks and the evicted slot with -inf so argmax skips them.
     neg_inf = mx.full((n,), float("-inf"), dtype=mx.float32)
@@ -167,7 +168,7 @@ def merge_pair(
     else:  # sim_weighted
         denom = (mx.sqrt(mx.sum(ks * ks)) * mx.sqrt(mx.sum(ke * ke))) + 1e-8
         cos = float((mx.sum(ks * ke) / denom).item())
-        w = min(max(cos, 0.0), 1.0)   # clip negatives → 0 (no anti-merge)
+        w = min(max(cos, 0.0), 1.0)  # clip negatives → 0 (no anti-merge)
 
     v_new = ((1.0 - w) * vs + w * ve).astype(mx.float16)
     if merge_keys:
@@ -238,8 +239,13 @@ def init_cam_state(
             "merged away once the cache fills"
         )
     return CaMState(
-        keys=None, values=None, scores=None, n_sink=n_sink, budget=budget,
-        merge_mode=merge_mode, merge_keys=bool(merge_keys),
+        keys=None,
+        values=None,
+        scores=None,
+        n_sink=n_sink,
+        budget=budget,
+        merge_mode=merge_mode,
+        merge_keys=bool(merge_keys),
     )
 
 
@@ -254,13 +260,13 @@ def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
         [n] softmax weights summing to ~1.
     """
     scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
-    logits = (keys @ query_proxy) * scale   # [n]
+    logits = (keys @ query_proxy) * scale  # [n]
     return mx.softmax(logits, axis=-1)
 
 
 def cam_update(
     state: CaMState,
-    new_keys: mx.array,    # [S, D] fp16
+    new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
 ) -> CaMState:
     """Absorb S new tokens, merging the lowest-score token into a survivor if over budget.
@@ -287,7 +293,7 @@ def cam_update(
     S = new_keys.shape[0]
 
     for i in range(S):
-        k_i = new_keys[i]    # [D]
+        k_i = new_keys[i]  # [D]
         v_i = new_values[i]  # [D]
 
         if state.keys is None:
@@ -305,10 +311,10 @@ def cam_update(
 
         # --- score update (identical to H2O) -------------------------------
         attn = _attention_scores(k_i.astype(mx.float32), state.keys.astype(mx.float32))
-        updated_scores = state.scores + attn   # [n_kept]
+        updated_scores = state.scores + attn  # [n_kept]
 
         # --- append new token (score = 0) ----------------------------------
-        keys_cat   = mx.concatenate([state.keys,   k_i[None].astype(mx.float16)], axis=0)
+        keys_cat = mx.concatenate([state.keys, k_i[None].astype(mx.float16)], axis=0)
         values_cat = mx.concatenate([state.values, v_i[None].astype(mx.float16)], axis=0)
         scores_cat = mx.concatenate([updated_scores, mx.zeros((1,), dtype=mx.float32)], axis=0)
 
@@ -326,32 +332,33 @@ def cam_update(
 
             # Merge the loser into its most-similar survivor (unless drop mode).
             if state.merge_mode != "drop":
-                tgt = most_similar_survivor(
-                    keys_cat[evict_idx], keys_cat, evict_idx, n_sink_eff
-                )
+                tgt = most_similar_survivor(keys_cat[evict_idx], keys_cat, evict_idx, n_sink_eff)
                 if tgt >= 0:
                     k_new, v_new = merge_pair(
-                        keys_cat[tgt], values_cat[tgt],
-                        keys_cat[evict_idx], values_cat[evict_idx],
-                        state.merge_mode, state.merge_keys,
+                        keys_cat[tgt],
+                        values_cat[tgt],
+                        keys_cat[evict_idx],
+                        values_cat[evict_idx],
+                        state.merge_mode,
+                        state.merge_keys,
                     )
                     # Write the merged rows back into the survivor slot.
                     keys_cat = mx.concatenate(
-                        [keys_cat[:tgt], k_new[None], keys_cat[tgt + 1:]], axis=0
+                        [keys_cat[:tgt], k_new[None], keys_cat[tgt + 1 :]], axis=0
                     )
                     values_cat = mx.concatenate(
-                        [values_cat[:tgt], v_new[None], values_cat[tgt + 1:]], axis=0
+                        [values_cat[:tgt], v_new[None], values_cat[tgt + 1 :]], axis=0
                     )
                     # Survivor inherits the loser's mass.
                     merged_score = scores_cat[tgt] + scores_cat[evict_idx]
                     scores_cat = mx.concatenate(
-                        [scores_cat[:tgt], merged_score[None], scores_cat[tgt + 1:]],
+                        [scores_cat[:tgt], merged_score[None], scores_cat[tgt + 1 :]],
                         axis=0,
                     )
 
             # Remove the loser's slot.
             keep_indices = [j for j in range(n_total) if j != evict_idx]
-            keys_cat   = keys_cat[keep_indices]
+            keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
             scores_cat = scores_cat[keep_indices]
 
@@ -384,12 +391,12 @@ def cam_fp16_bytes(state: CaMState) -> int:
     if state.keys is None:
         return 0
     n, D = state.keys.shape
-    return n * D * 2 * 2   # K + V, 2 bytes each
+    return n * D * 2 * 2  # K + V, 2 bytes each
 
 
 def full_cam_fp16_bytes(tokens_seen: int, head_dim: int) -> int:
     """Hypothetical fp16 K + V bytes if all ``tokens_seen`` were stored."""
-    return tokens_seen * head_dim * 2 * 2   # K + V, 2 bytes each
+    return tokens_seen * head_dim * 2 * 2  # K + V, 2 bytes each
 
 
 __all__ = [

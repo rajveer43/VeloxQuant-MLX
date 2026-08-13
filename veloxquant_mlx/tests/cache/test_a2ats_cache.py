@@ -7,6 +7,7 @@ with distance-gated windowed RoPE. Values follow a plain nearest-centroid VQ
 path (no RoPE, no retrieval-set preference). All data is synthetic — no model
 loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -41,6 +42,7 @@ def _rand_kv(B=1, H=2, S=10, D=32, seed=0):
 # session's own lesson: 5 sibling methods shipped without this exact check.
 # ---------------------------------------------------------------------------
 
+
 def test_beta_above_one_rejected() -> None:
     with pytest.raises(ValueError, match="a2ats_beta"):
         _make(a2ats_beta=1.5)
@@ -74,6 +76,7 @@ def test_head_dim_not_divisible_by_sub_dim_rejected() -> None:
 # ---------------------------------------------------------------------------
 # Factory dispatch + shape
 # ---------------------------------------------------------------------------
+
 
 def test_factory_dispatch() -> None:
     c = _make()
@@ -111,6 +114,7 @@ def test_no_nan_in_output() -> None:
 # use_query_aware toggle
 # ---------------------------------------------------------------------------
 
+
 def test_query_aware_off_runs_without_crash() -> None:
     c = _make(a2ats_use_query_aware=False)
     k, v = _rand_kv(S=10, seed=4)
@@ -132,6 +136,7 @@ def test_query_aware_on_tracks_retrieved_tokens() -> None:
 # error than far tokens would under an equivalent all-approximate baseline
 # ---------------------------------------------------------------------------
 
+
 def test_large_window_reduces_to_always_exact_no_crash() -> None:
     c = _make(a2ats_window=10_000)
     k, v = _rand_kv(S=10, seed=6)
@@ -151,6 +156,7 @@ def test_zero_window_no_crash() -> None:
 # ---------------------------------------------------------------------------
 # Byte accounting
 # ---------------------------------------------------------------------------
+
 
 def test_compression_ratio_greater_than_one() -> None:
     c = _make()
@@ -175,7 +181,7 @@ def test_assigned_avg_bits_matches_formula() -> None:
 
 def test_codebook_bytes_static() -> None:
     c = _make(a2ats_codebook_bits=6, a2ats_sub_dim=8)
-    assert c.codebook_bytes == (2 ** 6) * 8 * 2
+    assert c.codebook_bytes == (2**6) * 8 * 2
 
 
 def test_compression_ratio_before_any_update_is_one() -> None:
@@ -186,6 +192,7 @@ def test_compression_ratio_before_any_update_is_one() -> None:
 # ---------------------------------------------------------------------------
 # for_model construction
 # ---------------------------------------------------------------------------
+
 
 def test_build_via_for_model_propagates_config() -> None:
     class _Attn:
@@ -198,8 +205,11 @@ def test_build_via_for_model_propagates_config() -> None:
         layers = [_Layer(), _Layer(), _Layer()]
 
     cfg = KVCacheConfig(
-        method="a2ats", head_dim=32,
-        a2ats_window=64, a2ats_beta=0.7, a2ats_retrieval_fraction=0.35,
+        method="a2ats",
+        head_dim=32,
+        a2ats_window=64,
+        a2ats_beta=0.7,
+        a2ats_retrieval_fraction=0.35,
     )
     caches = KVCacheBuilder.for_model(_Model(), cfg)
     assert all(isinstance(c, A2ATSKVCache) for c in caches)
@@ -211,6 +221,7 @@ def test_build_via_for_model_propagates_config() -> None:
 # ---------------------------------------------------------------------------
 # Determinism
 # ---------------------------------------------------------------------------
+
 
 def test_determinism() -> None:
     k, v = _rand_kv(S=15, seed=10)
@@ -242,20 +253,22 @@ def test_determinism_across_prefill_and_decode() -> None:
 # Calibrated vs. random-init codebook
 # ---------------------------------------------------------------------------
 
+
 def test_explicit_codebook_used_when_provided() -> None:
-    codebook = mx.zeros((2 ** 6, 8), dtype=mx.float32)
+    codebook = mx.zeros((2**6, 8), dtype=mx.float32)
     c = _make(a2ats_codebook=codebook)
     assert np.allclose(np.array(c._codebook), np.array(codebook))
 
 
 def test_random_init_codebook_when_absent() -> None:
     c = _make()
-    assert c._codebook.shape == (2 ** 6, 8)
+    assert c._codebook.shape == (2**6, 8)
 
 
 # ---------------------------------------------------------------------------
 # Empty / degenerate sequence
 # ---------------------------------------------------------------------------
+
 
 def test_single_token_prefill() -> None:
     c = _make()
@@ -274,6 +287,7 @@ def test_single_token_prefill() -> None:
 # the parent KVCache concatenates whatever it is handed and never revisits it,
 # so writing rotated keys froze each token's class at write time.
 # ---------------------------------------------------------------------------
+
 
 def test_token_rotation_updates_as_decode_position_advances() -> None:
     """A token classified "near" at prefill must lose its exact rotation once
@@ -332,14 +346,15 @@ def test_cache_length_grows_across_prefill_and_decode() -> None:
 # H-weighted assignment wiring (:issue:`29`, finding 4)
 # ---------------------------------------------------------------------------
 
+
 def test_query_h_enables_paper_assignment_path() -> None:
     """Supplying a calibrated ``a2ats_query_h`` switches the retrieval set to
     the paper's Eq. (14) objective instead of the cosine-blend substitute."""
     from veloxquant_mlx.quantizers.a2ats import a2ats_query_second_moment
 
-    h = a2ats_query_second_moment(mx.array(
-        np.random.default_rng(0).standard_normal((40, 8)).astype(np.float32)
-    ))
+    h = a2ats_query_second_moment(
+        mx.array(np.random.default_rng(0).standard_normal((40, 8)).astype(np.float32))
+    )
     cache = _make(a2ats_query_h=h)
     assert cache._cholesky_factor is not None
     k, v = _rand_kv(B=1, H=2, S=8, seed=8)

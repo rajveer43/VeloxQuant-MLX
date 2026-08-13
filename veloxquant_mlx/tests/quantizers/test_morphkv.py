@@ -7,6 +7,7 @@ topic-shift mechanism (recent-window correlation retains the region the recent
 context attends to, at a higher rate than a cumulative H2O-style baseline), with
 a null "stable" control where it shows no advantage.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -151,6 +152,7 @@ def test_run_is_reproducible():
             k, v = _rand_kv(1, 16, seed=i)
             st = morphkv_update(st, k, v)
         return morphkv_get_kv(st)[0]
+
     assert bool(mx.all(run() == run()).item())
 
 
@@ -166,7 +168,7 @@ def test_window_one_matches_tova():
 
     m = init_morphkv_state(n_sink=4, budget=12, head_dim=16, window=1)
     t = init_tova_state(n_sink=4, budget=12, head_dim=16)
-    for (k, v) in ks:
+    for k, v in ks:
         m = morphkv_update(m, k, v)
         t = tova_update(t, k, v)
 
@@ -184,7 +186,7 @@ def test_larger_window_can_differ_from_window_one():
 
     def run(window):
         st = init_morphkv_state(n_sink=2, budget=12, head_dim=16, window=window)
-        for (k, v) in ks:
+        for k, v in ks:
             st = morphkv_update(st, k, v)
         return morphkv_get_kv(st)[0]
 
@@ -210,8 +212,10 @@ def test_topic_shift_retains_recent_relevant():
     seeds — a statistical claim, not a per-seed guarantee.
     """
     D = 16
-    axis_a = np.zeros(D, dtype=np.float16); axis_a[0] = 3.0
-    axis_b = np.zeros(D, dtype=np.float16); axis_b[1] = 3.0
+    axis_a = np.zeros(D, dtype=np.float16)
+    axis_a[0] = 3.0
+    axis_b = np.zeros(D, dtype=np.float16)
+    axis_b[1] = 3.0
 
     def build_stream(seed):
         r = np.random.default_rng(seed)
@@ -246,7 +250,7 @@ def test_topic_shift_retains_recent_relevant():
                 st = h2o_update(st, k, k)
             K, _ = h2o_get_kv(st)
         # fraction of kept rows strongly aligned with axis B
-        proj_b = (K.astype(mx.float32) @ mx.array(axis_b.astype(np.float32)))
+        proj_b = K.astype(mx.float32) @ mx.array(axis_b.astype(np.float32))
         return int((proj_b > 6.0).sum().item())
 
     seeds = range(30)
@@ -262,12 +266,15 @@ def test_stable_control_no_advantage_required():
     is regime-dependent and not overclaimed on stable geometry.
     """
     D = 16
-    axis = np.zeros(D, dtype=np.float16); axis[0] = 3.0
+    axis = np.zeros(D, dtype=np.float16)
+    axis[0] = 3.0
 
     def run(method, seed):
         r = np.random.default_rng(seed)
-        stream = [mx.array((axis + r.standard_normal(D).astype(np.float16) * 0.2)[None])
-                  for _ in range(30)]
+        stream = [
+            mx.array((axis + r.standard_normal(D).astype(np.float16) * 0.2)[None])
+            for _ in range(30)
+        ]
         if method == "morphkv":
             st = init_morphkv_state(n_sink=1, budget=10, head_dim=D, window=4)
             for k in stream:

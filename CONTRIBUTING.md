@@ -77,6 +77,24 @@ pip install -e ".[dev]"
 Fork first if you do not have write access, then add
 `upstream` pointing at `rajveer43/VeloxQuant-MLX`.
 
+## Code style (pre-commit)
+
+Python code is formatted and linted with [Ruff](https://docs.astral.sh/ruff/)
+(config in `pyproject.toml`). Install the git hook once after setting up your
+virtualenv:
+
+```bash
+pre-commit install
+```
+
+This runs `ruff format` and `ruff check --fix` on staged files before every
+commit. To run it manually against the whole repo (e.g. before opening a
+PR):
+
+```bash
+pre-commit run --all-files
+```
+
 ## Running the tests
 
 ```bash
@@ -90,8 +108,13 @@ against the pure-MLX path). Seed all randomness: determinism is treated as a
 correctness requirement.
 
 End-to-end `mlx_lm` generation benches require Apple Silicon and are run
-locally. CI may run unit tests that do not need Metal; see
-`docs/CI_AND_TESTING.md` once present.
+locally.
+
+The repo has two, deliberately separate test directories —
+`veloxquant_mlx/tests/` (MLX-dependent, requires Apple Silicon) and
+`tests/non_metal/` (pure Python, MLX-free, runs on plain Linux CI). See
+[`docs/CI_AND_TESTING.md`](docs/CI_AND_TESTING.md#two-test-directories-and-why)
+for why the split exists and which one a new test belongs in.
 
 ## Submitting changes
 

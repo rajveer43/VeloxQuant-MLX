@@ -32,6 +32,7 @@ bytes fp16 (channel mean o) amortized per chunk. All three metadata terms are
 counted in ``compressed_*_bytes`` — not waved away (the paper 4-bit
 double-quantizes them; we do not).
 """
+
 from __future__ import annotations
 
 import math
@@ -80,9 +81,7 @@ class NSNQuantKVCache(_MLXKVCache):
 
         # Fail at build time, not on the first update (clear messages).
         if self._bits not in (1, 2):
-            raise ValueError(
-                f"NSNQuantKVCache: nsn_bits must be 1 or 2, got {self._bits}"
-            )
+            raise ValueError(f"NSNQuantKVCache: nsn_bits must be 1 or 2, got {self._bits}")
         if self._D % self._sub_d != 0:
             raise ValueError(
                 f"NSNQuantKVCache: head_dim {self._D} must be divisible by "
@@ -147,8 +146,7 @@ class NSNQuantKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         if self.offset + S > self._max_ctx:
             raise ValueError(
-                f"NSNQuantKVCache: context {self.offset + S} exceeds "
-                f"nsn_max_ctx={self._max_ctx}"
+                f"NSNQuantKVCache: context {self.offset + S} exceeds nsn_max_ctx={self._max_ctx}"
             )
         self._B, self._H = B, H
 

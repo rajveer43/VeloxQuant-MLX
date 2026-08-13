@@ -33,6 +33,7 @@ flakiness seen in VQ-based methods.
 Public API:
   KIVIQuantizer — encode / decode / estimate_inner_product
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -83,13 +84,9 @@ class KIVIQuantizer(Quantizer):
         **kwargs: Any,
     ) -> None:
         if b < 1 or b > 8:
-            raise QuantizerConfigError(
-                f"KIVIQuantizer: b={b} must be in [1, 8] (uint8 codes)."
-            )
+            raise QuantizerConfigError(f"KIVIQuantizer: b={b} must be in [1, 8] (uint8 codes).")
         if group_size < 1:
-            raise QuantizerConfigError(
-                f"KIVIQuantizer: group_size={group_size} must be >= 1."
-            )
+            raise QuantizerConfigError(f"KIVIQuantizer: group_size={group_size} must be >= 1.")
         if axis not in ("channel", "token"):
             raise QuantizerConfigError(
                 f"KIVIQuantizer: axis={axis!r} must be 'channel' or 'token'."
@@ -119,14 +116,14 @@ class KIVIQuantizer(Quantizer):
             # Repeat the last row to fill the ragged final group.  This only
             # affects the padded rows, which are discarded on decode.
             x = mx.concatenate([x, mx.broadcast_to(x[-1:], (pad, d))], axis=0)
-        xg = x.reshape(n_groups, gs, d)            # [G, gs, d]
-        gmin = mx.min(xg, axis=1, keepdims=True)   # [G, 1, d]
+        xg = x.reshape(n_groups, gs, d)  # [G, gs, d]
+        gmin = mx.min(xg, axis=1, keepdims=True)  # [G, 1, d]
         gmax = mx.max(xg, axis=1, keepdims=True)
         scale = (gmax - gmin) / self._levels
-        scale = mx.maximum(scale, self._eps)       # avoid /0 on constant groups
+        scale = mx.maximum(scale, self._eps)  # avoid /0 on constant groups
         codes = mx.round((xg - gmin) / scale)
         codes = mx.clip(codes, 0, self._levels).astype(mx.uint8)
-        codes = codes.reshape(n_groups * gs, d)[:n]      # drop padding
+        codes = codes.reshape(n_groups * gs, d)[:n]  # drop padding
         scale = scale.reshape(n_groups, d)
         zero = gmin.reshape(n_groups, d)
         return codes, scale.astype(mx.float32), zero.astype(mx.float32)
@@ -140,9 +137,7 @@ class KIVIQuantizer(Quantizer):
         pad = n_groups * gs - n
         c = codes
         if pad:
-            c = mx.concatenate(
-                [codes, mx.broadcast_to(codes[-1:], (pad, d))], axis=0
-            )
+            c = mx.concatenate([codes, mx.broadcast_to(codes[-1:], (pad, d))], axis=0)
         cg = c.reshape(n_groups, gs, d).astype(mx.float32)
         recon = cg * scale[:, None, :] + zero[:, None, :]
         return recon.reshape(n_groups * gs, d)[:n]
@@ -161,24 +156,20 @@ class KIVIQuantizer(Quantizer):
             x = mx.array(x)
         n, d = x.shape
         if d != self._d:
-            raise QuantizerConfigError(
-                f"KIVIQuantizer.encode: expected dim {self._d}, got {d}."
-            )
+            raise QuantizerConfigError(f"KIVIQuantizer.encode: expected dim {self._d}, got {d}.")
         if self._axis == "channel":
             codes, scale, zero = self._quantize_groups(x.astype(mx.float32))
         else:  # token: quantize along channel axis → operate on x.T
-            codes_t, scale_t, zero_t = self._quantize_groups(
-                x.astype(mx.float32).T
-            )
+            codes_t, scale_t, zero_t = self._quantize_groups(x.astype(mx.float32).T)
             codes = codes_t.T
-            scale = scale_t.T   # [d_groups, n] → [n, d_groups]
+            scale = scale_t.T  # [d_groups, n] → [n, d_groups]
             zero = zero_t.T
         ev = EncodedVector(
             quantizer_type="kivi",
             batch_size=n,
             dim=d,
             indices=codes,
-            norm=scale,          # repurposed: per-group scale
+            norm=scale,  # repurposed: per-group scale
             residual_norm=zero,  # repurposed: per-group zero-point
         )
         return ev
@@ -192,9 +183,7 @@ class KIVIQuantizer(Quantizer):
         if self._axis == "channel":
             recon = self._dequantize_groups(codes, scale, zero, n)
         else:
-            recon_t = self._dequantize_groups(
-                codes.T, scale.T, zero.T, ev.dim
-            )
+            recon_t = self._dequantize_groups(codes.T, scale.T, zero.T, ev.dim)
             recon = recon_t.T
         return recon.astype(mx.float16)
 

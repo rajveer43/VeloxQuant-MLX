@@ -1,0 +1,26 @@
+name: lint
+
+# Checks formatting only, matching the current repo-wide baseline
+# (ruff format). Full `ruff check` lint is enforced by the local
+# pre-commit hook (.pre-commit-config.yaml) but not yet in CI: ~200
+# pre-existing lint violations remain from before this workflow was
+# added (see #40) and need a dedicated cleanup PR first. Once that
+# lands, this job should switch to `pre-commit run --all-files` so CI
+# and the local hook enforce the same thing.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  ruff-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check formatting with ruff
+        run: pipx run ruff format --check .

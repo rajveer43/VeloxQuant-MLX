@@ -1,4 +1,5 @@
 """Tests for handler chain assembly and QuantizationContext flow."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -7,6 +8,7 @@ import pytest
 
 def _make_codebook(b: int = 2, d: int = 64):
     from veloxquant_mlx.codebooks.base import CodebookFactory
+
     return CodebookFactory.create("gaussian", b=b, d=d)
 
 
@@ -14,6 +16,7 @@ def _make_rotation(d: int = 64):
     import mlx.core as mx
     from veloxquant_mlx.math.rotation import make_rotation_matrix
     from veloxquant_mlx.preconditioners.rotation import RotationPreconditioner
+
     Pi = mx.array(make_rotation_matrix(d, seed=0).astype(np.float16))
     return RotationPreconditioner(Pi)
 
@@ -31,7 +34,7 @@ def test_normalization_handler_encode() -> None:
     assert ctx.norm is not None
     np.testing.assert_allclose(float(ctx.norm[0]), 5.0, atol=0.1)
     # Normalised vector should have unit norm
-    norm_after = float(mx.sqrt(mx.sum(ctx.x_current ** 2)).item())
+    norm_after = float(mx.sqrt(mx.sum(ctx.x_current**2)).item())
     np.testing.assert_allclose(norm_after, 1.0, atol=0.05)
 
 
@@ -102,8 +105,7 @@ def test_bit_packing_handler_roundtrip() -> None:
     d, b = 64, 2
     indices = mx.array(np.random.randint(0, 4, (2, d), dtype=np.uint8))
     ctx = QuantizationContext(
-        x_original=mx.zeros((2, d)), mode="encode",
-        x_current=mx.zeros((2, d)), indices=indices
+        x_original=mx.zeros((2, d)), mode="encode", x_current=mx.zeros((2, d)), indices=indices
     )
     handler = BitPackingHandler(b=b, d=d)
     ctx = handler.handle(ctx)
@@ -112,8 +114,10 @@ def test_bit_packing_handler_roundtrip() -> None:
     # Decode
     ctx.mode = "decode"
     ctx2 = QuantizationContext(
-        x_original=mx.zeros((2, d)), mode="decode",
-        x_current=mx.zeros((2, d)), packed_bits=ctx.packed_bits
+        x_original=mx.zeros((2, d)),
+        mode="decode",
+        x_current=mx.zeros((2, d)),
+        packed_bits=ctx.packed_bits,
     )
     ctx2 = handler.handle(ctx2)
     np.testing.assert_array_equal(np.array(indices), np.array(ctx2.indices))

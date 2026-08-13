@@ -17,6 +17,7 @@ def _make_U(d: int = D, seed: int = SEED) -> np.ndarray:
 
 def _random_vectors(n: int = N, d: int = D, seed: int = 0) -> "mx.array":
     import mlx.core as mx
+
     rng = np.random.default_rng(seed)
     x = rng.standard_normal((n, d)).astype(np.float32)
     x /= np.linalg.norm(x, axis=-1, keepdims=True)
@@ -70,10 +71,12 @@ def test_cosine_similarity_with_spectral_rotation():
     ev = sq.encode(x)
     x_hat_np = np.array(sq.decode(ev), dtype=np.float32)
 
-    cos_sim = float(np.mean(
-        np.sum(x_np * x_hat_np, axis=1) /
-        (np.linalg.norm(x_np, axis=1) * np.linalg.norm(x_hat_np, axis=1) + 1e-8)
-    ))
+    cos_sim = float(
+        np.mean(
+            np.sum(x_np * x_hat_np, axis=1)
+            / (np.linalg.norm(x_np, axis=1) * np.linalg.norm(x_hat_np, axis=1) + 1e-8)
+        )
+    )
     # With correct spectral rotation on low-rank data, should reconstruct well
     assert cos_sim > 0.7, f"Cosine similarity too low: {cos_sim:.4f}"
 
@@ -98,13 +101,19 @@ def test_cosine_similarity_spectral_beats_random_on_low_rank():
         x = mx.array(x_np, dtype=mx.float16)
         ev = sq.encode(x)
         x_hat = np.array(sq.decode(ev), dtype=np.float32)
-        return float(np.mean(
-            np.sum(x_np * x_hat, axis=1) /
-            (np.linalg.norm(x_np, axis=1) * np.linalg.norm(x_hat, axis=1) + 1e-8)
-        ))
+        return float(
+            np.mean(
+                np.sum(x_np * x_hat, axis=1)
+                / (np.linalg.norm(x_np, axis=1) * np.linalg.norm(x_hat, axis=1) + 1e-8)
+            )
+        )
 
-    sq_spectral = SpectralQuantizer(d=D, b_signal=3, b_noise=3, rotation=U_pca, d_s=4, seed=SEED, apply_qjl=False)
-    sq_random = SpectralQuantizer(d=D, b_signal=3, b_noise=3, rotation=None, d_s=4, seed=SEED, apply_qjl=False)
+    sq_spectral = SpectralQuantizer(
+        d=D, b_signal=3, b_noise=3, rotation=U_pca, d_s=4, seed=SEED, apply_qjl=False
+    )
+    sq_random = SpectralQuantizer(
+        d=D, b_signal=3, b_noise=3, rotation=None, d_s=4, seed=SEED, apply_qjl=False
+    )
 
     cs_spectral = cos_sim(sq_spectral)
     cs_random = cos_sim(sq_random)
@@ -233,7 +242,10 @@ def test_calibrate_inject_improves_cosine_similarity():
     cache.calibrate(rotations[0])
 
     # Append and decode, check quality
-    test_keys = mx.array(keys_np[:10] / (np.linalg.norm(keys_np[:10], axis=1, keepdims=True) + 1e-8), dtype=mx.float16)
+    test_keys = mx.array(
+        keys_np[:10] / (np.linalg.norm(keys_np[:10], axis=1, keepdims=True) + 1e-8),
+        dtype=mx.float16,
+    )
     for i in range(10):
         cache.append_key(test_keys[i])
         cache.append_value(test_keys[i])

@@ -1,4 +1,5 @@
 """Tests for QuantizationGraph (DAG + topological sort)."""
+
 from __future__ import annotations
 
 import pytest

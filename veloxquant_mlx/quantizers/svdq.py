@@ -30,6 +30,7 @@ Adaptation notes:
   - Documented as "SVDq-adapted" — not a faithful port; numbers come from
     committed results.json, not paper claims.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -61,8 +62,8 @@ def svd_compress_keys(
           singular_values — [r] fp32, descending
     """
     x = keys.astype(mx.float32)
-    K_mean = mx.mean(x, axis=0)          # [D]
-    x_centered = x - K_mean[None, :]     # [S, D]
+    K_mean = mx.mean(x, axis=0)  # [D]
+    x_centered = x - K_mean[None, :]  # [S, D]
 
     # MLX svd returns (U, S, Vt) with Vt shape [D, D] (economy=False)
     # or [min(S,D), D] — use economy form via mx.linalg.svd
@@ -84,9 +85,9 @@ def svd_compress_keys(
                     break
     rank = min(rank, int(S_vals.shape[0]), keys.shape[-1])
 
-    V = Vt[:rank, :].T                   # [D, r]
-    s_r = S_vals[:rank]                  # [r]
-    L = x_centered @ V                   # [S, r]
+    V = Vt[:rank, :].T  # [D, r]
+    s_r = S_vals[:rank]  # [r]
+    L = x_centered @ V  # [S, r]
     return L, V, K_mean, s_r
 
 

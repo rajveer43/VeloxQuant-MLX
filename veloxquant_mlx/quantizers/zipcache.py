@@ -40,6 +40,7 @@ This module holds the pure numerics: norm computation, saliency masking,
 per-group channel quant, full compress/reconstruct, and honest byte accounting.
 The cache wrapper owns the per-layer prefill/decode state.
 """
+
 from __future__ import annotations
 
 import math
@@ -63,7 +64,11 @@ class ZipCacheState(NamedTuple):
         lo_bits:   int bit-width for non-salient tokens.
         seq_len:   int original token count (= S).
         head_dim:  int feature dimension (= D).
+        group_size: int token group size used for min/max quantization at
+            compress time; must be reused by ``zipcache_reconstruct`` for the
+            dequant grouping to match.
     """
+
     hi_codes: mx.array
     hi_scales: mx.array
     hi_zeros: mx.array
@@ -75,11 +80,13 @@ class ZipCacheState(NamedTuple):
     lo_bits: int
     seq_len: int
     head_dim: int
+    group_size: int
 
 
 # ---------------------------------------------------------------------------
 # Saliency helpers
 # ---------------------------------------------------------------------------
+
 
 def token_key_norms(keys: mx.array) -> mx.array:
     """L2 norm of each token's key vector, ``[S, D] → [S]`` fp32."""
@@ -104,8 +111,8 @@ def saliency_mask(norms: mx.array, hi_fraction: float) -> mx.array:
     if n_hi >= S:
         return mx.ones((S,), dtype=mx.bool_)
     # argsort ascending; the top n_hi by norm are at the tail
-    order = mx.argsort(norms)              # ascending
-    hi_indices = order[S - n_hi:]          # largest n_hi norms
+    order = mx.argsort(norms)  # ascending
+    hi_indices = order[S - n_hi :]  # largest n_hi norms
     mask = mx.zeros((S,), dtype=mx.float32)
     mask = mask.at[hi_indices].add(1.0)
     return mask.astype(mx.bool_)
@@ -114,6 +121,7 @@ def saliency_mask(norms: mx.array, hi_fraction: float) -> mx.array:
 # ---------------------------------------------------------------------------
 # Per-group min/max quantization (channel axis)
 # ---------------------------------------------------------------------------
+
 
 def channel_quant(
     x: mx.array,
@@ -150,12 +158,12 @@ def channel_quant(
     x32 = x.astype(mx.float32)
     if pad:
         x32 = mx.concatenate([x32, mx.broadcast_to(x32[-1:], (pad, d))], axis=0)
-    xg = x32.reshape(n_groups, gs, d)             # [G, gs, D]
-    gmin = mx.min(xg, axis=1, keepdims=True)      # [G, 1, D]
+    xg = x32.reshape(n_groups, gs, d)  # [G, gs, D]
+    gmin = mx.min(xg, axis=1, keepdims=True)  # [G, 1, D]
     gmax = mx.max(xg, axis=1, keepdims=True)
     scale = mx.maximum((gmax - gmin) / levels, eps)
     codes = mx.clip(mx.round((xg - gmin) / scale), 0, levels).astype(mx.uint8)
-    codes = codes.reshape(n_groups * gs, d)[:n]   # drop padding
+    codes = codes.reshape(n_groups * gs, d)[:n]  # drop padding
     scales = scale.reshape(n_groups, d)
     zeros = gmin.reshape(n_groups, d)
     return codes, scales.astype(mx.float32), zeros.astype(mx.float32)
@@ -186,6 +194,7 @@ def channel_dequant(
 # ---------------------------------------------------------------------------
 # Full compress / reconstruct
 # ---------------------------------------------------------------------------
+
 
 def zipcache_compress(
     x: mx.array,
@@ -228,11 +237,18 @@ def zipcache_compress(
     lo_codes, lo_scales, lo_zeros = channel_quant(x_lo, lo_bits, group_size)
 
     return ZipCacheState(
-        hi_codes=hi_codes, hi_scales=hi_scales, hi_zeros=hi_zeros,
-        lo_codes=lo_codes, lo_scales=lo_scales, lo_zeros=lo_zeros,
+        hi_codes=hi_codes,
+        hi_scales=hi_scales,
+        hi_zeros=hi_zeros,
+        lo_codes=lo_codes,
+        lo_scales=lo_scales,
+        lo_zeros=lo_zeros,
         hi_mask=mask,
-        hi_bits=hi_bits, lo_bits=lo_bits,
-        seq_len=S, head_dim=D,
+        hi_bits=hi_bits,
+        lo_bits=lo_bits,
+        seq_len=S,
+        head_dim=D,
+        group_size=group_size,
     )
 
 
@@ -244,8 +260,7 @@ def zipcache_reconstruct(state: ZipCacheState) -> mx.array:
     """
     S = state.seq_len
     D = state.head_dim
-    gs = 32  # group_size is not stored in state; use 32 (the only value used)
-    # Use scales shape to derive actual group_size used at compress time
+    gs = state.group_size
     n_hi = int(state.hi_codes.shape[0]) if state.hi_codes.shape[0] > 0 else 0
     n_lo = int(state.lo_codes.shape[0]) if state.lo_codes.shape[0] > 0 else 0
 
@@ -264,7 +279,7 @@ def zipcache_reconstruct(state: ZipCacheState) -> mx.array:
         else:
             rows.append(lo_recon[lo_ptr])
             lo_ptr += 1
-    out = mx.stack(rows, axis=0)          # [S, D]
+    out = mx.stack(rows, axis=0)  # [S, D]
     return out.astype(mx.float16)
 
 
@@ -284,7 +299,7 @@ def zipcache_bytes(state: ZipCacheState, group_size: int = 32) -> int:
     # Group param bytes: fp16 scale + zero per (group, D) — matches GEAR/CacheGen accounting
     n_hi_groups = math.ceil(n_hi / group_size) if n_hi > 0 else 0
     n_lo_groups = math.ceil(n_lo / group_size) if n_lo > 0 else 0
-    hi_param_bytes = n_hi_groups * D * 2 * 2   # scale + zero, fp16 (2 bytes each)
+    hi_param_bytes = n_hi_groups * D * 2 * 2  # scale + zero, fp16 (2 bytes each)
     lo_param_bytes = n_lo_groups * D * 2 * 2
 
     mask_bytes = S  # bool, 1 byte per token
@@ -307,9 +322,7 @@ def zipcache_quant_dequant(
     group_size: int = 32,
 ) -> mx.array:
     """Drop-in quant→dequant: full ZipCache round-trip on ``[S, D]`` → fp16."""
-    return zipcache_reconstruct(
-        zipcache_compress(x, hi_bits, lo_bits, hi_fraction, group_size)
-    )
+    return zipcache_reconstruct(zipcache_compress(x, hi_bits, lo_bits, hi_fraction, group_size))
 
 
 __all__ = [

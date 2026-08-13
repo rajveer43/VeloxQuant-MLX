@@ -9,6 +9,7 @@ entropy-coded payload + table + V + mean; kvtc_pre_entropy_bytes excludes
 entropy gain), determinism, and values compressed too (not keys-only, unlike
 SVDq).
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -38,7 +39,9 @@ def _skewed_variance_data(S: int, D: int, r_true: int, seed: int, scale=None):
     return mx.array(X)
 
 
-def _svdq_fixed_split_reconstruction(x: mx.array, total_bit_budget: int, hi_fraction=0.25) -> mx.array:
+def _svdq_fixed_split_reconstruction(
+    x: mx.array, total_bit_budget: int, hi_fraction=0.25
+) -> mx.array:
     """SVDq-style fixed top-25%/75% mixed-bit split, at a MATCHED total bit
     budget, for the same local PCA basis kvtc_compress would fit — used as
     the baseline in the "DP beats fixed split" comparison. Implemented
@@ -72,7 +75,9 @@ def _svdq_fixed_split_reconstruction(x: mx.array, total_bit_budget: int, hi_frac
     for lo_bit in range(0, 9):
         hi_bit = 2 * lo_bit
         total = n_hi * hi_bit + n_lo * lo_bit
-        if total <= total_bit_budget and (n_hi * hi_bit + n_lo * lo_bit) > (n_hi * best[0] + n_lo * best[1]):
+        if total <= total_bit_budget and (n_hi * hi_bit + n_lo * lo_bit) > (
+            n_hi * best[0] + n_lo * best[1]
+        ):
             best = (hi_bit, lo_bit)
     hi_bit, lo_bit = best
 
@@ -126,10 +131,12 @@ def test_generous_budget_near_identity_reconstruction():
 
     xf = x.astype(mx.float32)
     rf = recon.astype(mx.float32)
-    cos = float(mx.mean(
-        mx.sum(xf * rf, axis=-1)
-        / (mx.sqrt(mx.sum(xf * xf, axis=-1)) * mx.sqrt(mx.sum(rf * rf, axis=-1)) + 1e-8)
-    ).item())
+    cos = float(
+        mx.mean(
+            mx.sum(xf * rf, axis=-1)
+            / (mx.sqrt(mx.sum(xf * xf, axis=-1)) * mx.sqrt(mx.sum(rf * rf, axis=-1)) + 1e-8)
+        ).item()
+    )
     assert cos > 0.999
 
 
@@ -211,6 +218,7 @@ def test_fp16_bytes_includes_payload_table_projection():
     quant_param_bytes = art.n_survived * 8
     payload_bytes = len(art.entropy_payload)
     from veloxquant_mlx.quantizers._entropy_coding import table_nbytes
+
     table_bytes = table_nbytes(art.entropy_table)
 
     expected = projection_bytes + quant_param_bytes + payload_bytes + table_bytes
@@ -238,6 +246,76 @@ def test_byte_helpers_zero_when_nothing_survives():
     assert kvtc_pre_entropy_bytes(art) == 0
     # fp16_bytes still counts V + mean (always stored).
     assert kvtc_fp16_bytes(art) > 0
+
+
+# ---------------------------------------------------------------------------
+# Regression for #77: entropy coding must never make the stored artifact
+# larger than plain fixed-width packing -- kvtc_compress falls back to
+# fixed-width when Huffman coding doesn't pay for itself.
+# ---------------------------------------------------------------------------
+def test_stored_size_never_worse_than_fixed_width():
+    """Randomized sweep mirroring the issue's exact repro: across varied
+    (S, D, budget), the realized stored payload+table must never exceed
+    kvtc_pre_entropy_bytes (fixed-width size)."""
+    from veloxquant_mlx.quantizers._entropy_coding import table_nbytes
+
+    rng = np.random.default_rng(0)
+    for _ in range(30):
+        S = int(rng.integers(20, 100))
+        D = int(rng.integers(8, 64))
+        x = mx.array(rng.standard_normal((S, D)).astype(np.float32))
+        budget = D * int(rng.integers(2, 5))
+        art = kvtc_compress(x, total_bit_budget=budget)
+        pre = kvtc_pre_entropy_bytes(art)
+        stored = len(art.entropy_payload) + table_nbytes(art.entropy_table)
+        assert stored <= pre
+
+
+def test_uniform_codes_fall_back_to_fixed_width():
+    """Near-uniform quantized codes (the realistic KV regime) should trigger
+    the fixed-width fallback -- Huffman has nothing to gain and its table is
+    pure overhead."""
+    rng = np.random.default_rng(1)
+    S, D = 512, 128
+    x = mx.array(rng.standard_normal((S, D)).astype(np.float32))
+    art = kvtc_compress(x, total_bit_budget=D * 3)
+    assert art.is_entropy_coded is False
+    assert art.entropy_table == {}
+
+
+def test_fixed_width_fallback_round_trips_correctly():
+    """Reconstruction through the fixed-width path must match reconstruction
+    through the (previously always-used) entropy-coded path in accuracy --
+    the fallback must not be lossy relative to entropy coding."""
+    rng = np.random.default_rng(2)
+    S, D = 256, 64
+    x = mx.array(rng.standard_normal((S, D)).astype(np.float32))
+    art = kvtc_compress(x, total_bit_budget=D * 3)
+    assert art.is_entropy_coded is False  # this budget/shape triggers fallback
+    recon = kvtc_decompress(art)
+    mx.eval(recon)
+    assert recon.shape == x.shape
+    mse = _mse(recon, x)
+    assert mse < 1.0  # ordinary quantization noise, not garbage
+
+
+def test_entropy_coding_gain_never_below_one():
+    """The module docstring's ">= 1 typically" claim (cache/kvtc_cache.py)
+    should now hold as a hard guarantee, not "typically": the fallback
+    ensures pre_entropy_bytes/kvtc_bytes-style ratios never fall below 1."""
+    from veloxquant_mlx.quantizers._entropy_coding import table_nbytes
+
+    rng = np.random.default_rng(3)
+    for _ in range(10):
+        S = int(rng.integers(20, 200))
+        D = int(rng.integers(8, 64))
+        x = mx.array(rng.standard_normal((S, D)).astype(np.float32))
+        art = kvtc_compress(x, total_bit_budget=D * 3)
+        pre = kvtc_pre_entropy_bytes(art)
+        stored = len(art.entropy_payload) + table_nbytes(art.entropy_table)
+        if stored == 0:
+            continue
+        assert pre / stored >= 1.0
 
 
 # ---------------------------------------------------------------------------

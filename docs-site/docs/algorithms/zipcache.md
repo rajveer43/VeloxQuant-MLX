@@ -33,10 +33,10 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="zipcache",
     head_dim=128,
-    zipcache_hi_bits=4,         # bit-width for salient (high-norm) tokens
-    zipcache_lo_bits=2,         # bit-width for non-salient tokens
+    zipcache_hi_bits=4,  # bit-width for salient (high-norm) tokens
+    zipcache_lo_bits=2,  # bit-width for non-salient tokens
     zipcache_hi_fraction=0.20,  # fraction of tokens routed to hi_bits
-    zipcache_group_size=32,     # token group size for min/max quantization
+    zipcache_group_size=32,  # token group size for min/max quantization
     zipcache_quantize_values=True,  # apply mixed-precision to values too
 )
 caches = KVCacheBuilder.for_model(model, config)

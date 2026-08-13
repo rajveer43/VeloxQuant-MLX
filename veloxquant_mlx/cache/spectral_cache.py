@@ -4,6 +4,7 @@ Matches the KVCache interface used by TurboQuantKVCache.
 Keys are compressed with SpectralQuant (spectral rotation + selective QJL
 + per-group codebooks). Values are compressed identically.
 """
+
 from __future__ import annotations
 
 import math
@@ -51,14 +52,22 @@ class SpectralQuantKVCache(KVCache):
 
         # Build quantizers — will be rebuilt after calibrate()
         self._key_q = SpectralQuantizer(
-            d=d, b_signal=b, b_noise=b,
-            rotation=None, d_s=self._key_d_s,
-            apply_qjl=self._apply_qjl, seed=seed,
+            d=d,
+            b_signal=b,
+            b_noise=b,
+            rotation=None,
+            d_s=self._key_d_s,
+            apply_qjl=self._apply_qjl,
+            seed=seed,
         )
         self._val_q = SpectralQuantizer(
-            d=d, b_signal=b, b_noise=b,
-            rotation=None, d_s=self._val_d_s,
-            apply_qjl=False, seed=seed + 1,  # values: never QJL
+            d=d,
+            b_signal=b,
+            b_noise=b,
+            rotation=None,
+            d_s=self._val_d_s,
+            apply_qjl=False,
+            seed=seed + 1,  # values: never QJL
         )
 
         # Storage: list of EncodedVectors (supports variable-length entries)
@@ -85,14 +94,22 @@ class SpectralQuantKVCache(KVCache):
         self._val_d_s = int(val_ds)
 
         self._key_q = SpectralQuantizer(
-            d=self._d, b_signal=b, b_noise=b,
-            rotation=key_U, d_s=self._key_d_s,
-            apply_qjl=self._apply_qjl, seed=seed,
+            d=self._d,
+            b_signal=b,
+            b_noise=b,
+            rotation=key_U,
+            d_s=self._key_d_s,
+            apply_qjl=self._apply_qjl,
+            seed=seed,
         )
         self._val_q = SpectralQuantizer(
-            d=self._d, b_signal=b, b_noise=b,
-            rotation=val_U, d_s=self._val_d_s,
-            apply_qjl=False, seed=seed + 1,
+            d=self._d,
+            b_signal=b,
+            b_noise=b,
+            rotation=val_U,
+            d_s=self._val_d_s,
+            apply_qjl=False,
+            seed=seed + 1,
         )
 
     # ------------------------------------------------------------------
@@ -186,12 +203,8 @@ class SpectralQuantKVCache(KVCache):
         n = self._size
         if n == 0:
             return 0
-        key_bits = (
-            self._d_key_bits() * n
-        )
-        val_bits = (
-            self._d_val_bits() * n
-        )
+        key_bits = self._d_key_bits() * n
+        val_bits = self._d_val_bits() * n
         return math.ceil((key_bits + val_bits) / 8)
 
     def _d_key_bits(self) -> int:

@@ -33,6 +33,7 @@ Usage
 
 Prints tables and saves a JSON summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -49,13 +50,13 @@ from veloxquant_mlx.cache.xkv_cache import XKVCache
 from veloxquant_mlx.cache.xkv_coordinator import XKVCoordinator
 
 # ── sweep configuration ──────────────────────────────────────────────────────
-SEQ_LENS         = [256, 512]
-GROUP_SIZES      = [2, 3, 4]
-SHARED_FRACTIONS = [0.9, 0.5, 0.1]   # 0.9 = strongly shared, 0.1 = mostly private
-N_HEADS          = 4
-HEAD_DIM         = 64
-RANK             = 16
-N_PROBES         = 32
+SEQ_LENS = [256, 512]
+GROUP_SIZES = [2, 3, 4]
+SHARED_FRACTIONS = [0.9, 0.5, 0.1]  # 0.9 = strongly shared, 0.1 = mostly private
+N_HEADS = 4
+HEAD_DIM = 64
+RANK = 16
+N_PROBES = 32
 
 
 def _synthetic_group_keys(n_members: int, S: int, shared_fraction: float, seed: int):
@@ -71,7 +72,7 @@ def _synthetic_group_keys(n_members: int, S: int, shared_fraction: float, seed: 
         shared_part = np.einsum("hsr,dr->hsd", shared_coeffs, shared_basis)
         private = rng.standard_normal((N_HEADS, S, HEAD_DIM)).astype(np.float32)
         mix = shared_fraction * shared_part + (1.0 - shared_fraction) * private * 2.0
-        layers.append(mx.array(mix[None].astype(np.float16)))   # [1, H, S, D]
+        layers.append(mx.array(mix[None].astype(np.float16)))  # [1, H, S, D]
     return layers
 
 
@@ -157,23 +158,23 @@ def _run_once(seq_len, group_size, shared_fraction, seed) -> dict:
     probe = mx.array(rng.standard_normal((N_PROBES, HEAD_DIM)).astype(np.float16))
     perts_shared, perts_indep = [], []
     for k, v, s_out, i_out in zip(layers, real_v, shared_outs, indep_outs):
-        full_k, full_v = k[0, 0], v[0, 0]      # [S, D] — head 0, batch 0
+        full_k, full_v = k[0, 0], v[0, 0]  # [S, D] — head 0, batch 0
         perts_shared.append(_perturbation(probe, full_k, full_v, s_out[0, 0], full_v))
         perts_indep.append(_perturbation(probe, full_k, full_v, i_out[0, 0], full_v))
 
     return {
-        "seq_len":              seq_len,
-        "group_size":           group_size,
-        "shared_fraction":      shared_fraction,
-        "shared_basis_mse":     round(shared_mse, 5),
-        "independent_svd_mse":  round(indep_mse, 5),
-        "mse_ratio":            round(shared_mse / max(indep_mse, 1e-9), 3),
-        "shared_group_bytes":   shared_bytes,
-        "independent_bytes":    indep_bytes,
-        "byte_ratio":           round(shared_bytes / max(indep_bytes, 1), 3),
-        "perturbation_shared":  round(float(np.mean(perts_shared)), 5),
-        "perturbation_indep":   round(float(np.mean(perts_indep)), 5),
-        "latency_ms":           round(latency_ms, 2),
+        "seq_len": seq_len,
+        "group_size": group_size,
+        "shared_fraction": shared_fraction,
+        "shared_basis_mse": round(shared_mse, 5),
+        "independent_svd_mse": round(indep_mse, 5),
+        "mse_ratio": round(shared_mse / max(indep_mse, 1e-9), 3),
+        "shared_group_bytes": shared_bytes,
+        "independent_bytes": indep_bytes,
+        "byte_ratio": round(shared_bytes / max(indep_bytes, 1), 3),
+        "perturbation_shared": round(float(np.mean(perts_shared)), 5),
+        "perturbation_indep": round(float(np.mean(perts_indep)), 5),
+        "latency_ms": round(latency_ms, 2),
     }
 
 
@@ -183,8 +184,10 @@ def main() -> None:
     print("  (mse_ratio < 1 means the shared basis reconstructs better than independent SVD)")
     print("  (byte_ratio < 1 means the shared basis costs fewer bytes than independent SVD)")
     print()
-    header = (f"{'seq':>5}  {'grp':>4}  {'shared_frac':>11}  {'mse_ratio':>9}  "
-              f"{'byte_ratio':>10}  {'pert_shared':>11}  {'pert_indep':>10}  {'ms':>7}")
+    header = (
+        f"{'seq':>5}  {'grp':>4}  {'shared_frac':>11}  {'mse_ratio':>9}  "
+        f"{'byte_ratio':>10}  {'pert_shared':>11}  {'pert_indep':>10}  {'ms':>7}"
+    )
     print(header)
     print("-" * len(header))
 
@@ -206,12 +209,16 @@ def main() -> None:
     high_share = [r for r in results if r["shared_fraction"] == max(SHARED_FRACTIONS)]
     low_share = [r for r in results if r["shared_fraction"] == min(SHARED_FRACTIONS)]
     print("\nSummary:")
-    print(f"  At shared_fraction={max(SHARED_FRACTIONS)}: mean mse_ratio="
-          f"{np.mean([r['mse_ratio'] for r in high_share]):.3f}, mean byte_ratio="
-          f"{np.mean([r['byte_ratio'] for r in high_share]):.3f}")
-    print(f"  At shared_fraction={min(SHARED_FRACTIONS)}: mean mse_ratio="
-          f"{np.mean([r['mse_ratio'] for r in low_share]):.3f}, mean byte_ratio="
-          f"{np.mean([r['byte_ratio'] for r in low_share]):.3f}")
+    print(
+        f"  At shared_fraction={max(SHARED_FRACTIONS)}: mean mse_ratio="
+        f"{np.mean([r['mse_ratio'] for r in high_share]):.3f}, mean byte_ratio="
+        f"{np.mean([r['byte_ratio'] for r in high_share]):.3f}"
+    )
+    print(
+        f"  At shared_fraction={min(SHARED_FRACTIONS)}: mean mse_ratio="
+        f"{np.mean([r['mse_ratio'] for r in low_share]):.3f}, mean byte_ratio="
+        f"{np.mean([r['byte_ratio'] for r in low_share]):.3f}"
+    )
     print("  (honest expectation: mse_ratio should rise toward/above 1.0 as shared_fraction")
     print("   falls — xKV's shared-basis mechanism only helps when structure is truly shared.)")
 

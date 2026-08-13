@@ -36,7 +36,15 @@ Public API:
   a2ats_apply_exact_rope      — standard RoPE at each token's own position
   a2ats_apply_windowed_rope   — key side: exact within window, unrotated outside
   a2ats_apply_far_query_rope  — query side: constant R_b for the far bucket
+  rope_remap_positions        — de-rotate + re-rotate already-RoPE'd vectors
+                                to a new position (used by H2O-adapted, see
+                                cache/h2o_cache.py, to fix up positions after
+                                eviction removes rows from the middle of a
+                                stored sequence — not A2ATS-specific, kept
+                                here because it shares this module's RoPE
+                                cos/sin/rotate primitives)
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -56,7 +64,7 @@ def _rope_cos_sin(positions: mx.array, head_dim: int, base: float) -> tuple:
     """
     half = head_dim // 2
     inv_freq = 1.0 / (base ** (mx.arange(0, half, dtype=mx.float32) / half))  # [half]
-    angles = positions.astype(mx.float32)[:, None] * inv_freq[None, :]        # [N, half]
+    angles = positions.astype(mx.float32)[:, None] * inv_freq[None, :]  # [N, half]
     return mx.cos(angles).astype(mx.float16), mx.sin(angles).astype(mx.float16)
 
 
@@ -85,6 +93,51 @@ def a2ats_apply_exact_rope(
     if x.shape[0] == 0:
         return x.astype(mx.float16)
     cos, sin = _rope_cos_sin(positions, x.shape[-1], base)
+    return _rotate(x.astype(mx.float16), cos, sin)
+
+
+def rope_remap_positions(
+    x: mx.array,
+    old_positions: mx.array,
+    new_positions: mx.array,
+    base: float = 10000.0,
+) -> mx.array:
+    """De-rotate already-RoPE'd vectors from ``old_positions`` and re-rotate
+    them at ``new_positions`` — used to fix up stored keys after an eviction
+    cache (H2O-adapted, and structurally any other row-dropping eviction
+    cache) removes rows and leaves the survivors' *storage index* out of sync
+    with the absolute position baked into their rotation.
+
+    RoPE rotates each ``(x1, x2)`` pair by angle ``position * inv_freq``; the
+    inverse rotation is the same formula at ``-position``. Composing "rotate
+    by ``-old_position``" then "rotate by ``new_position``" is equivalent to a
+    single rotation by ``new_position - old_position``, computed directly here
+    (one rotation, not two) for numerical accuracy.
+
+    Args:
+        x: ``[N, D]`` fp16/fp32 vectors, already RoPE'd at ``old_positions``.
+        old_positions: ``[N]`` absolute positions each row was originally
+            rotated at (must be the *exact* positions used at rotation time).
+        new_positions: ``[N]`` absolute positions to re-rotate each row to
+            (typically contiguous indices reflecting a post-eviction gap-free
+            layout).
+        base: RoPE frequency base — must match the base the model's attention
+            module actually used, or the de-rotation will not cancel out.
+
+    Returns:
+        ``[N, D]`` fp16 vectors, equivalent to having been generated fresh and
+        rotated directly at ``new_positions``.
+
+    Caveat: assumes MLX's default ``traditional=False`` (NeoX-style first/second-
+    half split) RoPE convention — the same one :func:`a2ats_apply_exact_rope`
+    uses and the one ``mlx_lm``'s Llama/Mistral/Qwen attention modules default
+    to. Models configured with ``traditional=True`` (adjacent-pair
+    interleaving) are not handled by this function.
+    """
+    if x.shape[0] == 0:
+        return x.astype(mx.float16)
+    delta = new_positions.astype(mx.float32) - old_positions.astype(mx.float32)
+    cos, sin = _rope_cos_sin(delta, x.shape[-1], base)
     return _rotate(x.astype(mx.float16), cos, sin)
 
 
@@ -145,7 +198,7 @@ def a2ats_apply_windowed_rope(
 
     x16 = x.astype(mx.float16)
     distance = mx.array(query_position, dtype=mx.float32) - positions.astype(mx.float32)
-    near_mask = distance < float(window)   # [N] bool; window<=0 -> all False
+    near_mask = distance < float(window)  # [N] bool; window<=0 -> all False
 
     exact = a2ats_apply_exact_rope(x16, positions, base=base)
 
@@ -188,8 +241,8 @@ def a2ats_apply_far_query_rope(
         return q.astype(mx.float16)
 
     offset = mx.array([float(b)], dtype=mx.float32)
-    cos, sin = _rope_cos_sin(offset, q2.shape[-1], base)   # [1, half]
-    out = _rotate(q2.astype(mx.float16), cos, sin)         # broadcasts over N
+    cos, sin = _rope_cos_sin(offset, q2.shape[-1], base)  # [1, half]
+    out = _rotate(q2.astype(mx.float16), cos, sin)  # broadcasts over N
     return out[0] if squeeze else out
 
 
@@ -197,4 +250,5 @@ __all__ = [
     "a2ats_apply_exact_rope",
     "a2ats_apply_windowed_rope",
     "a2ats_apply_far_query_rope",
+    "rope_remap_positions",
 ]

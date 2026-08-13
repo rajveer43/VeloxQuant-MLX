@@ -49,6 +49,7 @@ Usage
 
 Prints tables and saves a JSON summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -68,16 +69,16 @@ if str(_repo_root) not in sys.path:
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
 # ── sweep configuration ──────────────────────────────────────────────────────
-SEQ_LENS  = [512, 1024]
-BITS      = [2, 4]
-REGIMES   = ["heterogeneous", "homogeneous"]
-HEAD_DIM  = 64
-N_HEADS   = 2
-GROUP     = 16
-WINDOW    = 128
-N_SINK    = 5
-N_PROBES  = 32
-SEED      = 11
+SEQ_LENS = [512, 1024]
+BITS = [2, 4]
+REGIMES = ["heterogeneous", "homogeneous"]
+HEAD_DIM = 64
+N_HEADS = 2
+GROUP = 16
+WINDOW = 128
+N_SINK = 5
+N_PROBES = 32
+SEED = 11
 
 
 def _synthetic(S: int, regime: str, seed: int):
@@ -141,19 +142,22 @@ def _run_once(S: int, bits: int, regime: str, seed: int) -> dict:
     k, v, q = _synthetic(S, regime, seed)
 
     skvq_base = dict(
-        method="skvq", skvq_bits_key=bits, skvq_bits_value=bits,
-        skvq_group_size=GROUP, skvq_window=WINDOW, skvq_n_sink=N_SINK,
+        method="skvq",
+        skvq_bits_key=bits,
+        skvq_bits_value=bits,
+        skvq_group_size=GROUP,
+        skvq_window=WINDOW,
+        skvq_n_sink=N_SINK,
         skvq_max_ctx=max(8192, S),
     )
     arms = {
-        "skvq":           dict(skvq_base),
+        "skvq": dict(skvq_base),
         "skvq_noreorder": dict(skvq_base, skvq_reorder=False),
-        "skvq_noclip":    dict(skvq_base, skvq_clip_search=False),
-        "skvq_plain":     dict(skvq_base, skvq_reorder=False,
-                               skvq_clip_search=False),
-        "kivi":           dict(method="kivi", bit_width_inlier=bits,
-                               kivi_group_size=GROUP,
-                               residual_length=WINDOW),
+        "skvq_noclip": dict(skvq_base, skvq_clip_search=False),
+        "skvq_plain": dict(skvq_base, skvq_reorder=False, skvq_clip_search=False),
+        "kivi": dict(
+            method="kivi", bit_width_inlier=bits, kivi_group_size=GROUP, residual_length=WINDOW
+        ),
     }
 
     outs, ms = {}, {}
@@ -167,20 +171,28 @@ def _run_once(S: int, bits: int, regime: str, seed: int) -> dict:
     q_end = caches["skvq"].quantized_tokens
     common = slice(N_SINK, min(q_end, S - WINDOW))
 
-    row = {"seq_len": S, "bits": bits, "regime": regime,
-           "quantized_tokens_skvq": q_end,
-           "common_region": [common.start, common.stop]}
+    row = {
+        "seq_len": S,
+        "bits": bits,
+        "regime": regime,
+        "quantized_tokens_skvq": q_end,
+        "common_region": [common.start, common.stop],
+    }
     for name in arms:
         mse, nmse = _key_errs(k, outs[name][0], common)
         row[f"key_mse_{name}"] = round(mse, 6)
         row[f"key_nmse_{name}"] = round(nmse, 6)
-        row[f"pert_{name}"] = round(
-            _perturbation(q, k, v, outs[name][0], outs[name][1]), 6
-        )
+        row[f"pert_{name}"] = round(_perturbation(q, k, v, outs[name][0], outs[name][1]), 6)
     sk = caches["skvq"]
     row["skvq_bytes_per_token"] = round(
-        (sk.compressed_key_bytes + sk.compressed_value_bytes
-         + sk.residual_fp16_bytes + sk.perm_bytes) / sk.tokens_seen, 2
+        (
+            sk.compressed_key_bytes
+            + sk.compressed_value_bytes
+            + sk.residual_fp16_bytes
+            + sk.perm_bytes
+        )
+        / sk.tokens_seen,
+        2,
     )
     row["fp16_bytes_per_token"] = HEAD_DIM * 2 * 2 * N_HEADS
     row["skvq_assigned_avg_bits"] = round(sk.assigned_avg_bits, 3)
@@ -191,32 +203,44 @@ def _run_once(S: int, bits: int, regime: str, seed: int) -> dict:
 
 def main() -> None:
     print("SKVQ-adapted sliding-window quantization — offline synthetic benchmark")
-    print(f"  head_dim={HEAD_DIM} heads={N_HEADS} group={GROUP} "
-          f"window={WINDOW} n_sink={N_SINK} probes={N_PROBES}")
-    print("  (key MSE over the region quantized by every arm; perturbation = "
-          "1 - cosine vs full fp16 cache; lower = better)")
+    print(
+        f"  head_dim={HEAD_DIM} heads={N_HEADS} group={GROUP} "
+        f"window={WINDOW} n_sink={N_SINK} probes={N_PROBES}"
+    )
+    print(
+        "  (key MSE over the region quantized by every arm; perturbation = "
+        "1 - cosine vs full fp16 cache; lower = better)"
+    )
     print()
 
     results = []
-    hdr = (f"{'seq':>5} {'bits':>4} {'regime':>13}  {'skvq':>9} {'noreord':>9} "
-           f"{'noclip':>9} {'plain':>9} {'kivi':>9}   metric")
+    hdr = (
+        f"{'seq':>5} {'bits':>4} {'regime':>13}  {'skvq':>9} {'noreord':>9} "
+        f"{'noclip':>9} {'plain':>9} {'kivi':>9}   metric"
+    )
     print(hdr)
     print("-" * len(hdr))
     for S, bits, regime in product(SEQ_LENS, BITS, REGIMES):
         row = _run_once(S, bits, regime, seed=SEED + S)
         results.append(row)
-        print(f"{S:>5} {bits:>4} {regime:>13}  "
-              f"{row['key_mse_skvq']:>9.5f} {row['key_mse_skvq_noreorder']:>9.5f} "
-              f"{row['key_mse_skvq_noclip']:>9.5f} {row['key_mse_skvq_plain']:>9.5f} "
-              f"{row['key_mse_kivi']:>9.5f}   key_mse")
-        print(f"{'':>5} {'':>4} {'':>13}  "
-              f"{row['key_nmse_skvq']:>9.3f} {row['key_nmse_skvq_noreorder']:>9.3f} "
-              f"{row['key_nmse_skvq_noclip']:>9.3f} {row['key_nmse_skvq_plain']:>9.3f} "
-              f"{row['key_nmse_kivi']:>9.3f}   key_nmse")
-        print(f"{'':>5} {'':>4} {'':>13}  "
-              f"{row['pert_skvq']:>9.5f} {row['pert_skvq_noreorder']:>9.5f} "
-              f"{row['pert_skvq_noclip']:>9.5f} {row['pert_skvq_plain']:>9.5f} "
-              f"{row['pert_kivi']:>9.5f}   pert")
+        print(
+            f"{S:>5} {bits:>4} {regime:>13}  "
+            f"{row['key_mse_skvq']:>9.5f} {row['key_mse_skvq_noreorder']:>9.5f} "
+            f"{row['key_mse_skvq_noclip']:>9.5f} {row['key_mse_skvq_plain']:>9.5f} "
+            f"{row['key_mse_kivi']:>9.5f}   key_mse"
+        )
+        print(
+            f"{'':>5} {'':>4} {'':>13}  "
+            f"{row['key_nmse_skvq']:>9.3f} {row['key_nmse_skvq_noreorder']:>9.3f} "
+            f"{row['key_nmse_skvq_noclip']:>9.3f} {row['key_nmse_skvq_plain']:>9.3f} "
+            f"{row['key_nmse_kivi']:>9.3f}   key_nmse"
+        )
+        print(
+            f"{'':>5} {'':>4} {'':>13}  "
+            f"{row['pert_skvq']:>9.5f} {row['pert_skvq_noreorder']:>9.5f} "
+            f"{row['pert_skvq_noclip']:>9.5f} {row['pert_skvq_plain']:>9.5f} "
+            f"{row['pert_kivi']:>9.5f}   pert"
+        )
 
     out_path = Path(__file__).parent.parent / "figures" / "skvq" / "results.json"
     out_path.write_text(json.dumps(results, indent=2))
@@ -224,14 +248,20 @@ def main() -> None:
 
     for regime in REGIMES:
         rows = [r for r in results if r["regime"] == regime]
-        gain_reorder = np.mean([
-            (r["key_mse_skvq_noreorder"] - r["key_mse_skvq"])
-            / max(r["key_mse_skvq_noreorder"], 1e-12) for r in rows
-        ])
-        gain_clip = np.mean([
-            (r["key_mse_skvq_noclip"] - r["key_mse_skvq"])
-            / max(r["key_mse_skvq_noclip"], 1e-12) for r in rows
-        ])
+        gain_reorder = np.mean(
+            [
+                (r["key_mse_skvq_noreorder"] - r["key_mse_skvq"])
+                / max(r["key_mse_skvq_noreorder"], 1e-12)
+                for r in rows
+            ]
+        )
+        gain_clip = np.mean(
+            [
+                (r["key_mse_skvq_noclip"] - r["key_mse_skvq"])
+                / max(r["key_mse_skvq_noclip"], 1e-12)
+                for r in rows
+            ]
+        )
         print(f"\nSummary ({regime}):")
         print(f"  mean key-MSE reduction from reordering (given clip): {gain_reorder:+.1%}")
         print(f"  mean key-MSE reduction from clip search (given reorder): {gain_clip:+.1%}")

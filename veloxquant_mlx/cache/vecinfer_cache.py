@@ -18,6 +18,7 @@ Per-token storage (keys) at codebook bit-width ``b_k`` and sub-vector
 dimension ``d_k``: ``(D / d_k) * b_k / 8`` bytes — plus an amortized
 codebook cost of ``2**b_k * d_k * 2`` bytes shared across all tokens.
 """
+
 from __future__ import annotations
 
 import math
@@ -91,8 +92,8 @@ class VecInferKVCache(_MLXKVCache):
         self._H = walsh_hadamard_matrix(self._head_dim, dtype=mx.float32)
 
         # Codebooks
-        n_kc = 2 ** self._key_bits
-        n_vc = 2 ** self._value_bits
+        n_kc = 2**self._key_bits
+        n_vc = 2**self._value_bits
         seed = int(getattr(config, "seed", 42))
 
         key_cb = getattr(config, "key_codebook", None)
@@ -100,9 +101,7 @@ class VecInferKVCache(_MLXKVCache):
             # Random init — only useful for shape/wiring tests; real usage
             # supplies a calibrated codebook via the factory.
             rng = mx.random.key(seed)
-            key_cb = mx.random.normal(
-                shape=(n_kc, self._key_sub_dim), key=rng
-            ).astype(mx.float32)
+            key_cb = mx.random.normal(shape=(n_kc, self._key_sub_dim), key=rng).astype(mx.float32)
         elif not isinstance(key_cb, mx.array):
             key_cb = mx.array(key_cb)
         self._key_codebook = key_cb.astype(mx.float32)
@@ -110,9 +109,7 @@ class VecInferKVCache(_MLXKVCache):
         val_cb = getattr(config, "value_codebook", None)
         if val_cb is None:
             rng = mx.random.key(seed + 1)
-            val_cb = mx.random.normal(
-                shape=(n_vc, self._value_sub_dim), key=rng
-            ).astype(mx.float32)
+            val_cb = mx.random.normal(shape=(n_vc, self._value_sub_dim), key=rng).astype(mx.float32)
         elif not isinstance(val_cb, mx.array):
             val_cb = mx.array(val_cb)
         self._value_codebook = val_cb.astype(mx.float32)
@@ -145,7 +142,7 @@ class VecInferKVCache(_MLXKVCache):
         # head_dim with n_centroids <= 256, n_sub <= 16, head_dim <= 256.
         fused_req = getattr(config, "fused_sdpa", False)
         shape_ok = _fused_supports_shape(
-            n_centroids=2 ** self._key_bits,
+            n_centroids=2**self._key_bits,
             n_sub=self._head_dim // self._key_sub_dim,
             head_dim=self._head_dim,
         )
@@ -174,18 +171,18 @@ class VecInferKVCache(_MLXKVCache):
     def _quantize(self, x: mx.array, codebook: mx.array, sub_dim: int) -> mx.array:
         if self._use_metal:
             from veloxquant_mlx.metal.kernels import vecinfer_quantize_metal
+
             return vecinfer_quantize_metal(x, codebook, sub_dim)
         return quantize_vq(x, codebook, sub_dim)
 
     def _dequantize(self, indices: mx.array, codebook: mx.array) -> mx.array:
         if self._use_metal:
             from veloxquant_mlx.metal.kernels import vecinfer_dequant_metal
+
             return vecinfer_dequant_metal(indices, codebook)
         return dequantize_vq(indices, codebook)
 
-    def _encode_decode_keys(
-        self, keys: mx.array
-    ) -> tuple:
+    def _encode_decode_keys(self, keys: mx.array) -> tuple:
         """Fused smooth+WHT+VQ+dequant+inv-WHT+smooth in one Metal dispatch.
 
         Returns ``(k_hat_fp16, k_indices_uint32)``.  Falls back to the
@@ -195,11 +192,12 @@ class VecInferKVCache(_MLXKVCache):
         D = keys.shape[-1]
         can_fuse = (
             self._use_metal
-            and (D & (D - 1)) == 0   # power-of-2 for WHT butterfly
-            and D <= 512              # threadgroup size cap
+            and (D & (D - 1)) == 0  # power-of-2 for WHT butterfly
+            and D <= 512  # threadgroup size cap
         )
         if can_fuse:
             from veloxquant_mlx.metal.kernels import vecinfer_encode_decode_metal
+
             k_hat_fp16, k_idx = vecinfer_encode_decode_metal(
                 keys=keys,
                 k_codebook=self._key_codebook,
@@ -229,9 +227,7 @@ class VecInferKVCache(_MLXKVCache):
             k_hat = k_hat * sm_b
         return k_hat.astype(keys.dtype), k_idx
 
-    def _encode_decode_values(
-        self, values: mx.array
-    ) -> tuple:
+    def _encode_decode_values(self, values: mx.array) -> tuple:
         """Fused VQ+dequant for values in one Metal dispatch.
 
         Returns ``(v_hat_fp16, v_indices_uint32)``.
@@ -240,6 +236,7 @@ class VecInferKVCache(_MLXKVCache):
         can_fuse = self._use_metal and D <= 512
         if can_fuse:
             from veloxquant_mlx.metal.kernels import vecinfer_encode_decode_simple_metal
+
             v_hat_fp16, v_idx = vecinfer_encode_decode_simple_metal(
                 values=values,
                 v_codebook=self._value_codebook,
@@ -288,18 +285,16 @@ class VecInferKVCache(_MLXKVCache):
 
         # Also stash indices so decode steps can use the fused path
         if self._stored_k_indices is None:
-            self._stored_k_indices = mx.zeros(
-                (B, H, self._max_ctx, self._n_sub_k), dtype=mx.uint32)
-            self._stored_v_indices = mx.zeros(
-                (B, H, self._max_ctx, self._n_sub_v), dtype=mx.uint32)
+            self._stored_k_indices = mx.zeros((B, H, self._max_ctx, self._n_sub_k), dtype=mx.uint32)
+            self._stored_v_indices = mx.zeros((B, H, self._max_ctx, self._n_sub_v), dtype=mx.uint32)
         if self._stored_S_kv + S > self._max_ctx:
             raise RuntimeError(
                 f"VecInferKVCache: prefill length {self._stored_S_kv + S} "
                 f"exceeded fused_sdpa_max_ctx={self._max_ctx}."
             )
         new_end = self._stored_S_kv + S
-        self._stored_k_indices[:, :, self._stored_S_kv:new_end, :] = k_idx.astype(mx.uint32)
-        self._stored_v_indices[:, :, self._stored_S_kv:new_end, :] = v_idx.astype(mx.uint32)
+        self._stored_k_indices[:, :, self._stored_S_kv : new_end, :] = k_idx.astype(mx.uint32)
+        self._stored_v_indices[:, :, self._stored_S_kv : new_end, :] = v_idx.astype(mx.uint32)
         self._stored_S_kv = new_end
 
         self._account_bytes(B, H, S, D)
@@ -343,10 +338,8 @@ class VecInferKVCache(_MLXKVCache):
 
         # Lazy ring-buffer allocation on first update
         if self._stored_k_indices is None:
-            self._stored_k_indices = mx.zeros(
-                (B, H, self._max_ctx, self._n_sub_k), dtype=mx.uint32)
-            self._stored_v_indices = mx.zeros(
-                (B, H, self._max_ctx, self._n_sub_v), dtype=mx.uint32)
+            self._stored_k_indices = mx.zeros((B, H, self._max_ctx, self._n_sub_k), dtype=mx.uint32)
+            self._stored_v_indices = mx.zeros((B, H, self._max_ctx, self._n_sub_v), dtype=mx.uint32)
 
         if self._stored_S_kv + S > self._max_ctx:
             raise RuntimeError(
@@ -358,12 +351,8 @@ class VecInferKVCache(_MLXKVCache):
         # Slice-write into the pre-allocated buffer.  MLX supports
         # in-place slice assignment on arrays.
         new_end = self._stored_S_kv + S
-        self._stored_k_indices[:, :, self._stored_S_kv:new_end, :] = (
-            k_idx.astype(mx.uint32)
-        )
-        self._stored_v_indices[:, :, self._stored_S_kv:new_end, :] = (
-            v_idx.astype(mx.uint32)
-        )
+        self._stored_k_indices[:, :, self._stored_S_kv : new_end, :] = k_idx.astype(mx.uint32)
+        self._stored_v_indices[:, :, self._stored_S_kv : new_end, :] = v_idx.astype(mx.uint32)
         self._stored_S_kv = new_end
 
         # Advance offset so mlx_lm's RoPE (rope(q, offset=cache.offset))
@@ -496,14 +485,15 @@ class VecInferKVCache(_MLXKVCache):
 
         # Slice the live portion of the pre-allocated ring buffer.
         # MLX slices are views — no copy.
-        live_k = self._stored_k_indices[:, :, :self._stored_S_kv, :]
-        live_v = self._stored_v_indices[:, :, :self._stored_S_kv, :]
+        live_k = self._stored_k_indices[:, :, : self._stored_S_kv, :]
+        live_v = self._stored_v_indices[:, :, : self._stored_S_kv, :]
 
         # Transform q in fp32 (matches what the Hadamard math assumes)
         q_tilde = apply_dual_transform_queries(
             q.astype(mx.float32),
-            self._smooth if self._smooth is not None
-                else mx.ones((self._head_dim,), dtype=mx.float32),
+            self._smooth
+            if self._smooth is not None
+            else mx.ones((self._head_dim,), dtype=mx.float32),
             self._H,
         )
 
@@ -545,8 +535,8 @@ class VecInferKVCache(_MLXKVCache):
     @property
     def codebook_bytes(self) -> int:
         """Static codebook overhead in bytes (fp16 storage)."""
-        kb = (2 ** self._key_bits) * self._key_sub_dim * 2
-        vb = (2 ** self._value_bits) * self._value_sub_dim * 2
+        kb = (2**self._key_bits) * self._key_sub_dim * 2
+        vb = (2**self._value_bits) * self._value_sub_dim * 2
         return kb + vb
 
     @property

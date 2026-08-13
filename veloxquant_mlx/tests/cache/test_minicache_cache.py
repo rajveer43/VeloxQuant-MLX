@@ -5,6 +5,7 @@ per-layer magnitudes, retaining high-divergence token pairs. These tests cover
 role assignment via the builder, the shared-coordinator merge path, the
 retention set, byte accounting, and the degenerate (no-coordinator) passthrough.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -50,8 +51,7 @@ def _kv(S, H=4, D=64, seed=0):
 
 
 def _build(n=8, **cfg):
-    base = dict(method="minicache", head_dim=64, minicache_start_frac=0.5,
-                minicache_group_size=2)
+    base = dict(method="minicache", head_dim=64, minicache_start_frac=0.5, minicache_group_size=2)
     base.update(cfg)
     return KVCacheBuilder.for_model(_Model(n), KVCacheConfig(**base))
 
@@ -60,10 +60,11 @@ def _build(n=8, **cfg):
 # Role assignment
 # ------------------------------------------------------------------
 
+
 def test_factory_degenerate_is_primary() -> None:
     c = KVCacheFactory.create(KVCacheConfig(method="minicache", head_dim=64))
     assert isinstance(c, MiniCacheKVCache)
-    assert c.role == "primary"   # no coordinator → degenerate primary
+    assert c.role == "primary"  # no coordinator → degenerate primary
 
 
 def test_for_model_assigns_primary_and_merge() -> None:
@@ -85,6 +86,7 @@ def test_early_layers_never_merged() -> None:
 # Shapes through a forward pass (primaries before merges)
 # ------------------------------------------------------------------
 
+
 def test_forward_pass_shapes_preserved() -> None:
     caches = _build(8)
     K, V = _kv(32)
@@ -98,6 +100,7 @@ def test_forward_pass_shapes_preserved() -> None:
 # ------------------------------------------------------------------
 # Merge quality: similar layers reconstruct well
 # ------------------------------------------------------------------
+
 
 def test_merge_layer_reconstructs_similar_primary() -> None:
     """When primary and merge layers are near-identical, the merge reconstructs
@@ -114,7 +117,9 @@ def test_merge_layer_reconstructs_similar_primary() -> None:
     rng = np.random.default_rng(0)
     base = rng.standard_normal((1, 4, 16, 64)).astype(np.float32)
     Kp = mx.array(base.astype(np.float16))
-    Km = mx.array((base + rng.standard_normal(base.shape).astype(np.float32) * 0.02).astype(np.float16))
+    Km = mx.array(
+        (base + rng.standard_normal(base.shape).astype(np.float32) * 0.02).astype(np.float16)
+    )
     V = mx.zeros((1, 4, 16, 64), dtype=mx.float16)
 
     primary.update_and_fetch(Kp, V)
@@ -127,6 +132,7 @@ def test_merge_layer_reconstructs_similar_primary() -> None:
 # ------------------------------------------------------------------
 # Retention: dissimilar token pairs kept unmerged
 # ------------------------------------------------------------------
+
 
 def test_dissimilar_tokens_retained() -> None:
     caches = _build(4, minicache_start_frac=0.0, minicache_retention_threshold=0.95)
@@ -155,6 +161,7 @@ def test_dissimilar_tokens_retained() -> None:
 # Byte accounting: merge layer compresses
 # ------------------------------------------------------------------
 
+
 def test_merge_layer_compresses() -> None:
     caches = _build(8)
     K, V = _kv(32, seed=2)
@@ -179,6 +186,7 @@ def test_n_retained_plus_merged_equals_total() -> None:
 # Degenerate passthrough is lossless
 # ------------------------------------------------------------------
 
+
 def test_degenerate_passthrough_lossless() -> None:
     c = KVCacheFactory.create(KVCacheConfig(method="minicache", head_dim=64))
     K, V = _kv(16, seed=5)
@@ -191,11 +199,69 @@ def test_degenerate_passthrough_lossless() -> None:
 # Coordinator
 # ------------------------------------------------------------------
 
+
 def test_coordinator_max_ctx_guard() -> None:
     coord = MiniCacheCoordinator(max_ctx=8)
     K, V = _kv(16)
     with pytest.raises(RuntimeError, match="max_ctx"):
         coord.publish_primary(0, 0, 16, K, V)
+
+
+# ------------------------------------------------------------------
+# Regression for #79: coordinator must reclaim published entries once
+# consumed, or long generations exhaust minicache_max_ctx and crash.
+# ------------------------------------------------------------------
+
+
+def test_coordinator_round_trip_reclaims() -> None:
+    coord = MiniCacheCoordinator()
+    K, V = _kv(16)
+    coord.publish_primary(0, token_start=0, n_tokens=16, keys=K, values=V, n_readers=1)
+    assert coord.published_tokens(0) == 16
+    entry = coord.fetch_primary(0, 0)
+    assert entry is not None
+    np.testing.assert_array_equal(np.array(entry.keys.tolist()), np.array(K.tolist()))
+    # Once the single expected reader has fetched it, the entry is reclaimed
+    # and its tokens credited back — published_tokens tracks live (unconsumed)
+    # tokens, not a lifetime total.
+    assert coord.published_tokens(0) == 0
+    assert coord.fetch_primary(0, 999) is None  # missing offset
+    assert coord.fetch_primary(0, 0) is None  # already reclaimed
+
+
+def test_publish_past_max_ctx_does_not_raise_after_reclaim() -> None:
+    coord = MiniCacheCoordinator(max_ctx=8)
+    for i in range(20):
+        K, V = _kv(1, seed=i)
+        coord.publish_primary(0, token_start=i, n_tokens=1, keys=K, values=V, n_readers=1)
+        coord.fetch_primary(0, i)
+    assert coord.published_tokens(0) == 0
+
+
+def test_group_size_three_both_mergers_consume_before_reclaim() -> None:
+    coord = MiniCacheCoordinator()
+    K, V = _kv(16)
+    coord.publish_primary(0, token_start=0, n_tokens=16, keys=K, values=V, n_readers=2)
+    assert coord.published_tokens(0) == 16  # still live: 0 of 2 readers fetched
+
+    coord.fetch_primary(0, 0)
+    assert coord.published_tokens(0) == 16  # still live: 1 of 2 readers fetched
+
+    coord.fetch_primary(0, 0)
+    assert coord.published_tokens(0) == 0  # reclaimed: both readers fetched
+
+
+def test_for_model_decode_past_max_ctx_does_not_raise() -> None:
+    """End-to-end via for_model: decode past minicache_max_ctx must not raise,
+    for both simple pairs and group_size=3 (one primary : two mergers)."""
+    for group_size in (2, 3):
+        caches = _build(
+            6, minicache_start_frac=0.0, minicache_group_size=group_size, minicache_max_ctx=8
+        )
+        for _ in range(20):
+            K, V = _kv(1)
+            for c in caches:
+                c.update_and_fetch(K, V)
 
 
 def test_determinism() -> None:

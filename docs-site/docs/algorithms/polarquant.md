@@ -40,7 +40,8 @@ config = KVCacheConfig(
 cache = KVCacheBuilder.build(model, config)
 
 response = mlx_lm.generate(
-    model, tokenizer,
+    model,
+    tokenizer,
     prompt="What are the main differences between Python and Go?",
     max_tokens=400,
     kv_cache=cache,

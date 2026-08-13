@@ -64,6 +64,7 @@ const sidebars: SidebarsConfig = {
         'algorithms/amc',
         'algorithms/a2ats',
         'algorithms/xkv',
+        'algorithms/cross-model-transfer',
       ],
     },
   ],
@@ -74,6 +75,7 @@ const sidebars: SidebarsConfig = {
       label: 'Guides',
       collapsed: false,
       items: [
+        'guides/control-panel',
         'guides/mlx-lm-integration',
         'guides/metal-kernels',
         'guides/calibration',

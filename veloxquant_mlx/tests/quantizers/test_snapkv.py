@@ -7,6 +7,7 @@ observation-window scoring shape/range/clamp, snap_select_indices exact count,
 sorted order, sink guarantee, high-score preference, snapkv_compress shape/dtype,
 no-eviction edge case, and byte accounting. All data is synthetic — no model loading.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -33,6 +34,7 @@ def _rand_kv(S: int = 64, D: int = 128, seed: int = 0) -> tuple[mx.array, mx.arr
 # ---------------------------------------------------------------------------
 # obs_window_attention_scores
 # ---------------------------------------------------------------------------
+
 
 def test_obs_window_scores_shape() -> None:
     K, _ = _rand_kv(S=64, D=128)
@@ -71,6 +73,7 @@ def test_obs_window_single_token() -> None:
 # ---------------------------------------------------------------------------
 # snap_select_indices
 # ---------------------------------------------------------------------------
+
 
 def test_select_count_exact() -> None:
     scores = mx.array([0.1, 0.5, 0.3, 0.9, 0.2, 0.7], dtype=mx.float32)
@@ -123,6 +126,7 @@ def test_select_n_sink_zero() -> None:
 # snapkv_compress
 # ---------------------------------------------------------------------------
 
+
 def test_compress_output_shape() -> None:
     K, V = _rand_kv(S=64, D=128)
     state = snapkv_compress(K, V, budget=16, obs_window=8, n_sink=2)
@@ -163,10 +167,11 @@ def test_compress_edge_n_sink_zero_obs1() -> None:
 # Byte accounting
 # ---------------------------------------------------------------------------
 
+
 def test_snapkv_fp16_bytes_formula() -> None:
     K, V = _rand_kv(S=32, D=128)
     state = snapkv_compress(K, V, budget=16, obs_window=4)
-    expected = 16 * 128 * 2 * 2   # n_kept * D * 2 (K+V) * 2 (fp16)
+    expected = 16 * 128 * 2 * 2  # n_kept * D * 2 (K+V) * 2 (fp16)
     assert snapkv_fp16_bytes(state) == expected
 
 

@@ -12,9 +12,18 @@ Public API:
   - :func:`turboquant_bit_pack`
   - :func:`turboquant_bit_unpack`
 """
+
 from __future__ import annotations
 
+from pathlib import Path
+
 import mlx.core as mx
+
+
+def _read_kernel_source(filename: str) -> str:
+    """Read a standalone .metal kernel source file from metal/src/."""
+    return (Path(__file__).parent / "src" / filename).read_text()
+
 
 _cache: dict = {}
 
@@ -27,20 +36,7 @@ _cache: dict = {}
 # to B_BITS, shifts into position, and writes one packed uint8.
 # ELEMS_PER_BYTE is a compile-time constant (template), so the loop unrolls.
 
-_PACK_SRC = r"""
-    constexpr int  ELEMS_PER_BYTE = 8 / B_BITS;
-    constexpr uint MASK           = (1u << B_BITS) - 1u;
-
-    uint byte_idx = thread_position_in_grid.x;
-    uint base     = byte_idx * ELEMS_PER_BYTE;
-
-    uint packed_byte = 0u;
-    for (int i = 0; i < ELEMS_PER_BYTE; ++i) {
-        uint val = uint(indices[base + i]) & MASK;
-        packed_byte |= (val << (i * B_BITS));
-    }
-    packed[byte_idx] = uint8_t(packed_byte);
-"""
+_PACK_SRC = _read_kernel_source("bit_pack.metal")
 
 
 # ===========================================================================
@@ -49,21 +45,13 @@ _PACK_SRC = r"""
 # Grid: (N_elements, 1, 1) — one thread per output index.
 # Each thread computes its source byte and bit offset, extracts B_BITS, writes.
 
-_UNPACK_SRC = r"""
-    constexpr int  ELEMS_PER_BYTE = 8 / B_BITS;
-    constexpr uint MASK           = (1u << B_BITS) - 1u;
-
-    uint elem_idx = thread_position_in_grid.x;
-    uint byte_idx = elem_idx / ELEMS_PER_BYTE;
-    uint bit_off  = (elem_idx % ELEMS_PER_BYTE) * B_BITS;
-
-    indices[elem_idx] = uint8_t((uint(packed[byte_idx]) >> bit_off) & MASK);
-"""
+_UNPACK_SRC = _read_kernel_source("bit_unpack.metal")
 
 
 # ---------------------------------------------------------------------------
 # Kernel factories
 # ---------------------------------------------------------------------------
+
 
 def _pack_kernel(b: int):
     key = ("bit_pack", b)
@@ -95,6 +83,7 @@ def _unpack_kernel(b: int):
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def turboquant_bit_pack(indices: mx.array, b: int) -> mx.array:
     """Pack uint8 indices into tightly bit-packed uint8 storage.
 
@@ -111,11 +100,9 @@ def turboquant_bit_pack(indices: mx.array, b: int) -> mx.array:
     N = indices.size
     elems_per_byte = 8 // b
     if N % elems_per_byte != 0:
-        raise ValueError(
-            f"turboquant_bit_pack: N={N} not divisible by {elems_per_byte} (= 8/b)"
-        )
+        raise ValueError(f"turboquant_bit_pack: N={N} not divisible by {elems_per_byte} (= 8/b)")
     n_bytes = N * b // 8
-    flat    = indices.reshape(-1).astype(mx.uint8)
+    flat = indices.reshape(-1).astype(mx.uint8)
     outputs = _pack_kernel(b)(
         inputs=[flat],
         template=[("B_BITS", b)],
@@ -140,7 +127,7 @@ def turboquant_bit_unpack(packed: mx.array, N: int, b: int) -> mx.array:
     """
     if b not in (1, 2, 4):
         raise ValueError(f"turboquant_bit_unpack: b must be 1, 2, or 4, got {b}")
-    flat    = packed.reshape(-1).astype(mx.uint8)
+    flat = packed.reshape(-1).astype(mx.uint8)
     outputs = _unpack_kernel(b)(
         inputs=[flat],
         template=[("B_BITS", b)],

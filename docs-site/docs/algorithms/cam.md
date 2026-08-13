@@ -75,10 +75,10 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="cam",
     head_dim=128,
-    cam_budget=512,          # max tokens kept per layer (sinks included)
-    cam_n_sink=4,            # initial positions never evicted (attention sinks)
-    cam_merge="sim_weighted", # "sim_weighted" | "mean" | "drop" (drop == H2O)
-    cam_merge_keys=False,    # merge keys too (values are always merged)
+    cam_budget=512,  # max tokens kept per layer (sinks included)
+    cam_n_sink=4,  # initial positions never evicted (attention sinks)
+    cam_merge="sim_weighted",  # "sim_weighted" | "mean" | "drop" (drop == H2O)
+    cam_merge_keys=False,  # merge keys too (values are always merged)
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

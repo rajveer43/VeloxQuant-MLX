@@ -34,6 +34,7 @@ This module holds the pure numerics: group quant exposing integer codes,
 token-delta transform, and the entropy/byte estimator.  The cache wrapper owns
 the per-layer state and accounting.
 """
+
 from __future__ import annotations
 
 import math
@@ -52,6 +53,7 @@ class CodeStream(NamedTuple):
         n_rows: int original (pre-pad) token count.
         bits:   int bit-width.
     """
+
     codes: mx.array
     scale: mx.array
     zero: mx.array
@@ -130,14 +132,12 @@ def symbol_entropy_bits(symbols: mx.array) -> float:
     counts = counts.at[shifted].add(ones)
     p = counts / float(n)
     nz = p > 0
-    p_nz = mx.where(nz, p, mx.ones_like(p))   # avoid log(0); masked out below
+    p_nz = mx.where(nz, p, mx.ones_like(p))  # avoid log(0); masked out below
     ent = -mx.sum(mx.where(nz, p * (mx.log(p_nz) / math.log(2.0)), mx.zeros_like(p)))
     return float(ent.item())
 
 
-def entropy_coded_bytes(
-    stream: CodeStream, use_delta: bool = True
-) -> int:
+def entropy_coded_bytes(stream: CodeStream, use_delta: bool = True) -> int:
     """Estimate the entropy-coded size (bytes) of a CodeStream's codes.
 
     Models a real arithmetic coder by measuring the Shannon entropy of the
@@ -155,14 +155,14 @@ def entropy_coded_bytes(
         symbol stream is incompressible), so neither does this estimate.
     """
     n_groups, gs, d = stream.codes.shape
-    flat = stream.codes.reshape(n_groups * gs, d)[: stream.n_rows]   # [N, D]
+    flat = stream.codes.reshape(n_groups * gs, d)[: stream.n_rows]  # [N, D]
     symbols = token_delta(flat) if use_delta else flat
     bits_per_sym = symbol_entropy_bits(symbols)
     n_symbols = int(stream.n_rows * d)
     # A real coder never spends more than the fixed bit-width per symbol.
     bits_per_sym = min(bits_per_sym, float(stream.bits))
     code_bytes = math.ceil(n_symbols * bits_per_sym / 8)
-    param_bytes = n_groups * d * 2 * 2          # scale + zero, fp16
+    param_bytes = n_groups * d * 2 * 2  # scale + zero, fp16
     return code_bytes + param_bytes
 
 
@@ -174,9 +174,7 @@ def fixed_width_bytes(stream: CodeStream) -> int:
     return code_bytes + param_bytes
 
 
-def cachegen_quant_dequant(
-    x: mx.array, bits: int, group_size: int = 32
-) -> mx.array:
+def cachegen_quant_dequant(x: mx.array, bits: int, group_size: int = 32) -> mx.array:
     """Drop-in quant→dequant (values identical to plain group quant).
 
     The entropy layer is storage-only; the reconstructed tensor is exactly the

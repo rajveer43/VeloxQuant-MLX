@@ -13,6 +13,7 @@ also cover: factory dispatch, interface attributes, shape/dtype, cross-head
 budget allocation reaching every head, byte accounting, determinism, and
 for_model config propagation. All data is synthetic.
 """
+
 from __future__ import annotations
 
 import mlx.core as mx
@@ -135,8 +136,7 @@ def test_decode_growth_unbounded_past_prefill_budget() -> None:
         ko, vo = c.update_and_fetch(k, v)
 
     assert ko.shape[2] == prefill_size + 15, (
-        "decode tokens must be appended unconditionally, growing the cache "
-        "past the prefill budget"
+        "decode tokens must be appended unconditionally, growing the cache past the prefill budget"
     )
 
 
@@ -244,9 +244,14 @@ def test_build_via_for_model_propagates_config() -> None:
         layers = [_Layer(), _Layer(), _Layer()]
 
     cfg = KVCacheConfig(
-        method="nestedkv", head_dim=32,
-        nestedkv_budget=64, nestedkv_n_sink=8, nestedkv_window=32,
-        nestedkv_beta=2.5, nestedkv_tau=0.5, nestedkv_kappa=8.0,
+        method="nestedkv",
+        head_dim=32,
+        nestedkv_budget=64,
+        nestedkv_n_sink=8,
+        nestedkv_window=32,
+        nestedkv_beta=2.5,
+        nestedkv_tau=0.5,
+        nestedkv_kappa=8.0,
         nestedkv_safeguard_alpha=0.15,
     )
     caches = KVCacheBuilder.for_model(_Model(), cfg)

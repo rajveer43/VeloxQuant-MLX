@@ -1,4 +1,5 @@
 """Mac chip + RAM method recommender (pure heuristics, no MLX required)."""
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -59,15 +60,13 @@ def estimate_kv_fp16_mb(
 ) -> float:
     """Full K+V fp16 cache size in megabytes."""
     bytes_ = 2 * n_layers * n_kv_heads * head_dim * seq_len * 2
-    return bytes_ / (1024 ** 2)
+    return bytes_ / (1024**2)
 
 
 def recommend(req: RecommendRequest) -> RecommendResult:
     """Return a transparent method recommendation for Apple Silicon."""
     if req.ram_gb not in ALLOWED_RAM_GB:
-        raise ValueError(
-            f"ram_gb must be one of {ALLOWED_RAM_GB}, got {req.ram_gb}"
-        )
+        raise ValueError(f"ram_gb must be one of {ALLOWED_RAM_GB}, got {req.ram_gb}")
     if req.seq_len < 1:
         raise ValueError("seq_len must be >= 1")
 
@@ -76,21 +75,33 @@ def recommend(req: RecommendRequest) -> RecommendResult:
     # Leave ~4 GB for OS + apps; activations need headroom too
     headroom_gb = req.ram_gb - weight_gb - 4.0
     if headroom_gb < 3.0:
-        warnings.append(
-            f"{req.model_class} 4-bit weights (~{weight_gb} GB) leave little "
-            f"headroom on {req.ram_gb} GB (est. headroom {headroom_gb:.1f} GB). "
-            "Prefer a smaller model, eviction, or full-KV compression."
-        )
+        # Negative headroom means the weights alone overrun the machine, so say
+        # "will not fit" rather than "barely fits" — the softer phrasing would
+        # read as a caution about a setup that is in fact impossible.
+        if headroom_gb < 0:
+            warnings.append(
+                f"A {req.model_class} model will not fit in {req.ram_gb} GB. Its "
+                f"weights alone need ~{weight_gb} GB, which is more than this Mac "
+                f"has once macOS takes its share — you are about "
+                f"{abs(headroom_gb):.1f} GB short of any headroom. Pick a smaller "
+                "model."
+            )
+        else:
+            warnings.append(
+                f"A {req.model_class} model barely fits in {req.ram_gb} GB. Its "
+                f"weights alone take ~{weight_gb} GB, leaving about "
+                f"{headroom_gb:.1f} GB of headroom for everything else. Try a "
+                "smaller model, or pick a goal that caps memory."
+            )
 
-    kv_fp16 = estimate_kv_fp16_mb(
-        req.n_layers, req.n_kv_heads, req.head_dim, req.seq_len
-    )
+    kv_fp16 = estimate_kv_fp16_mb(req.n_layers, req.n_kv_heads, req.head_dim, req.seq_len)
 
     # Tiny-model Metal overhead warning (chip generation does not remove this)
     if req.model_class == "1B":
         warnings.append(
-            "Metal kernel launch overhead can dominate on tiny models; "
-            "prefer RVQ or disable Metal if tok/s drops."
+            "On a model this small the GPU spends more time starting work than "
+            "doing it, so compression can actually slow generation down. If speed "
+            "drops, switch to turboquant_rvq or turn the Metal kernels off."
         )
 
     tight = req.ram_gb <= 16 or headroom_gb < 3.0
@@ -100,13 +111,17 @@ def recommend(req: RecommendRequest) -> RecommendResult:
         ratio = 7.5
         resident = False
         rationale = (
-            "Zero-calibration default. Key accounting ~7.5x at head_dim=128. "
-            "Default path dequantizes into parent fp16 cache."
+            "The safe everyday pick: it works out of the box with no setup step, "
+            "and shrinks the key half of the cache by about 7.5x. It unpacks each "
+            "value back to full precision as it is read, so this is a size "
+            "measurement rather than a drop in live memory use."
         )
         if tight and req.model_class in ("7B", "14B", "32B"):
             warnings.append(
-                "Tight RAM with a mid/large model: consider goal=max_context "
-                "(rabitq) or goal=constant_memory (eviction) for long prompts."
+                "RAM is tight for a model this size. For long prompts you will get "
+                "more out of 'Fit the longest conversation' (rabitq), which "
+                "compresses the whole cache, or 'Never grow past a fixed memory "
+                "limit' (streaming_llm), which caps it outright."
             )
 
     elif req.goal == "max_key_accounting":
@@ -117,48 +132,56 @@ def recommend(req: RecommendRequest) -> RecommendResult:
             "key_sub_dim": 8,
             "value_sub_dim": 8,
             "use_metal_kernels": None,
-            "note": "Requires one-time codebook calibration",
+            "note": "Needs a one-time setup pass over sample data before first use",
         }
         ratio = 16.0
         resident = False
         rationale = (
-            "Product VQ 1-bit path targets ~16x key accounting when "
-            "head_dim is divisible by sub_dim=8. Needs calibration."
+            "The smallest key cache on offer, around 16x. The trade is a one-time "
+            "setup pass over sample data before you can use it, and the same "
+            "unpack-on-read caveat as the everyday option."
         )
         if req.head_dim % 8 != 0:
             warnings.append(
-                f"head_dim={req.head_dim} is not divisible by 8; "
-                "VecInfer sub_dim must divide head_dim."
+                f"This model will not work with vecinfer: it splits each vector "
+                f"into groups of 8, and this model's head dimension "
+                f"({req.head_dim}) does not divide evenly by 8."
             )
 
     elif req.goal == "best_quality":
         method = "spectral"
-        knobs = {"bit_width_inlier": 3, "note": "Requires spectral rotation calibration"}
+        knobs = {
+            "bit_width_inlier": 3,
+            "note": "Needs a one-time setup pass over sample data before first use",
+        }
         ratio = 5.3
         resident = False
         rationale = (
-            "SpectralQuant targets better reconstruction at moderate "
-            "compression via eigenbasis rotation (calibration required)."
+            "Compresses less (about 5.3x) but reconstructs the cache more "
+            "faithfully, so answers stay closest to the uncompressed model. "
+            "Needs a one-time setup pass over sample data."
         )
 
     elif req.goal == "max_context":
         if tight:
             method = "rabitq"
-            knobs = {"note": "1-bit keys + MSE-b4 values; prefer fused Metal path when available"}
+            knobs = {"note": "Compresses the whole cache; turn on the Metal kernels if available"}
             ratio = 6.0
             resident = True
             rationale = (
-                "Full-KV compression is more likely to free resident memory "
-                "than key-only accounting methods on tight RAM."
+                "Compresses both halves of the cache, so it genuinely gives RAM "
+                "back rather than only measuring smaller. That matters most on a "
+                "machine as tight as this one."
             )
         else:
             method = "rabitq"
-            knobs = {"note": "Full KV compression for longer context in fixed RAM"}
+            knobs = {"note": "Compresses the whole cache, for longer chats in the same memory"}
             ratio = 6.0
             resident = True
             rationale = (
-                "RaBitQ compresses keys and values. Better candidate for "
-                "real context capacity gains than key-only RVQ accounting."
+                "Compresses both halves of the cache, not just the keys, so the "
+                "space it frees is real. That makes it the better choice when you "
+                "want the longest possible conversation in the RAM you have."
             )
 
     elif req.goal == "constant_memory":
@@ -167,12 +190,15 @@ def recommend(req: RecommendRequest) -> RecommendResult:
         ratio = 1.0
         resident = True
         rationale = (
-            "Structural eviction keeps a fixed sink + window. Cache token "
-            "count stays bounded regardless of generation length."
+            "Keeps the first few tokens plus a sliding window of recent ones and "
+            "discards the rest, so memory use stops growing no matter how long "
+            "the conversation runs."
         )
         warnings.append(
-            "Eviction drops tokens; quality depends on the task. "
-            "For importance-based eviction try method=h2o instead."
+            "This works by forgetting older tokens, so the model can lose track of "
+            "things said early in a long conversation. How much that hurts depends "
+            "on the task. To drop the least-used tokens instead of simply the "
+            "oldest, try method=h2o."
         )
 
     else:
@@ -181,16 +207,19 @@ def recommend(req: RecommendRequest) -> RecommendResult:
     # Chip note: bandwidth/generation matters less than RAM for method pick
     if req.chip in ("M1", "M2") and req.model_class in ("14B", "32B"):
         warnings.append(
-            f"{req.chip} with {req.model_class}: expect lower tok/s; "
-            "memory fit still depends mainly on unified RAM."
+            f"A {req.model_class} model on an {req.chip} will generate text more "
+            "slowly than on a newer chip. Whether it fits at all, though, comes "
+            "down to how much RAM you have rather than which chip it is."
         )
 
     compressed_mb = kv_fp16 / ratio if ratio > 0 else kv_fp16
     # Resident estimate is only meaningful when resident_savings_likely
     if not resident:
         warnings.append(
-            "Resident RSS savings are unlikely at short context for this "
-            "method's default path (accounting ratio still valid)."
+            "This method measures smaller but may not free much actual RAM on "
+            "short prompts, because its default path unpacks values back to full "
+            "precision as it reads them. The size figure is real; treat it as a "
+            "measure of how well the data compresses, not as RAM you get back."
         )
 
     return RecommendResult(

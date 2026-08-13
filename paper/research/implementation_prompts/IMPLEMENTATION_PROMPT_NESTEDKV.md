@@ -58,15 +58,15 @@ freezes into a simple append-only buffer for decode.
 ```python
 @dataclass
 class NestedKVState:
-    keys: mx.array | None      # [n_kept, D] fp16
-    values: mx.array | None    # [n_kept, D] fp16
-    mu_stable: mx.array | None       # [D] float32 running mean of ALL normalized keys ever kept+seen
-    n_seen_for_stable: int           # count backing mu_stable's running mean (Welford-style update)
+    keys: mx.array | None  # [n_kept, D] fp16
+    values: mx.array | None  # [n_kept, D] fp16
+    mu_stable: mx.array | None  # [D] float32 running mean of ALL normalized keys ever kept+seen
+    n_seen_for_stable: int  # count backing mu_stable's running mean (Welford-style update)
     n_sink: int
     budget: int
-    block_size: int            # b = clip(floor(N/32), 128, 256) — recomputed as N grows; see note below
-    window_size: int           # W = 64, fixed
-    n_sink_score: float        # large constant used to protect sink positions, e.g. 1e9
+    block_size: int  # b = clip(floor(N/32), 128, 256) — recomputed as N grows; see note below
+    window_size: int  # W = 64, fixed
+    n_sink_score: float  # large constant used to protect sink positions, e.g. 1e9
 ```
 
 Key design decision (state carefully — this replaces an earlier draft of this
@@ -192,10 +192,10 @@ decode, not a recurring per-step eviction update like H2O/CurDKV's):
 __all__ = [
     "NestedKVState",
     "init_nestedkv_state",
-    "nestedkv_score",             # per-head, one-shot over the full prefill: returns a_star for all N tokens
+    "nestedkv_score",  # per-head, one-shot over the full prefill: returns a_star for all N tokens
     "nestedkv_allocate_head_budgets",  # cross-head budget competition (component 5), one-shot
-    "nestedkv_compress_prefill",   # per-head: score + evict once, called only at prefill
-    "nestedkv_append_decode",      # per-head: plain unscored append for decode tokens
+    "nestedkv_compress_prefill",  # per-head: score + evict once, called only at prefill
+    "nestedkv_append_decode",  # per-head: plain unscored append for decode tokens
     "nestedkv_get_kv",
     "nestedkv_fp16_bytes",
     "full_nestedkv_fp16_bytes",
@@ -237,13 +237,15 @@ trade-off, not an implementation gap.
 
 Config fields (add to `KVCacheConfig` in `cache/base.py`):
 ```python
-nestedkv_budget: int = 512               # per-head-equivalent budget (total layer budget = this * n_heads)
+nestedkv_budget: int = 512  # per-head-equivalent budget (total layer budget = this * n_heads)
 nestedkv_n_sink: int = 4
-nestedkv_window: int = 64                # W, current-memory trailing window
-nestedkv_beta: float = 3.0                # head-adaptive blend temperature (paper's stated default)
-nestedkv_tau: float = 0.60                # surprise gate threshold (paper's stated default)
-nestedkv_kappa: float = 10.0              # surprise gate sharpness (paper's stated default)
-nestedkv_safeguard_alpha: float = 0.20    # per-head guaranteed-floor fraction (paper's stated default, Appendix A)
+nestedkv_window: int = 64  # W, current-memory trailing window
+nestedkv_beta: float = 3.0  # head-adaptive blend temperature (paper's stated default)
+nestedkv_tau: float = 0.60  # surprise gate threshold (paper's stated default)
+nestedkv_kappa: float = 10.0  # surprise gate sharpness (paper's stated default)
+nestedkv_safeguard_alpha: float = (
+    0.20  # per-head guaranteed-floor fraction (paper's stated default, Appendix A)
+)
 ```
 
 Wire into `base.py`: add `"nestedkv"` to the `Literal`, add the config block

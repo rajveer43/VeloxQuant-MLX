@@ -16,6 +16,7 @@ Run from repo root:
 Defaults to a small fast-iterating model.  Pass --model to test a larger
 one (e.g. ``mlx-community/Llama-3.1-8B-Instruct-4bit``).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -43,24 +44,27 @@ LONG_PROMPT = (
     "Schwarzschild solution, gravitational time dilation, frame dragging, "
     "the cosmological constant, and the relationship between matter, "
     "curvature, and the stress-energy tensor.  Be thorough.\n\n"
-    + ("The story of relativity begins in the late 19th century when "
-       "Maxwell's equations predicted a constant speed for light that "
-       "contradicted Newtonian mechanics.  Michelson and Morley sought "
-       "to detect the luminiferous ether through interferometry but "
-       "found no fringe shift, an outcome that puzzled physicists for "
-       "decades.  Lorentz proposed length contraction; FitzGerald did "
-       "similarly.  Poincare formulated principles of relativity that "
-       "anticipated Einstein's eventual formulation. ") * 16
+    + (
+        "The story of relativity begins in the late 19th century when "
+        "Maxwell's equations predicted a constant speed for light that "
+        "contradicted Newtonian mechanics.  Michelson and Morley sought "
+        "to detect the luminiferous ether through interferometry but "
+        "found no fringe shift, an outcome that puzzled physicists for "
+        "decades.  Lorentz proposed length contraction; FitzGerald did "
+        "similarly.  Poincare formulated principles of relativity that "
+        "anticipated Einstein's eventual formulation. "
+    )
+    * 16
 )
 MAX_TOKENS = 120
 
 
 def _peak_mb() -> float:
     try:
-        return float(mx.get_peak_memory()) / (1024 ** 2)
+        return float(mx.get_peak_memory()) / (1024**2)
     except Exception:
         try:
-            return float(mx.metal.get_peak_memory()) / (1024 ** 2)
+            return float(mx.metal.get_peak_memory()) / (1024**2)
         except Exception:
             return float("nan")
 
@@ -78,7 +82,7 @@ def _reset_peak() -> None:
 def _build_caches(
     model,
     *,
-    method: str,             # "fp16" | "vecinfer-pure" | "vecinfer-fused"
+    method: str,  # "fp16" | "vecinfer-pure" | "vecinfer-fused"
     key_sub_dim: int = 8,
 ):
     """Return a list of caches, one per attention-bearing layer."""
@@ -101,9 +105,7 @@ def _build_caches(
             continue
         hd = getattr(attn, "head_dim", None)
         if hd is None and args is not None:
-            hd = getattr(args, "head_dim", None) or (
-                args.hidden_size // args.num_attention_heads
-            )
+            hd = getattr(args, "head_dim", None) or (args.hidden_size // args.num_attention_heads)
         if hd is None or method == "fp16":
             caches.append(_FB())
             continue
@@ -141,23 +143,31 @@ def _run_one(model, tokenizer, *, label: str, method: str) -> dict:
     t0 = time.perf_counter()
     try:
         response = mlx_lm.generate(
-            model, tokenizer, prompt=prompt_txt,
-            max_tokens=MAX_TOKENS, verbose=False,
+            model,
+            tokenizer,
+            prompt=prompt_txt,
+            max_tokens=MAX_TOKENS,
+            verbose=False,
             prompt_cache=caches,
         )
     except Exception as e:
         return {
-            "label": label, "method": method,
+            "label": label,
+            "method": method,
             "error": str(e),
-            "tput": 0.0, "peak_mb": float("nan"),
-            "n_tok": 0, "elapsed": 0.0, "preview": "",
+            "tput": 0.0,
+            "peak_mb": float("nan"),
+            "n_tok": 0,
+            "elapsed": 0.0,
+            "preview": "",
         }
     elapsed = time.perf_counter() - t0
     n_tok = len(tokenizer.encode(response)) if response else 0
     peak = _peak_mb()
 
     return {
-        "label": label, "method": method,
+        "label": label,
+        "method": method,
         "tput": n_tok / max(elapsed, 1e-6),
         "peak_mb": peak,
         "n_tok": n_tok,
@@ -172,9 +182,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS)
-    parser.add_argument("--long-prompt", action="store_true",
-                        help="Use a ~4-5k-token prompt to push S_kv into "
-                             "the fused-kernel sweet spot.")
+    parser.add_argument(
+        "--long-prompt",
+        action="store_true",
+        help="Use a ~4-5k-token prompt to push S_kv into the fused-kernel sweet spot.",
+    )
     args = parser.parse_args()
     MAX_TOKENS = args.max_tokens
     if args.long_prompt:
@@ -186,7 +198,8 @@ def main() -> int:
 
     from mlx_lm import load
     from veloxquant_mlx.metal.fused_sdpa import (
-        patch_mlx_lm_for_fused_sdpa, unpatch_mlx_lm,
+        patch_mlx_lm_for_fused_sdpa,
+        unpatch_mlx_lm,
     )
 
     print(f"Model: {args.model}")
@@ -212,25 +225,31 @@ def main() -> int:
 
     print("\n" + "=" * 78)
     print(f"  {'label':<18s}  {'tput tok/s':>11s}  {'peak MB':>9s}  {'n_tok':>6s}  preview")
-    print(f"  {'-'*18}  {'-'*11}  {'-'*9}  {'-'*6}  {'-'*40}")
+    print(f"  {'-' * 18}  {'-' * 11}  {'-' * 9}  {'-' * 6}  {'-' * 40}")
     for r in runs:
         if r.get("error"):
             print(f"  {r['label']:<18s}  ERROR: {r['error']}")
             continue
-        print(f"  {r['label']:<18s}  {r['tput']:>11.1f}  {r['peak_mb']:>9.0f}  "
-              f"{r['n_tok']:>6d}  {r['preview'][:60]!r}")
+        print(
+            f"  {r['label']:<18s}  {r['tput']:>11.1f}  {r['peak_mb']:>9.0f}  "
+            f"{r['n_tok']:>6d}  {r['preview'][:60]!r}"
+        )
 
     # Verdict
-    fp16   = next((r for r in runs if r["method"] == "fp16" and not r.get("error")), None)
-    pure   = next((r for r in runs if r["method"] == "vecinfer-pure" and not r.get("error")), None)
-    fused  = next((r for r in runs if r["method"] == "vecinfer-fused" and not r.get("error")), None)
+    fp16 = next((r for r in runs if r["method"] == "fp16" and not r.get("error")), None)
+    pure = next((r for r in runs if r["method"] == "vecinfer-pure" and not r.get("error")), None)
+    fused = next((r for r in runs if r["method"] == "vecinfer-fused" and not r.get("error")), None)
 
     if fused and pure and fused["tput"] > pure["tput"]:
-        print(f"\nSUCCESS: fused {fused['tput']:.1f} tok/s beats pure {pure['tput']:.1f} tok/s "
-              f"({fused['tput']/pure['tput']:.2f}x).")
+        print(
+            f"\nSUCCESS: fused {fused['tput']:.1f} tok/s beats pure {pure['tput']:.1f} tok/s "
+            f"({fused['tput'] / pure['tput']:.2f}x)."
+        )
     elif fused and pure:
-        print(f"\nNOTE: fused {fused['tput']:.1f} tok/s did not beat pure "
-              f"{pure['tput']:.1f} tok/s on this shape.")
+        print(
+            f"\nNOTE: fused {fused['tput']:.1f} tok/s did not beat pure "
+            f"{pure['tput']:.1f} tok/s on this shape."
+        )
 
     return 0
 

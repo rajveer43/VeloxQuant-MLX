@@ -69,7 +69,9 @@ latent quantization step — do not reimplement group quant):
 
 ```python
 def joint_svd_compress(
-    key_stack: list[mx.array],   # N arrays, each [S, D] fp16/fp32 — one per group member, same token range
+    key_stack: list[
+        mx.array
+    ],  # N arrays, each [S, D] fp16/fp32 — one per group member, same token range
     rank: Optional[int] = None,
     energy_threshold: float = 0.95,
 ) -> tuple[mx.array, mx.array, mx.array]:
@@ -87,16 +89,16 @@ def joint_svd_compress(
 
 ```python
 def project_into_shared_basis(
-    keys: mx.array,      # [S, D]
-    V_g: mx.array,        # [D, r]
-    K_mean_g: mx.array,   # [D]
+    keys: mx.array,  # [S, D]
+    V_g: mx.array,  # [D, r]
+    K_mean_g: mx.array,  # [D]
 ) -> mx.array:
     """Project one layer's own keys into an already-computed shared basis. Returns latent [S, r]."""
 ```
 
 ```python
 def reconstruct_from_shared_basis(
-    L_q: mx.array,        # [S, r] quantized latents
+    L_q: mx.array,  # [S, r] quantized latents
     V_g: mx.array,
     K_mean_g: mx.array,
 ) -> mx.array:
@@ -105,7 +107,7 @@ def reconstruct_from_shared_basis(
 
 ```python
 def quantize_latents_uniform(
-    L: mx.array,           # [S, r]
+    L: mx.array,  # [S, r]
     bits: int = 4,
     group_size: int = 32,
 ) -> mx.array:
@@ -170,15 +172,21 @@ class XKVCoordinator:
     def reset(self) -> None: ...
 
     def publish_member_keys(
-        self, group_id: int, member_idx: int, token_start: int,
-        keys: mx.array,   # this member's own [S, D] centered-later keys (raw, per-layer)
+        self,
+        group_id: int,
+        member_idx: int,
+        token_start: int,
+        keys: mx.array,  # this member's own [S, D] centered-later keys (raw, per-layer)
     ) -> None:
         """Any group member (leader or follower) publishes its raw prefill keys
         for this token range. Once ALL expected members for (group_id, token_start)
         have published, the basis is computed automatically and cached."""
 
     def get_shared_basis(
-        self, group_id: int, token_start: int, expected_members: int,
+        self,
+        group_id: int,
+        token_start: int,
+        expected_members: int,
     ) -> Optional[tuple[mx.array, mx.array, mx.array]]:
         """Returns (V_g, K_mean_g, singular_values) once all `expected_members`
         have published for this (group_id, token_start); None if still waiting.
@@ -320,12 +328,12 @@ Run `pytest veloxquant_mlx/tests/cache/test_xkv_cache.py -v` before continuing.
 2. Add a new config field block (mirror the `svdq_*` / `cam_*` blocks around
    lines 65-70 / 156-159):
    ```python
-   xkv_group_size: int = 2          # layers per shared-subspace group (2 = pairs)
-   xkv_rank: Optional[int] = None   # explicit rank; None → energy threshold
+   xkv_group_size: int = 2  # layers per shared-subspace group (2 = pairs)
+   xkv_rank: Optional[int] = None  # explicit rank; None → energy threshold
    xkv_energy_threshold: float = 0.95
-   xkv_latent_bits: int = 4         # single-bit-width latent quantization
+   xkv_latent_bits: int = 4  # single-bit-width latent quantization
    xkv_group_quant_size: int = 32
-   xkv_max_ctx: int = 8192          # coordinator per-group token budget
+   xkv_max_ctx: int = 8192  # coordinator per-group token budget
    ```
 3. Add `elif config.method == "xkv":` dispatch around line ~268-274 (next to
    the `svdq`/`xquant` branches) — but note xKV needs a coordinator like

@@ -1,4 +1,5 @@
 """Tests for VecInferKVCache (mlx_lm-compatible wrapper)."""
+
 from __future__ import annotations
 
 import math
@@ -104,14 +105,16 @@ def test_reconstruction_error_bounded() -> None:
 
 def test_codebook_bytes_reported() -> None:
     c = _build(key_sub_dim=4, key_bits=8, value_sub_dim=8, value_bits=8)
-    expected = (2 ** 8) * 4 * 2 + (2 ** 8) * 8 * 2
+    expected = (2**8) * 4 * 2 + (2**8) * 8 * 2
     assert c.codebook_bytes == expected
 
 
 def test_head_dim_must_divide_sub_dim() -> None:
     with pytest.raises(ValueError, match="not divisible"):
         cfg = KVCacheConfig(
-            method="vecinfer", head_dim=128,
-            key_sub_dim=5, key_codebook_bits=4,
+            method="vecinfer",
+            head_dim=128,
+            key_sub_dim=5,
+            key_codebook_bits=4,
         )
         KVCacheFactory.create(cfg)

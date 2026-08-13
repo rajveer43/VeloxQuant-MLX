@@ -1,4 +1,5 @@
 """Tests for BitPackBuffer — roundtrip packing for b = 1, 2, 3, 4."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -12,7 +13,7 @@ from veloxquant_mlx.dsa.bit_pack import BitPackBuffer
 def test_bit_pack_roundtrip(b: int, n: int) -> None:
     buf = BitPackBuffer(b=b)
     rng = np.random.default_rng(b * 1000 + n)
-    original = rng.integers(0, 2 ** b, size=n, dtype=np.uint8)
+    original = rng.integers(0, 2**b, size=n, dtype=np.uint8)
     packed = buf.pack(original)
     recovered = buf.unpack(packed, n)
     np.testing.assert_array_equal(original, recovered)
@@ -68,7 +69,7 @@ def test_asymmetric_lengths(b: int) -> None:
         if n == 0:
             continue
         original = np.zeros(n, dtype=np.uint8)
-        original[0] = 2 ** b - 1
+        original[0] = 2**b - 1
         packed = buf.pack(original)
         recovered = buf.unpack(packed, n)
         np.testing.assert_array_equal(original, recovered, err_msg=f"b={b}, n={n}")

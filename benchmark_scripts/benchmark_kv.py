@@ -10,6 +10,7 @@ Accuracy strategy:
 Usage:
     python benchmark_kv.py
 """
+
 import math
 import time
 from typing import List, Optional
@@ -56,8 +57,7 @@ class TurboQuantMLXKVCache(_MLXKVCache):
 
         m = min(head_dim, 64)
         self._quantizers = [
-            TurboQuantProd(d=head_dim, b=bits, m=m, seed=seed + i)
-            for i in range(n_kv_heads)
+            TurboQuantProd(d=head_dim, b=bits, m=m, seed=seed + i) for i in range(n_kv_heads)
         ]
         # Per-head outlier channel indices (detected from first 32 tokens)
         self._outlier_idx: Optional[List[np.ndarray]] = None
@@ -72,8 +72,8 @@ class TurboQuantMLXKVCache(_MLXKVCache):
 
     def _calibrate_outliers(self, head: int, buf: List[np.ndarray]) -> None:
         """Set outlier channel indices from calibration buffer variance."""
-        stacked = np.concatenate(buf, axis=0)           # (T, D)
-        var = stacked.var(axis=0)                        # (D,)
+        stacked = np.concatenate(buf, axis=0)  # (T, D)
+        var = stacked.var(axis=0)  # (D,)
         sorted_idx = np.argsort(var)[::-1]
         self._outlier_idx[head] = sorted_idx[: self._n_outlier].astype(np.int32)
         all_idx = np.arange(self._head_dim, dtype=np.int32)
@@ -91,7 +91,7 @@ class TurboQuantMLXKVCache(_MLXKVCache):
         for h in range(H):
             batch_results = []
             for b in range(B):
-                kv_f32 = keys[b, h, :, :].astype(mx.float32)   # (S, D)
+                kv_f32 = keys[b, h, :, :].astype(mx.float32)  # (S, D)
 
                 # Accumulate calibration data for outlier detection
                 if self._n_outlier > 0 and not self._calib_done:
@@ -105,11 +105,13 @@ class TurboQuantMLXKVCache(_MLXKVCache):
                 kv_unit = (kv_f32 / safe_norms).astype(mx.float16)
 
                 # --- Outlier protection: zero out outlier dims before TQ ---
-                if (self._n_outlier > 0
-                        and self._outlier_idx is not None
-                        and self._outlier_idx[h] is not None):
+                if (
+                    self._n_outlier > 0
+                    and self._outlier_idx is not None
+                    and self._outlier_idx[h] is not None
+                ):
                     oidx = mx.array(self._outlier_idx[h])
-                    outlier_vals = kv_f32[:, oidx]   # (S, n_out), fp32
+                    outlier_vals = kv_f32[:, oidx]  # (S, n_out), fp32
                     # zero outlier dims in the unit vector sent to TurboQuant
                     kv_unit_np = np.array(kv_unit)
                     kv_unit_np[:, self._outlier_idx[h]] = 0.0
@@ -117,26 +119,26 @@ class TurboQuantMLXKVCache(_MLXKVCache):
 
                 # --- TurboQuant encode/decode ---
                 ev = self._quantizers[h].encode(kv_unit)
-                k_unit_hat = self._quantizers[h].decode(ev)           # (S, D) fp16
+                k_unit_hat = self._quantizers[h].decode(ev)  # (S, D) fp16
 
                 # --- Rescale by norms ---
-                k_hat = (k_unit_hat.astype(mx.float32) * safe_norms)
+                k_hat = k_unit_hat.astype(mx.float32) * safe_norms
 
                 # --- Re-inject outlier channels at fp16 precision ---
-                if (self._n_outlier > 0
-                        and self._outlier_idx is not None
-                        and self._outlier_idx[h] is not None):
+                if (
+                    self._n_outlier > 0
+                    and self._outlier_idx is not None
+                    and self._outlier_idx[h] is not None
+                ):
                     k_hat_np = np.array(k_hat)
                     k_hat_np[:, self._outlier_idx[h]] = np.array(outlier_vals, dtype=np.float32)
                     k_hat = mx.array(k_hat_np, dtype=mx.float32)
 
                 batch_results.append(k_hat.astype(keys.dtype))
-            head_results.append(mx.stack(batch_results, axis=0))   # (B, S, D)
-        k_dequant = mx.stack(head_results, axis=1)                  # (B, H, S, D)
+            head_results.append(mx.stack(batch_results, axis=0))  # (B, S, D)
+        k_dequant = mx.stack(head_results, axis=1)  # (B, H, S, D)
 
-        if self._n_outlier > 0 and all(
-            self._outlier_idx[h] is not None for h in range(H)
-        ):
+        if self._n_outlier > 0 and all(self._outlier_idx[h] is not None for h in range(H)):
             self._calib_done = True
 
         # Memory accounting: keys only (values stay fp16 in parent)
@@ -144,12 +146,16 @@ class TurboQuantMLXKVCache(_MLXKVCache):
         m_eff = self._quantizers[0]._m_eff
         d_inlier = (self._head_dim - self._n_outlier) if self._n_outlier > 0 else self._head_dim
         per_token = (
-            math.ceil(d_inlier * b_mse / 8)    # MSE indices (inlier dims)
-            + math.ceil(m_eff / 8)              # QJL signs
-            + 2                                  # residual norm fp16
-            + self._n_outlier * 2               # outlier fp16 channels
-            + 2                                  # per-vector norm fp16
-        ) * H * B
+            (
+                math.ceil(d_inlier * b_mse / 8)  # MSE indices (inlier dims)
+                + math.ceil(m_eff / 8)  # QJL signs
+                + 2  # residual norm fp16
+                + self._n_outlier * 2  # outlier fp16 channels
+                + 2  # per-vector norm fp16
+            )
+            * H
+            * B
+        )
         self._key_bytes_compressed += per_token * S
         self._key_bytes_fp16 += H * B * S * self._head_dim * 2
 
@@ -195,15 +201,18 @@ def run(model, tokenizer, cache_factory, label: str, max_tokens: int = MAX_TOKEN
     original_make_cache = model.make_cache
     injected = []
     if cache_factory is not None:
+
         def _patch(*_, **__):
             c = cache_factory()
             injected.extend(c)
             return c
+
         model.make_cache = _patch
 
     t0 = time.perf_counter()
     response = mlx_lm.generate(
-        model, tokenizer,
+        model,
+        tokenizer,
         prompt=prompt_text,
         max_tokens=max_tokens,
         verbose=False,
@@ -215,14 +224,14 @@ def run(model, tokenizer, cache_factory, label: str, max_tokens: int = MAX_TOKEN
     ratio_str = ""
     if injected:
         k_fp16 = sum(c.fp16_key_bytes for c in injected)
-        k_cmp  = sum(c.compressed_key_bytes for c in injected)
+        k_cmp = sum(c.compressed_key_bytes for c in injected)
         if k_cmp > 0:
-            ratio_str = f"  | key compression {k_fp16/k_cmp:.2f}x  ({k_cmp/1024:.0f} KB vs {k_fp16/1024:.0f} KB fp16)"
+            ratio_str = f"  | key compression {k_fp16 / k_cmp:.2f}x  ({k_cmp / 1024:.0f} KB vs {k_fp16 / 1024:.0f} KB fp16)"
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"[{label}]{ratio_str}")
     print(f"  {response[:500]}{'...' if len(response) > 500 else ''}")
-    print(f"  {toks} tokens  {elapsed:.1f}s  ({toks/elapsed:.1f} tok/s)")
+    print(f"  {toks} tokens  {elapsed:.1f}s  ({toks / elapsed:.1f} tok/s)")
     return response, elapsed, injected
 
 
@@ -240,14 +249,16 @@ resp_fp16, t_fp16, _ = run(model, tokenizer, None, "fp16 baseline")
 
 # 3-bit (aggressive, some quality loss)
 resp_3b, t_3b, c3 = run(
-    model, tokenizer,
+    model,
+    tokenizer,
     lambda: build_caches(model, bits=3),
     "TurboQuant 3-bit",
 )
 
 # 4-bit (near-lossless)
 resp_4b, t_4b, c4 = run(
-    model, tokenizer,
+    model,
+    tokenizer,
     lambda: build_caches(model, bits=4),
     "TurboQuant 4-bit",
 )
@@ -255,20 +266,23 @@ resp_4b, t_4b, c4 = run(
 # 4-bit + outlier protection (best quality)
 N_OUTLIER = 8
 resp_4bo, t_4bo, c4o = run(
-    model, tokenizer,
+    model,
+    tokenizer,
     lambda: build_caches(model, bits=4, n_outlier=N_OUTLIER),
     f"TurboQuant 4-bit + {N_OUTLIER} outlier channels",
 )
 
 # Summary table
-print(f"\n{'='*60}")
+print(f"\n{'=' * 60}")
 print(f"{'Config':<35} {'Compression':>12} {'Time':>7} {'Quality'}")
-print(f"{'-'*60}")
+print(f"{'-' * 60}")
+
 
 def ratio(caches):
     kf = sum(c.fp16_key_bytes for c in caches)
     kc = sum(c.compressed_key_bytes for c in caches)
-    return f"{kf/kc:.2f}x" if kc > 0 else "—"
+    return f"{kf / kc:.2f}x" if kc > 0 else "—"
+
 
 fp16_tok = sum(
     cfg.num_key_value_heads * hd * 2 * 2 * cfg.num_hidden_layers

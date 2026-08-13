@@ -44,6 +44,7 @@ per token. The searched α adds nothing (folded into lo/scale); the frozen
 permutations add ``2 * H * D * 4`` bytes per layer total, counted once in
 ``perm_bytes``.
 """
+
 from __future__ import annotations
 
 import math
@@ -92,16 +93,11 @@ class SKVQKVCache(_MLXKVCache):
         self._max_ctx = int(getattr(config, "skvq_max_ctx", 8192))
 
         # Fail at build time, not on the first update (clear messages).
-        for name, b in (("skvq_bits_key", self._bits_k),
-                        ("skvq_bits_value", self._bits_v)):
+        for name, b in (("skvq_bits_key", self._bits_k), ("skvq_bits_value", self._bits_v)):
             if not (1 <= b <= 8):
-                raise ValueError(
-                    f"SKVQKVCache: {name}={b} must be in [1, 8] (uint8 codes)"
-                )
+                raise ValueError(f"SKVQKVCache: {name}={b} must be in [1, 8] (uint8 codes)")
         if self._group_size < 1:
-            raise ValueError(
-                f"SKVQKVCache: skvq_group_size={self._group_size} must be >= 1"
-            )
+            raise ValueError(f"SKVQKVCache: skvq_group_size={self._group_size} must be >= 1")
         if self._window < 2:
             raise ValueError(
                 f"SKVQKVCache: skvq_window={self._window} must be >= 2 (the "
@@ -113,14 +109,9 @@ class SKVQKVCache(_MLXKVCache):
                 f"[0, skvq_window) so sinks live entirely inside chunk 0"
             )
         if not (0.0 < self._clip_alpha <= 1.0):
-            raise ValueError(
-                f"SKVQKVCache: skvq_clip_alpha={self._clip_alpha} must be "
-                f"in (0, 1]"
-            )
+            raise ValueError(f"SKVQKVCache: skvq_clip_alpha={self._clip_alpha} must be in (0, 1]")
 
-        self._alphas = (
-            DEFAULT_ALPHA_GRID if self._clip_search else (self._clip_alpha,)
-        )
+        self._alphas = DEFAULT_ALPHA_GRID if self._clip_search else (self._clip_alpha,)
 
         # Per-head channel permutations, frozen from the first flushed
         # chunk. None until then; identity is represented by None when
@@ -158,7 +149,7 @@ class SKVQKVCache(_MLXKVCache):
         """
         B, H, r, D = chunk.shape
         x = chunk.astype(mx.float32).transpose(1, 0, 2, 3).reshape(H, B * r, D)
-        rng = mx.max(x, axis=1) - mx.min(x, axis=1)      # [H, D]
+        rng = mx.max(x, axis=1) - mx.min(x, axis=1)  # [H, D]
         perm = mx.argsort(rng, axis=-1).astype(mx.int32)
         inv = mx.argsort(perm, axis=-1).astype(mx.int32)
         return perm, inv
@@ -179,9 +170,7 @@ class SKVQKVCache(_MLXKVCache):
         if perm is not None:
             x32 = self._gather_channels(x32, perm)
         flat = x32.reshape(B * H * r, D)
-        codes, lo, scale = clipped_group_quant(
-            flat, bits, self._group_size, self._alphas
-        )
+        codes, lo, scale = clipped_group_quant(flat, bits, self._group_size, self._alphas)
         recon = clipped_group_dequant(codes, lo, scale, self._group_size, D)
         recon = recon.reshape(B, H, r, D)
         if inv is not None:
@@ -205,8 +194,7 @@ class SKVQKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         if self.offset + S > self._max_ctx:
             raise ValueError(
-                f"SKVQKVCache: context {self.offset + S} exceeds "
-                f"skvq_max_ctx={self._max_ctx}"
+                f"SKVQKVCache: context {self.offset + S} exceeds skvq_max_ctx={self._max_ctx}"
             )
         self._B, self._H = B, H
 
@@ -222,19 +210,15 @@ class SKVQKVCache(_MLXKVCache):
                 self._perm_k, self._inv_k = self._per_head_perms(k_chunk)
                 self._perm_v, self._inv_v = self._per_head_perms(v_chunk)
 
-            k_q = self._round_trip(k_chunk, self._perm_k, self._inv_k,
-                                   self._bits_k)
-            v_q = self._round_trip(v_chunk, self._perm_v, self._inv_v,
-                                   self._bits_v)
+            k_q = self._round_trip(k_chunk, self._perm_k, self._inv_k, self._bits_k)
+            v_q = self._round_trip(v_chunk, self._perm_v, self._inv_v, self._bits_v)
             if s == 0 and self._n_sink > 0:
                 # Sink filter: leading tokens stay fp16-exact.
                 k_q = mx.concatenate(
-                    [k_chunk[..., : self._n_sink, :],
-                     k_q[..., self._n_sink :, :]], axis=2
+                    [k_chunk[..., : self._n_sink, :], k_q[..., self._n_sink :, :]], axis=2
                 )
                 v_q = mx.concatenate(
-                    [v_chunk[..., : self._n_sink, :],
-                     v_q[..., self._n_sink :, :]], axis=2
+                    [v_chunk[..., : self._n_sink, :], v_q[..., self._n_sink :, :]], axis=2
                 )
             self.keys[..., s:e, :] = k_q
             self.values[..., s:e, :] = v_q

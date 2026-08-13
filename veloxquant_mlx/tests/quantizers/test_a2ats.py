@@ -5,6 +5,7 @@ blends reconstruction quality with query-cosine-similarity when assigning
 codebook centroids, and splits tokens into a high-fidelity retrieval set vs.
 the bulk via the same query-similarity signal. All data is synthetic.
 """
+
 from __future__ import annotations
 
 import math
@@ -27,6 +28,7 @@ def _mat(n, d, seed=0):
 # ---------------------------------------------------------------------------
 # a2ats_query_aware_assignment
 # ---------------------------------------------------------------------------
+
 
 def test_assignment_output_shape_and_dtype() -> None:
     x = _mat(5, 4)
@@ -51,10 +53,13 @@ def test_beta_one_reduces_to_nearest_centroid() -> None:
     """beta=1.0 -> pure reconstruction-error term -> must pick the same
     centroid as plain nearest-centroid VQ, regardless of query."""
     x = mx.array([[1.0, 0.0, 0.0, 0.0]], dtype=mx.float32)
-    cb = mx.array([
-        [1.0, 0.0, 0.0, 0.0],   # nearest to x
-        [0.0, 0.0, 0.0, 1.0],   # far from x, but aligned with an adversarial query
-    ], dtype=mx.float32)
+    cb = mx.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],  # nearest to x
+            [0.0, 0.0, 0.0, 1.0],  # far from x, but aligned with an adversarial query
+        ],
+        dtype=mx.float32,
+    )
     adversarial_query = mx.array([0.0, 0.0, 0.0, 1.0], dtype=mx.float32)
     idx = a2ats_query_aware_assignment(x, cb, adversarial_query, beta=1.0)
     assert int(idx[0].item()) == 0
@@ -67,17 +72,20 @@ def test_query_aware_prefers_relevant_centroid_over_nearest() -> None:
     mode does something (mirrors AMC's
     test_query_aware_saliency_downweights_high_magnitude_irrelevant_tokens)."""
     x = mx.array([[1.0, 0.1, 0.0, 0.0]], dtype=mx.float32)
-    cb = mx.array([
-        [1.0, 0.0, 0.0, 0.0],    # nearest to x by L2, but orthogonal-ish to query
-        [0.0, 0.0, 0.0, 1.0],    # far from x, but exactly aligned with query
-    ], dtype=mx.float32)
+    cb = mx.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],  # nearest to x by L2, but orthogonal-ish to query
+            [0.0, 0.0, 0.0, 1.0],  # far from x, but exactly aligned with query
+        ],
+        dtype=mx.float32,
+    )
     query = mx.array([0.0, 0.0, 0.0, 1.0], dtype=mx.float32)
 
     idx_nearest_only = a2ats_query_aware_assignment(x, cb, query, beta=1.0)
     idx_query_dominant = a2ats_query_aware_assignment(x, cb, query, beta=0.0)
 
-    assert int(idx_nearest_only[0].item()) == 0     # pure reconstruction picks centroid 0
-    assert int(idx_query_dominant[0].item()) == 1    # pure query-alignment picks centroid 1
+    assert int(idx_nearest_only[0].item()) == 0  # pure reconstruction picks centroid 0
+    assert int(idx_query_dominant[0].item()) == 1  # pure query-alignment picks centroid 1
 
 
 def test_assignment_deterministic() -> None:
@@ -92,6 +100,7 @@ def test_assignment_deterministic() -> None:
 # ---------------------------------------------------------------------------
 # a2ats_select_retrieval_set
 # ---------------------------------------------------------------------------
+
 
 def test_retrieval_set_respects_fraction() -> None:
     keys = _mat(100, 8, seed=10)
@@ -116,12 +125,15 @@ def test_retrieval_set_picks_most_similar_to_query() -> None:
     retrieval set contains the most-similar tokens, not arbitrary ones."""
     d = 4
     query = mx.array([1.0, 0.0, 0.0, 0.0], dtype=mx.float32)
-    keys = mx.array([
-        [1.0, 0.0, 0.0, 0.0],    # most similar (parallel)
-        [0.9, 0.1, 0.0, 0.0],    # second most similar
-        [0.0, 1.0, 0.0, 0.0],    # orthogonal
-        [-1.0, 0.0, 0.0, 0.0],   # anti-parallel (least similar)
-    ], dtype=mx.float32)
+    keys = mx.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],  # most similar (parallel)
+            [0.9, 0.1, 0.0, 0.0],  # second most similar
+            [0.0, 1.0, 0.0, 0.0],  # orthogonal
+            [-1.0, 0.0, 0.0, 0.0],  # anti-parallel (least similar)
+        ],
+        dtype=mx.float32,
+    )
     ret_idx, bulk_idx = a2ats_select_retrieval_set(keys, query, retrieval_fraction=0.5)
     ret_set = set(np.array(ret_idx).tolist())
     assert ret_set == {0, 1}
@@ -174,13 +186,14 @@ def test_retrieval_set_deterministic() -> None:
 # (:issue:`29`, finding 4)
 # ---------------------------------------------------------------------------
 
+
 def test_second_moment_is_symmetric_positive_definite() -> None:
     """``H = E[qᵀq]`` plus a ridge must be SPD — Cholesky (Eq. 15) requires
     definite, not merely semi-definite, which matters when M < d."""
     from veloxquant_mlx.quantizers.a2ats import a2ats_query_second_moment
 
     q = mx.array(np.random.default_rng(0).standard_normal((3, 8)).astype(np.float32))
-    h = np.array(a2ats_query_second_moment(q))   # M=3 < d=8: rank-deficient
+    h = np.array(a2ats_query_second_moment(q))  # M=3 < d=8: rank-deficient
     assert np.allclose(h, h.T, atol=1e-5)
     assert np.all(np.linalg.eigvalsh(h) > 0)
 
@@ -188,7 +201,8 @@ def test_second_moment_is_symmetric_positive_definite() -> None:
 def test_cholesky_factor_reconstructs_h() -> None:
     """Eq. (15): ``H = L Lᵀ``, with ``L`` lower-triangular."""
     from veloxquant_mlx.quantizers.a2ats import (
-        a2ats_cholesky_factor, a2ats_query_second_moment,
+        a2ats_cholesky_factor,
+        a2ats_query_second_moment,
     )
 
     q = mx.array(np.random.default_rng(1).standard_normal((50, 6)).astype(np.float32))
@@ -203,7 +217,8 @@ def test_h_weighted_assignment_matches_bruteforce_eq14() -> None:
     in ``z = k̃L`` space must equal minimizing ``(k̃ − c) H (k̃ − c)ᵀ``
     directly."""
     from veloxquant_mlx.quantizers.a2ats import (
-        a2ats_cholesky_factor, a2ats_h_weighted_assignment,
+        a2ats_cholesky_factor,
+        a2ats_h_weighted_assignment,
         a2ats_query_second_moment,
     )
 
@@ -228,7 +243,8 @@ def test_h_identity_reduces_to_plain_nearest_centroid() -> None:
     """§3.2's premise: the query-aware and plain-VQ objectives coincide
     exactly when ``H ∝ I``. This pins that reduction."""
     from veloxquant_mlx.quantizers.a2ats import (
-        a2ats_cholesky_factor, a2ats_h_weighted_assignment,
+        a2ats_cholesky_factor,
+        a2ats_h_weighted_assignment,
     )
 
     rng = np.random.default_rng(3)
@@ -244,7 +260,8 @@ def test_h_identity_reduces_to_plain_nearest_centroid() -> None:
 
 def test_h_weighted_assignment_empty_input() -> None:
     from veloxquant_mlx.quantizers.a2ats import (
-        a2ats_cholesky_factor, a2ats_h_weighted_assignment,
+        a2ats_cholesky_factor,
+        a2ats_h_weighted_assignment,
     )
 
     out = a2ats_h_weighted_assignment(
@@ -259,7 +276,8 @@ def test_h_weighted_differs_from_plain_vq_under_anisotropic_h() -> None:
     paper's assignment must actually diverge from plain nearest-centroid —
     otherwise §3.2's contribution would be vacuous."""
     from veloxquant_mlx.quantizers.a2ats import (
-        a2ats_cholesky_factor, a2ats_h_weighted_assignment,
+        a2ats_cholesky_factor,
+        a2ats_h_weighted_assignment,
     )
 
     # Heavily anisotropic: dimension 0 matters ~100x more than dimension 1.
