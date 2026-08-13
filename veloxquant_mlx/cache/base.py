@@ -1277,9 +1277,7 @@ class KVCacheBuilder:
                 seed=config.seed + i,
                 store=config.store,
             )
-            caches.append(
-                ChunkKVCache(layer_cfg, layer_id=attn_pos, coordinator=coordinator)
-            )
+            caches.append(ChunkKVCache(layer_cfg, layer_id=attn_pos, coordinator=coordinator))
             attn_pos += 1
         return caches
 
