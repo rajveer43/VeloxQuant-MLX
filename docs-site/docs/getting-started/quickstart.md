@@ -13,6 +13,12 @@ This guide gets you from a fresh install to compressed LLM inference in five min
 Complete [Installation](../getting-started/installation) first. You need `mlx_lm` installed (`pip install mlx-lm`) and a model downloaded locally (e.g. `mlx-community/Llama-3.2-3B-Instruct-4bit`).
 :::
 
+:::tip[No Python? Start here instead]
+`veloxquant panel` runs a local Start/Stop web UI and OpenAI-compatible server
+— pick a model and method, no code required. See the
+[Control Panel guide](../guides/control-panel).
+:::
+
 ## Step 1 — Load a model
 
 ```python
@@ -21,18 +27,20 @@ import mlx_lm
 model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 ```
 
-## Step 2 — Create a compressed KV cache
+## Step 2 — Wire in a compressed KV cache
 
 ```python
-from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
+from veloxquant_mlx.cache import KVCacheConfig
+from veloxquant_mlx.integration.mlx_lm_patch import patch_model_kv_cache
 
 config = KVCacheConfig(
     method="turboquant_rvq",  # zero-calibration 1-bit RVQ
-    bits=1,  # 1-bit keys, 2-bit values (default)
+    bit_width_inlier=1,  # 1-bit inlier channels
+    seed=42,
 )
 
-# Build per-layer cache matching the model architecture
-cache = KVCacheBuilder.build(model, config)
+# Overrides model.make_cache() so mlx_lm builds the quantized cache automatically
+patch_model_kv_cache(model, config)
 ```
 
 ## Step 3 — Generate with compression
@@ -45,12 +53,13 @@ response = mlx_lm.generate(
     tokenizer,
     prompt=prompt,
     max_tokens=512,
-    kv_cache=cache,  # drop-in replacement for the default cache
     verbose=True,
 )
 
 print(response)
 ```
+
+No cache argument needed — `patch_model_kv_cache` already rewired `model.make_cache()`, so every `generate()` / `stream_generate()` call on this model builds a fresh quantized cache automatically.
 
 ## Step 4 — Inspect memory savings
 
@@ -58,85 +67,64 @@ print(response)
 from veloxquant_mlx.observers.memory import MemoryObserver
 
 observer = MemoryObserver()
-observer.attach(cache)
+config = KVCacheConfig(
+    method="turboquant_rvq",
+    bit_width_inlier=1,
+    seed=42,
+    observers=[observer],
+)
+patch_model_kv_cache(model, config)
 
 # Run a longer generation to see the savings
-response = mlx_lm.generate(model, tokenizer, prompt=prompt, max_tokens=2048, kv_cache=cache)
+response = mlx_lm.generate(model, tokenizer, prompt=prompt, max_tokens=2048)
 
 report = observer.report()
-print(f"Peak compressed memory : {report.peak_compressed_mb:.1f} MB")
-print(f"Equivalent fp16 memory : {report.peak_fp16_mb:.1f} MB")
-print(f"Compression ratio      : {report.compression_ratio:.1f}×")
+print(report)  # {'quantize': <bytes>, 'dequantize': <bytes>, ...} per pipeline stage
+print(f"Peak single-stage delta: {observer.peak_delta_bytes()} bytes")
 ```
 
-Example output on M3 Pro (Llama-3.2-3B, 2048 tokens):
-
-```
-Peak compressed memory : 48.3 MB
-Equivalent fp16 memory : 362.0 MB
-Compression ratio      : 7.5×
-```
+`report()` returns accounting deltas per pipeline stage (bytes saved by storing quantized values instead of fp16), not a resident-RAM measurement — see [Choose the right algorithm](../algorithms/overview) for which methods reduce accounting size only vs. actual resident memory before treating this as an Activity-Monitor-visible number.
 
 ## Full script
 
 ```python
 import mlx_lm
-from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
+from veloxquant_mlx.cache import KVCacheConfig
+from veloxquant_mlx.integration.mlx_lm_patch import patch_model_kv_cache
 from veloxquant_mlx.observers.memory import MemoryObserver
 
 # Load model
 model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 
-# Configure compressed cache
-config = KVCacheConfig(method="turboquant_rvq", bits=1)
-cache = KVCacheBuilder.build(model, config)
-
-# Attach memory observer
+# Configure compressed cache + memory accounting
 observer = MemoryObserver()
-observer.attach(cache)
+config = KVCacheConfig(
+    method="turboquant_rvq",
+    bit_width_inlier=1,
+    seed=42,
+    observers=[observer],
+)
+patch_model_kv_cache(model, config)
 
-# Generate
+# Generate — no cache argument needed, model.make_cache() is already patched
 prompt = "Write a short story about a robot learning to paint."
-response = mlx_lm.generate(model, tokenizer, prompt=prompt, max_tokens=1024, kv_cache=cache)
+response = mlx_lm.generate(model, tokenizer, prompt=prompt, max_tokens=1024)
 print(response)
 
-# Print stats
-report = observer.report()
-print(
-    f"\nMemory: {report.peak_compressed_mb:.1f} MB "
-    f"(vs {report.peak_fp16_mb:.1f} MB fp16, "
-    f"{report.compression_ratio:.1f}× compression)"
-)
+# Print accounting stats
+print(f"\nMemory deltas by stage: {observer.report()}")
 ```
 
 ## What just happened?
 
 - `KVCacheConfig` describes which algorithm and bit-width to use
-- `KVCacheBuilder.build()` creates one cache per transformer layer, matching the model's `num_key_value_heads` and `head_dim`
+- `patch_model_kv_cache()` overrides `model.make_cache()` so `mlx_lm.generate()` / `stream_generate()` build a quantized cache automatically, with no per-call cache argument
 - During generation, each attention layer writes compressed keys/values via Metal GPU kernels instead of storing raw fp16 tensors
-- The `MemoryObserver` tracks peak allocation and reports the savings
+- The `MemoryObserver`, attached via `KVCacheConfig(observers=[...])`, records per-stage byte deltas you can inspect with `.report()`
 
 ## Try a stronger algorithm
 
-For higher accuracy at a slightly higher compute cost, switch to VecInfer (requires a one-time codebook training step):
-
-```python
-from veloxquant_mlx.allocators.vecinfer import train_codebook, calibrate_smooth_factors
-
-# One-time calibration (save and reuse across sessions)
-smooth_factors = calibrate_smooth_factors(model, tokenizer, num_samples=64)
-codebook = train_codebook(model, tokenizer, smooth_factors, num_samples=128)
-
-config = KVCacheConfig(
-    method="vecinfer",
-    bits=2,
-    codebook=codebook,
-    smooth_factors=smooth_factors,
-)
-cache = KVCacheBuilder.build(model, config)
-```
-
-See [VecInfer algorithm docs](../algorithms/vecinfer) and the [mlx_lm integration guide](../guides/mlx-lm-integration) for full details.
+For higher accuracy at a slightly higher compute cost, switch to VecInfer. It requires a one-time codebook training step (`calibrate_smooth_factors` + `train_codebook` from `veloxquant_mlx.allocators.vecinfer`) before it can be passed to `KVCacheConfig(method="vecinfer", ...)` — see the [VecInfer algorithm docs](../algorithms/vecinfer) for the full, runnable calibration snippet and the [mlx_lm integration guide](../guides/mlx-lm-integration) for wiring it into `patch_model_kv_cache`.
 
 ## Next steps
 

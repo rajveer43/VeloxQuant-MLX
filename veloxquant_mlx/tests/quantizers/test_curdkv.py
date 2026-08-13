@@ -17,6 +17,8 @@ loading.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import mlx.core as mx
 import numpy as np
 import pytest
@@ -380,6 +382,136 @@ def test_h2o_blind_spot_on_same_planted_geometry() -> None:
     assert abs(n_class1_kept - n_class2_kept) <= budget // 2 + 1, (
         "H2O should not show a strong value-aware preference on identical-key "
         "geometry — its blind spot is exactly the point of this test"
+    )
+
+
+# ---------------------------------------------------------------------------
+# SVD non-convergence fallback (real-model regression)
+# ---------------------------------------------------------------------------
+
+
+def test_leverage_scores_falls_back_when_svd_does_not_converge() -> None:
+    """np.linalg.svd's ``gesdd`` LAPACK driver has documented, data-dependent
+    non-convergence flakiness (observed on Apple's Accelerate backend during
+    real-model generation — see
+    https://github.com/rajveer43/VeloxQuant-MLX/issues/147 for the crash
+    trace: a full mlx_lm.generate() run through CurDKVKVCache died with
+    ``numpy.linalg.LinAlgError: SVD did not converge`` on ordinary, non-
+    adversarial real K/V activations). This is not reliably reproducible
+    with synthetic inputs, so this test forces the failure via a mock and
+    checks that ``_leverage_scores`` falls back to scipy's more robust
+    ``gesvd`` driver instead of propagating the crash.
+    """
+    from veloxquant_mlx.quantizers.curdkv import _leverage_scores
+
+    D = 16
+    n = 10
+    rng = np.random.default_rng(0)
+    keys = mx.array(rng.standard_normal((n, D)).astype(np.float32))
+    values = mx.array(rng.standard_normal((n, D)).astype(np.float32))
+    query = mx.array(rng.standard_normal(D).astype(np.float32))
+
+    with patch("numpy.linalg.svd", side_effect=np.linalg.LinAlgError("SVD did not converge")):
+        scores = _leverage_scores(query, keys, values, rank_cap=8)
+
+    scores_np = np.array(scores.tolist())
+    assert np.all(np.isfinite(scores_np))
+    assert scores_np.sum() == pytest.approx(1.0, abs=1e-4)
+
+
+def test_leverage_scores_does_not_hang_when_gesvd_fallback_stalls() -> None:
+    """The scipy ``gesvd`` fallback (see previous test) is itself not
+    guaranteed to return promptly on every input — a real-model validation
+    run observed an 11+ minute stall on a single call that normally
+    completes in under a second (issue #147). ``_robust_svd`` bounds the
+    fallback with a watchdog timeout (``_GESVD_TIMEOUT_S``) so a stalled
+    ``gesvd`` call can never hang the eviction loop: on timeout it returns
+    an all-zero result, which ``_leverage_scores`` already treats the same
+    as its existing degenerate-all-zero-value-block case.
+
+    This test forces BOTH ``np.linalg.svd`` to fail AND the ``gesvd``
+    fallback to hang (mocked as an indefinite sleep), and asserts the call
+    returns well within the timeout budget instead of hanging, with a
+    finite, valid (all-zero) result.
+    """
+    import time
+
+    from veloxquant_mlx.quantizers.curdkv import _GESVD_TIMEOUT_S, _leverage_scores
+
+    D = 16
+    n = 10
+    rng = np.random.default_rng(0)
+    keys = mx.array(rng.standard_normal((n, D)).astype(np.float32))
+    values = mx.array(rng.standard_normal((n, D)).astype(np.float32))
+    query = mx.array(rng.standard_normal(D).astype(np.float32))
+
+    def _hang_forever(*_a, **_k):
+        time.sleep(_GESVD_TIMEOUT_S * 100)
+        raise AssertionError("should never actually finish sleeping in this test")
+
+    t0 = time.time()
+    with patch("numpy.linalg.svd", side_effect=np.linalg.LinAlgError("SVD did not converge")):
+        with patch("scipy.linalg.svd", side_effect=_hang_forever):
+            scores = _leverage_scores(query, keys, values, rank_cap=8)
+    elapsed = time.time() - t0
+
+    assert elapsed < _GESVD_TIMEOUT_S * 2, (
+        f"_leverage_scores took {elapsed:.2f}s — should return near the "
+        f"{_GESVD_TIMEOUT_S}s watchdog budget, not hang indefinitely"
+    )
+    scores_np = np.array(scores.tolist())
+    assert np.all(np.isfinite(scores_np))
+    assert np.all(scores_np == 0.0)
+
+
+# ---------------------------------------------------------------------------
+# Age-bias regression: newcomer vs. long-lived survivor eviction fairness
+# ---------------------------------------------------------------------------
+
+
+def test_high_value_newcomer_not_evicted_on_arrival() -> None:
+    """A brand-new token with a value vector far larger (more
+    output-relevant) than anything already cached must not be evicted on the
+    very step it arrives, just because existing survivors have had many
+    prior steps to accumulate leverage score.
+
+    Regression test: comparing a newcomer's single-step self-leverage score
+    directly against survivors' many-step CUMULATIVE scores is a scale
+    mismatch — the cumulative sum grows with age regardless of value, so an
+    old-but-mild survivor could out-score a new-but-critical token purely by
+    having been in the cache longer. Eviction must compare MEAN per-step
+    leverage (cumulative score / steps survived) instead.
+
+    Identifies the newcomer by ``n_updates == 1`` (it has been through
+    exactly one accumulation step) rather than matching raw key values: once
+    RoPE-remapping was added (see the FIXED, CONFIRMED-ON-REAL-MODELS
+    PROBLEM in the module docstring), a survivor whose storage index shifts
+    due to an unrelated eviction gets its key rotated to a new position, so
+    exact fp16 key-value matching is no longer a reliable way to track "the
+    same logical token" across an update call.
+    """
+    D = 16
+    budget = 4
+    st = init_curdkv_state(n_sink=0, budget=budget, head_dim=D)
+    rng = np.random.default_rng(3)
+
+    # Fill the cache and let mild-value survivors accumulate score over many
+    # steps, so their raw cumulative sums grow large purely from age.
+    for _ in range(24):
+        ki = mx.array(rng.standard_normal((1, D)).astype(np.float16)) * 0.1
+        vi = mx.array(rng.standard_normal((1, D)).astype(np.float16)) * 0.1
+        st = curdkv_update(st, ki, vi)
+
+    # A single newcomer with a value vector 1000x larger than anything seen
+    # so far — should clearly deserve retention over the mild survivors.
+    k_important = mx.array(rng.standard_normal((1, D)).astype(np.float16)) * 0.1
+    v_important = mx.array(rng.standard_normal((1, D)).astype(np.float16)) * 100.0
+    st = curdkv_update(st, k_important, v_important)
+
+    n_updates = np.array(st.n_updates.tolist())
+    newcomer_rows = np.where(n_updates == 1.0)[0]
+    assert len(newcomer_rows) == 1, (
+        "high-value newcomer was evicted purely due to accumulation-age bias"
     )
 
 

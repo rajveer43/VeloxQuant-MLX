@@ -159,6 +159,13 @@ class _TensorLowRank:
             heads.append(reconstruct_from_latent(L, self._V[g], self._mu[g]))  # [S, D]
         return mx.stack(heads, axis=0)[None]  # [1, H, S, D]
 
+    def trim(self, n: int) -> None:
+        """Drop the ``n`` most-recent tokens from every head's latent buffer."""
+        if not self._latents or n <= 0:
+            return
+        keep = max(0, self._latents[0].shape[0] - n)
+        self._latents = [L[:keep] for L in self._latents]
+
     # ------------------------------------------------------------------
     @property
     def stored_rank(self) -> int:
@@ -244,6 +251,12 @@ class PALUKVCache(_MLXKVCache):
         # We bypass the parent fp16 ring buffer; track offset ourselves.
         self._palu_offset = 0
         self._H = 0
+        # Last (k_out, v_out) reconstructed by update_and_fetch, for .state —
+        # mlx_lm's generate() reads cache.state directly (e.g. during chunked
+        # prefill and the speculative-decoding rewind path); since self.keys/
+        # self.values are never populated (true latent storage), .state must
+        # be overridden to serve this instead (see #83).
+        self._last_state: Optional[tuple] = None
 
         # Byte accounting
         self._compressed_key_bytes = 0
@@ -270,6 +283,7 @@ class PALUKVCache(_MLXKVCache):
         k_out = self._keys_lr.reconstruct()  # [1, H, total, D] fp16
         v_out = self._vals_lr.reconstruct()
         self._account_bytes(H, S, D)
+        self._last_state = (k_out, v_out)
         return k_out, v_out
 
     def _account_bytes(self, H: int, S: int, D: int) -> None:
@@ -301,6 +315,34 @@ class PALUKVCache(_MLXKVCache):
 
     def size(self) -> int:
         return self._palu_offset
+
+    @property
+    def state(self):  # type: ignore[override]
+        if self._last_state is None:
+            empty = mx.zeros((1, self._H, 0, self._D), dtype=mx.float16)
+            return empty, empty
+        return self._last_state
+
+    @state.setter
+    def state(self, v) -> None:
+        k, v_ = v
+        self._last_state = (k, v_)
+        self._palu_offset = int(k.shape[2])
+
+    def is_trimmable(self) -> bool:
+        return True
+
+    def trim(self, n: int) -> int:
+        n = min(self._palu_offset, n)
+        if n <= 0:
+            return 0
+        self._keys_lr.trim(n)
+        self._vals_lr.trim(n)
+        self._palu_offset -= n
+        if self._last_state is not None:
+            k, v_ = self._last_state
+            self._last_state = (k[:, :, : k.shape[2] - n, :], v_[:, :, : v_.shape[2] - n, :])
+        return n
 
     @property
     def nbytes(self) -> int:

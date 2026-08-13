@@ -110,8 +110,13 @@ def apply_dual_transform_keys(K: mx.array, smooth: mx.array, H: mx.array) -> mx.
     elif smooth.ndim == 2:
         # smooth: [n_heads, head_dim]
         # K: [..., head_dim] (last axis is always head_dim).
-        # For 4D [B, H, S, D], broadcast smooth [H, D] -> [H, 1, D].
-        if K.ndim >= 4 and K.shape[-3] == smooth.shape[0]:
+        # The head axis is always -3, whether K is 3D [H, S, D] (single
+        # batch item) or 4D [B, H, S, D] -- checking K.ndim >= 4 used ndim
+        # as a proxy for "has a head axis" and silently fell through to the
+        # averaging branch for genuine 3D per-head input (#74). Require
+        # only that a -3 axis exists (ndim >= 3) and that it matches
+        # smooth's head count.
+        if K.ndim >= 3 and K.shape[-3] == smooth.shape[0]:
             sm = smooth[:, None, :].astype(K.dtype)
             K_sm = K / sm
         elif K.shape[-1] == smooth.shape[-1]:
@@ -144,7 +149,9 @@ def apply_dual_transform_queries(q: mx.array, smooth: mx.array, H: mx.array) -> 
     if smooth.ndim == 1:
         q_sm = q * smooth.astype(q.dtype)
     elif smooth.ndim == 2:
-        if q.ndim >= 4 and q.shape[-3] == smooth.shape[0]:
+        # See apply_dual_transform_keys for why this checks ndim >= 3, not
+        # >= 4 (#74).
+        if q.ndim >= 3 and q.shape[-3] == smooth.shape[0]:
             sm = smooth[:, None, :].astype(q.dtype)
             q_sm = q * sm
         elif q.shape[-1] == smooth.shape[-1]:

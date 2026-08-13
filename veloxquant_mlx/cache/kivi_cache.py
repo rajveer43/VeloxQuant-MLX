@@ -40,6 +40,9 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.metal import metal_available
+from veloxquant_mlx.metal.kernels import kivi_group_quant_dequant as _kivi_group_quant_dequant
+
 
 class KIVIKVCache(_MLXKVCache):
     """KV cache implementing KIVI asymmetric group quantization.
@@ -71,6 +74,25 @@ class KIVIKVCache(_MLXKVCache):
         self._levels = (1 << self._b) - 1
         self._eps = 1e-8
 
+        # Resolve Metal acceleration flag (#164).  Three-state, matching
+        # VecInferKVCache:
+        #   None  → auto-detect (silent fallback)
+        #   True  → require (raise if unavailable)
+        #   False → forced pure-MLX path
+        # The kernels are bit-identical to the MLX path, so this is a pure
+        # performance knob — it can never change a numeric result.  Measured
+        # 1.3x-4.4x on Apple M4 across both KIVI schemes, widening with the
+        # flush size; see the benchmark in
+        # ``tests/metal/test_kivi_quant.py::test_kivi_quant_benchmark``.
+        requested = getattr(config, "use_metal_kernels", None)
+        available = metal_available()
+        if requested is True and not available:
+            raise RuntimeError(
+                "KIVIKVCache: use_metal_kernels=True but Metal kernels "
+                "are not available on this build of mlx."
+            )
+        self._use_metal: bool = bool(available if requested is None else requested) and available
+
         # Byte accounting
         self._key_bytes_compressed = 0
         self._key_bytes_fp16 = 0
@@ -78,6 +100,12 @@ class KIVIKVCache(_MLXKVCache):
         self._value_bytes_fp16 = 0
         self._residual_fp16_bytes = 0
         self._tokens_seen = 0
+
+        # Cumulative count of leading tokens (absolute sequence positions
+        # [0, _n_quantized)) that have already been quantized in-place in
+        # the parent cache's storage. Tokens age out of the fp16 residual
+        # window based on true cumulative position, not this call's S.
+        self._n_quantized = 0
 
     # ------------------------------------------------------------------
     # Group quant/dequant helpers (asymmetric min/max, deterministic)
@@ -89,7 +117,29 @@ class KIVIKVCache(_MLXKVCache):
         the quantization axis within those: -2 == per-channel (group along
         tokens, KIVI keys), -1 == per-token (group along channels, values).
         Groups partition the chosen axis into blocks of ``group_size``.
+
+        Dispatches to a fused Metal kernel when one is available (#164),
+        falling back to the pure-MLX path below otherwise.  The two are
+        **bit-identical**, not merely close — see
+        ``tests/metal/test_kivi_quant.py`` — so enabling or disabling the
+        kernel can never change a benchmark result or a cached value.
         """
+        if self._use_metal:
+            try:
+                return _kivi_group_quant_dequant(
+                    x,
+                    axis=axis,
+                    group_size=self._group_size,
+                    levels=self._levels,
+                    eps=self._eps,
+                )
+            except Exception:
+                # Any kernel-side failure (unsupported dtype, compile error,
+                # driver issue) degrades to the MLX path rather than taking
+                # down generation.  Latch it off so we don't re-pay the
+                # failure on every subsequent flush.
+                self._use_metal = False
+
         gs = self._group_size
         x32 = x.astype(mx.float32)
         L = x32.shape[axis]
@@ -113,51 +163,86 @@ class KIVIKVCache(_MLXKVCache):
         return recon.astype(x.dtype)
 
     # ------------------------------------------------------------------
+    # Residual-buffer boundary (Algorithm 1)
+    # ------------------------------------------------------------------
+    def _quantization_boundary(self) -> int:
+        """Absolute position up to which tokens may be quantized *now*.
+
+        Paper Algorithm 1 buffers arriving keys in ``X_Kr`` and flushes only
+        once that buffer holds ``R`` tokens, quantizing the whole ``R x D``
+        block at once.  The effect that matters numerically: because keys
+        are quantized **per channel** (the group runs along the *token*
+        axis), a flush must carry at least ``group_size`` tokens or every
+        group degenerates to a single element — ``min == max``, ``scale``
+        collapses to ``eps``, and the "quantized" round-trip is bit-exact
+        (#162).
+
+        So the boundary is snapped **down to a multiple of ``group_size``**:
+        tokens wait in the fp16 residual until they can form whole groups.
+        This also makes the result independent of how the sequence was
+        chunked — one-shot prefill and token-by-token decode quantize
+        exactly the same positions with exactly the same group boundaries.
+        """
+        aged = max(0, self.offset - self._residual_length)
+        return (aged // self._group_size) * self._group_size
+
+    # ------------------------------------------------------------------
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys, values):
-        """Quantize the aged-out portion of K/V, keep the residual in fp16.
+        """Quantize whatever has aged out of the fp16 residual window.
 
-        We quantize **only** tokens that fall outside the most-recent
-        ``residual_length`` window of the *current* incoming block.  During
-        prefill (large S) this quantizes the bulk and keeps the tail exact;
-        during decode (S==1) the new token is within the residual window and
-        passes through untouched until it ages out on later steps.
+        Tokens age out based on their **true cumulative position** in the
+        sequence, not this call's own ``S``: after every call, the most
+        recent ``residual_length`` tokens (of the *entire* history) stay
+        fp16 and everything older becomes eligible.  Eligible tokens are
+        then flushed in ``group_size``-aligned blocks per
+        :meth:`_quantization_boundary`, so per-channel key groups always
+        span a full ``group_size`` tokens.
+
+        Implementation: store the incoming block via the parent cache
+        first (so ``self.offset``/``self.keys``/``self.values`` reflect the
+        full accumulated history), then quantize-in-place any newly-aged
+        leading slice of that stored buffer that hasn't been quantized yet.
         """
         B, H, S, D = keys.shape
-        r = self._residual_length
+        k_all, v_all = super().update_and_fetch(keys, values)
 
-        if S <= r:
-            # Entire incoming block is within the fp16 residual window.
-            k_out, v_out = keys, values
-            n_quant = 0
-        else:
-            n_quant = S - r
-            k_q = self._quant_dequant_along(keys[:, :, :n_quant, :], axis=-2)
-            v_q = self._quant_dequant_along(values[:, :, :n_quant, :], axis=-1)
-            k_out = mx.concatenate([k_q, keys[:, :, n_quant:, :]], axis=2)
-            v_out = mx.concatenate([v_q, values[:, :, n_quant:, :]], axis=2)
+        new_boundary = self._quantization_boundary()
+        n_quant_now = new_boundary - self._n_quantized
+        if n_quant_now > 0:
+            lo, hi = self._n_quantized, new_boundary
+            k_q = self._quant_dequant_along(self.keys[:, :, lo:hi, :], axis=-2)
+            v_q = self._quant_dequant_along(self.values[:, :, lo:hi, :], axis=-1)
+            self.keys[:, :, lo:hi, :] = k_q
+            self.values[:, :, lo:hi, :] = v_q
+            self._n_quantized = new_boundary
+            k_all, v_all = self.keys[..., : self.offset, :], self.values[..., : self.offset, :]
 
-        self._account_bytes(B, H, S, D, n_quant)
-        return super().update_and_fetch(k_out, v_out)
+        self._account_bytes(B, H, S, D, n_quant_now)
+        return k_all, v_all
 
-    def _account_bytes(self, B: int, H: int, S: int, D: int, n_quant: int) -> None:
-        n_res = S - n_quant
+    def _account_bytes(self, B: int, H: int, S: int, D: int, n_quant_now: int) -> None:
         gs = self._group_size
-        # Quantized keys: per-channel — D channels, ceil(n_quant/gs) groups,
-        # b bits/code + (scale, zero) fp16 per (group, channel).
-        if n_quant > 0:
-            k_groups = math.ceil(n_quant / gs)
-            k_code_bytes = math.ceil(n_quant * D * self._b / 8) * H * B
+        # Quantized keys: per-channel — D channels, n_quant/gs groups, b
+        # bits/code + (scale, zero) fp16 per (group, channel).  Flushes are
+        # group_size-aligned (see _quantization_boundary), so this divides
+        # evenly and no group is charged for tokens it doesn't hold.
+        if n_quant_now > 0:
+            k_groups = math.ceil(n_quant_now / gs)
+            k_code_bytes = math.ceil(n_quant_now * D * self._b / 8) * H * B
             k_param_bytes = k_groups * D * 2 * 2 * H * B  # scale+zero, fp16
             # Quantized values: per-token — ceil(D/gs) groups per token.
             v_groups = math.ceil(D / gs)
-            v_code_bytes = math.ceil(n_quant * D * self._b / 8) * H * B
-            v_param_bytes = n_quant * v_groups * 2 * 2 * H * B
+            v_code_bytes = math.ceil(n_quant_now * D * self._b / 8) * H * B
+            v_param_bytes = n_quant_now * v_groups * 2 * 2 * H * B
             self._key_bytes_compressed += k_code_bytes + k_param_bytes
             self._value_bytes_compressed += v_code_bytes + v_param_bytes
-        # fp16 residual window (kept exact)
-        self._residual_fp16_bytes += n_res * D * 2 * 2 * H * B  # K+V
+        # fp16 residual window: current size (not cumulative) — this is
+        # the live, still-fp16 tail, so it must plateau at residual_length
+        # once the window fills, not grow with every call.
+        n_res = self.offset - self._n_quantized
+        self._residual_fp16_bytes = n_res * D * 2 * 2 * H * B  # K+V
         # fp16 equivalents (for ratio): every token at full precision
         self._key_bytes_fp16 += H * B * S * D * 2
         self._value_bytes_fp16 += H * B * S * D * 2
@@ -184,7 +269,13 @@ class KIVIKVCache(_MLXKVCache):
 
     @property
     def residual_fp16_bytes(self) -> int:
-        """Bytes held in the fp16 residual window (keys + values)."""
+        """Bytes held in fp16 and not yet quantized (keys + values).
+
+        This is the ``residual_length`` window **plus** any partial group
+        still waiting for enough tokens to form a whole ``group_size``
+        block, so it is bounded by ``residual_length + group_size - 1``
+        tokens rather than exactly ``residual_length``.
+        """
         return self._residual_fp16_bytes
 
     @property
@@ -194,6 +285,23 @@ class KIVIKVCache(_MLXKVCache):
         use ``(compressed_*_bytes + residual_fp16_bytes) / fp16_*_bytes``.
         """
         return float(self._b)
+
+    @property
+    def effective_compression_ratio(self) -> float:
+        """End-to-end KV byte ratio vs fp16, residual window included.
+
+        This is the honest number: quantized codes + per-group (scale, zero)
+        + the still-fp16 residual tail, against the fp16 cost of every token
+        seen.  Reporting ``compressed_*`` alone overstates the win because
+        it silently omits the fp16 residual (#162).
+        """
+        total_fp16 = self._key_bytes_fp16 + self._value_bytes_fp16
+        if total_fp16 == 0:
+            return 1.0
+        total = (
+            self._key_bytes_compressed + self._value_bytes_compressed + self._residual_fp16_bytes
+        )
+        return total_fp16 / total if total else 1.0
 
 
 __all__ = ["KIVIKVCache"]

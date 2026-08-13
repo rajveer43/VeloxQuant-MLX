@@ -90,6 +90,40 @@ distinction none of the methods above can make by construction.
    latency reduction** under aggressive compression) are the **paper's, on
    trained models** — never quoted as this repo's own.
 
+## :warning: Known limitation on Llama-3-family models — read before using
+
+Real end-to-end generation testing on `Llama-3.2-1B-Instruct` surfaced (and
+partially fixed) a RoPE-position bug:
+
+- **Fixed**: `mlx_lm`'s attention module rotates the next query and incoming
+  key using `self.rope(x, offset=cache.offset)` — computed *before*
+  `update_and_fetch` is ever called. The cache used to reset `self.offset` to
+  the post-eviction *kept-row count* every call, which undercounts the true
+  absolute sequence position the moment any eviction has happened. This is
+  now fixed the same way [H2O](../algorithms/h2o) already fixes it:
+  `self.offset` tracks the true absolute step count, and surviving keys are
+  re-rotated on eviction to stay consistent with their shifted storage
+  index. Verified via a synthetic reproduction of `mlx_lm.generate()`'s
+  exact bulk-prefill-then-final-token call split.
+- **Not yet fixed**: that re-rotation uses plain RoPE math
+  (`inv_freq = base^(-i/half)`). Llama-3-family models use
+  `rope_scaling={"rope_type": "llama3", ...}` — a piecewise,
+  per-frequency-band rescaling that plain RoPE does not reproduce, no matter
+  what `curdkv_rope_base` is set to. Confirmed on a real Llama-3.2-1B run:
+  every kept row an eviction re-rotated came out numerically wrong, and
+  generation quality remained degraded even after the offset-desync fix
+  above. Rows an eviction never touched are unaffected and correct.
+  **This affects [H2O](../algorithms/h2o) identically** — same underlying
+  primitive (`rope_remap_positions`), same untested-on-Llama3-scaling gap;
+  not introduced by this fix, but newly confirmed by it.
+
+Practical implication: at the time of writing, expect degraded output
+quality from CurDKV-adapted (and H2O-adapted) whenever eviction actually
+occurs on a Llama-3-family model, independent of budget size — this is a
+correctness gap in RoPE remapping, not a property of the eviction
+mechanism itself. See
+[#148](https://github.com/rajveer43/VeloxQuant-MLX/issues/148) for status.
+
 ## The planted-geometry observable (pinned)
 
 Two token classes, near-identical keys (so any key-only scorer treats them
@@ -154,10 +188,17 @@ loop — no prefill-only phase, unlike [SnapKV](../algorithms/snapkv)):
 4. Accumulate the leverage score into each existing token's cumulative
    score; seed the new token's own score with its self-leverage within the
    resulting block (not a flat 0 — see honesty crux, point 4).
-5. If the cache now exceeds `curdkv_budget`, permanently evict the
-   lowest-cumulative-score non-sink token (sink protection identical to
+5. If the cache now exceeds `curdkv_budget`, permanently evict the non-sink
+   token with the lowest **mean per-step** leverage score (cumulative score
+   divided by the number of accumulation steps it has been through),
+   **not** the raw cumulative sum (sink protection identical to
    [H2O](../algorithms/h2o): the first `curdkv_n_sink` positions get `+inf`
-   protection before the `argmin`).
+   protection before the `argmin`). Comparing raw sums would bias eviction
+   against newcomers — an old survivor's sum grows with every step it
+   stays cached, so a brand-new, far-more-valuable token could otherwise be
+   evicted on the very step it arrives, before it has had any chance to
+   accumulate. See [#145](https://github.com/rajveer43/VeloxQuant-MLX/issues/145)
+   for the regression case.
 
 ## Byte accounting
 

@@ -78,7 +78,7 @@ class PolarQuantKVCache(KVCache):
         """
         import mlx.core as mx
 
-        n = self._n_tokens
+        n = len(self._k_angles)
         if n == 0:
             return mx.zeros((self._d,), dtype=mx.float16)
 
@@ -111,7 +111,7 @@ class PolarQuantKVCache(KVCache):
 
     def memory_bytes(self) -> int:
         """Estimate memory footprint."""
-        n = self._n_tokens
+        n = len(self._k_angles)
         if n == 0:
             return 0
         d = self._d
@@ -125,7 +125,7 @@ class PolarQuantKVCache(KVCache):
         return angle_bytes + radius_bytes + v_bytes
 
     def __len__(self) -> int:
-        return self._n_tokens
+        return len(self._k_angles)
 
     def __repr__(self) -> str:
         return f"PolarQuantKVCache(d={self._d}, n_tokens={self._n_tokens})"

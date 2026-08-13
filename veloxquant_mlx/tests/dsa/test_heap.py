@@ -89,3 +89,40 @@ class TestSortedChannelIndex:
             idx.insert(ch, float(ch))
         top4 = idx.top_k(4)
         assert set(top4) == {124, 125, 126, 127}
+
+    def test_top_k_no_duplicates_on_reinsert_same_magnitude(self) -> None:
+        """Regression test for #66: re-inserting a channel with a magnitude
+        equal to its current live value must not produce a duplicate in
+        top_k, and must not displace a genuinely-distinct channel."""
+        idx = SortedChannelIndex()
+        magnitudes = [1.0, 5.0, 5.0, 2.0, 0.5]
+        for _ in range(3):
+            for ch, mag in enumerate(magnitudes):
+                idx.insert(ch, mag)
+        top3 = idx.top_k(3)
+        assert len(top3) == len(set(top3)) == 3
+        assert set(top3) == {1, 2, 3}  # magnitudes 5.0, 5.0, 2.0
+
+    def test_repeated_identical_inserts_do_not_grow_heap(self) -> None:
+        """Regression test for #66: re-inserting unchanged magnitudes must
+        not grow the heap unboundedly."""
+        idx = SortedChannelIndex()
+        n_channels = 16
+        for _ in range(10):
+            for ch in range(n_channels):
+                idx.insert(ch, float(ch))
+        assert len(idx._heap) == n_channels
+        assert len(idx) == n_channels
+
+    def test_changing_magnitudes_still_dedup_top_k(self) -> None:
+        """Updates with genuinely new magnitudes must still be reflected
+        correctly in top_k, with no duplicate channels, even though the
+        heap retains stale entries via lazy deletion."""
+        idx = SortedChannelIndex()
+        idx.insert(0, 1.0)
+        idx.insert(1, 2.0)
+        idx.insert(0, 3.0)  # channel 0 updated to a new, higher magnitude
+        idx.insert(0, 3.0)  # redundant re-insert, should be a no-op
+        top2 = idx.top_k(2)
+        assert len(top2) == len(set(top2)) == 2
+        assert top2[0] == 0  # channel 0 now highest at 3.0

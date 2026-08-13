@@ -13,6 +13,7 @@ from veloxquant_mlx.quantizers.cachegen import (
     dequant_codes,
     entropy_coded_bytes,
     fixed_width_bytes,
+    layer_group_bits,
     quantize_to_codes,
     symbol_entropy_bits,
     token_delta,
@@ -86,3 +87,55 @@ def test_drop_in_matches_group_quant() -> None:
     b = _group_quant_dequant(x, 4, 16)
     mx.eval(a, b)
     assert bool(mx.all(a == b).item())
+
+
+# ------------------------------------------------------------------
+# Per-channel entropy grouping (§5.1.3)
+# ------------------------------------------------------------------
+
+
+def test_per_channel_entropy_smaller_or_equal_pooled() -> None:
+    """Grouping by channel should never be worse than pooling all channels."""
+    rng = np.random.default_rng(7)
+    # Channels with very different scales/distributions: pooling should blur
+    # the per-channel structure and yield higher (or equal) entropy.
+    walk = np.cumsum(rng.standard_normal((128, 32)).astype(np.float32), axis=0)
+    scales = np.concatenate([np.full(16, 0.05), np.full(16, 5.0)]).astype(np.float32)
+    x = walk * scales
+    st = quantize_to_codes(mx.array(x), bits=4, group_size=32)
+    per_channel = entropy_coded_bytes(st, use_delta=True, per_channel=True)
+    pooled = entropy_coded_bytes(st, use_delta=True, per_channel=False)
+    assert per_channel <= pooled
+
+
+def test_per_channel_entropy_capped_at_fixed_width() -> None:
+    rng = np.random.default_rng(8)
+    x = mx.array(rng.standard_normal((64, 16)).astype(np.float32))
+    st = quantize_to_codes(x, bits=4, group_size=32)
+    assert entropy_coded_bytes(st, use_delta=True, per_channel=True) <= fixed_width_bytes(st)
+
+
+# ------------------------------------------------------------------
+# Layer-wise bit schedule (§5.1.2/§5.2)
+# ------------------------------------------------------------------
+
+
+def test_layer_group_bits_non_increasing() -> None:
+    schedule = layer_group_bits(n_layers=24, base_bits=4, n_groups=3)
+    assert len(schedule) == 24
+    assert schedule == sorted(schedule, reverse=True)
+    assert schedule[0] == 4
+    assert schedule[-1] < schedule[0]
+
+
+def test_layer_group_bits_floored_at_two() -> None:
+    schedule = layer_group_bits(n_layers=9, base_bits=3, n_groups=3)
+    assert min(schedule) >= 2
+
+
+def test_layer_group_bits_empty() -> None:
+    assert layer_group_bits(n_layers=0, base_bits=4) == []
+
+
+def test_layer_group_bits_single_layer() -> None:
+    assert layer_group_bits(n_layers=1, base_bits=4) == [4]
