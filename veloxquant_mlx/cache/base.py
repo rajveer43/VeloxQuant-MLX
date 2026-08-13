@@ -150,6 +150,7 @@ class KVCacheConfig:
     kvquant_group_size: int = 32  # group size for per-channel/per-token fitting
     kvquant_lloyd_iters: int = 8  # Lloyd-Max iterations for level fitting
     kvquant_refit_interval: int = 0  # refit levels every N decode steps (0 = freeze prefill)
+    kvquant_n_sink: int = 1  # leading attention-sink tokens kept fp16 (paper §3.5; 0 = off)
     # --- PALU configuration (true-latent low-rank K *and* V) -------------
     palu_rank: Optional[int] = None  # explicit latent rank; None → energy threshold
     palu_energy_threshold: float = 0.90  # singular-value energy to retain
