@@ -17,6 +17,7 @@ import pytest
 
 from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.qfilters_cache import QFiltersKVCache
+from veloxquant_mlx.quantizers.qfilters import qfilters_fp16_bytes
 
 
 def _kv(B, H, S, D, seed=0):
@@ -337,6 +338,174 @@ def test_calibrated_filter_is_path_independent() -> None:
 
     assert np.array_equal(np.array(k_prefill), np.array(k_decode))
     assert np.array_equal(np.array(v_prefill), np.array(v_decode))
+
+
+@pytest.mark.parametrize("chunk", [1073, 512, 256, 64, 16, 1])
+def test_calibrated_kept_set_is_invariant_to_prefill_chunk_size(chunk: int) -> None:
+    """Same prompt, any chunking — bit-identical retained K/V and offset (#172).
+
+    Q-Filters scores a token once, against a filter frozen before token 0, and
+    a token's score never changes afterwards. Top-k under a fixed key is
+    order-invariant, so absorbing S tokens then evicting once and evicting
+    incrementally select the *same* rows. This pins that: the chunk-size
+    sensitivity reported in #172 is not an eviction-ordering effect.
+    """
+    B, H, S, D = 1, 4, 1073, 16
+    cfg = KVCacheConfig(method="qfilters", head_dim=D, qfilters_budget=128, qfilters_n_sink=4)
+    filters = _calibrated_filters(H, D, seed=7)
+    k, v = _kv_block(B, H, S, D, seed=8)
+
+    one_shot = QFiltersKVCache(cfg, filters=filters)
+    k_ref, v_ref = one_shot.update_and_fetch(k, v)
+
+    chunked = QFiltersKVCache(cfg, filters=filters)
+    k_out = v_out = None
+    for i in range(0, S, chunk):
+        k_out, v_out = chunked.update_and_fetch(k[:, :, i : i + chunk], v[:, :, i : i + chunk])
+
+    assert np.array_equal(np.array(k_ref), np.array(k_out))
+    assert np.array_equal(np.array(v_ref), np.array(v_out))
+    # Budget is respected regardless of how the prompt was fed in.
+    assert k_out.shape[2] == 128
+    # True absolute position must not depend on chunking, or RoPE drifts.
+    assert chunked.offset == one_shot.offset == S
+
+
+@pytest.mark.parametrize("chunk", [1073, 256, 64])
+def test_recent_window_protects_prompt_tail_at_every_chunk_size(chunk: int) -> None:
+    """``qfilters_recent`` pins the trailing window regardless of chunking (#172).
+
+    With ``recent=0`` the tail of a long prompt — where the actual question
+    lives — is scored like any other token and is almost entirely evicted,
+    which is what produces degenerate generation. The trailing guard is the
+    knob that prevents it, and it must behave identically under one-shot and
+    chunked prefill.
+    """
+    B, H, S, D, recent = 1, 2, 1073, 16, 32
+    cfg = KVCacheConfig(
+        method="qfilters",
+        head_dim=D,
+        qfilters_budget=128,
+        qfilters_n_sink=4,
+        qfilters_recent=recent,
+    )
+    filters = _calibrated_filters(H, D, seed=9)
+    k, v = _kv_block(B, H, S, D, seed=10)
+
+    cache = QFiltersKVCache(cfg, filters=filters)
+    k_out = None
+    for i in range(0, S, chunk):
+        k_out, _ = cache.update_and_fetch(k[:, :, i : i + chunk], v[:, :, i : i + chunk])
+
+    assert k_out.shape[2] == 128
+    # The final `recent` rows of the window are exactly the prompt's last
+    # `recent` tokens, in order — never evicted, never reordered.
+    tail_expected = np.array(k)[:, :, S - recent :]
+    assert np.array_equal(np.array(k_out)[:, :, -recent:], tail_expected)
+
+
+def _reference_evict(k, v, filters, budget, n_sink, recent, sign):
+    """Per-(b, h) numpy oracle for the vectorized path (#173).
+
+    Deliberately an independent reimplementation rather than a call into
+    ``qfilters_update``: a parity test that shares code with the thing it
+    checks can only catch wiring mistakes, not selection mistakes.
+    """
+    k = np.array(k, dtype=np.float16)
+    v = np.array(v, dtype=np.float16)
+    f = np.array(filters, dtype=np.float32)
+    B, H, S, _ = k.shape
+    ks, vs = [], []
+    for b in range(B):
+        kh, vh = [], []
+        for h in range(H):
+            scores = k[b, h].astype(np.float32) @ f[h] * sign
+            if S > budget:
+                sel = scores.copy()
+                sel[: min(n_sink, S)] = np.inf
+                if recent > 0:
+                    sel[S - min(recent, S - min(n_sink, S)) :] = np.inf
+                keep = np.sort(np.argsort(sel, kind="stable")[S - budget :])
+            else:
+                keep = np.arange(S)
+            kh.append(k[b, h][keep])
+            vh.append(v[b, h][keep])
+        ks.append(np.stack(kh))
+        vs.append(np.stack(vh))
+    return np.stack(ks), np.stack(vs)
+
+
+@pytest.mark.parametrize(
+    ("B", "H", "S", "budget", "n_sink", "recent", "sign"),
+    [
+        (1, 4, 300, 64, 4, 0, 1),  # single batch
+        (3, 4, 300, 64, 4, 0, 1),  # batched — the loop's worst case
+        (2, 3, 257, 48, 4, 8, 1),  # recent window + ragged S
+        (1, 4, 300, 64, 2, 0, -1),  # inverted sign ablation
+        (2, 2, 20, 64, 4, 0, 1),  # under budget — no eviction at all
+        (2, 8, 512, 128, 4, 16, 1),  # GQA-shaped head count
+    ],
+)
+def test_batched_path_matches_per_head_reference(
+    B: int, H: int, S: int, budget: int, n_sink: int, recent: int, sign: int
+) -> None:
+    """Vectorizing the B×H loop must not move a single bit (#173)."""
+    D = 16
+    cfg = KVCacheConfig(
+        method="qfilters",
+        head_dim=D,
+        qfilters_budget=budget,
+        qfilters_n_sink=n_sink,
+        qfilters_recent=recent,
+        qfilters_sign=sign,
+    )
+    filters = _calibrated_filters(H, D, seed=11)
+    k, v = _kv_block(B, H, S, D, seed=12)
+
+    cache = QFiltersKVCache(cfg, filters=filters)
+    k_out, v_out = cache.update_and_fetch(k, v)
+
+    k_ref, v_ref = _reference_evict(k, v, filters, budget, n_sink, recent, sign)
+    assert np.array_equal(np.array(k_out), k_ref)
+    assert np.array_equal(np.array(v_out), v_ref)
+
+
+def test_batched_path_state_mirror_stays_consistent() -> None:
+    """Lazily-rebuilt per-head states must match the batched buffers (#173).
+
+    The fast path leaves ``_states`` stale and refreshes it on demand; if that
+    sync drifts, byte accounting and ``tokens_kept`` silently go wrong.
+    """
+    B, H, S, D, budget = 2, 4, 300, 16, 64
+    cfg = KVCacheConfig(method="qfilters", head_dim=D, qfilters_budget=budget, qfilters_n_sink=4)
+    filters = _calibrated_filters(H, D, seed=13)
+    k, v = _kv_block(B, H, S, D, seed=14)
+
+    cache = QFiltersKVCache(cfg, filters=filters)
+    k_out, _ = cache.update_and_fetch(k, v)
+
+    assert cache.tokens_kept == budget
+    states = cache.states
+    assert len(states) == B * H
+    for g, st in enumerate(states):
+        b, h = divmod(g, H)
+        assert np.array_equal(np.array(st.keys), np.array(k_out)[b, h])
+        assert st.scores.shape[0] == budget
+    # Closed-form byte accounting must equal the per-state sum it replaced.
+    assert cache.qfilters_kept_bytes == sum(qfilters_fp16_bytes(st) for st in states)
+
+
+def test_fallback_path_still_uses_per_head_loop() -> None:
+    """The key-SVD fallback must not be silently routed to the batched path.
+
+    Its filters freeze per group at different times, which the shared-filter
+    vectorization cannot represent — so it must keep the loop (#173).
+    """
+    cfg = KVCacheConfig(method="qfilters", head_dim=16, qfilters_budget=32)
+    fallback = QFiltersKVCache(cfg)
+    assert fallback._can_batch() is False
+    calibrated = QFiltersKVCache(cfg, filters=_calibrated_filters(4, 16))
+    assert calibrated._can_batch() is True
 
 
 def test_calibrated_selection_matches_projection_ranking() -> None:
