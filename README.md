@@ -23,13 +23,13 @@
   <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/release.yml?branch=master&style=flat-square&label=release%20%2B%20full%20test%20suite&logo=github" alt="Release build status"/></a>
   <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/non-metal-unit.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/non-metal-unit.yml?branch=master&style=flat-square&label=non-metal%20unit&logo=github" alt="Non-Metal unit tests"/></a>
   <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/lint.yml?branch=master&style=flat-square&label=lint&logo=github" alt="Lint status"/></a>
-  <img src="https://img.shields.io/badge/tests-2201%20passing-22c55e?style=flat-square" alt="Tests"/>
+  <img src="https://img.shields.io/badge/tests-2218%20passing-22c55e?style=flat-square" alt="Tests"/>
 </p>
 
 <p>
   <a href="https://veloxquant-mlx.netlify.app/"><img src="https://img.shields.io/badge/landing%20page-veloxquant--mlx.netlify.app-7c3aed?style=flat-square" alt="Landing"/></a>
   <a href="https://veloxquant-mlx.netlify.app/playground.html"><img src="https://img.shields.io/badge/playground-try%20it%20live-00d4ff?style=flat-square" alt="Playground"/></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.49.0-64748b?style=flat-square" alt="Changelog"/></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.49.1-64748b?style=flat-square" alt="Changelog"/></a>
   <a href="blogs/metal-kernels.md"><img src="https://img.shields.io/badge/blog-Metal%20kernels%20v1-f97316?style=flat-square" alt="Blog"/></a>
   <a href="blogs/turboquant-metal-kernels.md"><img src="https://img.shields.io/badge/blog-TurboQuant%20Metal%20kernels-f97316?style=flat-square" alt="Blog v2"/></a>
   <a href="https://ko-fi.com/rajveer43"><img src="https://img.shields.io/badge/Ko--fi-support-ff5e5b?style=flat-square&logo=ko-fi&logoColor=white" alt="Ko-fi"/></a>

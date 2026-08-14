@@ -133,6 +133,14 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.49.1 (2026-08-14)
+
+### Performance Improvements
+
+- **qfilters**: Vectorize the per-(B, H) eviction loop
+  ([`701388c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/701388ca36b221795d4c876bcf74c72ddae7311e))
+
+
 ## v0.49.0 (2026-08-14)
 
 ### Bug Fixes
