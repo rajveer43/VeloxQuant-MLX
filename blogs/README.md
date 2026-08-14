@@ -18,3 +18,5 @@ When you edit a post here, mirror the change to the corresponding file in `docs-
 | `hands-on.md` | `docs-site/blog/2026-05-28-hands-on.md` | `/docs/blog/hands-on` |
 | `kivi.md` | `docs-site/blog/2026-06-10-kivi.md` | `/docs/blog/kivi` |
 | `tensorops-research.md` | `docs-site/blog/2026-06-20-tensorops-research.md` | `/docs/blog/tensorops-research` |
+| _(docs-site only)_ | `docs-site/blog/2026-08-12-kivi-metal-kernel-honest-benchmark.md` | `/docs/blog/kivi-metal-kernel-honest-benchmark` |
+| `qfilters-query-geometry.md` | `docs-site/blog/2026-08-14-qfilters-query-geometry.md` | `/docs/blog/qfilters-query-geometry` |
