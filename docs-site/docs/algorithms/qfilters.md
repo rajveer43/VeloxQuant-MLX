@@ -375,12 +375,13 @@ them) and RoPE is relative, so reporting the true position is sufficient and
 survivors need no re-rotation — unlike H2O/Keyformer, which renumber and
 therefore need a delta-rotation pass.
 
-#### Not measured
+#### Still not measured
 
-TTFT/throughput (paper Figure 10), Ruler, NIAH, and comparisons against
-SnapKV / Expected Attention / StreamingLLM. [L2Norm](../algorithms/knorm) was
-excluded from the table above because it still carries the same un-fixed
-`offset` defect and would compare unfairly.
+**RULER** beyond the NIAH family — the other ten task categories (variable
+tracking, common/frequent-word extraction, QA) are not covered.
+**Expected Attention** is not implemented in this repo, so it cannot be a
+comparison arm. [L2Norm](../algorithms/knorm) still carries the same
+un-fixed `offset` defect and would compare unfairly.
 
 ## When to use it
 
