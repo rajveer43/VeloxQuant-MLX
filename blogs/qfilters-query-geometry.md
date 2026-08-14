@@ -90,7 +90,7 @@ The fix is a separate offline calibration module — which turned out to be well
 def compute_qfilters(queries, max_svd_samples=3000):
     """[H, N, D] query activations -> [H, D] unit-norm Q-Filters."""
     for head in range(h):
-        mat = q[head].astype(np.float64)   # NOT centered
+        mat = q[head].astype(np.float64)  # NOT centered
         u, _s, vt = np.linalg.svd(mat, full_matrices=False)
         v1, u1 = vt[0], u[:, 0]
 
@@ -228,7 +228,7 @@ I read how `mlx_lm` actually calls the cache:
 
 ```python
 queries = self.rope(queries, offset=cache.offset)
-keys    = self.rope(keys,    offset=cache.offset)
+keys = self.rope(keys, offset=cache.offset)
 keys, values = cache.update_and_fetch(keys, values)
 ```
 

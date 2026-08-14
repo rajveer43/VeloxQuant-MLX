@@ -44,15 +44,22 @@ each query-head group are averaged onto their KV head.
 
 ```python
 from veloxquant_mlx.quantizers.qfilters_calibration import (
-    collect_query_activations, compute_qfilters, average_gqa_filters,
-    QFiltersCalibration, save_qfilters,
+    collect_query_activations,
+    compute_qfilters,
+    average_gqa_filters,
+    QFiltersCalibration,
+    save_qfilters,
 )
 
 acts = collect_query_activations(model, tokenizer, calibration_texts)  # per layer [H_q, N, D]
 filters = [average_gqa_filters(compute_qfilters(a), n_kv_heads=8) for a in acts]
 save_qfilters(
-    QFiltersCalibration(filters, model_id="mlx-community/Llama-3.2-3B-Instruct-4bit",
-                        n_samples=3000, dataset="pile-subset"),
+    QFiltersCalibration(
+        filters,
+        model_id="mlx-community/Llama-3.2-3B-Instruct-4bit",
+        n_samples=3000,
+        dataset="pile-subset",
+    ),
     "qfilters_llama32_3b.npz",
 )
 ```
