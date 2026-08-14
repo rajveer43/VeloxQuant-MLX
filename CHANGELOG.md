@@ -133,6 +133,46 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.49.0 (2026-08-14)
+
+### Bug Fixes
+
+- **cache**: Correct RoPE offset after eviction in SnapKV and StreamingLLM
+  ([`e4186f7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e4186f7f6a9c0429bfb169ca21a7b84ca06517f5))
+
+- **docs**: Use MDX comment syntax for the blog truncation marker
+  ([`8669596`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8669596cbed18325407c95931ea05420f7c9ec63))
+
+- **qfilters**: Correct RoPE offset after eviction, measure real perplexity
+  ([`cf9a255`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cf9a2552024d0c24c579f05ba98ee0581e6c52f7))
+
+### Code Style
+
+- Apply ruff format to Q-Filters markdown code blocks
+  ([`0b023d2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0b023d2c17a80855be93fbe955e2a787ff452c88))
+
+### Documentation
+
+- **blog**: Add Q-Filters real-model investigation write-up
+  ([`570b7e2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/570b7e27731e3afca4272656918a9cb3fdd783bb))
+
+- **changelog**: Record the SnapKV/StreamingLLM RoPE offset fix
+  ([`2d93a41`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2d93a411c4b4317746dc912dbd98c8401725b099))
+
+### Features
+
+- **qfilters**: Paper-faithful query-SVD calibration + fused Metal kernels
+  ([`3cc4142`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3cc41429c4d9f84fca7fb7a0dff33e0888e845c5))
+
+### Testing
+
+- **qfilters**: Add TTFT, throughput and NIAH harness vs SnapKV/StreamingLLM
+  ([`a600927`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a60092748b3058d1d72799268035b3abed1b8551))
+
+- **qfilters**: Validate query-SVD calibration on real trained models
+  ([`3fa0c60`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3fa0c60d539b21524643fd1ab223c2ce41ccf940))
+
+
 ## v0.48.5 (2026-08-13)
 
 ### Code Style
