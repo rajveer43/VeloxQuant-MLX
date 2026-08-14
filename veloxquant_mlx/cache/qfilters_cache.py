@@ -11,27 +11,32 @@ The repo's fourth eviction scorer class: not attention/proxy (SnapKV, H2O,
 TOVA, PyramidKV, SqueezeAttention, ChunkKV, CaM), not structural
 (StreamingLLM, sink), not intrinsic-norm (L2Norm).
 
-THE HONESTY CRUX: the paper derives the filter from query-distribution SVD
-offline; a cache never sees queries, so we derive it from the SVD of the
-first ``qfilters_calib_tokens`` observed KEYS and freeze it. A documented
-deviation — a different estimator of the same head-geometry direction, never
-claimed equivalent, validated only under constructed geometry (see the
-benchmark's ``filter_cosine`` field and isotropic control).
+TWO FILTER SOURCES
+------------------
+Pass ``filters`` (``[H_kv, D]``, from
+:mod:`veloxquant_mlx.quantizers.qfilters_calibration`) to use the paper's
+**query-SVD** direction — the mechanism §3.2 actually specifies. The filter is
+then frozen before the first token, so the sign is correct by construction
+(Theorem 3.3's ``kappa^h > 0``), eviction runs from token 0 with no
+calibration window, and the kept set is **path-independent**: prefill in one
+block and token-by-token decode return bit-identical results.
 
-Path-DEPENDENCE (contrast with L2NormKVCache): the filter is estimated from
-whichever chunk first crosses the calibration threshold, so prefill-in-one-
-block and token-by-token decode can freeze *different* directions and
-diverge. There is deliberately no prefill/decode bit-for-bit equivalence
-guarantee here.
+With ``filters=None`` the cache falls back to estimating the direction from
+the SVD of the first ``qfilters_calib_tokens`` observed KEYS. That recovers
+the dominant axis but not its orientation — the sign is exactly what a query
+disambiguates — so on this path ``qfilters_sign`` is a genuine ablation knob,
+and the kept set is path-DEPENDENT (the direction depends on whichever chunk
+first crosses the threshold). Nothing on the fallback path is claimed
+equivalent to the paper's filter.
 
-Adaptation limitations (stated plainly):
-  - Filter is key-SVD-derived, not query-SVD-derived (the crux above).
+Limitations (stated plainly):
   - The anisotropy/attention-prediction claim is the paper's, about trained
-    models; nothing here validates it on synthetic data.
+    models; nothing here validates it on real weights.
   - No RoPE position-ID remapping after eviction.
   - Uniform budget and n_sink across all heads.
   - ``qfilters_recent`` (trailing protected window) is an extension, off by
     default.
+  - Calibrated filters are model-specific; a head-layout mismatch raises.
 
 Byte accounting (same names as L2NormKVCache):
     qfilters_kept_bytes — fp16 bytes for retained K + V (plus the frozen
@@ -51,7 +56,6 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.qfilters import (
     QFiltersState,
-    full_qfilters_fp16_bytes,
     init_qfilters_state,
     qfilters_fp16_bytes,
     qfilters_get_kv,
@@ -67,9 +71,15 @@ class QFiltersKVCache(_MLXKVCache):
             ``qfilters_budget`` (int, default 512) — max tokens kept (incl. sinks),
             ``qfilters_n_sink`` (int, default 4)   — leading positions never evicted,
             ``qfilters_recent`` (int, default 0)   — trailing protected window (extension),
-            ``qfilters_calib_tokens`` (int, default 128) — tokens observed before
-                the filter direction is estimated and frozen,
+            ``qfilters_calib_tokens`` (int, default 128) — fallback only: tokens
+                observed before the filter direction is estimated and frozen,
             ``qfilters_sign`` (int, default 1)     — +1 = paper direction; -1 = inverted.
+        filters: Optional ``[H_kv, D]`` pre-calibrated query-SVD Q-Filters for
+            this layer (see :mod:`veloxquant_mlx.quantizers.qfilters_calibration`).
+            When given, eviction is active immediately and path-independent;
+            when omitted, the key-SVD fallback applies. Must match the layer's
+            ``(H, D)`` — a mismatch raises on the first ``update_and_fetch``
+            rather than silently mis-evicting.
 
     Notes:
         No ``.bits`` attribute — stores and returns fp16 K/V directly.
@@ -85,13 +95,21 @@ class QFiltersKVCache(_MLXKVCache):
         ``trim()`` (see #83).
     """
 
-    def __init__(self, config: Any) -> None:
+    def __init__(self, config: Any, filters: mx.array | None = None) -> None:
         super().__init__()
         self._budget = int(getattr(config, "qfilters_budget", 512))
         self._n_sink = int(getattr(config, "qfilters_n_sink", 4))
         self._recent = int(getattr(config, "qfilters_recent", 0))
         self._calib = int(getattr(config, "qfilters_calib_tokens", 128))
         self._sign = int(getattr(config, "qfilters_sign", 1))
+
+        # Paper-faithful query-SVD filters for THIS layer, [H_kv, D], if the
+        # builder was given a calibration artifact. None => key-SVD fallback.
+        self._filters = filters.astype(mx.float32) if filters is not None else None
+        if self._filters is not None and self._filters.ndim != 2:
+            raise ValueError(
+                f"QFiltersKVCache: filters must be 2-D [H_kv, D], got {tuple(self._filters.shape)}"
+            )
 
         # Fail at build time with clear messages (delegates the guards).
         init_qfilters_state(
@@ -118,6 +136,16 @@ class QFiltersKVCache(_MLXKVCache):
             self._B = B
             self._H = H
             self._head_dim = D
+
+            if self._filters is not None:
+                f_heads, f_dim = (int(x) for x in self._filters.shape)
+                if f_heads != H or f_dim != D:
+                    raise ValueError(
+                        f"QFiltersKVCache: calibrated filters are [{f_heads}, {f_dim}] "
+                        f"but this layer runs [H={H}, D={D}] — the artifact was "
+                        "calibrated on a different model or head layout"
+                    )
+
             self._states = [
                 init_qfilters_state(
                     self._n_sink,
@@ -126,8 +154,11 @@ class QFiltersKVCache(_MLXKVCache):
                     recent=self._recent,
                     calib_tokens=self._calib,
                     sign=self._sign,
+                    # Filters are per-KV-head and shared across the batch, so
+                    # head index h selects the row for every b.
+                    filter_dir=(None if self._filters is None else self._filters[i % H]),
                 )
-                for _ in range(B * H)
+                for i in range(B * H)
             ]
 
     def _head_idx(self, b: int, h: int) -> int:

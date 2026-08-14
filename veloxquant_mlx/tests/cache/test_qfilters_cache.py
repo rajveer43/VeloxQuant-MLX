@@ -274,3 +274,98 @@ def test_for_model_wiring_and_fallback() -> None:
     assert isinstance(caches[0], QFiltersKVCache)
     assert type(caches[1]) is _FallbackCache
     assert isinstance(caches[2], QFiltersKVCache)
+
+
+# ==================================================================
+# Calibrated (paper-faithful) filters — see quantizers/qfilters_calibration.py
+# ==================================================================
+
+
+def _calibrated_filters(H: int, D: int, seed: int = 0) -> mx.array:
+    rng = np.random.default_rng(seed)
+    f = rng.standard_normal((H, D))
+    f /= np.linalg.norm(f, axis=1, keepdims=True)
+    return mx.array(f.astype(np.float32))
+
+
+def _kv_block(B: int, H: int, S: int, D: int, seed: int = 0):
+    rng = np.random.default_rng(seed)
+    k = mx.array(rng.standard_normal((B, H, S, D)).astype(np.float16))
+    v = mx.array(rng.standard_normal((B, H, S, D)).astype(np.float16))
+    return k, v
+
+
+def test_calibrated_filter_evicts_without_warmup() -> None:
+    """A calibrated filter is frozen before token 0 — no calibration window.
+
+    The key-SVD fallback must first observe `calib_tokens` keys, during which
+    the cache grows past its budget. A supplied filter removes that window
+    entirely.
+    """
+    B, H, S, D = 1, 4, 80, 16
+    cfg = KVCacheConfig(method="qfilters", head_dim=D, qfilters_budget=32, qfilters_n_sink=2)
+    k, v = _kv_block(B, H, S, D, seed=1)
+
+    calibrated = QFiltersKVCache(cfg, filters=_calibrated_filters(H, D))
+    k_out, _ = calibrated.update_and_fetch(k, v)
+    assert k_out.shape[2] == 32
+
+    # Fallback: still inside its calibration window, so nothing is evicted.
+    fallback = QFiltersKVCache(cfg)
+    k_fb, _ = fallback.update_and_fetch(k, v)
+    assert k_fb.shape[2] == S
+
+
+def test_calibrated_filter_is_path_independent() -> None:
+    """Prefill-in-one-block and token-by-token decode agree bit-for-bit.
+
+    This is the guarantee the key-SVD fallback cannot make: its direction
+    depends on which chunk first crosses the calibration threshold.
+    """
+    B, H, S, D = 1, 4, 80, 16
+    cfg = KVCacheConfig(method="qfilters", head_dim=D, qfilters_budget=32, qfilters_n_sink=2)
+    filters = _calibrated_filters(H, D, seed=2)
+    k, v = _kv_block(B, H, S, D, seed=3)
+
+    prefill = QFiltersKVCache(cfg, filters=filters)
+    k_prefill, v_prefill = prefill.update_and_fetch(k, v)
+
+    decode = QFiltersKVCache(cfg, filters=filters)
+    k_decode = v_decode = None
+    for t in range(S):
+        k_decode, v_decode = decode.update_and_fetch(k[:, :, t : t + 1], v[:, :, t : t + 1])
+
+    assert np.array_equal(np.array(k_prefill), np.array(k_decode))
+    assert np.array_equal(np.array(v_prefill), np.array(v_decode))
+
+
+def test_calibrated_selection_matches_projection_ranking() -> None:
+    """The kept set is the budget highest-projection rows against the filter."""
+    B, H, S, D, budget = 1, 2, 40, 8, 12
+    cfg = KVCacheConfig(method="qfilters", head_dim=D, qfilters_budget=budget, qfilters_n_sink=0)
+    filters = _calibrated_filters(H, D, seed=4)
+    k, v = _kv_block(B, H, S, D, seed=5)
+
+    cache = QFiltersKVCache(cfg, filters=filters)
+    k_out, _ = cache.update_and_fetch(k, v)
+
+    for h in range(H):
+        scores = np.array(k, dtype=np.float32)[0, h] @ np.array(filters, dtype=np.float32)[h]
+        keep = np.sort(np.argsort(scores, kind="stable")[S - budget :])
+        assert np.array_equal(np.array(k)[0, h][keep], np.array(k_out)[0, h])
+
+
+def test_calibrated_filters_reject_head_layout_mismatch() -> None:
+    """Filters from another model must fail loudly, not silently mis-evict."""
+    cfg = KVCacheConfig(method="qfilters", head_dim=16, qfilters_budget=16)
+    cache = QFiltersKVCache(cfg, filters=_calibrated_filters(8, 16))
+    k, v = _kv_block(1, 4, 20, 16, seed=6)  # 4 heads, filters have 8
+
+    with pytest.raises(ValueError, match="calibrated on a different model"):
+        cache.update_and_fetch(k, v)
+
+
+def test_calibrated_filters_reject_wrong_rank() -> None:
+    cfg = KVCacheConfig(method="qfilters", head_dim=16, qfilters_budget=16)
+    with pytest.raises(ValueError, match=r"2-D \[H_kv, D\]"):
+        QFiltersKVCache(cfg, filters=mx.zeros((4,), dtype=mx.float32))

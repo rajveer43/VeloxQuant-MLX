@@ -14,35 +14,39 @@ otherwise lacks (not attention/proxy like SnapKV/H2O/TOVA/PyramidKV/
 SqueezeAttention/ChunkKV/CaM, not structural like StreamingLLM/sink, not
 intrinsic-norm like L2Norm).
 
-THE HONESTY CRUX (read this before trusting any number)
--------------------------------------------------------
-The paper estimates the filter direction **offline, from the SVD of a sample
-of query vectors**. A cache-side library never sees query vectors — only the
-K/V passed to ``update_and_fetch``. So we substitute a **different estimator
-of the same head-geometry direction**: the top right-singular vector of the
-first ``calib_tokens`` observed **keys**, computed once and then frozen. This
-is a genuine deviation, not a shortcut. Nothing here is claimed equivalent to
-the paper's query-derived filter; the machinery is validated only under
-constructed geometry (see the benchmark's ``paper_like`` regime and its
-``filter_cosine`` field), with an isotropic control where it shows no
-advantage.
+TWO FILTER SOURCES (which one you get changes the guarantees)
+--------------------------------------------------------------
+1. **Calibrated — paper-faithful (preferred).** Pass a ``filter_dir`` computed
+   offline by :mod:`veloxquant_mlx.quantizers.qfilters_calibration` from the
+   **SVD of query activations** (paper §3.2, Eq. 1). This is the paper's
+   actual mechanism. Because the filter is known before the first token, the
+   sign is correct by construction (Theorem 3.3's ``kappa^h > 0``), eviction
+   is active immediately, and the kept set is **path-independent**.
 
-Path-DEPENDENCE (honest contrast with L2Norm)
----------------------------------------------
-Unlike L2Norm, the kept set is **not** path-independent: the filter is
-estimated from whichever chunk first crosses ``calib_tokens``, so
-prefill-in-one-block and token-by-token decode can freeze *different*
-directions and diverge. We therefore do NOT claim or test bit-for-bit
-prefill/decode equivalence — only the weaker true property that, *given the
-same frozen filter*, scoring and eviction are order-invariant.
+2. **Key-SVD fallback (no calibration available).** With no ``filter_dir``,
+   the filter is estimated from the top right-singular vector of the first
+   ``calib_tokens`` observed **keys** and frozen. A cache never sees queries,
+   so this substitutes a different estimator of the same head-geometry axis.
+   It recovers the axis but **not which end of it is important** — the sign is
+   exactly what a query disambiguates. Under this path ``sign`` is a genuine
+   ablation knob, not a cosmetic one. Nothing on this path is claimed
+   equivalent to the paper's filter.
 
-Adaptation limitations (stated plainly):
-  - Filter is key-SVD-derived, not query-SVD-derived (the crux above).
-  - The anisotropy/attention-prediction claim is the paper's, about trained
-    models; nothing here validates it on synthetic data.
+Path-dependence applies to the FALLBACK ONLY
+--------------------------------------------
+On the key-SVD path the filter is estimated from whichever chunk first
+crosses ``calib_tokens``, so prefill-in-one-block and token-by-token decode
+can freeze *different* directions and diverge; we do not claim bit-for-bit
+prefill/decode equivalence there, only that scoring/eviction are
+order-invariant *given the same frozen filter*. With a calibrated filter the
+direction never depends on traffic, so that divergence cannot arise.
+
+Limitations (stated plainly):
   - No RoPE position-ID remapping after eviction.
   - Uniform budget / n_sink across all heads.
   - ``recent`` (trailing protected window) is an extension, off by default.
+  - Calibrated filters are model-specific; reusing another model's artifact
+    is silently wrong, so the loader checks the recorded model id.
 
 Public API (mirrors quantizers/knorm.py)
 -----------------------------------------
@@ -101,12 +105,23 @@ def init_qfilters_state(
     recent: int = 0,
     calib_tokens: int = 128,
     sign: int = 1,
+    filter_dir: mx.array | None = None,
 ) -> QFiltersState:
     """Create an empty QFiltersState before any tokens arrive.
 
+    Args:
+        filter_dir: Optional ``[D]`` pre-calibrated Q-Filter from
+            :mod:`veloxquant_mlx.quantizers.qfilters_calibration` (the paper's
+            query-SVD direction). When supplied the filter is already frozen,
+            so ``calib_tokens`` is irrelevant and eviction is active from the
+            very first token — there is no warm-up window during which the
+            cache grows unbounded, and no path dependence. When omitted the
+            cache falls back to the key-SVD estimator (see module docstring).
+
     Raises:
-        ValueError: if ``sign`` is not ±1, or the protected positions
-            (sinks + recent) leave no evictable room within the budget.
+        ValueError: if ``sign`` is not ±1, the protected positions
+            (sinks + recent) leave no evictable room within the budget, or
+            ``filter_dir`` is not a 1-D vector.
     """
     if sign not in (1, -1):
         raise ValueError(f"qfilters: sign must be +1 or -1, got {sign!r}")
@@ -115,11 +130,17 @@ def init_qfilters_state(
             f"qfilters: n_sink ({n_sink}) + recent ({recent}) must be < "
             f"budget ({budget}) — no evictable positions remain"
         )
+    if filter_dir is not None:
+        if filter_dir.ndim != 1:
+            raise ValueError(
+                f"qfilters: filter_dir must be 1-D [D], got shape {tuple(filter_dir.shape)}"
+            )
+        filter_dir = filter_dir.astype(mx.float32)
     return QFiltersState(
         keys=None,
         values=None,
         scores=None,
-        filter_dir=None,
+        filter_dir=filter_dir,
         n_sink=n_sink,
         budget=budget,
         recent=recent,
