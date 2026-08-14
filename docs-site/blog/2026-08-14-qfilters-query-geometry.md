@@ -21,7 +21,7 @@ Fixing it meant implementing the paper properly, writing two Metal kernels, find
 
 This is the whole run, including the parts where I was wrong.
 
-<!-- truncate -->
+{/* truncate */}
 
 ---
 
