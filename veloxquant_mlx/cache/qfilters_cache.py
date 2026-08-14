@@ -32,7 +32,11 @@ equivalent to the paper's filter.
 Limitations (stated plainly):
   - The anisotropy/attention-prediction claim is the paper's, about trained
     models; nothing here validates it on real weights.
-  - No RoPE position-ID remapping after eviction.
+  - No RoPE position-ID *renumbering* after eviction. Surviving tokens keep
+    their original absolute positions, so ``self.offset`` reports the true
+    token position and RoPE stays correct without re-rotating survivors
+    (see ``update_and_fetch`` and :issue:`171`). Positions do become
+    non-contiguous where tokens were dropped.
   - Uniform budget and n_sink across all heads.
   - ``qfilters_recent`` (trailing protected window) is an extension, off by
     default.
@@ -130,6 +134,11 @@ class QFiltersKVCache(_MLXKVCache):
         self._full_seq_bytes: int = 0
         self._tokens_seen_total: int = 0
 
+        # True absolute token position, independent of how many rows survive
+        # eviction. Reported as ``self.offset`` so mlx_lm's RoPE stays correct
+        # after tokens are dropped (see #171 and update_and_fetch).
+        self._true_offset: int = 0
+
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         if not self._states:
@@ -213,7 +222,30 @@ class QFiltersKVCache(_MLXKVCache):
         self.keys = None
         self.values = None
         self.offset = 0
-        return super().update_and_fetch(K_out, V_out)
+        out = super().update_and_fetch(K_out, V_out)
+
+        # RoPE position correctness (see #171).
+        #
+        # mlx_lm rotates BOTH the query and the incoming key at
+        # ``offset=cache.offset`` *before* calling update_and_fetch. The base
+        # class above just set ``self.offset`` to the number of RETAINED rows,
+        # so once eviction starts (n_kept pinned at budget) the offset stops
+        # advancing and every subsequent token is rotated at ~budget while its
+        # true position keeps climbing — a drift that grows without bound and
+        # scrambles attention.
+        #
+        # Q-Filters PRESERVES the original position of every surviving token
+        # (eviction drops rows but never renumbers them), so all stored keys
+        # already carry rotations for their true absolute positions. RoPE is
+        # relative — <rope(q,i), rope(k,j)> depends only on i-j — so reporting
+        # the true position here puts queries, new keys, and survivors back on
+        # one consistent absolute axis, and no re-rotation of survivors is
+        # needed. This is exactly why H2O/Keyformer need a delta-rotation pass
+        # and this cache does not: they renumber positions on eviction, we do
+        # not.
+        self._true_offset += S
+        self.offset = self._true_offset
+        return out
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:

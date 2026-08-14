@@ -369,3 +369,50 @@ def test_calibrated_filters_reject_wrong_rank() -> None:
     cfg = KVCacheConfig(method="qfilters", head_dim=16, qfilters_budget=16)
     with pytest.raises(ValueError, match=r"2-D \[H_kv, D\]"):
         QFiltersKVCache(cfg, filters=mx.zeros((4,), dtype=mx.float32))
+
+
+# ==================================================================
+# RoPE position bookkeeping (#171)
+# ==================================================================
+
+
+def test_offset_tracks_true_position_after_eviction() -> None:
+    """``cache.offset`` must be the true token position, not the retained count.
+
+    mlx_lm rotates both the query and the incoming key at ``offset=cache.offset``
+    *before* calling ``update_and_fetch``. If the offset stalls at the budget
+    once eviction begins, every later token is rotated at the wrong position and
+    attention degrades without bound (measured: ppl 598 -> 17.6 on
+    Llama-3.2-1B once this is correct).
+    """
+    B, H, D, budget = 1, 2, 8, 16
+    cfg = KVCacheConfig(method="qfilters", head_dim=D, qfilters_budget=budget, qfilters_n_sink=2)
+    cache = QFiltersKVCache(cfg, filters=_calibrated_filters(H, D))
+
+    n_steps = 5 * budget
+    for t in range(n_steps):
+        k, v = _kv_block(B, H, 1, D, seed=100 + t)
+        cache.update_and_fetch(k, v)
+        assert cache.offset == t + 1, (
+            f"offset {cache.offset} != true position {t + 1} — RoPE would be wrong"
+        )
+
+    # Eviction still bounds the cache; the offset just no longer conflates the
+    # two quantities.
+    assert cache.tokens_kept <= budget
+
+
+def test_offset_advances_by_block_size_on_prefill() -> None:
+    """A multi-token block advances the offset by S, not by rows retained."""
+    B, H, S, D = 1, 2, 100, 8
+    cfg = KVCacheConfig(method="qfilters", head_dim=D, qfilters_budget=32, qfilters_n_sink=2)
+    cache = QFiltersKVCache(cfg, filters=_calibrated_filters(H, D))
+
+    k, v = _kv_block(B, H, S, D, seed=7)
+    cache.update_and_fetch(k, v)
+    assert cache.offset == S
+    assert cache.tokens_kept <= 32
+
+    k2, v2 = _kv_block(B, H, 1, D, seed=8)
+    cache.update_and_fetch(k2, v2)
+    assert cache.offset == S + 1

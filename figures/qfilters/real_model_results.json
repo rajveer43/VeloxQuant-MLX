@@ -51,11 +51,33 @@
       "k_norm": {"median": 0.410, "mean": 0.381, "frac_positive": 0.946}
     }
   },
+  "rope_offset_fix": {
+    "_comment": "The #171 blocker, now fixed on this branch. mlx_lm rotates both query and incoming key at offset=cache.offset BEFORE calling update_and_fetch; the base class was leaving offset equal to the retained-row count, so it stalled at `budget` once eviction began and every later token was rotated at the wrong position.",
+    "symptom_before": "budget=64, Llama-3.2-1B: offset stalls at 64; position drift reaches +135 by token 199 and grows without bound.",
+    "was_preexisting_on_master": true,
+    "fix": "Track true absolute position in QFiltersState-independent counter and report it as self.offset. No re-rotation of survivors is needed because Q-Filters PRESERVES original positions (it drops rows but never renumbers them) and RoPE is relative — unlike H2O/Keyformer, which renumber and therefore need a delta-rotation pass.",
+    "effect": "Llama-3.2-1B, 768 generated tokens, budget=128: calibrated perplexity 598.5 -> 17.6."
+  },
   "end_to_end_generation_perplexity": {
-    "status": "BLOCKED - not a valid measurement",
-    "reason": "QFiltersKVCache does not remap RoPE position ids after eviction (a pre-existing, documented limitation, present identically on master). After eviction the base-class cache offset equals the retained token count, not the true token position: after 300 generated tokens with budget=128 the offset reads 128. mlx_lm derives the incoming query's RoPE position from cache.offset, so every post-eviction query is rotated at the wrong position and attention is scrambled.",
-    "evidence": "Measured on mlx-community/Llama-3.2-1B-Instruct-4bit, budget=128: offset after 300 tokens = 128 on BOTH this branch and master (git stash check).",
-    "impact": "Affects every Q-Filters arm equally (calibrated, fallback, both signs), so no meaningful perplexity comparison between eviction policies is possible until position remapping is fixed. No perplexity or TTFT numbers are claimed.",
-    "tracked_separately": true
+    "_comment": "Token-by-token generation perplexity, paper §4 / Fig. 5 setup. Script: benchmark_scripts/qfilters_real_model_perplexity.py. Requires the rope_offset_fix above.",
+    "eval_tokens": 1024,
+    "eval_text": "continuous non-repetitive prose (a repeated short paragraph drives fp16 ppl to ~1.3 and makes all policies look equally bad)",
+    "recency_window_finding": {
+      "_comment": "The single largest factor in generation. Pure projection ranking is a long-range-importance signal and will evict the immediately-preceding tokens, which next-token prediction depends on most. The paper evaluates retrieval/NIAH tasks where this matters far less.",
+      "llama_3_2_1b_budget_128_calibrated": {"recent_0": 263.15, "recent_32": 16.31, "recent_64": 20.32, "recent_96": 24.86}
+    },
+    "mlx-community/Llama-3.2-1B-Instruct-4bit": {
+      "fp16_baseline": 4.050,
+      "budget_256_recent_64": {"calibrated": 8.476, "fallback": 13.358, "gap_closed_pct": 52},
+      "budget_128_recent_32": {"calibrated": 16.307, "fallback": 23.645, "gap_closed_pct": 37},
+      "budget_64_recent_16": {"calibrated": 25.933, "fallback": 31.274, "gap_closed_pct": 20}
+    },
+    "mlx-community/Llama-3.2-3B-Instruct-4bit": {
+      "fp16_baseline": 3.305,
+      "budget_256_recent_64": {"calibrated": 5.076, "fallback": 7.264, "gap_closed_pct": 55},
+      "budget_128_recent_32": {"calibrated": 10.046, "fallback": 14.909, "gap_closed_pct": 42}
+    },
+    "conclusion": "The calibrated query-SVD filter beats the key-SVD fallback at every budget on both models, consistent with the attention-correlation ordering. Perplexity is still well above fp16 at these ratios: this is single-sequence eviction with no RoPE renumbering, uniform per-head budgets, and a much smaller calibration set than the paper's; the numbers are a policy comparison, NOT a reproduction of the paper's Figure 5.",
+    "not_measured": "TTFT / throughput (paper Fig. 10), Ruler, NIAH, and any comparison against SnapKV / Expected Attention / StreamingLLM. L2Norm was excluded because it carries the same un-fixed RoPE offset defect and would compare unfairly."
   }
 }

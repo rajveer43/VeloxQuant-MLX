@@ -42,7 +42,11 @@ order-invariant *given the same frozen filter*. With a calibrated filter the
 direction never depends on traffic, so that divergence cannot arise.
 
 Limitations (stated plainly):
-  - No RoPE position-ID remapping after eviction.
+  - No RoPE position-ID *renumbering* after eviction — surviving tokens keep
+    their original absolute positions (so the cache reports the true token
+    position as its offset and needs no re-rotation; see the cache module and
+    :issue:`171`). Positions therefore become non-contiguous with gaps where
+    tokens were dropped, which the paper also does not address.
   - Uniform budget / n_sink across all heads.
   - ``recent`` (trailing protected window) is an extension, off by default.
   - Calibrated filters are model-specific; reusing another model's artifact

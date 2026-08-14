@@ -106,7 +106,7 @@ config = KVCacheConfig(
     head_dim=128,
     qfilters_budget=512,  # max tokens kept (incl. sinks)
     qfilters_n_sink=4,  # leading positions never evicted
-    qfilters_recent=0,  # trailing protected window (extension, off)
+    qfilters_recent=0,  # trailing protected window; set ~budget/4 for generation
     qfilters_calib_tokens=128,  # fallback only: tokens before the filter freezes
     qfilters_sign=1,  # +1 = paper direction; -1 = inverted ablation
 )
@@ -185,13 +185,19 @@ compile-time bound.
 ## Adaptation notes
 
 **What we do NOT implement:**
-- RoPE position-ID remapping after eviction (same as every eviction method
-  here) — so the Metal apply kernel copies keys bit-identically, with no
-  re-rotation step.
+- RoPE position-ID **renumbering** after eviction. Survivors keep their
+  original absolute positions, so the cache reports the true token position and
+  RoPE stays correct with no re-rotation — which is why the Metal apply kernel
+  copies keys bit-identically (H2O/Keyformer renumber, so they need a
+  delta-rotation pass). Positions do become non-contiguous where tokens were
+  dropped; the paper does not address this either.
 - Per-head budgets (uniform across heads, same as H2O/TOVA/CaM/L2Norm).
 
 **Extensions beyond the paper (off by default):**
 - `qfilters_recent` — protects the most recent tokens StreamingLLM-style.
+  **Effectively required for open-ended generation** (16× perplexity swing —
+  see [Generation perplexity](#generation-perplexity)); left off by default so
+  the default configuration stays paper-faithful.
 - `qfilters_sign=-1` — the inverted scorer, meaningful as an ablation arm on
   the key-SVD fallback path, where the sign is ambiguous. With calibrated
   filters the paper's `+1` is correct by construction.
@@ -306,25 +312,68 @@ half the time, i.e. worse than a coin flip. This is the sharpest available
 evidence that the query-SVD estimator is not a refinement of the key-side one
 but a categorically different signal.
 
-### :warning: End-to-end perplexity is BLOCKED — no numbers claimed
+### Generation perplexity
 
-`QFiltersKVCache` **does not remap RoPE position ids after eviction** (the
-documented limitation below). The consequence only shows up on a real model:
-the base-class cache `offset` tracks *retained* tokens, not true position, so
-after 300 generated tokens at `budget=128` the offset reads **128**. `mlx_lm`
-derives the incoming query's RoPE position from `cache.offset`, so every
-post-eviction query is rotated at the wrong position and attention is
-scrambled.
+Token-by-token generation with eviction active (paper §4 / Figure 5 setup),
+1024 tokens of continuous prose. Script:
+`benchmark_scripts/qfilters_real_model_perplexity.py`.
 
-This is **pre-existing and present identically on `master`** (verified by
-stashing this branch), and it degrades every Q-Filters arm equally —
-calibrated, fallback, both signs. So no meaningful perplexity comparison
-between eviction policies is possible until position remapping lands, and
-**no perplexity or TTFT numbers are claimed here**. Treat the paper's
-Figures 5/10 and Table 1 as the paper's, not as reproduced.
+**Llama-3.2-1B** (fp16 baseline **4.050**):
 
-The correlation and anisotropy results above are unaffected: they measure
-scoring quality directly, with no generation loop involved.
+| Budget | Calibrated | Fallback | Gap to fp16 closed |
+|---|---|---|---|
+| 256 (~4×) | **8.476** | 13.358 | **52%** |
+| 128 (~8×) | **16.307** | 23.645 | **37%** |
+| 64 (~16×) | **25.933** | 31.274 | **20%** |
+
+**Llama-3.2-3B** (fp16 baseline **3.305**):
+
+| Budget | Calibrated | Fallback | Gap to fp16 closed |
+|---|---|---|---|
+| 256 (~4×) | **5.076** | 7.264 | **55%** |
+| 128 (~8×) | **10.046** | 14.909 | **42%** |
+
+The calibrated filter wins at every budget on both models, matching the
+attention-correlation ordering. But note the absolute numbers: perplexity is
+still well above fp16. This is a **policy comparison, not a reproduction of
+Figure 5** — no RoPE renumbering, uniform per-head budgets, and a much smaller
+calibration set than the paper's §4.2.
+
+#### `qfilters_recent` is effectively required for generation
+
+The single largest factor. Pure projection ranking is a *long-range importance*
+signal, and it will happily evict the immediately-preceding tokens — which is
+what next-token prediction leans on hardest. Llama-3.2-1B, budget 128,
+calibrated:
+
+| `qfilters_recent` | 0 | 32 | 64 | 96 |
+|---|---|---|---|---|
+| perplexity | **263.2** | **16.3** | 20.3 | 24.9 |
+
+A 16× swing. The paper evaluates retrieval and NIAH tasks where recency matters
+far less, so this does not contradict it — but if you use Q-Filters for
+open-ended generation, set `qfilters_recent` (≈ budget/4 worked best here).
+It remains off by default to keep the default paper-faithful.
+
+#### RoPE positions had to be fixed first (#171)
+
+`mlx_lm` rotates both the query and the incoming key at `offset=cache.offset`
+*before* `update_and_fetch` runs. The base class left `offset` equal to the
+retained-row count, so it stalled at `budget` once eviction began: at
+budget 64 the position drift reached **+135 by token 199** and grew without
+bound. Fixing it moved calibrated perplexity from **598.5 → 17.6**.
+
+Q-Filters **preserves** original positions (it drops rows but never renumbers
+them) and RoPE is relative, so reporting the true position is sufficient and
+survivors need no re-rotation — unlike H2O/Keyformer, which renumber and
+therefore need a delta-rotation pass.
+
+#### Not measured
+
+TTFT/throughput (paper Figure 10), Ruler, NIAH, and comparisons against
+SnapKV / Expected Attention / StreamingLLM. [L2Norm](../algorithms/knorm) was
+excluded from the table above because it still carries the same un-fixed
+`offset` defect and would compare unfairly.
 
 ## When to use it
 
