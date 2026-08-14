@@ -267,14 +267,64 @@ H2O-adapted and random arms under two data regimes:
   best-of-sign is the best-of-two selection bonus, not an importance signal.
   Reported in full — no fabricated advantage.
 
-**No model-level benchmark has been run.** These are offline-synthetic,
-output-perturbation and byte-accounting numbers — not perplexity or throughput
-on a real model. The calibration path is validated on constructed query
-geometry and on `collect_query_activations`' hook mechanics, **not** by
-measuring the paper's anisotropy claim on real trained weights, and no
-end-to-end perplexity or TTFT comparison against the paper's Figures 5/10
-exists here yet. Treat the paper's reported accuracy and TTFT numbers as the
-paper's, not as reproduced.
+## Real-model validation
+
+Measured on trained MLX weights — scripts in
+`benchmark_scripts/qfilters_real_model_anisotropy.py` and
+`qfilters_real_model_attention_corr.py`, raw numbers in
+`figures/qfilters/real_model_results.json`.
+
+### The paper's anisotropy holds (Observations 3.1 / 3.2)
+
+| Model | `E⟨Q,uʰ⟩ > 0` | `\|E⟨Q,v₁⟩\|` vs. other components | Top-component energy |
+|---|---|---|---|
+| Llama-3.2-1B-Instruct-4bit | **100%** of 512 heads | 44.4× | 90.6% |
+| Llama-3.2-3B-Instruct-4bit | **100%** of 672 heads | 52.3× | 84.7% |
+| Qwen2.5-7B-Instruct-4bit | **100%** of 784 heads | 47.9× | 81.3% |
+
+Observation 3.1 holds in **every head measured** — that universal positivity is
+`κʰ > 0`, the property the sign correctness rests on. Observation 3.2 holds
+too: the leading component's mean projection is ~50× the rest, which have
+near-zero mean, matching Figure 2c. Qwen2.5 is the paper's §5 limitation case
+(QKV bias), yet the anisotropy is present there as well.
+
+### The calibrated filter predicts real attention (Figure 4)
+
+Spearman correlation against **true** mean attention `Sʰₜ` from real attention
+maps on held-out text:
+
+| Scorer | Llama-3.2-1B (128 KV heads) | Llama-3.2-3B (224 KV heads) |
+|---|---|---|
+| **Q-Filters, calibrated (query-SVD)** | **+0.783** (100% sign-correct) | **+0.863** (100% sign-correct) |
+| K-norm ([L2Norm](../algorithms/knorm)) | +0.460 (94.5%) | +0.410 (94.6%) |
+| Q-Filters, key-SVD fallback | **−0.032** (46.1%) | **−0.008** (49.1%) |
+
+The calibrated filter tracks true attention strongly and beats K-norm,
+reproducing the paper's Figure 4 ordering. The key-SVD fallback is
+**statistically indistinguishable from noise** — its sign is correct less than
+half the time, i.e. worse than a coin flip. This is the sharpest available
+evidence that the query-SVD estimator is not a refinement of the key-side one
+but a categorically different signal.
+
+### :warning: End-to-end perplexity is BLOCKED — no numbers claimed
+
+`QFiltersKVCache` **does not remap RoPE position ids after eviction** (the
+documented limitation below). The consequence only shows up on a real model:
+the base-class cache `offset` tracks *retained* tokens, not true position, so
+after 300 generated tokens at `budget=128` the offset reads **128**. `mlx_lm`
+derives the incoming query's RoPE position from `cache.offset`, so every
+post-eviction query is rotated at the wrong position and attention is
+scrambled.
+
+This is **pre-existing and present identically on `master`** (verified by
+stashing this branch), and it degrades every Q-Filters arm equally —
+calibrated, fallback, both signs. So no meaningful perplexity comparison
+between eviction policies is possible until position remapping lands, and
+**no perplexity or TTFT numbers are claimed here**. Treat the paper's
+Figures 5/10 and Table 1 as the paper's, not as reproduced.
+
+The correlation and anisotropy results above are unaffected: they measure
+scoring quality directly, with no generation loop involved.
 
 ## When to use it
 

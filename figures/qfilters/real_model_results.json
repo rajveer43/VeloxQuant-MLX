@@ -1,0 +1,61 @@
+{
+  "_comment": "Real-model validation of Q-Filters on trained MLX weights. Produced by benchmark_scripts/qfilters_real_model_anisotropy.py and qfilters_real_model_attention_corr.py. See docs-site/docs/algorithms/qfilters.md for interpretation.",
+  "date": "2026-08-14",
+  "calibration": {
+    "texts": 4,
+    "max_length": 512,
+    "max_svd_samples_per_head": 3000,
+    "note": "Paper §4.2 uses 20 samples x 2048 tokens with 3k SVD samples per head; this is a smaller calibration set."
+  },
+  "anisotropy": {
+    "_comment": "Paper Observations 3.1 and 3.2 measured on real query activations. Obs 3.1 = E<Q,u> > 0 (the sign that Theorem 3.3's kappa^h > 0 depends on). Obs 3.2 = projections on non-leading SVD components have ~zero mean.",
+    "mlx-community/Llama-3.2-1B-Instruct-4bit": {
+      "layers": 16,
+      "heads_measured": 512,
+      "obs_3_1_frac_positive": 1.0,
+      "obs_3_1_median": 11.945,
+      "obs_3_2_ratio_median": 44.4,
+      "top_component_energy_share_median": 0.906
+    },
+    "mlx-community/Llama-3.2-3B-Instruct-4bit": {
+      "layers": 28,
+      "heads_measured": 672,
+      "obs_3_1_frac_positive": 1.0,
+      "obs_3_1_median": 13.411,
+      "obs_3_2_ratio_median": 52.3,
+      "top_component_energy_share_median": 0.847
+    },
+    "mlx-community/Qwen2.5-7B-Instruct-4bit": {
+      "layers": 28,
+      "heads_measured": 784,
+      "obs_3_1_frac_positive": 1.0,
+      "obs_3_1_median": 15.459,
+      "obs_3_2_ratio_median": 47.9,
+      "top_component_energy_share_median": 0.813,
+      "note": "Paper §5 lists Qwen-2.5 as a limitation case (QKV projection bias). The anisotropy is nonetheless present here."
+    }
+  },
+  "attention_correlation": {
+    "_comment": "Spearman rank correlation between each scorer and TRUE mean attention S^h_t computed from real attention maps on held-out text (paper Figure 4). Measured per KV head.",
+    "held_out_tokens": 512,
+    "mlx-community/Llama-3.2-1B-Instruct-4bit": {
+      "kv_heads": 128,
+      "query_svd_calibrated": {"median": 0.783, "mean": 0.737, "frac_positive": 1.0},
+      "key_svd_fallback": {"median": -0.032, "mean": -0.022, "frac_positive": 0.461},
+      "k_norm": {"median": 0.460, "mean": 0.415, "frac_positive": 0.945}
+    },
+    "mlx-community/Llama-3.2-3B-Instruct-4bit": {
+      "kv_heads": 224,
+      "query_svd_calibrated": {"median": 0.863, "mean": 0.829, "frac_positive": 1.0},
+      "key_svd_fallback": {"median": -0.008, "mean": 0.003, "frac_positive": 0.491},
+      "k_norm": {"median": 0.410, "mean": 0.381, "frac_positive": 0.946}
+    }
+  },
+  "end_to_end_generation_perplexity": {
+    "status": "BLOCKED - not a valid measurement",
+    "reason": "QFiltersKVCache does not remap RoPE position ids after eviction (a pre-existing, documented limitation, present identically on master). After eviction the base-class cache offset equals the retained token count, not the true token position: after 300 generated tokens with budget=128 the offset reads 128. mlx_lm derives the incoming query's RoPE position from cache.offset, so every post-eviction query is rotated at the wrong position and attention is scrambled.",
+    "evidence": "Measured on mlx-community/Llama-3.2-1B-Instruct-4bit, budget=128: offset after 300 tokens = 128 on BOTH this branch and master (git stash check).",
+    "impact": "Affects every Q-Filters arm equally (calibrated, fallback, both signs), so no meaningful perplexity comparison between eviction policies is possible until position remapping is fixed. No perplexity or TTFT numbers are claimed.",
+    "tracked_separately": true
+  }
+}
