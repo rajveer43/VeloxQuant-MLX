@@ -6,6 +6,38 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ### Fixed
 
+**RoPE positions after eviction in SnapKV-adapted and StreamingLLM-adapted**
+([#171](https://github.com/rajveer43/VeloxQuant-MLX/issues/171)) — both
+carried the same defect fixed earlier for Q-Filters: `self.offset` reported
+the **retained row count** rather than the true absolute token position.
+`mlx_lm` rotates both the query and the incoming key at
+`offset=cache.offset` *before* `update_and_fetch` runs, so once eviction
+started every subsequent token was rotated at the wrong position. Measured
+over 200 decode steps after a 64-token prefill at budget 32:
+
+- **StreamingLLM** — offset froze at **32** while the true position reached
+  **263** (drift **+231**, growing without bound once the window saturated).
+- **SnapKV** — offset advanced but stayed **exactly 32 behind**, the constant
+  deficit being the tokens dropped during prefill compression.
+
+Both preserve original positions (`snap_select_indices` returns kept indices
+sorted ascending; StreamingLLM's window drops rows without renumbering) and
+RoPE is relative, so reporting the true position is sufficient — survivors
+need no re-rotation, unlike H2O/Keyformer which renumber.
+
+SnapKV needed more than the `_true_offset` counter that sufficed for
+StreamingLLM: its decode path appends deltas, so the base class's cursor
+arithmetic and return slice (`self.keys[..., :self.offset, :]`) genuinely
+require the row count. `offset` is now a property yielding the row count
+while the base class is on the stack and the true position outside it.
+
+Note this diverges from the StreamingLLM paper, which assigns positions by
+index *within* the cache; matching that would require re-rotating every
+survivor each step. Recorded in the cache docstring.
+
+Two existing tests asserted `offset == retained rows` — the old meaning —
+and were updated, with a dedicated regression test added.
+
 **A2ATS-adapted paper-fidelity fixes** ([#29](https://github.com/rajveer43/VeloxQuant-MLX/issues/29)) —
 four deviations from the source paper (He et al., ACL 2025 Findings), three
 of which contradicted its equations rather than knowingly adapting them:

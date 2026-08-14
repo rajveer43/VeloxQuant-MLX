@@ -82,6 +82,11 @@ class StreamingLLMKVCache(_MLXKVCache):
         self._full_seq_bytes: int = 0
         self._tokens_seen_total: int = 0  # sum over all (B, H) heads
 
+        # True absolute token position, independent of how many rows survive
+        # eviction. Reported as ``self.offset`` so mlx_lm's RoPE stays correct
+        # after tokens are dropped (see #171 and update_and_fetch).
+        self._true_offset: int = 0
+
     # ------------------------------------------------------------------
     def _ensure_windows(self, B: int, H: int, D: int) -> None:
         """Initialise per-head window list on first call."""
@@ -151,7 +156,33 @@ class StreamingLLMKVCache(_MLXKVCache):
         self.keys = None
         self.values = None
         self.offset = 0
-        return super().update_and_fetch(K_out, V_out)
+        out = super().update_and_fetch(K_out, V_out)
+
+        # RoPE position correctness (see #171).
+        #
+        # mlx_lm rotates BOTH the query and the incoming key at
+        # ``offset=cache.offset`` *before* calling update_and_fetch. The base
+        # class above just set ``self.offset`` to the number of RETAINED rows,
+        # so once the window saturates (n_keep pinned at n_sink + window_size)
+        # the offset stops advancing and every subsequent token is rotated at
+        # ~n_keep while its true position keeps climbing — an unbounded drift
+        # that scrambles attention.
+        #
+        # StreamingLLM PRESERVES the original position of every surviving
+        # token (the window drops rows but never renumbers them), so all
+        # stored keys already carry rotations for their true absolute
+        # positions. RoPE is relative — <rope(q,i), rope(k,j)> depends only on
+        # i-j — so reporting the true position here puts queries, new keys,
+        # and survivors back on one consistent absolute axis, and no
+        # re-rotation of survivors is needed.
+        #
+        # NOTE: this is the *faithful-to-this-implementation* choice, not the
+        # StreamingLLM paper's. The paper assigns positions by position
+        # *within the cache* rather than in the original sequence; doing that
+        # here would require re-rotating every survivor each step. See #171.
+        self._true_offset += S
+        self.offset = self._true_offset
+        return out
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:

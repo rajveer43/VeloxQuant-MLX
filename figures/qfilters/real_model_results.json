@@ -1,0 +1,83 @@
+{
+  "_comment": "Real-model validation of Q-Filters on trained MLX weights. Produced by benchmark_scripts/qfilters_real_model_anisotropy.py and qfilters_real_model_attention_corr.py. See docs-site/docs/algorithms/qfilters.md for interpretation.",
+  "date": "2026-08-14",
+  "calibration": {
+    "texts": 4,
+    "max_length": 512,
+    "max_svd_samples_per_head": 3000,
+    "note": "Paper §4.2 uses 20 samples x 2048 tokens with 3k SVD samples per head; this is a smaller calibration set."
+  },
+  "anisotropy": {
+    "_comment": "Paper Observations 3.1 and 3.2 measured on real query activations. Obs 3.1 = E<Q,u> > 0 (the sign that Theorem 3.3's kappa^h > 0 depends on). Obs 3.2 = projections on non-leading SVD components have ~zero mean.",
+    "mlx-community/Llama-3.2-1B-Instruct-4bit": {
+      "layers": 16,
+      "heads_measured": 512,
+      "obs_3_1_frac_positive": 1.0,
+      "obs_3_1_median": 11.945,
+      "obs_3_2_ratio_median": 44.4,
+      "top_component_energy_share_median": 0.906
+    },
+    "mlx-community/Llama-3.2-3B-Instruct-4bit": {
+      "layers": 28,
+      "heads_measured": 672,
+      "obs_3_1_frac_positive": 1.0,
+      "obs_3_1_median": 13.411,
+      "obs_3_2_ratio_median": 52.3,
+      "top_component_energy_share_median": 0.847
+    },
+    "mlx-community/Qwen2.5-7B-Instruct-4bit": {
+      "layers": 28,
+      "heads_measured": 784,
+      "obs_3_1_frac_positive": 1.0,
+      "obs_3_1_median": 15.459,
+      "obs_3_2_ratio_median": 47.9,
+      "top_component_energy_share_median": 0.813,
+      "note": "Paper §5 lists Qwen-2.5 as a limitation case (QKV projection bias). The anisotropy is nonetheless present here."
+    }
+  },
+  "attention_correlation": {
+    "_comment": "Spearman rank correlation between each scorer and TRUE mean attention S^h_t computed from real attention maps on held-out text (paper Figure 4). Measured per KV head.",
+    "held_out_tokens": 512,
+    "mlx-community/Llama-3.2-1B-Instruct-4bit": {
+      "kv_heads": 128,
+      "query_svd_calibrated": {"median": 0.783, "mean": 0.737, "frac_positive": 1.0},
+      "key_svd_fallback": {"median": -0.032, "mean": -0.022, "frac_positive": 0.461},
+      "k_norm": {"median": 0.460, "mean": 0.415, "frac_positive": 0.945}
+    },
+    "mlx-community/Llama-3.2-3B-Instruct-4bit": {
+      "kv_heads": 224,
+      "query_svd_calibrated": {"median": 0.863, "mean": 0.829, "frac_positive": 1.0},
+      "key_svd_fallback": {"median": -0.008, "mean": 0.003, "frac_positive": 0.491},
+      "k_norm": {"median": 0.410, "mean": 0.381, "frac_positive": 0.946}
+    }
+  },
+  "rope_offset_fix": {
+    "_comment": "The #171 blocker, now fixed on this branch. mlx_lm rotates both query and incoming key at offset=cache.offset BEFORE calling update_and_fetch; the base class was leaving offset equal to the retained-row count, so it stalled at `budget` once eviction began and every later token was rotated at the wrong position.",
+    "symptom_before": "budget=64, Llama-3.2-1B: offset stalls at 64; position drift reaches +135 by token 199 and grows without bound.",
+    "was_preexisting_on_master": true,
+    "fix": "Track true absolute position in QFiltersState-independent counter and report it as self.offset. No re-rotation of survivors is needed because Q-Filters PRESERVES original positions (it drops rows but never renumbers them) and RoPE is relative — unlike H2O/Keyformer, which renumber and therefore need a delta-rotation pass.",
+    "effect": "Llama-3.2-1B, 768 generated tokens, budget=128: calibrated perplexity 598.5 -> 17.6."
+  },
+  "end_to_end_generation_perplexity": {
+    "_comment": "Token-by-token generation perplexity, paper §4 / Fig. 5 setup. Script: benchmark_scripts/qfilters_real_model_perplexity.py. Requires the rope_offset_fix above.",
+    "eval_tokens": 1024,
+    "eval_text": "continuous non-repetitive prose (a repeated short paragraph drives fp16 ppl to ~1.3 and makes all policies look equally bad)",
+    "recency_window_finding": {
+      "_comment": "The single largest factor in generation. Pure projection ranking is a long-range-importance signal and will evict the immediately-preceding tokens, which next-token prediction depends on most. The paper evaluates retrieval/NIAH tasks where this matters far less.",
+      "llama_3_2_1b_budget_128_calibrated": {"recent_0": 263.15, "recent_32": 16.31, "recent_64": 20.32, "recent_96": 24.86}
+    },
+    "mlx-community/Llama-3.2-1B-Instruct-4bit": {
+      "fp16_baseline": 4.050,
+      "budget_256_recent_64": {"calibrated": 8.476, "fallback": 13.358, "gap_closed_pct": 52},
+      "budget_128_recent_32": {"calibrated": 16.307, "fallback": 23.645, "gap_closed_pct": 37},
+      "budget_64_recent_16": {"calibrated": 25.933, "fallback": 31.274, "gap_closed_pct": 20}
+    },
+    "mlx-community/Llama-3.2-3B-Instruct-4bit": {
+      "fp16_baseline": 3.305,
+      "budget_256_recent_64": {"calibrated": 5.076, "fallback": 7.264, "gap_closed_pct": 55},
+      "budget_128_recent_32": {"calibrated": 10.046, "fallback": 14.909, "gap_closed_pct": 42}
+    },
+    "conclusion": "The calibrated query-SVD filter beats the key-SVD fallback at every budget on both models, consistent with the attention-correlation ordering. Perplexity is still well above fp16 at these ratios: this is single-sequence eviction with no RoPE renumbering, uniform per-head budgets, and a much smaller calibration set than the paper's; the numbers are a policy comparison, NOT a reproduction of the paper's Figure 5.",
+    "not_measured": "TTFT / throughput (paper Fig. 10), Ruler, NIAH, and any comparison against SnapKV / Expected Attention / StreamingLLM. L2Norm was excluded because it carries the same un-fixed RoPE offset defect and would compare unfairly."
+  }
+}
