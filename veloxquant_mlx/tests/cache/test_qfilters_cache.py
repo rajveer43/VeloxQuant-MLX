@@ -17,6 +17,8 @@ import pytest
 
 from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.qfilters_cache import QFiltersKVCache
+from veloxquant_mlx.metal import metal_available
+from veloxquant_mlx.metal._qfilters_evict import QFILTERS_MAX_BUDGET
 from veloxquant_mlx.quantizers.qfilters import qfilters_fp16_bytes
 
 
@@ -585,3 +587,117 @@ def test_offset_advances_by_block_size_on_prefill() -> None:
     k2, v2 = _kv_block(B, H, 1, D, seed=8)
     cache.update_and_fetch(k2, v2)
     assert cache.offset == S + 1
+
+
+# ==================================================================
+# Metal fused-eviction fast path (#179)
+# ==================================================================
+
+
+def test_use_metal_kernels_none_auto_detects() -> None:
+    """Default (unset) resolves to whatever this build of mlx supports."""
+    cfg = KVCacheConfig(method="qfilters", head_dim=16, qfilters_budget=32)
+    cache = QFiltersKVCache(cfg, filters=_calibrated_filters(4, 16))
+    assert cache._use_metal == metal_available()
+
+
+def test_use_metal_kernels_false_forces_pure_mlx_path() -> None:
+    """``use_metal_kernels=False`` must never take the fused-kernel branch,
+    even on a build where Metal is available — this is the debug/parity
+    escape hatch, so it must be unconditional."""
+    cfg = KVCacheConfig(method="qfilters", head_dim=16, qfilters_budget=32, use_metal_kernels=False)
+    cache = QFiltersKVCache(cfg, filters=_calibrated_filters(4, 16))
+    assert cache._use_metal is False
+
+
+def test_use_metal_kernels_false_output_matches_reference() -> None:
+    """Forcing the pure-MLX path must still produce the documented selection."""
+    B, H, S, D, budget, n_sink = 2, 4, 300, 16, 64, 4
+    cfg = KVCacheConfig(
+        method="qfilters",
+        head_dim=D,
+        qfilters_budget=budget,
+        qfilters_n_sink=n_sink,
+        use_metal_kernels=False,
+    )
+    filters = _calibrated_filters(H, D, seed=21)
+    k, v = _kv_block(B, H, S, D, seed=22)
+
+    cache = QFiltersKVCache(cfg, filters=filters)
+    k_out, v_out = cache.update_and_fetch(k, v)
+
+    k_ref, v_ref = _reference_evict(k, v, filters, budget, n_sink, 0, 1)
+    assert np.array_equal(np.array(k_out), k_ref)
+    assert np.array_equal(np.array(v_out), v_ref)
+
+
+def test_use_metal_kernels_true_with_oversized_budget_raises() -> None:
+    """A budget above QFILTERS_MAX_BUDGET can never use the fused kernel — the
+    survivor index list it stages in threadgroup memory needs a compile-time
+    bound — so requiring Metal explicitly must raise at construction, on any
+    machine, rather than silently falling back or failing deep in generation.
+    """
+    cfg = KVCacheConfig(
+        method="qfilters",
+        head_dim=16,
+        qfilters_budget=QFILTERS_MAX_BUDGET + 1,
+        use_metal_kernels=True,
+    )
+    with pytest.raises(ValueError, match="QFILTERS_MAX_BUDGET"):
+        QFiltersKVCache(cfg, filters=_calibrated_filters(4, 16))
+
+
+@pytest.mark.skipif(metal_available(), reason="only meaningful when Metal is unavailable")
+def test_use_metal_kernels_true_without_metal_raises() -> None:
+    cfg = KVCacheConfig(method="qfilters", head_dim=16, qfilters_budget=32, use_metal_kernels=True)
+    with pytest.raises(ValueError, match="Metal kernels are"):
+        QFiltersKVCache(cfg, filters=_calibrated_filters(4, 16))
+
+
+@pytest.mark.skipif(not metal_available(), reason="requires Metal GPU")
+@pytest.mark.parametrize(
+    "B,H,S,budget,n_sink,recent,sign",
+    [
+        (1, 4, 300, 64, 4, 0, 1),
+        (3, 4, 300, 64, 4, 0, 1),
+        (2, 3, 257, 48, 4, 8, 1),
+        (1, 4, 300, 64, 2, 0, -1),
+    ],
+)
+def test_metal_path_matches_pure_mlx_path(
+    B: int, H: int, S: int, budget: int, n_sink: int, recent: int, sign: int
+) -> None:
+    """The fused Metal kernel must be bit-for-bit interchangeable with the
+    pure-MLX batched selection it replaces (#179) — same tie-breaking
+    convention, same output. Only runs where Metal is actually available."""
+    D = 16
+    filters = _calibrated_filters(H, D, seed=31)
+    k, v = _kv_block(B, H, S, D, seed=32)
+
+    cfg_metal = KVCacheConfig(
+        method="qfilters",
+        head_dim=D,
+        qfilters_budget=budget,
+        qfilters_n_sink=n_sink,
+        qfilters_recent=recent,
+        qfilters_sign=sign,
+        use_metal_kernels=True,
+    )
+    cfg_pure = KVCacheConfig(
+        method="qfilters",
+        head_dim=D,
+        qfilters_budget=budget,
+        qfilters_n_sink=n_sink,
+        qfilters_recent=recent,
+        qfilters_sign=sign,
+        use_metal_kernels=False,
+    )
+    cache_metal = QFiltersKVCache(cfg_metal, filters=filters)
+    cache_pure = QFiltersKVCache(cfg_pure, filters=filters)
+
+    k_metal, v_metal = cache_metal.update_and_fetch(k, v)
+    k_pure, v_pure = cache_pure.update_and_fetch(k, v)
+
+    assert np.array_equal(np.array(k_metal), np.array(k_pure))
+    assert np.array_equal(np.array(v_metal), np.array(v_pure))
+    assert cache_metal.tokens_kept == cache_pure.tokens_kept

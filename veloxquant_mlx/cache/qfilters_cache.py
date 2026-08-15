@@ -61,6 +61,8 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.metal import metal_available
+from veloxquant_mlx.metal._qfilters_evict import QFILTERS_MAX_BUDGET, qfilters_fused_evict
 from veloxquant_mlx.quantizers.qfilters import (
     QFiltersState,
     init_qfilters_state,
@@ -82,6 +84,11 @@ class QFiltersKVCache(_MLXKVCache):
             ``qfilters_calib_tokens`` (int, default 128) — fallback only: tokens
                 observed before the filter direction is estimated and frozen,
             ``qfilters_sign`` (int, default 1)     — +1 = paper direction; -1 = inverted.
+            ``use_metal_kernels`` (bool | None, default None) — three-state Metal
+                fast-path flag for the calibrated/batched path (see Notes below):
+                ``None`` auto-detects, ``True`` requires Metal (raises at
+                construction if unavailable or if ``qfilters_budget`` exceeds
+                ``QFILTERS_MAX_BUDGET``), ``False`` forces the pure-MLX path.
         filters: Optional ``[H_kv, D]`` pre-calibrated query-SVD Q-Filters for
             this layer (see :mod:`veloxquant_mlx.quantizers.qfilters_calibration`).
             When given, eviction is active immediately and path-independent;
@@ -111,6 +118,18 @@ class QFiltersKVCache(_MLXKVCache):
         surface (``states``); nothing on the hot path reads them. The key-SVD
         fallback keeps the loop — its per-group filters freeze at different
         times, which a single shared-filter selection cannot express.
+
+        On top of that batched selection, when Metal is available (or
+        ``use_metal_kernels=True``) and the group is actually over budget with
+        ``qfilters_budget <= QFILTERS_MAX_BUDGET``, the over-budget branch
+        dispatches to ``qfilters_fused_evict`` — two fused Metal kernels
+        (scoring + threshold compaction, see
+        ``veloxquant_mlx/metal/_qfilters_evict.py``) that replace the pure-MLX
+        ``mx.argsort`` / ``mx.take_along_axis`` selection with the same
+        tie-breaking convention, so the two paths agree bit-for-bit
+        (:issue:`179`). Under-budget calls and the key-SVD fallback loop are
+        unaffected either way — there is nothing to evict yet, or the shared
+        batched selection this optimizes does not apply to them.
     """
 
     def __init__(self, config: Any, filters: mx.array | None = None) -> None:
@@ -137,6 +156,34 @@ class QFiltersKVCache(_MLXKVCache):
             recent=self._recent,
             calib_tokens=self._calib,
             sign=self._sign,
+        )
+
+        # Resolve the Metal fast-path flag for the batched (calibrated-filter)
+        # eviction branch. Three-state, same convention as VecInferKVCache:
+        #   None  -> auto-detect (silent fallback to pure MLX)
+        #   True  -> require Metal; raise now rather than deep in generation
+        #   False -> force the pure-MLX path (debug / parity testing)
+        requested_metal = getattr(config, "use_metal_kernels", None)
+        metal_ok = metal_available()
+        # Checked ahead of hardware availability so this failure is the same
+        # on every machine, Metal or not.
+        if requested_metal is True and self._budget > QFILTERS_MAX_BUDGET:
+            raise ValueError(
+                f"QFiltersKVCache: use_metal_kernels=True but qfilters_budget="
+                f"{self._budget} exceeds QFILTERS_MAX_BUDGET={QFILTERS_MAX_BUDGET} "
+                "(the eviction kernel stages the survivor index list in "
+                "threadgroup memory, which needs a compile-time bound) — drop "
+                "use_metal_kernels or lower the budget."
+            )
+        if requested_metal is True and not metal_ok:
+            raise ValueError(
+                "QFiltersKVCache: use_metal_kernels=True but Metal kernels are "
+                "not available on this build of mlx."
+            )
+        self._use_metal: bool = (
+            (metal_ok if requested_metal is None else bool(requested_metal))
+            and metal_ok
+            and self._budget <= QFILTERS_MAX_BUDGET
         )
 
         self._head_dim: int = 0
@@ -232,15 +279,31 @@ class QFiltersKVCache(_MLXKVCache):
         if self._batched_filters is None:
             self._batched_filters = mx.tile(self._filters, (B, 1))
 
-        keys_out, values_out, scores_out = qfilters_update_batched(
-            keys_cat,
-            values_cat,
-            self._batched_filters,
-            budget=self._budget,
-            n_sink=self._n_sink,
-            recent=self._recent,
-            sign=self._sign,
-        )
+        n_total = int(keys_cat.shape[1])
+        # The fused Metal kernel only replaces the OVER-budget branch (its own
+        # precondition — see qfilters_fused_evict's n_total <= budget guard).
+        # Under budget there is nothing to evict either way, so the pure-MLX
+        # path's early return already costs nothing extra.
+        if self._use_metal and n_total > self._budget:
+            keys_out, values_out, scores_out = qfilters_fused_evict(
+                keys_cat,
+                values_cat,
+                self._batched_filters,
+                budget=self._budget,
+                n_sink=self._n_sink,
+                recent=self._recent,
+                sign=self._sign,
+            )
+        else:
+            keys_out, values_out, scores_out = qfilters_update_batched(
+                keys_cat,
+                values_cat,
+                self._batched_filters,
+                budget=self._budget,
+                n_sink=self._n_sink,
+                recent=self._recent,
+                sign=self._sign,
+            )
         self._batched_keys = keys_out
         self._batched_values = values_out
         self._batched_scores = scores_out
