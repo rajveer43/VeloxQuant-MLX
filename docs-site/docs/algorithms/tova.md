@@ -102,7 +102,7 @@ faithful port.
 ## Evidence
 
 All claims trace to passing tests in
-`veloxquant_mlx/tests/cache/test_tova_cache.py` (15 tests) and
+`veloxquant_mlx/tests/cache/test_tova_cache.py` (18 tests) and
 `veloxquant_mlx/tests/quantizers/test_tova.py` (19 tests):
 
 - `init_tova_state` fields correct; state carries **no `scores` field** (memoryless)
@@ -122,6 +122,32 @@ All claims trace to passing tests in
 - Factory dispatch (`KVCacheFactory.create`) returns `TOVAKVCache`
 - `for_model` propagates `tova_budget` and `tova_n_sink` to all layer caches
 - Determinism: identical inputs produce identical outputs
+- `cache.offset` tracks the true absolute token position (not the retained
+  row count) through sustained eviction, across prefill block size, and
+  across a prefill-then-decode mix
+
+#### RoPE positions had to be fixed too (#175)
+
+`mlx_lm` rotates both the query and the incoming key at `offset=cache.offset`
+*before* `update_and_fetch` runs. Before #175, `TOVAKVCache` reset
+`self.offset = 0` on every call and let the base `KVCache.update_and_fetch`
+set it back to the retained-row count, so once eviction pinned the kept set
+at `tova_budget`, `offset` stalled there while the true position kept
+climbing — the same defect fixed for Q-Filters (#171) and L2Norm (#174).
+`tova_update` drops exactly the evicted row and keeps the rest in temporal
+order (never renumbers survivors), so the same `_true_offset` counter that
+sufficed for those caches applies directly here — no `offset` property
+split like [H2O's](../algorithms/h2o) was needed, because every
+`update_and_fetch` call fully resets the base class's buffers regardless of
+prefill or decode.
+
+Note: H2O was audited in the same pass and does **not** share this defect —
+it already tracks the true absolute step count directly (`self.offset =
+self._states[0].next_pos`) and additionally re-rotates surviving keys when
+eviction opens an interior gap, since H2O (unlike TOVA) can renumber
+positions when `h2o_n_sink > 0` protects sinks while interior rows are
+still evicted. See [H2O's docs](../algorithms/h2o) for that fix (shipped in
+v0.44.4, predating this audit).
 
 The offline harness in `benchmark_scripts/benchmark_tova.py` sweeps
 `(seq_len, budget, n_sink)` and reports latency and compression ratio —

@@ -6,6 +6,30 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ### Fixed
 
+**RoPE positions after eviction in TOVA-adapted**
+([#175](https://github.com/rajveer43/VeloxQuant-MLX/issues/175)) — audited
+H2O-adapted and TOVA-adapted for the same class of defect fixed for
+Q-Filters, L2Norm, SnapKV, and StreamingLLM. Findings:
+
+- **H2O-adapted already fixed** (shipped in v0.44.4, predating this audit):
+  `self.offset` already tracks the true absolute step count directly, and
+  because H2O renumbers positions to close gaps when an interior eviction
+  happens (e.g. with `h2o_n_sink > 0`), it additionally re-rotates the
+  shifted survivors — a stronger fix than the other caches need, since they
+  never renumber. No change required.
+- **TOVA-adapted carried the defect**: `self.offset` reported the retained
+  row count rather than the true absolute token position once eviction
+  pinned the kept set at `tova_budget`. `tova_update` drops exactly the
+  evicted row and keeps the rest in temporal order (never renumbers), so
+  the same `_true_offset` counter that sufficed for Q-Filters/L2Norm applies
+  directly — no `offset` property split like SnapKV's was needed, since
+  `TOVAKVCache.update_and_fetch` fully resets `self.keys`/`self.values`/
+  `self.offset` on every call, prefill and decode alike.
+
+Regression tests added to `test_tova_cache.py` mirroring the Q-Filters/L2Norm
+coverage: offset tracks true position through sustained eviction, advances
+by block size on prefill, and stays correct across a prefill-then-decode mix.
+
 **RoPE positions after eviction in L2Norm-adapted**
 ([#174](https://github.com/rajveer43/VeloxQuant-MLX/issues/174)) — carried
 the same defect fixed earlier for Q-Filters, SnapKV, and StreamingLLM:

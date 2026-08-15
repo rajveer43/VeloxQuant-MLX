@@ -18,7 +18,11 @@ Adaptation limitations (stated plainly):
     visible, so we use the incoming key vector as a proxy query to approximate
     the current-step attention distribution. Same approximation as SnapKV-adapted
     and H2O-adapted.
-  - No RoPE position-ID remapping after eviction.
+  - No RoPE position-ID *renumbering* after eviction — the evicted row is
+    dropped and the rest kept in temporal order, so surviving tokens keep
+    their original absolute positions and the cache layer reports the true
+    token position for RoPE rather than the retained row count (see
+    ``cache/tova_cache.py`` and :issue:`171`, :issue:`175`).
   - Uniform budget across all heads.
   - When a multi-token chunk (S > 1) arrives, tokens are absorbed one at a time
     and the last incoming key of each step is the proxy query. This differs from
