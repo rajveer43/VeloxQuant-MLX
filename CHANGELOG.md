@@ -47,6 +47,28 @@ anyway). **Not measured**: whether the paper's renumbering scheme would
 produce different generation quality — that needs real model inference
 and remains open, same as [#187](https://github.com/rajveer43/VeloxQuant-MLX/issues/187).
 
+**Reviewed SnapKV-adapted's RoPE position semantics against the paper**
+([#188](https://github.com/rajveer43/VeloxQuant-MLX/issues/188)) — unlike
+StreamingLLM, the SnapKV paper doesn't define a position-renumbering scheme
+at all (it compresses the cache once, at the end of prefill, before
+generation starts); common HF-`DynamicCache`-based reference
+implementations instead fall back to the retained-row-count convention this
+repo's `#171` fix moved away from. Reviewed why absolute-position
+preservation isn't a stylistic choice here but the behavior mathematically
+required by how the eviction mechanism works: SnapKV selects from K rows
+the model already rotated with RoPE during its own prefill forward pass, so
+survivors' rotations are permanently baked in before eviction happens —
+reporting anything but their true position would break RoPE's
+relative-distance identity. Unlike StreamingLLM (continuous per-step
+eviction), a hypothetical renumbering scheme here would only cost a
+one-time `O(budget)` re-rotation right after prefill compression — still not
+worth implementing, since exact positions already require none. Test
+coverage already existed
+(`test_offset_tracks_true_position_not_retained_rows` plus the
+chunked-prefill offset assertions) — no code or test changes needed, this
+was purely a documentation review. Added to
+`docs-site/docs/algorithms/snapkv.md`.
+
 ### Fixed
 
 **RoPE positions after eviction in TOVA-adapted**

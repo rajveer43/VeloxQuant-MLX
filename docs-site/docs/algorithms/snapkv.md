@@ -81,6 +81,74 @@ stream), but the proxy is still an approximation.
 The paper's max-pool smoothing step (`kernel_size > 1`) is not implemented. Documented
 as "SnapKV-adapted (key-as-query proxy)" throughout — never claimed as a faithful port.
 
+## RoPE position semantics vs. the paper (#188)
+
+Requested by [#188](https://github.com/rajveer43/VeloxQuant-MLX/issues/188): a
+review of whether preserving original absolute positions after eviction is
+the correct behavior for this implementation.
+
+**What the paper specifies.** Unlike StreamingLLM's paper — which explicitly
+describes reassigning RoPE position IDs by slot in a continuously-sliding
+window — the SnapKV paper does not define a position-renumbering scheme at
+all. SnapKV compresses the cache **exactly once**, at the end of prefill,
+before generation starts; the paper's contribution is which tokens to keep,
+not how position IDs should be assigned to the compressed result afterward.
+That said, common eviction reference implementations built on HF's
+`DynamicCache` typically derive "current position" from
+`past_key_values.get_seq_length()` — i.e., the **retained row count** — since
+that is the cache's built-in length semantics once rows are physically
+dropped. That convention is exactly what this repo's [#171](https://github.com/rajveer43/VeloxQuant-MLX/issues/171)
+fix moved away from.
+
+**Why absolute-position preservation isn't just a style choice here.** SnapKV
+eviction is a *post-hoc selection* over K rows that the model already rotated
+with RoPE during its own prefill forward pass — the cache wrapper never sees
+unrotated keys, and it has no access to the rotary embedding layer to
+re-rotate them (`update_and_fetch` only receives K/V tensors). Every
+surviving key's true-position rotation is therefore permanently baked in
+before eviction ever happens. Given that, reporting the retained row count as
+the position for subsequent tokens isn't a faithful-to-paper convention — it
+puts new queries/keys on a different absolute axis than the frozen survivors,
+which breaks the RoPE relative-distance identity
+(`⟨rope(q,i), rope(k,j)⟩` depends only on `i-j`) and silently corrupts
+attention. That is precisely the bug #171 found and fixed via `_true_offset`
+and the `offset` property split (see the code comments in
+`snapkv_cache.py` for the full mechanics — the base class needs the retained
+row count for its own cursor/slice arithmetic while everything outside it,
+including mlx_lm's RoPE, needs the true position; `_in_base` switches which
+one `self.offset` reads).
+
+**Contrast with StreamingLLM ([#189](https://github.com/rajveer43/VeloxQuant-MLX/issues/189)).**
+StreamingLLM evicts continuously, every decode step once its window is full,
+so faithfully renumbering positions there would mean re-rotating survivors on
+every step. SnapKV only evicts at prefill (`_process_prefill` /
+`_process_prefill_chunk`); decode tokens (`S == 1`) are always appended,
+never evicted. If renumbering-to-contiguous were ever implemented here, its
+re-rotation cost would be a **one-time** `O(budget)` operation right after
+prefill compression completes — not a per-decode-step cost. This implementation
+still doesn't do it, because absolute-position preservation is already exact
+and requires no re-rotation at all; the one-time cost would buy nothing but
+parity with the naive HF-`DynamicCache` convention.
+
+**What is NOT validated here.** Whether generation quality, perplexity, or
+retrieval behavior would differ under a renumbering scheme has **not been
+measured** — that needs a real model forward pass, which this development
+environment cannot run. See [#187](https://github.com/rajveer43/VeloxQuant-MLX/issues/187)
+and [#198](https://github.com/rajveer43/VeloxQuant-MLX/issues/198) for the
+general GPU-blocked-measurement pattern this repo follows.
+
+**Decision:** keep absolute-position preservation. It is the behavior
+mathematically required by how SnapKV's eviction mechanism actually works
+(post-hoc selection from already-rotated keys, no re-rotation performed), it
+is consistent with every other eviction cache in this library, and unlike
+StreamingLLM there isn't even a re-rotation-cost tradeoff to weigh — the
+alternative buys nothing. Regression coverage already exists in
+`test_snapkv_cache.py` (`test_offset_tracks_true_position_not_retained_rows`,
+plus the chunked-prefill offset assertions in
+`test_chunked_prefill_budget_stays_capped` and
+`test_chunked_prefill_then_decode_appends`); no code change was needed for
+this review.
+
 ## Evidence
 
 All claims trace to passing tests in
@@ -98,6 +166,10 @@ All claims trace to passing tests in
 - `keep_rate` in `(0, 1]` after realistic-budget prefill
 - Decode accumulation: seq dim grows by 1 per single-token call
 - Determinism; `for_model` config propagation (`_budget`, `_obs_window`, `_n_sink`)
+- `cache.offset` tracks the true absolute token position (not the retained
+  row count) after single-chunk eviction, across multi-chunk prefill
+  re-enforcement, and through a subsequent decode run (#171, reviewed
+  against the paper for #188 — see the RoPE section above)
 
 The offline harness in `benchmark_scripts/benchmark_snapkv.py` measures attention
 coverage (fraction of total obs-window attention mass in the kept set) vs a
