@@ -29,8 +29,12 @@ Adaptation limitations (stated plainly):
   - Key-as-query proxy: current-step attention weights are computed using the
     new key vector in place of the true query. Same approximation as
     SnapKV-adapted and H2O-adapted.
-  - No RoPE position-ID remapping after eviction; original positions are
-    preserved in returned rows.
+  - No RoPE position-ID *renumbering* after eviction. Surviving tokens keep
+    their original absolute positions (``tova_update`` drops the evicted row
+    and keeps the rest in temporal order), so ``self.offset`` reports the
+    true token position and RoPE stays correct without re-rotating survivors
+    (see ``update_and_fetch`` and :issue:`171`, :issue:`175`). Positions do
+    become non-contiguous where tokens were dropped.
   - Uniform budget and n_sink across all heads.
 
 Byte accounting:
@@ -96,6 +100,11 @@ class TOVAKVCache(_MLXKVCache):
         self._full_seq_bytes: int = 0
         self._tokens_seen_total: int = 0
 
+        # True absolute token position, independent of how many rows survive
+        # eviction. Reported as ``self.offset`` so mlx_lm's RoPE stays correct
+        # after tokens are dropped (see #171 and update_and_fetch).
+        self._true_offset: int = 0
+
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         """Lazily initialise per-head TovaState list on first call."""
@@ -159,7 +168,37 @@ class TOVAKVCache(_MLXKVCache):
         self.keys = None
         self.values = None
         self.offset = 0
-        return super().update_and_fetch(K_out, V_out)
+        out = super().update_and_fetch(K_out, V_out)
+
+        # RoPE position correctness (see #171, #175).
+        #
+        # mlx_lm rotates BOTH the query and the incoming key at
+        # ``offset=cache.offset`` *before* calling update_and_fetch. The base
+        # class above just set ``self.offset`` to the number of RETAINED rows
+        # (reset to 0 then advanced by n_kept), so once eviction starts
+        # (n_kept pinned at budget) the offset stops advancing and every
+        # subsequent token is rotated at ~budget while its true position
+        # keeps climbing — a drift that grows without bound and scrambles
+        # attention.
+        #
+        # TOVA PRESERVES the original position of every surviving token
+        # (tova_update drops exactly the evicted row and keeps the rest in
+        # temporal order — it never renumbers), so all stored keys already
+        # carry rotations for their true absolute positions. RoPE is
+        # relative — <rope(q,i), rope(k,j)> depends only on i-j — so
+        # reporting the true position here puts queries, new keys, and
+        # survivors back on one consistent absolute axis, and no
+        # re-rotation of survivors is needed. This mirrors L2NormKVCache's
+        # and QFiltersKVCache's fix, and is safe here for the same reason:
+        # every update_and_fetch call above fully resets
+        # self.keys/self.values/self.offset before delegating to the base
+        # class, so nothing later reads self.offset as a row-count cursor
+        # the way SnapKV's incremental decode path does. (H2O needs more
+        # than this: it renumbers positions on eviction and re-rotates
+        # survivors directly — see h2o_cache.py.)
+        self._true_offset += S
+        self.offset = self._true_offset
+        return out
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:
