@@ -6,6 +6,32 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ### Fixed
 
+**RoPE positions after eviction in L2Norm-adapted**
+([#174](https://github.com/rajveer43/VeloxQuant-MLX/issues/174)) — carried
+the same defect fixed earlier for Q-Filters, SnapKV, and StreamingLLM:
+`self.offset` reported the **retained row count** rather than the true
+absolute token position once eviction pinned the kept set at
+`knorm_budget`. `mlx_lm` rotates both the query and the incoming key at
+`offset=cache.offset` *before* `update_and_fetch` runs, so subsequent
+tokens were rotated at a stale, non-advancing position — the offset drift
+that excluded L2Norm as a fair baseline in Q-Filters benchmarks.
+
+L2Norm's `knorm_update` already restores kept rows to temporal order after
+top-k selection (never renumbers survivors), so the same fix that sufficed
+for Q-Filters applies directly: a `_true_offset` counter incremented by the
+incoming block size `S`, reported as `self.offset` after every
+`update_and_fetch` call. Unlike SnapKV, no `offset` property split was
+needed — `L2NormKVCache.update_and_fetch` fully resets
+`self.keys`/`self.values`/`self.offset` on *every* call (prefill and decode
+alike), so the base class's cursor arithmetic never observes the true
+position as a stale row count between calls.
+
+Regression tests added mirroring the Q-Filters/SnapKV coverage: offset
+tracks true position through sustained eviction, advances by block size
+(not retained rows) on prefill, and stays correct across a prefill-then-decode
+mix. L2Norm can now be re-enabled as a fair comparison arm in Q-Filters
+benchmarks.
+
 **RoPE positions after eviction in SnapKV-adapted and StreamingLLM-adapted**
 ([#171](https://github.com/rajveer43/VeloxQuant-MLX/issues/171)) — both
 carried the same defect fixed earlier for Q-Filters: `self.offset` reported
