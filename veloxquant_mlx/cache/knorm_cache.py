@@ -25,7 +25,11 @@ Adaptation limitations (stated plainly):
   - The low-norm ⇒ high-attention correlation is the paper's empirical claim
     about trained models — not validated here on synthetic data (the
     benchmark's isotropic control shows no advantage, honestly reported).
-  - No RoPE position-ID remapping after eviction.
+  - No RoPE position-ID *renumbering* after eviction. Surviving tokens keep
+    their original absolute positions, so ``self.offset`` reports the true
+    token position and RoPE stays correct without re-rotating survivors
+    (see ``update_and_fetch`` and :issue:`171`, :issue:`174`). Positions do
+    become non-contiguous where tokens were dropped.
   - Uniform budget and n_sink across all heads.
   - ``knorm_recent`` (trailing protected window) is an extension, off by
     default; enabling it breaks the path-independence property.
@@ -98,6 +102,11 @@ class L2NormKVCache(_MLXKVCache):
         self._full_seq_bytes: int = 0
         self._tokens_seen_total: int = 0
 
+        # True absolute token position, independent of how many rows survive
+        # eviction. Reported as ``self.offset`` so mlx_lm's RoPE stays correct
+        # after tokens are dropped (see #171 and update_and_fetch).
+        self._true_offset: int = 0
+
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         if not self._states:
@@ -163,7 +172,36 @@ class L2NormKVCache(_MLXKVCache):
         self.keys = None
         self.values = None
         self.offset = 0
-        return super().update_and_fetch(K_out, V_out)
+        out = super().update_and_fetch(K_out, V_out)
+
+        # RoPE position correctness (see #171, #174).
+        #
+        # mlx_lm rotates BOTH the query and the incoming key at
+        # ``offset=cache.offset`` *before* calling update_and_fetch. The base
+        # class above just set ``self.offset`` to the number of RETAINED rows
+        # (reset to 0 then advanced by n_kept), so once eviction starts
+        # (n_kept pinned at budget) the offset stops advancing and every
+        # subsequent token is rotated at ~budget while its true position
+        # keeps climbing — a drift that grows without bound and scrambles
+        # attention.
+        #
+        # L2Norm PRESERVES the original position of every surviving token
+        # (eviction drops rows but never renumbers them: knorm_update keeps
+        # each retained row's original ordering), so all stored keys already
+        # carry rotations for their true absolute positions. RoPE is
+        # relative — <rope(q,i), rope(k,j)> depends only on i-j — so
+        # reporting the true position here puts queries, new keys, and
+        # survivors back on one consistent absolute axis, and no
+        # re-rotation of survivors is needed. This mirrors QFiltersKVCache's
+        # fix and is safe here for the same reason: every update_and_fetch
+        # call above fully resets self.keys/self.values/self.offset before
+        # delegating to the base class, so nothing later reads self.offset
+        # as a row-count cursor the way SnapKV's incremental decode path
+        # does (see snapkv_cache.py's ``offset`` property for the case where
+        # that is NOT true).
+        self._true_offset += S
+        self.offset = self._true_offset
+        return out
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:

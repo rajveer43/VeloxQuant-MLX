@@ -30,7 +30,11 @@ Adaptation limitations (stated plainly):
   - The low-norm ⇒ high-attention correlation is the paper's empirical claim
     about trained models; nothing here validates it on synthetic data (see
     the benchmark's isotropic control, where the method shows no advantage).
-  - No RoPE position-ID remapping after eviction.
+  - No RoPE position-ID *renumbering* after eviction — surviving tokens keep
+    their original absolute positions (``knorm_update`` restores temporal
+    order after top-k selection), so the cache layer reports the true token
+    position for RoPE rather than the retained row count (see
+    ``cache/knorm_cache.py`` and :issue:`171`, :issue:`174`).
   - Uniform budget and n_sink across all heads.
   - ``recent`` (trailing protected window) is an extension, off by default.
 

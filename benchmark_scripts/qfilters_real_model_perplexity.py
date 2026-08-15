@@ -36,6 +36,7 @@ import numpy as np
 from mlx_lm.models.cache import KVCache
 
 from veloxquant_mlx.cache.base import KVCacheConfig
+from veloxquant_mlx.cache.knorm_cache import L2NormKVCache
 from veloxquant_mlx.cache.qfilters_cache import QFiltersKVCache
 from veloxquant_mlx.quantizers.qfilters_calibration import (
     average_gqa_filters,
@@ -173,17 +174,34 @@ def main() -> None:
             [QFiltersKVCache(KVCacheConfig(**kw)) for _ in range(n_layers)],
             "Q-Filters fallback (key-SVD)",
         )
-        # NOTE: L2NormKVCache is deliberately NOT included as a comparison arm.
-        # It carries the same un-remapped-RoPE defect this branch fixes for
-        # Q-Filters (knorm_cache.py sets self.offset = 0 and lets the base
-        # class overwrite it with the retained-row count), so its numbers would
-        # be dominated by position drift rather than by eviction quality. Once
-        # #171's fix is generalised to the other evicting caches, add it back.
+        # L2NormKVCache is now a fair comparison arm: #174 generalised the
+        # #171 RoPE-offset fix to knorm_cache.py, so its offset tracks the
+        # true absolute token position through eviction instead of stalling
+        # at the retained-row count. Uses knorm's own trailing-window knob
+        # (knorm_recent) for the same reason qfilters_recent is needed above.
+        kn = perplexity(
+            model,
+            ids,
+            [
+                L2NormKVCache(
+                    KVCacheConfig(
+                        method="knorm",
+                        head_dim=head_dim,
+                        knorm_budget=budget,
+                        knorm_n_sink=4,
+                        knorm_recent=recent,
+                    )
+                )
+                for _ in range(n_layers)
+            ],
+            "L2Norm (key-norm eviction)",
+        )
         gap = fb - base
         closed = 100 * (1 - (cal - base) / gap) if abs(gap) > 1e-9 else float("nan")
         print(
             f"    vs fp16 {base:.3f}:  calibrated {100 * (cal - base) / base:+7.1f}%   "
             f"fallback {100 * (fb - base) / base:+7.1f}%   "
+            f"L2Norm {100 * (kn - base) / base:+7.1f}%   "
             f"(calibrated closes {closed:.0f}% of the fallback's gap)"
         )
 

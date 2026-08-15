@@ -380,8 +380,9 @@ therefore need a delta-rotation pass.
 **RULER** beyond the NIAH family — the other ten task categories (variable
 tracking, common/frequent-word extraction, QA) are not covered.
 **Expected Attention** is not implemented in this repo, so it cannot be a
-comparison arm. [L2Norm](../algorithms/knorm) still carries the same
-un-fixed `offset` defect and would compare unfairly.
+comparison arm. [L2Norm](../algorithms/knorm) previously carried the same
+`offset` defect and was excluded for that reason; #174 generalised the
+`_true_offset` fix to it, so it is now included as a fair comparison arm.
 
 ## When to use it
 
