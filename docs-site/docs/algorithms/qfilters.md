@@ -189,6 +189,34 @@ Budgets above `QFILTERS_MAX_BUDGET` (4096) raise rather than truncate — the
 survivor index list is staged in threadgroup memory, which needs a
 compile-time bound.
 
+### Wired into the cache's hot path (#179)
+
+Through 0.44.x these kernels existed and were tested (`test_qfilters_evict.py`)
+but `QFiltersKVCache` never called them — the calibrated/batched eviction
+branch always ran the pure-MLX `mx.argsort` / `mx.take_along_axis` selection
+in `qfilters_update_batched`, even on a machine where Metal was available.
+The B×H Python loop itself was already removed for the calibrated path back
+in #173; what #179 found still on the table was this second layer — the
+already-written fused kernel sitting unused.
+
+`QFiltersKVCache` now resolves a three-state `use_metal_kernels` flag at
+construction (`None` auto-detects, `True` requires Metal and raises
+immediately if unavailable or if `qfilters_budget` exceeds
+`QFILTERS_MAX_BUDGET`, `False` forces the pure-MLX path — same convention as
+`VecInferKVCache`). When Metal is selected and a group is actually over
+budget, `_update_batched` calls `qfilters_fused_evict` instead of
+`qfilters_update_batched`; both share the same scoring formula and
+tie-breaking convention, so `test_metal_path_matches_pure_mlx_path` (Metal
+hardware only) asserts the two are bit-for-bit interchangeable. Under-budget
+calls and the key-SVD fallback's per-head loop are untouched either way — the
+fallback's path-dependence still requires per-group filter freezing that a
+single shared-filter selection (Metal or not) cannot express.
+
+This has **not been benchmarked** — no TTFT/decode-throughput numbers exist
+yet for the fused-kernel path vs. the pure-MLX batched path it now sits
+alongside. That measurement needs real Apple Silicon; see
+[Still not measured](#still-not-measured).
+
 ## Adaptation notes
 
 **What we do NOT implement:**
@@ -214,7 +242,7 @@ compile-time bound.
 All claims trace to passing tests in
 `veloxquant_mlx/tests/quantizers/test_qfilters.py` (12),
 `veloxquant_mlx/tests/quantizers/test_qfilters_calibration.py` (20),
-`veloxquant_mlx/tests/cache/test_qfilters_cache.py` (20) and
+`veloxquant_mlx/tests/cache/test_qfilters_cache.py` (33) and
 `veloxquant_mlx/tests/metal/test_qfilters_evict.py` (20).
 
 **Calibration (query-SVD, paper-faithful):**
@@ -383,6 +411,14 @@ tracking, common/frequent-word extraction, QA) are not covered.
 comparison arm. [L2Norm](../algorithms/knorm) previously carried the same
 `offset` defect and was excluded for that reason; #174 generalised the
 `_true_offset` fix to it, so it is now included as a fair comparison arm.
+
+**TTFT / decode throughput of the fused-Metal-kernel path** (#179). The
+kernel wiring above is correctness-tested (bit-for-bit parity against the
+pure-MLX batched path, Metal hardware only) but not benchmarked — no
+before/after TTFT or tok/s numbers exist yet for it, on any model size. The
+`n_total <= budget` case and the key-SVD fallback loop never touch the
+kernel, so any speedup is bounded to the calibrated path's over-budget
+steps specifically. Measuring this needs real Apple Silicon.
 
 ## When to use it
 

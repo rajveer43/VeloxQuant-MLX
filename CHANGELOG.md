@@ -4,6 +4,27 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ## [Unreleased]
 
+### Performance
+
+**Wired the existing Q-Filters Metal eviction kernels into the cache**
+([#179](https://github.com/rajveer43/VeloxQuant-MLX/issues/179)) — the
+per-`(B, H)` Python loop on the calibrated path was already removed in
+#173 (`qfilters_update_batched`), but the fused Metal kernels written and
+tested alongside it (`qfilters_fused_evict`,
+`veloxquant_mlx/metal/_qfilters_evict.py`) were never called from
+`QFiltersKVCache` — the batched path always ran the pure-MLX
+`mx.argsort` / `mx.take_along_axis` selection even when Metal was
+available. `QFiltersKVCache` now resolves a three-state
+`use_metal_kernels` flag (`None` auto-detect, `True` require, `False`
+force pure-MLX — the same convention `VecInferKVCache` already uses) and
+dispatches the over-budget branch of the calibrated/batched path to the
+fused kernel when eligible. Verified bit-for-bit interchangeable with the
+pure-MLX path it replaces via a new parametrized parity test (Metal
+hardware only); the key-SVD fallback's per-head loop and the under-budget
+passthrough are untouched. **Not yet benchmarked** — no before/after
+TTFT or decode-throughput numbers exist for this path; that measurement
+needs real Apple Silicon and remains open.
+
 ### Fixed
 
 **RoPE positions after eviction in TOVA-adapted**
