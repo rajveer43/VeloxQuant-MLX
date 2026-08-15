@@ -159,6 +159,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.49.2 (2026-08-15)
+
+### Bug Fixes
+
+- **cache**: Generalize RoPE offset fix to L2Norm cache (#174)
+  ([#195](https://github.com/rajveer43/VeloxQuant-MLX/pull/195),
+  [`0241a5d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0241a5d4eb1f6be894604aaeca97f2b80415fc62))
+
+
 ## v0.49.1 (2026-08-14)
 
 ### Performance Improvements
