@@ -221,3 +221,68 @@ def test_build_via_for_model_propagates_config() -> None:
     assert all(isinstance(c, StreamingLLMKVCache) for c in caches)
     assert caches[0]._n_sink == 6
     assert caches[0]._window_size == 128
+
+
+# ---------------------------------------------------------------------------
+# RoPE position bookkeeping (#171, #189)
+# ---------------------------------------------------------------------------
+
+
+def test_offset_tracks_true_position_after_eviction() -> None:
+    """``cache.offset`` must be the true token position, not the retained count.
+
+    mlx_lm rotates both the query and the incoming key at ``offset=cache.offset``
+    *before* calling ``update_and_fetch``. Before #171, ``self.offset`` was left
+    at whatever the base ``KVCache.update_and_fetch`` set it to — the number of
+    RETAINED rows — so once the sink+window filled and the kept count pinned at
+    ``n_sink + window_size``, the offset stopped advancing while the true
+    position kept climbing. This reproduces that drift without the fix: without
+    ``_true_offset`` tracking, ``cache.offset`` would stall at
+    ``n_sink + window_size`` instead of tracking ``t + 1``.
+    """
+    n_sink, window_size = 4, 8
+    c = _make(stream_n_sink=n_sink, stream_window_size=window_size)
+
+    n_steps = 5 * (n_sink + window_size)
+    for t in range(n_steps):
+        k, v = _rand_kv(S=1, H=2, D=64, seed=100 + t)
+        c.update_and_fetch(k, v)
+        assert c.offset == t + 1, (
+            f"offset {c.offset} != true position {t + 1} — RoPE would be wrong"
+        )
+
+    # Eviction still bounds the window; offset just no longer conflates the
+    # two quantities.
+    assert c.tokens_in_window <= n_sink + window_size
+
+
+def test_offset_advances_by_block_size_on_prefill() -> None:
+    """A multi-token block advances the offset by S, not by rows retained."""
+    n_sink, window_size, S = 4, 8, 100
+    c = _make(stream_n_sink=n_sink, stream_window_size=window_size)
+
+    k, v = _rand_kv(S=S, D=64, seed=7)
+    c.update_and_fetch(k, v)
+    assert c.offset == S
+    assert c.tokens_in_window <= n_sink + window_size
+
+    k2, v2 = _rand_kv(S=1, D=64, seed=8)
+    c.update_and_fetch(k2, v2)
+    assert c.offset == S + 1
+
+
+def test_offset_survives_prefill_then_decode_mix() -> None:
+    """Offset stays the true position across a prefill block followed by
+    many decode steps, even though sink+window eviction is active throughout."""
+    n_sink, window_size, S = 4, 8, 40
+    c = _make(stream_n_sink=n_sink, stream_window_size=window_size)
+
+    k, v = _rand_kv(S=S, D=64, seed=9)
+    c.update_and_fetch(k, v)
+    assert c.offset == S
+
+    for t in range(30):
+        kd, vd = _rand_kv(S=1, D=64, seed=200 + t)
+        c.update_and_fetch(kd, vd)
+        assert c.offset == S + t + 1
+    assert c.tokens_in_window <= n_sink + window_size

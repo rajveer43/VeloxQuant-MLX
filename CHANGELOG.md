@@ -25,6 +25,28 @@ passthrough are untouched. **Not yet benchmarked** — no before/after
 TTFT or decode-throughput numbers exist for this path; that measurement
 needs real Apple Silicon and remains open.
 
+### Documentation
+
+**Reviewed StreamingLLM-adapted's RoPE position semantics against the paper**
+([#189](https://github.com/rajveer43/VeloxQuant-MLX/issues/189)) — the
+implementation already preserved original absolute token positions after
+eviction rather than the paper's cache-slot renumbering (a deliberate
+divergence noted briefly in the docs since the #171 offset fix), but this
+had never been reviewed against the paper explicitly, and unlike every
+other eviction cache in the library, `StreamingLLMKVCache` had **no
+regression test** guarding the `_true_offset`/`#171` fix. Added three
+offset-tracking tests to `test_streaming_llm_cache.py` (mirroring the
+KNorm/SnapKV/TOVA/Q-Filters coverage: true position through sustained
+eviction, block-size advance on prefill, and correctness across a
+prefill-then-decode mix), and expanded `docs-site/docs/algorithms/streaming_llm.md`
+with a full review section explaining why absolute-position preservation
+was kept over the paper's renumbering (RoPE relativity makes it exact;
+consistency with every sibling cache; avoids a per-step re-rotation cost;
+the cache-wrapper boundary can't implement the paper's scheme cleanly
+anyway). **Not measured**: whether the paper's renumbering scheme would
+produce different generation quality — that needs real model inference
+and remains open, same as [#187](https://github.com/rajveer43/VeloxQuant-MLX/issues/187).
+
 ### Fixed
 
 **RoPE positions after eviction in TOVA-adapted**
