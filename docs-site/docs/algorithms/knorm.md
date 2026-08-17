@@ -176,10 +176,42 @@ random eviction, H2O-adapted — under two data regimes:
   — 0.3–1.2 ms per prefill block vs H2O-adapted's 37–275 ms on the same
   inputs (M-series, offline harness).
 
-**No model-level benchmark has been run.** These are offline-synthetic,
-output-perturbation and byte-accounting numbers — not perplexity or
-throughput on a real model, and they validate the machinery, not the
-paper's correlation claim.
+The numbers above are offline-synthetic, output-perturbation and
+byte-accounting measurements — they validate the machinery, not the paper's
+correlation claim. For real-model perplexity, see the next section.
+
+#### Real-model perplexity after the RoPE fix (#174, #190)
+
+The #174 fix was authored without access to Apple Silicon, so no end-to-end
+numbers existed for it. Measured on **Llama-3.2-1B-Instruct-4bit**, 1024
+tokens, generation mode (tokens fed one at a time, eviction running as the
+cache fills — `benchmark_scripts/qfilters_real_model_perplexity.py`), fp16
+full-cache baseline **ppl 4.050**:
+
+| Budget | Compression | Q-Filters calibrated | Q-Filters fallback | **L2Norm** |
+|--------|-------------|----------------------|--------------------|------------|
+| 128 (`recent=32`) | ~8× | 16.307 (+302.7%) | 23.645 (+483.9%) | **20.469 (+405.4%)** |
+| 256 (`recent=64`) | ~4× | 8.476 (+109.3%) | 13.358 (+229.8%) | **9.529 (+135.3%)** |
+
+Two things this establishes:
+
+- **The offset fix works end-to-end.** L2Norm's perplexity now responds to
+  the cache budget (20.5 → 9.5 as the budget doubles). Position drift under
+  the pre-#174 bug grows without bound with sequence length, which swamps
+  eviction quality and pins every arm at a garbage number regardless of
+  budget; an ordered, budget-responsive curve is what a correct offset looks
+  like.
+- **L2Norm is a genuine baseline, not a strawman.** It lands between the two
+  Q-Filters arms at both budgets — well ahead of the key-SVD fallback,
+  behind calibrated query-SVD. The gap to calibrated Q-Filters widens as
+  compression gets more aggressive (9.53 vs 8.48 at budget 256; 20.47 vs
+  16.31 at budget 128), which is where filter quality matters most.
+
+**Scope of this measurement:** one model (1B) and two budgets. Larger models
+(Llama-3.2-3B, Qwen2.5-7B) and a wider budget sweep remain open — see
+[#181](https://github.com/rajveer43/VeloxQuant-MLX/issues/181) and
+[#180](https://github.com/rajveer43/VeloxQuant-MLX/issues/180). Throughput
+and TTFT for L2Norm are still unmeasured.
 
 ## When to use it
 
