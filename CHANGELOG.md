@@ -27,6 +27,28 @@ needs real Apple Silicon and remains open.
 
 ### Documentation
 
+**Measured real-model perplexity for L2Norm after the RoPE offset fix**
+([#190](https://github.com/rajveer43/VeloxQuant-MLX/issues/190),
+validating [#174](https://github.com/rajveer43/VeloxQuant-MLX/issues/174))
+— #174 generalized the #171 offset fix to `L2NormKVCache` and re-enabled
+L2Norm as an arm in the Q-Filters generation-perplexity benchmark, but was
+authored in a sandbox without MLX, so the fix shipped with unit-test
+coverage and **no end-to-end numbers**. Ran
+`benchmark_scripts/qfilters_real_model_perplexity.py` on
+Llama-3.2-1B-Instruct-4bit (1024 tokens, budgets 128/256) on Apple
+Silicon: against an fp16 baseline of ppl 4.050, L2Norm scores 20.469 at
+budget 128 and 9.529 at budget 256, landing between calibrated Q-Filters
+(16.307 / 8.476) and the key-SVD fallback (23.645 / 13.358) at both
+points. The budget-responsive curve confirms the offset fix end-to-end —
+pre-#174 position drift grows without bound with sequence length and would
+flatten every arm regardless of budget. Documented in
+`docs-site/docs/algorithms/knorm.md`, replacing its "no model-level
+benchmark has been run" note. **Scope**: one model, two budgets — larger
+models and a wider sweep remain open under
+[#181](https://github.com/rajveer43/VeloxQuant-MLX/issues/181) /
+[#180](https://github.com/rajveer43/VeloxQuant-MLX/issues/180); L2Norm
+TTFT/throughput is still unmeasured. Docs only, no code changes.
+
 **Reviewed StreamingLLM-adapted's RoPE position semantics against the paper**
 ([#189](https://github.com/rajveer43/VeloxQuant-MLX/issues/189)) — the
 implementation already preserved original absolute token positions after
