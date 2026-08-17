@@ -21,19 +21,28 @@
 
 <p>
   <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/release.yml?branch=master&style=flat-square&label=release%20%2B%20full%20test%20suite&logo=github" alt="Release build status"/></a>
-  <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/non-metal-unit.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/non-metal-unit.yml?branch=master&style=flat-square&label=non-metal%20unit&logo=github" alt="Non-Metal unit tests"/></a>
+  <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/non-metal-unit.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/non-metal-unit.yml?branch=master&style=flat-square&label=unit&logo=github" alt="Non-Metal unit tests"/></a>
   <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/lint.yml?branch=master&style=flat-square&label=lint&logo=github" alt="Lint status"/></a>
   <img src="https://img.shields.io/badge/tests-2236%20passing-22c55e?style=flat-square" alt="Tests"/>
+  <!-- The tests and changelog badges are rewritten on every release by
+       scripts/sync_release_badges.py, which matches the literal
+       "badge/tests-<n>%20passing-" and "badge/changelog-<version>-" patterns.
+       Keep both in badge form — converting either to a text link silently
+       disables that sync. -->
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.50.0-64748b?style=flat-square" alt="Changelog"/></a>
+  <a href="SECURITY.md"><img src="https://img.shields.io/badge/security-policy-1f6feb?style=flat-square" alt="Security policy"/></a>
 </p>
 
+<!-- Text links rather than a third badge row. The project docs, governance and
+     support links are all reachable, but they no longer compete with the
+     status badges above for a first-time reader's attention. -->
 <p>
-  <a href="https://veloxquant-mlx.netlify.app/"><img src="https://img.shields.io/badge/landing%20page-veloxquant--mlx.netlify.app-7c3aed?style=flat-square" alt="Landing"/></a>
-  <a href="https://veloxquant-mlx.netlify.app/playground.html"><img src="https://img.shields.io/badge/playground-try%20it%20live-00d4ff?style=flat-square" alt="Playground"/></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.50.0-64748b?style=flat-square" alt="Changelog"/></a>
-  <a href="blogs/metal-kernels.md"><img src="https://img.shields.io/badge/blog-Metal%20kernels%20v1-f97316?style=flat-square" alt="Blog"/></a>
-  <a href="blogs/turboquant-metal-kernels.md"><img src="https://img.shields.io/badge/blog-TurboQuant%20Metal%20kernels-f97316?style=flat-square" alt="Blog v2"/></a>
-  <a href="https://ko-fi.com/rajveer43"><img src="https://img.shields.io/badge/Ko--fi-support-ff5e5b?style=flat-square&logo=ko-fi&logoColor=white" alt="Ko-fi"/></a>
-  <a href="https://buymeachai.in/rajveer43"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Chai-support-fbb034?style=flat-square&logo=buymeacoffee&logoColor=black" alt="Buy Me a Chai"/></a>
+  <a href="https://veloxquant-mlx.netlify.app/">Docs</a> ·
+  <a href="https://veloxquant-mlx.netlify.app/playground.html">Playground</a> ·
+  <a href="#project--governance">Governance</a> ·
+  <a href="SECURITY.md">Security</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a> ·
+  <a href="#support">Support the project</a>
 </p>
 
 </div>
@@ -108,15 +117,16 @@ response = mlx_lm.generate(model, tokenizer, prompt="Explain relativity simply."
 1. [Installation](#installation)
 2. [Quickstart](#quickstart)
 3. [Method library](#method-library) — all 41 methods, grouped by family
-4. [Metal kernels](#metal-kernels--new-in-051)
+4. [Metal kernels](#metal-kernels)
 5. [Benchmark results](#benchmark-results)
 6. [What's inside](#whats-inside)
 7. [Architecture](#architecture)
 8. [CLI](#cli)
 9. [Development](#development)
-10. [Documentation & blog posts](#documentation--blog-posts)
-11. [References](#references)
-12. [Support](#support)
+10. [Project & governance](#project--governance) — security policy, maintainership, release process
+11. [Documentation & blog posts](#documentation--blog-posts)
+12. [References](#references)
+13. [Support](#support)
 
 ---
 
@@ -222,7 +232,7 @@ The 41 methods span three families — each links to its full docs page:
 
 ---
 
-## Metal kernels — new in 0.5.1
+## Metal kernels
 
 VecInfer's `quantize_vq` — the slowest step in the pipeline — now runs on the GPU instead of in Python: a 30-line Metal shader, JIT-compiled by `mx.fast.metal_kernel` the first time you call it. Same Python API, no code changes required to benefit.
 
@@ -433,6 +443,38 @@ Contributions welcome — please open an issue first for anything beyond a small
 
 ---
 
+## Project & governance
+
+These policies already governed the project; this section makes them reachable
+from the README rather than only from the file tree.
+
+| | |
+|---|---|
+| **Security policy** | [SECURITY.md](SECURITY.md) — private disclosure by email, acknowledgement within 72 hours, confirmed issues resolved within 14 days, reporters credited in release notes |
+| **Governance** | [GOVERNANCE.md](GOVERNANCE.md) — decision-making, contribution path, and how co-maintainers are added |
+| **Code of conduct** | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) |
+| **Contributing** | [CONTRIBUTING.md](CONTRIBUTING.md) — open an issue before anything beyond a small bugfix |
+| **Citations & provenance** | [CITATIONS.md](CITATIONS.md) — every method traced to its paper, with deviations documented |
+| **Release process** | Automated via [python-semantic-release](https://github.com/python-semantic-release/python-semantic-release); every release is gated on the full test suite. See [CHANGELOG.md](CHANGELOG.md) |
+
+**Maintainership and bus factor.** This project is maintained by one person
+([rajveer43](https://github.com/rajveer43)) with a second contributor active on
+the codebase. That is a real key-person risk and we would rather state it than
+have you discover it: if you are evaluating VeloxQuant-MLX for production or
+funding, weigh it accordingly. [GOVERNANCE.md](GOVERNANCE.md) describes how
+co-maintainers are added, and the MIT license means the code remains usable and
+forkable regardless. Continuity work — expanding the maintainer group and
+documenting release-critical knowledge — is open and tracked in
+[issues](https://github.com/rajveer43/VeloxQuant-MLX/issues).
+
+**What is verified continuously.** Lint and the non-Metal unit suite run on
+GitHub Actions (Ubuntu, Python 3.12) for every push; the full suite, including
+Metal parity tests that need Apple Silicon, gates each release. Metal kernel
+correctness is covered by dedicated numpy-parity tests rather than benchmarks
+alone — see [Metal kernels](#metal-kernels).
+
+---
+
 ## Documentation & blog posts
 
 Full docs, including per-method pages, guides, and API reference: **https://veloxquant-mlx.netlify.app/**
@@ -488,12 +530,14 @@ Headline references: [TurboQuant (ICLR 2026)](https://arxiv.org/abs/2504.19874),
 
 ## Support
 
-VeloxQuant-MLX is free, MIT-licensed,
-and built nights-and-weekends — if it saves your Mac some memory (or you just
-want to see the 42nd method land), you can
-[**buy me a chai** ☕](https://buymeachai.in/rajveer43) or
-[**tip on Ko-fi** 💜](https://ko-fi.com/rajveer43). Stars, issues, and
-PRs are equally appreciated.
+VeloxQuant-MLX is free and MIT-licensed, with no commercial offering and no
+revenue behind it — development time is donated. Funding is not required to use
+it and never gates a feature, but it is what buys maintenance time.
+
+- **Using it?** Stars, issue reports, and PRs are the most useful contribution — they tell us what actually breaks on hardware we do not have.
+- **Funding it?** [Buy me a chai ☕](https://buymeachai.in/rajveer43) or [tip on Ko-fi 💜](https://ko-fi.com/rajveer43).
+- **Reporting a vulnerability?** Do not open a public issue — follow [SECURITY.md](SECURITY.md).
+- **Citing it?** [DOI 10.5281/zenodo.20647294](https://doi.org/10.5281/zenodo.20647294); per-method attributions in [CITATIONS.md](CITATIONS.md).
 
 ---
 
