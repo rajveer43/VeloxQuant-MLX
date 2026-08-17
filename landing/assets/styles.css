@@ -447,14 +447,67 @@ h1 span::after {
   margin: 0 auto 2rem;
 }
 
+/* Before/after proof card — the "this now fits" moment, stated with the
+   numbers the calculator derives rather than a claim. */
+.hero-proof {
+  max-width: 620px;
+  margin: 0 auto 1.75rem;
+  padding: 1.1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: left;
+}
+
+.hero-proof-head {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.75rem;
+}
+
+.hero-proof-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.hero-proof-before { color: var(--muted); }
+.hero-proof-before strong { color: var(--caution-text); }
+.hero-proof-after { color: var(--text); }
+.hero-proof-after strong { color: var(--good); }
+
+.hero-proof-arrow {
+  color: var(--accent);
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+
+.hero-proof-note {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0.8rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Sits after the CTA now, so it no longer pulls up into the pills. */
 .hero-disclaimer {
   font-size: 0.8rem;
   color: var(--muted);
   opacity: 0.75;
   max-width: 560px;
-  margin: -1.25rem auto 1.75rem;
+  margin: 0 auto 1.75rem;
   line-height: 1.5;
 }
+
+.hero-secondary-links { margin-top: 1rem; }
 
 .hero-disclaimer a {
   color: inherit;
@@ -1541,6 +1594,27 @@ tbody td {
   font-weight: 700;
   font-size: 0.8rem;
 }
+
+/* Trust signals, separated from the requirements they sit beneath: these are
+   claims about the project, not things the reader has to satisfy. */
+.req-list-trust {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.req-list-trust li::before {
+  content: '●';
+  font-size: 0.6rem;
+}
+
+.req-list-trust a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.req-list-trust a:hover { color: var(--accent); }
 
 /* ===== PROVENANCE STRIP ===== */
 .provenance-strip {
@@ -2962,6 +3036,40 @@ code.inline.max { color: var(--max); }
 .calc-nojs { padding: 1.25rem; font-size: 0.86rem; color: var(--muted); }
 
 /* ── Method picker (decision tree) ── */
+
+/* Promoted default: one recommendation, with the resident-RAM alternative
+   stated inline rather than buried as a co-equal row further down. */
+.picker-lead {
+  padding: 1.35rem 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  margin-bottom: 1.25rem;
+}
+.picker-lead-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 0.6rem;
+}
+.picker-lead-pick {
+  font-size: 1rem;
+  color: var(--text);
+  line-height: 1.55;
+  margin: 0;
+}
+.picker-lead-note {
+  font-size: 0.86rem;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 0.85rem 0 0;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+.picker-reveal { margin-top: 0.5rem; }
+
 .picker-list { display: flex; flex-direction: column; gap: 0.55rem; }
 .picker-row {
   display: grid;
