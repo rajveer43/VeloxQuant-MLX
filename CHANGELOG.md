@@ -270,6 +270,43 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.50.0 (2026-08-17)
+
+### Build System
+
+- **deps**: Bump cryptography from 47.0.0 to 50.0.0
+  ([#204](https://github.com/rajveer43/VeloxQuant-MLX/pull/204),
+  [`346b54d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/346b54dd19de373c04cc7ecd5ea9799737a5e1fc))
+
+- **deps**: Bump pillow from 12.2.0 to 12.3.0
+  ([#203](https://github.com/rajveer43/VeloxQuant-MLX/pull/203),
+  [`88f633a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/88f633a6c1695f5849189e1d2b6e1891d27da6c4))
+
+- **deps**: Bump pyjwt from 2.12.1 to 2.13.0
+  ([#202](https://github.com/rajveer43/VeloxQuant-MLX/pull/202),
+  [`0dbd9db`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0dbd9dbdb1a70674dfa73ae533b89686c87a6cf6))
+
+### Documentation
+
+- **cache**: Review SnapKV RoPE position semantics vs. paper (#188)
+  ([#200](https://github.com/rajveer43/VeloxQuant-MLX/pull/200),
+  [`14fb58b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/14fb58bcf1169c67420a52787976249b65cd2a17))
+
+- **cache**: Review StreamingLLM RoPE position semantics vs. paper (#189)
+  ([#199](https://github.com/rajveer43/VeloxQuant-MLX/pull/199),
+  [`ae38052`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ae38052873ea1810f5dbbbda2ca77df775f8a94b))
+
+- **knorm**: Measure real-model perplexity for L2Norm after RoPE fix (#190)
+  ([#205](https://github.com/rajveer43/VeloxQuant-MLX/pull/205),
+  [`3c6de43`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3c6de43d578b6a5e8bac8257db1a853dfb9ae97f))
+
+### Features
+
+- **landing**: Lead with unqualified metrics, resequence hero caveats
+  ([#206](https://github.com/rajveer43/VeloxQuant-MLX/pull/206),
+  [`ba085b2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ba085b2db9a60b0c61f6f13e13b898d913f0f362))
+
+
 ## v0.49.4 (2026-08-15)
 
 ### Performance Improvements
