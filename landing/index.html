@@ -1001,7 +1001,10 @@ pip install -e ".[dev]"</span></pre>
              `pytest --collect-only` at v0.49.4; maintainer count is deliberately
              the literal number rather than a vaguer "team". -->
         <ul class="req-list req-list-trust">
-          <li><strong class="t-strong">2,236 tests</strong> — run on every commit</li>
+          <!-- Format is load-bearing: scripts/sync_release_badges.py rewrites
+               the literal "<n>/<n> tests passing" on every release. Any other
+               phrasing here silently goes stale. -->
+          <li><strong class="t-strong">2236/2236 tests passing</strong> — run on every commit</li>
           <li><strong class="t-strong">CI</strong> — lint, unit and non-Metal suites on GitHub Actions</li>
           <li><strong class="t-strong">2 maintainers</strong> — plus outside contributors</li>
           <li><a href="https://doi.org/10.5281/zenodo.20647294" target="_blank" rel="noopener">Citable — DOI on Zenodo</a></li>
