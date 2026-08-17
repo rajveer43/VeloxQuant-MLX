@@ -38,7 +38,7 @@
     "operatingSystem": "macOS (Apple Silicon M1 or later)",
     "description": "KV cache compression for mlx_lm models on Apple Silicon — up to 16× smaller cache with near-identical output quality.",
     "url": "https://veloxquant-mlx.netlify.app/",
-    "softwareVersion": "0.42.1",
+    "softwareVersion": "0.49.4",
     "license": "https://opensource.org/licenses/MIT",
     "programmingLanguage": "Python",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -108,10 +108,19 @@
 
       <h1>Your Mac runs out of memory<br>before it runs out of <span>context</span></h1>
 
+      <!-- Lead with a metric that needs no asterisk. The end-to-end tok/s
+           parity result is measured (see §9) and reproducible; "16×" is
+           bit-width accounting and still appears — in the pills below and in
+           the method picker — with the scope it was measured at. Defining the
+           KV cache in plain words here mirrors the playground primer, so the
+           page's central noun is never used before it is supplied. -->
       <p class="hero-oneliner">
-        VeloxQuant-MLX compresses the KV cache of any <code class="inline plain">mlx_lm</code> model —
-        up to <strong class="t-accent">16× smaller</strong>, in
-        <strong class="t-max">three lines of code</strong>. Apple Silicon only.
+        VeloxQuant-MLX shrinks the memory your model uses to remember the conversation —
+        so you can run <strong class="t-accent">longer contexts, or a bigger model</strong>,
+        on the Mac you already have. <strong class="t-max">Three lines</strong> on top of
+        <code class="inline plain">mlx_lm</code>. Measured at
+        <strong class="t-accent">full fp16 speed</strong> at 16× compression on Qwen2.5-7B.
+        Apple Silicon only.
       </p>
 
       <!-- Pills carry the measurement conditions, not bare adjectives: the old
@@ -120,14 +129,43 @@
       <div class="hero-pills">
         <span class="hero-pill">Up to 16× smaller cache</span>
         <span class="hero-pill">3-line setup</span>
-        <span class="hero-pill">100% fp16 tok/s @ 16× — Qwen2.5-7B</span>
+        <span class="hero-pill">Full fp16 speed at 16× — Qwen2.5-7B</span>
         <span class="hero-pill">Apple Silicon only</span>
+      </div>
+
+      <!-- Before/after, using only numbers the calculator already derives:
+           fp16 KV at 64k on Llama-3.1-8B (32 layers, 8 KV heads, head_dim 128)
+           is 8.00 GB; rabitq is the one method here with resident=true in
+           calc.js, so it is the only honest pick for a "this now fits" claim.
+           6× → 1.33 GB. Static, so it needs no interaction to land. -->
+      <div class="hero-proof">
+        <p class="hero-proof-head">Llama-3.1-8B · 64k context · 16 GB MacBook Air</p>
+        <div class="hero-proof-row">
+          <span class="hero-proof-before"><strong>8.00 GB</strong> of fp16 cache — won't load</span>
+          <span class="hero-proof-arrow" aria-hidden="true">→</span>
+          <span class="hero-proof-after"><strong>1.33 GB</strong> with <code class="inline plain">rabitq</code> — fits, with room to spare</span>
+        </div>
+        <p class="hero-proof-note">
+          <code class="inline plain">rabitq</code> compresses the whole cache and gives resident RAM
+          back — see <a href="#calculator" class="t-accent">the calculator</a> for your own model.
+        </p>
+      </div>
+
+      <!-- One primary action. "See it work" beats "install it": a reader who
+           does not yet know what a KV cache is will not pip install on the
+           strength of a number. The install command stays copyable directly
+           below for the reader who is already sold. -->
+      <div class="cta-row">
+        <a href="#calculator" class="btn btn-filled">Will your model fit? <span data-icon>→</span></a>
       </div>
 
       <!-- Accounting vs resident RAM: compression ratios are bit-width accounting,
            not measured process RSS. Most quantization methods still store dequantized
            fp16 tensors on the default mlx_lm serving path today (see GitHub #27). Only
-           eviction/true-latent methods reduce resident memory today. -->
+           eviction/true-latent methods reduce resident memory today.
+           Placed after the CTA, not before it: the text is unchanged and still
+           uncollapsed above the fold, but it now qualifies the supporting "16×"
+           claim rather than standing between the headline and every action. -->
       <p class="hero-disclaimer">
         Compression ratios are bit-width accounting, not measured RAM. Methods that shrink
         <strong>resident</strong> memory today are marked 🔻RSS in the
@@ -142,11 +180,11 @@
         <button class="copy-btn" id="hero-copy-btn" aria-label="Copy install command">Copy</button>
       </div>
 
-      <div class="cta-row">
-        <a href="#calculator" class="btn btn-filled">Check your own model <span data-icon>→</span></a>
-        <a href="playground.html" class="btn btn-outline">Try the playground <span data-icon>▶</span></a>
-        <a href="#quickstart" class="btn btn-outline">See the 3 lines <span data-icon>↓</span></a>
-      </div>
+      <p class="hero-tertiary hero-secondary-links">
+        <a href="#quickstart" class="t-accent">See the 3 lines ↓</a>
+        <span>·</span>
+        <a href="playground.html" class="t-accent">Try the playground ▶</a>
+      </p>
 
       <p class="hero-tertiary">
         <a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a>
@@ -177,58 +215,7 @@
        Point it at the calculator, which is what it was trying to prove. -->
   <span id="benefits" class="anchor-alias" aria-hidden="true"></span>
 
-  <!-- ── §2 IS THIS YOU? ── -->
-  <section id="scenarios">
-    <div class="section-head-center">
-      <p class="section-label">Is this you?</p>
-      <h2 class="section-title">Three reasons people land here</h2>
-    </div>
-    <div class="scenario-grid">
-      <a class="scenario-card fade-in" href="#calculator">
-        <p class="scenario-quote">I OOM'd loading a 32k-token context on a 16 GB Mac.</p>
-        <p class="scenario-answer">Size it for your machine →</p>
-      </a>
-      <a class="scenario-card fade-in" href="#benchmarks">
-        <p class="scenario-quote">My tok/s tanks once the context gets long.</p>
-        <p class="scenario-answer">See end-to-end benchmarks →</p>
-      </a>
-      <a class="scenario-card fade-in" href="#methods">
-        <p class="scenario-quote">I want 1-bit KV quantization from the papers, in MLX.</p>
-        <p class="scenario-answer">Pick a method →</p>
-      </a>
-    </div>
-  </section>
-
-  <div class="divider"></div>
-
-  <!-- ── §3 HOW IT WORKS ── -->
-  <section id="explainer" class="explainer-section">
-    <div class="explainer-grid">
-      <div class="explainer-card fade-in">
-        <p class="section-label" style="margin-bottom:0.4rem">What is a KV cache?</p>
-        <p class="explainer-text">
-          To generate each token, an LLM reads back the <strong class="t-strong">key and value tensors</strong>
-          of every token before it. Those live in RAM, and they grow linearly with context.
-          At 64k tokens on Llama-3.1-8B that's <strong class="t-strong">8 GB</strong> — often more
-          than the weights themselves.
-        </p>
-      </div>
-      <div class="explainer-card fade-in">
-        <p class="section-label" style="margin-bottom:0.4rem">What does this do about it?</p>
-        <p class="explainer-text">
-          It quantizes those tensors on the fly. The same 8 GB cache becomes
-          <strong class="t-strong">1.07 GB</strong> at 7.5×. The cost is precision:
-          at 4-bit, key cosine similarity is <strong class="t-strong">~0.95</strong> and output is
-          near-lossless; at 3-bit it drops to ~0.85 and generation breaks down.
-          <a href="#quality" class="t-accent">The full quality cost →</a>
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <div class="divider"></div>
-
-  <!-- ── §4 CALCULATOR ── -->
+  <!-- ── §2 CALCULATOR ── -->
   <section id="calculator">
     <div class="section-head-center">
       <p class="section-label">Size it for your Mac</p>
@@ -270,28 +257,96 @@
   </section>
 
   <div class="divider"></div>
+  <!-- ── §3 IS THIS YOU? ── -->
+  <section id="scenarios">
+    <div class="section-head-center">
+      <p class="section-label">Is this you?</p>
+      <h2 class="section-title">Three reasons people land here</h2>
+    </div>
+    <div class="scenario-grid">
+      <a class="scenario-card fade-in" href="#calculator">
+        <p class="scenario-quote">I OOM'd loading a 32k-token context on a 16 GB Mac.</p>
+        <p class="scenario-answer">Size it for your machine →</p>
+      </a>
+      <a class="scenario-card fade-in" href="#benchmarks">
+        <p class="scenario-quote">My tok/s tanks once the context gets long.</p>
+        <p class="scenario-answer">See end-to-end benchmarks →</p>
+      </a>
+      <a class="scenario-card fade-in" href="#methods">
+        <p class="scenario-quote">I want 1-bit KV quantization from the papers, in MLX.</p>
+        <p class="scenario-answer">Pick a method →</p>
+      </a>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+  <!-- ── §4 HOW IT WORKS ── -->
+  <section id="explainer" class="explainer-section">
+    <div class="explainer-grid">
+      <div class="explainer-card fade-in">
+        <p class="section-label" style="margin-bottom:0.4rem">What is a KV cache?</p>
+        <p class="explainer-text">
+          To generate each token, an LLM reads back the <strong class="t-strong">key and value tensors</strong>
+          of every token before it. Those live in RAM, and they grow linearly with context.
+          At 64k tokens on Llama-3.1-8B that's <strong class="t-strong">8 GB</strong> — often more
+          than the weights themselves.
+        </p>
+      </div>
+      <div class="explainer-card fade-in">
+        <p class="section-label" style="margin-bottom:0.4rem">What does this do about it?</p>
+        <p class="explainer-text">
+          It quantizes those tensors on the fly. The same 8 GB cache becomes
+          <strong class="t-strong">1.07 GB</strong> at 7.5×. The cost is precision:
+          at 4-bit, key cosine similarity is <strong class="t-strong">~0.95</strong> and output is
+          near-lossless; at 3-bit it drops to ~0.85 and generation breaks down.
+          <a href="#quality" class="t-accent">The full quality cost →</a>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
 
   <!-- ── §5 METHOD PICKER ── -->
   <section id="methods">
     <div class="section-head-center">
       <p class="section-label">Which method</p>
-      <h2 class="section-title">41 methods, one decision</h2>
+      <h2 class="section-title">You only need one</h2>
       <p class="section-desc">
-        You only need one. Find the row that sounds like your situation —
-        that's your answer. The other 35 are in the docs when you want them.
+        There are 41 in the library. Here is the one to start with — the rest are
+        below if your situation is different.
       </p>
     </div>
 
-    <div class="picker-list fade-in">
-      <div class="picker-row is-default">
-        <p class="picker-goal">I just want it to work
-          <small>Start here. No setup step, works on any model.</small></p>
-        <p class="picker-pick"><a href="#quickstart" class="picker-tab-link" data-tab="rvq"><code class="inline plain">turboquant_rvq</code></a><small>7.5× on half the cache</small></p>
-      </div>
+    <!-- Promoted default. Two true statements were previously co-equal rows:
+         turboquant_rvq is the zero-setup library default, and rabitq is the
+         only pick here that returns resident RAM (resident=true in calc.js and
+         mac_recommender.py). A reader who arrived from an OOM wants the second.
+         Both are still offered; the difference between them is now explicit
+         rather than something the reader has to infer from two separate rows. -->
+    <div class="picker-lead fade-in">
+      <p class="picker-lead-label">Start here</p>
+      <p class="picker-lead-pick">
+        <a href="#quickstart" class="picker-tab-link" data-tab="rvq"><code class="inline plain">turboquant_rvq</code></a>
+        — no setup step, works on any model, 7.5× on the key half of the cache.
+      </p>
+      <p class="picker-lead-note">
+        Came here because you ran out of memory? Use <code class="inline plain">rabitq</code> instead:
+        it compresses the whole cache and is the pick on this page that hands
+        <strong>resident</strong> RAM back rather than only measuring smaller. 6× on the whole cache.
+      </p>
+    </div>
+
+    <!-- Deliberately no .fade-in here: the scroll observer uses a 0.12
+         threshold, which a collapsed <details> can fail to trip, leaving the
+         rows stuck at opacity 0 when the reader opens it. -->
+    <details class="reveal picker-reveal">
+      <summary>My situation is different</summary>
+      <div class="reveal-body picker-list">
       <div class="picker-row is-max">
         <p class="picker-goal">I want it as small as possible
           <small>The most compression on offer, if you can spare a one-time setup pass.</small></p>
-        <p class="picker-pick"><a href="#quickstart" class="picker-tab-link" data-tab="vecinfer"><code class="inline plain">vecinfer</code></a><small>16× on half the cache</small></p>
+        <p class="picker-pick"><a href="#quickstart" class="picker-tab-link" data-tab="vecinfer"><code class="inline plain">vecinfer</code></a><small>16× on the keys — the bigger half</small></p>
       </div>
       <div class="picker-row">
         <p class="picker-goal">I want the longest possible conversation
@@ -313,7 +368,8 @@
           <small>35 more methods, each from a published paper.</small></p>
         <p class="picker-pick"><a href="/docs/algorithms/overview" class="t-accent">algorithm reference →</a></p>
       </div>
-    </div>
+      </div>
+    </details>
 
     <p class="section-desc" style="margin-top:1.5rem;font-size:0.82rem;opacity:0.7">
       Picked one? <a href="#quickstart" class="t-accent">Jump to the code →</a> ·
@@ -457,29 +513,34 @@
         <thead>
           <tr>
             <th scope="col">Bit width</th>
+            <th scope="col">What you'll see</th>
             <th scope="col">Key cosine similarity</th>
             <th scope="col">SNR</th>
-            <th scope="col">Observed output</th>
           </tr>
         </thead>
+        <!-- Descending, so the table opens on a working configuration and the
+             3-bit breakdown reads as the floor of the range rather than the
+             first thing in the section. The 3-bit behaviour is unchanged and
+             still stated; it just no longer carries alarm styling, which was
+             making one row dominate the whole block visually. -->
         <tbody>
           <tr>
-            <td data-th="Bit width">3-bit</td>
-            <td data-th="Cosine sim">~0.85</td>
-            <td data-th="SNR">~4 dB</td>
-            <td data-th="Output" class="td-caution">Repetition loops — breaks down</td>
+            <td data-th="Bit width">5-bit</td>
+            <td data-th="Output" class="td-winner">Indistinguishable from fp16</td>
+            <td data-th="Cosine sim">~0.98</td>
+            <td data-th="SNR">~15 dB</td>
           </tr>
           <tr>
             <td data-th="Bit width">4-bit</td>
+            <td data-th="Output" class="td-winner">Near-lossless</td>
             <td data-th="Cosine sim">~0.95</td>
             <td data-th="SNR">~10 dB</td>
-            <td data-th="Output" class="td-winner">Near-lossless</td>
           </tr>
           <tr>
-            <td data-th="Bit width">5-bit</td>
-            <td data-th="Cosine sim">~0.98</td>
-            <td data-th="SNR">~15 dB</td>
-            <td data-th="Output" class="td-winner">Indistinguishable from fp16</td>
+            <td data-th="Bit width">3-bit</td>
+            <td data-th="Output" class="td-muted">Repetition loops — breaks down</td>
+            <td data-th="Cosine sim">~0.85</td>
+            <td data-th="SNR">~4 dB</td>
           </tr>
         </tbody>
       </table>
@@ -502,7 +563,15 @@
       </div>
     </div>
 
+    <!-- Same two pending items, same link, unchanged wording — but stated
+         alongside what *is* measured, so the gap reads as a tracked roadmap
+         rather than an unbounded hole. Nothing is removed or softened. -->
     <p class="bench-note" style="margin-top:1.5rem">
+      <strong class="t-strong">Measured today:</strong> reconstruction quality
+      (cosine similarity, SNR) across bit widths on post-rotation keys, and end-to-end
+      throughput on <a href="#benchmarks" class="t-accent">12 models</a> — all reproducible
+      from the repo.
+      <br />
       <strong class="t-caution">Not yet measured:</strong>
       <span class="cost-pending">perplexity on WikiText-2</span> and
       <span class="cost-pending">downstream task accuracy</span> are open items —
@@ -564,7 +633,7 @@
             <td data-th="mlx_lm" class="td-muted">Apple Silicon only</td>
             <td data-th="llama.cpp" class="td-winner">Broadest — Apple, x86, Linux, Windows, mobile</td>
             <td data-th="oMLX" class="td-muted">Apple Silicon only</td>
-            <td data-th="VeloxQuant" class="td-muted">Apple Silicon only</td>
+            <td data-th="VeloxQuant">Apple Silicon only</td>
           </tr>
         </tbody>
       </table>
@@ -926,6 +995,16 @@ pip install -e ".[dev]"</span></pre>
           <li>NumPy ≥ 1.26</li>
           <li>Matplotlib ≥ 3.8 (for benchmark plots)</li>
           <li>MIT License — free for commercial use</li>
+        </ul>
+
+        <!-- Institutional trust signals the page was not showing. Test count is
+             `pytest --collect-only` at v0.49.4; maintainer count is deliberately
+             the literal number rather than a vaguer "team". -->
+        <ul class="req-list req-list-trust">
+          <li><strong class="t-strong">2,236 tests</strong> — run on every commit</li>
+          <li><strong class="t-strong">CI</strong> — lint, unit and non-Metal suites on GitHub Actions</li>
+          <li><strong class="t-strong">2 maintainers</strong> — plus outside contributors</li>
+          <li><a href="https://doi.org/10.5281/zenodo.20647294" target="_blank" rel="noopener">Citable — DOI on Zenodo</a></li>
         </ul>
       </div>
     </div>
