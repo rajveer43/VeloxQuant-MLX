@@ -8,8 +8,10 @@ WHAT THIS IS NOT
 ----------------
 * **Not RULER.** The retrieval arm here is the NIAH family only (single-key,
   multi-key, multi-value), generated synthetically in-process. RULER's other
-  ten task categories (variable tracking, common/frequent-word extraction, QA)
-  are not covered.
+  task categories (variable tracking, common/frequent-word extraction, QA)
+  are covered separately by ``qfilters_ruler_beyond_niah.py`` (:issue:`177`),
+  which finds Q-Filters at 0% on variable tracking and two-hop QA against
+  ceilings of 69% and 90% -- it does not generalise past single-span lookup.
 * **Not Expected Attention.** That method is not implemented in this repo, so
   it cannot be a comparison arm.
 * **Not a speedup claim over fp16.** These caches run a per-(B, H) Python loop
