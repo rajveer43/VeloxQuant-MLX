@@ -106,7 +106,69 @@ EVAL = (
     "reproducing an argument collapsed, and that arguments which would once have "
     "died in a single monastery library could now be answered, and answered "
     "again, by people who had never met. "
+    "Longitude at sea resisted solution for far longer than latitude, which any "
+    "navigator could fix by measuring the sun at noon or the pole star at night. "
+    "Longitude required knowing the time at a reference meridian at the same "
+    "instant as local time, and no pendulum clock could keep that reference "
+    "aboard a rolling ship through changes of temperature and humidity. The "
+    "astronomical alternative, the method of lunar distances, demanded tables of "
+    "the moon's position accurate to a degree no observatory had yet reached, and "
+    "a set of calculations that took a trained officer four hours to complete. "
+    "John Harrison spent decades building sea clocks against this problem, moving "
+    "from large machines with interlocking grasshopper escapements to a watch "
+    "barely five inches across, and the board charged with judging his work kept "
+    "raising what would count as proof. The eventual solution in practice was "
+    "neither one method nor the other but both together, chronometers checked "
+    "against lunars when the sky allowed, until the price of a reliable timepiece "
+    "fell far enough that every merchant vessel could carry one. "
+    "Bird migration was for centuries explained by theories that now read as "
+    "fantasy, including the belief that swallows spent the winter in the mud at "
+    "the bottom of ponds, an idea repeated by serious naturalists into the "
+    "eighteenth century. The evidence that settled the question arrived piecemeal: "
+    "a stork shot in Germany carrying a central African spear through its neck, "
+    "then systematic ringing programmes that recovered numbered bands from birds "
+    "thousands of miles from where they were fitted. What the recoveries revealed "
+    "was more surprising than mere distance. Individual birds return not just to "
+    "the same country but often to the same hedgerow, navigating by a combination "
+    "of the sun's arc, the pattern of polarised light at dusk, star rotation "
+    "around the celestial pole, and a magnetic sense whose receptor is still "
+    "argued over. Young birds of some species make the first journey alone, "
+    "without any adult to follow, which means the route is inherited rather than "
+    "taught, while in others the knowledge is cultural and a population that "
+    "loses its experienced birds loses the route with them. "
+    "The problem of measuring the speed of light was thought hopeless by "
+    "observers who assumed propagation was instantaneous. Galileo proposed "
+    "stationing two people on hilltops with shuttered lanterns and found, "
+    "unsurprisingly, only the delay of human reaction. The first real value came "
+    "not from a terrestrial experiment but from watching the moons of Jupiter, "
+    "whose eclipses ran early when Earth approached and late when it receded, a "
+    "discrepancy Ole Romer interpreted as the time light took to cross the "
+    "diameter of Earth's orbit. His figure was low, because the size of that "
+    "orbit was itself poorly known, but the method was sound and the principle "
+    "established. Later terrestrial measurements using toothed wheels and "
+    "rotating mirrors closed the gap, and the constant eventually became so well "
+    "determined that the metre was redefined in terms of it, inverting the "
+    "original relationship: the speed of light is now exact by definition and it "
+    "is the length of the metre that follows from it. "
+    "Cartographic projection forces an unavoidable compromise, since no flat "
+    "sheet can represent a sphere without distorting area, angle, or distance "
+    "somewhere. The Mercator projection preserves angles, which is exactly what a "
+    "navigator wants because a straight line drawn on the chart is a course of "
+    "constant compass bearing, but it inflates land near the poles without limit "
+    "and has been criticised for the political impression that inflation leaves. "
+    "Equal-area projections correct the sizes and pay for it by shearing shapes "
+    "into forms that look wrong to eyes trained on the familiar arrangement. "
+    "There is no projection that is best in general, only projections that are "
+    "appropriate for a purpose, and the long history of the subject is largely a "
+    "history of people rediscovering that fact and proposing a new compromise "
+    "they believe resolves it. "
 ) * 3
+
+# The corpus above yields ~3.5k tokens under the Llama/Qwen tokenizers, so this
+# cap is a ceiling rather than a target; budgets 256/512/1024 then run at
+# roughly 13.6x/6.8x/3.4x compression. Any budget >= the token count would
+# never fill the cache, and every arm would return the fp16 baseline exactly.
+EVAL_TOKENS = 4096
 
 
 def perplexity(model, ids, caches, label: str) -> float:
@@ -131,12 +193,18 @@ def main() -> None:
     inner = getattr(model, "model", model)
     n_layers = len(inner.layers)
     kv_heads = model.args.num_key_value_heads
-    head_dim = model.args.head_dim
+    # Qwen2's ModelArgs omits head_dim; Llama's carries it. Derive when absent.
+    head_dim = (
+        getattr(model.args, "head_dim", None)
+        or model.args.hidden_size // model.args.num_attention_heads
+    )
 
     acts = collect_query_activations(model, tok, CALIB, max_length=512, max_samples_per_head=3000)
     filters = [average_gqa_filters(compute_qfilters(a), kv_heads) for a in acts]
 
-    ids = tok.encode(EVAL)[:1024]
+    # Must exceed the largest budget or the cache never fills and no eviction
+    # runs: at budget == len(ids) every arm returns the fp16 baseline exactly.
+    ids = tok.encode(EVAL)[:EVAL_TOKENS]
     print(f"\n=== {model_id} | {len(ids)} tokens, generation mode ===")
     base = perplexity(
         model, ids, [KVCache() for _ in range(n_layers)], "fp16 full cache (no eviction)"

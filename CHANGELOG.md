@@ -270,6 +270,83 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.50.2 (2026-08-18)
+
+### Bug Fixes
+
+- **qfilters**: Derive head_dim for Qwen and validate at 7B (#176)
+  ([#230](https://github.com/rajveer43/VeloxQuant-MLX/pull/230),
+  [`bc9cb4f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bc9cb4fb0c492dea9d1fe92baf4305d057542513))
+
+### Build System
+
+- **deps**: Bump authlib from 1.7.0 to 1.7.1
+  ([#216](https://github.com/rajveer43/VeloxQuant-MLX/pull/216),
+  [`2e5f7d4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2e5f7d4eccc5d68adbf5749af7abeadb57c9d611))
+
+- **deps**: Bump fast-uri from 3.1.2 to 3.1.5 in /docs-site
+  ([#219](https://github.com/rajveer43/VeloxQuant-MLX/pull/219),
+  [`e112723`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e1127230d50a44be28cc8a8d0a90defbb30344ab))
+
+- **deps**: Bump gradio from 6.13.0 to 6.15.1
+  ([#208](https://github.com/rajveer43/VeloxQuant-MLX/pull/208),
+  [`4abd88c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4abd88ca0ce76af3ae6cec399262a0a75c502ea4))
+
+- **deps**: Bump idna from 3.13 to 3.15
+  ([#215](https://github.com/rajveer43/VeloxQuant-MLX/pull/215),
+  [`21ea5c1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/21ea5c1b808fae1a9a9d29de2cf43a7f421894f5))
+
+- **deps**: Bump joserfc from 1.6.4 to 1.6.8
+  ([#211](https://github.com/rajveer43/VeloxQuant-MLX/pull/211),
+  [`4ea2cca`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4ea2cca0ec8911662c16fc15170d72a1a5d25dcf))
+
+- **deps**: Bump js-yaml from 3.14.2 to 3.15.1 in /docs-site
+  ([#220](https://github.com/rajveer43/VeloxQuant-MLX/pull/220),
+  [`396634d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/396634daa2c050ca9633dac3862703665791cc5a))
+
+- **deps**: Bump mcp from 1.27.0 to 1.28.1
+  ([#209](https://github.com/rajveer43/VeloxQuant-MLX/pull/209),
+  [`e542da7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e542da75dc8ecda81d1cdd0da470f6d15aa5ddd1))
+
+- **deps**: Bump nanoid from 3.3.12 to 3.3.18 in /docs-site
+  ([#218](https://github.com/rajveer43/VeloxQuant-MLX/pull/218),
+  [`b4dfde3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b4dfde3ec6ffe16c609b3e826c7c29eb923799fd))
+
+- **deps**: Bump pydantic-settings from 2.14.0 to 2.14.2
+  ([#210](https://github.com/rajveer43/VeloxQuant-MLX/pull/210),
+  [`a9491c1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a9491c1d3630a67c665d865a5308491914f90d63))
+
+- **deps**: Bump python-multipart from 0.0.26 to 0.0.31
+  ([#214](https://github.com/rajveer43/VeloxQuant-MLX/pull/214),
+  [`288c50b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/288c50ba1be0a5c1cd84dae57489efd21c059f5f))
+
+- **deps**: Bump starlette from 1.0.0 to 1.3.1
+  ([#212](https://github.com/rajveer43/VeloxQuant-MLX/pull/212),
+  [`47135f6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/47135f68714b5e5631d94eb874fe0a7a2b26ffff))
+
+- **deps**: Bump urllib3 from 2.6.3 to 2.7.0
+  ([#217](https://github.com/rajveer43/VeloxQuant-MLX/pull/217),
+  [`3d2ecbb`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3d2ecbb9acac0c91140b1ad8ae9c74b18035fb68))
+
+### Continuous Integration
+
+- **release**: Collapse merge bursts into one release run
+  ([#213](https://github.com/rajveer43/VeloxQuant-MLX/pull/213),
+  [`99c04db`](https://github.com/rajveer43/VeloxQuant-MLX/commit/99c04dbe6d6a044514d36672f2eba38340c29eeb))
+
+### Documentation
+
+- Rewrite README prose in a first-person engineering voice
+  ([#221](https://github.com/rajveer43/VeloxQuant-MLX/pull/221),
+  [`ecbe1e0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ecbe1e0db012e2ee53c3575988cfc0c12ccd16c0))
+
+### Testing
+
+- **rotation**: Pin bare-m Hadamard behaviour to the installed MLX
+  ([#231](https://github.com/rajveer43/VeloxQuant-MLX/pull/231),
+  [`9726875`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9726875649955d5d3c8a2c9f6038190a82303d13))
+
+
 ## v0.50.1 (2026-08-18)
 
 ### Bug Fixes
