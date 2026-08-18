@@ -270,6 +270,57 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.51.0 (2026-08-18)
+
+### Build System
+
+- **deps**: Bump brace-expansion from 1.1.15 to 1.1.18 in /docs-site
+  ([#222](https://github.com/rajveer43/VeloxQuant-MLX/pull/222),
+  [`59a208c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/59a208cd3c6af6eb6f78e1a295490a0cdfb7119b))
+
+- **deps**: Bump postcss from 8.5.15 to 8.5.26 in /docs-site
+  ([#223](https://github.com/rajveer43/VeloxQuant-MLX/pull/223),
+  [`f4dc708`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f4dc708dedbd353bc64f0122197d2396b331ac3c))
+
+### Documentation
+
+- **blog**: The needle was the easy part -- RULER beyond NIAH
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+- **qfilters**: Report the non-NIAH RULER results and correct the gap claim
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+### Features
+
+- **bench**: RULER task categories beyond NIAH for Q-Filters
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+- **bench**: RULER task categories beyond NIAH for Q-Filters (#177)
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+### Testing
+
+- **ruler**: Probe whether chunked prefill rescues Q-Filters on VT
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+- **ruler**: Raw results for the four non-NIAH RULER categories on Qwen2.5-7B
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+- **ruler**: Record actual prefilled token counts per task and context
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+- **ruler**: Verify the arms compress equally before reading the CWE spread
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+
 ## v0.50.2 (2026-08-18)
 
 ### Bug Fixes
