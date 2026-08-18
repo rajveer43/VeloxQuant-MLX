@@ -270,6 +270,21 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.50.1 (2026-08-18)
+
+### Bug Fixes
+
+- **landing**: Match the test-count format the release sync rewrites
+  ([#207](https://github.com/rajveer43/VeloxQuant-MLX/pull/207),
+  [`90cc805`](https://github.com/rajveer43/VeloxQuant-MLX/commit/90cc8054f2c89a1082e9b277a48151346f5b82e5))
+
+### Documentation
+
+- **readme**: Surface security and governance policies, trim badge wall
+  ([#207](https://github.com/rajveer43/VeloxQuant-MLX/pull/207),
+  [`90cc805`](https://github.com/rajveer43/VeloxQuant-MLX/commit/90cc8054f2c89a1082e9b277a48151346f5b82e5))
+
+
 ## v0.50.0 (2026-08-17)
 
 ### Build System

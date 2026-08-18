@@ -27,7 +27,7 @@ fastmcp==3.2.4
 filelock==3.29.0
 fonttools==4.62.1
 fsspec==2026.3.0
-gradio==6.13.0
+gradio==6.15.1
 gradio_client==2.5.0
 graphifyy==0.5.0
 griffelib==2.0.2
