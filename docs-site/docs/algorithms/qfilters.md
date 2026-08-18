@@ -327,18 +327,20 @@ Observation 3.1 holds in **every head measured** — that universal positivity i
 `κʰ > 0`, the property the sign correctness rests on. Observation 3.2 holds
 too: the leading component's mean projection is ~50× the rest, which have
 near-zero mean, matching Figure 2c. Qwen2.5 is the paper's §5 limitation case
-(QKV bias), yet the anisotropy is present there as well.
+(QKV bias), yet the anisotropy is present there as well. Anisotropy alone does
+not guarantee an end-to-end win, though: see the Qwen budget sweep below, where
+the advantage disappears at mild compression.
 
 ### The calibrated filter predicts real attention (Figure 4)
 
 Spearman correlation against **true** mean attention `Sʰₜ` from real attention
 maps on held-out text:
 
-| Scorer | Llama-3.2-1B (128 KV heads) | Llama-3.2-3B (224 KV heads) |
-|---|---|---|
-| **Q-Filters, calibrated (query-SVD)** | **+0.783** (100% sign-correct) | **+0.863** (100% sign-correct) |
-| K-norm ([L2Norm](../algorithms/knorm)) | +0.460 (94.5%) | +0.410 (94.6%) |
-| Q-Filters, key-SVD fallback | **−0.032** (46.1%) | **−0.008** (49.1%) |
+| Scorer | Llama-3.2-1B (128 KV heads) | Llama-3.2-3B (224 KV heads) | Qwen2.5-7B (112 KV heads) |
+|---|---|---|---|
+| **Q-Filters, calibrated (query-SVD)** | **+0.783** (100% sign-correct) | **+0.863** (100% sign-correct) | **+0.850** (100% sign-correct) |
+| K-norm ([L2Norm](../algorithms/knorm)) | +0.460 (94.5%) | +0.410 (94.6%) | +0.402 (86.6%) |
+| Q-Filters, key-SVD fallback | **−0.032** (46.1%) | **−0.008** (49.1%) | **−0.039** (48.2%) |
 
 The calibrated filter tracks true attention strongly and beats K-norm,
 reproducing the paper's Figure 4 ordering. The key-SVD fallback is
@@ -373,6 +375,45 @@ attention-correlation ordering. But note the absolute numbers: perplexity is
 still well above fp16. This is a **policy comparison, not a reproduction of
 Figure 5** — no RoPE renumbering, uniform per-head budgets, and a much smaller
 calibration set than the paper's §4.2.
+
+#### Qwen2.5-7B and a wider budget sweep (#176)
+
+The rows above use a 1024-token eval, which caps the usable budget: at
+budget 1024 the cache never fills, no eviction runs, and every arm returns the
+fp16 baseline. The sweep below therefore uses a longer **~3485-token** corpus,
+so budgets 256/512/1024 sit at roughly 13.6×/6.8×/3.4× compression.
+**These numbers are not comparable to the 1024-token tables above.**
+Llama-3.2-1B was re-run on the same corpus to keep the comparison matched.
+
+**Qwen2.5-7B** (fp16 baseline **2.325**):
+
+| Budget | Calibrated | Fallback | L2Norm | Gap to fp16 closed |
+|---|---|---|---|---|
+| 256 (~13.6×) | **10.478** | 11.660 | 11.297 | 13% |
+| 512 (~6.8×) | **7.000** | 8.416 | 7.751 | 23% |
+| 1024 (~3.4×) | 4.015 | 4.010 | **3.560** | −0% |
+
+**Llama-3.2-1B** (fp16 baseline **3.445**):
+
+| Budget | Calibrated | Fallback | L2Norm | Gap to fp16 closed |
+|---|---|---|---|---|
+| 256 (~13.6×) | **27.671** | 34.631 | 30.836 | 22% |
+| 512 (~6.8×) | **15.975** | 24.126 | 16.855 | 39% |
+| 1024 (~3.4×) | 6.818 | 9.237 | **6.518** | 42% |
+
+Two findings, one positive and one not:
+
+The query-SVD advantage **does** survive at 7B scale. Qwen's Spearman
+correlation (+0.850) is close to Llama-3.2-3B's, and the calibrated filter beats
+the fallback at budgets 256 and 512.
+
+It does **not** hold uniformly across compression ratios. At budget 1024 on Qwen
+the calibrated and fallback arms are tied (4.015 vs 4.010) and plain L2Norm beats
+both. The advantage is also consistently smaller on Qwen than on Llama-3.2-1B at
+matched compression — 13% vs 22% at budget 256, 23% vs 39% at budget 512. That is
+consistent with the paper's §5, which lists Qwen-2.5 as a limitation case because
+of its QKV projection bias. If you are running Q-Filters on Qwen at mild
+compression, measure against L2Norm before assuming the calibrated filter helps.
 
 #### `qfilters_recent` is effectively required for generation
 
