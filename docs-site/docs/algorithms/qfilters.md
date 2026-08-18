@@ -444,14 +444,97 @@ them) and RoPE is relative, so reporting the true position is sufficient and
 survivors need no re-rotation — unlike H2O/Keyformer, which renumber and
 therefore need a delta-rotation pass.
 
+#### Beyond NIAH: the other RULER categories (#177)
+
+The retrieval evidence above is the needle family only. That leaves the
+question of whether the method generalises past single-span lookup, which
+these four task categories answer. Script:
+`benchmark_scripts/qfilters_ruler_beyond_niah.py`, raw numbers in
+`figures/qfilters/ruler_beyond_niah.json`.
+
+Qwen2.5-7B-Instruct-4bit, 5 seeds per cell, mean over contexts 1024 and 2048,
+every arm at a matched budget. These are **not** RULER's own harness or its
+scores — the generators follow the constructions in Hsieh et al.
+(arXiv:2404.06654) but are written here and run at short contexts, so read
+them as a relative comparison between cache methods, not as RULER numbers.
+`qa_synthetic` is not RULER's QA task, which wraps SQuAD/HotpotQA; it is
+synthetic two-hop QA and is easier.
+
+| Task | fp16 | Q-Filters | SnapKV | StreamingLLM | L2Norm |
+|---|---|---|---|---|---|
+| VT (chain tracking) | 69% | 0 / 0 / 0 | 0 / 0 / 3 | 0 / 12 / **46** | 0 / 0 / 3 |
+| CWE (common words) | 100% | 9 / 33 / **56** | 0 / 0 / 0 | **100 / 93 / 100** | 23 / 38 / 53 |
+| FWE (frequent words) | 69% | 43 / 40 / 46 | 0 / 0 / 13 | **77 / 64 / 52** | 49 / 43 / 43 |
+| QA (two-hop) | 90% | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+
+Cells are budget 256 / 512 / 1024. fp16 ignores the budget and is the
+ceiling. All four task rows clear the harness's discriminative gate (fp16
+well above the floor), so each is a method comparison rather than a
+measurement of what the model cannot do.
+
+**Q-Filters does not generalise past needle retrieval.** It scores 0% on
+variable tracking and 0% on two-hop QA at every budget, against ceilings of
+69% and 90%. This is not a prefill artifact: chunking the prefill — the
+path-dependence lever that restored coherence in the NIAH harness — leaves VT
+at 0.00 one-shot, 0.00 at 256-token chunks and 0.11 at 64-token chunks
+(`qfilters_ruler_prefill_chunking.py`).
+
+**The failures are task-shaped, not method-shaped.** VT and QA need a
+specific *conjunction* to survive: a whole assignment chain, or both hops of
+person → place → instrument. Partial retention earns nothing, so every arm
+bottoms out. CWE and FWE award partial credit, and there Q-Filters degrades
+gracefully instead — 9 → 33 → 56% on CWE, scaling cleanly with budget. Three
+task categories, three different shapes; NIAH alone shows none of this.
+
+**Budget does not always help.** On FWE, Q-Filters is flat across budgets
+(43 / 40 / 46%) and so is L2Norm. Zeta-distributed frequencies make the answer
+depend on counting the whole list, so retaining a larger arbitrary subset
+does not improve the count.
+
+**SnapKV floors on the three aggregation tasks** because its trailing
+`snap_obs_window` lands on the question text rather than on the data it must
+aggregate, so the proxy queries score the wrong region as important. Having
+evicted the word list, the model answers from priors: at budget 1024 on CWE it
+returns a fluent, well-formed and entirely fabricated `"opportunity",
+"innovation", "inspiration"` — none of which appear in the prompt. This is a
+proxy-query method meeting a task whose relevant span is not where its proxy
+looks, not a general claim about SnapKV.
+
+Two caveats on the StreamingLLM column, which otherwise looks like a clean
+win. Its 100% on CWE is partly a property of the construction: the word list
+sits at the end of the prompt, immediately before the question, which is
+exactly where a trailing window keeps tokens. And its 77% on FWE sits *above*
+the 69% fp16 ceiling — that is seed variance at the ceiling, not compression
+beating no compression, and it is reported as measured rather than clipped.
+
+Every arm was verified to compress equally before these numbers were read:
+at budget 512 on a 1272-token CWE prompt, all four retain exactly 512 rows
+and report offset 1272 (`qfilters_ruler_budget_verification.py`). No arm is
+advantaged by keeping more, and none carries the `offset` defect #171/#174
+fixed, so the 0%–100% spread is entirely *which* tokens each method selected.
+
+One caution on reading budgets. The harness's context lengths size the filler
+only; instruction, task spans and question add 100–250 tokens, so a nominal
+1024-token QA prompt is 1169 tokens and budget 1024 still evicts ~145 of them
+— enough to break a hop. `prompt_tokens` in the JSON records the real
+prefilled length per task and context.
+
 #### Still not measured
 
-**RULER** beyond the NIAH family — the other ten task categories (variable
-tracking, common/frequent-word extraction, QA) are not covered.
+**RULER's remaining task categories.** #177 covers variable tracking,
+common/frequent-word extraction and QA (above); RULER ships 13 tasks, and the
+rest — multi-hop tracing variants and the aggregation tasks at long context —
+are not covered, nor is any context beyond 2048 tokens.
+**Model coverage for the RULER results is a single model.** Llama-3.2-1B
+cannot perform VT, CWE or FWE even at fp16 (ceilings 11% / 16% / 26%), so
+those cells cannot evaluate cache methods at that scale; Llama-3.2-3B would
+have contributed genuine CWE and FWE cells (ceilings 100% / 81%) and was cut
+for runtime.
 **Expected Attention** is not implemented in this repo, so it cannot be a
-comparison arm. [L2Norm](../algorithms/knorm) previously carried the same
-`offset` defect and was excluded for that reason; #174 generalised the
-`_true_offset` fix to it, so it is now included as a fair comparison arm.
+comparison arm — tracked in #178. [L2Norm](../algorithms/knorm) previously
+carried the same `offset` defect and was excluded for that reason; #174
+generalised the `_true_offset` fix to it, so it is now included as a fair
+comparison arm.
 
 **TTFT / decode throughput of the fused-Metal-kernel path** (#179). The
 kernel wiring above is correctness-tested (bit-for-bit parity against the
