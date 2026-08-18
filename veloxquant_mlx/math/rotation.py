@@ -13,11 +13,19 @@ def is_hadamard_compatible(d: int) -> bool:
 
     MLX requires d = m * 2^k where m in {1, 12, 20, 28} and k >= 0 -- except
     for the bare non-trivial m values (d == 12, 20, 28 exactly, i.e. k=0),
-    which crash mx.hadamard_transform during Metal shader compilation on the
-    installed MLX version (0.32.0) rather than raising a catchable, sensible
-    error (#67). k=0 with m=1 (d=1) is unaffected and works fine, since it's
-    just the identity transform. All powers of 2 work (m=1, k>=0). Examples
-    that do NOT work: 576=9*64, 192=3*64.
+    which this gate rejects. On MLX <= 0.32.0 they crash
+    mx.hadamard_transform during Metal shader compilation rather than raising
+    a catchable error (#67). MLX 0.32.1 fixed that kernel and returns a
+    correct orthonormal Hadamard for those sizes, but this package supports
+    mlx>=0.18, so the gate stays conservative: green-lighting a d that crashes
+    on a supported older MLX is worse than declining a rotation that would
+    have worked on a newer one. If the floor is ever raised to >=0.32.1 this
+    can accept bare m -- see test_bare_m_transform_is_orthonormal_when_supported,
+    which checks the correctness precondition for doing so.
+
+    k=0 with m=1 (d=1) is unaffected and works fine, since it's just the
+    identity transform. All powers of 2 work (m=1, k>=0). Examples that do NOT
+    work: 576=9*64, 192=3*64.
     """
     if d < 1:
         return False
