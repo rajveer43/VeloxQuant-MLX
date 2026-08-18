@@ -629,6 +629,7 @@ def main() -> None:
 
         mrec: dict = {}
         samples: dict = {}
+        prompt_lens: dict = {}
 
         for task in TASKS:
             print(f"\n--- {task} ---", flush=True)
@@ -654,6 +655,15 @@ def main() -> None:
                             # samples of the same model.
                             seed = ctx * 100 + s + TASK_SEED_OFFSET[task]
                             prompt, expected, pool = BUILDERS[task](tok, ctx, seed)
+                            # CTX_LENS sizes the *filler*; the instruction,
+                            # task spans and question add ~100-250 tokens on
+                            # top. Record what was actually prefilled so the
+                            # compression ratio a budget implies is checkable
+                            # rather than inferred from the label. This is why
+                            # budget 1024 still evicts at ctx 1024.
+                            prompt_lens.setdefault(task, {}).setdefault(
+                                str(ctx), len(tok.encode(prompt))
+                            )
                             caches = make_caches(method, n_layers, head_dim, nb, filters)
                             sc, text = run_case(model, tok, caches, prompt, expected, pool)
                             cell.append(sc)
@@ -696,7 +706,11 @@ def main() -> None:
                     flush=True,
                 )
 
-        results["models"][model_id] = {"tasks": mrec, "samples": samples}
+        results["models"][model_id] = {
+            "tasks": mrec,
+            "prompt_tokens": prompt_lens,
+            "samples": samples,
+        }
         # Write after each model: a 7B run is long enough that losing it to a
         # crash on the next model would be a real cost.
         out_path.parent.mkdir(parents=True, exist_ok=True)
