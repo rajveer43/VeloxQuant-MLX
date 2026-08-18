@@ -23,7 +23,9 @@ mid = sys.argv[1]
 m, tok = mlx_lm.load(mid)
 inner = getattr(m, "model", m)
 args = m.args
-H, KV, D = args.num_attention_heads, args.num_key_value_heads, args.head_dim
+H, KV = args.num_attention_heads, args.num_key_value_heads
+# Qwen2's ModelArgs omits head_dim; Llama's carries it. Derive when absent.
+D = getattr(args, "head_dim", None) or args.hidden_size // H
 
 calib = [
     "The capital of France is Paris, a city of art and history. " * 40,
