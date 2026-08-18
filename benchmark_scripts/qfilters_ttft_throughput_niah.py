@@ -280,7 +280,11 @@ def main() -> None:
         inner = getattr(model, "model", model)
         n_layers = len(inner.layers)
         kv_heads = model.args.num_key_value_heads
-        head_dim = model.args.head_dim
+        # Qwen2's ModelArgs omits head_dim; Llama's carries it. Derive when absent.
+        head_dim = (
+            getattr(model.args, "head_dim", None)
+            or model.args.hidden_size // model.args.num_attention_heads
+        )
 
         print("calibrating query-SVD filters ...", flush=True)
         acts = collect_query_activations(
