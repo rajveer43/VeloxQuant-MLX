@@ -406,6 +406,79 @@ def test_recent_window_protects_prompt_tail_at_every_chunk_size(chunk: int) -> N
     assert np.array_equal(np.array(k_out)[:, :, -recent:], tail_expected)
 
 
+@pytest.mark.parametrize("chunk", [1073, 512, 256, 64, 16, 1])
+def test_fallback_respects_budget_at_every_prefill_chunk_size(chunk: int) -> None:
+    """The key-SVD fallback is path-dependent, but never over budget (#183).
+
+    Unlike the calibrated path, the fallback estimates its direction from
+    whichever chunk first crosses ``calib_tokens``, so the *kept set* legitimately
+    varies with chunking — that is documented behaviour, not a bug. What must
+    hold at every chunk size is the safety property the investigation in #183
+    asked about: once the filter freezes, the cache is pinned at ``budget`` and
+    the reported offset is the true token position, so RoPE cannot drift.
+    """
+    B, H, S, D = 1, 2, 1073, 16
+    cfg = KVCacheConfig(
+        method="qfilters",
+        head_dim=D,
+        qfilters_budget=128,
+        qfilters_n_sink=4,
+        qfilters_calib_tokens=128,
+    )
+    k, v = _kv(B, H, S, D, seed=11)
+
+    cache = QFiltersKVCache(cfg)
+    k_out = None
+    for i in range(0, S, chunk):
+        k_out, _ = cache.update_and_fetch(k[:, :, i : i + chunk], v[:, :, i : i + chunk])
+    mx.eval(k_out)
+
+    assert k_out.shape[2] == 128
+    assert cache.offset == S
+    # A frozen, unit-norm direction — whatever chunk froze it.
+    d = np.array(cache.states[0].filter_dir)
+    assert abs(float(np.linalg.norm(d)) - 1.0) < 1e-4
+
+
+def test_fallback_kept_set_is_chunk_dependent_calibrated_is_not() -> None:
+    """The documented asymmetry between the two filter sources (#183).
+
+    #172 established that the calibrated path is chunk-invariant. The mirror
+    claim — that the fallback is *not* — was documented but never pinned. If a
+    future change accidentally made the fallback path-independent (or the
+    calibrated path path-dependent), the module docstrings would silently
+    become wrong; this fails instead.
+    """
+    B, H, S, D = 1, 2, 1073, 16
+    cfg = KVCacheConfig(
+        method="qfilters",
+        head_dim=D,
+        qfilters_budget=128,
+        qfilters_n_sink=4,
+        qfilters_calib_tokens=128,
+    )
+    k, v = _kv(B, H, S, D, seed=12)
+
+    def run(filters, chunk):
+        cache = QFiltersKVCache(cfg, filters=filters)
+        out = None
+        for i in range(0, S, chunk):
+            out, _ = cache.update_and_fetch(k[:, :, i : i + chunk], v[:, :, i : i + chunk])
+        mx.eval(out)
+        return np.array(out)
+
+    # Calibrated: bit-identical one-shot vs chunked.
+    filters = _calibrated_filters(H, D, seed=13)
+    assert np.array_equal(run(filters, S), run(filters, 256))
+
+    # Fallback: the frozen direction depends on which chunk crossed
+    # calib_tokens, so the kept set differs. Both stay at budget.
+    fb_one_shot = run(None, S)
+    fb_chunked = run(None, 256)
+    assert fb_one_shot.shape[2] == fb_chunked.shape[2] == 128
+    assert not np.array_equal(fb_one_shot, fb_chunked)
+
+
 def _reference_evict(k, v, filters, budget, n_sink, recent, sign):
     """Per-(b, h) numpy oracle for the vectorized path (#173).
 
