@@ -24,8 +24,14 @@ HEAD_DIM = 128
 
 
 def test_kv_bytes_per_token_scales_with_bit_width():
-    """4-bit KV should read roughly a quarter of what fp16 reads."""
-    seq = 4096
+    """4-bit KV approaches a quarter of fp16 as the fp16 residual amortises.
+
+    It does not reach exactly 1/4: KIVI keeps the most recent
+    ``residual_length`` tokens in fp16, and group scale/zero add a little on
+    top. At a long sequence the residual amortises away and the ratio tends
+    toward the bit ratio.
+    """
+    seq = 32768
     fp16 = kv_bytes_per_token(None, N_LAYERS, N_KV_HEADS, HEAD_DIM, seq)
     q4 = kv_bytes_per_token(
         KVCacheConfig(method="kivi", bit_width_inlier=4),
@@ -35,8 +41,29 @@ def test_kv_bytes_per_token_scales_with_bit_width():
         seq,
     )
     ratio = q4 / fp16
-    # ~1/4 plus group scale/zero overhead, which is small but not zero.
-    assert 0.25 <= ratio < 0.32, f"4-bit/fp16 ratio was {ratio}"
+    assert 0.25 <= ratio < 0.35, f"4-bit/fp16 ratio was {ratio}"
+
+
+def test_kv_bytes_per_token_residual_window_is_billed_at_fp16():
+    """The fp16 residual tail must be charged at fp16, not the quantized width.
+
+    Charging every resident token at 4 bits would understate KIVI's real
+    traffic. Below the residual length nothing is quantized yet, so a 4-bit
+    arm must read exactly what fp16 reads.
+    """
+    cfg = KVCacheConfig(method="kivi", bit_width_inlier=4, residual_length=128)
+    short = 64  # entirely inside the fp16 residual window
+    fp16 = kv_bytes_per_token(None, N_LAYERS, N_KV_HEADS, HEAD_DIM, short)
+    q4 = kv_bytes_per_token(cfg, N_LAYERS, N_KV_HEADS, HEAD_DIM, short)
+    assert q4 == fp16
+
+    # And the ratio must improve monotonically as the residual amortises.
+    r_short = q4 / fp16
+    long_seq = 32768
+    r_long = kv_bytes_per_token(cfg, N_LAYERS, N_KV_HEADS, HEAD_DIM, long_seq) / (
+        kv_bytes_per_token(None, N_LAYERS, N_KV_HEADS, HEAD_DIM, long_seq)
+    )
+    assert r_long < r_short
 
 
 def test_kv_bytes_per_token_2bit_is_smaller_than_4bit():

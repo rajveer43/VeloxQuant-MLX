@@ -153,14 +153,28 @@ def kv_bytes_per_token(
         return n_layers * per_layer_head * resident * _FP16_BYTES * 2
 
     group_size = int(getattr(config, "kivi_group_size", 32) or 32)
+
+    # KIVI-style methods keep the most recent `residual_length` tokens in fp16
+    # and quantize them only once they age out. Charging every resident token
+    # at the quantized width would understate their real traffic, so the
+    # residual window is billed at fp16 -- matching KIVIKVCache._account_bytes,
+    # which reports it separately as `residual_fp16_bytes`.
+    residual = min(resident, int(getattr(config, "residual_length", 0) or 0))
+    n_quantized = max(0, resident - residual)
+
     total = 0
     for b in widths:
         # Codes: b bits per element, for K and V.
-        code_bytes = 2 * ((resident * per_layer_head * b + 7) // 8)
+        code_bytes = 2 * ((n_quantized * per_layer_head * b + 7) // 8)
         # Group params: scale+zero per group, for K and V.
-        n_groups = max(1, (resident * per_layer_head + group_size - 1) // group_size)
-        param_bytes = 2 * n_groups * _GROUP_PARAM_BYTES
-        total += code_bytes + param_bytes
+        if n_quantized > 0:
+            n_groups = max(1, (n_quantized * per_layer_head + group_size - 1) // group_size)
+            param_bytes = 2 * n_groups * _GROUP_PARAM_BYTES
+        else:
+            param_bytes = 0
+        # The still-fp16 residual tail, K and V.
+        residual_bytes = residual * per_layer_head * _FP16_BYTES * 2
+        total += code_bytes + param_bytes + residual_bytes
     return total
 
 
