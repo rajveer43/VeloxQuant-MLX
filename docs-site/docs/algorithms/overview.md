@@ -178,3 +178,4 @@ quantizer = CompositeQuantizer(
 - Pick an algorithm and read its detailed page
 - [mlx_lm integration guide](../guides/mlx-lm-integration)
 - [Calibration guide](../guides/calibration)
+- [Energy profiling guide](../guides/energy-profiling)

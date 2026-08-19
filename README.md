@@ -192,6 +192,7 @@ Longer walkthroughs:
 - [5-minute quickstart](https://veloxquant-mlx.netlify.app/docs/getting-started/quickstart) — the example above, then **VecInfer** (16×, Metal-accelerated) as a stronger-algorithm follow-on
 - [Mixed-precision guide](https://veloxquant-mlx.netlify.app/docs/guides/mixed-precision) — **RateQuant** automatic per-layer bit allocation via reverse-waterfilling
 - [mlx_lm integration guide](https://veloxquant-mlx.netlify.app/docs/guides/mlx-lm-integration) — wiring compressed caches into any model
+- [Energy profiling guide](https://veloxquant-mlx.netlify.app/docs/guides/energy-profiling) — measuring J/token and derived KV traffic for compressed caches on Apple Silicon
 
 ---
 

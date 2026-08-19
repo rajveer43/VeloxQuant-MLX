@@ -83,6 +83,7 @@ const sidebars: SidebarsConfig = {
         'guides/sliding-window',
         'guides/observers',
         'guides/benchmarking',
+        'guides/energy-profiling',
         'guides/validation-report',
         'guides/mac-recommender',
       ],
