@@ -307,9 +307,7 @@ _CONFIG_FIELDS: Dict[str, List[str]] = {
     "svdq": [
         "svdq_rank",
         "svdq_energy_threshold",
-        "svdq_hi_bit",
-        "svdq_lo_bit",
-        "svdq_hi_fraction",
+        "svdq_bit_schedule",
         "svdq_group_size",
     ],
     "kitty": ["kitty_hi_fraction", "kitty_hi_bit", "kitty_lo_bit", "kitty_group_size"],

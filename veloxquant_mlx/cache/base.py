@@ -122,9 +122,10 @@ class KVCacheConfig:
     # --- SVDq configuration (sub-2-bit key compression via offline SVD) --
     svdq_rank: Optional[int] = None  # explicit rank; None → energy threshold
     svdq_energy_threshold: float = 0.95  # fraction of singular value energy to retain
-    svdq_hi_bit: int = 4  # bits for top-importance latent channels
-    svdq_lo_bit: int = 2  # bits for remaining latent channels
-    svdq_hi_fraction: float = 0.25  # fraction of channels routed to hi_bit
+    # 8-group per-group bit schedule (paper Eq. 6), most-significant group
+    # first; 0 truncates that group entirely. Default is the paper's own
+    # worked example, mean bit-width b̄ = 2.
+    svdq_bit_schedule: tuple[int, ...] = (8, 4, 2, 1, 1, 0, 0, 0)
     svdq_group_size: int = 32  # group size for latent quantization
     # --- Kitty configuration (dynamic channel-wise mixed-precision) ------
     kitty_hi_fraction: float = 0.25  # fraction of channels routed to hi_bit
