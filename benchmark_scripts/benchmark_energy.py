@@ -69,6 +69,22 @@ OUT_JSON = _REPO_ROOT / "energy_benchmark_results.json"
 NA = "n/a (requires sudo)"
 
 
+# Calibration corpus for the Q-Filters arm. Content is irrelevant to a power
+# measurement; what matters is that the filter is frozen before the timed run,
+# so the cache takes its vectorized path rather than the per-head fallback.
+_CALIB_TEXTS = [
+    "The Roman Republic was established after the overthrow of the Roman Kingdom, "
+    "traditionally dated to 509 BC. Power was held by annually elected magistrates "
+    "and the Senate, an assembly drawn largely from the patrician class.",
+    "Photosynthesis is the process by which green plants, algae and some bacteria "
+    "convert light energy into chemical energy stored in carbohydrate molecules. "
+    "In plants the reaction takes place in chloroplasts.",
+    "Plate tectonics describes the movement of large sections of the Earth's "
+    "lithosphere over the underlying asthenosphere. Where plates converge one may "
+    "subduct beneath another, producing deep ocean trenches and volcanic arcs.",
+]
+
+
 # ---------------------------------------------------------------------------
 # Model geometry
 # ---------------------------------------------------------------------------
@@ -153,19 +169,51 @@ def _arm_specs(head_dim: int):
     ]
 
 
-def _build_caches(model, config):
+def _calibrate_qfilters(model, tokenizer, n_kv_heads: int):
+    """Compute Q-Filters projection directions once, for reuse across reps.
+
+    This matters for the measurement, not just for quality. ``QFiltersKVCache``
+    only takes its vectorized eviction path when the filter is already frozen
+    (``_can_batch()`` requires ``_filters is not None``). An *uncalibrated*
+    cache falls back to the key-SVD path, which loops over every ``(B, H)``
+    group in Python on every decode step across all layers -- so benchmarking
+    it would measure that fallback loop rather than the eviction method, and
+    would report eviction as far slower than it is.
+    """
+    from veloxquant_mlx.quantizers.qfilters_calibration import (
+        average_gqa_filters,
+        collect_query_activations,
+        compute_qfilters,
+    )
+
+    acts = collect_query_activations(
+        model, tokenizer, _CALIB_TEXTS, max_length=512, max_samples_per_head=1024
+    )
+    return [average_gqa_filters(compute_qfilters(a), n_kv_heads) for a in acts]
+
+
+def _build_caches(model, config, qfilters=None):
     if config is None:
         return _build_fp16(model)
+    if config.method == "qfilters" and qfilters is not None:
+        # Filters are a constructor argument, so the calibrated arm is built
+        # directly rather than through for_model (which has no way to pass
+        # them). Same wiring as qfilters_real_model_perplexity.py.
+        from veloxquant_mlx.cache.qfilters_cache import QFiltersKVCache
+
+        return [QFiltersKVCache(config, filters=f) for f in qfilters]
     return KVCacheBuilder.for_model(model, config)
 
 
 # ---------------------------------------------------------------------------
 # One measured run
 # ---------------------------------------------------------------------------
-def _run_arm(model, ids, config, n_tokens: int, kv_bytes: int, label: str, privileged: bool):
+def _run_arm(
+    model, ids, config, n_tokens: int, kv_bytes: int, label: str, privileged: bool, qfilters=None
+):
     """Warm up (discarded), then measure one arm."""
     # --- warm-up, discarded: absorbs Metal compilation and page-in ---------
-    warm_caches = _build_caches(model, config)
+    warm_caches = _build_caches(model, config, qfilters)
     logits = model(mx.array([ids[:32]]), cache=warm_caches)
     mx.eval(logits)
     del warm_caches
@@ -175,7 +223,7 @@ def _run_arm(model, ids, config, n_tokens: int, kv_bytes: int, label: str, privi
     # Held in `state` rather than a bare local: the closures below capture it,
     # and the `del` at the end of this function would otherwise make it an
     # unbound local for them.
-    state = {"caches": _build_caches(model, config)}
+    state = {"caches": _build_caches(model, config, qfilters)}
 
     def prefill():
         logits = model(mx.array([ids]), cache=state["caches"])
@@ -323,6 +371,17 @@ def main() -> None:
     seq_len = len(ids) + args.max_tokens
     print(f"prompt tokens={len(ids)}  modelled seq_len={seq_len}")
 
+    # Calibrate Q-Filters once, before any timing. Doing it inside a measured
+    # arm would charge calibration to that arm's energy budget.
+    print("calibrating Q-Filters ...", flush=True)
+    try:
+        qfilters = _calibrate_qfilters(model, tokenizer, n_kv)
+    except Exception as exc:  # calibration is best-effort; report, do not fake
+        print(f"  WARNING: Q-Filters calibration failed ({exc}).")
+        print("  The Q-Filters arm will run its UNCALIBRATED key-SVD fallback,")
+        print("  which loops per-head in Python and is NOT representative.")
+        qfilters = None
+
     specs = _arm_specs(head_dim)
     results: dict[str, list[dict]] = {label: [] for label, _, _ in specs}
 
@@ -332,7 +391,7 @@ def main() -> None:
         for label, config, _desc in specs:
             kv_bytes = kv_bytes_per_token(config, n_layers, n_kv, head_dim, seq_len)
             print(f"  rep {rep + 1}/{args.reps}  {label} ...", flush=True)
-            m = _run_arm(model, ids, config, args.max_tokens, kv_bytes, label, privileged)
+            m = _run_arm(model, ids, config, args.max_tokens, kv_bytes, label, privileged, qfilters)
             results[label].append(m.to_dict())
 
     info = mx.device_info()
