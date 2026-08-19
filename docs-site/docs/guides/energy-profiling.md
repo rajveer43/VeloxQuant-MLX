@@ -70,6 +70,34 @@ sudo python benchmark_scripts/benchmark_energy.py mlx-community/Qwen3-8B-4bit \
     --reps 3 --max-tokens 200 --context-tokens 4096
 ```
 
+Note the interpreter: if the project runs in a virtualenv, use its Python
+explicitly (`sudo .venv/bin/python ...`). Plain `sudo python` picks up system
+Python, which will not have `mlx` installed.
+
+### Always check sampling coverage
+
+`powermetrics` streams a plist document per interval into a pipe. If any of
+that output is lost, the surviving samples cover only part of the run and the
+energy figure is correspondingly incomplete. The harness reports this:
+
+```
+WARNING: power sampling covered only 42% of this run (17.8s of 42.1s).
+Energy is under-reported for this arm.
+```
+
+Per-arm coverage is also recorded in `energy_benchmark_results.json` under
+`meta.power_sampling_coverage`, and is available programmatically as
+`PowerSampler.coverage` (`None` when nothing was sampled, `1.0` when every
+interval was captured).
+
+**Treat any arm below ~90% coverage as unreliable rather than as a low-energy
+result.** Energy integrates over the window the samples actually cover, so
+incomplete sampling under-reports — it does not invent energy for unobserved
+intervals, but it does understate the run. Widely varying coverage across
+repetitions of the same arm is the signature to watch for: identical work
+reporting very different joules means the sampler dropped data, not that the
+hardware behaved differently.
+
 ### Why `--context-tokens` matters
 
 Eviction arms only diverge from the baseline once the sequence exceeds their
