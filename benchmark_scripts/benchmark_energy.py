@@ -68,6 +68,9 @@ OUT_JSON = _REPO_ROOT / "energy_benchmark_results.json"
 
 NA = "n/a (requires sudo)"
 
+# Per-arm power-sampling coverage, recorded for the JSON report.
+_COVERAGE: dict[str, float | None] = {}
+
 
 # Calibration corpus for the Q-Filters arm. Content is irrelevant to a power
 # measurement; what matters is that the filter is frozen before the timed run,
@@ -247,6 +250,15 @@ def _run_arm(
 
         energy = sampler.energy_joules()
         power = sampler.mean_power_mw()
+        cov = sampler.coverage
+        if cov is not None and cov < 0.9:
+            # Lost sampler output means the energy figure covers only part of
+            # the run. Say so loudly rather than reporting it as if complete.
+            print(
+                f"    WARNING: power sampling covered only {cov:.0%} of this run "
+                f"({sampler.sampled_s:.1f}s of {sampler.elapsed_s:.1f}s). "
+                f"Energy is under-reported for this arm."
+            )
         m = RunMetrics(
             tokens_generated=m.tokens_generated,
             wall_s=m.wall_s,
@@ -261,6 +273,7 @@ def _run_arm(
             mean_cpu_mw=power.get("cpu"),
             label=label,
         )
+        _COVERAGE[label] = cov
     else:
         m = measure_generation(prefill, decode_step, n_tokens, kv_bytes, label=label)
 
@@ -406,6 +419,7 @@ def main() -> None:
         "head_dim": head_dim,
         "seq_len_modelled": seq_len,
         "privileged": privileged,
+        "power_sampling_coverage": _COVERAGE,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
     OUT_JSON.write_text(json.dumps({"meta": meta, "arms": results}, indent=2))

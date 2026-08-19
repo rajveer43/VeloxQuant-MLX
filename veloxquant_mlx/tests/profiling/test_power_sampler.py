@@ -143,3 +143,47 @@ def test_energy_joules_from_fixture_is_positive():
     energy = sampler.energy_joules()
     assert energy is not None
     assert energy > 0.0
+
+
+def _mk(pkg_mw: float, elapsed_s: float) -> PowerSample:
+    return PowerSample(
+        cpu_mw=pkg_mw, gpu_mw=0.0, ane_mw=0.0, package_mw=pkg_mw, elapsed_s=elapsed_s
+    )
+
+
+def test_energy_integrates_over_sampled_window_not_wall_time():
+    """Partial sampling must not have energy invented for unobserved time.
+
+    Multiplying a partial-window mean by full wall time fabricates energy for
+    intervals nobody measured. Here 2s of samples were collected over a 10s
+    run, so energy must reflect 2s (20 J), not 10s (100 J).
+    """
+    s = PowerSampler()
+    s._samples = [_mk(10_000.0, 1.0), _mk(10_000.0, 1.0)]  # 10 W over 2 s
+    s._t_start, s._t_end = 0.0, 10.0
+    assert s.energy_joules() == pytest.approx(20.0)
+
+
+def test_coverage_reports_fraction_of_wall_time_sampled():
+    s = PowerSampler()
+    s._samples = [_mk(10_000.0, 1.0), _mk(10_000.0, 1.0)]
+    s._t_start, s._t_end = 0.0, 10.0
+    assert s.coverage == pytest.approx(0.2)
+    assert s.sampled_s == pytest.approx(2.0)
+
+
+def test_coverage_is_none_without_samples():
+    """No samples is 'unknown coverage', not 'zero coverage'."""
+    s = PowerSampler()
+    s._t_start, s._t_end = 0.0, 10.0
+    assert s.coverage is None
+    assert s.energy_joules() is None
+
+
+def test_full_coverage_matches_wall_time_integration():
+    """When nothing is lost, the two integrations agree."""
+    s = PowerSampler()
+    s._samples = [_mk(10_000.0, 0.5) for _ in range(20)]  # 10 W over 10 s
+    s._t_start, s._t_end = 0.0, 10.0
+    assert s.coverage == pytest.approx(1.0)
+    assert s.energy_joules() == pytest.approx(100.0)

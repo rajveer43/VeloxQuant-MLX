@@ -249,17 +249,44 @@ class PowerSampler:
         return self
 
     def __exit__(self, *exc) -> None:
-        """Stop sampling. Never raises -- profiling must not fail the run."""
+        """Stop sampling. Never raises -- profiling must not fail the run.
+
+        Ordering matters here. ``powermetrics`` writes a full plist document
+        per interval into a pipe the reader thread drains in 64 KiB chunks, so
+        at a 100 ms interval over a multi-second run there is always output in
+        flight. Killing the process first discards whatever is still buffered,
+        and how much is lost depends on thread scheduling -- which produced
+        run-to-run energy swings of 3x on identical work.
+
+        So: close stdin and SIGTERM (powermetrics exits on either), then let
+        the reader drain to EOF before joining. The join timeout scales with
+        the run length because there is proportionally more to drain.
+        """
         self._t_end = time.perf_counter()
         try:
             if self._proc is not None:
-                self._proc.terminate()
+                try:
+                    self._proc.terminate()
+                except Exception:
+                    pass
+            # Drain BEFORE reaping: the reader exits on EOF once powermetrics
+            # closes its end, so this collects the tail rather than dropping it.
+            if self._thread is not None:
+                self._thread.join(timeout=max(5.0, 0.2 * self.elapsed_s))
+            if self._proc is not None:
                 try:
                     self._proc.wait(timeout=2.0)
                 except Exception:
-                    self._proc.kill()
-            if self._thread is not None:
-                self._thread.join(timeout=2.0)
+                    try:
+                        self._proc.kill()
+                        self._proc.wait(timeout=1.0)
+                    except Exception:
+                        pass
+                try:
+                    if self._proc.stdout is not None:
+                        self._proc.stdout.close()
+                except Exception:
+                    pass
         except Exception:
             pass
         finally:
@@ -302,12 +329,40 @@ class PowerSampler:
         end = self._t_end if self._t_end is not None else time.perf_counter()
         return end - self._t_start
 
+    @property
+    def sampled_s(self) -> float:
+        """Wall time the collected samples actually cover.
+
+        Each plist document reports its own ``elapsed_ns``, so this is the real
+        observed window -- which is *not* the same as :attr:`elapsed_s` if any
+        output was lost.
+        """
+        return sum(s.elapsed_s for s in self._samples)
+
+    @property
+    def coverage(self) -> float | None:
+        """Fraction of wall time the samples cover, or ``None`` if unmeasured.
+
+        1.0 means every interval was captured. Substantially less means output
+        was dropped, and the energy figure is correspondingly less trustworthy.
+        """
+        if not self._samples or self.elapsed_s <= 0:
+            return None
+        return self.sampled_s / self.elapsed_s
+
     def energy_joules(self) -> float | None:
         """Sampled energy estimate in joules, or ``None`` if unmeasured.
 
-        ``J = mean_package_W x elapsed_s``. This is a **sampled estimate**, not
-        a hardware energy counter -- the sampling interval bounds its
-        resolution and short power excursions are averaged away.
+        ``J = mean_package_W x sampled_s``, integrated over the window the
+        samples **actually cover**, not over raw wall time. Those differ
+        whenever sampler output is lost, and multiplying a partial-window mean
+        by full wall time silently invents energy for unobserved intervals.
+
+        This is a **sampled estimate**, not a hardware energy counter: the
+        sampling interval bounds its resolution and short power excursions are
+        averaged away. Check :attr:`coverage` before trusting the figure --
+        well under 1.0 means intervals were missed, so this under-reports the
+        true energy of the run.
 
         Returns ``None`` (never ``0.0``) when no samples were collected, so a
         missing measurement can never masquerade as "used no energy".
@@ -316,7 +371,10 @@ class PowerSampler:
         if not readings:
             return None
         mean_w = (sum(readings) / len(readings)) / 1000.0
-        return mean_w * self.elapsed_s
+        # Prefer the observed window; fall back to wall time only if the
+        # per-sample durations are unavailable (e.g. the text fallback).
+        window = self.sampled_s if self.sampled_s > 0 else self.elapsed_s
+        return mean_w * window
 
     def mean_power_mw(self) -> dict[str, float | None]:
         """Mean per-domain power in mW; each entry ``None`` when unsampled."""
