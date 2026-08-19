@@ -30,11 +30,13 @@ fail the run being profiled, so ``__exit__`` never raises.
 Output format
 -------------
 The sampler requests ``-f plist`` and parses it with the stdlib ``plistlib``.
-If plist yields no parseable samples, it falls back to parsing the default text
-output. Both paths are implemented because ``powermetrics`` enforces its root
-check *before* validating arguments, so an unprivileged probe cannot confirm
-which formats the installed binary accepts -- every format value, including
-bogus ones, returns the same superuser error.
+``-f plist`` was **verified accepted** under sudo on an Apple M4 (macOS,
+``powermetrics`` at ``/usr/bin/powermetrics``): it exits 0 and emits one
+NUL-terminated XML document per sample. A text-output fallback is kept for
+binaries that reject plist, since ``powermetrics`` enforces its root check
+*before* validating arguments -- an unprivileged probe returns the same
+superuser error for every format value, including bogus ones, so the format
+cannot be confirmed without root.
 """
 
 from __future__ import annotations
@@ -92,13 +94,20 @@ def parse_plist_samples(raw: bytes) -> list[PowerSample]:
     ``powermetrics -f plist`` emits one document per sample back-to-back, which
     is not a single valid plist, so documents are split on the XML header before
     being handed to ``plistlib`` individually.
+
+    Each emitted document is **NUL-terminated** (`</plist>\\n\\x00<?xml ...`),
+    verified against a captured fixture on an M4. The NUL must be stripped or
+    every document after the first fails to parse -- which would silently drop
+    most samples and understate the integrated energy rather than erroring.
     """
     if not raw:
         return []
     samples: list[PowerSample] = []
-    chunks = [c for c in raw.split(_PLIST_HEADER) if c.strip()]
+    chunks = [c for c in raw.split(_PLIST_HEADER) if c.strip(b"\x00 \t\r\n")]
     for chunk in chunks:
-        doc = _PLIST_HEADER + chunk
+        # Strip the NUL terminator (and any stray whitespace) that separates
+        # consecutive documents.
+        doc = _PLIST_HEADER + chunk.strip(b"\x00 \t\r\n")
         try:
             parsed = plistlib.loads(doc)
         except Exception:

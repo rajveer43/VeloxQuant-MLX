@@ -119,6 +119,21 @@ def test_plist_parsing_extracts_power_fields():
 
 
 @pytest.mark.skipif(not FIXTURE.exists(), reason="captured fixture not present")
+def test_plist_parsing_handles_nul_separated_documents():
+    """powermetrics NUL-terminates each emitted document.
+
+    Regression guard: splitting only on the XML header leaves a leading NUL on
+    every document after the first, so plistlib rejects them and all but one
+    sample is silently dropped -- understating integrated energy rather than
+    raising. The captured fixture holds 3 samples; all 3 must parse.
+    """
+    raw = FIXTURE.read_bytes()
+    assert raw.count(b"<?xml version") == len(parse_plist_samples(raw)), (
+        "every emitted plist document must yield a sample"
+    )
+
+
+@pytest.mark.skipif(not FIXTURE.exists(), reason="captured fixture not present")
 def test_energy_joules_from_fixture_is_positive():
     """End-to-end: captured samples integrate to a positive joule estimate."""
     sampler = PowerSampler()
