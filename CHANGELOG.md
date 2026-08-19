@@ -270,6 +270,19 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.52.1 (2026-08-19)
+
+### Bug Fixes
+
+- **svdq**: Implement paper's real 8-group bit schedule, guard against small-rank truncation
+  ([`579fb8f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/579fb8fc0397a2d26875a6ad5f68d7713e73db75))
+
+### Code Style
+
+- Fix ruff formatting in test_svdq_cache.py
+  ([`1e32922`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1e3292257c09cd24379a78b61d370d4d801c16e1))
+
+
 ## v0.52.0 (2026-08-19)
 
 ### Features
