@@ -107,7 +107,7 @@ def test_reconstruction_lower_mse_than_raw_2bit() -> None:
     # decay model (lambda_j = c * exp(-rho*j)) so the trailing groups really
     # do carry little energy and are safe to truncate.
     decay = np.exp(-0.15 * np.arange(true_rank)).astype(np.float32)
-    W = (rng.standard_normal((true_rank, D)).astype(np.float32) * decay[:, None])
+    W = rng.standard_normal((true_rank, D)).astype(np.float32) * decay[:, None]
     noise = rng.standard_normal((S, D)).astype(np.float32) * 0.02
     K_np = U @ W + noise
     K_mx = mx.array(K_np)
