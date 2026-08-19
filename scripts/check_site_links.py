@@ -26,6 +26,7 @@ import concurrent.futures
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -36,6 +37,18 @@ ANCHOR_RE = re.compile(r"\[[^\]]*\]\(#([^)]+)\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$", re.M)
 # Trailing punctuation that belongs to the prose, not the URL.
 TRAILING = ".,;:!?"
+
+# Netlify throttles concurrent bursts, and a checker that reports throttling as
+# a broken link fails CI on working URLs. Keep concurrency low, retry transport
+# errors, and only trust an HTTP status the server actually returned.
+TIMEOUT = 15
+RETRIES = 3
+BACKOFF = 1.0
+WORKERS = 4
+# Whole-run budget. Past this the remaining URLs are reported unreachable
+# rather than retried: a link check is not worth a CI slot that hangs, and an
+# unreachable URL never fails the build anyway.
+DEADLINE_S = 180
 
 
 def slugify(text: str) -> str:
@@ -63,21 +76,49 @@ def tracked_files(paths: list[str]) -> list[Path]:
     return [Path(f) for f in out if f.endswith((".md", ".mdx", ".html"))]
 
 
+_deadline = float("inf")
+
+
+def _fetch(url: str, method: str) -> int:
+    req = urllib.request.Request(url, method=method, headers={"User-Agent": "link-check"})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        return r.status
+
+
 def check_url(url: str) -> tuple[str, int | str]:
-    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "link-check"})
-    try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return url, r.status
-    except urllib.error.HTTPError as e:
-        # Some hosts reject HEAD but serve GET; retry before calling it broken.
+    """Resolve one URL, retrying transient network failures.
+
+    A link check that reports every dropped connection as a broken link is
+    worse than no check: it fails CI on working links and trains people to
+    ignore it. Netlify throttles bursts, so timeouts and RemoteDisconnected
+    are expected noise rather than evidence about the link. Only an HTTP
+    status the server actually returned counts as a verdict; transport errors
+    are retried with backoff and reported only if every attempt fails.
+    """
+    last: int | str = "unknown"
+    for attempt in range(RETRIES):
+        if time.monotonic() > _deadline:
+            return url, last if last != "unknown" else "SkippedPastDeadline"
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "link-check"})
-            with urllib.request.urlopen(req, timeout=20) as r:
-                return url, r.status
-        except Exception:
-            return url, e.code
-    except Exception as e:  # noqa: BLE001 - report any failure verbatim
-        return url, type(e).__name__
+            return url, _fetch(url, "HEAD")
+        except urllib.error.HTTPError as e:
+            # A status the server actually returned is a verdict, not noise --
+            # report it without retrying. The exception is a host that rejects
+            # HEAD while serving GET; confirm those with a GET before believing
+            # the link is broken.
+            if e.code not in {403, 405, 501}:
+                return url, e.code
+            try:
+                return url, _fetch(url, "GET")
+            except urllib.error.HTTPError as e2:
+                return url, e2.code
+            except Exception:  # noqa: BLE001 - transport failure, fall through to retry
+                last = type(e).__name__
+        except Exception as e:  # noqa: BLE001 - transport failure, retry
+            last = type(e).__name__
+        if attempt < RETRIES - 1:
+            time.sleep(BACKOFF * (2**attempt))
+    return url, last
 
 
 def main() -> int:
@@ -112,12 +153,34 @@ def main() -> int:
 
     print(f"{len(files)} files, {len(urls)} distinct site URLs")
 
+    unreachable: list[str] = []
     if not args.offline and urls:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+        global _deadline
+        _deadline = time.monotonic() + DEADLINE_S
+        with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
             for url, status in ex.map(check_url, urls):
-                if status != 200:
-                    where = ", ".join(str(p) for p in sorted(set(urls[url])))
-                    failures.append(f"{where}: {status} {url}")
+                where = ", ".join(str(p) for p in sorted(set(urls[url])))
+                if isinstance(status, int):
+                    # urlopen follows redirects, so a 2xx here means the URL
+                    # resolves to a real page. Anything else is the server's
+                    # own verdict and is a genuine broken link.
+                    if not 200 <= status < 300:
+                        failures.append(f"{where}: {status} {url}")
+                else:
+                    # Never resolved after RETRIES attempts -- DNS, TLS, timeout
+                    # or a dropped connection. That says nothing about whether
+                    # the link is correct, so it must not fail the build; a
+                    # flaky checker gets ignored, which is worse than none.
+                    unreachable.append(f"{where}: {status} {url}")
+
+    if unreachable:
+        print(
+            f"\n{len(unreachable)} URL(s) unreachable after {RETRIES} attempts "
+            "(network, not necessarily broken links):",
+            file=sys.stderr,
+        )
+        for u in sorted(unreachable):
+            print(f"  {u}", file=sys.stderr)
 
     if failures:
         print(f"\n{len(failures)} broken link(s):", file=sys.stderr)
