@@ -21,3 +21,4 @@ When you edit a post here, mirror the change to the corresponding file in `docs-
 | _(docs-site only)_ | `docs-site/blog/2026-08-12-kivi-metal-kernel-honest-benchmark.md` | `/docs/blog/kivi-metal-kernel-honest-benchmark` |
 | `qfilters-query-geometry.md` | `docs-site/blog/2026-08-14-qfilters-query-geometry.md` | `/docs/blog/qfilters-query-geometry` |
 | `energy-profiling-harness.md` | `docs-site/blog/2026-08-19-energy-profiling-harness.md` | `/docs/blog/energy-profiling-harness` |
+| `why-fewer-bytes-isnt-faster.md` | `docs-site/blog/2026-08-19-why-fewer-bytes-isnt-faster.md` | `/docs/blog/why-fewer-bytes-isnt-faster` |
