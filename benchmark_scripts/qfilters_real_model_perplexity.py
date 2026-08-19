@@ -36,8 +36,10 @@ import numpy as np
 from mlx_lm.models.cache import KVCache
 
 from veloxquant_mlx.cache.base import KVCacheConfig
+from veloxquant_mlx.cache.h2o_cache import H2OKVCache
 from veloxquant_mlx.cache.knorm_cache import L2NormKVCache
 from veloxquant_mlx.cache.qfilters_cache import QFiltersKVCache
+from veloxquant_mlx.cache.tova_cache import TOVAKVCache
 from veloxquant_mlx.quantizers.qfilters_calibration import (
     average_gqa_filters,
     collect_query_activations,
@@ -264,12 +266,65 @@ def main() -> None:
             ],
             "L2Norm (key-norm eviction)",
         )
+        # H2O and TOVA join as comparison arms only now that their
+        # post-eviction RoPE handling is verified (#183): both report
+        # ``cache.offset`` as the true absolute token position rather than the
+        # retained-row count, so ``mlx_lm``'s rope(..., offset=cache.offset)
+        # stays correct after eviction. H2O additionally re-rotates survivors
+        # to a gap-free layout (it renumbers positions); TOVA, like Q-Filters,
+        # preserves original positions and needs no re-rotation. Without that
+        # verification these arms would be measuring position drift rather
+        # than eviction quality, and Q-Filters would look good for the wrong
+        # reason.
+        #
+        # Neither takes a `recent` window: H2O's accumulated-attention score
+        # and TOVA's last-query attention both carry intrinsic recency bias,
+        # so unlike pure projection ranking they do not need the trailing
+        # guard to stay coherent. Passing budget/n_sink alone is the faithful
+        # configuration for each, not an oversight.
+        h2o = perplexity(
+            model,
+            ids,
+            [
+                H2OKVCache(
+                    KVCacheConfig(
+                        method="h2o",
+                        head_dim=head_dim,
+                        h2o_budget=budget,
+                        h2o_n_sink=4,
+                        # Must match the model's own RoPE base or the
+                        # de-rotate/re-rotate pass will not cancel.
+                        h2o_rope_base=float(getattr(model.args, "rope_theta", 10000.0)),
+                    )
+                )
+                for _ in range(n_layers)
+            ],
+            "H2O (accumulated attention)",
+        )
+        tova = perplexity(
+            model,
+            ids,
+            [
+                TOVAKVCache(
+                    KVCacheConfig(
+                        method="tova",
+                        head_dim=head_dim,
+                        tova_budget=budget,
+                        tova_n_sink=4,
+                    )
+                )
+                for _ in range(n_layers)
+            ],
+            "TOVA (last-query attention)",
+        )
         gap = fb - base
         closed = 100 * (1 - (cal - base) / gap) if abs(gap) > 1e-9 else float("nan")
         print(
             f"    vs fp16 {base:.3f}:  calibrated {100 * (cal - base) / base:+7.1f}%   "
             f"fallback {100 * (fb - base) / base:+7.1f}%   "
             f"L2Norm {100 * (kn - base) / base:+7.1f}%   "
+            f"H2O {100 * (h2o - base) / base:+7.1f}%   "
+            f"TOVA {100 * (tova - base) / base:+7.1f}%   "
             f"(calibrated closes {closed:.0f}% of the fallback's gap)"
         )
 

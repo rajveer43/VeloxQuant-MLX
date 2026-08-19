@@ -431,6 +431,82 @@ far less, so this does not contradict it — but if you use Q-Filters for
 open-ended generation, set `qfilters_recent` (≈ budget/4 worked best here).
 It remains off by default to keep the default paper-faithful.
 
+#### Comparison arms and the RoPE precondition (#183)
+
+An eviction cache may only join these comparisons once its post-eviction RoPE
+handling is verified. `mlx_lm` rotates both the query and the incoming key at
+`offset=cache.offset` *before* `update_and_fetch` runs, so a cache that reports
+the retained-row count instead of the true token position stalls its offset at
+`budget` the moment eviction begins, and the drift grows without bound. An arm
+in that state measures position drift rather than eviction quality — which
+would make whichever method is correct look good for the wrong reason.
+
+All four arms report the true absolute position, verified at zero drift through
+a 200-token prefill plus 120 decode steps at budget 64, and pinned as a shared
+contract in `tests/cache/test_eviction_rope_contract.py`. They reach it two
+different ways, both valid:
+
+| arm | positions after eviction | needs re-rotation | recency guard |
+|---|---|---|---|
+| Q-Filters | preserved (gapped) | no | `qfilters_recent` (default 0) |
+| TOVA | preserved (gapped) | no | none — intrinsic |
+| L2Norm | preserved (gapped) | no | `knorm_recent` (default 0) |
+| H2O | **renumbered** (gap-free) | **yes** | `h2o_grace` (default 16) |
+
+**Intentional differences from the original algorithms.** H2O renumbers
+survivors to a contiguous layout, so it de-rotates and re-rotates kept keys
+via `rope_remap_positions`; `h2o_rope_base` must match the model's own RoPE
+base or that correction will not cancel. Q-Filters, TOVA and L2Norm leave
+positions untouched, so surviving keys keep the rotation they were stored
+with and non-contiguous gaps are expected — neither the Q-Filters nor the
+TOVA paper addresses renumbering.
+
+H2O and TOVA are run at budget and `n_sink` only, with **no** trailing-window
+override. That is faithful rather than an oversight: H2O's accumulated-attention
+score and TOVA's last-query attention both carry intrinsic recency bias, so
+unlike pure projection ranking they do not need the trailing guard that
+Q-Filters requires to stay coherent (see `qfilters_recent` above).
+
+#### Eviction semantics: one-shot vs incremental (#172, #183)
+
+`qfilters_update` absorbs a whole block of `S` tokens and evicts down to budget
+**once**, rather than evicting after every sub-block. On the calibrated path this
+is not an approximation of incremental eviction — it is the *same function*. A
+token is scored once against a filter frozen before token 0, and its score never
+changes while cached, so top-k under a fixed key is order-invariant. Feeding a
+prompt as one block, in 256-token chunks, or one token at a time retains
+bit-identical K/V and the same `offset`
+(`test_calibrated_kept_set_is_invariant_to_prefill_chunk_size`).
+
+Incremental eviction is therefore pure overhead on that path. Prefilling 4096
+tokens, 8 heads, D=128, budget 512:
+
+| prefill chunk | eviction calls | prefill time |
+|---|---|---|
+| one-shot (4096) | 1 | **1.8 ms** |
+| 1024 | 4 | 3.4 ms |
+| 256 | 16 | 7.9 ms |
+| 64 | 64 | 23.7 ms |
+| 16 | 256 | 65.8 ms |
+
+Up to **36× slower for identical output**. One-shot stays the default; there is
+no cache-pressure or adaptive variant to add, because there is no quality
+difference to trade against.
+
+The **key-SVD fallback** is the genuine exception, and its path-dependence is a
+property of the *estimator*, not of the eviction step: the direction is frozen
+from whichever chunk first crosses `qfilters_calib_tokens`, so different
+chunkings freeze different directions (cosine to the one-shot direction measured
+at +0.65 / +0.43 / +0.56 for chunks of 512 / 256 / 64) and retain different
+token sets. The budget bound and `offset` hold at every chunk size regardless
+(`test_fallback_respects_budget_at_every_prefill_chunk_size`). Chunked prefill
+on the fallback is not more correct than one-shot — just different. If you need
+chunk-invariance, supply calibrated filters.
+
+Chunk size was originally suspected as the cause of degenerate `"the the the
+the"` generation. It is not: the retained set is chunk-invariant on the
+calibrated path. The actual cause is `qfilters_recent=0` — see above.
+
 #### RoPE positions had to be fixed first (#171)
 
 `mlx_lm` rotates both the query and the incoming key at `offset=cache.offset`
