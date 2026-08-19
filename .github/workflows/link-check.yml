@@ -1,0 +1,37 @@
+# Checks that documentation links actually resolve.
+#
+# Docusaurus' own `onBrokenLinks: 'throw'` only sees links *inside* the docs
+# site. Absolute https://veloxquant-mlx.netlify.app/... URLs written in README,
+# CHANGELOG or blog sources are invisible to it, and that is exactly where a
+# reader found two 404s: they pointed at /algorithms/... while the site serves
+# everything under /docs/ (baseUrl in docusaurus.config.ts, plus netlify.toml
+# copying docs-site/build/* into dist/docs/).
+#
+# Runs weekly as well as on PRs, because these links can rot without anyone
+# touching the file that contains them -- a docs page moves, and a README URL
+# written months ago silently starts 404ing.
+name: link-check
+
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+      - "**/*.mdx"
+      - "**/*.html"
+      - "scripts/check_site_links.py"
+      - ".github/workflows/link-check.yml"
+  schedule:
+    # Mondays 06:00 UTC.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check anchors and site URLs
+        run: python scripts/check_site_links.py

@@ -104,7 +104,7 @@
       <div class="particle"></div>
     </div>
     <div class="hero-content">
-      <div class="badge" id="hero-badge" data-text="v0.51.0 — fused KIVI-style Metal attention kernel shipped">v0.51.0 — fused KIVI-style Metal attention kernel shipped</div>
+      <div class="badge" id="hero-badge" data-text="v0.51.1 — fused KIVI-style Metal attention kernel shipped">v0.51.1 — fused KIVI-style Metal attention kernel shipped</div>
 
       <h1>Your Mac runs out of memory<br>before it runs out of <span>context</span></h1>
 
@@ -588,21 +588,19 @@
       <p class="section-label">Why not just use what I have?</p>
       <h2 class="section-title">Against what you're already running</h2>
       <p class="section-desc">
-        llama.cpp already quantizes the KV cache. oMLX serves
-        <code class="inline">mlx_lm</code> models but doesn't compress the cache.
+        llama.cpp already quantizes the KV cache, with one fixed scheme and no eviction.
         Plain <code class="inline">mlx_lm</code> doesn't compress it at all.
       </p>
     </div>
 
     <div class="table-wrap fade-in">
       <table class="stacked">
-        <caption class="visually-hidden">Feature comparison against plain mlx_lm, llama.cpp and oMLX</caption>
+        <caption class="visually-hidden">Feature comparison against plain mlx_lm and llama.cpp</caption>
         <thead>
           <tr>
             <th scope="col"></th>
             <th scope="col">Plain mlx_lm</th>
             <th scope="col">llama.cpp / Ollama</th>
-            <th scope="col">oMLX</th>
             <th scope="col">VeloxQuant-MLX</th>
           </tr>
         </thead>
@@ -611,28 +609,24 @@
             <td data-th="Row">Compression schemes</td>
             <td data-th="mlx_lm" class="td-muted">None</td>
             <td data-th="llama.cpp" class="td-muted">One uniform scheme</td>
-            <td data-th="oMLX" class="td-muted">One experimental scheme</td>
             <td data-th="VeloxQuant" class="td-purple bar-cell"><span class="bar-fill bar-fill-purple" style="width:100%"></span><span class="bar-text t-max">41 methods</span></td>
           </tr>
           <tr>
             <td data-th="Row">Token eviction</td>
             <td data-th="mlx_lm" class="td-muted">No</td>
             <td data-th="llama.cpp" class="td-muted">No</td>
-            <td data-th="oMLX" class="td-muted">No</td>
             <td data-th="VeloxQuant" class="td-winner">Yes — 11 methods</td>
           </tr>
           <tr>
             <td data-th="Row">Per-layer / per-head tuning</td>
             <td data-th="mlx_lm" class="td-muted">N/A</td>
             <td data-th="llama.cpp" class="td-muted">No — one setting, whole model</td>
-            <td data-th="oMLX" class="td-muted">No</td>
             <td data-th="VeloxQuant" class="td-purple">Yes, per layer</td>
           </tr>
           <tr>
             <td data-th="Row">Hardware support</td>
             <td data-th="mlx_lm" class="td-muted">Apple Silicon only</td>
             <td data-th="llama.cpp" class="td-winner">Broadest — Apple, x86, Linux, Windows, mobile</td>
-            <td data-th="oMLX" class="td-muted">Apple Silicon only</td>
             <td data-th="VeloxQuant">Apple Silicon only</td>
           </tr>
         </tbody>
@@ -649,7 +643,6 @@
               <th scope="col"></th>
               <th scope="col">Plain mlx_lm</th>
               <th scope="col">llama.cpp / Ollama</th>
-              <th scope="col">oMLX</th>
               <th scope="col">VeloxQuant-MLX</th>
             </tr>
           </thead>
@@ -658,42 +651,36 @@
               <td data-th="Row">What it is</td>
               <td data-th="mlx_lm" class="td-muted">Model loading + generation library</td>
               <td data-th="llama.cpp" class="td-muted">Standalone inference runtime (C/C++)</td>
-              <td data-th="oMLX" class="td-muted">Serving layer on top of mlx_lm</td>
               <td data-th="VeloxQuant">KV cache compression on top of mlx_lm</td>
             </tr>
             <tr>
               <td data-th="Row">KV cache precision</td>
               <td data-th="mlx_lm" class="td-muted">fp16, always</td>
               <td data-th="llama.cpp">Fixed: <code class="inline">q8_0</code> or <code class="inline">q4_0</code></td>
-              <td data-th="oMLX" class="td-muted">fp16 by default; one experimental toggle</td>
               <td data-th="VeloxQuant" class="td-purple">1–8 bit, chosen per method</td>
             </tr>
             <tr>
               <td data-th="Row">Cross-layer compression</td>
               <td data-th="mlx_lm" class="td-muted">No</td>
               <td data-th="llama.cpp" class="td-muted">No</td>
-              <td data-th="oMLX" class="td-muted">No</td>
               <td data-th="VeloxQuant" class="td-winner">Yes — XQuant, MiniCache, xKV</td>
             </tr>
             <tr>
               <td data-th="Row">Memory strategy</td>
               <td data-th="mlx_lm" class="td-muted">None</td>
               <td data-th="llama.cpp" class="td-muted">On-device only</td>
-              <td data-th="oMLX">SSD-tiered paging (hot RAM / cold SSD)</td>
               <td data-th="VeloxQuant">In-memory compression</td>
             </tr>
             <tr>
               <td data-th="Row">Model format</td>
               <td data-th="mlx_lm">MLX safetensors</td>
               <td data-th="llama.cpp" class="td-muted">GGUF</td>
-              <td data-th="oMLX">MLX safetensors</td>
               <td data-th="VeloxQuant">MLX safetensors — same as mlx_lm</td>
             </tr>
             <tr>
               <td data-th="Row">Integration</td>
               <td data-th="mlx_lm" class="td-muted">Native</td>
               <td data-th="llama.cpp" class="td-muted">Native</td>
-              <td data-th="oMLX" class="td-muted">brew install / CLI server</td>
               <td data-th="VeloxQuant" class="td-highlight">3 lines on top of mlx_lm</td>
             </tr>
           </tbody>
@@ -710,15 +697,6 @@
           quantization is production-tested at massive scale through Ollama and LM Studio, and needs zero
           configuration. If you're not on a Mac, or you want the most battle-tested path with the least
           decision-making, that's the right default.
-        </p>
-      </div>
-      <div class="explainer-card fade-in">
-        <p class="section-label" style="margin-bottom:0.4rem">Where oMLX fits</p>
-        <p class="explainer-text">
-          A different axis entirely — it's a <strong class="t-strong">serving layer</strong>, not a compression
-          scheme. Continuous batching, an OpenAI/Anthropic-compatible API, and SSD-tiered paging for long-idle
-          sessions. Not mutually exclusive with VeloxQuant-MLX — both build on
-          <code class="inline">mlx_lm</code> — but that combination isn't a supported path here today.
         </p>
       </div>
       <div class="explainer-card fade-in">
@@ -739,11 +717,6 @@
       library's own tok/s and compression numbers across 12 models, see
       <a href="#benchmarks" class="t-accent">benchmarks →</a>.
       <a href="/docs/getting-started/comparison" class="t-accent">Full write-up →</a>
-      <br /><br />
-      A note on oMLX + "TurboQuant": some articles describe oMLX as shipping TurboQuant KV cache support.
-      That refers to Google's TurboQuant paper (arXiv:2504.19874) — the same family this library's
-      <code class="inline">turboquant_rvq</code> method implements — independently, not a dependency on this
-      package. The toggle has also been reported broken or removed across oMLX releases.
     </p>
   </section>
 
@@ -907,8 +880,8 @@
           <code class="inline">q4_0</code>) applied uniformly across the whole model. VeloxQuant-MLX
           ships 41 methods — pick per model, and some support per-layer bit allocation instead of
           one setting for everything. It also includes 11 token-eviction methods (drop low-value
-          tokens entirely) and cross-layer methods (XQuant, MiniCache, xKV) that llama.cpp,
-          plain <code class="inline">mlx_lm</code>, and oMLX don't have. See the
+          tokens entirely) and cross-layer methods (XQuant, MiniCache, xKV) that neither
+          llama.cpp nor plain <code class="inline">mlx_lm</code> has. See the
           <a href="#compare">full comparison table</a> above.
         </div>
       </details>

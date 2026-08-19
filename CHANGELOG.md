@@ -270,6 +270,51 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.51.1 (2026-08-19)
+
+### Bug Fixes
+
+- **ci**: Stop the link checker failing on network flakiness
+  ([#234](https://github.com/rajveer43/VeloxQuant-MLX/pull/234),
+  [`806e2a6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/806e2a6971e576570dac13875e081235d12de5c3))
+
+- **docs**: Correct two README links that 404ed, and check links in CI
+  ([#234](https://github.com/rajveer43/VeloxQuant-MLX/pull/234),
+  [`806e2a6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/806e2a6971e576570dac13875e081235d12de5c3))
+
+- **site**: Redirect docs paths missing the /docs prefix instead of 404ing
+  ([#234](https://github.com/rajveer43/VeloxQuant-MLX/pull/234),
+  [`806e2a6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/806e2a6971e576570dac13875e081235d12de5c3))
+
+### Build System
+
+- **deps**: Bump body-parser from 1.20.5 to 1.20.6 in /docs-site
+  ([#225](https://github.com/rajveer43/VeloxQuant-MLX/pull/225),
+  [`58881a5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/58881a5e00cbf21db081df74a47142c350013c9a))
+
+- **deps**: Bump shell-quote from 1.8.4 to 1.10.0 in /docs-site
+  ([#227](https://github.com/rajveer43/VeloxQuant-MLX/pull/227),
+  [`7bfbbe0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7bfbbe0e7baed58b377421eeb7b92c03c1742b94))
+
+- **deps**: Bump svgo from 3.3.3 to 3.3.4 in /docs-site
+  ([#224](https://github.com/rajveer43/VeloxQuant-MLX/pull/224),
+  [`d15a3b5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d15a3b50ecca64bdf39a6c801b0f3859aefaa1c4))
+
+- **deps**: Bump webpack-dev-server from 5.2.4 to 5.2.6 in /docs-site
+  ([#226](https://github.com/rajveer43/VeloxQuant-MLX/pull/226),
+  [`546ba0c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/546ba0cbdc64a08ab9f745c38ec9260ce8115329))
+
+- **deps**: Bump websocket-driver from 0.7.4 to 0.7.5 in /docs-site
+  ([#233](https://github.com/rajveer43/VeloxQuant-MLX/pull/233),
+  [`ee13ec5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ee13ec5eff32818f5f8bed30ff8aceb28fc10f4c))
+
+### Documentation
+
+- Drop oMLX from the comparison, keep llama.cpp and plain mlx_lm
+  ([#234](https://github.com/rajveer43/VeloxQuant-MLX/pull/234),
+  [`806e2a6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/806e2a6971e576570dac13875e081235d12de5c3))
+
+
 ## v0.51.0 (2026-08-18)
 
 ### Build System

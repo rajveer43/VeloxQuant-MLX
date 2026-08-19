@@ -11,3 +11,57 @@
 [build.environment]
   NODE_VERSION = "20"
   SECRETS_SCAN_OMIT_KEYS = "YOUR_APP_ID,YOUR_SEARCH_API_KEY"
+
+# Docs live under /docs/ (docusaurus.config.ts sets baseUrl: '/docs/', and the
+# build above copies docs-site/build/* into dist/docs/). Anything that lands on
+# a docs path without that prefix hits Netlify's bare 404 page rather than the
+# site's own, because the request never reaches the Docusaurus app.
+#
+# Two ways readers get there: links written before the /docs prefix existed
+# (older blog posts and external articles still carry them), and hand-typed
+# guesses like /installation. Both are cheap to redirect and confusing to leave
+# 404ing, since the bare Netlify 404 gives no way back into the site.
+#
+# These are non-forced rules (Netlify's default), so a real file at the path
+# always wins -- /docs/* keeps serving the built site untouched.
+
+[[redirects]]
+  from = "/getting-started/*"
+  to = "/docs/getting-started/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/algorithms/*"
+  to = "/docs/algorithms/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/guides/*"
+  to = "/docs/guides/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/api/*"
+  to = "/docs/api/:splat"
+  status = 301
+
+# Bare shorthands people type or link by hand.
+[[redirects]]
+  from = "/installation"
+  to = "/docs/getting-started/installation"
+  status = 301
+
+[[redirects]]
+  from = "/docs/installation"
+  to = "/docs/getting-started/installation"
+  status = 301
+
+[[redirects]]
+  from = "/quickstart"
+  to = "/docs/getting-started/quickstart"
+  status = 301
+
+[[redirects]]
+  from = "/changelog"
+  to = "/docs/changelog"
+  status = 301

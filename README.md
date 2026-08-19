@@ -29,7 +29,7 @@
        "badge/tests-<n>%20passing-" and "badge/changelog-<version>-" patterns.
        Keep both in badge form — converting either to a text link silently
        disables that sync. -->
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.51.0-64748b?style=flat-square" alt="Changelog"/></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.51.1-64748b?style=flat-square" alt="Changelog"/></a>
   <a href="SECURITY.md"><img src="https://img.shields.io/badge/security-policy-1f6feb?style=flat-square" alt="Security policy"/></a>
 </p>
 
@@ -496,7 +496,7 @@ Deep-dive writeups live in [`blogs/`](blogs/) and are also published on the docs
 ## Beyond compression: cross-model KV transfer
 
 One capability in this repo is **not** a compression method and is deliberately
-not counted in the 41: [**cross-model KV cache transfer**](https://veloxquant-mlx.netlify.app/algorithms/cross-model-transfer)
+not counted in the 41: [**cross-model KV cache transfer**](https://veloxquant-mlx.netlify.app/docs/algorithms/cross-model-transfer)
 (`veloxquant_mlx.transfer`). Instead of shrinking one model's cache, it maps a
 *source* model's already-prefilled KV into a *target* model's format, so the
 receiver can skip prefill when you swap between two models in the same family.
@@ -508,7 +508,7 @@ single-model cache contract can express. Adapted from
 [Cross-Model KV Cache Transfer (NVIDIA, arXiv:2608.03893)](https://arxiv.org/abs/2608.03893).
 The paper's retention and speedup figures are its own, measured on
 datacenter-scale pairs, and are not reproduced here. Read the
-[docs page](https://veloxquant-mlx.netlify.app/algorithms/cross-model-transfer)
+[docs page](https://veloxquant-mlx.netlify.app/docs/algorithms/cross-model-transfer)
 for the caveats before relying on it.
 
 ---
