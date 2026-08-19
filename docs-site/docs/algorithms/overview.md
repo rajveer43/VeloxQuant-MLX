@@ -14,7 +14,7 @@ All algorithms use Metal GPU kernels and require macOS on an M-series chip.
 :::
 
 :::tip[New here?]
-If you haven't decided whether you need cache compression at all, read [VeloxQuant-MLX vs. llama.cpp / oMLX / plain mlx_lm](../getting-started/comparison) first — it explains what problem these 41 methods solve and when you don't need them.
+If you haven't decided whether you need cache compression at all, read [VeloxQuant-MLX vs. llama.cpp / plain mlx_lm](../getting-started/comparison) first — it explains what problem these 41 methods solve and when you don't need them.
 :::
 
 ## Comparison table
