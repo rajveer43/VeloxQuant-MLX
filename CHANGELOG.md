@@ -270,6 +270,21 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.52.0 (2026-08-19)
+
+### Features
+
+- **bench**: Add H2O and TOVA as Q-Filters comparison arms
+  ([#235](https://github.com/rajveer43/VeloxQuant-MLX/pull/235),
+  [`bd816e2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bd816e2efaf8e1863aee3effaa5453991a0aebc7))
+
+### Testing
+
+- **qfilters**: Pin fallback chunk-dependence and budget safety
+  ([#235](https://github.com/rajveer43/VeloxQuant-MLX/pull/235),
+  [`bd816e2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bd816e2efaf8e1863aee3effaa5453991a0aebc7))
+
+
 ## v0.51.1 (2026-08-19)
 
 ### Bug Fixes
