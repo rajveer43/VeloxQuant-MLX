@@ -270,6 +270,21 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.53.0 (2026-08-20)
+
+### Bug Fixes
+
+- **anchorkv**: Resolve ruff-format and link-check CI failures
+  ([#238](https://github.com/rajveer43/VeloxQuant-MLX/pull/238),
+  [`51b45ac`](https://github.com/rajveer43/VeloxQuant-MLX/commit/51b45ace5f74c2bce227ddd69f66340f0948d684))
+
+### Features
+
+- **anchorkv**: Add AnchorKV anchor-residual KV cache compression
+  ([#238](https://github.com/rajveer43/VeloxQuant-MLX/pull/238),
+  [`51b45ac`](https://github.com/rajveer43/VeloxQuant-MLX/commit/51b45ace5f74c2bce227ddd69f66340f0948d684))
+
+
 ## v0.52.1 (2026-08-19)
 
 ### Bug Fixes
