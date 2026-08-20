@@ -232,6 +232,7 @@ _FAMILY: Dict[str, MethodFamily] = {
     "nestedkv": MethodFamily.QUANTIZATION,
     "amc": MethodFamily.EVICTION,
     "a2ats": MethodFamily.HYBRID,
+    "anchorkv": MethodFamily.HYBRID,
 }
 
 _BLURB: Dict[str, str] = {
@@ -275,6 +276,7 @@ _BLURB: Dict[str, str] = {
     "nestedkv": "NestedKV: hierarchical nested codebooks.",
     "amc": "AMC: adaptive memory compression.",
     "a2ats": "A2ATS-adapted: rotary-aware vector quantization with distance gating.",
+    "anchorkv": "AnchorKV-adapted: anchor-residual compression, no eviction.",
 }
 
 #: Honest "-adapted" notes. Sourced from open issues that document the
