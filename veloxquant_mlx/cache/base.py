@@ -95,6 +95,7 @@ class KVCacheConfig:
         "nestedkv",
         "amc",
         "a2ats",
+        "anchorkv",
     ] = "turboquant_rvq"
     head_dim: int = 128
     bit_width_inlier: Union[int, list] = 2
@@ -347,6 +348,13 @@ class KVCacheConfig:
     # [sub_dim, sub_dim] query second-moment H (Eq. 10); enables the paper's Eq. 14 assignment
     a2ats_query_h: Any = None
     a2ats_codebook: Any = None  # mx.array | np.ndarray | None (random init if absent)
+    # --- AnchorKV-adapted configuration (anchor-residual compression, no eviction; no verified venue) --
+    anchorkv_theta: float = 0.05  # fraction of the uncompressed fp16 cache to retain (paper's single knob)
+    anchorkv_window: int = 32  # trailing positions always anchors + proxy observation queries
+    anchorkv_rho: float = 0.7  # fraction of non-window anchor budget filled by attention score
+    anchorkv_anchor_frac: float = 1.0 / 128.0  # anchor budget k as a fraction of context length (paper: S/128)
+    anchorkv_residual_bits: int = 2  # bits/coordinate for stored residuals
+    anchorkv_seed: int = 42  # RNG seed for uniform anchor sampling + residual codec rotation
     # --- KVSink-adapted sink protection (method="kivi_sink") -----------
     n_sink_tokens: int = 5  # top-k high-key-norm tokens kept fp16
     smooth_factors: Any = None  # mx.array | np.ndarray | None
@@ -428,6 +436,7 @@ class KVCacheFactory:
         from veloxquant_mlx.cache.nestedkv_cache import NestedKVKVCache
         from veloxquant_mlx.cache.amc_cache import AMCKVCache
         from veloxquant_mlx.cache.a2ats_cache import A2ATSKVCache
+        from veloxquant_mlx.cache.anchorkv_cache import AnchorKVKVCache
         from veloxquant_mlx.cache.kitty_cache import KittyKVCache
         from veloxquant_mlx.cache.polar_cache import PolarQuantKVCache
         from veloxquant_mlx.cache.qjl_cache import QJLKVCache
@@ -597,13 +606,20 @@ class KVCacheFactory:
             # module docstring); the default for_model path (one
             # A2ATSKVCache per layer) is all it needs.
             cache = A2ATSKVCache(config)
+        elif config.method == "anchorkv":
+            # No coordinator: anchor selection, per-token assignment/
+            # projection, utility scoring, and cross-head residual-budget
+            # allocation all run once per (batch, layer) at prefill end and
+            # freeze thereafter; the default for_model path (one
+            # AnchorKVKVCache per layer) is all it needs.
+            cache = AnchorKVKVCache(config)
         else:
             raise QuantizerConfigError(
                 f"KVCacheFactory: unknown method '{config.method}'. "
                 f"Choices: turboquant_prod, turboquant_mse, turboquant_rvq, "
                 f"polar, qjl, vecinfer, spectral, kivi, kivi_sink, svdq, kitty, "
                 f"adakv, xquant, kvquant, palu, cachegen, minicache, gear, zipcache, snapkv, "
-                f"streaming_llm, h2o, tova, pyramidkv, squeeze, chunkkv, cam, xkv, nsnquant, knorm, skvq, qfilters, keyformer, morphkv, kvzip, kvtc, curdkv, nestedkv, amc, a2ats."
+                f"streaming_llm, h2o, tova, pyramidkv, squeeze, chunkkv, cam, xkv, nsnquant, knorm, skvq, qfilters, keyformer, morphkv, kvzip, kvtc, curdkv, nestedkv, amc, a2ats, anchorkv."
             )
 
         if config.sliding_window is not None:
