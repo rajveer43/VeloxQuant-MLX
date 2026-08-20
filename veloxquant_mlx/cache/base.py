@@ -349,10 +349,14 @@ class KVCacheConfig:
     a2ats_query_h: Any = None
     a2ats_codebook: Any = None  # mx.array | np.ndarray | None (random init if absent)
     # --- AnchorKV-adapted configuration (anchor-residual compression, no eviction; no verified venue) --
-    anchorkv_theta: float = 0.05  # fraction of the uncompressed fp16 cache to retain (paper's single knob)
+    anchorkv_theta: float = (
+        0.05  # fraction of the uncompressed fp16 cache to retain (paper's single knob)
+    )
     anchorkv_window: int = 32  # trailing positions always anchors + proxy observation queries
     anchorkv_rho: float = 0.7  # fraction of non-window anchor budget filled by attention score
-    anchorkv_anchor_frac: float = 1.0 / 128.0  # anchor budget k as a fraction of context length (paper: S/128)
+    anchorkv_anchor_frac: float = (
+        1.0 / 128.0
+    )  # anchor budget k as a fraction of context length (paper: S/128)
     anchorkv_residual_bits: int = 2  # bits/coordinate for stored residuals
     anchorkv_seed: int = 42  # RNG seed for uniform anchor sampling + residual codec rotation
     # --- KVSink-adapted sink protection (method="kivi_sink") -----------

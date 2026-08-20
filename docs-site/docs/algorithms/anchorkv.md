@@ -76,14 +76,17 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="anchorkv",
     head_dim=model.args.head_dim or (model.args.hidden_size // model.args.num_attention_heads),
-    anchorkv_theta=0.1,       # retain ~10% of the uncompressed byte cost
-    anchorkv_window=32,       # trailing tokens always kept as anchors
+    anchorkv_theta=0.1,  # retain ~10% of the uncompressed byte cost
+    anchorkv_window=32,  # trailing tokens always kept as anchors
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches
 
 response = mlx_lm.generate(
-    model, tokenizer, prompt="Summarize the attached document.", max_tokens=200,
+    model,
+    tokenizer,
+    prompt="Summarize the attached document.",
+    max_tokens=200,
 )
 ```
 
@@ -94,9 +97,9 @@ byte-accounting arithmetic describing the compressed representation — but
 can hand it to the standard `mlx_lm` attention path. The paper's own memory
 win comes from a fused kernel that reconstructs each tile only when
 consumed and never materializes the dense cache — that fused path is **not**
-implemented here (see [Adaptation notes](#adaptation-notes---what-we-do-not-implement)).
+implemented here (see [Adaptation notes](#adaptation-notes--what-we-do-not-implement)).
 If you need resident RAM to drop today, use an eviction method (🔻RSS in the
-[method library](../../../#method-library)) or
+[method library](https://github.com/rajveer43/VeloxQuant-MLX#method-library)) or
 [VecInfer](../algorithms/vecinfer).
 :::
 
