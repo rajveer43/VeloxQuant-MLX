@@ -293,6 +293,27 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.56.0 (2026-08-21)
+
+### Code Style
+
+- Fix ruff-format violation in mac_recommender.py
+  ([#240](https://github.com/rajveer43/VeloxQuant-MLX/pull/240),
+  [`f2eb44a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f2eb44a069cb8d2e9f994de3fd9915a644da64ea))
+
+### Documentation
+
+- **readme**: Add RocketKV, fix stale method counts and AnchorKV link
+  ([#240](https://github.com/rajveer43/VeloxQuant-MLX/pull/240),
+  [`f2eb44a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f2eb44a069cb8d2e9f994de3fd9915a644da64ea))
+
+### Features
+
+- **rocketkv**: Add RocketKV two-stage KV cache compression
+  ([#240](https://github.com/rajveer43/VeloxQuant-MLX/pull/240),
+  [`f2eb44a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f2eb44a069cb8d2e9f994de3fd9915a644da64ea))
+
+
 ## v0.55.0 (2026-08-21)
 
 ### Features
