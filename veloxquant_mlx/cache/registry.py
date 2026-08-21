@@ -233,6 +233,7 @@ _FAMILY: Dict[str, MethodFamily] = {
     "amc": MethodFamily.EVICTION,
     "a2ats": MethodFamily.HYBRID,
     "anchorkv": MethodFamily.HYBRID,
+    "rocketkv": MethodFamily.HYBRID,
 }
 
 _BLURB: Dict[str, str] = {
@@ -277,6 +278,7 @@ _BLURB: Dict[str, str] = {
     "amc": "AMC: adaptive memory compression.",
     "a2ats": "A2ATS-adapted: rotary-aware vector quantization with distance gating.",
     "anchorkv": "AnchorKV-adapted: anchor-residual compression, no eviction.",
+    "rocketkv": "RocketKV-adapted: SnapKV eviction + hybrid sparse attention selection.",
 }
 
 #: Honest "-adapted" notes. Sourced from open issues that document the
@@ -339,6 +341,13 @@ _CONFIG_FIELDS: Dict[str, List[str]] = {
     "qjl": ["jl_dim", "seed"],
     "polar": ["bit_width_inlier", "seed"],
     "spectral": ["bit_width_inlier", "seed"],
+    "rocketkv": [
+        "rocketkv_compression_ratio",
+        "rocketkv_page_size",
+        "rocketkv_head_topk1",
+        "rocketkv_obs_window",
+        "rocketkv_n_sink",
+    ],
 }
 
 _GENERIC_FIELDS = ["bit_width_inlier", "seed"]
@@ -360,6 +369,7 @@ _FIELD_HELP: Dict[str, str] = {
     "adakv_target_avg_bits": "Global average bits/element budget.",
     "kvquant_outlier_fraction": "Top-magnitude fraction kept in fp16.",
     "residual_length": "Recent tokens kept uncompressed.",
+    "rocketkv_compression_ratio": "Overall target ratio; adaptively split across both stages.",
 }
 
 
