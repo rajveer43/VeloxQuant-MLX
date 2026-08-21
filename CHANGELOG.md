@@ -270,6 +270,14 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.54.1 (2026-08-21)
+
+### Bug Fixes
+
+- **docs-site**: Bump joi and http-proxy-middleware to patched versions
+  ([`4e2d46f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4e2d46f99df7ef7ced70b9278ecde82b21da4713))
+
+
 ## v0.54.0 (2026-08-21)
 
 ### Features
