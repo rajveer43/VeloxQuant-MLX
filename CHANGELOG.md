@@ -270,6 +270,14 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.54.0 (2026-08-21)
+
+### Features
+
+- **landing**: Add VeloxQuant Studio waitlist section and fix calc URL leak
+  ([`d18556b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d18556bd55fc7f5f2a5da5ca01bc8b918481e453))
+
+
 ## v0.53.0 (2026-08-20)
 
 ### Bug Fixes
