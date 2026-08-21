@@ -270,6 +270,14 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.55.0 (2026-08-21)
+
+### Features
+
+- **mac_recommender**: Extend model classes and RAM tiers to real-world scale
+  ([`13c7b33`](https://github.com/rajveer43/VeloxQuant-MLX/commit/13c7b3356d5dd26597fbd691925fa95297046f06))
+
+
 ## v0.54.1 (2026-08-21)
 
 ### Bug Fixes
