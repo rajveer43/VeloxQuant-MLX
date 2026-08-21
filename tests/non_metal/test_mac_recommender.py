@@ -74,3 +74,29 @@ def test_ruleset_export():
     assert rs["version"] == 1
     assert "everyday" in rs["defaults"]
     assert rs["defaults"]["everyday"]["method"] == "turboquant_rvq"
+
+
+def test_70b_fits_on_96gb():
+    r = recommend(RecommendRequest(chip="M3", ram_gb=96, model_class="70B", goal="everyday"))
+    assert not any("will not fit" in w for w in r.warnings)
+
+
+def test_671b_warns_below_192gb():
+    r = recommend(RecommendRequest(chip="M3", ram_gb=128, model_class="671B", goal="everyday"))
+    assert any("only practical on Mac Studio" in w for w in r.warnings)
+
+
+def test_671b_does_not_fit_on_64gb():
+    r = recommend(RecommendRequest(chip="M4", ram_gb=64, model_class="671B", goal="everyday"))
+    assert any("will not fit" in w for w in r.warnings)
+
+
+def test_512gb_is_allowed_ram():
+    r = recommend(RecommendRequest(chip="M3", ram_gb=512, model_class="671B", goal="everyday"))
+    assert not any("will not fit" in w for w in r.warnings)
+
+
+def test_ruleset_export_includes_large_classes():
+    rs = ruleset_dict()
+    assert "671B" in rs["model_classes"]
+    assert 192 in rs["allowed_ram_gb"]
