@@ -214,7 +214,14 @@ def recommend(req: RecommendRequest) -> RecommendResult:
         raise ValueError(f"Unknown goal: {req.goal}")
 
     # Chip note: bandwidth/generation matters less than RAM for method pick
-    if req.chip in ("M1", "M2") and req.model_class in ("14B", "32B", "70B", "120B", "235B", "671B"):
+    if req.chip in ("M1", "M2") and req.model_class in (
+        "14B",
+        "32B",
+        "70B",
+        "120B",
+        "235B",
+        "671B",
+    ):
         warnings.append(
             f"A {req.model_class} model on an {req.chip} will generate text more "
             "slowly than on a newer chip. Whether it fits at all, though, comes "
