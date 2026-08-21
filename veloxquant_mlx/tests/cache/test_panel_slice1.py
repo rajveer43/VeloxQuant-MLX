@@ -53,14 +53,14 @@ def _get(base, path):
 
 
 def test_coverage_split_is_stable():
-    """Locks the measured 13/5/18 split; drift should be a deliberate change."""
+    """Locks the measured 13/5/19 split; drift should be a deliberate change."""
     counts = {c: 0 for c in TelemetryCoverage}
     for info in list_methods(servable_only=True):
         counts[info.coverage] += 1
 
     assert counts[TelemetryCoverage.KEYS_AND_VALUES] == 13
     assert counts[TelemetryCoverage.KEYS_ONLY] == 5
-    assert counts[TelemetryCoverage.NONE] == 18
+    assert counts[TelemetryCoverage.NONE] == 19
 
 
 def test_default_method_is_keys_only():

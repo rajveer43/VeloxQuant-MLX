@@ -4,6 +4,29 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ## [Unreleased]
 
+### Added
+
+**RocketKV-adapted: two-stage KV cache compression**
+([#239](https://github.com/rajveer43/VeloxQuant-MLX/issues/239)) — new
+`method="rocketkv"`, inspired by "RocketKV: Accelerating Long-Context LLM
+Inference via Two-Stage KV Cache Compression" (Behnam, Fu, Zhao, Tsai, Yu,
+Tumanov; NVIDIA/Georgia Tech; ICML 2025, arXiv:2502.14051). Composes
+coarse-grain permanent eviction (stage 1, directly reuses SnapKV-adapted)
+with fine-grain dynamic per-decode-step top-k selection over the survivors
+(stage 2, Hybrid Sparse Attention — a two-dimensional approximate-attention
+reduction combining Quest-style paged sequence-dimension max/min summaries
+with SparQ-style head-dimension top-k channel selection). An adaptive
+formula (paper §3.6) splits a single `rocketkv_compression_ratio` knob
+across both stages automatically. `MethodFamily.HYBRID`. No RocketKV-MT
+(multi-turn) variant in this PR — see the issue for follow-up. New
+`veloxquant_mlx/quantizers/rocketkv.py` (paged summaries, HSA scoring,
+adaptive split) and `veloxquant_mlx/cache/rocketkv_cache.py`
+(`RocketKVKVCache`), tests in
+`veloxquant_mlx/tests/{quantizers,cache}/test_rocketkv*.py`, offline
+benchmark in `benchmark_scripts/benchmark_rocketkv.py`, docs at
+`docs-site/docs/algorithms/rocketkv.md`, adaptation rationale in
+`paper/research/surveys/NEW_METHOD_SURVEY_V23.md`.
+
 ### Performance
 
 **Wired the existing Q-Filters Metal eviction kernels into the cache**

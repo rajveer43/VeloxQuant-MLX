@@ -64,6 +64,7 @@ const sidebars: SidebarsConfig = {
         'algorithms/amc',
         'algorithms/a2ats',
         'algorithms/anchorkv',
+        'algorithms/rocketkv',
         'algorithms/xkv',
         'algorithms/cross-model-transfer',
       ],
