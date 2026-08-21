@@ -779,6 +779,222 @@ section {
   to   { opacity: 1; transform: scaleX(1); }
 }
 
+/* ===== WAITLIST (VeloxQuant Studio macOS app) ===== */
+.waitlist-shell {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 2.5rem;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2.5rem;
+}
+
+.waitlist-points {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.waitlist-points li {
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  padding-left: 1.3rem;
+  position: relative;
+}
+
+.waitlist-points li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--good);
+  font-weight: 600;
+}
+
+.waitlist-form-wrap { width: 100%; }
+
+#waitlist-form { width: 100%; }
+
+.waitlist-label {
+  display: block;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+
+.waitlist-field-row {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.waitlist-field-row input[type="email"] {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 0.65rem 0.9rem;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  transition: border-color 0.2s;
+}
+
+.waitlist-field-row input[type="email"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.waitlist-field-row .btn {
+  flex-shrink: 0;
+}
+
+.waitlist-note {
+  font-size: 0.78rem;
+  color: var(--muted);
+  opacity: 0.75;
+  margin: 0.7rem 0 0;
+}
+
+/* Honeypot field — visually hidden but present in the DOM/tab order-free,
+   so bots that fill every field trip it while real users never see it. */
+.waitlist-hp-field {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.waitlist-success {
+  padding: 1.25rem 1.4rem;
+  background: var(--code-bg);
+  border: 1px solid var(--good);
+  border-radius: var(--radius);
+}
+
+.waitlist-success-title {
+  color: var(--good);
+  font-weight: 600;
+  margin: 0 0 0.4rem;
+}
+
+.waitlist-success-body {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+@media (max-width: 800px) {
+  .waitlist-shell {
+    grid-template-columns: 1fr;
+    padding: 1.75rem;
+  }
+}
+
+/* ===== TOAST ===== */
+.toast-stack {
+  position: fixed;
+  top: 1.5rem;
+  right: 1.5rem;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  min-width: 280px;
+  max-width: 360px;
+  padding: 0.9rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--good);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+  animation: toast-in 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.toast.toast-leaving {
+  animation: toast-out 0.25s ease-in forwards;
+}
+
+.toast-icon {
+  flex-shrink: 0;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 50%;
+  background: var(--good);
+  color: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-top: 0.05rem;
+}
+
+.toast-body { flex: 1; min-width: 0; }
+
+.toast-title {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.88rem;
+  margin: 0 0 0.2rem;
+}
+
+.toast-desc {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.toast-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.1rem;
+}
+
+.toast-close:hover { color: var(--text); }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(24px); }
+}
+
+@media (max-width: 480px) {
+  .toast-stack {
+    left: 1rem;
+    right: 1rem;
+    top: 1rem;
+  }
+  .toast { min-width: 0; max-width: none; }
+}
+
 /* ===== KV EXPLAINER ===== */
 .explainer-section {
   padding: 3rem 1.5rem;

@@ -264,14 +264,6 @@ function initCalculator() {
     ramSel.value = String(VQCalc.ALLOWED_RAM_GB.includes(ram) ? ram : 16);
   }
 
-  function writeState(seqLen) {
-    const q = new URLSearchParams(location.search);
-    q.set('model', modelSel.value);
-    q.set('ctx', String(seqLen));
-    q.set('ram', ramSel.value);
-    history.replaceState(null, '', location.pathname + '?' + q.toString() + location.hash);
-  }
-
   function render() {
     const preset = VQCalc.MODEL_PRESETS.find(p => p.id === modelSel.value);
     const seqLen = CTX_STEPS[parseInt(ctxRange.value, 10)];
@@ -334,8 +326,6 @@ function initCalculator() {
         `<a class="btn btn-outline" href="playground.html">Full playground →</a>` +
         `<a class="btn btn-outline" href="#install">Install →</a>` +
       `</div>`;
-
-    writeState(seqLen);
   }
 
   // The no-JS fallback is in the markup and removed only once we know the
@@ -522,6 +512,79 @@ function initThemeToggle() {
   });
 }
 
+// ── TOAST ──
+function showToast({ title, desc, duration = 6000 }) {
+  const stack = document.getElementById('toast-stack');
+  if (!stack) return;
+
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.setAttribute('role', 'status');
+  toast.innerHTML = `
+    <span class="toast-icon" aria-hidden="true">✓</span>
+    <span class="toast-body">
+      <p class="toast-title"></p>
+      <p class="toast-desc"></p>
+    </span>
+    <button class="toast-close" aria-label="Dismiss notification">×</button>
+  `;
+  toast.querySelector('.toast-title').textContent = title;
+  toast.querySelector('.toast-desc').textContent = desc;
+
+  function dismiss() {
+    toast.classList.add('toast-leaving');
+    toast.addEventListener('animationend', () => toast.remove(), { once: true });
+  }
+
+  toast.querySelector('.toast-close').addEventListener('click', dismiss);
+  stack.appendChild(toast);
+
+  setTimeout(dismiss, duration);
+}
+
+// ── WAITLIST FORM ──
+// Netlify Forms: the static <form data-netlify="true"> is enough for Netlify's
+// build-time HTML parser to register the "waitlist" form and start capturing
+// submissions server-side, with zero backend of our own. This just upgrades
+// the UX from "reload to a plain success page" to an inline swap plus a
+// toast, and falls back to a normal (non-JS) POST if fetch is unavailable
+// or fails.
+function initWaitlistForm() {
+  const form = document.getElementById('waitlist-form');
+  if (!form) return;
+
+  const success = document.getElementById('waitlist-success');
+  const submitBtn = document.getElementById('waitlist-submit');
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Joining…';
+
+    const body = new URLSearchParams(new FormData(form)).toString();
+
+    fetch('/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('Network response was not ok');
+        form.hidden = true;
+        success.hidden = false;
+        showToast({
+          title: "You're on the waitlist",
+          desc: "We'll announce VeloxQuant Studio here as soon as we start building — watch your inbox.",
+        });
+      })
+      .catch(() => {
+        // Fall back to a real form submission (full Netlify redirect flow)
+        // rather than stranding the user on a form that silently did nothing.
+        form.submit();
+      });
+  });
+}
+
 // ── INIT ──
 document.addEventListener('DOMContentLoaded', () => {
   initCopyButtons();
@@ -537,4 +600,5 @@ document.addEventListener('DOMContentLoaded', () => {
   initActiveNav();
   initHamburgerMenu();
   initThemeToggle();
+  initWaitlistForm();
 });

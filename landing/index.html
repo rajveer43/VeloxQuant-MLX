@@ -67,6 +67,7 @@
       <span></span><span></span><span></span>
     </button>
     <ul class="nav-links" id="nav-links">
+      <li><a href="#waitlist">macOS app</a></li>
       <li><a href="#scenarios">Start here</a></li>
       <li><a href="#calculator">Calculator</a></li>
       <li><a href="#methods">Methods</a></li>
@@ -209,6 +210,76 @@
   </section>
 
   <div class="divider"></div>
+
+  <!-- ── §1.5 MACOS APP WAITLIST ──
+       VeloxQuant Studio is a native SwiftUI control panel for this library
+       (separate repo) — drives `veloxquant methods/serve/recommend` as a
+       subprocess instead of reimplementing the engine. Not shipped yet, so
+       this collects interest via Netlify Forms rather than linking a build. -->
+  <section id="waitlist">
+    <div class="waitlist-shell fade-in">
+      <div class="waitlist-copy">
+        <p class="section-label">Coming soon</p>
+        <h2 class="section-title">VeloxQuant Studio — a native macOS app</h2>
+        <p class="section-desc" style="margin-left:0">
+          A SwiftUI control panel for this library: pick a model, pick a method, watch the
+          quantized cache load and serve — no terminal required. It drives the same
+          <code class="inline">veloxquant</code> CLI shown above, so the compression is
+          identical, just with a UI on top.
+        </p>
+        <ul class="waitlist-points">
+          <li>Browse the method library and size your Mac's RAM before you commit</li>
+          <li>One-click <code class="inline plain">veloxquant serve</code> with live streamed logs</li>
+          <li>Built for Apple Silicon, distributed outside the App Store first</li>
+        </ul>
+      </div>
+
+      <div class="waitlist-form-wrap">
+        <form
+          id="waitlist-form"
+          name="waitlist"
+          method="POST"
+          data-netlify="true"
+          netlify-honeypot="waitlist-company"
+        >
+          <input type="hidden" name="form-name" value="waitlist" />
+          <p class="waitlist-hp-field" aria-hidden="true">
+            <label>Company<input name="waitlist-company" tabindex="-1" autocomplete="off" /></label>
+          </p>
+
+          <label for="waitlist-email" class="waitlist-label">Email address</label>
+          <div class="waitlist-field-row">
+            <input
+              type="email"
+              id="waitlist-email"
+              name="email"
+              placeholder="you@example.com"
+              required
+              autocomplete="email"
+            />
+            <button type="submit" class="btn btn-filled" id="waitlist-submit">
+              Join waitlist <span data-icon>→</span>
+            </button>
+          </div>
+          <p class="waitlist-note" id="waitlist-status">
+            No spam — we'll announce it here the moment we start building.
+          </p>
+        </form>
+
+        <div class="waitlist-success" id="waitlist-success" hidden>
+          <p class="waitlist-success-title">You're on the list.</p>
+          <p class="waitlist-success-body">We'll email you as soon as we start building. In the meantime, the CLI works today — see the <a href="#quickstart" class="t-accent">quickstart</a> above.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Toast — fires on successful waitlist join, independent of scroll
+       position, so the confirmation lands even if the inline success box
+       (inside #waitlist) has already scrolled out of view. -->
+  <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="true"></div>
 
   <!-- Legacy anchor aliases. #benefits was the old stats section, dropped in
        the redesign; README, PyPI and published blog posts still link to it.
