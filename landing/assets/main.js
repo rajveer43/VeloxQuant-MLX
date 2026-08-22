@@ -63,6 +63,11 @@ function activateTab(tab, { scrollIntoView = true } = {}) {
   );
   const panel = document.getElementById('tab-' + tab);
   if (panel) panel.classList.add('active');
+  // The advanced examples (VecInfer, RateQuant, VLM) live inside a
+  // collapsed <details> — open it so activating a tab actually shows it,
+  // instead of leaving it collapsed.
+  const details = btn.closest('details');
+  if (details && !details.open) details.open = true;
   // Keep the active tab button in view on the horizontally-scrolling
   // mobile tab strip.
   if (scrollIntoView) btn.scrollIntoView({ inline: 'nearest', block: 'nearest' });
@@ -71,20 +76,6 @@ function activateTab(tab, { scrollIntoView = true } = {}) {
 function initCodeTabs() {
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => activateTab(btn.dataset.tab));
-  });
-}
-
-// ── METHOD PICKER → QUICKSTART TAB HANDOFF ──
-// Clicking a method name in #methods jumps to #quickstart with the matching
-// code tab already selected, instead of leaving the visitor to find and
-// click the right tab themselves.
-function initPickerTabLinks() {
-  document.querySelectorAll('.picker-tab-link[data-tab]').forEach(link => {
-    link.addEventListener('click', () => {
-      // Let the anchor navigation happen; just pre-select the tab so it's
-      // showing once the browser scrolls #quickstart into view.
-      activateTab(link.dataset.tab, { scrollIntoView: false });
-    });
   });
 }
 
@@ -319,8 +310,8 @@ function initCalculator() {
       `<p class="calc-note">Estimated from your model's real shape ` +
       `(${preset.n_layers} layers · ${preset.n_kv_heads} KV heads · head_dim ${preset.head_dim}), ` +
       `assuming 4-bit weights (~${res.weightGb} GB) and a 4 GB OS reserve. ` +
-      `${residentNote} Compression has a quality cost too — see ` +
-      `<a href="#quality" class="t-accent">what it costs you →</a>.</p>` +
+      `${residentNote} Heavier compression can affect answer quality — ` +
+      `see the <a href="/docs/algorithms/overview" class="t-accent">algorithm reference</a>.</p>` +
       `<div class="calc-cta">` +
         `<a class="btn btn-filled" href="#quickstart">Use <code class="inline plain">${rec.id}</code> →</a>` +
         `<a class="btn btn-outline" href="playground.html">Full playground →</a>` +
@@ -589,7 +580,6 @@ function initWaitlistForm() {
 document.addEventListener('DOMContentLoaded', () => {
   initCopyButtons();
   initCodeTabs();
-  initPickerTabLinks();
   initBadgeTyping();
   initMatrixRain();
   initScrollParallax();

@@ -3322,6 +3322,12 @@ code.inline.max { color: var(--max); }
   font-size: 0.85em;
 }
 
+/* ── Inline "for developers" aside within a plain-language paragraph ── */
+.jargon-note {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
 /* ── Proof of maintenance ── */
 .proof-row {
   display: grid;
