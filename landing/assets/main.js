@@ -324,8 +324,8 @@ function initCalculator() {
       `<p class="calc-note">Estimated from your model's real shape ` +
       `(${preset.n_layers} layers · ${preset.n_kv_heads} KV heads · head_dim ${preset.head_dim}), ` +
       `assuming 4-bit weights (~${res.weightGb} GB) and a 4 GB OS reserve. ` +
-      `${residentNote} Compression has a quality cost too — see ` +
-      `<a href="#quality" class="t-accent">what it costs you →</a>.</p>` +
+      `${residentNote} Heavier compression can affect answer quality — ` +
+      `see the <a href="#compare" class="t-accent">comparison</a> below.</p>` +
       `<div class="calc-cta">` +
         `<a class="btn btn-filled" href="#quickstart">Use <code class="inline plain">${rec.id}</code> →</a>` +
         `<a class="btn btn-outline" href="playground.html">Full playground →</a>` +

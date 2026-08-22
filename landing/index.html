@@ -74,7 +74,6 @@
       <li><a href="#quickstart">Quickstart</a></li>
       <li><a href="#compare">Compare</a></li>
       <li><a href="#benchmarks">Benchmarks</a></li>
-      <li><a href="#quality">Quality cost</a></li>
       <li><a href="playground.html">Playground</a></li>
       <li><a href="#faq">FAQ</a></li>
       <li><a href="#install">Install</a></li>
@@ -383,7 +382,6 @@
           The trade-off is a small amount of precision: at moderate compression, the model's
           answers are essentially unchanged from normal; pushed too far, answers can start to
           repeat themselves or lose coherence.
-          <a href="#quality" class="t-accent">See what you gain and what you might notice →</a>
         </p>
       </div>
     </div>
@@ -595,153 +593,6 @@
         </p>
       </div>
     </details>
-  </section>
-
-  <div class="divider"></div>
-
-  <!-- ── §7 QUALITY COST ──
-       A compression library that publishes only ratios and throughput reads
-       as hiding the quality number. Consumer-facing columns replace cosine
-       similarity / SNR with what those numbers actually mean for output;
-       the original measurements move to a "for developers" reveal, same
-       numbers, unchanged. -->
-  <section id="quality">
-    <div class="section-head-center">
-      <p class="section-label">What it costs you</p>
-      <h2 class="section-title">What you gain, and what you might notice</h2>
-      <p class="section-desc">
-        Compression isn't free — squeezing memory harder means the model has slightly less
-        precise information to work with. Here's what that trades off, from mild to severe.
-      </p>
-    </div>
-
-    <div class="table-wrap fade-in">
-      <table class="stacked">
-        <caption class="visually-hidden">What you gain vs. what you might notice, by compression level</caption>
-        <thead>
-          <tr>
-            <th scope="col">Compression level</th>
-            <th scope="col">Memory saved</th>
-            <th scope="col">What you might notice</th>
-          </tr>
-        </thead>
-        <!-- Descending, so the table opens on a working configuration and the
-             heaviest compression reads as the floor of the range rather than
-             the first thing in the section. -->
-        <tbody>
-          <tr>
-            <td data-th="Level">Light (5-bit)</td>
-            <td data-th="Memory saved">~3×</td>
-            <td data-th="What you might notice" class="td-winner">Nothing — responses are indistinguishable from uncompressed</td>
-          </tr>
-          <tr>
-            <td data-th="Level">Moderate (4-bit) — our default</td>
-            <td data-th="Memory saved">~4×</td>
-            <td data-th="What you might notice" class="td-winner">Nothing in practice — near-lossless</td>
-          </tr>
-          <tr>
-            <td data-th="Level">Aggressive (3-bit)</td>
-            <td data-th="Memory saved">~5×</td>
-            <td data-th="What you might notice" class="td-muted">Responses can get stuck repeating themselves — not recommended</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <p class="section-desc" style="margin-top:0.75rem;font-size:0.8rem">
-      (These figures describe compressing the key half of the cache at a fixed setting, to
-      isolate the effect of precision alone. Whole-cache and per-method numbers — including
-      the 7.5×/16× figures used elsewhere on this page — are measured separately; see
-      <a href="#benchmarks" class="t-accent">benchmarks</a> and the
-      <a href="#quickstart" class="t-accent">quickstart</a> above.)
-    </p>
-
-    <div class="outlier-grid" style="margin-top:1.75rem">
-      <div class="outlier loss fade-in">
-        <span class="outlier-tag">Known failure mode</span>
-        Compress too aggressively and the model can lose track of what it's saying, causing
-        <strong>repetitive or looping text</strong>. This shows up below the "moderate" setting
-        above, and gets worse on smaller models. If you see repetition, back off to a lighter
-        compression setting.
-      </div>
-      <div class="outlier win fade-in">
-        <span class="outlier-tag">Where quality holds up best</span>
-        Our recommended default (<strong>RVQ-1bit</strong>) stays close to normal output quality
-        at its compression level, which is why it's the one we suggest starting with. One other
-        method (<strong>SpectralQuant</strong>) measures even closer to the original on some models —
-        see the <a href="#methods" class="t-accent">method picker</a> above.
-      </div>
-    </div>
-
-    <details class="reveal fade-in" style="margin-top:1.5rem">
-      <summary>For developers: the underlying measurements</summary>
-      <div class="reveal-body">
-        <p class="section-desc" style="margin:0 0 1rem;font-size:0.85rem">
-          Measured on post-rotation key vectors at head_dim=128, TurboQuant codebook. "Cosine
-          similarity" is how closely the compressed vectors point in the same direction as the
-          originals (1.0 = identical); "SNR" (signal-to-noise ratio) is a standard measure of
-          how much the compression distorts the signal, in decibels — higher is cleaner.
-        </p>
-        <div class="table-wrap">
-          <table class="stacked">
-            <caption class="visually-hidden">Reconstruction quality by bit width</caption>
-            <thead>
-              <tr>
-                <th scope="col">Bit width</th>
-                <th scope="col">Output</th>
-                <th scope="col">Key cosine similarity</th>
-                <th scope="col">SNR</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td data-th="Bit width">5-bit</td>
-                <td data-th="Output" class="td-winner">Indistinguishable from fp16</td>
-                <td data-th="Cosine sim">~0.98</td>
-                <td data-th="SNR">~15 dB</td>
-              </tr>
-              <tr>
-                <td data-th="Bit width">4-bit</td>
-                <td data-th="Output" class="td-winner">Near-lossless</td>
-                <td data-th="Cosine sim">~0.95</td>
-                <td data-th="SNR">~10 dB</td>
-              </tr>
-              <tr>
-                <td data-th="Bit width">3-bit</td>
-                <td data-th="Output" class="td-muted">Repetition loops — breaks down</td>
-                <td data-th="Cosine sim">~0.85</td>
-                <td data-th="SNR">~4 dB</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="section-desc" style="margin-top:1rem;font-size:0.85rem">
-          Below 4-bit at head_dim=128, attention destabilises: ~15% directional error in key
-          vectors is enough to send autoregressive generation into repetition loops. At
-          head_dim=64 (e.g. SmolLM2-135M) the codebook approximation breaks down entirely — SNR
-          goes negative even at 4-bit. SpectralQuant gains +3pp cosine similarity over
-          TurboQuant on Qwen2.5-0.5B at the same bit width; RVQ-1bit holds ~0.92 cosine at 7.5×.
-        </p>
-      </div>
-    </details>
-
-    <!-- Same two pending items, same link, unchanged wording — but stated
-         alongside what *is* measured, so the gap reads as a tracked roadmap
-         rather than an unbounded hole. Nothing is removed or softened. -->
-    <p class="bench-note" style="margin-top:1.5rem">
-      <strong class="t-strong">Measured today:</strong> how closely compressed output matches
-      the original across compression levels, and real generation speed on
-      <a href="#benchmarks" class="t-accent">12 models</a> — all of it reproducible from the
-      code.
-      <br />
-      <strong class="t-caution">Not yet measured:</strong> two standard research benchmarks —
-      <span class="cost-pending">perplexity on WikiText-2</span> and
-      <span class="cost-pending">accuracy on downstream tasks</span> — are still open items,
-      tracked in
-      <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/BENCHMARK_RESULTS.md" target="_blank" rel="noopener" class="t-accent">BENCHMARK_RESULTS.md</a>.
-      In plain terms: at the highest compression setting, quality depends on what you're using
-      the model for — try it on your own task before relying on it for anything important.
-    </p>
   </section>
 
   <div class="divider"></div>
