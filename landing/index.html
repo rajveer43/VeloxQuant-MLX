@@ -101,7 +101,7 @@
       <div class="particle"></div>
     </div>
     <div class="hero-content">
-      <div class="badge" id="hero-badge" data-text="v0.55.0 — new: faster on-chip processing for compressed conversations">v0.55.0 — new: faster on-chip processing for compressed conversations</div>
+      <div class="badge" id="hero-badge" data-text="v0.56.0 — fused KIVI-style Metal attention kernel shipped">v0.56.0 — fused KIVI-style Metal attention kernel shipped</div>
 
       <h1>Your Mac runs out of memory<br>before your conversation runs out of <span>things to say</span></h1>
 
@@ -605,14 +605,12 @@ pip install -e ".[dev]"</span></pre>
              a vaguer "team". -->
         <ul class="req-list req-list-trust">
           <!-- Format is load-bearing: scripts/sync_release_badges.py rewrites
-               the literal "<n>/<n> tests passing" on every release via a
-               regex match on this exact phrase. Any other phrasing here
-               silently goes stale. -->
-          <li><strong class="t-strong">Runs entirely on your Mac</strong> — nothing about your conversations or files is ever sent anywhere</li>
-          <li><strong class="t-strong">2306/2306 tests passing</strong> — every change is checked automatically before release, not just eyeballed</li>
-          <li><strong class="t-strong">Actively maintained</strong> — 2 maintainers plus outside contributors, with automated checks (CI) on every change</li>
-          <li><strong class="t-strong">Open source</strong> — anyone can read the code on GitHub to verify what it actually does</li>
-          <li><a href="https://doi.org/10.5281/zenodo.20647294" target="_blank" rel="noopener">Citable in academic work — DOI on Zenodo</a></li>
+               the literal "<n>/<n> tests passing" on every release. Any other
+               phrasing here silently goes stale. -->
+          <li><strong class="t-strong">2347/2347 tests passing</strong> — run on every commit</li>
+          <li><strong class="t-strong">CI</strong> — lint, unit and non-Metal suites on GitHub Actions</li>
+          <li><strong class="t-strong">2 maintainers</strong> — plus outside contributors</li>
+          <li><a href="https://doi.org/10.5281/zenodo.20647294" target="_blank" rel="noopener">Citable — DOI on Zenodo</a></li>
         </ul>
       </div>
     </div>
