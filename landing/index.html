@@ -356,36 +356,6 @@
   </section>
 
   <div class="divider"></div>
-  <!-- ── §4 HOW IT WORKS ── -->
-  <section id="explainer" class="explainer-section">
-    <div class="explainer-grid">
-      <div class="explainer-card fade-in">
-        <p class="section-label" style="margin-bottom:0.4rem">Why does a long chat use so much memory?</p>
-        <p class="explainer-text">
-          As you chat with a local AI model, it keeps a running memory of everything said so
-          far — this is the <strong class="t-strong">"KV cache"</strong> you'll see mentioned around
-          this site. It grows the longer the conversation gets. At 64k tokens (roughly a
-          100-page document) on Llama-3.1-8B, that memory alone is
-          <strong class="t-strong">8 GB</strong> — often more than the model itself takes up.
-          <span class="jargon-note">(Developers: it's the cached key and value tensors from the
-          attention mechanism — <a href="/docs/" class="t-accent">technical docs →</a>)</span>
-        </p>
-      </div>
-      <div class="explainer-card fade-in">
-        <p class="section-label" style="margin-bottom:0.4rem">What does VeloxQuant-MLX do about it?</p>
-        <p class="explainer-text">
-          It stores that memory more efficiently — similar to how a compressed photo takes less
-          space than the original. The same 8 GB shrinks to
-          <strong class="t-strong">1.07 GB</strong>, a 7.5× reduction with our default setting.
-          The trade-off is a small amount of precision: at moderate compression, the model's
-          answers are essentially unchanged from normal; pushed too far, answers can start to
-          repeat themselves or lose coherence.
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <div class="divider"></div>
 
   <!-- ── §5 METHOD PICKER ── -->
   <section id="methods">
