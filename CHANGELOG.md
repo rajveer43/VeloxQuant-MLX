@@ -293,6 +293,64 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.57.0 (2026-08-22)
+
+### Bug Fixes
+
+- **docs-site**: Patch npm vulnerabilities via dependency overrides
+  ([`8d83691`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8d836913cc4dacf30d0a00801d57e3c46607c713))
+
+### Documentation
+
+- Remove dangling links to deleted OPTIMIZATION_FINDINGS.md
+  ([`36f04fe`](https://github.com/rajveer43/VeloxQuant-MLX/commit/36f04fee7cf7f1917f03d4532105a1dd897d5e03))
+
+- **readme**: Rewrite for human voice, no content changes
+  ([`922774e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/922774e28440fadc7a4cb8f10c1c38905ee8aa7d))
+
+### Features
+
+- **landing**: Link to VS Code extension
+  ([`6e9164c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6e9164cc5a385bc8cde7dab2ec99a781e4a64f2a))
+
+### Refactoring
+
+- **landing**: Remove Benchmarks section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove Comparison section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove confusing Quality Cost section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove How It Works explainer section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove llama.cpp-vs-VeloxQuant-MLX card comparison from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove method picker section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Rewrite landing page copy for a non-technical audience
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Tighten hero copy on landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **readme**: Swap banner for app-icon-matching logo, trim stale copy
+  ([`e9290e1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e9290e1e15ff62deece27d3a30efc3eed1b77f9e))
+
+
 ## v0.56.0 (2026-08-21)
 
 ### Code Style
