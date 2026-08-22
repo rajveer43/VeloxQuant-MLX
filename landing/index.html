@@ -72,7 +72,6 @@
       <li><a href="#calculator">Calculator</a></li>
       <li><a href="#methods">Methods</a></li>
       <li><a href="#quickstart">Quickstart</a></li>
-      <li><a href="#compare">Compare</a></li>
       <li><a href="playground.html">Playground</a></li>
       <li><a href="#faq">FAQ</a></li>
       <li><a href="#install">Install</a></li>
@@ -594,122 +593,6 @@
     </details>
   </section>
 
-  <div class="divider"></div>
-
-  <!-- ── §8 COMPARISON ── -->
-  <section id="compare">
-    <div class="section-head-center">
-      <p class="section-label">Why not just use what I have?</p>
-      <h2 class="section-title">Against what you're already running</h2>
-      <p class="section-desc">
-        llama.cpp (the engine behind Ollama and LM Studio) already compresses this memory, with
-        one fixed setting and no way to drop old parts of the conversation. Plain
-        <code class="inline">mlx_lm</code> doesn't compress it at all.
-      </p>
-    </div>
-
-    <div class="table-wrap fade-in">
-      <table class="stacked">
-        <caption class="visually-hidden">Feature comparison against plain mlx_lm and llama.cpp</caption>
-        <thead>
-          <tr>
-            <th scope="col"></th>
-            <th scope="col">Plain mlx_lm</th>
-            <th scope="col">llama.cpp / Ollama</th>
-            <th scope="col">VeloxQuant-MLX</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td data-th="Row">Ways to compress memory</td>
-            <td data-th="mlx_lm" class="td-muted">None</td>
-            <td data-th="llama.cpp" class="td-muted">One fixed setting</td>
-            <td data-th="VeloxQuant" class="td-purple bar-cell"><span class="bar-fill bar-fill-purple" style="width:100%"></span><span class="bar-text t-max">41 methods to choose from</span></td>
-          </tr>
-          <tr>
-            <td data-th="Row">Can drop old parts of the conversation to save memory</td>
-            <td data-th="mlx_lm" class="td-muted">No</td>
-            <td data-th="llama.cpp" class="td-muted">No</td>
-            <td data-th="VeloxQuant" class="td-winner">Yes — 11 methods support this</td>
-          </tr>
-          <tr>
-            <td data-th="Row">Fine-tuned settings per model part</td>
-            <td data-th="mlx_lm" class="td-muted">N/A</td>
-            <td data-th="llama.cpp" class="td-muted">No — one setting for the whole model</td>
-            <td data-th="VeloxQuant" class="td-purple">Yes</td>
-          </tr>
-          <tr>
-            <td data-th="Row">Which computers it runs on</td>
-            <td data-th="mlx_lm" class="td-muted">Apple Silicon only</td>
-            <td data-th="llama.cpp" class="td-winner">Broadest — Mac, Windows, Linux, mobile</td>
-            <td data-th="VeloxQuant">Apple Silicon only</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <details class="reveal fade-in">
-      <summary>For developers: full technical comparison</summary>
-      <div class="reveal-body table-wrap">
-        <table class="stacked">
-          <caption class="visually-hidden">Extended feature comparison</caption>
-          <thead>
-            <tr>
-              <th scope="col"></th>
-              <th scope="col">Plain mlx_lm</th>
-              <th scope="col">llama.cpp / Ollama</th>
-              <th scope="col">VeloxQuant-MLX</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td data-th="Row">What it is</td>
-              <td data-th="mlx_lm" class="td-muted">Model loading + generation library</td>
-              <td data-th="llama.cpp" class="td-muted">Standalone inference runtime (C/C++)</td>
-              <td data-th="VeloxQuant">KV cache compression on top of mlx_lm</td>
-            </tr>
-            <tr>
-              <td data-th="Row">KV cache precision</td>
-              <td data-th="mlx_lm" class="td-muted">fp16, always</td>
-              <td data-th="llama.cpp">Fixed: <code class="inline">q8_0</code> or <code class="inline">q4_0</code></td>
-              <td data-th="VeloxQuant" class="td-purple">1–8 bit, chosen per method</td>
-            </tr>
-            <tr>
-              <td data-th="Row">Cross-layer compression</td>
-              <td data-th="mlx_lm" class="td-muted">No</td>
-              <td data-th="llama.cpp" class="td-muted">No</td>
-              <td data-th="VeloxQuant" class="td-winner">Yes — XQuant, MiniCache, xKV</td>
-            </tr>
-            <tr>
-              <td data-th="Row">Memory strategy</td>
-              <td data-th="mlx_lm" class="td-muted">None</td>
-              <td data-th="llama.cpp" class="td-muted">On-device only</td>
-              <td data-th="VeloxQuant">In-memory compression</td>
-            </tr>
-            <tr>
-              <td data-th="Row">Model format</td>
-              <td data-th="mlx_lm">MLX safetensors</td>
-              <td data-th="llama.cpp" class="td-muted">GGUF</td>
-              <td data-th="VeloxQuant">MLX safetensors — same as mlx_lm</td>
-            </tr>
-            <tr>
-              <td data-th="Row">Integration</td>
-              <td data-th="mlx_lm" class="td-muted">Native</td>
-              <td data-th="llama.cpp" class="td-muted">Native</td>
-              <td data-th="VeloxQuant" class="td-highlight">3 lines on top of mlx_lm</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </details>
-
-    <p class="section-desc" style="margin-top:1.5rem;font-size:0.82rem;opacity:0.65">
-      No head-to-head speed numbers against llama.cpp are published here — they're different
-      engines running on different code paths, so a direct race wouldn't be a fair comparison.
-      <a href="/docs/getting-started/comparison" class="t-accent">Full technical write-up →</a>
-    </p>
-  </section>
-
   <!-- ── §10 FAQ ── -->
   <section id="faq">
     <p class="section-label">FAQ</p>
@@ -735,8 +618,7 @@
           offers 41 different methods to choose from, some of which can be tuned per part of the
           model rather than one setting for everything. It also includes 11 methods that can drop
           old, low-value parts of a conversation entirely to save even more memory — something
-          neither llama.cpp nor plain <code class="inline">mlx_lm</code> does. See the
-          <a href="#compare">full comparison</a> above.
+          neither llama.cpp nor plain <code class="inline">mlx_lm</code> does.
         </div>
       </details>
       <details class="faq-item fade-in">
