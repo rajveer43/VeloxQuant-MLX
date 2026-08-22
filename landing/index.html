@@ -113,14 +113,10 @@
            central concept in plain words here mirrors the playground primer, so
            the page's central noun is never used before it is supplied. -->
       <p class="hero-oneliner">
-        When a local AI model chats with you, it keeps everything you've said in memory so it
-        doesn't lose the thread — that's called the "KV cache," and it can eat several
-        gigabytes of RAM on a long conversation. VeloxQuant-MLX shrinks that memory so you can
-        run <strong class="t-accent">longer conversations, or a bigger model</strong>, on the
-        Mac you already have. Free and open source. <strong class="t-max">Three lines of code</strong>
-        added to a Python script — measured at <strong class="t-accent">full normal speed</strong>
-        even at its highest compression setting on one popular model (Qwen2.5-7B). Works on
-        Apple Silicon Macs (M1 or later).
+        Local AI models keep every past message in memory (the "KV cache"), which can eat
+        gigabytes on a long chat. VeloxQuant-MLX shrinks it, so you get
+        <strong class="t-accent">longer conversations, or a bigger model</strong>, on the Mac
+        you already have — free, open source, <strong class="t-max">three lines of code</strong>.
       </p>
 
       <!-- Pills carry the measurement conditions, not bare adjectives: the old
@@ -146,8 +142,7 @@
           <span class="hero-proof-after"><strong>1.33 GB</strong> with one of our methods (<code class="inline plain">rabitq</code>) — fits, with room to spare</span>
         </div>
         <p class="hero-proof-note">
-          This particular method actually frees up that memory on your Mac, not just on paper —
-          see <a href="#calculator" class="t-accent">the calculator</a> below to check your own model.
+          Real freed memory, not just on paper — <a href="#calculator" class="t-accent">check your own model</a>.
         </p>
       </div>
 
@@ -163,19 +158,16 @@
            not measured process RSS. Most quantization methods still store dequantized
            fp16 tensors on the default mlx_lm serving path today (see GitHub #27). Only
            eviction/true-latent methods reduce resident memory today.
-           Placed after the CTA, not before it: the text is unchanged and still
-           uncollapsed above the fold, but it now qualifies the supporting "16×"
-           claim rather than standing between the headline and every action. -->
+           Placed after the CTA, not before it: stays uncollapsed above the fold,
+           qualifying the supporting "16×" claim rather than standing between the
+           headline and every action. -->
       <p class="hero-disclaimer">
-        Be aware: most of the "×" numbers on this page describe how much smaller the data
-        <em>could</em> be, not what Activity Monitor will show today — for most methods, the
-        memory isn't actually freed up on your Mac yet. Methods that <strong>do</strong> free up
-        real memory right now are marked 🔻RSS ("RSS" = the memory Activity Monitor actually
-        shows) in the
-        <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">method list</a>;
-        the rest are on the
-        <a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/27" target="_blank" rel="noopener">roadmap</a>
-        to get there. See the <a href="#faq" class="t-accent">FAQ</a> for the full explanation.
+        Most "×" numbers here are potential savings, not yet what Activity Monitor shows.
+        Methods marked 🔻RSS in the
+        <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">method list</a>
+        free real memory today; the rest are on the
+        <a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/27" target="_blank" rel="noopener">roadmap</a>.
+        Details in the <a href="#faq" class="t-accent">FAQ</a>.
       </p>
 
       <div class="install-block" id="hero-install" title="Click to copy">
