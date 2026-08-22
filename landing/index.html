@@ -70,7 +70,6 @@
       <li><a href="#waitlist">macOS app</a></li>
       <li><a href="#scenarios">Start here</a></li>
       <li><a href="#calculator">Calculator</a></li>
-      <li><a href="#methods">Methods</a></li>
       <li><a href="#quickstart">Quickstart</a></li>
       <li><a href="playground.html">Playground</a></li>
       <li><a href="#faq">FAQ</a></li>
@@ -108,10 +107,10 @@
 
       <!-- Lead with a metric that needs no asterisk. The end-to-end tok/s
            parity result is measured (see §9) and reproducible; "16×" is
-           bit-width accounting and still appears — in the pills below and in
-           the method picker — with the scope it was measured at. Defining the
-           central concept in plain words here mirrors the playground primer, so
-           the page's central noun is never used before it is supplied. -->
+           bit-width accounting and still appears in the pills below with the
+           scope it was measured at. Defining the central concept in plain
+           words here mirrors the playground primer, so the page's central
+           noun is never used before it is supplied. -->
       <p class="hero-oneliner">
         Local AI models keep every past message in memory (the "KV cache"), which can eat
         gigabytes on a long chat. VeloxQuant-MLX shrinks it, so you get
@@ -340,85 +339,11 @@
         <p class="scenario-quote">Responses get noticeably slower once the conversation gets long.</p>
         <p class="scenario-answer">See how to fix it →</p>
       </a>
-      <a class="scenario-card fade-in" href="#methods">
+      <a class="scenario-card fade-in" href="/docs/algorithms/overview">
         <p class="scenario-quote">I'm a developer and want the technical details on each compression method.</p>
-        <p class="scenario-answer">Pick a method →</p>
+        <p class="scenario-answer">Browse the algorithm reference →</p>
       </a>
     </div>
-  </section>
-
-  <div class="divider"></div>
-
-  <!-- ── §5 METHOD PICKER ── -->
-  <section id="methods">
-    <div class="section-head-center">
-      <p class="section-label">Which method</p>
-      <h2 class="section-title">You only need one</h2>
-      <p class="section-desc">
-        There are 41 compression methods available, each suited to a different situation
-        (mostly of interest to developers). Here is the one to start with — the rest are
-        below if your situation is different.
-      </p>
-    </div>
-
-    <!-- Promoted default. Two true statements were previously co-equal rows:
-         turboquant_rvq is the zero-setup library default, and rabitq is the
-         only pick here that returns resident RAM (resident=true in calc.js and
-         mac_recommender.py). A reader who arrived from an OOM wants the second.
-         Both are still offered; the difference between them is now explicit
-         rather than something the reader has to infer from two separate rows. -->
-    <div class="picker-lead fade-in">
-      <p class="picker-lead-label">Start here</p>
-      <p class="picker-lead-pick">
-        <a href="#quickstart" class="picker-tab-link" data-tab="rvq"><code class="inline plain">turboquant_rvq</code></a>
-        — no setup step, works on any model, cuts the cache to about a third of its
-        normal size.
-      </p>
-      <p class="picker-lead-note">
-        Came here because you ran out of memory? Use <code class="inline plain">rabitq</code> instead:
-        it's the pick on this page that actually frees up RAM on your Mac today, rather than
-        only being smaller in theory. Cuts memory use to about a sixth.
-      </p>
-    </div>
-
-    <!-- Deliberately no .fade-in here: the scroll observer uses a 0.12
-         threshold, which a collapsed <details> can fail to trip, leaving the
-         rows stuck at opacity 0 when the reader opens it. -->
-    <details class="reveal picker-reveal">
-      <summary>My situation is different</summary>
-      <div class="reveal-body picker-list">
-      <div class="picker-row is-max">
-        <p class="picker-goal">I want the memory savings as small as possible
-          <small>The most compression on offer, if you can spare a one-time setup step.</small></p>
-        <p class="picker-pick"><a href="#quickstart" class="picker-tab-link" data-tab="vecinfer"><code class="inline plain">vecinfer</code></a><small>up to 16× smaller on the larger part of the cache</small></p>
-      </div>
-      <div class="picker-row">
-        <p class="picker-goal">I want the longest possible conversation
-          <small>The pick here that hands real memory back on your Mac, not just a smaller number on paper.</small></p>
-        <p class="picker-pick"><code class="inline plain">rabitq</code><small>~6× smaller, whole cache</small></p>
-      </div>
-      <div class="picker-row">
-        <p class="picker-goal">I need the answers to stay as accurate as possible
-          <small>Compresses least, stays closest to how the model normally behaves.</small></p>
-        <p class="picker-pick"><code class="inline plain">kivi</code><small>~4× smaller, whole cache</small></p>
-      </div>
-      <div class="picker-row">
-        <p class="picker-goal">I never want it to run out of memory, no matter how long the chat
-          <small>Forgets older messages to hold memory flat. Fine for chat, risky if you need to recall something from early in a long document.</small></p>
-        <p class="picker-pick"><code class="inline plain">streaming_llm</code> / <code class="inline plain">h2o</code><small>fixed size, doesn't grow</small></p>
-      </div>
-      <div class="picker-row">
-        <p class="picker-goal">I'm a developer and want the full technical picture
-          <small>35 more methods, each adapted from a published research paper.</small></p>
-        <p class="picker-pick"><a href="/docs/algorithms/overview" class="t-accent">algorithm reference →</a></p>
-      </div>
-      </div>
-    </details>
-
-    <p class="section-desc" style="margin-top:1.5rem;font-size:0.82rem;opacity:0.7">
-      Picked one? <a href="#quickstart" class="t-accent">Jump to the code →</a> ·
-      <a href="#install" class="t-accent">or install and go →</a>
-    </p>
   </section>
 
   <div class="divider"></div>
