@@ -73,7 +73,6 @@
       <li><a href="#methods">Methods</a></li>
       <li><a href="#quickstart">Quickstart</a></li>
       <li><a href="#compare">Compare</a></li>
-      <li><a href="#benchmarks">Benchmarks</a></li>
       <li><a href="playground.html">Playground</a></li>
       <li><a href="#faq">FAQ</a></li>
       <li><a href="#install">Install</a></li>
@@ -346,9 +345,9 @@
         <p class="scenario-quote">My Mac ran out of memory partway through a long chat.</p>
         <p class="scenario-answer">Size it for your machine →</p>
       </a>
-      <a class="scenario-card fade-in" href="#benchmarks">
+      <a class="scenario-card fade-in" href="#quickstart">
         <p class="scenario-quote">Responses get noticeably slower once the conversation gets long.</p>
-        <p class="scenario-answer">See real speed measurements →</p>
+        <p class="scenario-answer">See how to fix it →</p>
       </a>
       <a class="scenario-card fade-in" href="#methods">
         <p class="scenario-quote">I'm a developer and want the technical details on each compression method.</p>
@@ -731,158 +730,9 @@
     <p class="section-desc" style="margin-top:1.5rem;font-size:0.82rem;opacity:0.65">
       No head-to-head speed numbers against llama.cpp are published here — they're different
       engines running on different code paths, so a direct race wouldn't be a fair comparison.
-      This page's own speed and compression numbers across 12 models are in
-      <a href="#benchmarks" class="t-accent">benchmarks →</a>.
       <a href="/docs/getting-started/comparison" class="t-accent">Full technical write-up →</a>
     </p>
   </section>
-
-  <div class="divider"></div>
-
-  <!-- ── §9 BENCHMARKS ── -->
-  <section id="benchmarks">
-    <p class="section-label">Benchmarks</p>
-    <h2 class="section-title">Real speed, measured across many models on a Mac</h2>
-    <p class="section-desc" style="margin-bottom:1.75rem">
-      Actually generating text end-to-end, not a synthetic test — a 200-token prompt followed
-      by 120 tokens of generation. The two results worth knowing first:
-    </p>
-
-    <div class="outlier-grid">
-      <div class="outlier win fade-in">
-        <span class="outlier-tag">✓ No speed penalty at all</span>
-        <strong>Qwen2.5-7B</strong> — our smallest setting (VecInfer-1bit, 16× less memory) runs at
-        <strong>21.5 tokens/sec vs 21.0 uncompressed</strong>. On this particular model, the
-        smaller cache actually makes it slightly faster, not slower.
-      </div>
-      <div class="outlier loss fade-in">
-        <span class="outlier-tag">✗ Avoid VecInfer on this one model</span>
-        <strong>Qwen3-8B</strong> — that same smallest setting collapses to
-        <strong>2.4 tokens/sec, about 1/8th normal speed</strong>. Use our default
-        (<code class="inline">turboquant_rvq</code>) on this model instead — 19.6 tokens/sec.
-      </div>
-    </div>
-
-    <details class="reveal fade-in">
-      <summary>See the full data, model by model</summary>
-      <div class="reveal-body table-wrap">
-        <table class="stacked">
-          <caption class="visually-hidden">Throughput and compression by model and method</caption>
-          <thead>
-            <tr>
-              <th scope="col">Model</th>
-              <th scope="col">FP16<br><span style="font-weight:400;opacity:0.6;font-size:0.72rem">tok/s</span></th>
-              <th scope="col">RVQ-1bit<br><span style="font-weight:400;opacity:0.6;font-size:0.72rem">tok/s</span></th>
-              <th scope="col">RVQ ratio</th>
-              <th scope="col">VecInfer-1bit<br><span style="font-weight:400;opacity:0.6;font-size:0.72rem">tok/s</span></th>
-              <th scope="col">VecInfer ratio</th>
-              <th scope="col">Best pick</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td data-th="Model">Llama-3.2-1B</td>
-              <td data-th="FP16">105.4</td>
-              <td data-th="RVQ" class="td-highlight">104.3</td>
-              <td data-th="RVQ ratio" class="td-highlight">7.1×</td>
-              <td data-th="VecInfer" class="td-highlight">91.2</td>
-              <td data-th="VecInfer ratio" class="td-purple">16×</td>
-              <td data-th="Best pick" class="td-muted">RVQ-1bit</td>
-            </tr>
-            <tr>
-              <td data-th="Model">Llama-3.2-3B</td>
-              <td data-th="FP16">47.6</td>
-              <td data-th="RVQ" class="td-highlight">46.2</td>
-              <td data-th="RVQ ratio" class="td-highlight">7.5×</td>
-              <td data-th="VecInfer" class="td-highlight">40.2</td>
-              <td data-th="VecInfer ratio" class="td-purple">16×</td>
-              <td data-th="Best pick" class="td-muted">RVQ-1bit</td>
-            </tr>
-            <tr>
-              <td data-th="Model">Llama-3.1-8B</td>
-              <td data-th="FP16">20.5</td>
-              <td data-th="RVQ" class="td-highlight">20.6</td>
-              <td data-th="RVQ ratio" class="td-highlight">7.5×</td>
-              <td data-th="VecInfer" class="td-highlight">19.6</td>
-              <td data-th="VecInfer ratio" class="td-purple">16×</td>
-              <td data-th="Best pick" class="td-muted">RVQ-1bit</td>
-            </tr>
-            <tr>
-              <td data-th="Model">Mistral-7B</td>
-              <td data-th="FP16">23.6</td>
-              <td data-th="RVQ" class="td-highlight">22.8</td>
-              <td data-th="RVQ ratio" class="td-highlight">7.5×</td>
-              <td data-th="VecInfer" class="td-highlight">9.8</td>
-              <td data-th="VecInfer ratio" class="td-purple">16×</td>
-              <td data-th="Best pick" class="td-muted">RVQ-1bit</td>
-            </tr>
-            <tr>
-              <td data-th="Model"><strong>Qwen2.5-7B</strong></td>
-              <td data-th="FP16">21.0</td>
-              <td data-th="RVQ" class="td-highlight">20.7</td>
-              <td data-th="RVQ ratio" class="td-highlight">7.5×</td>
-              <td data-th="VecInfer" class="td-winner">21.5 ↑ fp16</td>
-              <td data-th="VecInfer ratio" class="td-purple">16×</td>
-              <td data-th="Best pick" class="td-purple">VecInfer-1bit</td>
-            </tr>
-            <tr>
-              <td data-th="Model"><strong>Qwen3-8B</strong></td>
-              <td data-th="FP16">20.3</td>
-              <td data-th="RVQ" class="td-highlight">19.6</td>
-              <td data-th="RVQ ratio" class="td-highlight">7.5×</td>
-              <td data-th="VecInfer" class="td-caution">2.4 ↓ 12% of fp16</td>
-              <td data-th="VecInfer ratio" class="td-purple">16×</td>
-              <td data-th="Best pick" class="td-muted">RVQ-1bit</td>
-            </tr>
-            <tr>
-              <td data-th="Model">Phi-4</td>
-              <td data-th="FP16">10.4</td>
-              <td data-th="RVQ" class="td-highlight">8.1</td>
-              <td data-th="RVQ ratio" class="td-highlight">7.5×</td>
-              <td data-th="VecInfer" class="td-highlight">4.0</td>
-              <td data-th="VecInfer ratio" class="td-purple">16×</td>
-              <td data-th="Best pick" class="td-muted">TQ-2bit (9.6)</td>
-            </tr>
-            <tr>
-              <td data-th="Model">Falcon3-7B</td>
-              <td data-th="FP16">17.3</td>
-              <td data-th="RVQ" class="td-highlight">21.7</td>
-              <td data-th="RVQ ratio" class="td-highlight">7.8×</td>
-              <td data-th="VecInfer" class="td-highlight">17.0</td>
-              <td data-th="VecInfer ratio" class="td-purple">16×</td>
-              <td data-th="Best pick" class="td-muted">RVQ-1bit</td>
-            </tr>
-            <tr>
-              <td data-th="Model"><strong>gemma-3-4b</strong></td>
-              <td data-th="FP16">26.0</td>
-              <td data-th="RVQ" class="td-highlight">24.2</td>
-              <td data-th="RVQ ratio" class="td-highlight">7.8×</td>
-              <td data-th="VecInfer" class="td-winner">22.6</td>
-              <td data-th="VecInfer ratio" class="td-purple">16×</td>
-              <td data-th="Best pick" class="td-purple">VecInfer-1bit</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </details>
-
-    <p class="repro">
-      <b>Reproduce:</b> python benchmark_scripts/bench_e2e.py --models all — Apple M-series, MLX ≥ 0.18, unified memory
-    </p>
-
-    <p class="bench-note" style="margin-top:1.5rem">
-      Full per-model charts and raw data in
-      <a href="https://github.com/rajveer43/VeloxQuant-MLX/tree/master/figures" target="_blank" rel="noopener" class="t-accent">figures/</a>.
-      On-chip acceleration benchmarks and memory measurements live in the
-      <a href="playground.html" class="t-accent">playground →</a>
-    </p>
-
-    <p class="section-desc" style="margin-top:1rem;font-size:0.82rem;opacity:0.7">
-      Picked a method from the numbers above? <a href="#install" class="t-accent">Install and go →</a>
-    </p>
-  </section>
-
-  <div class="divider"></div>
 
   <!-- ── §10 FAQ ── -->
   <section id="faq">
