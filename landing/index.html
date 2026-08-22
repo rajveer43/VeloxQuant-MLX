@@ -703,30 +703,6 @@
       </div>
     </details>
 
-    <div class="explainer-grid explainer-grid-3" style="margin-top:2rem">
-      <div class="explainer-card fade-in">
-        <p class="section-label" style="margin-bottom:0.4rem">Where llama.cpp wins</p>
-        <p class="explainer-text">
-          It's the more mature, more widely used project — runs on <strong class="t-strong">every platform</strong>,
-          not just Apple Silicon. Its built-in cache compression is battle-tested at massive scale
-          through Ollama and LM Studio, and needs zero configuration. If you're not on a Mac, or
-          you want the most proven path with the least decision-making, that's the right default.
-        </p>
-      </div>
-      <div class="explainer-card fade-in">
-        <p class="section-label" style="margin-bottom:0.4rem">Where VeloxQuant-MLX wins</p>
-        <p class="explainer-text">
-          llama.cpp offers one fixed compression setting applied the same way everywhere, with no
-          way to drop old conversation history. VeloxQuant-MLX goes further —
-          <strong class="t-accent">up to 16× on the key half of the cache</strong> — with methods
-          tuned for accuracy on Apple hardware, plus
-          <strong class="t-strong">11 methods</strong> that can drop stale parts of a conversation
-          entirely. All on top of the <code class="inline">mlx_lm</code> stack you're likely
-          already running.
-        </p>
-      </div>
-    </div>
-
     <p class="section-desc" style="margin-top:1.5rem;font-size:0.82rem;opacity:0.65">
       No head-to-head speed numbers against llama.cpp are published here — they're different
       engines running on different code paths, so a direct race wouldn't be a fair comparison.
