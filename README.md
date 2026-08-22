@@ -1,13 +1,12 @@
 <div align="center">
 
-<!-- Replace with your generated cover image -->
-<img src="assets/veloxquant.png" alt="VeloxQuant-MLX" width="860" />
-
-<h1>VeloxQuant-MLX</h1>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/veloxquant-logo-dark.svg" />
+  <img src="assets/veloxquant-logo.svg" alt="VeloxQuant-MLX — Fast KV Cache Quantization for Apple Silicon" width="560" />
+</picture>
 
 <p>
-  <strong>Fast KV Cache Quantization for Apple Silicon</strong><br/>
-  TurboQuant · RVQ · VecInfer · RateQuant · PolarQuant · QJL · SpectralQuant · CommVQ · RaBitQ — in MLX
+  43 compression methods — quantizers, token-eviction caches, cross-layer merging — in MLX
 </p>
 
 <p>
@@ -33,16 +32,12 @@
   <a href="SECURITY.md"><img src="https://img.shields.io/badge/security-policy-1f6feb?style=flat-square" alt="Security policy"/></a>
 </p>
 
-<!-- Text links rather than a third badge row. The project docs, governance and
-     support links are all reachable, but they no longer compete with the
-     status badges above for a first-time reader's attention. -->
+<!-- Text links rather than a third badge row. Governance, Security and Support
+     are one section away (see Table of contents) so they aren't repeated here. -->
 <p>
   <a href="https://veloxquant-mlx.netlify.app/">Docs</a> ·
   <a href="https://veloxquant-mlx.netlify.app/playground.html">Playground</a> ·
-  <a href="#project--governance">Governance</a> ·
-  <a href="SECURITY.md">Security</a> ·
-  <a href="CONTRIBUTING.md">Contributing</a> ·
-  <a href="#support">Support the project</a>
+  <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 </div>
@@ -435,7 +430,7 @@ cache = (
 pytest veloxquant_mlx/tests/ -v
 
 # 2-bit improvement validation — fast synthetic run
-python test_2bit_improvements.py
+python benchmark_scripts/test_2bit_improvements.py
 
 # Generate optimization-journey figure
 python scripts/plot_optimization_journey.py
