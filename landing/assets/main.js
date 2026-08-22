@@ -63,6 +63,11 @@ function activateTab(tab, { scrollIntoView = true } = {}) {
   );
   const panel = document.getElementById('tab-' + tab);
   if (panel) panel.classList.add('active');
+  // The advanced examples (VecInfer, RateQuant, VLM) live inside a
+  // collapsed <details> — open it so a picker-link handoff actually shows
+  // the tab it just selected, instead of leaving it collapsed.
+  const details = btn.closest('details');
+  if (details && !details.open) details.open = true;
   // Keep the active tab button in view on the horizontally-scrolling
   // mobile tab strip.
   if (scrollIntoView) btn.scrollIntoView({ inline: 'nearest', block: 'nearest' });
