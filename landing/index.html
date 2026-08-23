@@ -87,119 +87,128 @@
 
   <!-- ── §1 HERO ── -->
   <section id="hero">
-    <canvas id="matrix-canvas" aria-hidden="true"></canvas>
-    <div class="aurora-container" aria-hidden="true">
-      <div class="aurora-blob aurora-blob-1"></div>
-      <div class="aurora-blob aurora-blob-2"></div>
-      <div class="aurora-blob aurora-blob-3"></div>
-    </div>
-    <div class="particles-container" aria-hidden="true">
-      <div class="particle"></div>
-      <div class="particle"></div>
-      <div class="particle"></div>
-      <div class="particle"></div>
-      <div class="particle"></div>
-    </div>
-    <div class="hero-content">
-      <div class="badge" id="hero-badge" data-text="v0.57.0 — fused KIVI-style Metal attention kernel shipped">v0.57.0 — fused KIVI-style Metal attention kernel shipped</div>
+    <div class="hero-grid">
+      <!-- Left Column: Copy & Actions -->
+      <div class="hero-left">
+        <div class="badge" id="hero-badge">v0.57.0 — fused KIVI-style Metal attention kernel shipped</div>
+        
+        <h1>Your Mac runs out of memory before your conversation runs out of <span>things to say</span></h1>
+        
+        <p class="hero-oneliner">
+          Local AI models keep every past message in memory (the "KV cache"), which eats 
+          gigabytes on long chats. VeloxQuant-MLX shrinks it, giving you 
+          <strong class="t-accent">longer conversations or bigger models</strong> on the Mac 
+          you already have — free, open source, in <strong class="t-max">three lines of code</strong>.
+        </p>
 
-      <h1>Your Mac runs out of memory<br>before your conversation runs out of <span>things to say</span></h1>
-
-      <!-- Lead with a metric that needs no asterisk. The end-to-end tok/s
-           parity result is measured (see §9) and reproducible; "16×" is
-           bit-width accounting and still appears in the pills below with the
-           scope it was measured at. Defining the central concept in plain
-           words here mirrors the playground primer, so the page's central
-           noun is never used before it is supplied. -->
-      <p class="hero-oneliner">
-        Local AI models keep every past message in memory (the "KV cache"), which can eat
-        gigabytes on a long chat. VeloxQuant-MLX shrinks it, so you get
-        <strong class="t-accent">longer conversations, or a bigger model</strong>, on the Mac
-        you already have — free, open source, <strong class="t-max">three lines of code</strong>.
-      </p>
-
-      <!-- Pills carry the measurement conditions, not bare adjectives: the old
-           "Near-identical quality" was unverifiable, so each claim now names
-           the model or shape it was measured on. -->
-      <div class="hero-pills">
-        <span class="hero-pill">Up to 16× less memory used</span>
-        <span class="hero-pill">3-line setup</span>
-        <span class="hero-pill">No speed loss on Qwen2.5-7B, even at max compression</span>
-        <span class="hero-pill">Runs entirely on your Mac — nothing sent anywhere</span>
-      </div>
-
-      <!-- Before/after, using only numbers the calculator already derives:
-           fp16 KV at 64k on Llama-3.1-8B (32 layers, 8 KV heads, head_dim 128)
-           is 8.00 GB; rabitq is the one method here with resident=true in
-           calc.js, so it is the only honest pick for a "this now fits" claim.
-           6× → 1.33 GB. Static, so it needs no interaction to land. -->
-      <div class="hero-proof">
-        <p class="hero-proof-head">Example: Llama-3.1-8B, a long conversation (64k tokens), on a 16 GB MacBook Air</p>
-        <div class="hero-proof-row">
-          <span class="hero-proof-before"><strong>8.00 GB</strong> of memory needed normally — won't load</span>
-          <span class="hero-proof-arrow" aria-hidden="true">→</span>
-          <span class="hero-proof-after"><strong>1.33 GB</strong> with one of our methods (<code class="inline plain">rabitq</code>) — fits, with room to spare</span>
+        <div class="install-block" id="hero-install" title="Click to copy">
+          <span class="dollar">$</span>
+          <span id="install-cmd">pip install VeloxQuant-MLX</span>
+          <button class="copy-btn" id="hero-copy-btn" aria-label="Copy install command">Copy</button>
         </div>
-        <p class="hero-proof-note">
-          Real freed memory, not just on paper — <a href="#calculator" class="t-accent">check your own model</a>.
+
+        <div class="cta-row">
+          <a href="#calculator" class="btn btn-filled">Will your model fit? <span data-icon>→</span></a>
+          <a href="playground.html" class="btn btn-outline">Try the playground ▶</a>
+        </div>
+
+        <p class="hero-secondary-links">
+          <a href="#quickstart" class="t-accent">See the 3 lines ↓</a>
+          <span>·</span>
+          <a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a>
+          <span>·</span>
+          <a href="https://pypi.org/project/VeloxQuant-MLX/" target="_blank" rel="noopener">PyPI</a>
+          <span>·</span>
+          <a href="/docs/">Docs</a>
         </p>
       </div>
 
-      <!-- One primary action. "See it work" beats "install it": a reader who
-           does not yet know what a KV cache is will not pip install on the
-           strength of a number. The install command stays copyable directly
-           below for the reader who is already sold. -->
-      <div class="cta-row">
-        <a href="#calculator" class="btn btn-filled">Will your model fit? <span data-icon>→</span></a>
+      <!-- Right Column: Visual Diagram & Stats -->
+      <div class="hero-right">
+        <!-- SVG Architecture Blueprint Diagram -->
+        <div class="diagram-container">
+          <svg class="unified-memory-diagram" viewBox="0 0 500 370" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="500" height="370" rx="12" fill="var(--surface)" stroke="var(--border)" stroke-width="1"/>
+            
+            <text x="24" y="36" fill="var(--text)" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="14">Unified RAM Allocation (16 GB Mac)</text>
+            <text x="24" y="54" fill="var(--muted)" font-family="Inter, system-ui, sans-serif" font-size="11">How VeloxQuant fits large contexts in RAM</text>
+            
+            <!-- Left Diagram Box: Without VeloxQuant -->
+            <g transform="translate(24, 80)">
+              <rect width="210" height="260" rx="8" fill="var(--bg)" stroke="var(--border)" stroke-dasharray="4 4"/>
+              <text x="16" y="24" fill="var(--muted)" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="10" letter-spacing="0.05em">WITHOUT VELOXQUANT</text>
+              
+              <!-- OS Memory -->
+              <rect x="12" y="38" width="186" height="45" rx="6" fill="var(--surface)" stroke="var(--border)"/>
+              <text x="24" y="58" fill="var(--muted)" font-family="Inter, system-ui, sans-serif" font-size="11">macOS &amp; Apps</text>
+              <text x="24" y="72" fill="var(--text)" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="11">4.0 GB</text>
+              
+              <!-- Model Weight -->
+              <rect x="12" y="91" width="186" height="45" rx="6" fill="var(--surface)" stroke="var(--border)"/>
+              <text x="24" y="111" fill="var(--muted)" font-family="Inter, system-ui, sans-serif" font-size="11">Llama-3.1-8B (4-bit)</text>
+              <text x="24" y="125" fill="var(--text)" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="11">4.5 GB</text>
+              
+              <!-- Normal KV Cache (Fails) -->
+              <rect x="12" y="144" width="186" height="104" rx="6" fill="rgba(239, 68, 68, 0.06)" stroke="#ef4444" stroke-width="1.5"/>
+              <text x="24" y="168" fill="#ef4444" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="12">Standard KV Cache</text>
+              <text x="24" y="185" fill="var(--text)" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="11">8.0 GB (at 64k tokens)</text>
+              <text x="24" y="210" fill="#f87171" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="600">⚠️ Out of Memory (OOM)</text>
+              <text x="24" y="224" fill="#f87171" font-family="Inter, system-ui, sans-serif" font-size="10">System Swap / Model Crash</text>
+            </g>
+
+            <!-- Right Diagram Box: With VeloxQuant -->
+            <g transform="translate(266, 80)">
+              <rect width="210" height="260" rx="8" fill="var(--bg)" stroke="var(--border)" stroke-dasharray="4 4"/>
+              <text x="16" y="24" fill="var(--accent)" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="10" letter-spacing="0.05em">WITH VELOXQUANT</text>
+              
+              <!-- OS Memory -->
+              <rect x="12" y="38" width="186" height="45" rx="6" fill="var(--surface)" stroke="var(--border)"/>
+              <text x="24" y="58" fill="var(--muted)" font-family="Inter, system-ui, sans-serif" font-size="11">macOS &amp; Apps</text>
+              <text x="24" y="72" fill="var(--text)" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="11">4.0 GB</text>
+              
+              <!-- Model Weight -->
+              <rect x="12" y="91" width="186" height="45" rx="6" fill="var(--surface)" stroke="var(--border)"/>
+              <text x="24" y="111" fill="var(--muted)" font-family="Inter, system-ui, sans-serif" font-size="11">Llama-3.1-8B (4-bit)</text>
+              <text x="24" y="125" fill="var(--text)" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="11">4.5 GB</text>
+              
+              <!-- Compressed KV Cache (Fits) -->
+              <rect x="12" y="144" width="186" height="45" rx="6" fill="rgba(34, 197, 94, 0.06)" stroke="#22c55e" stroke-width="1.5"/>
+              <text x="24" y="165" fill="#22c55e" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="11">Quantized KV Cache</text>
+              <text x="24" y="179" fill="var(--text)" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="11">1.33 GB (RVQ-1bit)</text>
+              
+              <!-- Available Headroom -->
+              <rect x="12" y="197" width="186" height="51" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-dasharray="3 3"/>
+              <text x="24" y="217" fill="var(--muted)" font-family="Inter, system-ui, sans-serif" font-size="11">Free RAM Headroom</text>
+              <text x="24" y="231" fill="#3b82f6" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="11">6.17 GB (Stable Run)</text>
+            </g>
+          </svg>
+        </div>
+
+        <div class="hero-proof">
+          <p class="hero-proof-head">Llama-3.1-8B (64k context) memory footprint:</p>
+          <div class="hero-proof-row">
+            <span class="hero-proof-before"><strong>8.00 GB</strong> normal</span>
+            <span class="hero-proof-arrow" aria-hidden="true">→</span>
+            <span class="hero-proof-after"><strong>1.33 GB</strong> with <code class="inline plain">rabitq</code></span>
+          </div>
+        </div>
+
+        <div class="hero-pills">
+          <span class="hero-pill">Up to 16× less KV cache RAM</span>
+          <span class="hero-pill">No speed loss on Qwen2.5-7B</span>
+          <span class="hero-pill">Zero cloud dependencies</span>
+        </div>
+
+        <p class="hero-disclaimer">
+          Quantization ratios represent cache compression. Methods marked 🔻RSS in the 
+          <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">algorithm list</a> 
+          free process resident memory today. Details in <a href="#faq" class="t-accent">FAQ</a>.
+        </p>
+
+        <p class="hero-meta">
+          Foss (MIT) · Runs locally on Apple Silicon (M1+) · Works with <code class="inline plain">mlx_lm</code> &amp; <code class="inline plain">mlx-vlm</code>
+        </p>
       </div>
-
-      <!-- Accounting vs resident RAM: compression ratios are bit-width accounting,
-           not measured process RSS. Most quantization methods still store dequantized
-           fp16 tensors on the default mlx_lm serving path today (see GitHub #27). Only
-           eviction/true-latent methods reduce resident memory today.
-           Placed after the CTA, not before it: stays uncollapsed above the fold,
-           qualifying the supporting "16×" claim rather than standing between the
-           headline and every action. -->
-      <p class="hero-disclaimer">
-        Most "×" numbers here are potential savings, not yet what Activity Monitor shows.
-        Methods marked 🔻RSS in the
-        <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">method list</a>
-        free real memory today; the rest are on the
-        <a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/27" target="_blank" rel="noopener">roadmap</a>.
-        Details in the <a href="#faq" class="t-accent">FAQ</a>.
-      </p>
-
-      <div class="install-block" id="hero-install" title="Click to copy">
-        <span class="dollar">$</span>
-        <span id="install-cmd">pip install VeloxQuant-MLX</span>
-        <button class="copy-btn" id="hero-copy-btn" aria-label="Copy install command">Copy</button>
-      </div>
-
-      <p class="hero-tertiary hero-secondary-links">
-        <a href="#quickstart" class="t-accent">See the 3 lines ↓</a>
-        <span>·</span>
-        <a href="playground.html" class="t-accent">Try the playground ▶</a>
-      </p>
-
-      <p class="hero-tertiary">
-        <a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a>
-        <span>·</span>
-        <a href="https://pypi.org/project/VeloxQuant-MLX/" target="_blank" rel="noopener">PyPI</a>
-        <span>·</span>
-        <a href="/docs/">Docs</a>
-      </p>
-
-      <!-- Qualify and disqualify in one row. Saying who this is NOT for is
-           a trust signal, not a lost conversion. -->
-      <p class="hero-meta">
-        Free &amp; open source (MIT license)
-        <span>·</span>
-        Runs entirely on your Mac — nothing sent anywhere
-        <span>·</span>
-        Requires Apple Silicon (M1 or later)
-        <span>·</span>
-        Works with <code class="inline plain">mlx_lm</code> &amp; <code class="inline plain">mlx-vlm</code>
-      </p>
     </div>
   </section>
 

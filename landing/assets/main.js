@@ -79,138 +79,7 @@ function initCodeTabs() {
   });
 }
 
-// ── HERO BADGE TYPING ANIMATION ──
-function initBadgeTyping() {
-  const badge = document.getElementById('hero-badge');
-  if (!badge) return;
-  const text = badge.dataset.text || badge.textContent.trim();
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    badge.textContent = text;
-    return;
-  }
-  let i = 0;
-  badge.textContent = '';
-  const cursor = document.createElement('span');
-  cursor.className = 'badge-cursor';
-  badge.appendChild(cursor);
-
-  const interval = setInterval(() => {
-    badge.insertBefore(document.createTextNode(text[i]), cursor);
-    i++;
-    if (i >= text.length) {
-      clearInterval(interval);
-      setTimeout(() => cursor.remove(), 1500);
-    }
-  }, 35);
-}
-
-// ── HERO MATRIX-RAIN CANVAS ──
-// Decorative only; skipped for reduced-motion and on narrow/touch viewports
-// where it costs battery for no visible benefit (the canvas covers the hero,
-// which is mostly obscured by content on small screens anyway).
-function initMatrixRain() {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  if (window.matchMedia('(max-width: 640px)').matches) return;
-
-  const canvas = document.getElementById('matrix-canvas');
-  const hero = document.getElementById('hero');
-  if (!canvas || !hero) return;
-  const ctx = canvas.getContext('2d');
-  const chars = '01ABCDEFx+=<>[]{}∑∫ΔΩπ';
-  const fontSize = 13;
-  let cols, drops;
-
-  function resize() {
-    canvas.width = hero.offsetWidth;
-    canvas.height = hero.offsetHeight;
-    cols = Math.floor(canvas.width / fontSize);
-    drops = Array.from({ length: cols }, () => Math.random() * -50);
-  }
-
-  resize();
-  new ResizeObserver(resize).observe(hero);
-
-  function themeColors() {
-    const styles = getComputedStyle(document.documentElement);
-    return {
-      bg: styles.getPropertyValue('--bg').trim() || '#08080f',
-      accent: styles.getPropertyValue('--accent').trim() || '#00d4ff',
-    };
-  }
-
-  function draw() {
-    const { bg, accent } = themeColors();
-    ctx.fillStyle = hexToRgba(bg, 0.05);
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = accent;
-    ctx.font = fontSize + 'px JetBrains Mono, monospace';
-    for (let i = 0; i < cols; i++) {
-      const ch = chars[Math.floor(Math.random() * chars.length)];
-      ctx.fillText(ch, i * fontSize, drops[i] * fontSize);
-      if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
-      drops[i] += 0.4;
-    }
-  }
-
-  // rAF-driven at a throttled ~16fps rather than a bare setInterval, so the
-  // browser pauses it in background tabs instead of animating off-screen.
-  let last = 0;
-  let stopped = false;
-  function frame(now) {
-    if (stopped) return;
-    if (now - last >= 60) { draw(); last = now; }
-    requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
-
-  // Stop entirely once the hero scrolls out of view.
-  const vis = new IntersectionObserver(entries => {
-    entries.forEach(e => {
-      if (e.isIntersecting && stopped) { stopped = false; requestAnimationFrame(frame); }
-      else if (!e.isIntersecting) { stopped = true; }
-    });
-  }, { threshold: 0 });
-  vis.observe(hero);
-}
-
-// ── HERO SCROLL PARALLAX (aurora blobs) ──
-function initScrollParallax() {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const heroEl = document.getElementById('hero');
-  if (!heroEl) return;
-  const auroraContainer = heroEl.querySelector('.aurora-container');
-  if (!auroraContainer) return;
-
-  // Write the transform inside rAF so a fast scroll can't queue up layout
-  // work on every single scroll event.
-  let ticking = false;
-  window.addEventListener('scroll', () => {
-    if (ticking) return;
-    ticking = true;
-    requestAnimationFrame(() => {
-      ticking = false;
-      const heroH = heroEl.offsetHeight;
-      if (window.scrollY > heroH) return;
-      auroraContainer.style.transform = `translateY(${(window.scrollY / heroH) * 60}px)`;
-    });
-  }, { passive: true });
-}
-
-// ── MAGNETIC BUTTONS (desktop hover only — mousemove never fires on touch) ──
-function initMagneticButtons() {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  document.querySelectorAll('.btn').forEach(btn => {
-    btn.addEventListener('mousemove', e => {
-      const rect = btn.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const dx = (e.clientX - cx) / (rect.width / 2);
-      const dy = (e.clientY - cy) / (rect.height / 2);
-      btn.style.transform = `translate(${dx * 7}px, ${dy * 5}px)`;
-    });
-    btn.addEventListener('mouseleave', () => { btn.style.transform = ''; });
-  });
-}
+// (Removed AI animations code: initBadgeTyping, initMatrixRain, initScrollParallax, initMagneticButtons)
 
 // ── INLINE MEMORY CALCULATOR ──
 // Three inputs only; the full parameter surface stays in the playground.
@@ -330,65 +199,7 @@ function initCalculator() {
   ctxRange.addEventListener('input', render);
 }
 
-// ── CODE BLOCK "TERMINAL BOOT" TYPE-ON EFFECT ──
-// Only ever applied to blocks that opt in with data-boot: the quickstart diff
-// is meant to be copied, and making someone wait for it to type is hostile.
-function bootCode(preEl) {
-  if (preEl.dataset.booted) return;
-  preEl.dataset.booted = 'true';
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-  const original = preEl.innerHTML;
-  preEl.innerHTML = '';
-
-  const tmp = document.createElement('div');
-  tmp.innerHTML = original;
-
-  const cursor = document.createElement('span');
-  cursor.className = 'code-cursor-blink';
-  preEl.appendChild(cursor);
-
-  const nodes = Array.from(tmp.childNodes);
-  let nodeIdx = 0;
-  let charIdx = 0;
-  let delay = 0;
-
-  function nextTick() {
-    if (nodeIdx >= nodes.length) { cursor.remove(); return; }
-    const node = nodes[nodeIdx];
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent;
-      if (charIdx < text.length) {
-        preEl.insertBefore(document.createTextNode(text[charIdx]), cursor);
-        charIdx++;
-        delay = 12;
-      } else {
-        nodeIdx++; charIdx = 0; delay = 0;
-      }
-    } else {
-      preEl.insertBefore(node.cloneNode(true), cursor);
-      nodeIdx++; charIdx = 0; delay = 18;
-    }
-    setTimeout(nextTick, delay);
-  }
-
-  setTimeout(nextTick, 120);
-}
-
-function initCodeBootAnimation() {
-  const targets = document.querySelectorAll('.code-wrap[data-boot]');
-  if (!targets.length) return;
-  const codeObserver = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        const pre = entry.target.querySelector('pre');
-        if (pre) bootCode(pre);
-        codeObserver.unobserve(entry.target);
-      }
-    });
-  }, { threshold: 0.25 });
-  targets.forEach(el => codeObserver.observe(el));
-}
+// (Removed AI animations code: initCodeBootAnimation)
 
 // ── STAT NUMBER COUNTER ──
 function animateCounter(element, target, suffix) {
@@ -580,11 +391,6 @@ function initWaitlistForm() {
 document.addEventListener('DOMContentLoaded', () => {
   initCopyButtons();
   initCodeTabs();
-  initBadgeTyping();
-  initMatrixRain();
-  initScrollParallax();
-  initMagneticButtons();
-  initCodeBootAnimation();
   initCalculator();
   initScrollFadeIn();
   initActiveNav();
