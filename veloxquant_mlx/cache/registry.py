@@ -43,7 +43,23 @@ __all__ = [
     "DEFAULT_SERVE_METHOD",
 ]
 
-DOCS_BASE = "https://veloxquant-mlx.netlify.app/algorithms"
+DOCS_BASE = "https://veloxquant-mlx.netlify.app/docs/algorithms"
+
+#: Registry method name -> published doc-site slug. The docs site (Docusaurus,
+#: migrated from the old static-HTML `/algorithms/<slug>` layout) has its own
+#: page-naming scheme that does not mechanically match `MethodInfo.name`
+#: (e.g. `turboquant_rvq` -> `rvq`, `polar` -> `polarquant`), and it does not
+#: yet have a page for most registry methods. A method absent from this map
+#: has no docs page; `docs_url` is `None` rather than a synthesized dead link.
+#: Sourced from https://veloxquant-mlx.netlify.app/sitemap.xml.
+_DOCS_SLUG: Dict[str, str] = {
+    "turboquant_rvq": "rvq",
+    "polar": "polarquant",
+    "kivi": "kivi",
+    "qjl": "qjl",
+    "spectral": "spectral",
+    "vecinfer": "vecinfer",
+}
 
 #: What ``veloxquant serve`` starts with when the user does not pick a method.
 #: This was originally chosen because ``KVCacheConfig`` defaulted to
@@ -147,8 +163,9 @@ class MethodInfo:
     coverage: TelemetryCoverage = TelemetryCoverage.NONE
 
     @property
-    def docs_url(self) -> str:
-        return f"{DOCS_BASE}/{self.name.replace('_', '-')}"
+    def docs_url(self) -> Optional[str]:
+        slug = _DOCS_SLUG.get(self.name)
+        return f"{DOCS_BASE}/{slug}" if slug is not None else None
 
     @property
     def is_adapted(self) -> bool:
