@@ -293,6 +293,30 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.57.1 (2026-08-25)
+
+### Bug Fixes
+
+- **ui**: Harden static-file path containment check in control panel
+  ([`c1086a1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c1086a1fbb2ee098f77d81fd970e6d6b9a0b6cac))
+
+### Chores
+
+- **landing**: Add Plausible analytics
+  ([#244](https://github.com/rajveer43/VeloxQuant-MLX/pull/244),
+  [`cf14196`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cf14196fe3b680f31cc815808f0ce36658935c52))
+
+- **landing**: Add Plausible analytics
+  ([#243](https://github.com/rajveer43/VeloxQuant-MLX/pull/243),
+  [`9780e3e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9780e3ed83af8640d9c46b2d42c168c0475b6aec))
+
+### Refactoring
+
+- **landing**: Calmer, human-centric hero and dedicated benchmarks page
+  ([#245](https://github.com/rajveer43/VeloxQuant-MLX/pull/245),
+  [`0d7f044`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0d7f044796185f32ebb2eddc5b48635643ac8880))
+
+
 ## v0.57.0 (2026-08-22)
 
 ### Bug Fixes
