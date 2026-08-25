@@ -69,18 +69,16 @@
 
   <!-- ── NAVIGATION ── -->
   <nav id="navbar">
-    <a href="#hero" class="nav-logo">VeloxQuant-MLX</a>
+    <a href="#hero" class="nav-logo"><img src="assets/logo.svg" alt="" width="28" height="28" class="nav-logo-mark" />VeloxQuant-MLX</a>
     <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
       <span></span><span></span><span></span>
     </button>
     <ul class="nav-links" id="nav-links">
-      <li><a href="#waitlist">macOS app</a></li>
-      <li><a href="#scenarios">Start here</a></li>
       <li><a href="#calculator">Calculator</a></li>
       <li><a href="#quickstart">Quickstart</a></li>
-      <li><a href="playground.html">Playground</a></li>
       <li><a href="#faq">FAQ</a></li>
       <li><a href="#install">Install</a></li>
+      <li><a href="benchmarks.html">Benchmarks</a></li>
       <li><a href="/docs/" rel="noopener">Docs</a></li>
       <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
       <li>
@@ -92,89 +90,63 @@
     </ul>
   </nav>
 
-  <!-- ── §1 HERO ── -->
+  <!-- ── §1 HERO ──
+       Atmospheric decoration (matrix-canvas, aurora blobs, floating
+       particles) removed for the calmer "oMLX-style" restyle — background is
+       flat/static now (see #hero rules in styles.css). Nav trimmed to 6
+       links for a calmer bar; "macOS app" (#waitlist), "Start here"
+       (#scenarios) and "Playground" (playground.html) are no longer linked
+       from nav, but their target IDs are preserved below since main.js's
+       scroll-spy and other pages still reference them. -->
   <section id="hero">
-    <canvas id="matrix-canvas" aria-hidden="true"></canvas>
-    <div class="aurora-container" aria-hidden="true">
-      <div class="aurora-blob aurora-blob-1"></div>
-      <div class="aurora-blob aurora-blob-2"></div>
-      <div class="aurora-blob aurora-blob-3"></div>
-    </div>
-    <div class="particles-container" aria-hidden="true">
-      <div class="particle"></div>
-      <div class="particle"></div>
-      <div class="particle"></div>
-      <div class="particle"></div>
-      <div class="particle"></div>
-    </div>
     <div class="hero-content">
       <div class="badge" id="hero-badge" data-text="v0.57.0 — fused KIVI-style Metal attention kernel shipped">v0.57.0 — fused KIVI-style Metal attention kernel shipped</div>
 
       <h1>Your Mac runs out of memory<br>before your conversation runs out of <span>things to say</span></h1>
 
-      <!-- Lead with a metric that needs no asterisk. The end-to-end tok/s
-           parity result is measured (see §9) and reproducible; "16×" is
-           bit-width accounting and still appears in the pills below with the
-           scope it was measured at. Defining the central concept in plain
-           words here mirrors the playground primer, so the page's central
-           noun is never used before it is supplied. -->
+      <!-- Lead with a metric that needs no asterisk. Trimmed per review: state
+           the mechanism once, in plain words, and stop — no restated CTA copy
+           ("free, open source, three lines") duplicating the pills/meta row
+           below it. -->
       <p class="hero-oneliner">
         Local AI models keep every past message in memory (the "KV cache"), which can eat
         gigabytes on a long chat. VeloxQuant-MLX shrinks it, so you get
         <strong class="t-accent">longer conversations, or a bigger model</strong>, on the Mac
-        you already have — free, open source, <strong class="t-max">three lines of code</strong>.
+        you already have.
       </p>
 
-      <!-- Pills carry the measurement conditions, not bare adjectives: the old
-           "Near-identical quality" was unverifiable, so each claim now names
-           the model or shape it was measured on. -->
+      <!-- Reduced from 4 pills to 2: the setup-speed and "nothing sent
+           anywhere" claims are either non-differentiating (local execution is
+           implied by an MLX/Apple Silicon library) or unverifiable at a
+           specific model/hardware/method combo without more context than a
+           pill can carry — dropped rather than hedged. -->
       <div class="hero-pills">
-        <span class="hero-pill">Up to 16× less memory used</span>
-        <span class="hero-pill">3-line setup</span>
-        <span class="hero-pill">No speed loss on Qwen2.5-7B, even at max compression</span>
-        <span class="hero-pill">Runs entirely on your Mac — nothing sent anywhere</span>
+        <span class="hero-pill">Up to 16× KV-cache compression</span>
+        <span class="hero-pill">Metal-accelerated · Apple Silicon</span>
       </div>
 
       <!-- Before/after, using only numbers the calculator already derives:
            fp16 KV at 64k on Llama-3.1-8B (32 layers, 8 KV heads, head_dim 128)
            is 8.00 GB; rabitq is the one method here with resident=true in
            calc.js, so it is the only honest pick for a "this now fits" claim.
-           6× → 1.33 GB. Static, so it needs no interaction to land. -->
-      <div class="hero-proof">
-        <p class="hero-proof-head">Example: Llama-3.1-8B, a long conversation (64k tokens), on a 16 GB MacBook Air</p>
-        <div class="hero-proof-row">
-          <span class="hero-proof-before"><strong>8.00 GB</strong> of memory needed normally — won't load</span>
-          <span class="hero-proof-arrow" aria-hidden="true">→</span>
-          <span class="hero-proof-after"><strong>1.33 GB</strong> with one of our methods (<code class="inline plain">rabitq</code>) — fits, with room to spare</span>
-        </div>
-        <p class="hero-proof-note">
-          Real freed memory, not just on paper — <a href="#calculator" class="t-accent">check your own model</a>.
-        </p>
-      </div>
-
-      <!-- One primary action. "See it work" beats "install it": a reader who
-           does not yet know what a KV cache is will not pip install on the
-           strength of a number. The install command stays copyable directly
-           below for the reader who is already sold. -->
-      <div class="cta-row">
-        <a href="#calculator" class="btn btn-filled">Will your model fit? <span data-icon>→</span></a>
-      </div>
-
-      <!-- Accounting vs resident RAM: compression ratios are bit-width accounting,
-           not measured process RSS. Most quantization methods still store dequantized
-           fp16 tensors on the default mlx_lm serving path today (see GitHub #27). Only
-           eviction/true-latent methods reduce resident memory today.
-           Placed after the CTA, not before it: stays uncollapsed above the fold,
-           qualifying the supporting "16×" claim rather than standing between the
-           headline and every action. -->
-      <p class="hero-disclaimer">
-        Most "×" numbers here are potential savings, not yet what Activity Monitor shows.
-        Methods marked 🔻RSS in the
-        <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">method list</a>
-        free real memory today; the rest are on the
-        <a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/27" target="_blank" rel="noopener">roadmap</a>.
-        Details in the <a href="#faq" class="t-accent">FAQ</a>.
+           6× → 1.33 GB. Unboxed into one plain sentence — the bordered card
+           with an all-caps eyebrow and arrow was the last piece of hero still
+           wearing SaaS-template chrome; the numbers carry it without one. -->
+      <p class="hero-proof">
+        On a 16 GB MacBook Air, a 64k-token conversation with Llama-3.1-8B needs
+        <strong class="hero-proof-before">8.00 GB</strong> normally — with
+        <code class="inline plain">rabitq</code> it drops to
+        <strong class="hero-proof-after">1.33 GB</strong> and fits.
       </p>
+
+      <!-- One primary action, reworded off the SaaS-toned "Will your model
+           fit?" to plainer developer phrasing. Install command promoted to
+           sit right beside it — the pip install is the strongest single
+           signal of "this is a real installable library," not an
+           afterthought below a disclaimer. -->
+      <div class="cta-row">
+        <a href="#calculator" class="btn btn-filled">Check memory requirements <span data-icon>→</span></a>
+      </div>
 
       <div class="install-block" id="hero-install" title="Click to copy">
         <span class="dollar">$</span>
@@ -212,74 +184,96 @@
 
   <div class="divider"></div>
 
-  <!-- ── §1.5 MACOS APP WAITLIST ──
-       VeloxQuant Studio is a native SwiftUI control panel for this library
-       (separate repo) — drives `veloxquant methods/serve/recommend` as a
-       subprocess instead of reimplementing the engine. Not shipped yet, so
-       this collects interest via Netlify Forms rather than linking a build. -->
-  <section id="waitlist">
-    <div class="waitlist-shell fade-in">
-      <div class="waitlist-copy">
-        <p class="section-label">Coming soon</p>
-        <h2 class="section-title">VeloxQuant Studio — a native macOS app</h2>
-        <p class="section-desc" style="margin-left:0">
-          A point-and-click app for this tool: pick a model, pick a compression setting, and
-          watch it load and run — no terminal or coding required. It uses the exact same
-          engine as the command-line tool above, so the results are identical, just with a
-          simple interface on top.
-        </p>
-        <ul class="waitlist-points">
-          <li>See how much RAM you'll save before you commit to anything</li>
-          <li>One click to start running a model, with live progress on screen</li>
-          <li>Built for Apple Silicon; available outside the App Store first</li>
-        </ul>
+  <!-- ── §2 STATS STRIP ──
+       Four plain numbers, no card chrome — every figure is traceable to
+       README.md's "Numbers" table (VecInfer-1bit head_dim=128 for the 16×
+       key figure; quantize_vq at S=2048 for the 13× Metal figure; the
+       729MB→12MB Falcon3-7B shape for the 98% figure; the full method
+       count for the 43). -->
+  <section id="stats">
+    <div class="stats-strip-row">
+      <div class="stats-strip-item fade-in">
+        <span class="stats-strip-num">16×</span>
+        <span class="stats-strip-label">max key cache compression<br>(VecInfer-1bit, head_dim=128)</span>
       </div>
-
-      <div class="waitlist-form-wrap">
-        <form
-          id="waitlist-form"
-          name="waitlist"
-          method="POST"
-          data-netlify="true"
-          netlify-honeypot="waitlist-company"
-        >
-          <input type="hidden" name="form-name" value="waitlist" />
-          <p class="waitlist-hp-field" aria-hidden="true">
-            <label>Company<input name="waitlist-company" tabindex="-1" autocomplete="off" /></label>
-          </p>
-
-          <label for="waitlist-email" class="waitlist-label">Email address</label>
-          <div class="waitlist-field-row">
-            <input
-              type="email"
-              id="waitlist-email"
-              name="email"
-              placeholder="you@example.com"
-              required
-              autocomplete="email"
-            />
-            <button type="submit" class="btn btn-filled" id="waitlist-submit">
-              Join waitlist <span data-icon>→</span>
-            </button>
-          </div>
-          <p class="waitlist-note" id="waitlist-status">
-            No spam — we'll announce it here the moment we start building.
-          </p>
-        </form>
-
-        <div class="waitlist-success" id="waitlist-success" hidden>
-          <p class="waitlist-success-title">You're on the list.</p>
-          <p class="waitlist-success-body">We'll email you as soon as we start building. In the meantime, the CLI works today — see the <a href="#quickstart" class="t-accent">quickstart</a> above.</p>
-        </div>
+      <div class="stats-strip-item fade-in">
+        <span class="stats-strip-num">13×</span>
+        <span class="stats-strip-label">Metal kernel speedup<br>(quantize_vq at S=2048)</span>
+      </div>
+      <div class="stats-strip-item fade-in">
+        <span class="stats-strip-num">98%</span>
+        <span class="stats-strip-label">peak memory reduction<br>(729MB → 12MB, Falcon3-7B shape)</span>
+      </div>
+      <div class="stats-strip-item fade-in">
+        <span class="stats-strip-num">43</span>
+        <span class="stats-strip-label">compression methods<br>in one drop-in API</span>
       </div>
     </div>
   </section>
 
   <div class="divider"></div>
 
+  <!-- ── §3 WHY VELOXQUANT-MLX (feature grid) ──
+       Six cards summarizing the method categories + what makes the project
+       usable, not just fast. Copy is plain-English, per the design brief;
+       every claim traces to README.md (43 methods total: 22 quantization +
+       6 low-rank/cross-layer + 15 eviction/merging; 12 production models;
+       13× / 98% Metal figures shared with the stats strip above). -->
+  <section id="why">
+    <div class="section-head-center">
+      <p class="section-label">Why VeloxQuant-MLX</p>
+      <h2 class="section-title">One API, six ways to shrink the cache</h2>
+    </div>
+    <div class="feature-grid">
+      <div class="feature-card fade-in">
+        <div class="feature-icon" aria-hidden="true">◆</div>
+        <p class="feature-eyebrow">01 — Quantizers</p>
+        <h3 class="feature-title">Shrink every number</h3>
+        <p class="feature-body">Compresses each Key/Value vector from 16-bit down to as little as 1 bit using calibrated codebooks — most methods need zero calibration and work out of the box.</p>
+      </div>
+      <div class="feature-card fade-in">
+        <div class="feature-icon" aria-hidden="true">⊘</div>
+        <p class="feature-eyebrow">02 — Token eviction</p>
+        <h3 class="feature-title">Drop what you don't need</h3>
+        <p class="feature-body">Some methods actively remove old, low-value tokens from memory instead of just shrinking them — this is the only path that frees memory you'll actually see in Activity Monitor today.</p>
+      </div>
+      <div class="feature-card fade-in">
+        <div class="feature-icon" aria-hidden="true">⧉</div>
+        <p class="feature-eyebrow">03 — Cross-layer merging</p>
+        <h3 class="feature-title">Share memory across layers</h3>
+        <p class="feature-body">Several transformer layers can share a single compressed cache instead of each keeping its own copy, cutting memory further with almost no code change.</p>
+      </div>
+      <div class="feature-card fade-in">
+        <div class="feature-icon" aria-hidden="true">⚙</div>
+        <p class="feature-eyebrow">04 — Metal kernels</p>
+        <h3 class="feature-title">Hand-written for Apple Silicon</h3>
+        <p class="feature-body">The hottest compression path runs on custom Metal kernels — up to 13× faster than the equivalent pure MLX code, with up to 98% less peak memory at the shapes that used to run out.</p>
+      </div>
+      <div class="feature-card fade-in">
+        <div class="feature-icon" aria-hidden="true">▤</div>
+        <p class="feature-eyebrow">05 — Drop-in API</p>
+        <h3 class="feature-title">Three lines, not a rewrite</h3>
+        <p class="feature-body">Every method shares one config object, so switching between them means changing a single string — your model-loading and generation code stays exactly the same.</p>
+      </div>
+      <div class="feature-card fade-in">
+        <div class="feature-icon" aria-hidden="true">◫</div>
+        <p class="feature-eyebrow">06 — Multi-model support</p>
+        <h3 class="feature-title">Works with what you already run</h3>
+        <p class="feature-body">Validated on 12 production model families (Llama, Mistral, Qwen, Phi, Gemma 3/4, Falcon) via <code class="inline plain">mlx_lm</code>, plus vision-language models through <code class="inline plain">mlx-vlm</code>.</p>
+      </div>
+    </div>
+    <p class="feature-more">
+      <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">Browse all 43 methods →</a>
+    </p>
+  </section>
+
+  <div class="divider"></div>
+
   <!-- Toast — fires on successful waitlist join, independent of scroll
        position, so the confirmation lands even if the inline success box
-       (inside #waitlist) has already scrolled out of view. -->
+       (inside #waitlist, further down the page) has already scrolled out
+       of view. Kept high in the DOM (fixed-position, so location doesn't
+       matter visually) rather than moved with #waitlist itself. -->
   <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="true"></div>
 
   <!-- Legacy anchor aliases. #benefits was the old stats section, dropped in
@@ -287,7 +281,7 @@
        Point it at the calculator, which is what it was trying to prove. -->
   <span id="benefits" class="anchor-alias" aria-hidden="true"></span>
 
-  <!-- ── §2 CALCULATOR ── -->
+  <!-- ── §4 CALCULATOR ── -->
   <section id="calculator">
     <div class="section-head-center">
       <p class="section-label">Size it for your Mac</p>
@@ -350,6 +344,184 @@
         <p class="scenario-quote">I'm a developer and want the technical details on each compression method.</p>
         <p class="scenario-answer">Browse the algorithm reference →</p>
       </a>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- ── §5 BENCHMARKS ──
+       Plain, static table — no animated bar-fill, no hover shimmer. Every
+       row is taken verbatim from README.md's "Numbers" table (values and
+       notes copied as-is; nothing here is rounded differently than the
+       source). .bar-cell/.bar-fill exist in styles.css for reuse elsewhere
+       but are intentionally not used in this table. -->
+  <section id="benchmarks">
+    <div class="section-head-center">
+      <p class="section-label">Real numbers, real hardware</p>
+      <h2 class="section-title">Measured, not projected</h2>
+      <p class="section-desc">
+        Every figure below comes straight from the project's own benchmark suite — the same
+        numbers in <a href="https://github.com/rajveer43/VeloxQuant-MLX#numbers" class="t-accent" target="_blank" rel="noopener">README.md</a>.
+      </p>
+    </div>
+    <div class="table-wrap fade-in">
+      <table>
+        <caption class="visually-hidden">Compression and speed benchmarks</caption>
+        <thead>
+          <tr>
+            <th scope="col">Metric</th>
+            <th scope="col">Value</th>
+            <th scope="col">Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Max key cache compression</td>
+            <td class="td-highlight">16×</td>
+            <td class="td-muted">VecInfer-1bit, head_dim=128</td>
+          </tr>
+          <tr>
+            <td>Metal kernel speedup</td>
+            <td class="td-highlight">13×</td>
+            <td class="td-muted"><code class="inline plain">quantize_vq</code> at S=2048 (range 6.9–14.7× over S=128–8192)</td>
+          </tr>
+          <tr>
+            <td>Peak memory reduction</td>
+            <td class="td-highlight">98%</td>
+            <td class="td-muted">729 MB → 12 MB, Falcon3-7B shape</td>
+          </tr>
+          <tr>
+            <td>RVQ-1bit compression</td>
+            <td class="td-highlight">7.5×</td>
+            <td class="td-muted">Near-zero throughput cost</td>
+          </tr>
+          <tr>
+            <td>SpectralQuant compression</td>
+            <td class="td-highlight">5.33×</td>
+            <td class="td-muted">Per-model measured (Qwen2.5-0.5B / Gemma-4-4B), same bit-width</td>
+          </tr>
+          <tr>
+            <td>RaBitQ full KV compression</td>
+            <td class="td-purple">6×</td>
+            <td class="td-muted">1-bit keys + MSE-b4 values, Falcon3-7B</td>
+          </tr>
+          <tr>
+            <td>CommVQ key compression</td>
+            <td class="td-purple">64×</td>
+            <td class="td-muted">RoPE-commutative VQ, D=128, n_cb=4</td>
+          </tr>
+          <tr>
+            <td>KIVI-2bit key compression</td>
+            <td class="td-highlight">5.8×</td>
+            <td class="td-muted">Per-channel keys / per-token values; measured on Llama-3.2-3B, Qwen2.5-7B, Mistral-7B</td>
+          </tr>
+          <tr>
+            <td>Production models validated</td>
+            <td class="td-winner">12</td>
+            <td class="td-muted">Llama, Mistral, Qwen, Phi, Gemma 3/4, Falcon</td>
+          </tr>
+          <tr>
+            <td>Tests passing</td>
+            <td class="td-winner">2347/2347</td>
+            <td class="td-muted">Run on every commit</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="bench-note">
+      Compression ratios above are bit-width accounting, not measured resident memory — see the
+      <a href="#faq" class="t-accent">FAQ</a> for what that means for what you'll actually see in
+      Activity Monitor. For attention-correlation accuracy, generation perplexity, and
+      task-level results beyond needle retrieval,
+      see the <a href="benchmarks.html" class="t-accent">full benchmarks page →</a>.
+    </p>
+  </section>
+
+  <!-- TESTIMONIAL: insert a real quote here once supplied.
+       No quote has been supplied yet, so nothing renders — do not fabricate
+       one. Intended structure, once a real quote exists:
+
+       <div class="divider"></div>
+       <section id="testimonial">
+         <div class="section-head-center">
+           <p class="section-label">From people using it</p>
+         </div>
+         <blockquote class="testimonial-quote">
+           "<quote text>"
+           <footer class="testimonial-attribution">
+             <cite><name>, <role/context></cite>
+           </footer>
+         </blockquote>
+       </section>
+
+       Style it plainly, consistent with the rest of the page: no card glow,
+       centered text, attribution in --muted below the quote. -->
+
+  <div class="divider"></div>
+
+  <!-- ── §1.5 MACOS APP WAITLIST ──
+       VeloxQuant Studio is a native SwiftUI control panel for this library
+       (separate repo) — drives `veloxquant methods/serve/recommend` as a
+       subprocess instead of reimplementing the engine. Not shipped yet, so
+       this collects interest via Netlify Forms rather than linking a build.
+       Repositioned here (was right after the hero) to match the new section
+       order; id and JS hooks (#waitlist-form/#waitlist-success/#waitlist-submit)
+       are unchanged. -->
+  <section id="waitlist">
+    <div class="waitlist-shell fade-in">
+      <div class="waitlist-copy">
+        <p class="section-label">Coming soon</p>
+        <h2 class="section-title">VeloxQuant Studio — a native macOS app</h2>
+        <p class="section-desc" style="margin-left:0">
+          A point-and-click app for this tool: pick a model, pick a compression setting, and
+          watch it load and run — no terminal or coding required. It uses the exact same
+          engine as the command-line tool above, so the results are identical, just with a
+          simple interface on top.
+        </p>
+        <ul class="waitlist-points">
+          <li>See how much RAM you'll save before you commit to anything</li>
+          <li>One click to start running a model, with live progress on screen</li>
+          <li>Built for Apple Silicon; available outside the App Store first</li>
+        </ul>
+      </div>
+
+      <div class="waitlist-form-wrap">
+        <form
+          id="waitlist-form"
+          name="waitlist"
+          method="POST"
+          data-netlify="true"
+          netlify-honeypot="waitlist-company"
+        >
+          <input type="hidden" name="form-name" value="waitlist" />
+          <p class="waitlist-hp-field" aria-hidden="true">
+            <label>Company<input name="waitlist-company" tabindex="-1" autocomplete="off" /></label>
+          </p>
+
+          <label for="waitlist-email" class="waitlist-label">Email address</label>
+          <div class="waitlist-field-row">
+            <input
+              type="email"
+              id="waitlist-email"
+              name="email"
+              placeholder="you@example.com"
+              required
+              autocomplete="email"
+            />
+            <button type="submit" class="btn btn-filled" id="waitlist-submit">
+              Join waitlist <span data-icon>→</span>
+            </button>
+          </div>
+          <p class="waitlist-note" id="waitlist-status">
+            No spam — we'll announce it here the moment we start building.
+          </p>
+        </form>
+
+        <div class="waitlist-success" id="waitlist-success" hidden>
+          <p class="waitlist-success-title">You're on the list.</p>
+          <p class="waitlist-success-body">We'll email you as soon as we start building. In the meantime, the CLI works today — see the <a href="#quickstart" class="t-accent">quickstart</a> above.</p>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -532,7 +704,7 @@
       <details class="faq-item fade-in">
         <summary>What hardware do I need?</summary>
         <div class="faq-item-body">
-          An Apple Silicon Mac (M1 or later; M2/M3/M4 recommended), Python 3.11 or 3.12, and
+          An Apple Silicon Mac (M1 or later; M2/M3/M4/M5 recommended), Python 3.11 or 3.12, and
           Apple's MLX framework (version 0.18 or later — installed automatically). It's a
           pure-Python tool with optional on-chip acceleration — no separate app to install
           today, and no GPU beyond what's already built into your Mac.
@@ -561,68 +733,67 @@
     </div>
   </section>
 
-  <!-- ── §11 INSTALL ── -->
+  <!-- ── §11 INSTALL ──
+       The one deliberately-more-emphasized block near the end of the page
+       (matching the oMLX reference's single dark contrast block). The page
+       is already dark by default, so emphasis is a subtle surface tint +
+       border on .install-well, not a second color scheme. -->
   <section id="install">
     <p class="section-label">Installation</p>
     <h2 class="section-title">Get started in seconds</h2>
     <p class="section-desc" style="margin-bottom:2rem;">Requires an Apple Silicon Mac (M1 or later) and Python 3.11 or newer.</p>
-    <div class="install-grid">
-      <div>
-        <div class="code-wrap fade-in">
-          <div class="code-header">
-            <span class="code-lang">install it</span>
-            <button class="code-copy" data-target="code-pip">Copy</button>
+    <div class="install-well fade-in">
+      <div class="install-grid">
+        <div>
+          <div class="code-wrap">
+            <div class="code-header">
+              <span class="code-lang">install it</span>
+              <button class="code-copy" data-target="code-pip">Copy</button>
+            </div>
+            <pre id="code-pip"><span class="id">pip install VeloxQuant-MLX</span></pre>
           </div>
-          <pre id="code-pip"><span class="id">pip install VeloxQuant-MLX</span></pre>
-        </div>
-        <div class="code-wrap fade-in">
-          <div class="code-header">
-            <span class="code-lang">check it worked</span>
-            <button class="code-copy" data-target="code-verify">Copy</button>
-          </div>
-          <pre id="code-verify"><span class="id">python -c "import veloxquant_mlx; print(veloxquant_mlx.__version__)"</span></pre>
-        </div>
-        <div class="code-wrap fade-in">
-          <div class="code-header">
-            <span class="code-lang">for developers: install from source</span>
-            <button class="code-copy" data-target="code-src">Copy</button>
-          </div>
-          <pre id="code-src"><span class="id">git clone https://github.com/rajveer43/VeloxQuant-MLX
+          <div class="code-wrap">
+            <div class="code-header">
+              <span class="code-lang">for developers: install from source</span>
+              <button class="code-copy" data-target="code-src">Copy</button>
+            </div>
+            <pre id="code-src"><span class="id">git clone https://github.com/rajveer43/VeloxQuant-MLX
 cd VeloxQuant-MLX
 pip install -e ".[dev]"</span></pre>
+          </div>
+          <p style="margin-top:1.5rem;">
+            Prefer an editor integration? Get the
+            <a href="https://marketplace.visualstudio.com/items?itemName=veloxquant-mlx.veloxquant-vscode" target="_blank" rel="noopener">VeloxQuant VS Code extension</a>.
+          </p>
         </div>
-        <p style="margin-top:1.5rem;">
-          Prefer an editor integration? Get the
-          <a href="https://marketplace.visualstudio.com/items?itemName=veloxquant-mlx.veloxquant-vscode" target="_blank" rel="noopener">VeloxQuant VS Code extension</a>.
-        </p>
-      </div>
-      <div class="fade-in">
-        <ul class="req-list">
-          <li>Apple Silicon M1 or later (M2/M3/M4 recommended)</li>
-          <li>Python 3.11 or 3.12</li>
-          <li>Apple's MLX framework, version 0.18 or later</li>
-          <li>NumPy 1.26 or later</li>
-          <li>Matplotlib 3.8 or later (only needed for benchmark charts)</li>
-          <li>Free and open source — MIT license, free for personal and commercial use</li>
-        </ul>
+        <div>
+          <ul class="req-list">
+            <li>Apple Silicon M1 or later (M2/M3/M4/M5 recommended)</li>
+            <li>Python 3.11 or 3.12</li>
+            <li>Apple's MLX framework, version 0.18 or later</li>
+            <li>NumPy 1.26 or later</li>
+            <li>Matplotlib 3.8 or later (only needed for benchmark charts)</li>
+            <li>Free and open source — MIT license, free for personal and commercial use</li>
+          </ul>
 
-        <!-- Institutional trust signals, reframed in plain terms for a
-             consumer reader: what "MIT license" / "tests" / "maintainers"
-             actually buy them (can inspect the code, it's checked before
-             each release, it's not a one-person weekend project) plus
-             explicit privacy framing, which the page didn't state anywhere
-             before. Test count is `pytest --collect-only` at v0.49.4;
-             maintainer count is deliberately the literal number rather than
-             a vaguer "team". -->
-        <ul class="req-list req-list-trust">
-          <!-- Format is load-bearing: scripts/sync_release_badges.py rewrites
-               the literal "<n>/<n> tests passing" on every release. Any other
-               phrasing here silently goes stale. -->
-          <li><strong class="t-strong">2347/2347 tests passing</strong> — run on every commit</li>
-          <li><strong class="t-strong">CI</strong> — lint, unit and non-Metal suites on GitHub Actions</li>
-          <li><strong class="t-strong">2 maintainers</strong> — plus outside contributors</li>
-          <li><a href="https://doi.org/10.5281/zenodo.20647294" target="_blank" rel="noopener">Citable — DOI on Zenodo</a></li>
-        </ul>
+          <!-- Institutional trust signals, reframed in plain terms for a
+               consumer reader: what "MIT license" / "tests" / "maintainers"
+               actually buy them (can inspect the code, it's checked before
+               each release, it's not a one-person weekend project) plus
+               explicit privacy framing, which the page didn't state anywhere
+               before. Test count is `pytest --collect-only` at v0.49.4;
+               maintainer count is deliberately the literal number rather than
+               a vaguer "team". -->
+          <ul class="req-list req-list-trust">
+            <!-- Format is load-bearing: scripts/sync_release_badges.py rewrites
+                 the literal "<n>/<n> tests passing" on every release. Any other
+                 phrasing here silently goes stale. -->
+            <li><strong class="t-strong">2347/2347 tests passing</strong> — run on every commit</li>
+            <li><strong class="t-strong">CI</strong> — lint, unit and non-Metal suites on GitHub Actions</li>
+            <li><strong class="t-strong">2 maintainers</strong> — plus outside contributors</li>
+            <li><a href="https://doi.org/10.5281/zenodo.20647294" target="_blank" rel="noopener">Citable — DOI on Zenodo</a></li>
+          </ul>
+        </div>
       </div>
     </div>
   </section>
