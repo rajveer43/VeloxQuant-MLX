@@ -1,0 +1,190 @@
+<!-- Deploy: drag the landing/ folder to netlify.com/drop -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Benchmarks — VeloxQuant-MLX</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=2" />
+  <link rel="shortcut icon" href="assets/favicon.svg?v=2" />
+  <meta name="description" content="Detailed, real-hardware benchmarks for VeloxQuant-MLX: Q-Filters attention-correlation accuracy and generation perplexity." />
+  <!-- Fonts are self-hosted in styles.css (assets/fonts/*.woff2) — no
+       third-party hop, no render-blocking preconnect. -->
+  <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="assets/styles.css" />
+  <script>
+    // Set the theme before first paint to avoid a flash of the wrong theme.
+    (function () {
+      try {
+        var saved = localStorage.getItem('vq-theme');
+        if (saved === 'light' || saved === 'dark') {
+          document.documentElement.setAttribute('data-theme', saved);
+        }
+      } catch (e) { /* storage unavailable */ }
+    })();
+  </script>
+
+  <!-- Privacy-friendly analytics by Plausible -->
+  <script async src="https://plausible.io/js/pa-LnzxjiMH3B7SjXGL3VIDm.js"></script>
+  <script>
+    window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+    plausible.init()
+  </script>
+</head>
+<body>
+
+  <!-- ── NAVIGATION ── -->
+  <nav id="navbar">
+    <a href="index.html#hero" class="nav-logo"><img src="assets/logo.svg" alt="" width="28" height="28" class="nav-logo-mark" />VeloxQuant-MLX</a>
+    <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <ul class="nav-links" id="nav-links">
+      <li><a href="index.html#calculator">Calculator</a></li>
+      <li><a href="index.html#quickstart">Quickstart</a></li>
+      <li><a href="index.html#faq">FAQ</a></li>
+      <li><a href="index.html#install">Install</a></li>
+      <li><a href="benchmarks.html" aria-current="page">Benchmarks</a></li>
+      <li><a href="playground.html">Playground</a></li>
+      <li><a href="/docs/" rel="noopener">Docs</a></li>
+      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
+      <li>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Switch to light theme" title="Toggle light / dark theme">
+          <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
+          <span class="theme-icon theme-icon-moon" aria-hidden="true">☾</span>
+        </button>
+      </li>
+    </ul>
+  </nav>
+
+  <!-- ── BENCHMARKS ── -->
+  <main>
+    <section id="benchmarks-detail" class="fade-in" style="padding-top:7rem;">
+      <div class="section-head-center">
+        <p class="section-label">Q-Filters, in depth</p>
+        <h2 class="section-title">How the scorer performs</h2>
+        <p class="section-desc">
+          Q-Filters is a token-eviction scorer: it decides which parts of a long conversation are
+          safe to drop from memory. These tables go past the headline compression number and
+          into whether its guesses are actually good — attention-correlation accuracy and
+          generation perplexity. Also on
+          <a href="/docs/algorithms/qfilters" class="t-accent">the docs page</a>, with full
+          methodology.
+        </p>
+      </div>
+
+      <h3 class="bench-subtitle">How well does Q-Filters predict what a model will actually attend to?</h3>
+      <p class="section-desc" style="margin-bottom:1.5rem">
+        Spearman correlation with the model's real attention (higher is better), vs. the K-norm/L2Norm
+        baseline. <a href="/docs/algorithms/qfilters" class="t-accent">Full write-up →</a>
+      </p>
+      <div class="table-wrap fade-in">
+        <table>
+          <caption class="visually-hidden">Q-Filters attention-correlation accuracy vs. K-norm baseline</caption>
+          <thead>
+            <tr>
+              <th scope="col">Scorer</th>
+              <th scope="col">Llama-3.2-1B</th>
+              <th scope="col">Llama-3.2-3B</th>
+              <th scope="col">Qwen2.5-7B</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Q-Filters, calibrated (query-SVD)</td>
+              <td class="td-winner">+0.783 <span class="td-muted">(100% sign-correct)</span></td>
+              <td class="td-winner">+0.863 <span class="td-muted">(100%)</span></td>
+              <td class="td-winner">+0.850 <span class="td-muted">(100%)</span></td>
+            </tr>
+            <tr>
+              <td>K-norm / L2Norm</td>
+              <td>+0.460 <span class="td-muted">(94.5%)</span></td>
+              <td>+0.410 <span class="td-muted">(94.6%)</span></td>
+              <td>+0.402 <span class="td-muted">(86.6%)</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="bench-subtitle">Does that translate to better generations?</h3>
+      <p class="section-desc" style="margin-bottom:1.5rem">
+        Generation perplexity with eviction active (lower is better), calibrated vs. fallback.
+        <a href="/docs/algorithms/qfilters" class="t-accent">Full write-up →</a>
+      </p>
+      <div class="table-wrap fade-in">
+        <table>
+          <caption class="visually-hidden">Q-Filters generation perplexity, calibrated vs. fallback</caption>
+          <thead>
+            <tr>
+              <th scope="col">Model / budget</th>
+              <th scope="col">Calibrated</th>
+              <th scope="col">Fallback</th>
+              <th scope="col">Gap to fp16 closed</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="4" class="td-muted">Llama-3.2-1B (fp16 baseline 4.050)</td></tr>
+            <tr>
+              <td>Budget 256 (~4×)</td>
+              <td class="td-winner">8.476</td>
+              <td>13.358</td>
+              <td class="td-winner">52%</td>
+            </tr>
+            <tr>
+              <td>Budget 128 (~8×)</td>
+              <td class="td-winner">16.307</td>
+              <td>23.645</td>
+              <td class="td-winner">37%</td>
+            </tr>
+            <tr>
+              <td>Budget 64 (~16×)</td>
+              <td class="td-winner">25.933</td>
+              <td>31.274</td>
+              <td class="td-winner">20%</td>
+            </tr>
+            <tr><td colspan="4" class="td-muted">Llama-3.2-3B (fp16 baseline 3.305)</td></tr>
+            <tr>
+              <td>Budget 256 (~4×)</td>
+              <td class="td-winner">5.076</td>
+              <td>7.264</td>
+              <td class="td-winner">55%</td>
+            </tr>
+            <tr>
+              <td>Budget 128 (~8×)</td>
+              <td class="td-winner">10.046</td>
+              <td>14.909</td>
+              <td class="td-winner">42%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="section-desc" style="margin-top:2.5rem;">
+        Want the main compression and speed numbers instead?
+        <a href="index.html#benchmarks" class="t-accent">Back to the summary table →</a>
+      </p>
+    </section>
+  </main>
+
+  <!-- ── FOOTER ── -->
+  <footer>
+    <ul class="footer-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
+      <li><a href="https://pypi.org/project/VeloxQuant-MLX/" target="_blank" rel="noopener">PyPI</a></li>
+      <li><a href="/docs/" rel="noopener">Docs</a></li>
+      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
+    </ul>
+    <p class="footer-copy">© 2026 Rajveer Rathod · MIT License</p>
+    <p class="footer-tagline">BUILT FOR APPLE SILICON. ENGINEERED FOR SPEED.</p>
+  </footer>
+
+  <script src="assets/main.js" defer></script>
+
+  <!-- GoatCounter: privacy-friendly, cookieless page counts. Client-side, so
+       it records browsers rather than crawlers — expect it to read lower than
+       server-side request counts. -->
+  <script data-goatcounter="https://veloxquant.goatcounter.com/count"
+          async src="//gc.zgo.at/count.js"></script>
+</body>
+</html>

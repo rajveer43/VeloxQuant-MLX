@@ -2,20 +2,12 @@
 // VeloxQuant-MLX landing page behavior
 // Zero-build static JS — served as-is by Netlify (cp -r landing/* dist/)
 //
-// The atmospheric layer (matrix rain, aurora blobs, particles, magnetic
-// buttons, badge typing) is what gives the hero its character, so it stays.
-// Every effect is gated on prefers-reduced-motion, and the two heaviest —
-// the canvas and the scroll parallax — are additionally skipped on narrow /
-// touch viewports where they cost battery for no visible benefit.
+// The hero's atmospheric layer (matrix rain canvas, aurora blobs, floating
+// particles, scroll parallax) was removed in the calmer "oMLX-style" restyle
+// — the hero background is flat/static now. Badge typing and magnetic
+// buttons stay: they're subtle, one-time or hover-only effects, gated on
+// prefers-reduced-motion like everything else here.
 // ============================================================
-
-function hexToRgba(hex, alpha) {
-  const h = hex.replace('#', '');
-  const r = parseInt(h.length === 3 ? h[0] + h[0] : h.slice(0, 2), 16);
-  const g = parseInt(h.length === 3 ? h[1] + h[1] : h.slice(2, 4), 16);
-  const b = parseInt(h.length === 3 ? h[2] + h[2] : h.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
 
 // ── COPY-TO-CLIPBOARD ──
 function copyText(text, btn) {
@@ -104,98 +96,6 @@ function initBadgeTyping() {
   }, 35);
 }
 
-// ── HERO MATRIX-RAIN CANVAS ──
-// Decorative only; skipped for reduced-motion and on narrow/touch viewports
-// where it costs battery for no visible benefit (the canvas covers the hero,
-// which is mostly obscured by content on small screens anyway).
-function initMatrixRain() {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  if (window.matchMedia('(max-width: 640px)').matches) return;
-
-  const canvas = document.getElementById('matrix-canvas');
-  const hero = document.getElementById('hero');
-  if (!canvas || !hero) return;
-  const ctx = canvas.getContext('2d');
-  const chars = '01ABCDEFx+=<>[]{}∑∫ΔΩπ';
-  const fontSize = 13;
-  let cols, drops;
-
-  function resize() {
-    canvas.width = hero.offsetWidth;
-    canvas.height = hero.offsetHeight;
-    cols = Math.floor(canvas.width / fontSize);
-    drops = Array.from({ length: cols }, () => Math.random() * -50);
-  }
-
-  resize();
-  new ResizeObserver(resize).observe(hero);
-
-  function themeColors() {
-    const styles = getComputedStyle(document.documentElement);
-    return {
-      bg: styles.getPropertyValue('--bg').trim() || '#08080f',
-      accent: styles.getPropertyValue('--accent').trim() || '#00d4ff',
-    };
-  }
-
-  function draw() {
-    const { bg, accent } = themeColors();
-    ctx.fillStyle = hexToRgba(bg, 0.05);
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = accent;
-    ctx.font = fontSize + 'px JetBrains Mono, monospace';
-    for (let i = 0; i < cols; i++) {
-      const ch = chars[Math.floor(Math.random() * chars.length)];
-      ctx.fillText(ch, i * fontSize, drops[i] * fontSize);
-      if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
-      drops[i] += 0.4;
-    }
-  }
-
-  // rAF-driven at a throttled ~16fps rather than a bare setInterval, so the
-  // browser pauses it in background tabs instead of animating off-screen.
-  let last = 0;
-  let stopped = false;
-  function frame(now) {
-    if (stopped) return;
-    if (now - last >= 60) { draw(); last = now; }
-    requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
-
-  // Stop entirely once the hero scrolls out of view.
-  const vis = new IntersectionObserver(entries => {
-    entries.forEach(e => {
-      if (e.isIntersecting && stopped) { stopped = false; requestAnimationFrame(frame); }
-      else if (!e.isIntersecting) { stopped = true; }
-    });
-  }, { threshold: 0 });
-  vis.observe(hero);
-}
-
-// ── HERO SCROLL PARALLAX (aurora blobs) ──
-function initScrollParallax() {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const heroEl = document.getElementById('hero');
-  if (!heroEl) return;
-  const auroraContainer = heroEl.querySelector('.aurora-container');
-  if (!auroraContainer) return;
-
-  // Write the transform inside rAF so a fast scroll can't queue up layout
-  // work on every single scroll event.
-  let ticking = false;
-  window.addEventListener('scroll', () => {
-    if (ticking) return;
-    ticking = true;
-    requestAnimationFrame(() => {
-      ticking = false;
-      const heroH = heroEl.offsetHeight;
-      if (window.scrollY > heroH) return;
-      auroraContainer.style.transform = `translateY(${(window.scrollY / heroH) * 60}px)`;
-    });
-  }, { passive: true });
-}
-
 // ── MAGNETIC BUTTONS (desktop hover only — mousemove never fires on touch) ──
 function initMagneticButtons() {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -267,17 +167,16 @@ function initCalculator() {
     const rec = VQCalc.pickRecommended(res.rows);
     const fp16 = res.rows[0];
 
-    const verdict = fp16.fits
-      ? `<span class="t-strong">fp16 already fits.</span> ${preset.name} at ` +
-        `${VQCalc.formatTokens(seqLen)} tokens needs ${VQCalc.formatMb(fp16.mb)} of KV cache, ` +
-        `and you have about ${res.budgetGb} GB free. Compression still buys you ` +
-        `headroom: <code class="inline plain t-accent">${rec.id}</code> takes you to ` +
-        `~${VQCalc.formatTokens(rec.maxTokens)} tokens in the same RAM.`
-      : `<span class="t-strong">fp16 does not fit.</span> ${preset.name} at ` +
-        `${VQCalc.formatTokens(seqLen)} tokens needs ${VQCalc.formatMb(fp16.mb)}, but only ` +
-        `about ${res.budgetGb} GB is free after weights and the OS. ` +
-        `<code class="inline plain t-accent">${rec.id}</code> fits in ` +
-        `${VQCalc.formatMb(rec.mb)}.`;
+    // One-line headline result: does it fit, and with how much room. Detail
+    // (all methods, the accounting caveat) moves behind "See all options" so
+    // the default view is a single glanceable answer, not a wall of bars.
+    const headline = fp16.fits
+      ? `<span class="t-strong">${preset.name} already fits</span> in ${res.budgetGb} GB free ` +
+        `— and <code class="inline plain t-accent">${rec.id}</code> stretches that to ` +
+        `~${VQCalc.formatTokens(rec.maxTokens)} tokens.`
+      : `<span class="t-strong">${preset.name} needs ${VQCalc.formatMb(fp16.mb)}</span> — more than ` +
+        `the ${res.budgetGb} GB you have free. <code class="inline plain t-accent">${rec.id}</code> ` +
+        `brings it down to <span class="t-strong">${VQCalc.formatMb(rec.mb)}</span>.`;
 
     const rowsHtml = res.rows.map(r => {
       const isRec = r.id === rec.id;
@@ -305,18 +204,22 @@ function initCalculator() {
       : `<code class="inline plain">${rec.id}</code> is a key-accounting method: on the default path it dequantizes into an fp16 parent cache, so the ratio is an accounting bound rather than a guaranteed drop in resident RAM. For real resident savings use <code class="inline plain">rabitq</code>.`;
 
     out.innerHTML =
-      `<div class="calc-verdict ${fp16.fits ? 'good' : 'bad'}">${verdict}</div>` +
-      `<div class="calc-rows">${rowsHtml}</div>` +
-      `<p class="calc-note">Estimated from your model's real shape ` +
-      `(${preset.n_layers} layers · ${preset.n_kv_heads} KV heads · head_dim ${preset.head_dim}), ` +
-      `assuming 4-bit weights (~${res.weightGb} GB) and a 4 GB OS reserve. ` +
-      `${residentNote} Heavier compression can affect answer quality — ` +
-      `see the <a href="/docs/algorithms/overview" class="t-accent">algorithm reference</a>.</p>` +
+      `<div class="calc-verdict ${fp16.fits ? 'good' : 'bad'}">${headline}</div>` +
       `<div class="calc-cta">` +
         `<a class="btn btn-filled" href="#quickstart">Use <code class="inline plain">${rec.id}</code> →</a>` +
         `<a class="btn btn-outline" href="playground.html">Full playground →</a>` +
-        `<a class="btn btn-outline" href="#install">Install →</a>` +
-      `</div>`;
+      `</div>` +
+      `<details class="reveal calc-reveal">` +
+        `<summary>See all options</summary>` +
+        `<div class="reveal-body">` +
+          `<div class="calc-rows">${rowsHtml}</div>` +
+          `<p class="calc-note">Estimated from your model's real shape ` +
+          `(${preset.n_layers} layers · ${preset.n_kv_heads} KV heads · head_dim ${preset.head_dim}), ` +
+          `assuming 4-bit weights (~${res.weightGb} GB) and a 4 GB OS reserve. ` +
+          `${residentNote} Heavier compression can affect answer quality — ` +
+          `see the <a href="/docs/algorithms/overview" class="t-accent">algorithm reference</a>.</p>` +
+        `</div>` +
+      `</details>`;
   }
 
   // The no-JS fallback is in the markup and removed only once we know the
@@ -581,8 +484,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initCopyButtons();
   initCodeTabs();
   initBadgeTyping();
-  initMatrixRain();
-  initScrollParallax();
   initMagneticButtons();
   initCodeBootAnimation();
   initCalculator();
