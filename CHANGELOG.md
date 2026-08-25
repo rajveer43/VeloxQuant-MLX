@@ -6,6 +6,60 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ### Added
 
+**Energy profiling harness** (`veloxquant_mlx/profiling/`,
+`benchmark_scripts/benchmark_energy.py`) — measures the energy and throughput
+cost of FP16 KV against VeloxQuant-compressed KV on Apple Silicon. Step 1
+(experiments A and B) of the energy-aware inference investigation; contains no
+Metal kernel work, and arm C is deliberately unimplemented pending a profiled
+bottleneck from A/B.
+
+*What it measures:* decode throughput with prefill timed separately, peak GPU
+memory, and — **only under `sudo`** — whole-package energy and J/token.
+`powermetrics` requires root; without it every energy field degrades to `None`
+(never `0.0`, which would propagate downstream as a fabricated measurement) and
+the harness stays useful for throughput and memory. `PowerSampler.__exit__`
+never raises, so a profiling failure cannot fail the run being profiled.
+
+*What it does not measure:* `kv_bytes_per_token` is **derived** from cache
+geometry, not observed. MLX exposes no bytes-moved counter — its whole
+`mx.metal` surface is allocation-side — and `powermetrics` reports power and
+residency, not DRAM bytes/s. Energy is a sampled integration of package power
+(`J = mean_package_W × elapsed_s`), not a hardware energy counter, so the
+sampling interval bounds resolution and other processes contribute to the
+total. Xcode Instruments via `mx.metal.start_capture()` is documented as the
+escalation path for genuinely measured bandwidth.
+
+*Confound controls:* a warm-up run is discarded before every measured arm so
+first-run Metal compilation is not charged to whichever arm ran first, and arms
+are interleaved (`A,B1,B2,A,B1,B2,…`) rather than blocked so thermal drift on a
+sustained-load M4 cannot be confounded with arm identity. Medians and spread are
+reported, not means.
+
+**First results — Apple M4, MLX 0.32.0, `mlx-community/Qwen3-8B-4bit`
+(36 layers, 8 KV heads, head_dim 128), 4096-token prompt, 200 decode tokens,
+3 interleaved reps, medians:**
+
+| Arm | tok/s | Peak MB | KV B/tok (derived) | J/token |
+|---|---|---|---|---|
+| A — fp16 baseline | 16.77 | 6846.7 | 633,470,976 | NOT YET RUN |
+| B1 — KIVI 4-bit | 15.22 | 6701.7 | 210,935,808 | NOT YET RUN |
+| B2 — Q-Filters, budget 512 | 10.60 | 7981.7 | 75,497,472 | NOT YET RUN |
+
+**J/token is NOT YET RUN on hardware** — it requires `sudo`, which was not
+available in the session that produced these numbers. Every other column is
+real.
+
+**The throughput result is negative and is reported as such.** Neither
+compressed arm is faster: KIVI 4-bit costs ~9% throughput while reading a third
+of the bytes, and Q-Filters costs ~37% while reading an eighth and using *more*
+peak memory than the baseline. At this scale, on this hardware, reducing KV
+bytes did not buy speed — per-step dequantization and eviction-scoring cost more
+than the traffic they save. This supports the "dequantization cost exceeds
+traffic saved" hypothesis **on the throughput axis only**; the energy axis is
+untested, and a slower arm at lower power can still win on joules.
+
+**`docs-site/docs/guides/energy-profiling.md`** — how to run it privileged and
+unprivileged, and a plain statement of what the numbers do and do not establish.
 **RocketKV-adapted: two-stage KV cache compression**
 ([#239](https://github.com/rajveer43/VeloxQuant-MLX/issues/239)) — new
 `method="rocketkv"`, inspired by "RocketKV: Accelerating Long-Context LLM

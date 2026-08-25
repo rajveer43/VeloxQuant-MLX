@@ -32,3 +32,4 @@ turboquant-mlx/
 
 .bench_tmp/.claude/
 .env
+energy_benchmark_results.json
