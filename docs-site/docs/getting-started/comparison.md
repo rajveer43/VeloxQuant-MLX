@@ -10,7 +10,7 @@ slug: /getting-started/comparison
 If you already run local LLMs on Apple Silicon, you're probably using `llama.cpp` (or Ollama/LM Studio, which wrap it) or `mlx_lm` directly. Both work today without VeloxQuant-MLX. This page is the honest answer to "why would I add another dependency?"
 
 :::info[Short version]
-`llama.cpp` quantizes the KV cache too — but with one fixed scheme applied uniformly to every model and layer, and no eviction. Plain `mlx_lm` doesn't quantize the KV cache at all; it stores it fp16, full size, always. VeloxQuant-MLX gives you 41 selectable compression methods (quantization *and* eviction *and* cross-layer merging), each independently tuned per layer, on top of the `mlx_lm` you're probably already using.
+`llama.cpp` quantizes the KV cache too — but with one fixed scheme applied uniformly to every model and layer, and no eviction. Plain `mlx_lm` doesn't quantize the KV cache at all; it stores it fp16, full size, always. VeloxQuant-MLX gives you 42 selectable compression methods (quantization *and* eviction *and* cross-layer merging), each independently tuned per layer, on top of the `mlx_lm` you're probably already using.
 :::
 
 ## The options, side by side
@@ -19,7 +19,7 @@ If you already run local LLMs on Apple Silicon, you're probably using `llama.cpp
 |---|---|---|---|
 | What it is | Model loading + generation library | Standalone inference runtime (C/C++) | KV cache compression library on top of `mlx_lm` |
 | KV cache precision | fp16 (no compression) | Fixed: `q8_0` or `q4_0` via `--cache-type-k` / `--cache-type-v` | 1–8 bit, chosen per method |
-| Compression scheme | None | One uniform per-tensor quant type, same scheme for every layer | 41 methods — VQ, RVQ, non-uniform, low-rank, entropy coding, mixed-precision |
+| Compression scheme | None | One uniform per-tensor quant type, same scheme for every layer | 42 methods — VQ, RVQ, non-uniform, low-rank, entropy coding, mixed-precision |
 | Token eviction (drop stale tokens) | No | No | Yes — SnapKV, StreamingLLM, H2O, TOVA, and 8 more |
 | Cross-layer compression | No | No | Yes — XQuant (code reuse), MiniCache (SLERP merge), xKV (shared subspace) |
 | Per-layer / per-head tuning | N/A | No — one setting for the whole model | Yes — method and bit-width are configurable per layer |
@@ -43,7 +43,7 @@ If you're not on Apple Silicon, or you want the most battle-tested path with the
 
 The gap is specifically in **how much control you have over the memory/quality tradeoff**, not raw compatibility:
 
-- **llama.cpp's KV quantization is one fixed scheme for the whole model.** `q4_0` is a uniform 4-bit block quantizer — the same scheme whether the layer is shallow (broad attention) or deep (narrow attention), whether the head is RoPE-sensitive or not. VeloxQuant-MLX's 41 methods exist because no single scheme is optimal everywhere: CommVQ preserves RoPE exactly, PolarQuant fits geometric key clusters, PyramidKV gives early layers a bigger budget than deep ones — none of that is expressible as a `--cache-type-k` flag.
+- **llama.cpp's KV quantization is one fixed scheme for the whole model.** `q4_0` is a uniform 4-bit block quantizer — the same scheme whether the layer is shallow (broad attention) or deep (narrow attention), whether the head is RoPE-sensitive or not. VeloxQuant-MLX's 42 methods exist because no single scheme is optimal everywhere: CommVQ preserves RoPE exactly, PolarQuant fits geometric key clusters, PyramidKV gives early layers a bigger budget than deep ones — none of that is expressible as a `--cache-type-k` flag.
 - **llama.cpp has no token eviction.** It quantizes every token's KV pair, forever. VeloxQuant-MLX's eviction methods (StreamingLLM, SnapKV, H2O, and 9 more) drop stale tokens entirely for constant-memory long-context generation — a different lever llama.cpp doesn't expose at all.
 - **Compression ceiling is higher.** `q4_0` gets you to 4 bits per element. VeloxQuant-MLX's 1-bit methods (TurboQuant RVQ, RaBitQ, QJL) go further — up to **16× key cache compression** (VecInfer, head_dim=128) — because they're built specifically for the sub-4-bit regime instead of adapting a general block quantizer down to it.
 - **You stay in the `mlx_lm` ecosystem.** If you're already loading MLX-format models with `mlx_lm`, VeloxQuant-MLX is three lines, not a runtime switch to GGUF and a different toolchain.
@@ -62,7 +62,7 @@ These are from this library's own benchmark suite, run against real production m
 | KIVI-2bit full-KV compression | **~4×** | incl. fp16 residual window; 100–106% of fp16 throughput |
 | CommVQ key compression | **64×** | RoPE-commutative VQ, D=128, n_cb=4 |
 
-We don't have head-to-head throughput numbers against `llama.cpp`'s `q4_0`/`q8_0` cache in this repo — different runtime, different hardware paths, and an apples-to-apples run hasn't been published here yet. The honest comparison today is architectural (fixed scheme vs. 41 selectable ones, no eviction vs. 11 eviction methods), not a benchmark race.
+We don't have head-to-head throughput numbers against `llama.cpp`'s `q4_0`/`q8_0` cache in this repo — different runtime, different hardware paths, and an apples-to-apples run hasn't been published here yet. The honest comparison today is architectural (fixed scheme vs. 42 selectable ones, no eviction vs. 11 eviction methods), not a benchmark race.
 
 ## Which one should you use?
 
@@ -82,5 +82,5 @@ In short: reach for VeloxQuant-MLX when your problem is *memory* — you've hit 
 ## Next steps
 
 - [5-minute quickstart](./quickstart)
-- [Algorithm overview](../algorithms/overview) — all 41 methods
+- [Algorithm overview](../algorithms/overview) — all 42 methods
 - [mlx_lm integration guide](../guides/mlx-lm-integration)

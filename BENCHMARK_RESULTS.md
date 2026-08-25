@@ -296,8 +296,6 @@ Four sequential changes to lift quantized throughput to fp16 parity:
 | 3. Boundary-sum quantize (replaces argmin) | 22.4 tok/s | — |
 | 4. Drop redundant fp32↔fp16 casts | **22.3 tok/s** | **36.0 tok/s** |
 
-Full writeup: [OPTIMIZATION_FINDINGS.md](OPTIMIZATION_FINDINGS.md)
-
 Figure: `figures/updated_tests/optimization_journey.png`
 
 ### RateQuant V2 mixed-precision results (v0.3.5)

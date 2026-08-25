@@ -43,7 +43,23 @@ __all__ = [
     "DEFAULT_SERVE_METHOD",
 ]
 
-DOCS_BASE = "https://veloxquant-mlx.netlify.app/algorithms"
+DOCS_BASE = "https://veloxquant-mlx.netlify.app/docs/algorithms"
+
+#: Registry method name -> published doc-site slug. The docs site (Docusaurus,
+#: migrated from the old static-HTML `/algorithms/<slug>` layout) has its own
+#: page-naming scheme that does not mechanically match `MethodInfo.name`
+#: (e.g. `turboquant_rvq` -> `rvq`, `polar` -> `polarquant`), and it does not
+#: yet have a page for most registry methods. A method absent from this map
+#: has no docs page; `docs_url` is `None` rather than a synthesized dead link.
+#: Sourced from https://veloxquant-mlx.netlify.app/sitemap.xml.
+_DOCS_SLUG: Dict[str, str] = {
+    "turboquant_rvq": "rvq",
+    "polar": "polarquant",
+    "kivi": "kivi",
+    "qjl": "qjl",
+    "spectral": "spectral",
+    "vecinfer": "vecinfer",
+}
 
 #: What ``veloxquant serve`` starts with when the user does not pick a method.
 #: This was originally chosen because ``KVCacheConfig`` defaulted to
@@ -147,8 +163,9 @@ class MethodInfo:
     coverage: TelemetryCoverage = TelemetryCoverage.NONE
 
     @property
-    def docs_url(self) -> str:
-        return f"{DOCS_BASE}/{self.name.replace('_', '-')}"
+    def docs_url(self) -> Optional[str]:
+        slug = _DOCS_SLUG.get(self.name)
+        return f"{DOCS_BASE}/{slug}" if slug is not None else None
 
     @property
     def is_adapted(self) -> bool:
@@ -232,6 +249,8 @@ _FAMILY: Dict[str, MethodFamily] = {
     "nestedkv": MethodFamily.QUANTIZATION,
     "amc": MethodFamily.EVICTION,
     "a2ats": MethodFamily.HYBRID,
+    "anchorkv": MethodFamily.HYBRID,
+    "rocketkv": MethodFamily.HYBRID,
 }
 
 _BLURB: Dict[str, str] = {
@@ -275,6 +294,8 @@ _BLURB: Dict[str, str] = {
     "nestedkv": "NestedKV: hierarchical nested codebooks.",
     "amc": "AMC: adaptive memory compression.",
     "a2ats": "A2ATS-adapted: rotary-aware vector quantization with distance gating.",
+    "anchorkv": "AnchorKV-adapted: anchor-residual compression, no eviction.",
+    "rocketkv": "RocketKV-adapted: SnapKV eviction + hybrid sparse attention selection.",
 }
 
 #: Honest "-adapted" notes. Sourced from open issues that document the
@@ -307,9 +328,7 @@ _CONFIG_FIELDS: Dict[str, List[str]] = {
     "svdq": [
         "svdq_rank",
         "svdq_energy_threshold",
-        "svdq_hi_bit",
-        "svdq_lo_bit",
-        "svdq_hi_fraction",
+        "svdq_bit_schedule",
         "svdq_group_size",
     ],
     "kitty": ["kitty_hi_fraction", "kitty_hi_bit", "kitty_lo_bit", "kitty_group_size"],
@@ -339,6 +358,13 @@ _CONFIG_FIELDS: Dict[str, List[str]] = {
     "qjl": ["jl_dim", "seed"],
     "polar": ["bit_width_inlier", "seed"],
     "spectral": ["bit_width_inlier", "seed"],
+    "rocketkv": [
+        "rocketkv_compression_ratio",
+        "rocketkv_page_size",
+        "rocketkv_head_topk1",
+        "rocketkv_obs_window",
+        "rocketkv_n_sink",
+    ],
 }
 
 _GENERIC_FIELDS = ["bit_width_inlier", "seed"]
@@ -360,6 +386,7 @@ _FIELD_HELP: Dict[str, str] = {
     "adakv_target_avg_bits": "Global average bits/element budget.",
     "kvquant_outlier_fraction": "Top-magnitude fraction kept in fp16.",
     "residual_length": "Recent tokens kept uncompressed.",
+    "rocketkv_compression_ratio": "Overall target ratio; adaptively split across both stages.",
 }
 
 

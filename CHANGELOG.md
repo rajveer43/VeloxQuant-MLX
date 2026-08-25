@@ -60,6 +60,26 @@ untested, and a slower arm at lower power can still win on joules.
 
 **`docs-site/docs/guides/energy-profiling.md`** — how to run it privileged and
 unprivileged, and a plain statement of what the numbers do and do not establish.
+**RocketKV-adapted: two-stage KV cache compression**
+([#239](https://github.com/rajveer43/VeloxQuant-MLX/issues/239)) — new
+`method="rocketkv"`, inspired by "RocketKV: Accelerating Long-Context LLM
+Inference via Two-Stage KV Cache Compression" (Behnam, Fu, Zhao, Tsai, Yu,
+Tumanov; NVIDIA/Georgia Tech; ICML 2025, arXiv:2502.14051). Composes
+coarse-grain permanent eviction (stage 1, directly reuses SnapKV-adapted)
+with fine-grain dynamic per-decode-step top-k selection over the survivors
+(stage 2, Hybrid Sparse Attention — a two-dimensional approximate-attention
+reduction combining Quest-style paged sequence-dimension max/min summaries
+with SparQ-style head-dimension top-k channel selection). An adaptive
+formula (paper §3.6) splits a single `rocketkv_compression_ratio` knob
+across both stages automatically. `MethodFamily.HYBRID`. No RocketKV-MT
+(multi-turn) variant in this PR — see the issue for follow-up. New
+`veloxquant_mlx/quantizers/rocketkv.py` (paged summaries, HSA scoring,
+adaptive split) and `veloxquant_mlx/cache/rocketkv_cache.py`
+(`RocketKVKVCache`), tests in
+`veloxquant_mlx/tests/{quantizers,cache}/test_rocketkv*.py`, offline
+benchmark in `benchmark_scripts/benchmark_rocketkv.py`, docs at
+`docs-site/docs/algorithms/rocketkv.md`, adaptation rationale in
+`paper/research/surveys/NEW_METHOD_SURVEY_V23.md`.
 
 ### Performance
 
@@ -326,6 +346,137 @@ window size via `adakv_obs_window` (default 32).
   range and adds an `attention_entropy` arm at matched budget.
 
 <!-- version list -->
+
+## v0.57.0 (2026-08-22)
+
+### Bug Fixes
+
+- **docs-site**: Patch npm vulnerabilities via dependency overrides
+  ([`8d83691`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8d836913cc4dacf30d0a00801d57e3c46607c713))
+
+### Documentation
+
+- Remove dangling links to deleted OPTIMIZATION_FINDINGS.md
+  ([`36f04fe`](https://github.com/rajveer43/VeloxQuant-MLX/commit/36f04fee7cf7f1917f03d4532105a1dd897d5e03))
+
+- **readme**: Rewrite for human voice, no content changes
+  ([`922774e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/922774e28440fadc7a4cb8f10c1c38905ee8aa7d))
+
+### Features
+
+- **landing**: Link to VS Code extension
+  ([`6e9164c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6e9164cc5a385bc8cde7dab2ec99a781e4a64f2a))
+
+### Refactoring
+
+- **landing**: Remove Benchmarks section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove Comparison section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove confusing Quality Cost section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove How It Works explainer section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove llama.cpp-vs-VeloxQuant-MLX card comparison from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove method picker section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Rewrite landing page copy for a non-technical audience
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Tighten hero copy on landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **readme**: Swap banner for app-icon-matching logo, trim stale copy
+  ([`e9290e1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e9290e1e15ff62deece27d3a30efc3eed1b77f9e))
+
+
+## v0.56.0 (2026-08-21)
+
+### Code Style
+
+- Fix ruff-format violation in mac_recommender.py
+  ([#240](https://github.com/rajveer43/VeloxQuant-MLX/pull/240),
+  [`f2eb44a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f2eb44a069cb8d2e9f994de3fd9915a644da64ea))
+
+### Documentation
+
+- **readme**: Add RocketKV, fix stale method counts and AnchorKV link
+  ([#240](https://github.com/rajveer43/VeloxQuant-MLX/pull/240),
+  [`f2eb44a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f2eb44a069cb8d2e9f994de3fd9915a644da64ea))
+
+### Features
+
+- **rocketkv**: Add RocketKV two-stage KV cache compression
+  ([#240](https://github.com/rajveer43/VeloxQuant-MLX/pull/240),
+  [`f2eb44a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f2eb44a069cb8d2e9f994de3fd9915a644da64ea))
+
+
+## v0.55.0 (2026-08-21)
+
+### Features
+
+- **mac_recommender**: Extend model classes and RAM tiers to real-world scale
+  ([`13c7b33`](https://github.com/rajveer43/VeloxQuant-MLX/commit/13c7b3356d5dd26597fbd691925fa95297046f06))
+
+
+## v0.54.1 (2026-08-21)
+
+### Bug Fixes
+
+- **docs-site**: Bump joi and http-proxy-middleware to patched versions
+  ([`4e2d46f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4e2d46f99df7ef7ced70b9278ecde82b21da4713))
+
+
+## v0.54.0 (2026-08-21)
+
+### Features
+
+- **landing**: Add VeloxQuant Studio waitlist section and fix calc URL leak
+  ([`d18556b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d18556bd55fc7f5f2a5da5ca01bc8b918481e453))
+
+
+## v0.53.0 (2026-08-20)
+
+### Bug Fixes
+
+- **anchorkv**: Resolve ruff-format and link-check CI failures
+  ([#238](https://github.com/rajveer43/VeloxQuant-MLX/pull/238),
+  [`51b45ac`](https://github.com/rajveer43/VeloxQuant-MLX/commit/51b45ace5f74c2bce227ddd69f66340f0948d684))
+
+### Features
+
+- **anchorkv**: Add AnchorKV anchor-residual KV cache compression
+  ([#238](https://github.com/rajveer43/VeloxQuant-MLX/pull/238),
+  [`51b45ac`](https://github.com/rajveer43/VeloxQuant-MLX/commit/51b45ace5f74c2bce227ddd69f66340f0948d684))
+
+
+## v0.52.1 (2026-08-19)
+
+### Bug Fixes
+
+- **svdq**: Implement paper's real 8-group bit schedule, guard against small-rank truncation
+  ([`579fb8f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/579fb8fc0397a2d26875a6ad5f68d7713e73db75))
+
+### Code Style
+
+- Fix ruff formatting in test_svdq_cache.py
+  ([`1e32922`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1e3292257c09cd24379a78b61d370d4d801c16e1))
+
 
 ## v0.52.0 (2026-08-19)
 

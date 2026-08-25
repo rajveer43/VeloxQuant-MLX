@@ -58,7 +58,7 @@ from typing import Optional
 
 import mlx.core as mx
 
-from veloxquant_mlx.quantizers.svdq import quantize_latents_mixed
+from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
 
 
 def head_group_bounds(n_heads: int, n_groups: int) -> list[tuple[int, int]]:
@@ -152,18 +152,29 @@ def quantize_latent(
 ) -> mx.array:
     """Mixed-bit quantize latents ``[S, r]`` → reconstructed fp16 latents ``[S, r]``.
 
-    Thin wrapper over :func:`veloxquant_mlx.quantizers.svdq.quantize_latents_mixed`
-    so PALU reuses the same, already-tested latent coder.  Top-``hi_fraction``
-    channels by singular value get ``hi_bit``; the rest get ``lo_bit``.
+    Top-``hi_fraction`` channels by singular value magnitude get ``hi_bit``;
+    the rest get ``lo_bit``. PALU's own 2-tier split — kept separate from
+    SVDq's 8-group fixed schedule (``svdq.quantize_latents_mixed``), which
+    follows a different paper (arXiv:2502.15304 Eq. 6) with a different
+    grouping shape and 0-bit truncation semantics that don't apply here.
     """
-    return quantize_latents_mixed(
-        L,
-        singular_values,
-        hi_bit=hi_bit,
-        lo_bit=lo_bit,
-        hi_fraction=hi_fraction,
-        group_size=group_size,
-    )
+    S, r = L.shape
+    n_hi = max(1, int(r * hi_fraction))
+    sv_np = singular_values.tolist()
+    sorted_idx = sorted(range(r), key=lambda i: -sv_np[i])
+    hi_idx = sorted(sorted_idx[:n_hi])
+    lo_idx = sorted(sorted_idx[n_hi:])
+
+    parts = [None] * r
+    if hi_idx:
+        recon_hi = _group_quant_dequant(L[:, hi_idx], hi_bit, group_size)
+        for new_col_idx, orig_col_idx in enumerate(hi_idx):
+            parts[orig_col_idx] = recon_hi[:, new_col_idx]
+    if lo_idx:
+        recon_lo = _group_quant_dequant(L[:, lo_idx], lo_bit, group_size)
+        for new_col_idx, orig_col_idx in enumerate(lo_idx):
+            parts[orig_col_idx] = recon_lo[:, new_col_idx]
+    return mx.stack(parts, axis=1).astype(mx.float16)
 
 
 __all__ = [

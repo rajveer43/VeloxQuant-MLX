@@ -63,6 +63,8 @@ const sidebars: SidebarsConfig = {
         'algorithms/nestedkv',
         'algorithms/amc',
         'algorithms/a2ats',
+        'algorithms/anchorkv',
+        'algorithms/rocketkv',
         'algorithms/xkv',
         'algorithms/cross-model-transfer',
       ],

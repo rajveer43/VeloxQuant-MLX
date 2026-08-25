@@ -63,6 +63,11 @@ function activateTab(tab, { scrollIntoView = true } = {}) {
   );
   const panel = document.getElementById('tab-' + tab);
   if (panel) panel.classList.add('active');
+  // The advanced examples (VecInfer, RateQuant, VLM) live inside a
+  // collapsed <details> — open it so activating a tab actually shows it,
+  // instead of leaving it collapsed.
+  const details = btn.closest('details');
+  if (details && !details.open) details.open = true;
   // Keep the active tab button in view on the horizontally-scrolling
   // mobile tab strip.
   if (scrollIntoView) btn.scrollIntoView({ inline: 'nearest', block: 'nearest' });
@@ -71,20 +76,6 @@ function activateTab(tab, { scrollIntoView = true } = {}) {
 function initCodeTabs() {
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => activateTab(btn.dataset.tab));
-  });
-}
-
-// ── METHOD PICKER → QUICKSTART TAB HANDOFF ──
-// Clicking a method name in #methods jumps to #quickstart with the matching
-// code tab already selected, instead of leaving the visitor to find and
-// click the right tab themselves.
-function initPickerTabLinks() {
-  document.querySelectorAll('.picker-tab-link[data-tab]').forEach(link => {
-    link.addEventListener('click', () => {
-      // Let the anchor navigation happen; just pre-select the tab so it's
-      // showing once the browser scrolls #quickstart into view.
-      activateTab(link.dataset.tab, { scrollIntoView: false });
-    });
   });
 }
 
@@ -264,14 +255,6 @@ function initCalculator() {
     ramSel.value = String(VQCalc.ALLOWED_RAM_GB.includes(ram) ? ram : 16);
   }
 
-  function writeState(seqLen) {
-    const q = new URLSearchParams(location.search);
-    q.set('model', modelSel.value);
-    q.set('ctx', String(seqLen));
-    q.set('ram', ramSel.value);
-    history.replaceState(null, '', location.pathname + '?' + q.toString() + location.hash);
-  }
-
   function render() {
     const preset = VQCalc.MODEL_PRESETS.find(p => p.id === modelSel.value);
     const seqLen = CTX_STEPS[parseInt(ctxRange.value, 10)];
@@ -327,15 +310,13 @@ function initCalculator() {
       `<p class="calc-note">Estimated from your model's real shape ` +
       `(${preset.n_layers} layers · ${preset.n_kv_heads} KV heads · head_dim ${preset.head_dim}), ` +
       `assuming 4-bit weights (~${res.weightGb} GB) and a 4 GB OS reserve. ` +
-      `${residentNote} Compression has a quality cost too — see ` +
-      `<a href="#quality" class="t-accent">what it costs you →</a>.</p>` +
+      `${residentNote} Heavier compression can affect answer quality — ` +
+      `see the <a href="/docs/algorithms/overview" class="t-accent">algorithm reference</a>.</p>` +
       `<div class="calc-cta">` +
         `<a class="btn btn-filled" href="#quickstart">Use <code class="inline plain">${rec.id}</code> →</a>` +
         `<a class="btn btn-outline" href="playground.html">Full playground →</a>` +
         `<a class="btn btn-outline" href="#install">Install →</a>` +
       `</div>`;
-
-    writeState(seqLen);
   }
 
   // The no-JS fallback is in the markup and removed only once we know the
@@ -522,11 +503,83 @@ function initThemeToggle() {
   });
 }
 
+// ── TOAST ──
+function showToast({ title, desc, duration = 6000 }) {
+  const stack = document.getElementById('toast-stack');
+  if (!stack) return;
+
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.setAttribute('role', 'status');
+  toast.innerHTML = `
+    <span class="toast-icon" aria-hidden="true">✓</span>
+    <span class="toast-body">
+      <p class="toast-title"></p>
+      <p class="toast-desc"></p>
+    </span>
+    <button class="toast-close" aria-label="Dismiss notification">×</button>
+  `;
+  toast.querySelector('.toast-title').textContent = title;
+  toast.querySelector('.toast-desc').textContent = desc;
+
+  function dismiss() {
+    toast.classList.add('toast-leaving');
+    toast.addEventListener('animationend', () => toast.remove(), { once: true });
+  }
+
+  toast.querySelector('.toast-close').addEventListener('click', dismiss);
+  stack.appendChild(toast);
+
+  setTimeout(dismiss, duration);
+}
+
+// ── WAITLIST FORM ──
+// Netlify Forms: the static <form data-netlify="true"> is enough for Netlify's
+// build-time HTML parser to register the "waitlist" form and start capturing
+// submissions server-side, with zero backend of our own. This just upgrades
+// the UX from "reload to a plain success page" to an inline swap plus a
+// toast, and falls back to a normal (non-JS) POST if fetch is unavailable
+// or fails.
+function initWaitlistForm() {
+  const form = document.getElementById('waitlist-form');
+  if (!form) return;
+
+  const success = document.getElementById('waitlist-success');
+  const submitBtn = document.getElementById('waitlist-submit');
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Joining…';
+
+    const body = new URLSearchParams(new FormData(form)).toString();
+
+    fetch('/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('Network response was not ok');
+        form.hidden = true;
+        success.hidden = false;
+        showToast({
+          title: "You're on the waitlist",
+          desc: "We'll announce VeloxQuant Studio here as soon as we start building — watch your inbox.",
+        });
+      })
+      .catch(() => {
+        // Fall back to a real form submission (full Netlify redirect flow)
+        // rather than stranding the user on a form that silently did nothing.
+        form.submit();
+      });
+  });
+}
+
 // ── INIT ──
 document.addEventListener('DOMContentLoaded', () => {
   initCopyButtons();
   initCodeTabs();
-  initPickerTabLinks();
   initBadgeTyping();
   initMatrixRain();
   initScrollParallax();
@@ -537,4 +590,5 @@ document.addEventListener('DOMContentLoaded', () => {
   initActiveNav();
   initHamburgerMenu();
   initThemeToggle();
+  initWaitlistForm();
 });
