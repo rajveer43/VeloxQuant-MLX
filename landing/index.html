@@ -229,37 +229,37 @@
         <div class="feature-icon" aria-hidden="true">◆</div>
         <p class="feature-eyebrow">01 — Quantizers</p>
         <h3 class="feature-title">Shrink every number</h3>
-        <p class="feature-body">Compresses each Key/Value vector from 16-bit down to as little as 1 bit using calibrated codebooks — most methods need zero calibration and work out of the box.</p>
+        <p class="feature-body">Fit bigger models and longer conversations in the RAM you already have — most methods work out of the box, no calibration step required.</p>
       </div>
       <div class="feature-card fade-in">
         <div class="feature-icon" aria-hidden="true">⊘</div>
         <p class="feature-eyebrow">02 — Token eviction</p>
         <h3 class="feature-title">Drop what you don't need</h3>
-        <p class="feature-body">Some methods actively remove old, low-value tokens from memory instead of just shrinking them — this is the only path that frees memory you'll actually see in Activity Monitor today.</p>
+        <p class="feature-body">Watch your Mac's memory actually go down while you chat — this is the only path that frees RAM you'll see drop in Activity Monitor in real time.</p>
       </div>
       <div class="feature-card fade-in">
         <div class="feature-icon" aria-hidden="true">⧉</div>
         <p class="feature-eyebrow">03 — Cross-layer merging</p>
         <h3 class="feature-title">Share memory across layers</h3>
-        <p class="feature-body">Several transformer layers can share a single compressed cache instead of each keeping its own copy, cutting memory further with almost no code change.</p>
+        <p class="feature-body">Squeeze out even more headroom on top of everything else — layers share memory instead of duplicating it, and you don't have to change your code to get it.</p>
       </div>
       <div class="feature-card fade-in">
         <div class="feature-icon" aria-hidden="true">⚙</div>
         <p class="feature-eyebrow">04 — Metal kernels</p>
         <h3 class="feature-title">Hand-written for Apple Silicon</h3>
-        <p class="feature-body">The hottest compression path runs on custom Metal kernels — up to 13× faster than the equivalent pure MLX code, with up to 98% less peak memory at the shapes that used to run out.</p>
+        <p class="feature-body">Up to 13× faster and up to 98% less peak memory than the plain MLX version — built to run at full speed on your Mac's own GPU, not adapted from something else.</p>
       </div>
       <div class="feature-card fade-in">
         <div class="feature-icon" aria-hidden="true">▤</div>
         <p class="feature-eyebrow">05 — Drop-in API</p>
         <h3 class="feature-title">Three lines, not a rewrite</h3>
-        <p class="feature-body">Every method shares one config object, so switching between them means changing a single string — your model-loading and generation code stays exactly the same.</p>
+        <p class="feature-body">Try a different method by changing one string, not your whole setup — your model-loading and generation code stays exactly the same.</p>
       </div>
       <div class="feature-card fade-in">
         <div class="feature-icon" aria-hidden="true">◫</div>
         <p class="feature-eyebrow">06 — Multi-model support</p>
         <h3 class="feature-title">Works with what you already run</h3>
-        <p class="feature-body">Validated on 12 production model families (Llama, Mistral, Qwen, Phi, Gemma 3/4, Falcon) via <code class="inline plain">mlx_lm</code>, plus vision-language models through <code class="inline plain">mlx-vlm</code>.</p>
+        <p class="feature-body">Tested on the models you're probably already running — Llama, Mistral, Qwen, Phi, Gemma, Falcon, and vision-language models too — not a narrow demo.</p>
       </div>
     </div>
     <p class="feature-more">
