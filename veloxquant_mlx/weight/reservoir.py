@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import struct
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -23,7 +23,7 @@ def _pad_to_page(n: int) -> int:
     return (n + _PAGE_SIZE - 1) // _PAGE_SIZE * _PAGE_SIZE
 
 
-def save_reservoir(model: nn.Module, path: Union[str, Path], persist_rotation: bool = False) -> None:
+def save_reservoir(model: nn.Module, path: str | Path, persist_rotation: bool = False) -> None:
     """Serialize a quantize_model()-processed model's QuantizedLinear layers.
 
     Writes a single flat file: magic/version, a JSON header describing each
@@ -70,7 +70,9 @@ def save_reservoir(model: nn.Module, path: Union[str, Path], persist_rotation: b
     for name, layer in layers:
         idx_np = np.array(layer._w_indices, copy=False, dtype=np.uint8)
         norms_np = np.array(layer._w_norms, copy=False, dtype=np.float32)
-        bias_np = None if layer._bias is None else np.array(layer._bias, copy=False, dtype=np.float16)
+        bias_np = (
+            None if layer._bias is None else np.array(layer._bias, copy=False, dtype=np.float16)
+        )
 
         is_hadamard = isinstance(layer._preconditioner, HadamardPreconditioner)
         # Hadamard diagonals are (d,) -- always cheap, always persisted.
@@ -124,8 +126,12 @@ def save_reservoir(model: nn.Module, path: Union[str, Path], persist_rotation: b
         centroids_flat = centroids_np.reshape(-1)
         index_segments.append(np.pad(idx_np.reshape(-1), (0, idx_padded - idx_bytes)))
         norms_segments.append(np.pad(norms_flat, (0, norms_padded_elems - norms_flat.size)))
-        rotation_segments.append(np.pad(rotation_flat, (0, rotation_padded_elems - rotation_flat.size)))
-        centroids_segments.append(np.pad(centroids_flat, (0, centroids_padded_elems - centroids_flat.size)))
+        rotation_segments.append(
+            np.pad(rotation_flat, (0, rotation_padded_elems - rotation_flat.size))
+        )
+        centroids_segments.append(
+            np.pad(centroids_flat, (0, centroids_padded_elems - centroids_flat.size))
+        )
         index_offset += idx_padded
         norms_offset += norms_padded_bytes
         rotation_offset += rotation_padded_bytes
@@ -144,8 +150,12 @@ def save_reservoir(model: nn.Module, path: Union[str, Path], persist_rotation: b
 
     index_blob = np.concatenate(index_segments) if index_segments else np.zeros(0, dtype=np.uint8)
     norms_blob = np.concatenate(norms_segments) if norms_segments else np.zeros(0, dtype=np.float32)
-    rotation_blob = np.concatenate(rotation_segments) if rotation_segments else np.zeros(0, dtype=np.float32)
-    centroids_blob = np.concatenate(centroids_segments) if centroids_segments else np.zeros(0, dtype=np.float32)
+    rotation_blob = (
+        np.concatenate(rotation_segments) if rotation_segments else np.zeros(0, dtype=np.float32)
+    )
+    centroids_blob = (
+        np.concatenate(centroids_segments) if centroids_segments else np.zeros(0, dtype=np.float32)
+    )
 
     path = Path(path)
     with open(path, "wb") as f:
@@ -160,7 +170,9 @@ def save_reservoir(model: nn.Module, path: Union[str, Path], persist_rotation: b
         f.write(centroids_blob.tobytes())
 
 
-def _fast_quantized_linear(entry: dict, rotation_np: np.ndarray, centroids_np: np.ndarray) -> QuantizedLinear:
+def _fast_quantized_linear(
+    entry: dict, rotation_np: np.ndarray, centroids_np: np.ndarray
+) -> QuantizedLinear:
     """Construct a QuantizedLinear without paying QuantizedLinear.__init__'s
     rotation-matrix / Lloyd-Max setup cost -- both are regenerated instead
     from the persisted rotation_np / centroids_np arrays.
@@ -197,7 +209,7 @@ def _fast_quantized_linear(entry: dict, rotation_np: np.ndarray, centroids_np: n
     return layer
 
 
-def load_reservoir(path: Union[str, Path]) -> dict[str, Any]:
+def load_reservoir(path: str | Path) -> dict[str, Any]:
     """Deserialize a reservoir file into a flat {layer_name: QuantizedLinear} dict.
 
     Reconstructs each layer from its persisted rotation matrix/diagonal and
@@ -277,7 +289,9 @@ def load_reservoir(path: Union[str, Path]) -> dict[str, Any]:
             # persist_rotation=False at save time: not persisted, re-derive
             # deterministically from seed (same QR cost quantize_model()
             # already pays -- see Finding 4 in docs/WEIGHT_RESERVOIR_IDEATION.md).
-            rotation_np = make_rotation_matrix(entry["in_features"], seed=entry["seed"]).astype(np.float32)
+            rotation_np = make_rotation_matrix(entry["in_features"], seed=entry["seed"]).astype(
+                np.float32
+            )
 
         cen_elems = entry["centroids_nbytes"] // 4
         cen_off = entry["centroids_offset"] // 4
@@ -289,7 +303,9 @@ def load_reservoir(path: Union[str, Path]) -> dict[str, Any]:
             index_blob[entry["index_offset"] : entry["index_offset"] + entry["index_nbytes"]]
         )
         norms_flat = np.array(
-            norms_blob[entry["norms_offset"] // 4 : entry["norms_offset"] // 4 + entry["norms_nbytes"] // 4]
+            norms_blob[
+                entry["norms_offset"] // 4 : entry["norms_offset"] // 4 + entry["norms_nbytes"] // 4
+            ]
         )
 
         layer._w_indices = mx.array(idx_flat.reshape(entry["out_features"], entry["in_features"]))
@@ -304,7 +320,7 @@ def load_reservoir(path: Union[str, Path]) -> dict[str, Any]:
     return layers
 
 
-def graft_reservoir(model: nn.Module, path: Union[str, Path]) -> nn.Module:
+def graft_reservoir(model: nn.Module, path: str | Path) -> nn.Module:
     """Load a reservoir and replace the matching named modules in `model` in place.
 
     `model` must have Linear/QuantizedLinear layers at the same dotted names

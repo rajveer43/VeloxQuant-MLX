@@ -80,7 +80,11 @@ def _worker_quantize_from_source(model_id: str, bits: int) -> None:
 
     mx.eval(model.parameters())
     elapsed = time.perf_counter() - t0
-    print(json.dumps({"mode": "quantize_from_source", "elapsed_s": elapsed, "peak_rss_mb": _peak_rss_mb()}))
+    print(
+        json.dumps(
+            {"mode": "quantize_from_source", "elapsed_s": elapsed, "peak_rss_mb": _peak_rss_mb()}
+        )
+    )
 
 
 def _worker_graft_reservoir(model_id: str, bits: int, reservoir_path: str) -> None:
@@ -99,7 +103,9 @@ def _worker_graft_reservoir(model_id: str, bits: int, reservoir_path: str) -> No
     model = graft_reservoir(model, Path(reservoir_path))
     mx.eval(model.parameters())
     elapsed = time.perf_counter() - t0
-    print(json.dumps({"mode": "graft_reservoir", "elapsed_s": elapsed, "peak_rss_mb": _peak_rss_mb()}))
+    print(
+        json.dumps({"mode": "graft_reservoir", "elapsed_s": elapsed, "peak_rss_mb": _peak_rss_mb()})
+    )
 
 
 def _worker_save_reservoir(model_id: str, bits: int, reservoir_path: str) -> None:
@@ -134,24 +140,65 @@ def main() -> None:
         _worker_save_reservoir(args.model, args.bits, args._reservoir_path)
         return
 
-    reservoir_path = REPO_ROOT / ".bench_tmp" / f"reservoir_{args.model.replace('/', '_')}_{args.bits}bit.vqrs"
+    reservoir_path = (
+        REPO_ROOT / ".bench_tmp" / f"reservoir_{args.model.replace('/', '_')}_{args.bits}bit.vqrs"
+    )
     reservoir_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"[1/3] Saving reservoir for {args.model} ({args.bits}-bit)...")
-    _run_subprocess(["--_worker", "save", "--model", args.model, "--bits", str(args.bits), "--_reservoir-path", str(reservoir_path)])
+    _run_subprocess(
+        [
+            "--_worker",
+            "save",
+            "--model",
+            args.model,
+            "--bits",
+            str(args.bits),
+            "--_reservoir-path",
+            str(reservoir_path),
+        ]
+    )
     reservoir_size_mb = reservoir_path.stat().st_size / 1024**2
     print(f"  reservoir file: {reservoir_size_mb:.1f} MB")
 
     print("[2/3] Single-process comparison: quantize_from_source vs graft_reservoir...")
-    single_quantize = _run_subprocess(["--_worker", "quantize", "--model", args.model, "--bits", str(args.bits)])
-    single_graft = _run_subprocess(["--_worker", "graft", "--model", args.model, "--bits", str(args.bits), "--_reservoir-path", str(reservoir_path)])
-    print(f"  quantize_from_source: {single_quantize['elapsed_s']:.2f}s, peak RSS {single_quantize['peak_rss_mb']:.1f} MB")
-    print(f"  graft_reservoir:      {single_graft['elapsed_s']:.2f}s, peak RSS {single_graft['peak_rss_mb']:.1f} MB")
+    single_quantize = _run_subprocess(
+        ["--_worker", "quantize", "--model", args.model, "--bits", str(args.bits)]
+    )
+    single_graft = _run_subprocess(
+        [
+            "--_worker",
+            "graft",
+            "--model",
+            args.model,
+            "--bits",
+            str(args.bits),
+            "--_reservoir-path",
+            str(reservoir_path),
+        ]
+    )
+    print(
+        f"  quantize_from_source: {single_quantize['elapsed_s']:.2f}s, peak RSS {single_quantize['peak_rss_mb']:.1f} MB"
+    )
+    print(
+        f"  graft_reservoir:      {single_graft['elapsed_s']:.2f}s, peak RSS {single_graft['peak_rss_mb']:.1f} MB"
+    )
 
-    print(f"[3/3] Concurrent ({args.n_concurrent} processes) peak RSS: quantize_from_source vs graft_reservoir...")
+    print(
+        f"[3/3] Concurrent ({args.n_concurrent} processes) peak RSS: quantize_from_source vs graft_reservoir..."
+    )
     procs_q = [
         subprocess.Popen(
-            [sys.executable, __file__, "--_worker", "quantize", "--model", args.model, "--bits", str(args.bits)],
+            [
+                sys.executable,
+                __file__,
+                "--_worker",
+                "quantize",
+                "--model",
+                args.model,
+                "--bits",
+                str(args.bits),
+            ],
             cwd=str(REPO_ROOT),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -215,15 +262,21 @@ def main() -> None:
     print(f"\nResults written to {out_path}")
 
     print("\n=== Summary ===")
-    print(f"Load time:  quantize_from_source={single_quantize['elapsed_s']:.2f}s  "
-          f"graft_reservoir={single_graft['elapsed_s']:.2f}s  "
-          f"speedup={single_quantize['elapsed_s']/single_graft['elapsed_s']:.2f}x")
+    print(
+        f"Load time:  quantize_from_source={single_quantize['elapsed_s']:.2f}s  "
+        f"graft_reservoir={single_graft['elapsed_s']:.2f}s  "
+        f"speedup={single_quantize['elapsed_s'] / single_graft['elapsed_s']:.2f}x"
+    )
     avg_q_rss = sum(r["peak_rss_mb"] for r in concurrent_quantize) / len(concurrent_quantize)
     avg_g_rss = sum(r["peak_rss_mb"] for r in concurrent_graft) / len(concurrent_graft)
-    print(f"Concurrent per-process peak RSS (N={args.n_concurrent}): "
-          f"quantize_from_source avg={avg_q_rss:.1f} MB  graft_reservoir avg={avg_g_rss:.1f} MB")
-    print("NOTE: per Findings 1-2 in docs/WEIGHT_RESERVOIR_IDEATION.md, these are NOT "
-          "shared physical pages -- each process pays its own RSS independently in both modes.")
+    print(
+        f"Concurrent per-process peak RSS (N={args.n_concurrent}): "
+        f"quantize_from_source avg={avg_q_rss:.1f} MB  graft_reservoir avg={avg_g_rss:.1f} MB"
+    )
+    print(
+        "NOTE: per Findings 1-2 in docs/WEIGHT_RESERVOIR_IDEATION.md, these are NOT "
+        "shared physical pages -- each process pays its own RSS independently in both modes."
+    )
 
 
 if __name__ == "__main__":
