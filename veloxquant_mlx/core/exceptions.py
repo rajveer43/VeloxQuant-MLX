@@ -15,3 +15,7 @@ class CyclicPipelineError(RuntimeError):
 
 class CodebookDimensionMismatch(ValueError):
     """Raised when a codebook's shape does not match the expected dimension."""
+
+
+class BlockPoolExhaustedError(RuntimeError):
+    """Raised when a BlockPoolAllocator has no free blocks left to allocate."""

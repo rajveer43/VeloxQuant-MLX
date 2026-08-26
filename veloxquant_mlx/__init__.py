@@ -21,16 +21,18 @@ from veloxquant_mlx.cache.vecinfer_cache import VecInferKVCache
 from veloxquant_mlx.core.abstractions import (
     ArtifactStore,
     KVCache,
-    Quantizer,
     QuantizationObserver,
+    Quantizer,
 )
 from veloxquant_mlx.core.context import EncodedVector, QuantizationContext, TransformResult
 from veloxquant_mlx.core.exceptions import (
     ArtifactNotFoundError,
+    BlockPoolExhaustedError,
     CodebookDimensionMismatch,
     CyclicPipelineError,
     QuantizerConfigError,
 )
+from veloxquant_mlx.memory import BlockPoolAllocator, PoolConfig, PooledKVCache
 from veloxquant_mlx.observers import KeyNormObserver, KeyNormReport
 from veloxquant_mlx.quantizers.base import QuantizerFactory
 
@@ -50,9 +52,14 @@ __all__ = [
     "TransformResult",
     # Exceptions
     "ArtifactNotFoundError",
+    "BlockPoolExhaustedError",
     "CodebookDimensionMismatch",
     "CyclicPipelineError",
     "QuantizerConfigError",
+    # KV-cache block pool allocator (issue #249)
+    "BlockPoolAllocator",
+    "PoolConfig",
+    "PooledKVCache",
     # Quantizer registry
     "QuantizerFactory",
     # RateQuant allocators (per-layer mixed-precision)

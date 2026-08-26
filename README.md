@@ -336,6 +336,7 @@ Historical benchmark snapshots (throughput optimisation journey, RateQuant V2, 8
 | [`veloxquant_mlx/cache/vecinfer_cache`](veloxquant_mlx/cache/vecinfer_cache.py) | `VecInferKVCache` — smooth + Hadamard + product VQ |
 | [`veloxquant_mlx/cache/turboquant_rvq_cache`](veloxquant_mlx/cache/turboquant_rvq_cache.py) | `TurboQuantRVQKVCache` — mlx_lm-compatible wrapper |
 | [`veloxquant_mlx/allocators`](veloxquant_mlx/allocators/) | `allocate_bits_ratequant`, `calibrate_layer_sensitivities`, VecInfer calibration |
+| [`veloxquant_mlx/memory`](veloxquant_mlx/memory/) | `BlockPoolAllocator` — fixed-size KV-cache block pool with reuse, fragmentation stats, and a `PooledKVCache` wrapper |
 | [`veloxquant_mlx/metal`](veloxquant_mlx/metal/) | Hand-written Metal MSL kernels, JIT via `mx.fast.metal_kernel` |
 | [`veloxquant_mlx/spectral`](veloxquant_mlx/spectral/) | `SpectralQuantizer`, rotation calibration, water-filling bit allocation |
 

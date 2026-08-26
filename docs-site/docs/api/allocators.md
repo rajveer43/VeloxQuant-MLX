@@ -185,3 +185,4 @@ from veloxquant_mlx.allocators.vecinfer import (
 - [VecInfer algorithm](../algorithms/vecinfer)
 - [Calibration guide](../guides/calibration)
 - [Mixed-precision guide](../guides/mixed-precision)
+- [Memory (Block Pool) API](./memory-api) — bit-allocation here is distinct from the KV-cache *memory*-block allocator in `veloxquant_mlx.memory`
