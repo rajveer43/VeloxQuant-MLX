@@ -1,0 +1,49 @@
+{
+  "model": "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+  "machine": "Apple M-series, 24 GB unified memory (same machine as docs/MEMORY_CONSTRAINT_FINDINGS.md)",
+  "n_layers": 168,
+  "source_model_disk_mb": 265.2,
+  "single_process": {
+    "quantize_model_from_source": {
+      "elapsed_s": 81.63,
+      "note": "mlx_lm.load() + quantize_model(bits=4, use_hadamard=True) + mx.eval(). Dominated by np.linalg.qr (55s of the pre-fix load_reservoir equivalent) across 24 non-Hadamard-compatible layers (in_features=4864) plus Lloyd-Max codebook fitting (8.9s) plus per-layer argmin quantization."
+    },
+    "load_reservoir_v1_recompute_rotation": {
+      "elapsed_s": 66.6,
+      "note": "First reservoir design: persisted only indices/norms, reconstructed rotation matrix + codebook from seed on every load via QuantizedLinear.__init__. Paid the SAME np.linalg.qr (55s) and Lloyd-Max (8.9s) cost as quantize_model() minus only the argmin quantization pass -- a much smaller win than intended. Superseded by v2."
+    },
+    "load_reservoir_v2_persisted_rotation": {
+      "elapsed_s_range": [0.36, 9.2],
+      "note": "Second reservoir design: persists rotation matrix/diagonal and codebook centroids in the file; reconstructs QuantizedLinear via _fast_quantized_linear (bypasses QuantizedLinear.__init__'s QR/Lloyd-Max branches entirely). cProfile CPU time is 0.346s; a standalone run measured 0.356s wall-clock; an earlier run in the same process as quantize_model() measured 9.2s wall-clock, likely warm-up/Metal-dispatch variance rather than a per-call regression -- flagged as unresolved variance, not silently averaged away.",
+      "speedup_vs_quantize_model": "9x-227x depending on which load_reservoir measurement is used; treat 9x as the conservative, reproducible number"
+    }
+  },
+  "file_size": {
+    "persist_rotation_true": {
+      "reservoir_file_mb": 2515.7,
+      "ratio_vs_source": "9.5x LARGER than source (265.2 MB), not smaller",
+      "breakdown_mb": {
+        "index_blob": 341.25,
+        "norms_blob": 3.375,
+        "rotation_blob": 2168.25,
+        "centroids_blob": 2.625
+      },
+      "finding": "rotation_blob is 86% of the file. The 24 QR-fallback layers (in_features=4864, not Hadamard-compatible) each persist a full 4864x4864 fp32 orthogonal rotation matrix (~94.8 MB per layer) to avoid re-deriving it via np.linalg.qr on load."
+    },
+    "persist_rotation_false_default": {
+      "reservoir_file_mb": 349.67,
+      "ratio_vs_source": "1.32x source (265.2 MB) -- index+norms+centroids blobs only, no QR matrices",
+      "load_elapsed_s": 59.28,
+      "note": "load_reservoir() re-derives each QR-fallback layer's rotation matrix from its persisted seed via np.linalg.qr -- same cost quantize_model() pays, since the rotation itself was never quantization-compressible savings, only recomputation-avoidable. This is RESOLVED as of the persist_rotation flag: default behavior no longer bloats the file; callers opt into the fast-load/large-file tradeoff explicitly via persist_rotation=True."
+    },
+    "resolution": "Added persist_rotation: bool = False parameter to save_reservoir() (default False). A dense random d x d orthogonal rotation matrix is inherently O(d^2) information with no compact encoding (confirmed: np.linalg.qr(mode='raw') still returns a full d x d array, not a compressed reflector form) -- so there is no way to keep both a small file AND a fast load for QR-fallback layers simultaneously. The flag makes the tradeoff explicit and caller-controlled instead of silently defaulting to the large-file behavior. Hadamard-compatible layers (144/168 in this model) are unaffected either way -- their (d,) diagonal is always persisted and always cheap."
+  },
+  "concurrent_n4_process_rss": {
+    "status": "not run",
+    "reason": "Qwen3-4B-4bit (the originally planned benchmark model) reliably OOM-killed (SIGKILL, exit 137) during quantize_model() on this 24 GB machine -- peak footprint measured at 21.2 GB with ~14-15 GB free+inactive available, consistent with docs/MEMORY_CONSTRAINT_FINDINGS.md's documented headroom constraints on this exact machine. The smaller Qwen2.5-0.5B-Instruct-4bit model was used instead for the single-process comparison above. Concurrent-process RSS sharing was not measured this pass; Findings 1-2 in this doc already establish analytically that no page sharing occurs regardless of model size."
+  },
+  "correctness": {
+    "bit_exact_round_trip": true,
+    "note": "veloxquant_mlx/tests/weight/test_reservoir.py: 11/11 passing, including 2/3/4-bit round trips, bias round-trip, grafting onto a raw (never quantize_model()-processed) module tree, and persist_rotation=True/False round trips on a real QR-fallback layer (in_features=50)."
+  }
+}
