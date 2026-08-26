@@ -69,6 +69,7 @@ _HADAMARD_QUANTIZE_SRC = _read_kernel_source("hadamard_quantize.metal")
 # Kernel factories
 # ---------------------------------------------------------------------------
 
+
 def _scalar_quantize_kernel(b: int, dtype: mx.Dtype):
     key = ("scalar_quantize", b, str(dtype))
     if key not in _cache:
