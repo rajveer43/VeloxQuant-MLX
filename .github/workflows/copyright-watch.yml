@@ -2,15 +2,23 @@ name: copyright-watch
 
 # Searches GitHub's public code index for distinctive strings from this repo
 # (class names, package names, unique identifiers). If anyone has copied the
-# code into their own repo without attribution, the workflow fails — and
-# GitHub emails you on workflow failure (per your notification settings at
-# https://github.com/settings/notifications).
+# code into their own repo without attribution, the workflow fails, which:
+#   1. Sends a direct email via Resend to rathodrajveer1311@gmail.com, and
+#   2. Triggers GitHub's own workflow-failure notification (per your
+#      notification settings at https://github.com/settings/notifications)
+#      as a backup channel.
+#
+# Setup required: add a RESEND_API_KEY repo secret (Settings > Secrets and
+# variables > Actions). Get a free key at https://resend.com — the sandbox
+# sender (onboarding@resend.dev) can email your own verified address with
+# no domain setup needed.
 #
 # Limitations:
 #   - Only indexes PUBLIC GitHub repos (no GitLab, Bitbucket, private mirrors).
 #   - Search has a few-day indexing lag for new repos.
 #   - Forks of THIS repo are excluded automatically by the -repo: filter,
 #     so legitimate forks (which preserve the LICENSE) won't trigger alerts.
+#   - Won't catch a copy that renames all identifiers before redistributing.
 
 on:
   schedule:
@@ -89,6 +97,8 @@ jobs:
                 lines.push('');
               }
               await core.summary.addRaw(lines.join('\n')).write();
+              core.exportVariable('COPY_WATCH_HITS', String(total_hits));
+              core.exportVariable('COPY_WATCH_BODY', lines.join('\n'));
               core.setFailed(
                 `Found ${total_hits} potential copies across ` +
                 `${findings.length} watched query/queries. ` +
@@ -97,3 +107,21 @@ jobs:
             } else {
               core.info('No unauthorized copies detected.');
             }
+
+      - name: Email alert via Resend
+        if: failure() && env.COPY_WATCH_HITS
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_TO: rathodrajveer1311@gmail.com
+        run: |
+          # Build JSON body safely with jq (avoids shell-escaping the markdown).
+          html=$(printf '%s' "$COPY_WATCH_BODY" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' | sed 's/$/<br>/')
+          payload=$(jq -n \
+            --arg to "$ALERT_TO" \
+            --arg subject "VeloxQuant-MLX copyright-watch: possible unauthorized copy detected" \
+            --arg html "<pre>${html}</pre><p>Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}</p>" \
+            '{from: "VeloxQuant Copyright Watch <onboarding@resend.dev>", to: [$to], subject: $subject, html: $html}')
+          curl -fsS -X POST https://api.resend.com/emails \
+            -H "Authorization: Bearer $RESEND_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$payload"
