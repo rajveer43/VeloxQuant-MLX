@@ -100,7 +100,7 @@ The instinct here is "surely you can store that more compactly." I had the same 
 `np.linalg.qr` has a `mode='raw'` option that returns the underlying Householder reflectors instead of the assembled orthogonal matrix — sounds exactly like what you'd want, a compact representation of the same rotation. I checked what shape it actually returns:
 
 ```python
-h, tau = np.linalg.qr(G, mode='raw')
+h, tau = np.linalg.qr(G, mode="raw")
 # h.shape == (4864, 4864)   — 180.5 MB, even bigger than the dense matrix
 # tau.shape == (4864,)      — 0.037 MB
 ```
@@ -117,7 +117,7 @@ The fix was to stop pretending there was a single right answer and expose the ch
 
 ```python
 save_reservoir(model, path, persist_rotation=False)  # default: small file
-save_reservoir(model, path, persist_rotation=True)   # fast load, large file
+save_reservoir(model, path, persist_rotation=True)  # fast load, large file
 ```
 
 With the default off, the reservoir file for the same model comes out to 349.7 MB — 1.3× the source model, essentially just the compressed weights plus some structural overhead — and load time goes back up to about 59 seconds, since QR-fallback layers regenerate their rotation from the stored seed exactly as the original `quantize_model()` path does. With it on, you're back to sub-second loads and a 2.5 GB file. Hadamard-compatible layers — 144 of the 168 in this model — are unaffected either way, since their rotation is just a `d`-length sign vector, cheap to store regardless.
