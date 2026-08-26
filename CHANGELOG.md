@@ -293,6 +293,49 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.58.0 (2026-08-26)
+
+### Bug Fixes
+
+- **ci**: Pin GitPython <3.1.60 to unbreak semantic-release
+  ([`02fda25`](https://github.com/rajveer43/VeloxQuant-MLX/commit/02fda25b1df0e72e49247be7b7f933db87bcc59a))
+
+### Code Style
+
+- Fix pre-existing ruff-format drift on master
+  ([#247](https://github.com/rajveer43/VeloxQuant-MLX/pull/247),
+  [`3f08868`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3f08868297e7aec6d7c9b950dd77c7c3b769dbf5))
+
+- Fix ruff format violations in embedded code fences
+  ([#247](https://github.com/rajveer43/VeloxQuant-MLX/pull/247),
+  [`3f08868`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3f08868297e7aec6d7c9b950dd77c7c3b769dbf5))
+
+- Fix ruff format/lint failures on weight-reservoir files
+  ([#247](https://github.com/rajveer43/VeloxQuant-MLX/pull/247),
+  [`3f08868`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3f08868297e7aec6d7c9b950dd77c7c3b769dbf5))
+
+### Documentation
+
+- Fix stale method count in package/citation metadata (41 -> 43)
+  ([#248](https://github.com/rajveer43/VeloxQuant-MLX/pull/248),
+  [`e96f2ea`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e96f2ea4fdbcf9b9c744c8ce99048d984c4bb79b))
+
+- Fix stale method count in package/citation metadata (41 -> 43)
+  ([`78f63d1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/78f63d1052c8539820a9e91563efbf62cae56838))
+
+### Features
+
+- **weight**: Mmap-backed reservoir for pre-quantized model weights
+  ([#247](https://github.com/rajveer43/VeloxQuant-MLX/pull/247),
+  [`3f08868`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3f08868297e7aec6d7c9b950dd77c7c3b769dbf5))
+
+### Performance Improvements
+
+- **metal**: Skip redundant fp32 cast in turboquant_scalar_quantize for fp16 input
+  ([#21](https://github.com/rajveer43/VeloxQuant-MLX/pull/21),
+  [`fd6f1ea`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fd6f1ea7e5d6df1497b740ac9eaee3526036a4c4))
+
+
 ## v0.57.1 (2026-08-25)
 
 ### Bug Fixes
