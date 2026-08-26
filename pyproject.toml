@@ -51,6 +51,13 @@ dev = [
     "build>=1.2",
     "twine>=5.0",
     "python-semantic-release>=9.15",
+    # GitPython 3.1.60 (2026-08-25) removed the `Actor.name_email_regex`
+    # class attribute that python-semantic-release<=10.6.1 still reads
+    # (semantic_release/cli/config.py), breaking `semantic-release version
+    # --print` with "type object 'Actor' has no attribute
+    # 'name_email_regex'". Pin below that release until PSR ships a fix
+    # for the new GitPython API.
+    "GitPython<3.1.60",
     "pre-commit>=3.7",
     "ruff>=0.6",
 ]
