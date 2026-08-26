@@ -6,6 +6,46 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ### Added
 
+**KV-cache-aware block pool allocator**
+([#249](https://github.com/rajveer43/VeloxQuant-MLX/issues/249)) — new
+`veloxquant_mlx/memory/` module addressing the fragmentation and repeated
+malloc/free overhead of allocating KV-cache buffers per request.
+`BlockPoolAllocator` (`block_pool.py`, no MLX dependency) pre-allocates a
+fixed pool of fixed-size blocks up front and hands them out per request,
+returning freed blocks to a LIFO free list for reuse instead of releasing
+them back to the OS; keys and values can be tracked on independent free
+lists (`PoolConfig.separate_kv`, default on) so asymmetric K/V pressure
+doesn't cause cross-contention. `AllocationStats` tracks allocation count,
+reuse count, exhaustion count, peak concurrent blocks, and fragmentation
+(fraction of allocated-but-not-full blocks) — the metrics the issue asked
+for, apart from wall-clock allocation latency which the benchmark measures
+directly instead. `MLXBlockStorage` (`mlx_storage.py`) pairs with a pool to
+provide the actual `mx.array` buffers, one per block id, reused in place
+across requests, and supports different blocks holding different
+compression formats (`fp16`/`fp32`/`int8`/`int4`/`int2`/`int1`) within one
+pool. `PooledKVCache` (`pooled_cache.py`) wraps any existing `KVCache` so
+its `append_key`/`append_value` calls check out and return blocks from a
+shared pool without changing the wrapped cache's own compression logic —
+mirrors the existing `SlidingWindowKVCache` wrapper pattern. New
+`BlockPoolExhaustedError` (`core/exceptions.py`). 37 tests: 23 pure-Python
+allocator tests in `tests/non_metal/test_block_pool.py` (no MLX required,
+runs on the cheap `ubuntu-latest` non-metal CI lane) plus 14 MLX-dependent
+tests in `veloxquant_mlx/tests/memory/`. Synthetic benchmark comparing
+against naive per-token allocation
+(`benchmark_scripts/benchmark_block_pool.py`, results committed at
+`figures/block_pool/results.json`) shows allocations-per-request dropping
+by roughly `block_size`x and >99% of steady-state allocations satisfied
+from reused blocks; **tokens/sec is not yet a clean win** on this
+microbenchmark — `mx.zeros()` is lazy/cheap in MLX so the naive baseline's
+raw throughput isn't penalized the way a real allocator under memory
+pressure or an eager backend would be, so the benchmark's own `note` field
+says to read `allocations_per_request` and `n_reused`, not `tokens_per_sec`,
+as the honest signal. No integration into the existing ~40
+`veloxquant_mlx/cache/*.py` classes' internal storage yet — those still
+manage their own capacity-sized buffers directly; `PooledKVCache` adds
+pool-backed *accounting* around any of them without touching their
+internals. Docs at `docs-site/docs/api/memory-api.md`.
+
 **RocketKV-adapted: two-stage KV cache compression**
 ([#239](https://github.com/rajveer43/VeloxQuant-MLX/issues/239)) — new
 `method="rocketkv"`, inspired by "RocketKV: Accelerating Long-Context LLM

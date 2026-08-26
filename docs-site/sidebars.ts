@@ -100,6 +100,7 @@ const sidebars: SidebarsConfig = {
         'api/cache',
         'api/quantizers',
         'api/allocators',
+        'api/memory-api',
         'api/spectral-api',
         'api/metal-api',
         'api/observers-api',

@@ -20,7 +20,8 @@ Exception
     ├── CodebookDimensionMismatch
     ├── CyclicPipelineError
     ├── QuantizerConfigError
-    └── MetalUnavailableError
+    ├── MetalUnavailableError
+    └── BlockPoolExhaustedError
 ```
 
 ---
@@ -143,6 +144,40 @@ Raised when a Metal kernel is called on a device where Metal is not available.
 - `patch_mlx_lm_for_fused_sdpa()` on an unsupported device
 
 **Fix:** Run on macOS with an Apple M-series chip. See [Installation troubleshooting](../getting-started/installation).
+
+---
+
+## BlockPoolExhaustedError
+
+```python
+from veloxquant_mlx.core.exceptions import BlockPoolExhaustedError
+```
+
+Raised when a `BlockPoolAllocator` has no free blocks left to satisfy an
+`allocate()` call. Allocation is all-or-nothing — no blocks are handed out
+on failure.
+
+**When raised:**
+- `pool.allocate(...)` requests more blocks than are currently free for the
+  requested stream (`"k"` or `"v"`)
+- A `PooledKVCache` needs a new block mid-generation and the shared pool is
+  fully checked out by other requests
+
+**Fix:** Increase `PoolConfig.n_blocks`, reduce concurrent request count, or
+call `release()` / `free_all()` on finished requests sooner.
+
+```python
+from veloxquant_mlx.core.exceptions import BlockPoolExhaustedError
+from veloxquant_mlx.memory import BlockPoolAllocator, PoolConfig
+
+pool = BlockPoolAllocator(PoolConfig(block_size=16, n_blocks=4))
+try:
+    pool.allocate(stream="k", n_tokens=1000, owner=1)
+except BlockPoolExhaustedError as e:
+    print(e)
+```
+
+See [Memory (Block Pool) API](./memory-api) for the full allocator reference.
 
 ---
 
