@@ -371,6 +371,11 @@ python benchmark_scripts/run_outlier_ratequant.py # RateQuant mixed-precision
 # Which method should I use on my Mac? (new in 0.42.0)
 python -m veloxquant_mlx recommend \
     --chip M4 --ram-gb 16 --model-class 7B --goal everyday
+
+# Auto-select method/bit-width/group-size/packing from workload + hardware,
+# no goal to pick (new in #253)
+python -m veloxquant_mlx autoconfig \
+    --seq-len 32768 --head-dim 128 --n-layers 32 --n-kv-heads 8 --ram-gb 16
 ```
 
 The recommender is accounting-aware. It reports the key compression ratio and also tells you when resident RAM savings are unlikely, rather than quoting a ratio that won't show up in RSS:
@@ -397,6 +402,8 @@ warnings:
 ```
 
 Goals: `everyday`, `max_key_accounting`, `max_context`, `best_quality`, `constant_memory`. Add `--json` for machine-readable output, or `--seq-len` / `--n-layers` / `--n-kv-heads` / `--head-dim` to match a specific model. Also available in the browser via the [Compression Lab](https://veloxquant-mlx.netlify.app/playground.html).
+
+`veloxquant autoconfig` goes a step further: instead of picking from a fixed list of goals, it derives bit-width, group size, and packing strategy directly from context length and available memory — short contexts get higher precision (`kivi` at 4-bit), long ones get aggressive compression (`turboquant_rvq` at 1-bit), and memory pressure that no bit-width can satisfy falls back to a bounded-memory method (`streaming_llm`) instead of quietly running out of RAM. See `veloxquant_mlx/tools/auto_kv_config.py`.
 
 Load precomputed artifacts to skip re-computation at runtime:
 
