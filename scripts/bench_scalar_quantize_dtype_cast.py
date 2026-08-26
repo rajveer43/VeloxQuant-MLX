@@ -15,6 +15,7 @@ then again after, to compute the delta.
 Usage:
     PYTHONPATH=. python scripts/bench_scalar_quantize_dtype_cast.py
 """
+
 from __future__ import annotations
 
 import time
@@ -40,14 +41,14 @@ def main() -> int:
     rng = np.random.default_rng(0)
     print(f"Device: {mx.default_device()}")
     print(f"{'shape (B,d)':<16s} {'b':>3s} {'fp16-in ms':>12s}")
-    print(f"{'-'*16} {'-'*3} {'-'*12}")
+    print(f"{'-' * 16} {'-' * 3} {'-' * 12}")
 
     # Realistic KV-cache quantize shapes: (batch*heads*seq, head_dim)
     cases = [
-        (64, 128),     # small decode step
-        (512, 128),    # medium seq
-        (4096, 128),   # long context, head_dim=128
-        (4096, 256),   # long context, head_dim=256 (Falcon3/Gemma-style)
+        (64, 128),  # small decode step
+        (512, 128),  # medium seq
+        (4096, 128),  # long context, head_dim=128
+        (4096, 256),  # long context, head_dim=256 (Falcon3/Gemma-style)
         (16384, 128),  # very long context
     ]
     bits = [2, 4]
