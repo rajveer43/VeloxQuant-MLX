@@ -18,15 +18,60 @@ on:
   push:
     branches: [master]
 
+# `cancel-in-progress: false` is deliberate and must stay that way: this job
+# pushes a tag, publishes a GitHub Release, and uploads to PyPI. Cancelling it
+# midway could leave a tag pushed with nothing published, or a PyPI upload with
+# no matching tag. A queued run is always safer than a half-finished release.
+#
+# The cost of queueing is that a burst of merges (Dependabot lands several PRs
+# in a row) queues one macos-14 release run each, all starting within seconds.
+# On 2026-08-17 that burst hit a codeload.github.com 429 and two release runs
+# died downloading actions/checkout before any step ran, which is why 0.50.0
+# was tagged but never reached PyPI. `debounce` below collapses such a burst
+# into a single release instead of widening this window.
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  release:
-    # Guard against the bump commit re-triggering this workflow, and against
-    # running on commits authored by the release bot itself.
+  # Cheap ubuntu gate that runs before the macos-14 release job. Its only
+  # purpose is to let a burst of merges collapse into one release: it waits
+  # briefly, then drops out if a newer commit has already landed on master,
+  # so only the last push in the burst proceeds to actually release. Whatever
+  # that final run releases includes every commit in the burst -- semantic
+  # release reads all commits since the last tag, so nothing is skipped.
+  #
+  # This uses no actions at all (no checkout, no setup-python) precisely
+  # because the failure it mitigates was an action *download* being rate
+  # limited before any step could run.
+  debounce:
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      proceed: ${{ steps.check.outputs.proceed }}
+    steps:
+      - name: Wait out any in-flight burst of merges
+        run: sleep 60
+
+      - name: Release only if this is still the newest commit on master
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          head_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/master" --jq '.sha')
+          if [ "$head_sha" = "${GITHUB_SHA}" ]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            echo "This is master HEAD -- proceeding to release."
+          else
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "Superseded by ${head_sha} -- that run will release this commit too."
+          fi
+
+  release:
+    needs: debounce
+    if: needs.debounce.outputs.proceed == 'true'
     runs-on: macos-14
     permissions:
       contents: write

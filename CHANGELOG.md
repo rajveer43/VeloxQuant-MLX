@@ -4,7 +4,199 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ## [Unreleased]
 
+### Added
+
+**RocketKV-adapted: two-stage KV cache compression**
+([#239](https://github.com/rajveer43/VeloxQuant-MLX/issues/239)) — new
+`method="rocketkv"`, inspired by "RocketKV: Accelerating Long-Context LLM
+Inference via Two-Stage KV Cache Compression" (Behnam, Fu, Zhao, Tsai, Yu,
+Tumanov; NVIDIA/Georgia Tech; ICML 2025, arXiv:2502.14051). Composes
+coarse-grain permanent eviction (stage 1, directly reuses SnapKV-adapted)
+with fine-grain dynamic per-decode-step top-k selection over the survivors
+(stage 2, Hybrid Sparse Attention — a two-dimensional approximate-attention
+reduction combining Quest-style paged sequence-dimension max/min summaries
+with SparQ-style head-dimension top-k channel selection). An adaptive
+formula (paper §3.6) splits a single `rocketkv_compression_ratio` knob
+across both stages automatically. `MethodFamily.HYBRID`. No RocketKV-MT
+(multi-turn) variant in this PR — see the issue for follow-up. New
+`veloxquant_mlx/quantizers/rocketkv.py` (paged summaries, HSA scoring,
+adaptive split) and `veloxquant_mlx/cache/rocketkv_cache.py`
+(`RocketKVKVCache`), tests in
+`veloxquant_mlx/tests/{quantizers,cache}/test_rocketkv*.py`, offline
+benchmark in `benchmark_scripts/benchmark_rocketkv.py`, docs at
+`docs-site/docs/algorithms/rocketkv.md`, adaptation rationale in
+`paper/research/surveys/NEW_METHOD_SURVEY_V23.md`.
+
+### Performance
+
+**Wired the existing Q-Filters Metal eviction kernels into the cache**
+([#179](https://github.com/rajveer43/VeloxQuant-MLX/issues/179)) — the
+per-`(B, H)` Python loop on the calibrated path was already removed in
+#173 (`qfilters_update_batched`), but the fused Metal kernels written and
+tested alongside it (`qfilters_fused_evict`,
+`veloxquant_mlx/metal/_qfilters_evict.py`) were never called from
+`QFiltersKVCache` — the batched path always ran the pure-MLX
+`mx.argsort` / `mx.take_along_axis` selection even when Metal was
+available. `QFiltersKVCache` now resolves a three-state
+`use_metal_kernels` flag (`None` auto-detect, `True` require, `False`
+force pure-MLX — the same convention `VecInferKVCache` already uses) and
+dispatches the over-budget branch of the calibrated/batched path to the
+fused kernel when eligible. Verified bit-for-bit interchangeable with the
+pure-MLX path it replaces via a new parametrized parity test (Metal
+hardware only); the key-SVD fallback's per-head loop and the under-budget
+passthrough are untouched. **Not yet benchmarked** — no before/after
+TTFT or decode-throughput numbers exist for this path; that measurement
+needs real Apple Silicon and remains open.
+
+### Documentation
+
+**Measured real-model perplexity for L2Norm after the RoPE offset fix**
+([#190](https://github.com/rajveer43/VeloxQuant-MLX/issues/190),
+validating [#174](https://github.com/rajveer43/VeloxQuant-MLX/issues/174))
+— #174 generalized the #171 offset fix to `L2NormKVCache` and re-enabled
+L2Norm as an arm in the Q-Filters generation-perplexity benchmark, but was
+authored in a sandbox without MLX, so the fix shipped with unit-test
+coverage and **no end-to-end numbers**. Ran
+`benchmark_scripts/qfilters_real_model_perplexity.py` on
+Llama-3.2-1B-Instruct-4bit (1024 tokens, budgets 128/256) on Apple
+Silicon: against an fp16 baseline of ppl 4.050, L2Norm scores 20.469 at
+budget 128 and 9.529 at budget 256, landing between calibrated Q-Filters
+(16.307 / 8.476) and the key-SVD fallback (23.645 / 13.358) at both
+points. The budget-responsive curve confirms the offset fix end-to-end —
+pre-#174 position drift grows without bound with sequence length and would
+flatten every arm regardless of budget. Documented in
+`docs-site/docs/algorithms/knorm.md`, replacing its "no model-level
+benchmark has been run" note. **Scope**: one model, two budgets — larger
+models and a wider sweep remain open under
+[#181](https://github.com/rajveer43/VeloxQuant-MLX/issues/181) /
+[#180](https://github.com/rajveer43/VeloxQuant-MLX/issues/180); L2Norm
+TTFT/throughput is still unmeasured. Docs only, no code changes.
+
+**Reviewed StreamingLLM-adapted's RoPE position semantics against the paper**
+([#189](https://github.com/rajveer43/VeloxQuant-MLX/issues/189)) — the
+implementation already preserved original absolute token positions after
+eviction rather than the paper's cache-slot renumbering (a deliberate
+divergence noted briefly in the docs since the #171 offset fix), but this
+had never been reviewed against the paper explicitly, and unlike every
+other eviction cache in the library, `StreamingLLMKVCache` had **no
+regression test** guarding the `_true_offset`/`#171` fix. Added three
+offset-tracking tests to `test_streaming_llm_cache.py` (mirroring the
+KNorm/SnapKV/TOVA/Q-Filters coverage: true position through sustained
+eviction, block-size advance on prefill, and correctness across a
+prefill-then-decode mix), and expanded `docs-site/docs/algorithms/streaming_llm.md`
+with a full review section explaining why absolute-position preservation
+was kept over the paper's renumbering (RoPE relativity makes it exact;
+consistency with every sibling cache; avoids a per-step re-rotation cost;
+the cache-wrapper boundary can't implement the paper's scheme cleanly
+anyway). **Not measured**: whether the paper's renumbering scheme would
+produce different generation quality — that needs real model inference
+and remains open, same as [#187](https://github.com/rajveer43/VeloxQuant-MLX/issues/187).
+
+**Reviewed SnapKV-adapted's RoPE position semantics against the paper**
+([#188](https://github.com/rajveer43/VeloxQuant-MLX/issues/188)) — unlike
+StreamingLLM, the SnapKV paper doesn't define a position-renumbering scheme
+at all (it compresses the cache once, at the end of prefill, before
+generation starts); common HF-`DynamicCache`-based reference
+implementations instead fall back to the retained-row-count convention this
+repo's `#171` fix moved away from. Reviewed why absolute-position
+preservation isn't a stylistic choice here but the behavior mathematically
+required by how the eviction mechanism works: SnapKV selects from K rows
+the model already rotated with RoPE during its own prefill forward pass, so
+survivors' rotations are permanently baked in before eviction happens —
+reporting anything but their true position would break RoPE's
+relative-distance identity. Unlike StreamingLLM (continuous per-step
+eviction), a hypothetical renumbering scheme here would only cost a
+one-time `O(budget)` re-rotation right after prefill compression — still not
+worth implementing, since exact positions already require none. Test
+coverage already existed
+(`test_offset_tracks_true_position_not_retained_rows` plus the
+chunked-prefill offset assertions) — no code or test changes needed, this
+was purely a documentation review. Added to
+`docs-site/docs/algorithms/snapkv.md`.
+
 ### Fixed
+
+**RoPE positions after eviction in TOVA-adapted**
+([#175](https://github.com/rajveer43/VeloxQuant-MLX/issues/175)) — audited
+H2O-adapted and TOVA-adapted for the same class of defect fixed for
+Q-Filters, L2Norm, SnapKV, and StreamingLLM. Findings:
+
+- **H2O-adapted already fixed** (shipped in v0.44.4, predating this audit):
+  `self.offset` already tracks the true absolute step count directly, and
+  because H2O renumbers positions to close gaps when an interior eviction
+  happens (e.g. with `h2o_n_sink > 0`), it additionally re-rotates the
+  shifted survivors — a stronger fix than the other caches need, since they
+  never renumber. No change required.
+- **TOVA-adapted carried the defect**: `self.offset` reported the retained
+  row count rather than the true absolute token position once eviction
+  pinned the kept set at `tova_budget`. `tova_update` drops exactly the
+  evicted row and keeps the rest in temporal order (never renumbers), so
+  the same `_true_offset` counter that sufficed for Q-Filters/L2Norm applies
+  directly — no `offset` property split like SnapKV's was needed, since
+  `TOVAKVCache.update_and_fetch` fully resets `self.keys`/`self.values`/
+  `self.offset` on every call, prefill and decode alike.
+
+Regression tests added to `test_tova_cache.py` mirroring the Q-Filters/L2Norm
+coverage: offset tracks true position through sustained eviction, advances
+by block size on prefill, and stays correct across a prefill-then-decode mix.
+
+**RoPE positions after eviction in L2Norm-adapted**
+([#174](https://github.com/rajveer43/VeloxQuant-MLX/issues/174)) — carried
+the same defect fixed earlier for Q-Filters, SnapKV, and StreamingLLM:
+`self.offset` reported the **retained row count** rather than the true
+absolute token position once eviction pinned the kept set at
+`knorm_budget`. `mlx_lm` rotates both the query and the incoming key at
+`offset=cache.offset` *before* `update_and_fetch` runs, so subsequent
+tokens were rotated at a stale, non-advancing position — the offset drift
+that excluded L2Norm as a fair baseline in Q-Filters benchmarks.
+
+L2Norm's `knorm_update` already restores kept rows to temporal order after
+top-k selection (never renumbers survivors), so the same fix that sufficed
+for Q-Filters applies directly: a `_true_offset` counter incremented by the
+incoming block size `S`, reported as `self.offset` after every
+`update_and_fetch` call. Unlike SnapKV, no `offset` property split was
+needed — `L2NormKVCache.update_and_fetch` fully resets
+`self.keys`/`self.values`/`self.offset` on *every* call (prefill and decode
+alike), so the base class's cursor arithmetic never observes the true
+position as a stale row count between calls.
+
+Regression tests added mirroring the Q-Filters/SnapKV coverage: offset
+tracks true position through sustained eviction, advances by block size
+(not retained rows) on prefill, and stays correct across a prefill-then-decode
+mix. L2Norm can now be re-enabled as a fair comparison arm in Q-Filters
+benchmarks.
+
+**RoPE positions after eviction in SnapKV-adapted and StreamingLLM-adapted**
+([#171](https://github.com/rajveer43/VeloxQuant-MLX/issues/171)) — both
+carried the same defect fixed earlier for Q-Filters: `self.offset` reported
+the **retained row count** rather than the true absolute token position.
+`mlx_lm` rotates both the query and the incoming key at
+`offset=cache.offset` *before* `update_and_fetch` runs, so once eviction
+started every subsequent token was rotated at the wrong position. Measured
+over 200 decode steps after a 64-token prefill at budget 32:
+
+- **StreamingLLM** — offset froze at **32** while the true position reached
+  **263** (drift **+231**, growing without bound once the window saturated).
+- **SnapKV** — offset advanced but stayed **exactly 32 behind**, the constant
+  deficit being the tokens dropped during prefill compression.
+
+Both preserve original positions (`snap_select_indices` returns kept indices
+sorted ascending; StreamingLLM's window drops rows without renumbering) and
+RoPE is relative, so reporting the true position is sufficient — survivors
+need no re-rotation, unlike H2O/Keyformer which renumber.
+
+SnapKV needed more than the `_true_offset` counter that sufficed for
+StreamingLLM: its decode path appends deltas, so the base class's cursor
+arithmetic and return slice (`self.keys[..., :self.offset, :]`) genuinely
+require the row count. `offset` is now a property yielding the row count
+while the base class is on the stack and the true position outside it.
+
+Note this diverges from the StreamingLLM paper, which assigns positions by
+index *within* the cache; matching that would require re-rotating every
+survivor each step. Recorded in the cache docstring.
+
+Two existing tests asserted `offset == retained rows` — the old meaning —
+and were updated, with a dedicated regression test added.
 
 **A2ATS-adapted paper-fidelity fixes** ([#29](https://github.com/rajveer43/VeloxQuant-MLX/issues/29)) —
 four deviations from the source paper (He et al., ACL 2025 Findings), three
@@ -100,6 +292,489 @@ window size via `adakv_obs_window` (default 32).
   range and adds an `attention_entropy` arm at matched budget.
 
 <!-- version list -->
+
+## v0.57.1 (2026-08-25)
+
+### Bug Fixes
+
+- **ui**: Harden static-file path containment check in control panel
+  ([`c1086a1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c1086a1fbb2ee098f77d81fd970e6d6b9a0b6cac))
+
+### Chores
+
+- **landing**: Add Plausible analytics
+  ([#244](https://github.com/rajveer43/VeloxQuant-MLX/pull/244),
+  [`cf14196`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cf14196fe3b680f31cc815808f0ce36658935c52))
+
+- **landing**: Add Plausible analytics
+  ([#243](https://github.com/rajveer43/VeloxQuant-MLX/pull/243),
+  [`9780e3e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9780e3ed83af8640d9c46b2d42c168c0475b6aec))
+
+### Refactoring
+
+- **landing**: Calmer, human-centric hero and dedicated benchmarks page
+  ([#245](https://github.com/rajveer43/VeloxQuant-MLX/pull/245),
+  [`0d7f044`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0d7f044796185f32ebb2eddc5b48635643ac8880))
+
+
+## v0.57.0 (2026-08-22)
+
+### Bug Fixes
+
+- **docs-site**: Patch npm vulnerabilities via dependency overrides
+  ([`8d83691`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8d836913cc4dacf30d0a00801d57e3c46607c713))
+
+### Documentation
+
+- Remove dangling links to deleted OPTIMIZATION_FINDINGS.md
+  ([`36f04fe`](https://github.com/rajveer43/VeloxQuant-MLX/commit/36f04fee7cf7f1917f03d4532105a1dd897d5e03))
+
+- **readme**: Rewrite for human voice, no content changes
+  ([`922774e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/922774e28440fadc7a4cb8f10c1c38905ee8aa7d))
+
+### Features
+
+- **landing**: Link to VS Code extension
+  ([`6e9164c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6e9164cc5a385bc8cde7dab2ec99a781e4a64f2a))
+
+### Refactoring
+
+- **landing**: Remove Benchmarks section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove Comparison section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove confusing Quality Cost section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove How It Works explainer section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove llama.cpp-vs-VeloxQuant-MLX card comparison from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Remove method picker section from landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Rewrite landing page copy for a non-technical audience
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **landing**: Tighten hero copy on landing page
+  ([#241](https://github.com/rajveer43/VeloxQuant-MLX/pull/241),
+  [`9256347`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9256347e55da10be5c81b96999019a15822ae2a7))
+
+- **readme**: Swap banner for app-icon-matching logo, trim stale copy
+  ([`e9290e1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e9290e1e15ff62deece27d3a30efc3eed1b77f9e))
+
+
+## v0.56.0 (2026-08-21)
+
+### Code Style
+
+- Fix ruff-format violation in mac_recommender.py
+  ([#240](https://github.com/rajveer43/VeloxQuant-MLX/pull/240),
+  [`f2eb44a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f2eb44a069cb8d2e9f994de3fd9915a644da64ea))
+
+### Documentation
+
+- **readme**: Add RocketKV, fix stale method counts and AnchorKV link
+  ([#240](https://github.com/rajveer43/VeloxQuant-MLX/pull/240),
+  [`f2eb44a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f2eb44a069cb8d2e9f994de3fd9915a644da64ea))
+
+### Features
+
+- **rocketkv**: Add RocketKV two-stage KV cache compression
+  ([#240](https://github.com/rajveer43/VeloxQuant-MLX/pull/240),
+  [`f2eb44a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f2eb44a069cb8d2e9f994de3fd9915a644da64ea))
+
+
+## v0.55.0 (2026-08-21)
+
+### Features
+
+- **mac_recommender**: Extend model classes and RAM tiers to real-world scale
+  ([`13c7b33`](https://github.com/rajveer43/VeloxQuant-MLX/commit/13c7b3356d5dd26597fbd691925fa95297046f06))
+
+
+## v0.54.1 (2026-08-21)
+
+### Bug Fixes
+
+- **docs-site**: Bump joi and http-proxy-middleware to patched versions
+  ([`4e2d46f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4e2d46f99df7ef7ced70b9278ecde82b21da4713))
+
+
+## v0.54.0 (2026-08-21)
+
+### Features
+
+- **landing**: Add VeloxQuant Studio waitlist section and fix calc URL leak
+  ([`d18556b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d18556bd55fc7f5f2a5da5ca01bc8b918481e453))
+
+
+## v0.53.0 (2026-08-20)
+
+### Bug Fixes
+
+- **anchorkv**: Resolve ruff-format and link-check CI failures
+  ([#238](https://github.com/rajveer43/VeloxQuant-MLX/pull/238),
+  [`51b45ac`](https://github.com/rajveer43/VeloxQuant-MLX/commit/51b45ace5f74c2bce227ddd69f66340f0948d684))
+
+### Features
+
+- **anchorkv**: Add AnchorKV anchor-residual KV cache compression
+  ([#238](https://github.com/rajveer43/VeloxQuant-MLX/pull/238),
+  [`51b45ac`](https://github.com/rajveer43/VeloxQuant-MLX/commit/51b45ace5f74c2bce227ddd69f66340f0948d684))
+
+
+## v0.52.1 (2026-08-19)
+
+### Bug Fixes
+
+- **svdq**: Implement paper's real 8-group bit schedule, guard against small-rank truncation
+  ([`579fb8f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/579fb8fc0397a2d26875a6ad5f68d7713e73db75))
+
+### Code Style
+
+- Fix ruff formatting in test_svdq_cache.py
+  ([`1e32922`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1e3292257c09cd24379a78b61d370d4d801c16e1))
+
+
+## v0.52.0 (2026-08-19)
+
+### Features
+
+- **bench**: Add H2O and TOVA as Q-Filters comparison arms
+  ([#235](https://github.com/rajveer43/VeloxQuant-MLX/pull/235),
+  [`bd816e2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bd816e2efaf8e1863aee3effaa5453991a0aebc7))
+
+### Testing
+
+- **qfilters**: Pin fallback chunk-dependence and budget safety
+  ([#235](https://github.com/rajveer43/VeloxQuant-MLX/pull/235),
+  [`bd816e2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bd816e2efaf8e1863aee3effaa5453991a0aebc7))
+
+
+## v0.51.1 (2026-08-19)
+
+### Bug Fixes
+
+- **ci**: Stop the link checker failing on network flakiness
+  ([#234](https://github.com/rajveer43/VeloxQuant-MLX/pull/234),
+  [`806e2a6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/806e2a6971e576570dac13875e081235d12de5c3))
+
+- **docs**: Correct two README links that 404ed, and check links in CI
+  ([#234](https://github.com/rajveer43/VeloxQuant-MLX/pull/234),
+  [`806e2a6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/806e2a6971e576570dac13875e081235d12de5c3))
+
+- **site**: Redirect docs paths missing the /docs prefix instead of 404ing
+  ([#234](https://github.com/rajveer43/VeloxQuant-MLX/pull/234),
+  [`806e2a6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/806e2a6971e576570dac13875e081235d12de5c3))
+
+### Build System
+
+- **deps**: Bump body-parser from 1.20.5 to 1.20.6 in /docs-site
+  ([#225](https://github.com/rajveer43/VeloxQuant-MLX/pull/225),
+  [`58881a5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/58881a5e00cbf21db081df74a47142c350013c9a))
+
+- **deps**: Bump shell-quote from 1.8.4 to 1.10.0 in /docs-site
+  ([#227](https://github.com/rajveer43/VeloxQuant-MLX/pull/227),
+  [`7bfbbe0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7bfbbe0e7baed58b377421eeb7b92c03c1742b94))
+
+- **deps**: Bump svgo from 3.3.3 to 3.3.4 in /docs-site
+  ([#224](https://github.com/rajveer43/VeloxQuant-MLX/pull/224),
+  [`d15a3b5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d15a3b50ecca64bdf39a6c801b0f3859aefaa1c4))
+
+- **deps**: Bump webpack-dev-server from 5.2.4 to 5.2.6 in /docs-site
+  ([#226](https://github.com/rajveer43/VeloxQuant-MLX/pull/226),
+  [`546ba0c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/546ba0cbdc64a08ab9f745c38ec9260ce8115329))
+
+- **deps**: Bump websocket-driver from 0.7.4 to 0.7.5 in /docs-site
+  ([#233](https://github.com/rajveer43/VeloxQuant-MLX/pull/233),
+  [`ee13ec5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ee13ec5eff32818f5f8bed30ff8aceb28fc10f4c))
+
+### Documentation
+
+- Drop oMLX from the comparison, keep llama.cpp and plain mlx_lm
+  ([#234](https://github.com/rajveer43/VeloxQuant-MLX/pull/234),
+  [`806e2a6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/806e2a6971e576570dac13875e081235d12de5c3))
+
+
+## v0.51.0 (2026-08-18)
+
+### Build System
+
+- **deps**: Bump brace-expansion from 1.1.15 to 1.1.18 in /docs-site
+  ([#222](https://github.com/rajveer43/VeloxQuant-MLX/pull/222),
+  [`59a208c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/59a208cd3c6af6eb6f78e1a295490a0cdfb7119b))
+
+- **deps**: Bump postcss from 8.5.15 to 8.5.26 in /docs-site
+  ([#223](https://github.com/rajveer43/VeloxQuant-MLX/pull/223),
+  [`f4dc708`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f4dc708dedbd353bc64f0122197d2396b331ac3c))
+
+### Documentation
+
+- **blog**: The needle was the easy part -- RULER beyond NIAH
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+- **qfilters**: Report the non-NIAH RULER results and correct the gap claim
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+### Features
+
+- **bench**: RULER task categories beyond NIAH for Q-Filters
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+- **bench**: RULER task categories beyond NIAH for Q-Filters (#177)
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+### Testing
+
+- **ruler**: Probe whether chunked prefill rescues Q-Filters on VT
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+- **ruler**: Raw results for the four non-NIAH RULER categories on Qwen2.5-7B
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+- **ruler**: Record actual prefilled token counts per task and context
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+- **ruler**: Verify the arms compress equally before reading the CWE spread
+  ([#232](https://github.com/rajveer43/VeloxQuant-MLX/pull/232),
+  [`b7eb1ee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7eb1ee49acf3d08e13b685e11a35cd4ab04bbc8))
+
+
+## v0.50.2 (2026-08-18)
+
+### Bug Fixes
+
+- **qfilters**: Derive head_dim for Qwen and validate at 7B (#176)
+  ([#230](https://github.com/rajveer43/VeloxQuant-MLX/pull/230),
+  [`bc9cb4f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bc9cb4fb0c492dea9d1fe92baf4305d057542513))
+
+### Build System
+
+- **deps**: Bump authlib from 1.7.0 to 1.7.1
+  ([#216](https://github.com/rajveer43/VeloxQuant-MLX/pull/216),
+  [`2e5f7d4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2e5f7d4eccc5d68adbf5749af7abeadb57c9d611))
+
+- **deps**: Bump fast-uri from 3.1.2 to 3.1.5 in /docs-site
+  ([#219](https://github.com/rajveer43/VeloxQuant-MLX/pull/219),
+  [`e112723`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e1127230d50a44be28cc8a8d0a90defbb30344ab))
+
+- **deps**: Bump gradio from 6.13.0 to 6.15.1
+  ([#208](https://github.com/rajveer43/VeloxQuant-MLX/pull/208),
+  [`4abd88c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4abd88ca0ce76af3ae6cec399262a0a75c502ea4))
+
+- **deps**: Bump idna from 3.13 to 3.15
+  ([#215](https://github.com/rajveer43/VeloxQuant-MLX/pull/215),
+  [`21ea5c1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/21ea5c1b808fae1a9a9d29de2cf43a7f421894f5))
+
+- **deps**: Bump joserfc from 1.6.4 to 1.6.8
+  ([#211](https://github.com/rajveer43/VeloxQuant-MLX/pull/211),
+  [`4ea2cca`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4ea2cca0ec8911662c16fc15170d72a1a5d25dcf))
+
+- **deps**: Bump js-yaml from 3.14.2 to 3.15.1 in /docs-site
+  ([#220](https://github.com/rajveer43/VeloxQuant-MLX/pull/220),
+  [`396634d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/396634daa2c050ca9633dac3862703665791cc5a))
+
+- **deps**: Bump mcp from 1.27.0 to 1.28.1
+  ([#209](https://github.com/rajveer43/VeloxQuant-MLX/pull/209),
+  [`e542da7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e542da75dc8ecda81d1cdd0da470f6d15aa5ddd1))
+
+- **deps**: Bump nanoid from 3.3.12 to 3.3.18 in /docs-site
+  ([#218](https://github.com/rajveer43/VeloxQuant-MLX/pull/218),
+  [`b4dfde3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b4dfde3ec6ffe16c609b3e826c7c29eb923799fd))
+
+- **deps**: Bump pydantic-settings from 2.14.0 to 2.14.2
+  ([#210](https://github.com/rajveer43/VeloxQuant-MLX/pull/210),
+  [`a9491c1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a9491c1d3630a67c665d865a5308491914f90d63))
+
+- **deps**: Bump python-multipart from 0.0.26 to 0.0.31
+  ([#214](https://github.com/rajveer43/VeloxQuant-MLX/pull/214),
+  [`288c50b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/288c50ba1be0a5c1cd84dae57489efd21c059f5f))
+
+- **deps**: Bump starlette from 1.0.0 to 1.3.1
+  ([#212](https://github.com/rajveer43/VeloxQuant-MLX/pull/212),
+  [`47135f6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/47135f68714b5e5631d94eb874fe0a7a2b26ffff))
+
+- **deps**: Bump urllib3 from 2.6.3 to 2.7.0
+  ([#217](https://github.com/rajveer43/VeloxQuant-MLX/pull/217),
+  [`3d2ecbb`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3d2ecbb9acac0c91140b1ad8ae9c74b18035fb68))
+
+### Continuous Integration
+
+- **release**: Collapse merge bursts into one release run
+  ([#213](https://github.com/rajveer43/VeloxQuant-MLX/pull/213),
+  [`99c04db`](https://github.com/rajveer43/VeloxQuant-MLX/commit/99c04dbe6d6a044514d36672f2eba38340c29eeb))
+
+### Documentation
+
+- Rewrite README prose in a first-person engineering voice
+  ([#221](https://github.com/rajveer43/VeloxQuant-MLX/pull/221),
+  [`ecbe1e0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ecbe1e0db012e2ee53c3575988cfc0c12ccd16c0))
+
+### Testing
+
+- **rotation**: Pin bare-m Hadamard behaviour to the installed MLX
+  ([#231](https://github.com/rajveer43/VeloxQuant-MLX/pull/231),
+  [`9726875`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9726875649955d5d3c8a2c9f6038190a82303d13))
+
+
+## v0.50.1 (2026-08-18)
+
+### Bug Fixes
+
+- **landing**: Match the test-count format the release sync rewrites
+  ([#207](https://github.com/rajveer43/VeloxQuant-MLX/pull/207),
+  [`90cc805`](https://github.com/rajveer43/VeloxQuant-MLX/commit/90cc8054f2c89a1082e9b277a48151346f5b82e5))
+
+### Documentation
+
+- **readme**: Surface security and governance policies, trim badge wall
+  ([#207](https://github.com/rajveer43/VeloxQuant-MLX/pull/207),
+  [`90cc805`](https://github.com/rajveer43/VeloxQuant-MLX/commit/90cc8054f2c89a1082e9b277a48151346f5b82e5))
+
+
+## v0.50.0 (2026-08-17)
+
+### Build System
+
+- **deps**: Bump cryptography from 47.0.0 to 50.0.0
+  ([#204](https://github.com/rajveer43/VeloxQuant-MLX/pull/204),
+  [`346b54d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/346b54dd19de373c04cc7ecd5ea9799737a5e1fc))
+
+- **deps**: Bump pillow from 12.2.0 to 12.3.0
+  ([#203](https://github.com/rajveer43/VeloxQuant-MLX/pull/203),
+  [`88f633a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/88f633a6c1695f5849189e1d2b6e1891d27da6c4))
+
+- **deps**: Bump pyjwt from 2.12.1 to 2.13.0
+  ([#202](https://github.com/rajveer43/VeloxQuant-MLX/pull/202),
+  [`0dbd9db`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0dbd9dbdb1a70674dfa73ae533b89686c87a6cf6))
+
+### Documentation
+
+- **cache**: Review SnapKV RoPE position semantics vs. paper (#188)
+  ([#200](https://github.com/rajveer43/VeloxQuant-MLX/pull/200),
+  [`14fb58b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/14fb58bcf1169c67420a52787976249b65cd2a17))
+
+- **cache**: Review StreamingLLM RoPE position semantics vs. paper (#189)
+  ([#199](https://github.com/rajveer43/VeloxQuant-MLX/pull/199),
+  [`ae38052`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ae38052873ea1810f5dbbbda2ca77df775f8a94b))
+
+- **knorm**: Measure real-model perplexity for L2Norm after RoPE fix (#190)
+  ([#205](https://github.com/rajveer43/VeloxQuant-MLX/pull/205),
+  [`3c6de43`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3c6de43d578b6a5e8bac8257db1a853dfb9ae97f))
+
+### Features
+
+- **landing**: Lead with unqualified metrics, resequence hero caveats
+  ([#206](https://github.com/rajveer43/VeloxQuant-MLX/pull/206),
+  [`ba085b2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ba085b2db9a60b0c61f6f13e13b898d913f0f362))
+
+
+## v0.49.4 (2026-08-15)
+
+### Performance Improvements
+
+- **qfilters**: Wire fused Metal eviction kernels into the cache hot path
+  ([#197](https://github.com/rajveer43/VeloxQuant-MLX/pull/197),
+  [`297ab04`](https://github.com/rajveer43/VeloxQuant-MLX/commit/297ab04cca776396eff2a2a87d51662896805a4a))
+
+
+## v0.49.3 (2026-08-15)
+
+### Bug Fixes
+
+- **cache**: Generalize RoPE offset fix to TOVA cache; audit H2O (#175)
+  ([#196](https://github.com/rajveer43/VeloxQuant-MLX/pull/196),
+  [`6cef57b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6cef57bbd75f08dadd4263733798ba8ac46ad00b))
+
+
+## v0.49.2 (2026-08-15)
+
+### Bug Fixes
+
+- **cache**: Generalize RoPE offset fix to L2Norm cache (#174)
+  ([#195](https://github.com/rajveer43/VeloxQuant-MLX/pull/195),
+  [`0241a5d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0241a5d4eb1f6be894604aaeca97f2b80415fc62))
+
+
+## v0.49.1 (2026-08-14)
+
+### Performance Improvements
+
+- **qfilters**: Vectorize the per-(B, H) eviction loop
+  ([`701388c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/701388ca36b221795d4c876bcf74c72ddae7311e))
+
+
+## v0.49.0 (2026-08-14)
+
+### Bug Fixes
+
+- **cache**: Correct RoPE offset after eviction in SnapKV and StreamingLLM
+  ([`e4186f7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e4186f7f6a9c0429bfb169ca21a7b84ca06517f5))
+
+- **docs**: Use MDX comment syntax for the blog truncation marker
+  ([`8669596`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8669596cbed18325407c95931ea05420f7c9ec63))
+
+- **qfilters**: Correct RoPE offset after eviction, measure real perplexity
+  ([`cf9a255`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cf9a2552024d0c24c579f05ba98ee0581e6c52f7))
+
+### Code Style
+
+- Apply ruff format to Q-Filters markdown code blocks
+  ([`0b023d2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0b023d2c17a80855be93fbe955e2a787ff452c88))
+
+### Documentation
+
+- **blog**: Add Q-Filters real-model investigation write-up
+  ([`570b7e2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/570b7e27731e3afca4272656918a9cb3fdd783bb))
+
+- **changelog**: Record the SnapKV/StreamingLLM RoPE offset fix
+  ([`2d93a41`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2d93a411c4b4317746dc912dbd98c8401725b099))
+
+### Features
+
+- **qfilters**: Paper-faithful query-SVD calibration + fused Metal kernels
+  ([`3cc4142`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3cc41429c4d9f84fca7fb7a0dff33e0888e845c5))
+
+### Testing
+
+- **qfilters**: Add TTFT, throughput and NIAH harness vs SnapKV/StreamingLLM
+  ([`a600927`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a60092748b3058d1d72799268035b3abed1b8551))
+
+- **qfilters**: Validate query-SVD calibration on real trained models
+  ([`3fa0c60`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3fa0c60d539b21524643fd1ab223c2ce41ccf940))
+
+
+## v0.48.5 (2026-08-13)
+
+### Code Style
+
+- Apply ruff 0.16.3 formatting to CAM docs and tests
+  ([`445d0c0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/445d0c0b22a96085b564d8729295ce22bbb7a77b))
+
+### Testing
+
+- Fix two release-workflow failures on master
+  ([`cd5aa6f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cd5aa6f119b26bd86408cbfcc888eb87c8ae7fe3))
+
 
 ## v0.48.4 (2026-08-13)
 

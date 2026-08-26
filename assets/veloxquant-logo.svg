@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 200" width="760" height="200">
+  <defs>
+    <!-- Mark background: same near-black-to-navy radial as the macOS app icon -->
+    <radialGradient id="markBg" cx="35%" cy="18%" r="95%">
+      <stop offset="0%" stop-color="#1c1c34"/>
+      <stop offset="55%" stop-color="#100f1c"/>
+      <stop offset="100%" stop-color="#08080f"/>
+    </radialGradient>
+
+    <!-- Bolt gradient: cyan accent, brighter at the tip -->
+    <linearGradient id="bolt" x1="20%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stop-color="#7ef2ff"/>
+      <stop offset="45%" stop-color="#00d4ff"/>
+      <stop offset="100%" stop-color="#00a8d4"/>
+    </linearGradient>
+
+    <!-- Purple secondary glow ring, echoing the brand's secondary accent color -->
+    <radialGradient id="ringGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="70%" stop-color="#7c3aed" stop-opacity="0"/>
+      <stop offset="92%" stop-color="#7c3aed" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#7c3aed" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="boltShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#00d4ff" flood-opacity="0.45"/>
+    </filter>
+
+    <!-- Wordmark: white to cyan, matching the "VeloxQuant-MLX" treatment
+         already established on the landing page and cover banner -->
+    <linearGradient id="wordAccent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00d4ff"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+
+    <clipPath id="markClip">
+      <rect x="0" y="0" width="200" height="200" rx="44"/>
+    </clipPath>
+  </defs>
+
+  <!-- ── MARK ── -->
+  <g clip-path="url(#markClip)">
+    <rect width="200" height="200" fill="url(#markBg)"/>
+
+    <!-- Precision ring: quantization grid / compressed lattice motif -->
+    <circle cx="100" cy="100" r="82" fill="url(#ringGlow)"/>
+    <circle cx="100" cy="100" r="70" fill="none" stroke="#2a2a48" stroke-width="1.5" opacity="0.55"/>
+
+    <!-- Corner tick marks -->
+    <g stroke="#3a3a5c" stroke-width="2" opacity="0.5" stroke-linecap="round">
+      <line x1="100" y1="26" x2="100" y2="36"/>
+      <line x1="100" y1="164" x2="100" y2="174"/>
+      <line x1="26" y1="100" x2="36" y2="100"/>
+      <line x1="164" y1="100" x2="174" y2="100"/>
+    </g>
+
+    <!-- Lightning bolt -->
+    <polygon points="114.6,46.1 69.9,109.4 94.9,109.4 90.2,156.3 144.9,90.2 116.8,90.2"
+             fill="url(#bolt)" filter="url(#boltShadow)"/>
+    <polygon points="114.6,46.1 69.9,109.4 94.9,109.4 90.2,156.3 144.9,90.2 116.8,90.2"
+             fill="none" stroke="#e8fdff" stroke-width="1.2" stroke-opacity="0.5" stroke-linejoin="round"/>
+  </g>
+
+  <!-- ── WORDMARK ── -->
+  <!-- #12131c reads on both GitHub's light and dark README backgrounds,
+       unlike the near-white used on the dark-only cover banner. -->
+  <g font-family="Helvetica Neue, Arial, sans-serif" font-weight="700">
+    <text x="230" y="98" font-size="58" fill="#12131c">VeloxQuant<tspan fill="url(#wordAccent)">-MLX</tspan></text>
+    <text x="231" y="134" font-size="21" font-weight="500" fill="#6b7280" letter-spacing="0.3">Fast KV Cache Quantization for Apple Silicon</text>
+  </g>
+</svg>

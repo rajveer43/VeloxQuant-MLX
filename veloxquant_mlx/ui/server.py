@@ -56,7 +56,8 @@ class PanelHandler(BaseHTTPRequestHandler):
         target = (STATIC_DIR / name).resolve()
 
         # Contain traversal: refuse anything resolving outside STATIC_DIR.
-        if not str(target).startswith(str(STATIC_DIR.resolve())) or not target.is_file():
+        static_root = STATIC_DIR.resolve()
+        if (target != static_root and static_root not in target.parents) or not target.is_file():
             self.send_error(404, "not found")
             return
 

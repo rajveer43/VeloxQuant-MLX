@@ -112,7 +112,10 @@ def test_chunked_prefill_budget_stays_capped() -> None:
     assert ko3.shape[2] == 10, (
         f"budget violated after 3rd prefill chunk: kept {ko3.shape[2]} > snap_budget=10"
     )
-    assert c.offset == 10
+    # Since #171 ``offset`` reports the TRUE absolute token position (what
+    # mlx_lm rotates RoPE at), not the retained row count — 150 tokens were
+    # seen even though only 10 rows survive.
+    assert c.offset == 150
 
 
 def test_chunked_prefill_then_decode_appends() -> None:
@@ -123,13 +126,15 @@ def test_chunked_prefill_then_decode_appends() -> None:
     k2, v2 = _rand_kv(S=50, H=1, D=8, seed=2)
     c.update_and_fetch(k1, v1)
     c.update_and_fetch(k2, v2)
-    assert c.offset == 10
+    # ``offset`` is the true absolute position since #171, not the row count:
+    # 100 tokens seen, 10 rows retained.
+    assert c.offset == 100
 
     for i in range(5):
         k1d, v1d = _rand_kv(S=1, H=1, D=8, seed=200 + i)
         ko, _ = c.update_and_fetch(k1d, v1d)
     assert ko.shape[2] == 15
-    assert c.offset == 15
+    assert c.offset == 105
 
 
 def test_chunked_prefill_sink_anchored_at_true_start() -> None:
@@ -264,3 +269,29 @@ def test_build_via_for_model_propagates_config() -> None:
     assert caches[0]._budget == 32
     assert caches[0]._obs_window == 16
     assert caches[0]._n_sink == 3
+
+
+def test_offset_tracks_true_position_not_retained_rows() -> None:
+    """Regression for #171: ``offset`` must report the true absolute token
+    position, since mlx_lm rotates RoPE at ``offset=cache.offset`` before
+    update_and_fetch runs.
+
+    Before the fix, offset carried the RETAINED ROW COUNT, so after prefill
+    compression dropped tokens it lagged the true position by exactly the
+    number evicted — every subsequent token was rotated at the wrong
+    position, and the error persisted for the rest of the sequence.
+    """
+    c = _make(snap_budget=16, snap_obs_window=4, snap_n_sink=2)
+    k, v = _rand_kv(S=64, H=1, D=8, seed=7)
+    ko, _ = c.update_and_fetch(k, v)
+
+    # Compression really did drop rows — otherwise this test proves nothing.
+    assert ko.shape[2] == 16
+    assert c.offset == 64, "offset must be the true position, not the row count"
+
+    # Each decode token advances the position by exactly one, with no drift
+    # accumulating relative to the retained row count.
+    for i in range(20):
+        k1, v1 = _rand_kv(S=1, H=1, D=8, seed=300 + i)
+        c.update_and_fetch(k1, v1)
+        assert c.offset == 64 + i + 1, f"position drift at decode step {i}"

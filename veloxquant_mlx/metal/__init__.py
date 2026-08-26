@@ -71,6 +71,8 @@ def __getattr__(name: str):
         "rabitq_hamming_score",
         "h2o_fused_evict",
         "keyformer_fused_evict",
+        "qfilters_fused_evict",
+        "qfilters_score",
     }
     if name in _turboquant_names:
         from . import kernels as _k
@@ -101,4 +103,6 @@ __all__ = [
     "rabitq_hamming_score",
     "h2o_fused_evict",
     "keyformer_fused_evict",
+    "qfilters_fused_evict",
+    "qfilters_score",
 ]

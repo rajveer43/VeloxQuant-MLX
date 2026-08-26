@@ -18,10 +18,30 @@ from veloxquant_mlx.ui import config as ui_config
 from veloxquant_mlx.ui.server import PanelHandler
 from veloxquant_mlx.ui.supervisor import LOG_CAPACITY, ServerSupervisor
 
+# Generous enough that a slow/loaded CI runner never turns latency into a
+# spurious failure; the panel fixture already warms the one genuinely slow
+# call, so a request hitting this ceiling means something is really stuck.
+_TIMEOUT = 60
+
 
 @pytest.fixture()
 def panel():
-    """A control plane on an ephemeral port, torn down after the test."""
+    """A control plane on an ephemeral port, torn down after the test.
+
+    ``/api/methods`` resolves the method registry lazily *inside* the request
+    handler thread (deliberate: it keeps panel startup fast). The first
+    ``list_methods()`` call is the expensive one — it imports all 40 method
+    modules behind ``get_method``'s cache, ~5s here and slower on a cold CI
+    runner — while every later call is ~0.04s. That one-off cost landed on
+    whichever request came first, pushing it past the client timeout so the
+    test failed with a socket TimeoutError rather than any real panel bug.
+    Warm the cache here so it is paid during setup, not inside a timed
+    request.
+    """
+    from veloxquant_mlx.cache.registry import list_methods
+
+    list_methods()
+
     supervisor = ServerSupervisor()
     handler = type("T", (PanelHandler,), {"supervisor": supervisor})
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -38,7 +58,7 @@ def panel():
 
 
 def _get(base, path):
-    with urllib.request.urlopen(base + path, timeout=10) as resp:
+    with urllib.request.urlopen(base + path, timeout=_TIMEOUT) as resp:
         return resp.status, json.loads(resp.read())
 
 
@@ -50,7 +70,7 @@ def _post(base, path, payload):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
             return resp.status, json.loads(resp.read())
     except urllib.error.HTTPError as exc:
         return exc.code, json.loads(exc.read())
@@ -185,7 +205,7 @@ def test_api_status_reports_version(panel):
 def test_api_methods_matches_registry(panel):
     base, _ = panel
     _, body = _get(base, "/api/methods")
-    assert len(body["methods"]) == 40
+    assert len(body["methods"]) == 42
     assert body["accounting_only"] is True
     assert sum(1 for m in body["methods"] if not m["is_servable"]) == 5
 
@@ -203,7 +223,7 @@ def test_api_start_rejects_bad_input(panel):
 
 def test_api_serves_the_panel(panel):
     base, _ = panel
-    with urllib.request.urlopen(base + "/", timeout=10) as resp:
+    with urllib.request.urlopen(base + "/", timeout=_TIMEOUT) as resp:
         html = resp.read().decode()
     assert "VeloxQuant-MLX" in html
     assert 'id="primary-btn"' in html
@@ -212,7 +232,7 @@ def test_api_serves_the_panel(panel):
 def test_api_refuses_path_traversal(panel):
     base, _ = panel
     with pytest.raises(urllib.error.HTTPError) as exc:
-        urllib.request.urlopen(base + "/../config.py", timeout=10)
+        urllib.request.urlopen(base + "/../config.py", timeout=_TIMEOUT)
     assert exc.value.code == 404
 
 

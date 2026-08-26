@@ -72,6 +72,13 @@ class SnapKVKVCache(_MLXKVCache):
         constrains prefill history, not the decode stream).
     """
 
+    # Class-level defaults so the ``offset`` property below is safe to read
+    # and write during ``super().__init__()``, before instance attributes
+    # have been created.
+    _in_base: bool = False
+    _row_offset: int = 0
+    _true_offset: int = 0
+
     def __init__(self, config: Any) -> None:
         super().__init__()
         self._budget = int(getattr(config, "snap_budget", 512))
@@ -91,6 +98,50 @@ class SnapKVKVCache(_MLXKVCache):
         # budget against the accumulated kept set rather than compressing
         # the new chunk in isolation and appending.
         self._prefill_done = False
+
+        # True absolute token position, independent of how many rows survive
+        # eviction. Surfaced through the ``offset`` property so mlx_lm's RoPE
+        # stays correct after tokens are dropped (see #171).
+        self._true_offset: int = 0
+
+    # ------------------------------------------------------------------
+    # ``offset`` carries TWO meanings that diverge as soon as eviction drops a
+    # row, and #171 was caused by conflating them:
+    #
+    #   1. mlx_lm's attention layer reads ``cache.offset`` as the POSITION to
+    #      rotate the query and incoming key at, before update_and_fetch runs.
+    #   2. The base ``KVCache.update_and_fetch`` uses it as the write cursor
+    #      and return slice (``self.keys[..., :self.offset, :]``).
+    #
+    # SnapKV's prefill compression drops tokens, so the retained row count
+    # falls permanently behind the true position — under (2)'s value every
+    # later token gets rotated at a position short by exactly the number
+    # evicted. Returning the true position from (2) instead would make the
+    # base class slice past the end of what it stored.
+    #
+    # So the two are separated: ``_row_offset`` backs the base class's
+    # bookkeeping, while reads from outside get the true position. This is
+    # sound because SnapKV PRESERVES original positions — snap_select_indices
+    # returns kept indices sorted ascending and never renumbers them — so
+    # stored keys already carry rotations for their true positions, and RoPE
+    # is relative (<rope(q,i), rope(k,j)> depends only on i-j), so no
+    # re-rotation of survivors is needed.
+    # The base class does ``prev = self.offset`` ... ``self.offset += S``, so
+    # during that call ``offset`` must read and write ROW counts. Outside it,
+    # mlx_lm must see the true position. ``_in_base`` flips between the two.
+    @property
+    def offset(self) -> int:
+        """True absolute token position (NOT the retained row count).
+
+        While the base class's ``update_and_fetch`` is on the stack this
+        yields the retained row count instead, so its cursor arithmetic and
+        return slice stay correct.
+        """
+        return self._row_offset if self._in_base else self._true_offset
+
+    @offset.setter
+    def offset(self, value: int) -> None:
+        self._row_offset = value
 
     # ------------------------------------------------------------------
     def _evict_head(self, keys: mx.array, values: mx.array) -> tuple[mx.array, mx.array, int]:
@@ -154,7 +205,11 @@ class SnapKVKVCache(_MLXKVCache):
         chunks' totals were already counted when first seen).
         """
         B, H, S, D = keys.shape
-        prev_kept = self.offset
+        # Retained row count — NOT self.offset, which since #171 reports the
+        # true absolute token position for RoPE and diverges from the row
+        # count as soon as eviction drops anything. Not self.keys.shape[2]
+        # either: that is the base class's over-allocated buffer size.
+        prev_kept = self._row_offset
         prev_kept_bytes = prev_kept * D * 2  # per (b, h), K or V alone
         k_out_b, v_out_b = [], []
         for b in range(B):
@@ -200,7 +255,15 @@ class SnapKVKVCache(_MLXKVCache):
                 k_out, v_out = self._process_prefill_chunk(keys, values)
         else:
             k_out, v_out = self._process_decode(keys, values)
-        return super().update_and_fetch(k_out, v_out)
+        # Track the true absolute position separately from the retained row
+        # count the base class maintains in ``_row_offset``. See the ``offset``
+        # property for why the two must not be conflated.
+        self._true_offset += keys.shape[2]
+        self._in_base = True
+        try:
+            return super().update_and_fetch(k_out, v_out)
+        finally:
+            self._in_base = False
 
     # ------------------------------------------------------------------
     @property

@@ -272,8 +272,6 @@ Codebook lookup materialized a `(batch, 128, k)` distance tensor for argmin — 
 
 The update path was casting fp16 → fp32 → fp16 → fp32 → fp16 unnecessarily because the rotation already handles internal precision internally. Removing the round-trips saved ~1.05x per call and is invisible to output quality.
 
-The full write-up with stage-by-stage numbers is in [OPTIMIZATION_FINDINGS.md](OPTIMIZATION_FINDINGS.md).
-
 ---
 
 ## Step 10: Understanding Memory Numbers

@@ -233,3 +233,68 @@ def test_for_model_wiring_and_fallback() -> None:
     assert isinstance(caches[0], L2NormKVCache)
     assert type(caches[1]) is _FallbackCache
     assert isinstance(caches[2], L2NormKVCache)
+
+
+# ==================================================================
+# RoPE position bookkeeping (#171, #174)
+# ==================================================================
+
+
+def test_offset_tracks_true_position_after_eviction() -> None:
+    """``cache.offset`` must be the true token position, not the retained count.
+
+    mlx_lm rotates both the query and the incoming key at ``offset=cache.offset``
+    *before* calling ``update_and_fetch``. Before this fix, ``self.offset`` was
+    left at whatever the base ``KVCache.update_and_fetch`` set it to — the
+    number of RETAINED rows — so once eviction pinned the kept count at the
+    budget, the offset stopped advancing and every later token was rotated at
+    the wrong (stale) position while its true position kept climbing. This
+    reproduces that drift without the fix: without ``_true_offset`` tracking,
+    ``cache.offset`` would stall at ``budget`` instead of tracking ``t + 1``.
+    """
+    B, H, D, budget = 1, 2, 8, 16
+    cache = _make(head_dim=D, knorm_budget=budget, knorm_n_sink=2)
+
+    n_steps = 5 * budget
+    for t in range(n_steps):
+        k, v = _kv(B, H, 1, D, seed=100 + t)
+        cache.update_and_fetch(k, v)
+        assert cache.offset == t + 1, (
+            f"offset {cache.offset} != true position {t + 1} — RoPE would be wrong"
+        )
+
+    # Eviction still bounds the cache; the offset just no longer conflates the
+    # two quantities.
+    assert cache.tokens_kept <= budget
+
+
+def test_offset_advances_by_block_size_on_prefill() -> None:
+    """A multi-token block advances the offset by S, not by rows retained."""
+    B, H, S, D = 1, 2, 100, 8
+    cache = _make(head_dim=D, knorm_budget=32, knorm_n_sink=2)
+
+    k, v = _kv(B, H, S, D, seed=7)
+    cache.update_and_fetch(k, v)
+    assert cache.offset == S
+    assert cache.tokens_kept <= 32
+
+    k2, v2 = _kv(B, H, 1, D, seed=8)
+    cache.update_and_fetch(k2, v2)
+    assert cache.offset == S + 1
+
+
+def test_offset_survives_prefill_then_decode_mix() -> None:
+    """Offset stays the true position across a prefill block followed by
+    many decode steps, even though eviction is active throughout."""
+    B, H, S, D, budget = 1, 2, 40, 8, 12
+    cache = _make(head_dim=D, knorm_budget=budget, knorm_n_sink=2)
+
+    k, v = _kv(B, H, S, D, seed=9)
+    cache.update_and_fetch(k, v)
+    assert cache.offset == S
+
+    for t in range(30):
+        kd, vd = _kv(B, H, 1, D, seed=200 + t)
+        cache.update_and_fetch(kd, vd)
+        assert cache.offset == S + t + 1
+    assert cache.tokens_kept <= budget

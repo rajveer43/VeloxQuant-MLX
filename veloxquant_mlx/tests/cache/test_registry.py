@@ -25,7 +25,7 @@ from veloxquant_mlx.cache.registry import (
 )
 
 # Locked against the audit in issue #27, re-verified by probe.
-EXPECTED_TOTAL = 40
+EXPECTED_TOTAL = 42
 EXPECTED_CRASHING = {
     "turboquant_prod",
     "turboquant_mse",
@@ -41,6 +41,7 @@ EXPECTED_CRASHING = {
 # unavailable (#152).
 EXPECTED_NOT_TRIMMABLE = {
     "amc",
+    "anchorkv",
     "cam",
     "chunkkv",
     "curdkv",
@@ -52,6 +53,7 @@ EXPECTED_NOT_TRIMMABLE = {
     "nestedkv",
     "pyramidkv",
     "qfilters",
+    "rocketkv",
     "squeeze",
     "streaming_llm",
     "tova",

@@ -11,27 +11,39 @@ The repo's fourth eviction scorer class: not attention/proxy (SnapKV, H2O,
 TOVA, PyramidKV, SqueezeAttention, ChunkKV, CaM), not structural
 (StreamingLLM, sink), not intrinsic-norm (L2Norm).
 
-THE HONESTY CRUX: the paper derives the filter from query-distribution SVD
-offline; a cache never sees queries, so we derive it from the SVD of the
-first ``qfilters_calib_tokens`` observed KEYS and freeze it. A documented
-deviation — a different estimator of the same head-geometry direction, never
-claimed equivalent, validated only under constructed geometry (see the
-benchmark's ``filter_cosine`` field and isotropic control).
+TWO FILTER SOURCES
+------------------
+Pass ``filters`` (``[H_kv, D]``, from
+:mod:`veloxquant_mlx.quantizers.qfilters_calibration`) to use the paper's
+**query-SVD** direction — the mechanism §3.2 actually specifies. The filter is
+then frozen before the first token, so the sign is correct by construction
+(Theorem 3.3's ``kappa^h > 0``), eviction runs from token 0 with no
+calibration window, and the kept set is **path-independent**: prefill in one
+block and token-by-token decode return bit-identical results.
 
-Path-DEPENDENCE (contrast with L2NormKVCache): the filter is estimated from
-whichever chunk first crosses the calibration threshold, so prefill-in-one-
-block and token-by-token decode can freeze *different* directions and
-diverge. There is deliberately no prefill/decode bit-for-bit equivalence
-guarantee here.
+With ``filters=None`` the cache falls back to estimating the direction from
+the SVD of the first ``qfilters_calib_tokens`` observed KEYS. That recovers
+the dominant axis but not its orientation — the sign is exactly what a query
+disambiguates — so on this path ``qfilters_sign`` is a genuine ablation knob,
+and the kept set is path-DEPENDENT (the direction depends on whichever chunk
+first crosses the threshold). Nothing on the fallback path is claimed
+equivalent to the paper's filter.
 
-Adaptation limitations (stated plainly):
-  - Filter is key-SVD-derived, not query-SVD-derived (the crux above).
+Limitations (stated plainly):
   - The anisotropy/attention-prediction claim is the paper's, about trained
-    models; nothing here validates it on synthetic data.
-  - No RoPE position-ID remapping after eviction.
+    models; nothing here validates it on real weights.
+  - No RoPE position-ID *renumbering* after eviction. Surviving tokens keep
+    their original absolute positions, so ``self.offset`` reports the true
+    token position and RoPE stays correct without re-rotating survivors
+    (see ``update_and_fetch`` and :issue:`171`). Positions do become
+    non-contiguous where tokens were dropped.
   - Uniform budget and n_sink across all heads.
   - ``qfilters_recent`` (trailing protected window) is an extension, off by
-    default.
+    default. With it off, a long prefill's trailing tokens are ranked like
+    any other and mostly evicted before generation starts — pure projection
+    ranking has no recency bias. Set it when generation quality on long
+    prompts matters (see ``qfilters_update`` and :issue:`172`).
+  - Calibrated filters are model-specific; a head-layout mismatch raises.
 
 Byte accounting (same names as L2NormKVCache):
     qfilters_kept_bytes — fp16 bytes for retained K + V (plus the frozen
@@ -49,13 +61,15 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.metal import metal_available
+from veloxquant_mlx.metal._qfilters_evict import QFILTERS_MAX_BUDGET, qfilters_fused_evict
 from veloxquant_mlx.quantizers.qfilters import (
     QFiltersState,
-    full_qfilters_fp16_bytes,
     init_qfilters_state,
     qfilters_fp16_bytes,
     qfilters_get_kv,
     qfilters_update,
+    qfilters_update_batched,
 )
 
 
@@ -67,9 +81,20 @@ class QFiltersKVCache(_MLXKVCache):
             ``qfilters_budget`` (int, default 512) — max tokens kept (incl. sinks),
             ``qfilters_n_sink`` (int, default 4)   — leading positions never evicted,
             ``qfilters_recent`` (int, default 0)   — trailing protected window (extension),
-            ``qfilters_calib_tokens`` (int, default 128) — tokens observed before
-                the filter direction is estimated and frozen,
+            ``qfilters_calib_tokens`` (int, default 128) — fallback only: tokens
+                observed before the filter direction is estimated and frozen,
             ``qfilters_sign`` (int, default 1)     — +1 = paper direction; -1 = inverted.
+            ``use_metal_kernels`` (bool | None, default None) — three-state Metal
+                fast-path flag for the calibrated/batched path (see Notes below):
+                ``None`` auto-detects, ``True`` requires Metal (raises at
+                construction if unavailable or if ``qfilters_budget`` exceeds
+                ``QFILTERS_MAX_BUDGET``), ``False`` forces the pure-MLX path.
+        filters: Optional ``[H_kv, D]`` pre-calibrated query-SVD Q-Filters for
+            this layer (see :mod:`veloxquant_mlx.quantizers.qfilters_calibration`).
+            When given, eviction is active immediately and path-independent;
+            when omitted, the key-SVD fallback applies. Must match the layer's
+            ``(H, D)`` — a mismatch raises on the first ``update_and_fetch``
+            rather than silently mis-evicting.
 
     Notes:
         No ``.bits`` attribute — stores and returns fp16 K/V directly.
@@ -83,15 +108,45 @@ class QFiltersKVCache(_MLXKVCache):
         chunked prefill); ``is_trimmable()`` reports ``False`` since the
         internal per-token state can't be rolled back by a base-class
         ``trim()`` (see #83).
+
+        With calibrated filters, eviction runs as ONE vectorized selection over
+        all ``B*H`` groups (``qfilters_update_batched``) instead of a Python
+        loop per (batch, head) — the loop cost scaled with ``B*H`` and dominated
+        decode at realistic head counts (:issue:`173`). Selection is bit-for-bit
+        what the loop produced. Per-head ``QFiltersState`` objects are then
+        stale, and are rebuilt lazily by ``_sync_states()`` for the diagnostic
+        surface (``states``); nothing on the hot path reads them. The key-SVD
+        fallback keeps the loop — its per-group filters freeze at different
+        times, which a single shared-filter selection cannot express.
+
+        On top of that batched selection, when Metal is available (or
+        ``use_metal_kernels=True``) and the group is actually over budget with
+        ``qfilters_budget <= QFILTERS_MAX_BUDGET``, the over-budget branch
+        dispatches to ``qfilters_fused_evict`` — two fused Metal kernels
+        (scoring + threshold compaction, see
+        ``veloxquant_mlx/metal/_qfilters_evict.py``) that replace the pure-MLX
+        ``mx.argsort`` / ``mx.take_along_axis`` selection with the same
+        tie-breaking convention, so the two paths agree bit-for-bit
+        (:issue:`179`). Under-budget calls and the key-SVD fallback loop are
+        unaffected either way — there is nothing to evict yet, or the shared
+        batched selection this optimizes does not apply to them.
     """
 
-    def __init__(self, config: Any) -> None:
+    def __init__(self, config: Any, filters: mx.array | None = None) -> None:
         super().__init__()
         self._budget = int(getattr(config, "qfilters_budget", 512))
         self._n_sink = int(getattr(config, "qfilters_n_sink", 4))
         self._recent = int(getattr(config, "qfilters_recent", 0))
         self._calib = int(getattr(config, "qfilters_calib_tokens", 128))
         self._sign = int(getattr(config, "qfilters_sign", 1))
+
+        # Paper-faithful query-SVD filters for THIS layer, [H_kv, D], if the
+        # builder was given a calibration artifact. None => key-SVD fallback.
+        self._filters = filters.astype(mx.float32) if filters is not None else None
+        if self._filters is not None and self._filters.ndim != 2:
+            raise ValueError(
+                f"QFiltersKVCache: filters must be 2-D [H_kv, D], got {tuple(self._filters.shape)}"
+            )
 
         # Fail at build time with clear messages (delegates the guards).
         init_qfilters_state(
@@ -103,14 +158,54 @@ class QFiltersKVCache(_MLXKVCache):
             sign=self._sign,
         )
 
+        # Resolve the Metal fast-path flag for the batched (calibrated-filter)
+        # eviction branch. Three-state, same convention as VecInferKVCache:
+        #   None  -> auto-detect (silent fallback to pure MLX)
+        #   True  -> require Metal; raise now rather than deep in generation
+        #   False -> force the pure-MLX path (debug / parity testing)
+        requested_metal = getattr(config, "use_metal_kernels", None)
+        metal_ok = metal_available()
+        # Checked ahead of hardware availability so this failure is the same
+        # on every machine, Metal or not.
+        if requested_metal is True and self._budget > QFILTERS_MAX_BUDGET:
+            raise ValueError(
+                f"QFiltersKVCache: use_metal_kernels=True but qfilters_budget="
+                f"{self._budget} exceeds QFILTERS_MAX_BUDGET={QFILTERS_MAX_BUDGET} "
+                "(the eviction kernel stages the survivor index list in "
+                "threadgroup memory, which needs a compile-time bound) — drop "
+                "use_metal_kernels or lower the budget."
+            )
+        if requested_metal is True and not metal_ok:
+            raise ValueError(
+                "QFiltersKVCache: use_metal_kernels=True but Metal kernels are "
+                "not available on this build of mlx."
+            )
+        self._use_metal: bool = (
+            (metal_ok if requested_metal is None else bool(requested_metal))
+            and metal_ok
+            and self._budget <= QFILTERS_MAX_BUDGET
+        )
+
         self._head_dim: int = 0
         self._states: list[QFiltersState] = []
         self._B: int = 0
         self._H: int = 0
 
+        # Batched fast-path buffers ([BH, n_kept, D]); see _update_batched.
+        self._batched_keys: mx.array | None = None
+        self._batched_values: mx.array | None = None
+        self._batched_scores: mx.array | None = None
+        self._batched_filters: mx.array | None = None
+        self._states_stale: bool = False
+
         self._qfilters_kept_bytes: int = 0
         self._full_seq_bytes: int = 0
         self._tokens_seen_total: int = 0
+
+        # True absolute token position, independent of how many rows survive
+        # eviction. Reported as ``self.offset`` so mlx_lm's RoPE stays correct
+        # after tokens are dropped (see #171 and update_and_fetch).
+        self._true_offset: int = 0
 
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
@@ -118,6 +213,16 @@ class QFiltersKVCache(_MLXKVCache):
             self._B = B
             self._H = H
             self._head_dim = D
+
+            if self._filters is not None:
+                f_heads, f_dim = (int(x) for x in self._filters.shape)
+                if f_heads != H or f_dim != D:
+                    raise ValueError(
+                        f"QFiltersKVCache: calibrated filters are [{f_heads}, {f_dim}] "
+                        f"but this layer runs [H={H}, D={D}] — the artifact was "
+                        "calibrated on a different model or head layout"
+                    )
+
             self._states = [
                 init_qfilters_state(
                     self._n_sink,
@@ -126,12 +231,112 @@ class QFiltersKVCache(_MLXKVCache):
                     recent=self._recent,
                     calib_tokens=self._calib,
                     sign=self._sign,
+                    # Filters are per-KV-head and shared across the batch, so
+                    # head index h selects the row for every b.
+                    filter_dir=(None if self._filters is None else self._filters[i % H]),
                 )
-                for _ in range(B * H)
+                for i in range(B * H)
             ]
 
     def _head_idx(self, b: int, h: int) -> int:
         return b * self._H + h
+
+    # ------------------------------------------------------------------
+    def _can_batch(self) -> bool:
+        """True when every group can be evicted in one vectorized selection.
+
+        Requires a calibrated filter: only then is every group's filter frozen
+        before token 0, so all ``B*H`` groups hold the same row count and share
+        one selection. The key-SVD fallback freezes each group's direction
+        whenever that group crosses ``calib_tokens``, and groups can sit in
+        different regimes within a single call, so it keeps the per-head loop
+        (which is also where its documented path-dependence lives).
+        """
+        return self._filters is not None
+
+    def _update_batched(
+        self, keys: mx.array, values: mx.array, B: int, H: int, D: int
+    ) -> tuple[mx.array, mx.array]:
+        """Absorb + evict all ``(b, h)`` groups at once, then mirror into states.
+
+        Keeps its own ``[BH, n, D]`` buffer so the hot path never restacks
+        per-head arrays. ``self._states`` is refreshed from it as a view so the
+        byte-accounting properties and ``tokens_kept`` stay accurate; those
+        slices are lazy in MLX and cost nothing until read.
+        """
+        BH = B * H
+        new_k = keys.reshape(BH, -1, D).astype(mx.float16)
+        new_v = values.reshape(BH, -1, D).astype(mx.float16)
+
+        if self._batched_keys is None:
+            keys_cat, values_cat = new_k, new_v
+        else:
+            keys_cat = mx.concatenate([self._batched_keys, new_k], axis=1)
+            values_cat = mx.concatenate([self._batched_values, new_v], axis=1)
+
+        # [H, D] filters are shared across the batch: tile to [BH, D] so group
+        # g = b*H + h reads row h, matching _ensure_states' `i % H`.
+        if self._batched_filters is None:
+            self._batched_filters = mx.tile(self._filters, (B, 1))
+
+        n_total = int(keys_cat.shape[1])
+        # The fused Metal kernel only replaces the OVER-budget branch (its own
+        # precondition — see qfilters_fused_evict's n_total <= budget guard).
+        # Under budget there is nothing to evict either way, so the pure-MLX
+        # path's early return already costs nothing extra.
+        if self._use_metal and n_total > self._budget:
+            keys_out, values_out, scores_out = qfilters_fused_evict(
+                keys_cat,
+                values_cat,
+                self._batched_filters,
+                budget=self._budget,
+                n_sink=self._n_sink,
+                recent=self._recent,
+                sign=self._sign,
+            )
+        else:
+            keys_out, values_out, scores_out = qfilters_update_batched(
+                keys_cat,
+                values_cat,
+                self._batched_filters,
+                budget=self._budget,
+                n_sink=self._n_sink,
+                recent=self._recent,
+                sign=self._sign,
+            )
+        self._batched_keys = keys_out
+        self._batched_values = values_out
+        self._batched_scores = scores_out
+        # self._states is now stale; it is rebuilt on demand by _sync_states()
+        # rather than here, so the hot path stays free of any BH-length loop.
+        self._states_stale = True
+
+        return keys_out.reshape(B, H, -1, D), values_out.reshape(B, H, -1, D)
+
+    def _sync_states(self) -> None:
+        """Materialize per-head ``QFiltersState`` views from the batched buffers.
+
+        Only the diagnostic surface (``tokens_kept``, ``.state``-adjacent
+        introspection, tests reaching into ``_states``) needs per-head objects,
+        so the BH-length rebuild is deferred to whoever actually reads them
+        instead of running on every ``update_and_fetch``.
+        """
+        if not self._states_stale or self._batched_keys is None:
+            return
+        for g in range(len(self._states)):
+            st = self._states[g]
+            self._states[g] = QFiltersState(
+                keys=self._batched_keys[g],
+                values=self._batched_values[g],
+                scores=self._batched_scores[g],
+                filter_dir=st.filter_dir,
+                n_sink=st.n_sink,
+                budget=st.budget,
+                recent=st.recent,
+                calib_tokens=st.calib_tokens,
+                sign=st.sign,
+            )
+        self._states_stale = False
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
@@ -151,27 +356,37 @@ class QFiltersKVCache(_MLXKVCache):
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
-        k_out_b, v_out_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                idx = self._head_idx(b, h)
-                st = qfilters_update(
-                    self._states[idx],
-                    keys[b, h].astype(mx.float16),
-                    values[b, h].astype(mx.float16),
-                )
-                self._states[idx] = st
-                k_h, v_h = qfilters_get_kv(st)
-                k_out_h.append(k_h)
-                v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))
-            v_out_b.append(mx.stack(v_out_h, axis=0))
+        if self._can_batch():
+            K_out, V_out = self._update_batched(keys, values, B, H, D)
+        else:
+            k_out_b, v_out_b = [], []
+            for b in range(B):
+                k_out_h, v_out_h = [], []
+                for h in range(H):
+                    idx = self._head_idx(b, h)
+                    st = qfilters_update(
+                        self._states[idx],
+                        keys[b, h].astype(mx.float16),
+                        values[b, h].astype(mx.float16),
+                    )
+                    self._states[idx] = st
+                    k_h, v_h = qfilters_get_kv(st)
+                    k_out_h.append(k_h)
+                    v_out_h.append(v_h)
+                k_out_b.append(mx.stack(k_out_h, axis=0))
+                v_out_b.append(mx.stack(v_out_h, axis=0))
 
-        K_out = mx.stack(k_out_b, axis=0)
-        V_out = mx.stack(v_out_b, axis=0)
+            K_out = mx.stack(k_out_b, axis=0)
+            V_out = mx.stack(v_out_b, axis=0)
 
-        self._qfilters_kept_bytes = sum(qfilters_fp16_bytes(st) for st in self._states)
+        if self._batched_keys is not None:
+            # Closed form of the per-state sum: every group holds the same
+            # n_kept rows and one float32 filter_dir, so summing BH identical
+            # terms in Python would just re-add the loop this path removes.
+            bh, n_kept, d = (int(x) for x in self._batched_keys.shape)
+            self._qfilters_kept_bytes = bh * (n_kept * d * 2 * 2 + d * 4)
+        else:
+            self._qfilters_kept_bytes = sum(qfilters_fp16_bytes(st) for st in self._states)
 
         # K_out/V_out is the full retained state every call, not a delta —
         # reset so the base class's append-only buffer starts fresh instead
@@ -182,7 +397,30 @@ class QFiltersKVCache(_MLXKVCache):
         self.keys = None
         self.values = None
         self.offset = 0
-        return super().update_and_fetch(K_out, V_out)
+        out = super().update_and_fetch(K_out, V_out)
+
+        # RoPE position correctness (see #171).
+        #
+        # mlx_lm rotates BOTH the query and the incoming key at
+        # ``offset=cache.offset`` *before* calling update_and_fetch. The base
+        # class above just set ``self.offset`` to the number of RETAINED rows,
+        # so once eviction starts (n_kept pinned at budget) the offset stops
+        # advancing and every subsequent token is rotated at ~budget while its
+        # true position keeps climbing — a drift that grows without bound and
+        # scrambles attention.
+        #
+        # Q-Filters PRESERVES the original position of every surviving token
+        # (eviction drops rows but never renumbers them), so all stored keys
+        # already carry rotations for their true absolute positions. RoPE is
+        # relative — <rope(q,i), rope(k,j)> depends only on i-j — so reporting
+        # the true position here puts queries, new keys, and survivors back on
+        # one consistent absolute axis, and no re-rotation of survivors is
+        # needed. This is exactly why H2O/Keyformer need a delta-rotation pass
+        # and this cache does not: they renumber positions on eviction, we do
+        # not.
+        self._true_offset += S
+        self.offset = self._true_offset
+        return out
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:
@@ -218,9 +456,22 @@ class QFiltersKVCache(_MLXKVCache):
     @property
     def tokens_kept(self) -> int:
         """Tokens currently in the (B=0, H=0) head's cache (diagnostic)."""
+        if self._batched_keys is not None:
+            return int(self._batched_keys.shape[1])
         if not self._states or self._states[0].keys is None:
             return 0
         return int(self._states[0].keys.shape[0])
+
+    @property
+    def states(self) -> list[QFiltersState]:
+        """Per-head eviction states (diagnostic).
+
+        On the batched path these are rebuilt lazily from the ``[BH, n, D]``
+        buffers, so reading this is what pays the BH-length cost — never the
+        hot path.
+        """
+        self._sync_states()
+        return self._states
 
 
 __all__ = ["QFiltersKVCache"]

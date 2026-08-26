@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 ChipFamily = Literal["M1", "M2", "M3", "M4"]
-ModelClass = Literal["1B", "3B", "7B", "14B", "32B"]
+ModelClass = Literal["1B", "3B", "7B", "14B", "32B", "70B", "120B", "235B", "671B"]
 Goal = Literal[
     "everyday",
     "max_key_accounting",
@@ -15,13 +15,22 @@ Goal = Literal[
     "constant_memory",
 ]
 
-ALLOWED_RAM_GB = (8, 16, 24, 32, 36, 48, 64, 128)
+# Mac Studio (M2/M3 Ultra) tops out at 192 GB; some configs go to 512 GB.
+ALLOWED_RAM_GB = (8, 16, 24, 32, 36, 48, 64, 96, 128, 192, 512)
+# Weight-only estimate at 4-bit quantization (Parameters x 4 bits / 8, plus
+# a small tokenizer/overhead margin). 70B+ classes reflect what mlx-community
+# actually ships (Llama 3.1 70B, Mixtral-8x22B/120B-class, Qwen 235B MoE,
+# DeepSeek V3/R1 671B) rather than being purely theoretical.
 MODEL_WEIGHT_GB_4BIT = {
     "1B": 0.8,
     "3B": 2.0,
     "7B": 4.5,
     "14B": 8.0,
     "32B": 18.0,
+    "70B": 40.0,
+    "120B": 68.0,
+    "235B": 132.0,
+    "671B": 380.0,
 }
 
 
@@ -116,7 +125,7 @@ def recommend(req: RecommendRequest) -> RecommendResult:
             "value back to full precision as it is read, so this is a size "
             "measurement rather than a drop in live memory use."
         )
-        if tight and req.model_class in ("7B", "14B", "32B"):
+        if tight and req.model_class in ("7B", "14B", "32B", "70B", "120B", "235B", "671B"):
             warnings.append(
                 "RAM is tight for a model this size. For long prompts you will get "
                 "more out of 'Fit the longest conversation' (rabitq), which "
@@ -205,11 +214,30 @@ def recommend(req: RecommendRequest) -> RecommendResult:
         raise ValueError(f"Unknown goal: {req.goal}")
 
     # Chip note: bandwidth/generation matters less than RAM for method pick
-    if req.chip in ("M1", "M2") and req.model_class in ("14B", "32B"):
+    if req.chip in ("M1", "M2") and req.model_class in (
+        "14B",
+        "32B",
+        "70B",
+        "120B",
+        "235B",
+        "671B",
+    ):
         warnings.append(
             f"A {req.model_class} model on an {req.chip} will generate text more "
             "slowly than on a newer chip. Whether it fits at all, though, comes "
             "down to how much RAM you have rather than which chip it is."
+        )
+
+    # Extreme-scale MoE models (120B+) need Ultra-class unified memory; call
+    # this out explicitly since the "will not fit" warning above only fires
+    # when headroom is negative, not when the fit is technically possible but
+    # leaves the machine unusable for anything else.
+    if req.model_class in ("120B", "235B", "671B") and req.ram_gb < 192:
+        warnings.append(
+            f"A {req.model_class} model is only practical on Mac Studio (M2/M3 "
+            "Ultra) configurations with 192 GB or more of unified memory. Smaller "
+            "machines that technically fit the weights will have little to no "
+            "headroom for the KV cache or macOS itself."
         )
 
     compressed_mb = kv_fp16 / ratio if ratio > 0 else kv_fp16

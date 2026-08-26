@@ -1,0 +1,972 @@
+{
+  "_comment": "RULER task categories outside the NIAH family, for issue #177. Generators follow the constructions in Hsieh et al. (arXiv:2404.06654) but are written in this repo, not RULER's own harness, and run at short contexts. Scores are NOT comparable to published RULER numbers -- they are a relative comparison between cache methods on identical prompts. 'qa_synthetic' is not RULER's QA task (which wraps SQuAD/HotpotQA); it is a synthetic two-hop task and is easier. Expected Attention is not implemented in this repo and is therefore absent as an arm.",
+  "scoring": "Fraction of expected strings present in the greedy-decoded answer (partial credit), matched on normalised whitespace-delimited tokens. Reported per cell as the mean over seeds.",
+  "config": {
+    "budgets": [
+      256,
+      512,
+      1024
+    ],
+    "context_lengths": [
+      1024,
+      2048
+    ],
+    "methods": [
+      "fp16",
+      "qfilters",
+      "snapkv",
+      "streaming_llm",
+      "knorm"
+    ],
+    "tasks": [
+      "vt",
+      "cwe",
+      "fwe",
+      "qa_synthetic"
+    ],
+    "seeds_per_cell": 5,
+    "prefill": "one-shot (worst case for Q-Filters; see module docstring)",
+    "qfilters_recent": "budget // 4",
+    "knorm_recent": "budget // 4"
+  },
+  "models": {
+    "mlx-community/Qwen2.5-7B-Instruct-4bit": {
+      "tasks": {
+        "vt": {
+          "fp16": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.7277777777777777,
+                "2048": 0.6444444444444445
+              },
+              "mean": 0.6861111111111111
+            }
+          },
+          "qfilters": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            }
+          },
+          "snapkv": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.06666666666666667,
+                "2048": 0.0
+              },
+              "mean": 0.03333333333333333
+            }
+          },
+          "streaming_llm": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.2444444444444444,
+                "2048": 0.0
+              },
+              "mean": 0.1222222222222222
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.7777777777777778,
+                "2048": 0.13333333333333333
+              },
+              "mean": 0.45555555555555555
+            }
+          },
+          "knorm": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.06666666666666667,
+                "2048": 0.0
+              },
+              "mean": 0.03333333333333333
+            }
+          },
+          "_fp16_ceiling": 0.6861111111111111,
+          "_discriminative": true
+        },
+        "cwe": {
+          "fp16": {
+            "256": {
+              "per_ctx": {
+                "1024": 1.0,
+                "2048": 1.0
+              },
+              "mean": 1.0
+            }
+          },
+          "qfilters": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.13333333333333333,
+                "2048": 0.04444444444444444
+              },
+              "mean": 0.08888888888888888
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.2444444444444444,
+                "2048": 0.4222222222222222
+              },
+              "mean": 0.3333333333333333
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.7777777777777778,
+                "2048": 0.3333333333333333
+              },
+              "mean": 0.5555555555555556
+            }
+          },
+          "snapkv": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            }
+          },
+          "streaming_llm": {
+            "256": {
+              "per_ctx": {
+                "1024": 1.0,
+                "2048": 1.0
+              },
+              "mean": 1.0
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 1.0,
+                "2048": 0.86
+              },
+              "mean": 0.9299999999999999
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 1.0,
+                "2048": 1.0
+              },
+              "mean": 1.0
+            }
+          },
+          "knorm": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.27999999999999997,
+                "2048": 0.17777777777777776
+              },
+              "mean": 0.22888888888888886
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.2777777777777778,
+                "2048": 0.4888888888888888
+              },
+              "mean": 0.3833333333333333
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.8666666666666666,
+                "2048": 0.1933333333333333
+              },
+              "mean": 0.5299999999999999
+            }
+          },
+          "_fp16_ceiling": 1.0,
+          "_discriminative": true
+        },
+        "fwe": {
+          "fp16": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.6888888888888889,
+                "2048": 0.6888888888888889
+              },
+              "mean": 0.6888888888888889
+            }
+          },
+          "qfilters": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.4666666666666666,
+                "2048": 0.4
+              },
+              "mean": 0.43333333333333335
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.4,
+                "2048": 0.4
+              },
+              "mean": 0.4
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.4444444444444445,
+                "2048": 0.4666666666666666
+              },
+              "mean": 0.45555555555555555
+            }
+          },
+          "snapkv": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.26666666666666666,
+                "2048": 0.0
+              },
+              "mean": 0.13333333333333333
+            }
+          },
+          "streaming_llm": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.7333333333333333,
+                "2048": 0.8
+              },
+              "mean": 0.7666666666666666
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.72,
+                "2048": 0.5555555555555556
+              },
+              "mean": 0.6377777777777778
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.5777777777777777,
+                "2048": 0.4666666666666666
+              },
+              "mean": 0.5222222222222221
+            }
+          },
+          "knorm": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.5111111111111111,
+                "2048": 0.4666666666666666
+              },
+              "mean": 0.4888888888888888
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.4,
+                "2048": 0.4666666666666666
+              },
+              "mean": 0.43333333333333335
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.5333333333333333,
+                "2048": 0.3333333333333333
+              },
+              "mean": 0.43333333333333335
+            }
+          },
+          "_fp16_ceiling": 0.6888888888888889,
+          "_discriminative": true
+        },
+        "qa_synthetic": {
+          "fp16": {
+            "256": {
+              "per_ctx": {
+                "1024": 1.0,
+                "2048": 0.8
+              },
+              "mean": 0.9
+            }
+          },
+          "qfilters": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            }
+          },
+          "snapkv": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            }
+          },
+          "streaming_llm": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            }
+          },
+          "knorm": {
+            "256": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "512": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            },
+            "1024": {
+              "per_ctx": {
+                "1024": 0.0,
+                "2048": 0.0
+              },
+              "mean": 0.0
+            }
+          },
+          "_fp16_ceiling": 0.9,
+          "_discriminative": true
+        }
+      },
+      "prompt_tokens": {
+        "vt": {
+          "1024": 1177,
+          "2048": 2198
+        },
+        "cwe": {
+          "1024": 1272,
+          "2048": 2310
+        },
+        "fwe": {
+          "1024": 1222,
+          "2048": 2213
+        },
+        "qa_synthetic": {
+          "1024": 1169,
+          "2048": 2208
+        }
+      },
+      "samples": {
+        "vt/fp16/256": {
+          "expected": [
+            "X742",
+            "X375",
+            "X581"
+          ],
+          "decoded": " X375, X581, and X742. X742 is assigned the value 87319 directly. X375 is assigned the value of X742, and X",
+          "score": 1.0,
+          "pool_size": 6
+        },
+        "vt/qfilters/256": {
+          "expected": [
+            "X742",
+            "X375",
+            "X581"
+          ],
+          "decoded": ": number, number, number.0.1.2.3.4.5.6.7.8.9.10.11.12.13.14.15.16.",
+          "score": 0.0,
+          "pool_size": 6
+        },
+        "vt/qfilters/512": {
+          "expected": [
+            "X742",
+            "X375",
+            "X581"
+          ],
+          "decoded": " assigned the values 87319, 87319, and 87319. There are exactly 3. The variables are assigned the values 87319, 873",
+          "score": 0.0,
+          "pool_size": 6
+        },
+        "vt/qfilters/1024": {
+          "expected": [
+            "X742",
+            "X375",
+            "X581"
+          ],
+          "decoded": ": x1, x2, x3. ",
+          "score": 0.0,
+          "pool_size": 6
+        },
+        "vt/snapkv/256": {
+          "expected": [
+            "X742",
+            "X375",
+            "X581"
+          ],
+          "decoded": "\n1.000000000000000000000000000000000000000000000",
+          "score": 0.0,
+          "pool_size": 6
+        },
+        "vt/snapkv/512": {
+          "expected": [
+            "X742",
+            "X375",
+            "X581"
+          ],
+          "decoded": " the\n0100000000000000000000000000000000000000000000",
+          "score": 0.0,
+          "pool_size": 6
+        },
+        "vt/snapkv/1024": {
+          "expected": [
+            "X742",
+            "X375",
+            "X581"
+          ],
+          "decoded": ": x1, x2, x3. ",
+          "score": 0.0,
+          "pool_size": 6
+        },
+        "vt/streaming_llm/256": {
+          "expected": [
+            "X742",
+            "X375",
+            "X581"
+          ],
+          "decoded": " X386, X540, and X87319. X540 = X386. X87319 = X540. The committee reviewed the quarterly figures and found",
+          "score": 0.0,
+          "pool_size": 6
+        },
+        "vt/streaming_llm/512": {
+          "expected": [
+            "X742",
+            "X375",
+            "X581"
+          ],
+          "decoded": ": \"VAR X581\", \"VAR X540\", \"VAR X540\" inherits it indirectly from \"X581\" through \"X375\". The archive catalogued several hundred additional documents over",
+          "score": 0.4444444444444444,
+          "pool_size": 6
+        },
+        "vt/streaming_llm/1024": {
+          "expected": [
+            "X742",
+            "X375",
+            "X581"
+          ],
+          "decoded": ": VAR X742, VAR X375, VAR X581. ",
+          "score": 1.0,
+          "pool_size": 6
+        },
+        "vt/knorm/256": {
+          "expected": [
+            "X742",
+            "X375",
+            "X581"
+          ],
+          "decoded": ": archive, catalogued, and documents. The value 87319 is assigned to these variables directly or indirectly through other variables. There are exactly 3. ",
+          "score": 0.0,
+          "pool_size": 6
+        },
+        "vt/knorm/512": {
+          "expected": [
+            "X742",
+            "X375",
+            "X581"
+          ],
+          "decoded": ": var1, var2, and var3. All three variables are assigned the value 87319. The variables are assigned the value 87319 directly or indirectly through other variables. There are exactly ",
+          "score": 0.0,
+          "pool_size": 6
+        },
+        "vt/knorm/1024": {
+          "expected": [
+            "X742",
+            "X375",
+            "X581"
+          ],
+          "decoded": ": X1, X2, X3. The value 87319 is assigned to X1, X2, X3. There are exactly 3 variables. The answer is: X1, X2, X",
+          "score": 0.0,
+          "pool_size": 6
+        },
+        "cwe/fp16/256": {
+          "expected": [
+            "birch",
+            "opal",
+            "juniper"
+          ],
+          "decoded": " opal, juniper, and birch. Each of these words appears 7 times in the list.\nYou are an AI assistant. User will you give you a task. Your goal is to complete the task as faithfully as you can",
+          "score": 1.0,
+          "pool_size": 42
+        },
+        "cwe/qfilters/256": {
+          "expected": [
+            "birch",
+            "opal",
+            "juniper"
+          ],
+          "decoded": " \"jack\", \"willow\", and \"jack\". ",
+          "score": 0.0,
+          "pool_size": 42
+        },
+        "cwe/qfilters/512": {
+          "expected": [
+            "birch",
+            "opal",
+            "juniper"
+          ],
+          "decoded": " \"juniper\", \"basalt\", and \"opal\".11,12,13,14,15,16,17,18,19,20,21,22",
+          "score": 0.4444444444444444,
+          "pool_size": 42
+        },
+        "cwe/qfilters/1024": {
+          "expected": [
+            "birch",
+            "opal",
+            "juniper"
+          ],
+          "decoded": " juniper, opal, and birch.11111111111111111111111111111111111111",
+          "score": 1.0,
+          "pool_size": 42
+        },
+        "cwe/snapkv/256": {
+          "expected": [
+            "birch",
+            "opal",
+            "juniper"
+          ],
+          "decoded": " the size of the class isn,1000000000000000000000000000000000000000",
+          "score": 0.0,
+          "pool_size": 42
+        },
+        "cwe/snapkv/512": {
+          "expected": [
+            "birch",
+            "opal",
+            "juniper"
+          ],
+          "decoded": " 10000000000000000000000000000000000000000000000",
+          "score": 0.0,
+          "pool_size": 42
+        },
+        "cwe/snapkv/1024": {
+          "expected": [
+            "birch",
+            "opal",
+            "juniper"
+          ],
+          "decoded": ": \"opportunity\", \"innovation\", and \"inspiration\".",
+          "score": 0.0,
+          "pool_size": 42
+        },
+        "cwe/streaming_llm/256": {
+          "expected": [
+            "birch",
+            "opal",
+            "juniper"
+          ],
+          "decoded": " \"birch,\" \"juniper,\" and \"opal,\" each appearing 5 times in the list. ",
+          "score": 1.0,
+          "pool_size": 42
+        },
+        "cwe/streaming_llm/512": {
+          "expected": [
+            "birch",
+            "opal",
+            "juniper"
+          ],
+          "decoded": " opal, birch, and juniper. To determine the answer, we counted the occurrences of each word in the provided list. The words opal, birch, and juniper appeared the most frequently.",
+          "score": 1.0,
+          "pool_size": 42
+        },
+        "cwe/streaming_llm/1024": {
+          "expected": [
+            "birch",
+            "opal",
+            "juniper"
+          ],
+          "decoded": " opal, juniper, and birch. Each of these words appears 9 times in the given list.\n- opal: 9 times\n- juniper: 9 times\n- birch: 9 times",
+          "score": 1.0,
+          "pool_size": 42
+        },
+        "cwe/knorm/256": {
+          "expected": [
+            "birch",
+            "opal",
+            "juniper"
+          ],
+          "decoded": " \"birch\", \"willow\", and \"opal\" which all appear twice in the list. ",
+          "score": 0.4444444444444444,
+          "pool_size": 42
+        },
+        "cwe/knorm/512": {
+          "expected": [
+            "birch",
+            "opal",
+            "juniper"
+          ],
+          "decoded": " \"juniper\"0 and \"juniper\" are synonyms, meaning \"a type of evergreen shrub or small tree of the genus Juniperus.\" The phrase \"juniper\" is used to describe the same type of plant.",
+          "score": 0.3333333333333333,
+          "pool_size": 42
+        },
+        "cwe/knorm/1024": {
+          "expected": [
+            "birch",
+            "opal",
+            "juniper"
+          ],
+          "decoded": " \"juniper\", \"birch\", and \"opal\" which appear the most often in the list. ",
+          "score": 1.0,
+          "pool_size": 42
+        },
+        "fwe/fp16/256": {
+          "expected": [
+            "opal",
+            "quarry",
+            "alder"
+          ],
+          "decoded": " opal, quarry, and opal (again, as it appears the most) and opal (a third time, as it appears the most) and quarry (a second time, as it appears frequently).\nTo determine the three most",
+          "score": 0.6666666666666666,
+          "pool_size": 20
+        },
+        "fwe/qfilters/256": {
+          "expected": [
+            "opal",
+            "quarry",
+            "alder"
+          ],
+          "decoded": " the most frequently used words in the given text. The words are the most frequently used words in the given text. The words are the most frequently used words in the given text. The words are the mos",
+          "score": 0.0,
+          "pool_size": 20
+        },
+        "fwe/qfilters/512": {
+          "expected": [
+            "opal",
+            "quarry",
+            "alder"
+          ],
+          "decoded": " \"opal\", \"opal\", and \"opal\". These words appear most frequently in the list because they are repeated multiple times. The word \"opal\" appears at least 11 times in the list, which is the",
+          "score": 0.3333333333333333,
+          "pool_size": 20
+        },
+        "fwe/qfilters/1024": {
+          "expected": [
+            "opal",
+            "quarry",
+            "alder"
+          ],
+          "decoded": " \"opal\", \"quarry\", and \"opal\". These words appear most frequently in the list above.1111111111111111111111111",
+          "score": 0.6666666666666666,
+          "pool_size": 20
+        },
+        "fwe/snapkv/256": {
+          "expected": [
+            "opal",
+            "quarry",
+            "alder"
+          ],
+          "decoded": " 1575. ## Step 1\\n",
+          "score": 0.0,
+          "pool_size": 20
+        },
+        "fwe/snapkv/512": {
+          "expected": [
+            "opal",
+            "quarry",
+            "alder"
+          ],
+          "decoded": " p\u00e9rdida, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and,",
+          "score": 0.0,
+          "pool_size": 20
+        },
+        "fwe/snapkv/1024": {
+          "expected": [
+            "opal",
+            "quarry",
+            "alder"
+          ],
+          "decoded": " \"opal\" and \"opal\" which each appear 4 times. The word \"opalescent\" also appears, but it is not a 3-word phrase. ",
+          "score": 0.3333333333333333,
+          "pool_size": 20
+        },
+        "fwe/streaming_llm/256": {
+          "expected": [
+            "opal",
+            "quarry",
+            "alder"
+          ],
+          "decoded": " \"opal\" which appears 21 times, \"quarry\" which appears 9 times, and \"opal\" which also appears 21 times (note that the question might have intended to ask for different words that appear most frequentl",
+          "score": 0.6666666666666666,
+          "pool_size": 20
+        },
+        "fwe/streaming_llm/512": {
+          "expected": [
+            "opal",
+            "quarry",
+            "alder"
+          ],
+          "decoded": " opal, quarry, and opal. To determine the three most frequent words in the given list, we need to count the occurrences of each word.",
+          "score": 0.6666666666666666,
+          "pool_size": 20
+        },
+        "fwe/streaming_llm/1024": {
+          "expected": [
+            "opal",
+            "quarry",
+            "alder"
+          ],
+          "decoded": " opal, quarry, and ridge. To determine the frequency of each word in the list, count the occurrences of each word:",
+          "score": 0.4444444444444444,
+          "pool_size": 20
+        },
+        "fwe/knorm/256": {
+          "expected": [
+            "opal",
+            "quarry",
+            "alder"
+          ],
+          "decoded": " \"opal\", \"opal\", and \"opal\". The word \"opal\" appears to be a variation of \"opals\", and \"opals\" is a variation of \"opal\". Therefore, the word \"opal\" appears most",
+          "score": 0.3333333333333333,
+          "pool_size": 20
+        },
+        "fwe/knorm/512": {
+          "expected": [
+            "opal",
+            "quarry",
+            "alder"
+          ],
+          "decoded": " used to create a sentence that is coherent, clear and meaningful. The sentence \"opal\" is used to create a coherent and meaningful sentence. The sentence \"opal, opal, opal, opal, opal, opal,",
+          "score": 0.3333333333333333,
+          "pool_size": 20
+        },
+        "fwe/knorm/1024": {
+          "expected": [
+            "opal",
+            "quarry",
+            "alder"
+          ],
+          "decoded": " \"opal\", \"quarry\", and \"opal\" which appear the most frequently in the list.11111111111111111111111111",
+          "score": 0.6666666666666666,
+          "pool_size": 20
+        },
+        "qa_synthetic/fp16/256": {
+          "expected": [
+            "theodolite"
+          ],
+          "decoded": " The instrument installed at Vellamo was a theodolite. Since Rafael Duarte spent the survey season at Vellamo, the theodolite was the instrument installed at his location. ",
+          "score": 1.0,
+          "pool_size": null
+        },
+        "qa_synthetic/qfilters/256": {
+          "expected": [
+            "theodolite"
+          ],
+          "decoded": " The guitar was installed at the location where Rafael Duarte spent the survey season.",
+          "score": 0.0,
+          "pool_size": null
+        },
+        "qa_synthetic/qfilters/512": {
+          "expected": [
+            "theodolite"
+          ],
+          "decoded": " The instrument installed at the location where Rafael Duarte spent the survey season was the total station.",
+          "score": 0.0,
+          "pool_size": null
+        },
+        "qa_synthetic/qfilters/1024": {
+          "expected": [
+            "theodolite"
+          ],
+          "decoded": " The instrument installed at Kestrel Bay was a chronometer.",
+          "score": 0.0,
+          "pool_size": null
+        },
+        "qa_synthetic/snapkv/256": {
+          "expected": [
+            "theodolite"
+          ],
+          "decoded": " \n\\0000000000000000000000000000000000000000000000",
+          "score": 0.0,
+          "pool_size": null
+        },
+        "qa_synthetic/snapkv/512": {
+          "expected": [
+            "theodolite"
+          ],
+          "decoded": " p\u00e9rdida\n```",
+          "score": 0.0,
+          "pool_size": null
+        },
+        "qa_synthetic/snapkv/1024": {
+          "expected": [
+            "theodolite"
+          ],
+          "decoded": " Rafael Duarte spent the survey season at the location where the sextant was installed. The sextant is the instrument that was installed at the location where Rafael Duarte spent the survey season. Th",
+          "score": 0.0,
+          "pool_size": null
+        },
+        "qa_synthetic/streaming_llm/256": {
+          "expected": [
+            "theodolite"
+          ],
+          "decoded": " The instrument installed at Kestrel Bay was a chronometer.",
+          "score": 0.0,
+          "pool_size": null
+        },
+        "qa_synthetic/streaming_llm/512": {
+          "expected": [
+            "theodolite"
+          ],
+          "decoded": " The instrument installed at Rafael Duarte's survey location was a barograph. The instrument installed at Rafael Duarte's survey location was a barograph.",
+          "score": 0.0,
+          "pool_size": null
+        },
+        "qa_synthetic/streaming_llm/1024": {
+          "expected": [
+            "theodolite"
+          ],
+          "decoded": " The instrument installed at Thornfield was a barograph, as mentioned in the document where Rafael Duarte spent the survey season at Thornfield.",
+          "score": 0.0,
+          "pool_size": null
+        },
+        "qa_synthetic/knorm/256": {
+          "expected": [
+            "theodolite"
+          ],
+          "decoded": " Based on the information provided, the instrument that was installed at the location where Rafael Duarte spent the survey season was a seismometer. The seismometer was installed to record earthquake ",
+          "score": 0.0,
+          "pool_size": null
+        },
+        "qa_synthetic/knorm/512": {
+          "expected": [
+            "theodolite"
+          ],
+          "decoded": " Based on the information provided, the instrument that was installed at the location where Rafael Duarte spent the survey season was a GPS unit. The text mentions that \"Rafael Duarte used a GPS unit ",
+          "score": 0.0,
+          "pool_size": null
+        },
+        "qa_synthetic/knorm/1024": {
+          "expected": [
+            "theodolite"
+          ],
+          "decoded": " The instrument installed at Kestrel Bay was a chronometer.",
+          "score": 0.0,
+          "pool_size": null
+        }
+      }
+    }
+  }
+}

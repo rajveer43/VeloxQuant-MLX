@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- Full-bleed square: macOS (Sequoia+) applies its own squircle mask
+         and shadow on top of the provided icon, so the artwork itself must
+         fill the entire canvas edge-to-edge rather than pre-rounding. -->
+
+    <!-- Background: near-black to navy radial, matching landing page favicon/brand -->
+    <radialGradient id="bg" cx="35%" cy="18%" r="95%">
+      <stop offset="0%" stop-color="#1c1c34"/>
+      <stop offset="55%" stop-color="#100f1c"/>
+      <stop offset="100%" stop-color="#08080f"/>
+    </radialGradient>
+
+    <!-- Subtle top sheen for depth, like native macOS icons -->
+    <linearGradient id="sheen" x1="0%" y1="0%" x2="0%" y2="60%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Bolt gradient: cyan accent, brighter at the tip -->
+    <linearGradient id="bolt" x1="20%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stop-color="#7ef2ff"/>
+      <stop offset="45%" stop-color="#00d4ff"/>
+      <stop offset="100%" stop-color="#00a8d4"/>
+    </linearGradient>
+
+    <!-- Purple secondary glow ring, echoing the brand's secondary accent color -->
+    <radialGradient id="ringGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="70%" stop-color="#7c3aed" stop-opacity="0"/>
+      <stop offset="92%" stop-color="#7c3aed" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#7c3aed" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="boltShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#00d4ff" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <g>
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+
+    <!-- Precision ring: represents quantization grid / compressed lattice -->
+    <circle cx="512" cy="512" r="420" fill="url(#ringGlow)"/>
+    <circle cx="512" cy="512" r="360" fill="none" stroke="#2a2a48" stroke-width="2" opacity="0.55"/>
+    <circle cx="512" cy="512" r="300" fill="none" stroke="#2a2a48" stroke-width="1.5" opacity="0.4"/>
+
+    <!-- Corner tick marks, echoing a measurement/precision motif -->
+    <g stroke="#3a3a5c" stroke-width="3" opacity="0.5" stroke-linecap="round">
+      <line x1="512" y1="150" x2="512" y2="184"/>
+      <line x1="512" y1="840" x2="512" y2="874"/>
+      <line x1="150" y1="512" x2="184" y2="512"/>
+      <line x1="840" y1="512" x2="874" y2="512"/>
+    </g>
+
+    <!-- Lightning bolt — VeloxQuant's established compression/speed mark,
+         scaled up from the existing favicon for full icon presence -->
+    <polygon points="586,236 358,560 486,560 462,800 742,462 598,462"
+             fill="url(#bolt)" filter="url(#boltShadow)"/>
+    <polygon points="586,236 358,560 486,560 462,800 742,462 598,462"
+             fill="none" stroke="#e8fdff" stroke-width="3" stroke-opacity="0.5" stroke-linejoin="round"/>
+
+    <!-- Top sheen -->
+    <rect width="1024" height="1024" fill="url(#sheen)"/>
+  </g>
+</svg>
