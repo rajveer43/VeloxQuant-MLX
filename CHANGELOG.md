@@ -409,6 +409,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.62.0 (2026-08-27)
+
+### Features
+
+- Harden block pool allocator (exhaustion, concurrency, defrag)
+  ([#267](https://github.com/rajveer43/VeloxQuant-MLX/pull/267),
+  [`e323dd0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e323dd0d6195d59982249f60244ac1d4c29950ea))
+
+
 ## v0.61.0 (2026-08-27)
 
 ### Features
