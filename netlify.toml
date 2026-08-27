@@ -12,6 +12,24 @@
   NODE_VERSION = "20"
   SECRETS_SCAN_OMIT_KEYS = "YOUR_APP_ID,YOUR_SEARCH_API_KEY"
 
+# Long-lived caching for hashed/static assets improves LCP (a Core Web
+# Vitals signal Google uses for ranking). HTML is left uncached so
+# deploys show up immediately.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/docs/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "*.woff2"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
 # Docs live under /docs/ (docusaurus.config.ts sets baseUrl: '/docs/', and the
 # build above copies docs-site/build/* into dist/docs/). Anything that lands on
 # a docs path without that prefix hits Netlify's bare 404 page rather than the
