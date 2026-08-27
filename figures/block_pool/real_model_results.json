@@ -1,0 +1,47 @@
+{
+  "model": "mlx-community/Llama-3.2-3B-Instruct-4bit",
+  "block_size": 16,
+  "model_shape": {
+    "n_layers": 28,
+    "n_kv_heads": 8,
+    "head_dim": 128
+  },
+  "hardware": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "machine": "arm64",
+    "chip": "Apple M4",
+    "ram_gb": 24.0
+  },
+  "generation": {
+    "prompt_tokens": 62,
+    "prompt_tps": 327.2139055355426,
+    "generation_tokens": 200,
+    "generation_tps": 34.77846048419434,
+    "wall_clock_s": 6.029418000000078,
+    "peak_memory_gb": 2.016231176
+  },
+  "note": "generation.* is real mlx_lm.generate() decode throughput/memory on plain fp16 caches (no VeloxQuant cache wiring \u2014 none of the pool code sits in this decode's hot path). allocator_replay.* re-plays the block pool and naive baseline at this model's *real* (n_layers, n_kv_heads, head_dim, generation_length), so the allocation-count/reuse/fragmentation numbers reflect a real model's real decode length rather than an arbitrary synthetic one. tokens_per_sec under allocator_replay is allocator-side append throughput on synthetic zero-filled vectors, not generation.generation_tps; mx.zeros() is lazy/cheap in MLX so the naive baseline's raw allocator throughput here is not penalized for the malloc/free churn a real allocator would pay under memory pressure or an eager backend \u2014 read allocations_per_request and n_reused as the honest signal, the same caveat as benchmark_block_pool.py.",
+  "allocator_replay": [
+    {
+      "label": "naive-per-token-alloc",
+      "elapsed_s": 0.05594791699968482,
+      "tokens_per_sec": 800744.7355055664,
+      "n_allocations": 44800,
+      "allocations_per_request": 200.0,
+      "python_peak_bytes": 240,
+      "fragmentation": 0.0
+    },
+    {
+      "label": "block-pool",
+      "elapsed_s": 0.3002810830003,
+      "tokens_per_sec": 149193.54743353993,
+      "n_allocations": 2912,
+      "allocations_per_request": 13.0,
+      "n_reused": 0,
+      "n_exhausted": 0,
+      "peak_blocks_in_use": 2912,
+      "python_peak_bytes": 91176,
+      "fragmentation": 0.07142857142857142
+    }
+  ]
+}

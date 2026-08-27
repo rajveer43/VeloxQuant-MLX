@@ -46,6 +46,34 @@ manage their own capacity-sized buffers directly; `PooledKVCache` adds
 pool-backed *accounting* around any of them without touching their
 internals. Docs at `docs-site/docs/api/memory-api.md`.
 
+**Block pool allocator now drives real `mlx_lm.generate()` traffic**
+(follow-up to [#249](https://github.com/rajveer43/VeloxQuant-MLX/issues/249))
+— the block pool allocator above shipped without a way to put it in a real
+model's decode hot path: `PooledKVCache` only wraps VeloxQuant's own
+standalone-method cache interface, which `mlx_lm.generate()` never drives.
+New `PoolBackedKVCache` (`veloxquant_mlx/memory/pool_backed_cache.py`) is a
+drop-in replacement for `mlx_lm.models.cache.KVCache` that implements
+`update_and_fetch` directly — same contiguous-buffer growth strategy as the
+stock class (attention needs one contiguous tensor per step; true
+block-paged storage would need a per-step gather), but every growth step
+now routes through `pool.allocate()`, and the growth chunk size is the
+pool's configured `block_size` instead of a hardcoded `step=256`. New
+`build_pooled_caches(model, pool, owner)` builds one per layer, all sharing
+one pool/owner, as a drop-in for `make_prompt_cache()`. 15 new tests verify
+bit-for-bit output parity against the stock `KVCache` (same random inputs,
+same growth boundaries, same `trim`/`state` semantics) while also checking
+pool accounting. Verified end-to-end against real Llama-3.2-3B-Instruct-4bit
+generation
+(`benchmark_scripts/benchmark_pool_backed_kvcache.py`, results committed at
+`figures/block_pool/pool_backed_kvcache_results.json`): decode tokens/sec
+and peak memory are within normal run-to-run noise between stock and pooled
+caches on the identical prompt, and a second sequential request sharing the
+same pool had **100% of its allocations satisfied by blocks the first
+request had released** — real cross-request reuse on a real model, not a
+synthetic replay. `PooledKVCache` is unchanged and still the entry point
+for the 5 standalone methods; `PoolBackedKVCache` is the one to reach for
+when the pool needs to actually drive live generation.
+
 **RocketKV-adapted: two-stage KV cache compression**
 ([#239](https://github.com/rajveer43/VeloxQuant-MLX/issues/239)) — new
 `method="rocketkv"`, inspired by "RocketKV: Accelerating Long-Context LLM
