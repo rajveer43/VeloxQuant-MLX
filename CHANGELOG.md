@@ -361,6 +361,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.61.0 (2026-08-27)
+
+### Features
+
+- Add sitemap/robots.txt and fix missing meta tags for SEO
+  ([#265](https://github.com/rajveer43/VeloxQuant-MLX/pull/265),
+  [`a5914a4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a5914a4c1e9ca44744471a626eb0c20ae2bccdef))
+
+
 ## v0.60.0 (2026-08-27)
 
 ### Features
