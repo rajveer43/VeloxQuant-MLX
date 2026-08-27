@@ -27,12 +27,24 @@ in different compression formats side by side.
 | [`Block`](#block) | A single fixed-size block handed out by the allocator |
 | [`AllocationStats`](#allocationstats) | Running allocation/reuse/fragmentation counters |
 | [`MLXBlockStorage`](#mlxblockstorage) | Pairs with a pool to provide the actual `mx.array` buffers, one per block id |
-| [`PooledKVCache`](#pooledkvcache) | Wraps any existing `KVCache` so its appends check out/return blocks from a shared pool |
+| [`PooledKVCache`](#pooledkvcache) | Wraps any existing VeloxQuant `KVCache` so its appends check out/return blocks from a shared pool |
+| [`PoolBackedKVCache`](#poolbackedkvcache) | Drop-in `mlx_lm.models.cache.KVCache` replacement — puts the pool directly in `mlx_lm.generate()`'s decode hot path |
+| [`build_pooled_caches`](#poolbackedkvcache) | Builds one `PoolBackedKVCache` per model layer, sharing one pool/owner |
 
 `BlockPoolAllocator`, `PoolConfig`, `Block`, and `AllocationStats` have no
 MLX dependency — they are plain Python and can be used, tested, or reasoned
-about independently of `mx.array`. `MLXBlockStorage` and `PooledKVCache`
-are the MLX-backed pieces that plug the pool into actual cache storage.
+about independently of `mx.array`. `MLXBlockStorage`, `PooledKVCache`, and
+`PoolBackedKVCache` are the MLX-backed pieces that plug the pool into
+actual cache storage.
+
+`PooledKVCache` and `PoolBackedKVCache` serve different interfaces and are
+not interchangeable: `PooledKVCache` wraps VeloxQuant's own `KVCache` ABC
+(`append_key`/`append_value`/`attend`), implemented only by the 5
+"standalone" methods (`turboquant_prod`, `turboquant_mse`, `polar`, `qjl`,
+`spectral` — see `STANDALONE_METHODS` in `veloxquant_mlx/cache/base.py`),
+which `mlx_lm.generate()` never drives. `PoolBackedKVCache` implements
+`mlx_lm`'s own `update_and_fetch` protocol directly, so it's the one to use
+when you want the pool actually driving a real model's live generation.
 
 ---
 
@@ -273,6 +285,66 @@ def n_blocks_held(self) -> int     # total K + V blocks currently checked out
 
 ---
 
+## PoolBackedKVCache
+
+```python
+from veloxquant_mlx.memory import PoolBackedKVCache, build_pooled_caches
+
+cache = PoolBackedKVCache(pool, owner=request_id)
+```
+
+Drop-in replacement for `mlx_lm.models.cache.KVCache`, the class
+`mlx_lm.generate()` uses by default for every layer's cache. `mlx_lm`'s
+stock `KVCache` grows its backing `mx.array` in fixed `step=256`-token
+chunks, hardcoded per instance, with no visibility into how many times
+that growth happened or how much of the last chunk went unused.
+`PoolBackedKVCache` keeps the same contiguous-buffer growth strategy —
+attention needs one contiguous `(B, n_kv_heads, seq_len, head_dim)` tensor
+every step, and RoPE/masking read `cache.offset` directly, so growth can't
+be replaced with true block-paged storage without paying a gather cost
+every decode step — but routes every growth step through
+`pool.allocate()`, so it shows up in the pool's `AllocationStats`, and the
+growth chunk size becomes the pool's configured `block_size` instead of a
+hardcoded constant.
+
+This is the class that actually puts `BlockPoolAllocator` in a real
+model's decode hot path — unlike `PooledKVCache` (see above), which only
+targets the 5 standalone methods, `PoolBackedKVCache` implements
+`mlx_lm`'s `update_and_fetch` protocol directly, so it works as a
+`prompt_cache` for `mlx_lm.generate()` on any model.
+
+| Constructor argument | Type | Description |
+|---|---|---|
+| `pool` | `BlockPoolAllocator` | Shared pool to draw growth accounting from |
+| `owner` | `int` | Opaque id identifying this cache's request/sequence — must be unique per concurrent cache |
+| `step` | `Optional[int]` | Token-chunk growth size; defaults to `pool.config.block_size` |
+
+**Methods:** implements the full `mlx_lm.models.cache.KVCache` contract
+(`update_and_fetch`, `state`, `meta_state`, `is_trimmable`, `trim`,
+`make_mask`, `empty`, `nbytes`, `size`), verified bit-for-bit identical
+output against the stock class on the same input sequence, plus:
+
+```python
+def release(self) -> None   # return every block this cache's growth checked out
+```
+
+### `build_pooled_caches`
+
+```python
+def build_pooled_caches(
+    model, pool: BlockPoolAllocator, owner: int, step: Optional[int] = None
+) -> list[PoolBackedKVCache]
+```
+
+Builds one `PoolBackedKVCache` per language-model layer, all sharing the
+same `pool` and `owner` — the drop-in replacement for
+`mlx_lm.models.cache.make_prompt_cache()` / `model.make_cache()` when you
+want pool-tracked growth. Because every layer shares one `owner`, calling
+`.release()` on any single layer's cache frees every layer's blocks for
+this request at once.
+
+---
+
 ## Usage
 
 ```python
@@ -305,6 +377,32 @@ A synthetic benchmark comparing this against naive per-token allocation
 (allocation count, peak memory, fragmentation, throughput) lives at
 [`benchmark_scripts/benchmark_block_pool.py`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/benchmark_scripts/benchmark_block_pool.py),
 with results committed at `figures/block_pool/results.json`.
+
+### Driving real `mlx_lm.generate()` traffic through the pool
+
+```python
+import mlx_lm
+from veloxquant_mlx.memory import BlockPoolAllocator, PoolConfig, build_pooled_caches
+
+model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
+pool = BlockPoolAllocator(PoolConfig(block_size=16, n_blocks=8192))
+
+cache = build_pooled_caches(model, pool, owner=request_id)
+text = mlx_lm.generate(model, tokenizer, prompt, prompt_cache=cache)
+
+# ... request finishes ...
+cache[0].release()  # every layer shares one owner, so any one releases all
+```
+
+A second, sequential request sharing the same `pool` (a fresh
+`build_pooled_caches(model, pool, owner=another_id)`) draws its growth
+from the blocks the first request just released — `pool.stats.n_reused`
+reflects that reuse happening on a real model's real generation, not a
+synthetic replay. An end-to-end benchmark comparing `PoolBackedKVCache`
+against a stock `KVCache` on the same prompt/model (generation tokens/sec,
+peak memory, and cross-request reuse fraction) lives at
+[`benchmark_scripts/benchmark_pool_backed_kvcache.py`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/benchmark_scripts/benchmark_pool_backed_kvcache.py),
+with results committed at `figures/block_pool/pool_backed_kvcache_results.json`.
 
 ---
 
