@@ -41,6 +41,7 @@ are the MLX-backed pieces that plug the pool into actual cache storage.
 ```python
 from veloxquant_mlx.memory import PoolConfig
 
+
 @dataclass
 class PoolConfig:
     block_size: int = 16
@@ -280,12 +281,7 @@ from veloxquant_mlx.memory import BlockPoolAllocator, PoolConfig, PooledKVCache
 
 pool = BlockPoolAllocator(PoolConfig(block_size=16, n_blocks=512))
 
-inner = (
-    KVCacheBuilder()
-    .with_method("kivi")
-    .with_head_dim(128)
-    .build()
-)
+inner = KVCacheBuilder().with_method("kivi").with_head_dim(128).build()
 cache = PooledKVCache(inner, pool, owner=request_id, format="int2")
 
 for token in tokens:
