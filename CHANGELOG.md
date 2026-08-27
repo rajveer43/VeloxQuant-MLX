@@ -333,6 +333,31 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.59.0 (2026-08-27)
+
+### Bug Fixes
+
+- Satisfy ruff format on embedded code snippets in memory-api.md
+  ([`ed94283`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ed942833b885541ec542bdf7bad25443c0b91e31))
+
+### Continuous Integration
+
+- Email direct alert on copyright-watch hits via Resend
+  ([`5c7afd0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5c7afd0456048becae5c4c6e929b4c28f78050e7))
+
+### Documentation
+
+- Add docs-site + changelog entries for the block pool allocator
+  ([#261](https://github.com/rajveer43/VeloxQuant-MLX/pull/261),
+  [`b318ba2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b318ba21dc0488dc50de7f86839b6a18de2d3320))
+
+### Features
+
+- Add KV-cache-aware block pool allocator
+  ([#261](https://github.com/rajveer43/VeloxQuant-MLX/pull/261),
+  [`b318ba2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b318ba21dc0488dc50de7f86839b6a18de2d3320))
+
+
 ## v0.58.0 (2026-08-26)
 
 ### Bug Fixes
