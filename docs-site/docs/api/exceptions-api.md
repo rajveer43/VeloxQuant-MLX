@@ -21,7 +21,8 @@ Exception
     ├── CyclicPipelineError
     ├── QuantizerConfigError
     ├── MetalUnavailableError
-    └── BlockPoolExhaustedError
+    ├── BlockPoolExhaustedError
+    └── OwnerAlreadyActiveError
 ```
 
 ---
@@ -174,6 +175,48 @@ pool = BlockPoolAllocator(PoolConfig(block_size=16, n_blocks=4))
 try:
     pool.allocate(stream="k", n_tokens=1000, owner=1)
 except BlockPoolExhaustedError as e:
+    print(e)
+```
+
+See [Memory (Block Pool) API](./memory-api) for the full allocator reference.
+
+---
+
+## OwnerAlreadyActiveError
+
+```python
+from veloxquant_mlx.core.exceptions import OwnerAlreadyActiveError
+```
+
+Raised when an owner id is registered on a `BlockPoolAllocator` while it's
+still checked out to another (unreleased) caller — catches two different
+requests accidentally reusing the same owner id, which would otherwise let
+one silently free the other's blocks via `free_all()`.
+
+**When raised:**
+- `pool.register_owner(owner)` is called twice for the same `owner` before
+  a `free_all(owner)` / `release_owner(owner)` in between
+
+**Not raised for:** a second `pool.allocate(..., owner=owner)` call for an
+owner that's already active — that's the normal pattern for a single
+request growing over multiple calls (e.g. `PoolBackedKVCache` appending
+more blocks), and `allocate()` can't otherwise distinguish it from a
+collision. Call `register_owner()` yourself up front if you want
+collisions between different callers caught immediately.
+
+**Fix:** Use a different owner id (e.g. a monotonically increasing request
+counter that isn't reused until confirmed released), or call
+`pool.release_owner(owner)` / `pool.free_all(owner)` before reusing the id.
+
+```python
+from veloxquant_mlx.core.exceptions import OwnerAlreadyActiveError
+from veloxquant_mlx.memory import BlockPoolAllocator, PoolConfig
+
+pool = BlockPoolAllocator(PoolConfig(block_size=16, n_blocks=64))
+pool.register_owner(request_id)
+try:
+    pool.register_owner(request_id)  # still active -- likely an id collision
+except OwnerAlreadyActiveError as e:
     print(e)
 ```
 
