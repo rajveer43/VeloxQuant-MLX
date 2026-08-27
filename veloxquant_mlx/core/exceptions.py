@@ -19,3 +19,7 @@ class CodebookDimensionMismatch(ValueError):
 
 class BlockPoolExhaustedError(RuntimeError):
     """Raised when a BlockPoolAllocator has no free blocks left to allocate."""
+
+
+class OwnerAlreadyActiveError(ValueError):
+    """Raised when an owner id is reused while still checked out to another caller."""

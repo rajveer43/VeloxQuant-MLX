@@ -14,7 +14,11 @@ memory-allocation analogue of the bit-level compression the rest of
 VeloxQuant-MLX provides. Pre-allocates a fixed pool of blocks up front so
 generation never pays for per-token `malloc`/`free`, tracks reuse and
 fragmentation across requests, and lets a single pool host blocks written
-in different compression formats side by side.
+in different compression formats side by side. The allocator is
+thread-safe, can grow on demand under `PoolConfig.grow_on_exhaustion`
+instead of hard-failing, guards against accidental owner-id collisions,
+can shrink back down via `shrink()`, and exposes a bounded history of
+stats snapshots plus a Prometheus exporter for observability.
 
 ---
 
@@ -59,6 +63,8 @@ class PoolConfig:
     block_size: int = 16
     n_blocks: int = 1024
     separate_kv: bool = True
+    grow_on_exhaustion: bool = False
+    max_blocks: Optional[int] = None
 ```
 
 **Fields:**
@@ -66,10 +72,12 @@ class PoolConfig:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `block_size` | `int` | `16` | Number of token slots stored per block |
-| `n_blocks` | `int` | `1024` | Total number of blocks the pool manages |
+| `n_blocks` | `int` | `1024` | Total number of blocks the pool manages initially |
 | `separate_kv` | `bool` | `True` | If `True`, keys and values are allocated from independent free lists so K-heavy and V-heavy workloads never compete for the same blocks. If `False`, a single free list backs both, which packs tighter when K/V pressure is uneven. |
+| `grow_on_exhaustion` | `bool` | `False` | If `True`, an `allocate()` call that would otherwise raise `BlockPoolExhaustedError` instead grows the exhausted stream's block count just enough to satisfy the request (capped by `max_blocks`). |
+| `max_blocks` | `Optional[int]` | `None` | Upper bound on total blocks once grown. `None` means unbounded growth. Ignored when `grow_on_exhaustion` is `False`. Growth that would exceed this cap still raises `BlockPoolExhaustedError`. |
 
-Raises `ValueError` if `block_size < 1` or `n_blocks < 1`.
+Raises `ValueError` if `block_size < 1`, `n_blocks < 1`, or `max_blocks < n_blocks`.
 
 ---
 
@@ -85,6 +93,12 @@ Pre-allocates `n_blocks` fixed-size blocks and hands them out on request.
 Freed blocks return to a free list (LIFO — a just-freed block tends to be
 cache-hot) and are reused by later allocations, so steady-state generation
 performs zero new-memory allocation once the pool is warm.
+
+**Thread safety:** every mutating and read method acquires an internal
+lock, so one pool can be shared across threads or concurrent request
+handlers without external synchronization. The lock is a plain
+(non-reentrant) `threading.Lock` — don't call back into the pool from
+inside a callback invoked while holding it.
 
 ### `allocate`
 
@@ -109,9 +123,16 @@ are handed out.
 | `owner` | `int` | Opaque id (e.g. request id) the blocks are checked out to |
 | `format` | `str` | Compression-format tag recorded on each block (`"fp16"`, `"int8"`, `"int4"`, `"int2"`, `"int1"`, ...) |
 
-**Raises:** `BlockPoolExhaustedError` if not enough free blocks remain;
-`ValueError` if `n_tokens <= 0` or `stream` is invalid for the pool's
-`separate_kv` setting.
+**Raises:** `BlockPoolExhaustedError` if not enough free blocks remain and
+the pool can't grow enough to cover the gap (see `PoolConfig.grow_on_exhaustion`
+/ `max_blocks`); `ValueError` if `n_tokens <= 0` or `stream` is invalid for
+the pool's `separate_kv` setting.
+
+Repeated `allocate()` calls for an owner that's already active on the pool
+are treated as that same request continuing to grow (the normal case — see
+[`PoolBackedKVCache`](#poolbackedkvcache)) and never raise. See
+[`register_owner`](#register_owner--release_owner) for real collision
+detection between two different callers.
 
 ### `free` / `free_all`
 
@@ -136,11 +157,51 @@ def n_free(self, stream: str = "k") -> int
 allocation order. `n_free` returns the number of free blocks remaining for
 a stream.
 
-### `stats`
+### `register_owner` / `release_owner`
+
+```python
+def register_owner(self, owner: int) -> None
+def release_owner(self, owner: int) -> None
+```
+
+`allocate()` calls `register_owner()` automatically for any owner id not
+yet seen, but it can't tell "the same request growing" apart from "two
+different callers colliding on the same id" — a second `allocate()` for an
+already-active owner is always treated as the former. Call
+`register_owner()` yourself, once, before the first `allocate()` for an
+owner, if you want the latter case to raise immediately:
+`OwnerAlreadyActiveError` is raised on a second `register_owner()` call
+for an id that's still active (has checked-out blocks, or was registered
+and not yet released). `release_owner()` clears an owner from the active
+set without freeing any blocks — `free_all()` calls it automatically once
+an owner's last block is freed.
+
+### `shrink`
+
+```python
+def shrink(self, stream: str, target_free: int) -> int
+```
+
+Permanently retires fully-free blocks from `stream` down to `target_free`
+free blocks remaining, and returns the number actually retired. Only
+blocks currently on the free list are eligible — in-use blocks are never
+touched, so this never breaks a live request. Use it to give memory back
+when a pool was sized for peak load that turned out much higher than
+steady-state usage. Retired blocks are removed from the pool's bookkeeping
+entirely, so any external backing storage indexed by block id (e.g.
+`MLXBlockStorage`) may drop the corresponding buffer. Raises `ValueError`
+if `target_free < 0`.
+
+### `stats` / `history`
 
 A `BlockPoolAllocator` exposes its running counters as `pool.stats`, an
 [`AllocationStats`](#allocationstats) instance updated on every
-`allocate`/`free` call.
+`allocate`/`free`/`shrink` call. `pool.history` is a bounded `deque`
+(most-recent 256 entries) of independent [`AllocationStats.snapshot()`](#allocationstats)
+copies, one appended per mutating call — use it to see recent
+fragmentation/exhaustion trends rather than only the current instant. See
+[`AllocationStats.to_prometheus`](#allocationstats) for exporting either
+the live `stats` or any `history` entry.
 
 ---
 
@@ -174,23 +235,42 @@ class AllocationStats:
     n_frees: int = 0
     n_reused: int = 0
     n_exhausted: int = 0
+    n_grown: int = 0
+    n_retired: int = 0
     peak_blocks_in_use: int = 0
 ```
 
 | Field | Description |
 |---|---|
-| `n_blocks` | Total blocks managed by the pool |
+| `n_blocks` | Total blocks currently managed by the pool |
 | `n_allocations` | Cumulative successful `allocate()` calls |
 | `n_frees` | Cumulative `free()` calls |
 | `n_reused` | Allocations satisfied by a block that had previously been freed and returned to the pool (vs. a block never handed out before) |
-| `n_exhausted` | Allocation attempts that failed because no free block was available |
+| `n_exhausted` | Allocation attempts that failed because no free block was available (and the pool couldn't grow enough to cover the gap) |
+| `n_grown` | Blocks added to the pool by exhaustion-triggered growth (see `PoolConfig.grow_on_exhaustion`) |
+| `n_retired` | Blocks permanently removed from the pool by [`shrink()`](#shrink) |
 | `peak_blocks_in_use` | High-water mark of concurrently allocated blocks |
 
 **Methods:**
 
 ```python
-def blocks_in_use(self) -> int      # n_allocations - n_frees
-def fragmentation(self) -> float    # fraction of managed blocks that are allocated but not full
+def blocks_in_use(self) -> int                          # n_allocations - n_frees
+def fragmentation(self) -> float                        # fraction of managed blocks that are allocated but not full
+def snapshot(self) -> AllocationStats                    # independent copy, detached from further mutation
+def to_prometheus(self, prefix: str = "veloxquant_block_pool") -> str  # Prometheus text-exposition format
+```
+
+`to_prometheus()` renders gauges (`blocks_in_use`, `blocks_total`,
+`fragmentation`, `peak_blocks_in_use`) and counters (`allocations_total`,
+`frees_total`, `reused_total`, `exhausted_total`, `grown_total`,
+`retired_total`) as newline-terminated Prometheus text, suitable for
+serving directly from a `/metrics` endpoint:
+
+```python
+print(pool.stats.to_prometheus())
+# # TYPE veloxquant_block_pool_blocks_in_use gauge
+# veloxquant_block_pool_blocks_in_use 3
+# ...
 ```
 
 ```python
@@ -198,7 +278,7 @@ pool = BlockPoolAllocator(PoolConfig(block_size=16, n_blocks=64))
 pool.allocate(stream="k", n_tokens=40, owner=1)
 print(pool.stats)
 # AllocationStats(in_use=3/64, allocations=3, frees=0, reused=0,
-#                  exhausted=0, peak=3, fragmentation=0.016)
+#                  exhausted=0, grown=0, retired=0, peak=3, fragmentation=0.016)
 ```
 
 ---

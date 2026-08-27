@@ -74,6 +74,54 @@ synthetic replay. `PooledKVCache` is unchanged and still the entry point
 for the 5 standalone methods; `PoolBackedKVCache` is the one to reach for
 when the pool needs to actually drive live generation.
 
+**Block pool allocator: exhaustion growth, concurrency safety, defrag,
+owner protection, observability**
+([#266](https://github.com/rajveer43/VeloxQuant-MLX/issues/266)) — five
+robustness gaps identified in the allocator design (see the issue), all
+closed in `veloxquant_mlx/memory/block_pool.py`, backward-compatible with
+existing `PoolConfig`/`BlockPoolAllocator` call sites:
+
+- **Growth on exhaustion.** New `PoolConfig.grow_on_exhaustion` (default
+  `False`, so existing behavior is unchanged) — when set, an `allocate()`
+  call that would otherwise raise `BlockPoolExhaustedError` instead grows
+  the exhausted stream by just enough blocks to satisfy the request,
+  capped by the new `PoolConfig.max_blocks` (`None` = unbounded). Growth
+  past the cap still raises, and a failed allocation stays all-or-nothing
+  even when partial growth happened along the way. New `AllocationStats.n_grown`
+  counter.
+- **Concurrency safety.** Every mutating and read method now acquires an
+  internal `threading.Lock`, so one pool can be shared across threads or
+  concurrent async request handlers without external synchronization.
+  Verified with a 500-thread concurrent-allocate stress test (no lost or
+  double-handed-out blocks) and an interleaved allocate/free stress test
+  across 16 threads.
+- **Shrink / defragmentation.** New `BlockPoolAllocator.shrink(stream,
+  target_free)` permanently retires fully-free blocks down to a target
+  free-block count, for giving memory back when a pool was sized for peak
+  load that turned out much higher than steady state. In-use blocks are
+  never touched. New `AllocationStats.n_retired` counter.
+- **Owner collision protection.** New `BlockPoolAllocator.register_owner()`
+  / `release_owner()` and `OwnerAlreadyActiveError`
+  (`core/exceptions.py`). A second `register_owner()` call for an owner id
+  that's still checked out now raises immediately, catching two different
+  callers accidentally reusing the same id before one silently frees the
+  other's blocks via `free_all()`. Ordinary repeated `allocate()` calls for
+  a single request's own owner (e.g. `PoolBackedKVCache` growing over
+  multiple steps) are unaffected — that continues to work exactly as
+  before, since `allocate()` can't otherwise distinguish "same request
+  growing" from "id collision" without the caller opting into the explicit
+  check.
+- **Observability.** New `BlockPoolAllocator.history`: a bounded
+  (256-entry) deque of independent `AllocationStats` snapshots, one
+  appended per mutating call, so recent fragmentation/exhaustion pressure
+  trends are visible instead of only the current instant. New
+  `AllocationStats.to_prometheus()` renders the live stats (or any history
+  entry) as Prometheus text-exposition format for a `/metrics` endpoint.
+
+24 new tests in `tests/non_metal/test_block_pool.py` (pure-Python, no MLX
+dependency, 47 total in that file now) — the full existing `veloxquant_mlx/`
+and `tests/non_metal/` suites pass with no regressions.
+
 **RocketKV-adapted: two-stage KV cache compression**
 ([#239](https://github.com/rajveer43/VeloxQuant-MLX/issues/239)) — new
 `method="rocketkv"`, inspired by "RocketKV: Accelerating Long-Context LLM
