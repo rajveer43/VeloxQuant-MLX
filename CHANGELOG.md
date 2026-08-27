@@ -361,6 +361,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.60.0 (2026-08-27)
+
+### Features
+
+- Drive real mlx_lm.generate() traffic through the block pool allocator
+  ([#263](https://github.com/rajveer43/VeloxQuant-MLX/pull/263),
+  [`a9c6d86`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a9c6d8699426880279e4df3d1f77b4662faab54e))
+
+
 ## v0.59.0 (2026-08-27)
 
 ### Bug Fixes
