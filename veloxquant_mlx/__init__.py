@@ -104,4 +104,4 @@ __all__ = [
     "select_kv_cache_config",
 ]
 
-__version__ = "0.63.0"
+__version__ = "0.64.0"

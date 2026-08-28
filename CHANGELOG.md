@@ -409,6 +409,25 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.64.0 (2026-08-28)
+
+### Bug Fixes
+
+- Satisfy ruff-format on embedded code blocks in auto-config guide
+  ([#273](https://github.com/rajveer43/VeloxQuant-MLX/pull/273),
+  [`7fefa1c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7fefa1c4d6cc065ae0efd02e257ae5f664e5e9c5))
+
+### Features
+
+- Add hardware-aware automatic KV-cache configuration
+  ([#273](https://github.com/rajveer43/VeloxQuant-MLX/pull/273),
+  [`7fefa1c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7fefa1c4d6cc065ae0efd02e257ae5f664e5e9c5))
+
+- Hardware-aware automatic KV quantization configuration
+  ([#273](https://github.com/rajveer43/VeloxQuant-MLX/pull/273),
+  [`7fefa1c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7fefa1c4d6cc065ae0efd02e257ae5f664e5e9c5))
+
+
 ## v0.63.0 (2026-08-28)
 
 ### Bug Fixes
