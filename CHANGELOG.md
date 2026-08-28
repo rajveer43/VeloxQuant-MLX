@@ -409,6 +409,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.62.1 (2026-08-28)
+
+### Performance Improvements
+
+- Warm KIVI Metal kernels at cache-build time (#250)
+  ([#268](https://github.com/rajveer43/VeloxQuant-MLX/pull/268),
+  [`5ac6b9b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5ac6b9ba99b495c7f6fbdf00b0d4e01935c7f81e))
+
+
 ## v0.62.0 (2026-08-27)
 
 ### Features
