@@ -34,6 +34,13 @@ from veloxquant_mlx.core.exceptions import (
 )
 from veloxquant_mlx.memory import BlockPoolAllocator, PoolConfig, PooledKVCache
 from veloxquant_mlx.observers import KeyNormObserver, KeyNormReport
+from veloxquant_mlx.profiling import (
+    KVCacheProfiler,
+    LayerProfile,
+    ProfileReport,
+    format_profile_table,
+    profile_layers,
+)
 from veloxquant_mlx.quantizers.base import QuantizerFactory
 
 __all__ = [
@@ -76,6 +83,12 @@ __all__ = [
     # Observers
     "KeyNormObserver",
     "KeyNormReport",
+    # Profiling (issue #252)
+    "KVCacheProfiler",
+    "LayerProfile",
+    "ProfileReport",
+    "format_profile_table",
+    "profile_layers",
 ]
 
 __version__ = "0.62.2"
