@@ -103,18 +103,21 @@ def test_run_workload_reuse_cache_grows_and_snapshots():
     assert mem_bytes == sorted(mem_bytes)
 
 
-def test_run_workload_sliding_window_caps_growth():
-    grown = _small_scenario(prompt_lens=[1], n_new_tokens=20, repeat=1, reuse_cache=True)
-    capped = _small_scenario(
+def test_run_workload_sliding_window_caps_token_count():
+    """sliding_window caps the *token count* the wrapper reports.
+
+    It does NOT currently cap memory_bytes() or the tokens actually
+    attended over — SlidingWindowKVCache._rebuild_inner()'s reset logic
+    checks for a bare ``_k_indices`` attribute that no registered cache
+    class has, so the "eviction" never resets the wrapped inner cache and
+    it keeps growing unbounded instead (see issue #274). Once that's fixed,
+    this test can be extended to also assert memory/attend-window bounds.
+    """
+    workload = _small_scenario(
         prompt_lens=[1], n_new_tokens=20, repeat=1, reuse_cache=True, sliding_window=4
     )
-
-    uncapped_result = run_workload("turboquant_prod", grown, head_dim=HEAD_DIM, bits=2, seed=5)
-    capped_result = run_workload("turboquant_prod", capped, head_dim=HEAD_DIM, bits=2, seed=5)
-
-    assert capped_result.memory_snapshots[-1].memory_bytes <= (
-        uncapped_result.memory_snapshots[-1].memory_bytes
-    )
+    result = run_workload("turboquant_prod", workload, head_dim=HEAD_DIM, bits=2, seed=5)
+    assert result.memory_snapshots[-1].n_tokens == 4
 
 
 def test_run_suite_builds_nested_results():

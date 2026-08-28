@@ -134,6 +134,13 @@ STANDARD_WORKLOADS: dict[str, WorkloadScenario] = {
         repeat=8,
         reuse_cache=True,
     ),
+    # Known limitation (issue #274): SlidingWindowKVCache's eviction reset
+    # never actually fires for any currently registered cache method, so the
+    # peak_memory_bytes/compression_ratio reported below do not reflect real
+    # eviction — the wrapped cache keeps growing unbounded under the hood
+    # even though the wrapper's own token count looks capped. Only
+    # memory_snapshots[i].n_tokens (the wrapper's own count) is reliable for
+    # this workload until #274 is fixed.
     "cache_eviction_reuse": WorkloadScenario(
         name="cache_eviction_reuse",
         description="One stream growing past a 512-token eviction window (8 checkpoints).",
