@@ -18,6 +18,13 @@ from veloxquant_mlx.allocators import (
 )
 from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.vecinfer_cache import VecInferKVCache
+from veloxquant_mlx.config import (
+    AutoConfigResult,
+    HardwareInfo,
+    WorkloadSpec,
+    detect_hardware_info,
+    select_kv_cache_config,
+)
 from veloxquant_mlx.core.abstractions import (
     ArtifactStore,
     KVCache,
@@ -89,6 +96,12 @@ __all__ = [
     "ProfileReport",
     "format_profile_table",
     "profile_layers",
+    # Hardware-aware automatic configuration (issue #253)
+    "AutoConfigResult",
+    "HardwareInfo",
+    "WorkloadSpec",
+    "detect_hardware_info",
+    "select_kv_cache_config",
 ]
 
 __version__ = "0.63.0"
