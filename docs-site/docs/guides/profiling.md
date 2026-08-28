@@ -40,10 +40,7 @@ from veloxquant_mlx.profiling import profile_layers, format_profile_table
 
 config = KVCacheConfig(method="kivi", bit_width_inlier=2)
 caches = KVCacheBuilder.for_model(model, config)
-profilers = [
-    KVCacheProfiler(c, head_dim=config.head_dim, layer_id=i)
-    for i, c in enumerate(caches)
-]
+profilers = [KVCacheProfiler(c, head_dim=config.head_dim, layer_id=i) for i, c in enumerate(caches)]
 
 # Run your normal generation loop, using `profilers[i]` wherever you'd
 # normally use `caches[i]` — everything else about your code stays the same.
