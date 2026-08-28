@@ -153,6 +153,37 @@ class TurboQuantRVQ(Quantizer):
             signs=idx2_int8,
         )
 
+    def encode_pack(self, x: Any) -> tuple[Any, Any]:
+        """Encode and bit-pack in one fused Metal dispatch (#251).
+
+        Equivalent to bit-packing :meth:`encode`'s ``indices``/``signs``
+        streams separately, but skips materializing either uint8 index
+        array: stage-1 quantize, dequantize, residual, stage-2 quantize,
+        and both bit-packs run in a single kernel over the rotated input.
+
+        Args:
+            x: Array of shape (batch, d), fp16.
+
+        Returns:
+            Tuple ``(packed1, packed2)``, each
+            ``(batch, ceil(d / (32 // b)))`` uint32 — bit-identical to
+            ``_pack_indices(idx1, b)``/``_pack_indices(idx2, b)`` for the
+            ``idx1``/``idx2`` that :meth:`encode` would have produced.
+        """
+        from veloxquant_mlx.metal.kernels import rvq_quant_pack
+
+        if x.ndim == 1:
+            x = x[None]
+
+        y = self._rotation.apply(x)  # (batch, d)
+        return rvq_quant_pack(
+            y,
+            self._codebook1.centroids_mx(),
+            self._codebook1.boundaries_mx(),
+            self._codebook2.boundaries_mx(),
+            self._b,
+        )
+
     def decode(self, ev: EncodedVector) -> Any:
         """Reconstruct x_hat = unrotate(y_hat1 + y_hat2)."""
         import mlx.core as mx
