@@ -409,6 +409,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.62.2 (2026-08-28)
+
+### Performance Improvements
+
+- Fuse RVQ quantize and bit-pack into a single Metal kernel
+  ([#269](https://github.com/rajveer43/VeloxQuant-MLX/pull/269),
+  [`cf09711`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cf097113f40b97f9fdce7813aca1c36f3efb2085))
+
+
 ## v0.62.1 (2026-08-28)
 
 ### Performance Improvements
