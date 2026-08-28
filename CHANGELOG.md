@@ -409,6 +409,43 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.63.0 (2026-08-28)
+
+### Bug Fixes
+
+- Satisfy ruff-format check on embedded code block
+  ([#272](https://github.com/rajveer43/VeloxQuant-MLX/pull/272),
+  [`114d023`](https://github.com/rajveer43/VeloxQuant-MLX/commit/114d02306ba243149d1f5f31431cc1a73ce1bb7f))
+
+- Satisfy ruff-format on pre-existing blog post
+  ([#272](https://github.com/rajveer43/VeloxQuant-MLX/pull/272),
+  [`114d023`](https://github.com/rajveer43/VeloxQuant-MLX/commit/114d02306ba243149d1f5f31431cc1a73ce1bb7f))
+
+### Documentation
+
+- Add blog post documenting the fused RVQ quantize+pack kernel
+  ([#270](https://github.com/rajveer43/VeloxQuant-MLX/pull/270),
+  [`ead3eb0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ead3eb0f308445e64a862ef2818a94e3ad4729d1))
+
+- Add docs-site pages for KVCacheProfiler
+  ([#272](https://github.com/rajveer43/VeloxQuant-MLX/pull/272),
+  [`114d023`](https://github.com/rajveer43/VeloxQuant-MLX/commit/114d02306ba243149d1f5f31431cc1a73ce1bb7f))
+
+- Make profiling guide lead with payoff and quickstart
+  ([#272](https://github.com/rajveer43/VeloxQuant-MLX/pull/272),
+  [`114d023`](https://github.com/rajveer43/VeloxQuant-MLX/commit/114d02306ba243149d1f5f31431cc1a73ce1bb7f))
+
+- Publish KIVI multi-model benchmark results and validation scripts
+  ([#271](https://github.com/rajveer43/VeloxQuant-MLX/pull/271),
+  [`86a191a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/86a191ad0bc6d530d51c4680f9f6fa0c0a1bee50))
+
+### Features
+
+- Add KV-cache kernel and memory profiler
+  ([#272](https://github.com/rajveer43/VeloxQuant-MLX/pull/272),
+  [`114d023`](https://github.com/rajveer43/VeloxQuant-MLX/commit/114d02306ba243149d1f5f31431cc1a73ce1bb7f))
+
+
 ## v0.62.2 (2026-08-28)
 
 ### Performance Improvements
