@@ -161,3 +161,4 @@ for obs in observers:
 
 - [RateQuant guide](../algorithms/ratequant)
 - [Observers API](../api/observers-api)
+- [Profiling guide](./profiling) — a ready-to-use `KVCacheProfiler` wrapper for quantize/dequantize latency and memory, if you don't need custom `QuantizationEvent` metadata

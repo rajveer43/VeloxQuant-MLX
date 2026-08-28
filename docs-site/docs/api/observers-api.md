@@ -229,3 +229,4 @@ print(f"Heterogeneity: {norm_obs.report().heterogeneity_ratio:.2f}")
 
 - [Observers guide](../guides/observers)
 - [RateQuant](../algorithms/ratequant)
+- [Profiling API](./profiling-api)
