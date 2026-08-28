@@ -851,7 +851,11 @@ class KVCacheBuilder:
                 f"KVCacheBuilder: n_calib_tokens={cfg.n_calib_tokens} must be >= 1."
             )
 
-        return KVCacheFactory.create(cfg)
+        from veloxquant_mlx.metal._warmup import warmup_for_config
+
+        cache = KVCacheFactory.create(cfg)
+        warmup_for_config(cfg)
+        return cache
 
     @staticmethod
     def for_model(model, config: "KVCacheConfig") -> list:
@@ -951,8 +955,11 @@ class KVCacheBuilder:
         if config.method == "chunkkv" and config.chunkkv_reuse_layers > 1:
             return KVCacheBuilder._build_chunkkv(layers, args, config, _FallbackCache)
 
+        from veloxquant_mlx.metal._warmup import warmup_for_config
+
         caches = []
         attn_idx = 0  # index into b_spec, advances only for attention layers
+        warmed_keys: set = set()
         for i, layer in enumerate(layers):
             attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
             if attn is None:
@@ -979,6 +986,13 @@ class KVCacheBuilder:
                 seed=config.seed + i,
                 store=config.store,
             )
+            # Warm each distinct (head_dim, bit_width) combo once rather than
+            # per layer — most models use the same head_dim across layers, so
+            # this usually compiles a single kernel variant for the whole model.
+            warm_key = (hd, layer_b if not isinstance(layer_b, list) else tuple(layer_b))
+            if warm_key not in warmed_keys:
+                warmup_for_config(layer_cfg)
+                warmed_keys.add(warm_key)
             caches.append(KVCacheFactory.create(layer_cfg))
             attn_idx += 1
         return caches
