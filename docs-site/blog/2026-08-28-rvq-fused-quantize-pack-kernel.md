@@ -55,8 +55,8 @@ Before optimizing a pipeline, confirm the pipeline exists as described. "Quantiz
 ```python
 # veloxquant_mlx/cache/turboquant_rvq_cache.py — before this change
 ev = self._quantizer.encode(k_unit)
-idx1 = ev.indices                    # (B*H*S, D) uint8 — stage-1 codes
-idx2 = ev.signs.astype(mx.uint8)     # (B*H*S, D) uint8 — stage-2 codes
+idx1 = ev.indices  # (B*H*S, D) uint8 — stage-1 codes
+idx2 = ev.signs.astype(mx.uint8)  # (B*H*S, D) uint8 — stage-2 codes
 
 p1 = _pack_indices(idx1, self._bits).reshape(B, H, S, self._n_words)
 p2 = _pack_indices(idx2, self._bits).reshape(B, H, S, self._n_words)
@@ -201,8 +201,8 @@ def test_rvq_quant_pack_bit_exact(D, bits, N):
     q = TurboQuantRVQ(d=D, b=bits, seed=D + bits + N, use_hadamard=True)
     x = mx.array(rng.standard_normal((N, D)).astype(np.float16))
 
-    p1_ref, p2_ref = _reference_pack(q, x, bits)   # MLX path: encode + _pack_indices
-    p1_got, p2_got = q.encode_pack(x)               # fused kernel
+    p1_ref, p2_ref = _reference_pack(q, x, bits)  # MLX path: encode + _pack_indices
+    p1_got, p2_got = q.encode_pack(x)  # fused kernel
 
     np.testing.assert_array_equal(np.array(p1_got), np.array(p1_ref))
     np.testing.assert_array_equal(np.array(p2_got), np.array(p2_ref))
@@ -230,7 +230,7 @@ if self._use_metal_pack:
         p1 = p1_flat.reshape(B, H, S, self._n_words)
         p2 = p2_flat.reshape(B, H, S, self._n_words)
     except Exception:
-        self._use_metal_pack = False   # don't re-pay the failure every call
+        self._use_metal_pack = False  # don't re-pay the failure every call
         p1 = p2 = None
 else:
     p1 = p2 = None
