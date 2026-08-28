@@ -48,9 +48,13 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 from mlx_lm.models.cache import create_attention_mask
 
+from veloxquant_mlx.metal import metal_available
 from veloxquant_mlx.quantizers.turboquant_rvq import TurboQuantRVQ
 
 _WORD_BITS = 32
+# rvq_quant_pack's threadgroup-per-vector kernel needs a power-of-two D that
+# fits a whole vector's coordinates in one Metal threadgroup (<= 1024).
+_MAX_FUSED_D = 1024
 
 
 def _pack_indices(idx: Any, bits: int) -> Any:
@@ -177,6 +181,17 @@ class TurboQuantRVQKVCache(_MLXKVCache):
         self._key_bytes_compressed = 0
         self._key_bytes_fp16 = 0
 
+        # Fused quantize+pack kernel (#251) needs a power-of-two head_dim
+        # that fits one Metal threadgroup; degrade to the MLX quantize +
+        # separate _pack_indices path otherwise. Bit-identical either way
+        # (see TurboQuantRVQ.encode_pack), so this is a pure perf knob.
+        self._use_metal_pack: bool = (
+            metal_available()
+            and self._head_dim > 0
+            and (self._head_dim & (self._head_dim - 1)) == 0
+            and self._head_dim <= _MAX_FUSED_D
+        )
+
     def _grow(self, B: int, H: int, num_steps: int) -> None:
         prev = self.offset
         needs_grow = self._packed1 is None or (prev + num_steps) > self._packed1.shape[2]
@@ -212,12 +227,26 @@ class TurboQuantRVQKVCache(_MLXKVCache):
         safe = mx.maximum(norms, mx.array(1e-4, dtype=kdtype))
         k_unit = (k_flat / safe).astype(mx.float16)
 
-        ev = self._quantizer.encode(k_unit)
-        idx1 = ev.indices  # (B*H*S, D) uint8
-        idx2 = ev.signs.astype(mx.uint8)  # (B*H*S, D) uint8, stage-2 codebook indices
+        if self._use_metal_pack:
+            try:
+                p1_flat, p2_flat = self._quantizer.encode_pack(k_unit)
+                p1 = p1_flat.reshape(B, H, S, self._n_words)
+                p2 = p2_flat.reshape(B, H, S, self._n_words)
+            except Exception:
+                # Kernel-side failure (compile error, driver issue): degrade
+                # to the MLX path rather than taking down generation, and
+                # latch off so later calls don't re-pay the failure.
+                self._use_metal_pack = False
+                p1 = p2 = None
+        else:
+            p1 = p2 = None
 
-        p1 = _pack_indices(idx1, self._bits).reshape(B, H, S, self._n_words)
-        p2 = _pack_indices(idx2, self._bits).reshape(B, H, S, self._n_words)
+        if p1 is None:
+            ev = self._quantizer.encode(k_unit)
+            idx1 = ev.indices  # (B*H*S, D) uint8
+            idx2 = ev.signs.astype(mx.uint8)  # (B*H*S, D) uint8, stage-2 codebook indices
+            p1 = _pack_indices(idx1, self._bits).reshape(B, H, S, self._n_words)
+            p2 = _pack_indices(idx2, self._bits).reshape(B, H, S, self._n_words)
         norms_bhs1 = norms.reshape(B, H, S, 1)
 
         self.offset += S

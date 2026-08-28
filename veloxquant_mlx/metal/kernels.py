@@ -8,6 +8,7 @@ Kernels are organized into focused submodules:
   _kivi_quant    — Fused KIVI asymmetric group quantize+dequantize round-trip
   _qjl           — QJL encode and inner product
   _rvq_attend    — Fused RVQ decode + attention
+  _rvq_quant_pack — Fused RVQ stage-1+stage-2 quantize, packed to uint32 (#251)
   _comm_vq       — CommVQ RoPE-commutative decode
   _rabitq        — RaBitQ packed Hamming scoring
   _rabitq_attend — Fused RaBitQ asymmetric attention (1-bit K + 4-bit V)
@@ -66,6 +67,9 @@ from veloxquant_mlx.metal._rabitq_values import (
 from veloxquant_mlx.metal._rvq_attend import (
     turboquant_fused_rvq_decode_attend,
 )
+from veloxquant_mlx.metal._rvq_quant_pack import (
+    rvq_quant_pack,
+)
 from veloxquant_mlx.metal._scalar_attend import (
     scalar_fused_decode_attend,
 )
@@ -97,6 +101,7 @@ __all__ = [
     "qjl_encode",
     "qjl_inner_product",
     "turboquant_fused_rvq_decode_attend",
+    "rvq_quant_pack",
     "comm_vq_decode_metal",
     "rabitq_hamming_score",
     "rabitq_fused_attend",

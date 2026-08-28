@@ -117,5 +117,14 @@ class ScalarCodebook(Codebook):
         """Return centroid array as MLX fp16 array."""
         return self._centroids_mx
 
+    def boundaries_mx(self) -> Any:
+        """Return sorted Voronoi boundaries (midpoints) as MLX fp16 array.
+
+        Shape ``(k - 1,)`` — the same array :meth:`quantize` compares
+        against. Exposed for callers (e.g. fused Metal kernels) that need
+        to replicate ``quantize``'s boundary-count semantics outside MLX.
+        """
+        return self._boundaries_mx
+
     def __repr__(self) -> str:
         return f"ScalarCodebook(k={self._k}, b={self._b})"
