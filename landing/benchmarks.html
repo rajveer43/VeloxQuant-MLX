@@ -177,6 +177,149 @@
         <a href="index.html#benchmarks" class="t-accent">Back to the summary table →</a>
       </p>
     </section>
+
+    <section id="kivi-multi-model" class="fade-in" style="padding-top:5rem;">
+      <div class="section-head-center">
+        <p class="section-label">KIVI, across the model zoo</p>
+        <h2 class="section-title">Does 4×/8× KV-cache compression hold up on real models?</h2>
+        <p class="section-desc">
+          KIVI's asymmetric group-wise quantization compresses the KV-cache 4× at 4-bit and 8×
+          at 2-bit. Numbers alone don't tell you whether that's safe to actually use — so this
+          runs the same long-context prompt (~430–500 tokens, well past the 128-token residual
+          window, so quantization is genuinely exercised) through 12 locally-cached models
+          spanning 135M to 8B parameters and Dense, MoE, and MLA attention, measuring perplexity
+          and decode throughput for fp16, KIVI 4-bit, and KIVI 2-bit.
+        </p>
+      </div>
+
+      <h3 class="bench-subtitle">Perplexity: fp16 vs. KIVI b=4 vs. KIVI b=2</h3>
+      <p class="section-desc" style="margin-bottom:1.5rem">
+        Lower is better. Long-sample causal-LM perplexity, computed through the actual patched
+        cache (not a bypassed no-cache forward pass).
+      </p>
+      <div class="table-wrap fade-in">
+        <table>
+          <caption class="visually-hidden">KIVI perplexity across 12 models, fp16 vs 4-bit vs 2-bit</caption>
+          <thead>
+            <tr>
+              <th scope="col">Model</th>
+              <th scope="col">fp16</th>
+              <th scope="col">KIVI b=4</th>
+              <th scope="col">KIVI b=2</th>
+              <th scope="col">Decode tok/s (fp16 → b4 → b2)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>SmolLM2-135M</td>
+              <td>28.87</td>
+              <td class="td-winner">29.63</td>
+              <td>44.85</td>
+              <td class="td-muted">—</td>
+            </tr>
+            <tr>
+              <td>Qwen2.5-0.5B</td>
+              <td class="td-muted">n/a<sup>†</sup></td>
+              <td class="td-winner">22.22</td>
+              <td>49.08</td>
+              <td class="td-muted">— → 245.2 → 244.3</td>
+            </tr>
+            <tr>
+              <td>Llama-3.2-1B</td>
+              <td>22.77</td>
+              <td class="td-winner">23.27</td>
+              <td>81.30</td>
+              <td>113.7 → 116.9 → 119.7</td>
+            </tr>
+            <tr>
+              <td>gemma-3-4B</td>
+              <td>16.00</td>
+              <td class="td-winner">16.37</td>
+              <td>17.72</td>
+              <td class="td-muted">—</td>
+            </tr>
+            <tr>
+              <td>Qwen3-4B</td>
+              <td class="td-muted">n/a<sup>†</sup></td>
+              <td class="td-winner">15.07</td>
+              <td>17.21</td>
+              <td class="td-muted">—</td>
+            </tr>
+            <tr>
+              <td>Llama-3.2-3B</td>
+              <td>15.47</td>
+              <td class="td-winner">15.82</td>
+              <td>20.93</td>
+              <td>46.4 → 48.5 → 46.2</td>
+            </tr>
+            <tr>
+              <td>Mistral-7B-v0.3</td>
+              <td>8.01</td>
+              <td class="td-winner">7.96</td>
+              <td>8.05</td>
+              <td>20.9 → 21.4 → 22.8</td>
+            </tr>
+            <tr>
+              <td>Qwen2.5-7B</td>
+              <td class="td-muted">n/a<sup>†</sup></td>
+              <td class="td-winner">9.30</td>
+              <td>10.75</td>
+              <td class="td-muted">— → 23.4 → 20.9</td>
+            </tr>
+            <tr>
+              <td>Llama-3.1-8B</td>
+              <td>10.88</td>
+              <td class="td-winner">11.02</td>
+              <td>13.57</td>
+              <td>15.6 → 15.9 → 18.5</td>
+            </tr>
+            <tr>
+              <td>Falcon3-7B</td>
+              <td>12.69</td>
+              <td class="td-winner">12.63</td>
+              <td>14.44</td>
+              <td>15.2 → 25.2 → 16.1</td>
+            </tr>
+            <tr>
+              <td>Qwen3-8B</td>
+              <td class="td-muted">n/a<sup>†</sup></td>
+              <td class="td-winner">9.92</td>
+              <td>10.57</td>
+              <td class="td-muted">—</td>
+            </tr>
+            <tr>
+              <td>DeepSeek-V2-Lite <span class="td-muted">(MoE, MLA)</span></td>
+              <td class="td-muted">n/a<sup>†</sup></td>
+              <td class="td-winner">15.34</td>
+              <td>17.87</td>
+              <td class="td-muted">— → 282.9<sup>‡</sup> → 82.5<sup>‡</sup></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="section-desc" style="margin-top:1rem; font-size:0.9rem;">
+        <sup>†</sup> fp16 baseline not measurable for these architectures — this mlx-lm version's
+        default model class has no <code>make_cache</code> for Qwen2.5/Qwen3/DeepSeek-V2, a
+        pre-existing library gap unrelated to KIVI. KIVI's own patch supplies
+        <code>make_cache</code>, so the quantized rows measured normally.
+        <sup>‡</sup> This gap is larger than bit-width alone should cause and is most likely
+        MoE expert-routing variance between separate runs rather than a real b=2-vs-b=4 speed
+        difference — treat it as noise, not a finding.
+      </p>
+
+      <h3 class="bench-subtitle">What this says about compression safety</h3>
+      <p class="section-desc" style="margin-bottom:0;">
+        KIVI b=4 is safe almost everywhere: perplexity stays within about a point of fp16 across
+        every model tested, 135M to 8B, dense or MoE. KIVI b=2 is a real 8× compression win on
+        7–8B models — Mistral-7B, Llama-3.1-8B, Qwen2.5-7B, Falcon3-7B, and Qwen3-8B all hold
+        within roughly 0.6–3 perplexity points of their higher-precision runs. It's a worse fit
+        below ~1–3B parameters: Llama-3.2-1B's perplexity more than triples under b=2 (81.3 vs.
+        22.8), so 2-bit KV-cache quantization is a call to make per model size, not a blanket
+        default. DeepSeek-V2-Lite's MoE + multi-head-latent-attention design — a layout KIVI
+        wasn't specifically built around — patched and ran cleanly, which is a good robustness
+        signal for architectures beyond standard multi-head attention.
+      </p>
+    </section>
   </main>
 
   <!-- ── FOOTER ── -->

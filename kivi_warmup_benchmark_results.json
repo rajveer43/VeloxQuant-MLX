@@ -1,0 +1,47 @@
+[
+  {
+    "label": "fp16 (baseline)",
+    "kernel_compile": null,
+    "cold_ttft_s": 0.42214633299954585,
+    "warm_ttft_s": 0.4030514169999151,
+    "ttft_delta_s": 0.019094915999630757,
+    "prefill_s": 0.40510229200026515,
+    "decode_tokens_per_sec": 118.8638467360606,
+    "n_prompt_tokens": 440,
+    "n_new_tokens": 46,
+    "perplexity": 22.768774385815014,
+    "n_kivi_kernel_variants_compiled": 0
+  },
+  {
+    "label": "KIVI b=2",
+    "kernel_compile": {
+      "cold_compile_s": 0.0028955840007256484,
+      "warm_recall_s": 0.0001947920000020531
+    },
+    "cold_ttft_s": 0.4405723339996257,
+    "warm_ttft_s": 0.4110578750005516,
+    "ttft_delta_s": 0.029514458999074122,
+    "prefill_s": 0.415703915999984,
+    "decode_tokens_per_sec": 119.86167198943197,
+    "n_prompt_tokens": 440,
+    "n_new_tokens": 65,
+    "perplexity": 81.30493459322258,
+    "n_kivi_kernel_variants_compiled": 2
+  },
+  {
+    "label": "KIVI b=4",
+    "kernel_compile": {
+      "cold_compile_s": 0.0007197919994723634,
+      "warm_recall_s": 0.00023179200070444494
+    },
+    "cold_ttft_s": 0.4364724999995815,
+    "warm_ttft_s": 0.41520562500045344,
+    "ttft_delta_s": 0.02126687499912805,
+    "prefill_s": 0.41637366699978884,
+    "decode_tokens_per_sec": 119.5365995619525,
+    "n_prompt_tokens": 440,
+    "n_new_tokens": 65,
+    "perplexity": 23.269513706158747,
+    "n_kivi_kernel_variants_compiled": 2
+  }
+]
