@@ -409,6 +409,25 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.65.0 (2026-08-28)
+
+### Bug Fixes
+
+- Correct sliding-window test assumption after finding real eviction bug
+  ([#275](https://github.com/rajveer43/VeloxQuant-MLX/pull/275),
+  [`143a4b6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/143a4b693a528641f93825a869c62d8445939450))
+
+### Features
+
+- Add KV-cache workload replay benchmark
+  ([#275](https://github.com/rajveer43/VeloxQuant-MLX/pull/275),
+  [`143a4b6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/143a4b693a528641f93825a869c62d8445939450))
+
+- Add KV-cache workload replay benchmark (#258)
+  ([#275](https://github.com/rajveer43/VeloxQuant-MLX/pull/275),
+  [`143a4b6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/143a4b693a528641f93825a869c62d8445939450))
+
+
 ## v0.64.0 (2026-08-28)
 
 ### Bug Fixes
