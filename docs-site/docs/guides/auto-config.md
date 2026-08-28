@@ -48,10 +48,10 @@ Rules apply in this priority order:
 from veloxquant_mlx import WorkloadSpec
 
 workload = WorkloadSpec(
-    head_dim=128,     # must be a power of 2
-    seq_len=64_000,   # expected or worst-case sequence length
-    n_layers=32,      # attention layers sharing this config (memory estimate only)
-    batch_size=4,     # concurrent sequences (memory estimate only)
+    head_dim=128,  # must be a power of 2
+    seq_len=64_000,  # expected or worst-case sequence length
+    n_layers=32,  # attention layers sharing this config (memory estimate only)
+    batch_size=4,  # concurrent sequences (memory estimate only)
 )
 ```
 
@@ -71,8 +71,8 @@ Pass an explicit `HardwareInfo` to override — useful in tests, CI, or when ser
 from veloxquant_mlx import HardwareInfo
 
 hardware = HardwareInfo(
-    total_memory_bytes=32 * 1024**3,   # 32 GB unified memory
-    active_memory_bytes=4 * 1024**3,   # model weights + other caches already resident
+    total_memory_bytes=32 * 1024**3,  # 32 GB unified memory
+    active_memory_bytes=4 * 1024**3,  # model weights + other caches already resident
 )
 result = select_kv_cache_config(workload, hardware)
 ```
