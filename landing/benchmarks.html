@@ -334,66 +334,72 @@
         </p>
       </div>
 
-      <h3 class="bench-subtitle">Naive copy-and-grow vs. a fixed-size block pool, out to 32K tokens</h3>
+      <h3 class="bench-subtitle">mlx_lm's real chunked-growth cache vs. a fixed-size block pool, out to 32K tokens</h3>
       <p class="section-desc" style="margin-bottom:1.5rem">
         Both strategies end up holding the same steady-state resident bytes. The difference is
-        the <em>transient</em> memory each append spends getting there — largest rise in MLX's
-        own peak memory during a single append, over the buffer already resident going in.
-        head_dim=128, block_size=16, single growing sequence.
+        the <em>transient</em> memory a chunk-filling append spends getting there — largest rise
+        in MLX's own peak memory during that append, over the buffer already resident going in.
+        The "stock" column mirrors <code>mlx_lm</code>'s actual <code>KVCache.update_and_fetch</code>
+        growth (chunked <code>mx.concatenate</code>), not a full-recopy strawman — see the
+        write-up for why that distinction matters. head_dim=128, block_size=16, single growing
+        sequence. This measurement is noisy; values are medians across 3 runs, full ranges in
+        the write-up. <a href="/docs/blog/kv-cache-fragmentation" class="t-accent">Full write-up →</a>
       </p>
       <div class="table-wrap fade-in">
         <table>
-          <caption class="visually-hidden">KV-cache allocator transient memory per append, naive vs block-pool, across context lengths</caption>
+          <caption class="visually-hidden">KV-cache allocator transient memory per append, stock chunked-concatenate vs block-pool, across context lengths</caption>
           <thead>
             <tr>
               <th scope="col">Context length</th>
-              <th scope="col">Naive temp/append</th>
+              <th scope="col">Stock temp/append (median)</th>
               <th scope="col">Pool temp/append</th>
-              <th scope="col">Ratio</th>
+              <th scope="col">Ratio (median)</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td>1,024 tok</td>
-              <td>514.0 KiB</td>
-              <td class="td-winner">6.3 KiB</td>
-              <td class="td-winner">82×</td>
+              <td>272.0 KiB</td>
+              <td class="td-winner">4.3 KiB</td>
+              <td class="td-winner">64×</td>
             </tr>
             <tr>
               <td>4,096 tok</td>
-              <td>1,958.0 KiB</td>
-              <td class="td-winner">6.3 KiB</td>
-              <td class="td-winner">313×</td>
+              <td>1,040.0 KiB</td>
+              <td class="td-winner">4.3 KiB</td>
+              <td class="td-winner">244×</td>
             </tr>
             <tr>
               <td>8,192 tok</td>
-              <td>3,948.0 KiB</td>
-              <td class="td-winner">6.3 KiB</td>
-              <td class="td-winner">630×</td>
+              <td>2,380.0 KiB</td>
+              <td class="td-winner">4.3 KiB</td>
+              <td class="td-winner">~560×</td>
             </tr>
             <tr>
               <td>16,384 tok</td>
-              <td>8,200.0 KiB</td>
-              <td class="td-winner">6.3 KiB</td>
-              <td class="td-winner">1,310×</td>
+              <td>4,112.0 KiB</td>
+              <td class="td-winner">4.3 KiB</td>
+              <td class="td-winner">~970×</td>
             </tr>
             <tr>
               <td>32,768 tok</td>
-              <td>14,206.0 KiB</td>
-              <td class="td-winner">6.3 KiB</td>
-              <td class="td-winner">2,269×</td>
+              <td>15,384.0 KiB</td>
+              <td class="td-winner">4.3 KiB</td>
+              <td class="td-winner">~3,600×</td>
             </tr>
           </tbody>
         </table>
       </div>
       <p class="section-desc" style="margin-top:1rem; font-size:0.9rem;">
-        The naive strategy copies the whole sequence-so-far on every append, so its transient
-        cost grows with context length — at 32K tokens, one append briefly holds ~14 MB of
-        scratch state for a cache whose steady-state footprint is 8 MB. The pool's transient
-        cost is flat: one new block, regardless of how much history already exists. On a
-        misaligned context length (999 tokens, block_size=16) the pool shows a real but small
-        0.9% padding overhead the exact-sized naive allocator doesn't pay — the honest cost of
-        eliminating the copy tax above.
+        High confidence: the pool's transient cost is flat across every run and context length —
+        one new block, independent of history. Stock's transient cost grew with context length
+        in every run, because a fresh <code>mx.concatenate([old, new_chunk])</code> briefly holds
+        the old buffer (which scales with context) plus the new one. Lower confidence: the exact
+        ratio at a given context length — run-to-run variance meant the 8K-token ratio alone
+        ranged from ~470× to ~810× across 3 runs, so treat the "×" figures above as
+        order-of-magnitude, not precise multipliers. On a misaligned context length (999 tokens,
+        block_size=16) the pool shows a real but small 0.9% padding overhead — the honest cost of
+        fixed-granularity allocation.
       </p>
 
       <h3 class="bench-subtitle">Six real models, end to end through mlx_lm.generate()</h3>

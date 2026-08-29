@@ -7,8 +7,10 @@ granularity, padding, temporary buffers, and fragmentation.
 
 This benchmark grows a *single* KV-cache sequence (mirroring real
 prompt-processing / long-context decode, not many short requests) out to
-each of several context lengths and reports, for both a naive
-per-token-malloc allocator and the block-pool allocator:
+each of several context lengths and reports, for both mlx_lm's actual
+stock-cache growth strategy (chunked ``mx.concatenate``, see
+``mlx_lm.models.cache.KVCache.update_and_fetch``) and the block-pool
+allocator, at matched growth granularity (``step`` == ``block_size``):
 
   - logical_bytes:      exact bytes needed for the tokens actually stored
                          (n_tokens * head_dim * bytes_per_element)
@@ -17,11 +19,18 @@ per-token-malloc allocator and the block-pool allocator:
   - fragmentation:      physical_bytes / logical_bytes - 1 (0 == no waste)
   - temp_peak_bytes:    largest *transient* rise in MLX's own peak resident
                          memory (mx.get_peak_memory()) observed during a
-                         single grow step, capturing scratch/copy buffers a
-                         naive reallocating strategy pays for that a pool
-                         avoids by writing in place
+                         single grow step, capturing the extra scratch
+                         memory alive while the new chunk/block and the
+                         concatenate/write it feeds are both resident
   - peak_physical_bytes: high-water mark of physical_bytes across the
                          whole run (not just the final size)
+
+Earlier versions of this benchmark compared the pool against a baseline
+that reallocated and copied the *entire* sequence on every append — that
+is not what any shipped cache does (mlx_lm's stock cache, mirrored here,
+only reallocates when a fixed-size chunk fills up), and comparing against
+it overstated the pool's advantage. This version's baseline is the real
+strategy currently in mlx_lm.
 
 across context lengths: 1K, 4K, 8K, 16K, 32K(+) tokens.
 
@@ -89,31 +98,42 @@ def _hardware() -> dict:
 
 
 class _NaiveGrowingBuffer:
-    """Baseline: reallocates a fresh, exactly-sized buffer on every grow step.
+    """Baseline: chunked mx.concatenate growth, exactly mlx_lm's stock
+    ``KVCache.update_and_fetch`` strategy (see
+    ``mlx_lm.models.cache.KVCache``) — grow by allocating a fresh
+    ``step``-token chunk and ``mx.concatenate``-ing it onto the existing
+    buffer, only when the existing buffer's capacity is exhausted.
 
-    Mirrors a from-scratch concatenation strategy (no pre-allocated
-    capacity, no block reuse) — the "current implementation" comparison
-    point issue #249 established and this benchmark extends across context
-    lengths instead of across request counts.
+    This is deliberately *not* a full recopy on every append (an earlier
+    version of this benchmark used that, which is a strawman nobody ships
+    — mlx_lm's real cache does not do it). ``step`` matches the pool's
+    ``block_size`` so both strategies grow at the same granularity and
+    the comparison isolates allocation strategy (concatenate-new-chunk vs.
+    checkout-a-block), not chunk size.
     """
 
-    def __init__(self, head_dim: int) -> None:
+    def __init__(self, head_dim: int, step: int) -> None:
         self.head_dim = head_dim
+        self.step = step
         self.n_tokens = 0
         self.n_allocations = 0
         self._buf = None
 
     def grow(self, n_new_tokens: int) -> None:
-        # Full copy-and-grow: allocate a new (n_tokens + n_new) buffer and
-        # copy the old contents in, exactly what a naive concatenate-based
-        # cache does on each append batch.
-        new_buf = mx.zeros((self.n_tokens + n_new_tokens, self.head_dim), dtype=mx.float16)
-        if self._buf is not None:
-            new_buf[: self.n_tokens] = self._buf
-        mx.eval(new_buf)
-        self._buf = new_buf
+        prev = self.n_tokens
+        capacity = 0 if self._buf is None else self._buf.shape[0]
+        if self._buf is None or (prev + n_new_tokens) > capacity:
+            new_capacity = capacity + self.step
+            while new_capacity < prev + n_new_tokens:
+                new_capacity += self.step
+            new_chunk = mx.zeros((new_capacity - capacity, self.head_dim), dtype=mx.float16)
+            if self._buf is not None:
+                self._buf = mx.concatenate([self._buf, new_chunk], axis=0)
+            else:
+                self._buf = new_chunk
+            mx.eval(self._buf)
+            self.n_allocations += 1
         self.n_tokens += n_new_tokens
-        self.n_allocations += 1
 
     def physical_bytes(self) -> int:
         if self._buf is None:
@@ -237,8 +257,8 @@ def main() -> None:
         n_blocks = -(-context_length // args.block_size) + 4  # headroom above exact fit
 
         naive = _run_sweep_for_allocator(
-            "naive-realloc",
-            lambda: _NaiveGrowingBuffer(args.head_dim),
+            "stock-chunked-concat",
+            lambda: _NaiveGrowingBuffer(args.head_dim, step=args.block_size),
             context_length,
             args.grow_step,
         )
@@ -254,7 +274,7 @@ def main() -> None:
 
         print(
             f"  {context_length:>6} tok | "
-            f"naive: phys={naive['physical_bytes'] / 1024:.1f} KiB "
+            f"stock: phys={naive['physical_bytes'] / 1024:.1f} KiB "
             f"frag={naive['fragmentation']:.3f} temp_peak={naive['temp_peak_bytes'] / 1024:.1f} KiB | "
             f"pool: phys={pooled['physical_bytes'] / 1024:.1f} KiB "
             f"frag={pooled['fragmentation']:.3f} temp_peak={pooled['temp_peak_bytes'] / 1024:.1f} KiB"
@@ -268,20 +288,25 @@ def main() -> None:
         "note": (
             "logical_bytes is the exact fp16 footprint of the tokens stored "
             "(n_tokens * head_dim * 2). physical_bytes is what is actually "
-            "resident in allocated buffers, including block/allocation "
-            "padding. fragmentation = physical/logical - 1 (0 == no waste "
-            "beyond the logical size). temp_peak_bytes is the largest "
-            "*transient* rise in MLX's own peak resident memory "
-            "(mx.get_peak_memory()) observed during a single grow step, "
-            "capturing scratch/copy buffers a naive copy-and-grow strategy "
-            "pays for on every append that a pool avoids by writing in "
-            "place. naive-realloc reallocates and "
-            "copies the whole sequence on every grow step (worst case for "
-            "temporary memory); block-pool only allocates a new block when "
-            "the current tail block is full, and never copies existing "
-            "data. This benchmark is model-free and synthetic: it isolates "
-            "allocator-level memory behavior from any particular "
-            "quantization method's compression math."
+            "resident in allocated buffers, including block/chunk padding. "
+            "fragmentation = physical/logical - 1 (0 == no waste beyond the "
+            "logical size). temp_peak_bytes is the largest *transient* rise "
+            "in MLX's own peak resident memory (mx.get_peak_memory()) "
+            "observed during a single grow step. stock-chunked-concat "
+            "mirrors mlx_lm's actual stock KVCache.update_and_fetch growth "
+            "strategy: it only reallocates when the existing buffer's "
+            "step-token capacity is exhausted, then mx.concatenate()s a "
+            "fresh step-sized chunk onto the existing buffer -- it does "
+            "NOT recopy the whole sequence on every append (an earlier "
+            "version of this benchmark compared against that strawman, "
+            "which overstated the pool's advantage; no shipped cache "
+            "reallocates that way). block-pool checks out a whole block "
+            "only when the current tail block is full, at the same step "
+            "granularity (step == block_size), and never copies existing "
+            "data on growth -- concatenate vs. checkout-a-block is the "
+            "isolated variable. This benchmark is model-free and "
+            "synthetic: it isolates allocator-level memory behavior from "
+            "any particular quantization method's compression math."
         ),
         "results": results,
     }

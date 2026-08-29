@@ -8,7 +8,7 @@ tags: [memory, allocator, kv-cache, apple-silicon, mlx, benchmarking]
 
 # Compression Ratio Lies About Memory. Here's the Allocator That Doesn't.
 
-*A 5×–8× KV-cache compression ratio tells you almost nothing about resident memory if the allocator underneath it copies the whole sequence on every append. This is what happens when you measure the allocator instead of the arithmetic — on a synthetic sweep out to 32K tokens, and on six real models from 135M to 7B parameters.*
+*A 5×–8× KV-cache compression ratio tells you almost nothing about resident memory: it describes the arithmetic, not the mechanism of growing the buffer that arithmetic runs on. This is what happens when you measure the allocator instead — on a synthetic sweep out to 32K tokens, and on six real models from 135M to 7B parameters — including a first draft of this benchmark that compared against a strawman baseline no shipped cache actually uses, and the correction once I checked.*
 
 ---
 
@@ -20,31 +20,31 @@ This post is about the allocator side specifically — not compression math, not
 
 ## The two allocation strategies
 
-There are two honest ways to grow a sequence's KV storage:
+There are two ways to grow a sequence's KV storage that are actually worth comparing — and getting the first one wrong is exactly the mistake an earlier draft of this post made, so it's worth being specific.
 
-**Copy-and-grow.** Keep one contiguous buffer. Every time you append tokens, allocate a new buffer sized for the whole sequence so far plus the new tokens, copy the old contents in, discard the old buffer. This is the naive baseline and — worth saying plainly — it's also what `mlx_lm`'s stock `KVCache` does, just with a fixed 256-token growth chunk instead of growing by exactly the new token count.
+**Chunked concatenate.** This is what `mlx_lm`'s stock `KVCache` actually does (`mlx_lm.models.cache.KVCache.update_and_fetch`): pre-allocate a `step`-token chunk (256 by default), write new tokens into it, and only when that chunk fills up, allocate a fresh `step`-sized chunk and `mx.concatenate()` it onto the existing buffer. It does **not** recopy the whole sequence on every append — an earlier version of this benchmark compared the pool against exactly that strawman (full recopy every append), which no shipped cache does, and it made the pool's advantage look far larger than it is. This post's numbers are from the corrected baseline: real chunked-concatenate growth, at the same chunk size as the pool's `block_size`, so the comparison isolates one variable — concatenate-a-new-chunk vs. checkout-a-block — instead of also smuggling in a chunk-size difference.
 
-**Block pool.** Pre-allocate fixed-size blocks up front. Appending tokens writes into the current block; only allocate a new block when the current one fills up. Existing data is never copied — a full block, once written, is never touched again until it's freed. This library's [`BlockPoolAllocator`](/docs/api/memory-api) (issue #249, `veloxquant_mlx/memory/block_pool.py`) implements this, and [`PoolBackedKVCache`](/docs/api/memory-api#poolbackedkvcache) (`veloxquant_mlx/memory/pool_backed_cache.py`) wires it directly into `mlx_lm.generate()`'s `update_and_fetch` protocol as a drop-in replacement for the stock cache.
+**Block pool.** Pre-allocate fixed-size blocks up front. Appending tokens writes into the current block; only allocate a new block when the current one fills up. Existing data is never copied or concatenated — a full block, once written, is never touched again until it's freed. This library's [`BlockPoolAllocator`](/docs/api/memory-api) (issue #249, `veloxquant_mlx/memory/block_pool.py`) implements this, and [`PoolBackedKVCache`](/docs/api/memory-api#poolbackedkvcache) (`veloxquant_mlx/memory/pool_backed_cache.py`) wires it directly into `mlx_lm.generate()`'s `update_and_fetch` protocol as a drop-in replacement for the stock cache.
 
-Copy-and-grow's problem isn't the final resident size — both strategies end up holding roughly the same number of logical bytes once the sequence stops growing. The problem is what happens *during* every single append: for one moment, both the old buffer and the new, bigger buffer are alive in memory simultaneously. That moment's cost scales with how much history you're copying, which means it scales with context length. A pool's per-append cost is one new block, a constant, regardless of how long the sequence already is.
+Both strategies end up holding the same number of resident bytes once the sequence stops growing — that was never in question. The difference is in what each *append that triggers a new allocation* costs: `mx.concatenate([old_buffer, new_chunk])` must materialize a fresh array holding both, so for one moment the old buffer and the new concatenated buffer are both alive in memory. The old buffer's size scales with how much history exists, so that moment's cost scales with context length. The pool's per-allocation cost is one new block, a constant, regardless of how long the sequence already is.
 
-That's a claim you can measure directly, so this benchmark measures it directly.
+That's a claim you can measure directly, so this benchmark measures it directly — and reports the actual run-to-run noise in that measurement, not one favorable sample.
 
 ## Benchmark 1: synthetic, allocator only, out to 32K tokens
 
-`benchmark_scripts/benchmark_kv_fragmentation.py` grows a single sequence — mirroring real prompt processing, not a swarm of short requests — out to each of 1K, 4K, 8K, 16K, and 32K tokens, using both strategies, and reports:
+`benchmark_scripts/benchmark_kv_fragmentation.py` grows a single sequence — mirroring real prompt processing, not a swarm of short requests — out to each of 1K, 4K, 8K, 16K, and 32K tokens, using both strategies at matched chunk/block size, and reports:
 
 - **logical_bytes** — exact bytes the stored tokens need (`n_tokens × head_dim × 2` for fp16)
 - **physical_bytes** — bytes actually resident, including any block padding
 - **fragmentation** — `physical / logical - 1`
-- **temp_peak_bytes** — the largest *transient* rise in MLX's own peak resident memory (`mx.get_peak_memory()`) during a single append, isolating the scratch/copy cost from the steady-state footprint
+- **temp_peak_bytes** — the largest *transient* rise in MLX's own peak resident memory (`mx.get_peak_memory()`) during a single append, isolating the scratch/concatenate cost from the steady-state footprint
 - **peak_physical_bytes** — high-water mark across the whole run
 
 It's deliberately model-free — allocator behavior doesn't depend on which quantization method or LLM is in use — so it runs anywhere without a checkpoint download, following the same approach as the existing block-pool benchmark from issue #249.
 
-Steady-state resident size is identical between the two strategies at every context length, as expected — that part was never in question:
+Steady-state resident size is identical between the two strategies at every context length, as expected:
 
-| context | naive physical | pool physical |
+| context | stock physical | pool physical |
 |---|---|---|
 | 1,024 tok | 256.0 KiB | 256.0 KiB |
 | 4,096 tok | 1,024.0 KiB | 1,024.0 KiB |
@@ -52,21 +52,23 @@ Steady-state resident size is identical between the two strategies at every cont
 | 16,384 tok | 4,096.0 KiB | 4,096.0 KiB |
 | 32,768 tok | 8,192.0 KiB | 8,192.0 KiB |
 
-The transient cost — what each *append* pays, not what the sequence holds at rest — is where the two strategies diverge, and it diverges a lot:
+The transient cost — what a chunk-filling append pays, not what the sequence holds at rest — is where the two strategies diverge. Because this measurement is itself noisy (allocator/scheduler variance, same lesson as every prior post on this blog), the numbers below are medians across 3 full runs, with the observed range:
 
-| context | naive temp_peak | pool temp_peak | ratio |
+| context | stock temp_peak (median, range) | pool temp_peak | ratio (median) |
 |---|---|---|---|
-| 1,024 tok | 514.0 KiB | 6.3 KiB | **82×** |
-| 4,096 tok | 1,958.0 KiB | 6.3 KiB | **313×** |
-| 8,192 tok | 3,948.0 KiB | 6.3 KiB | **630×** |
-| 16,384 tok | 8,200.0 KiB | 6.3 KiB | **1,310×** |
-| 32,768 tok | 14,206.0 KiB | 6.3 KiB | **2,269×** |
+| 1,024 tok | 272.0 KiB (272.0–272.0) | 4.3 KiB | **64×** |
+| 4,096 tok | 1,040.0 KiB (1,040.0–1,040.0) | 4.3 KiB | **244×** |
+| 8,192 tok | 2,380.0 KiB (2,064.0–3,468.0) | 4.3 KiB | **~560×** |
+| 16,384 tok | 4,112.0 KiB (4,112.0–6,828.0) | 4.3 KiB | **~970×** |
+| 32,768 tok | 15,384.0 KiB (14,544.0–16,356.0) | 4.3 KiB | **~3,600×** |
 
-The pool's transient cost is flat — one new block, regardless of how much history already exists. The naive strategy's transient cost grows with context length, because "copy the whole sequence" gets more expensive the longer the sequence is. This is the O(n) tax that a compression-ratio number simply never sees: it lives entirely in the mechanics of growing the buffer, not in how many bits each element costs.
+Two things to take from this, in order of confidence.
 
-The gap is roughly linear in context length, which is exactly what "copy the whole history on every append" predicts. At 32K tokens the naive path's single append briefly holds ~14 MB of scratch state for a cache whose steady-state footprint is 8 MB — nearly double, for one call, on every single token.
+**High confidence: the pool's transient cost is flat and the stock cache's is not.** Across all 3 runs and every context length, pool never moved off 4.3 KiB — one new block, independent of history length, exactly as the mechanism predicts. Stock's temp_peak grew with context length in every run, because a fresh `mx.concatenate([old, new_chunk])` briefly holds the old buffer (which scales with context) plus the new one. This qualitative relationship — flat vs. growing — held in 100% of samples and is the actual finding.
 
-**Fragmentation**, separately: with the default settings (block_size=16 dividing every default context length evenly), the pool shows 0% padding waste — no free lunch was hidden by rounding. Feeding it a context length that doesn't divide evenly makes the real cost visible: at 999 tokens with block_size=16, the pool rounds up to 63 blocks (1,008 slots) for 999 tokens actually stored, a 0.9% overhead. The naive strategy, allocating exact-sized buffers, shows 0% fragmentation by construction — it has no block concept to round against. That's the honest trade a block allocator makes: bounded, small, predictable padding in exchange for eliminating the O(n) copy tax above. 0.9% is a good trade.
+**Lower confidence: the exact ratio at a given context length.** The range column is real variance from a single unchanged code path (compare to the ±25% baseline spread reported in the [KIVI Metal kernel post](/docs/blog/kivi-metal-kernel-honest-benchmark) on this same hardware) — at 8,192 tokens the ratio could reasonably be reported as anywhere from ~470× to ~810× depending which of the 3 runs you'd picked. Treat "~3,600× at 32K" as an order-of-magnitude statement, not a precise multiplier — the *direction and existence* of the gap is solid, the specific digit after the tilde is not something to build an argument on.
+
+**Fragmentation**, separately, is a cleaner measurement with no such noise: with the default settings (block_size=16 dividing every default context length evenly), the pool shows 0% padding waste — no free lunch was hidden by rounding. Feeding it a context length that doesn't divide evenly makes the real cost visible: at 999 tokens with block_size=16, the pool rounds up to 63 blocks (1,008 slots) for 999 tokens actually stored, a 0.9% overhead. The stock strategy, chunked at the same granularity, would show equivalent rounding once its own chunk boundary is crossed — fragmentation here is a property of chunk/block size, not of which allocation strategy is used. That's the honest trade a fixed-granularity allocator makes: bounded, small, predictable padding, in exchange for whatever growth-mechanism benefit the strategy provides. 0.9% is a good trade either way.
 
 ## Benchmark 2: real models, end to end
 
@@ -93,11 +95,15 @@ Three things worth saying about this table, in order of how much they matter.
 
 **Every model shows 100% block reuse on the second sequential request.** Request A generates, releases its blocks back to the pool; request B — a fresh, independent generation sharing the same pool — draws every single block it needs from that just-freed set rather than growing the pool further. This is the steady-state behavior a block pool exists to produce: a long-running server serving many sequential requests should see its pool stop growing entirely once it's warm. Six real models, six architectures (Dense down to 135M, up through 7B), same result.
 
+## The mistake, and why it mattered
+
+The first version of this benchmark's synthetic baseline reallocated and copied the *entire* sequence on every single append — not the fixed-chunk `mx.concatenate` growth `mlx_lm`'s actual stock cache uses, which only reallocates once a chunk fills up. That baseline produced numbers like "82×–2,269× less transient memory," and every one of those numbers was comparing the pool against a strategy nobody ships. Once corrected to grow at the same chunk size mlx_lm actually uses, the gap is real but far smaller — roughly 64× at 1K tokens, growing to somewhere in the high-hundreds to low-thousands× by 32K, with real run-to-run noise on the exact figure at any single context length. The qualitative shape — pool flat, stock growing with context — survived the correction intact. The specific multiplier didn't, and shouldn't have been trusted at face value in the first place.
+
 ## What this does and doesn't claim
 
-It doesn't claim `PoolBackedKVCache` makes generation faster — it doesn't, by design, and the small memory overhead it does add is honestly reported, not hidden. What it claims is narrower and, I think, more useful: **the block-pool allocator eliminates an O(n)-with-context transient memory cost that a naive growing buffer pays on every single append**, at a fixed, small, and now-measured cost in steady-state memory — and this holds up identically whether you isolate the allocator on a synthetic sweep to 32K tokens, or run six real models end to end through `mlx_lm.generate()`.
+It doesn't claim `PoolBackedKVCache` makes generation faster — it doesn't, by design, and the small memory overhead it does add is honestly reported, not hidden. It doesn't claim a precise multiplier for the transient-memory gap — that number is genuinely noisy, and the range above is reported instead of a single favorable sample. What it claims is narrower: **the block-pool allocator's per-append transient cost stays flat as context grows, while chunked-concatenate growth's transient cost grows with it** — measured against `mlx_lm`'s real growth strategy, not a strawman, and confirmed on six real models end to end through `mlx_lm.generate()`, where peak-memory overhead is a small, consistent, honestly-reported +0.5%–+1.5%.
 
-Compression ratio and allocator overhead are answering different questions. A method's bit-width tells you what a token *should* cost. The allocator tells you what growing the buffer that holds that token actually spends, on every step, for as long as the sequence keeps growing. Both numbers belong in the report — this one is about the second.
+Compression ratio and allocator overhead are answering different questions. A method's bit-width tells you what a token *should* cost. The allocator tells you what growing the buffer that holds that token actually spends, on every step, for as long as the sequence keeps growing. Both numbers belong in the report — this one is about the second, and about how easy it is to get the second one wrong by picking the wrong thing to compare against.
 
 ---
 

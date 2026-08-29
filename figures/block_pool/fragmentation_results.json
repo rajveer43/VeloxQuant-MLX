@@ -8,20 +8,20 @@
     "chip": "Apple M4",
     "ram_gb": 24.0
   },
-  "note": "logical_bytes is the exact fp16 footprint of the tokens stored (n_tokens * head_dim * 2). physical_bytes is what is actually resident in allocated buffers, including block/allocation padding. fragmentation = physical/logical - 1 (0 == no waste beyond the logical size). temp_peak_bytes is the largest *transient* rise in MLX's own peak resident memory (mx.get_peak_memory()) observed during a single grow step, capturing scratch/copy buffers a naive copy-and-grow strategy pays for on every append that a pool avoids by writing in place. naive-realloc reallocates and copies the whole sequence on every grow step (worst case for temporary memory); block-pool only allocates a new block when the current tail block is full, and never copies existing data. This benchmark is model-free and synthetic: it isolates allocator-level memory behavior from any particular quantization method's compression math.",
+  "note": "logical_bytes is the exact fp16 footprint of the tokens stored (n_tokens * head_dim * 2). physical_bytes is what is actually resident in allocated buffers, including block/chunk padding. fragmentation = physical/logical - 1 (0 == no waste beyond the logical size). temp_peak_bytes is the largest *transient* rise in MLX's own peak resident memory (mx.get_peak_memory()) observed during a single grow step. stock-chunked-concat mirrors mlx_lm's actual stock KVCache.update_and_fetch growth strategy: it only reallocates when the existing buffer's step-token capacity is exhausted, then mx.concatenate()s a fresh step-sized chunk onto the existing buffer -- it does NOT recopy the whole sequence on every append (an earlier version of this benchmark compared against that strawman, which overstated the pool's advantage; no shipped cache reallocates that way). block-pool checks out a whole block only when the current tail block is full, at the same step granularity (step == block_size), and never copies existing data on growth -- concatenate vs. checkout-a-block is the isolated variable. This benchmark is model-free and synthetic: it isolates allocator-level memory behavior from any particular quantization method's compression math.",
   "results": [
     {
       "context_length": 1024,
       "naive": {
-        "label": "naive-realloc",
+        "label": "stock-chunked-concat",
         "context_length": 1024,
         "n_tokens": 1024,
         "logical_bytes": 262144,
         "physical_bytes": 262144,
         "peak_physical_bytes": 262144,
-        "temp_peak_bytes": 526348,
+        "temp_peak_bytes": 278540,
         "fragmentation": 0.0,
-        "n_allocations": 128
+        "n_allocations": 64
       },
       "pooled": {
         "label": "block-pool",
@@ -30,7 +30,7 @@
         "logical_bytes": 262144,
         "physical_bytes": 262144,
         "peak_physical_bytes": 262144,
-        "temp_peak_bytes": 6412,
+        "temp_peak_bytes": 4364,
         "fragmentation": 0.0,
         "n_allocations": 64,
         "n_reused": 0,
@@ -40,15 +40,15 @@
     {
       "context_length": 4096,
       "naive": {
-        "label": "naive-realloc",
+        "label": "stock-chunked-concat",
         "context_length": 4096,
         "n_tokens": 4096,
         "logical_bytes": 1048576,
         "physical_bytes": 1048576,
         "peak_physical_bytes": 1048576,
-        "temp_peak_bytes": 2005004,
+        "temp_peak_bytes": 1064970,
         "fragmentation": 0.0,
-        "n_allocations": 512
+        "n_allocations": 256
       },
       "pooled": {
         "label": "block-pool",
@@ -57,7 +57,7 @@
         "logical_bytes": 1048576,
         "physical_bytes": 1048576,
         "peak_physical_bytes": 1048576,
-        "temp_peak_bytes": 6412,
+        "temp_peak_bytes": 4364,
         "fragmentation": 0.0,
         "n_allocations": 256,
         "n_reused": 0,
@@ -67,15 +67,15 @@
     {
       "context_length": 8192,
       "naive": {
-        "label": "naive-realloc",
+        "label": "stock-chunked-concat",
         "context_length": 8192,
         "n_tokens": 8192,
         "logical_bytes": 2097152,
         "physical_bytes": 2097152,
         "peak_physical_bytes": 2097152,
-        "temp_peak_bytes": 4042764,
+        "temp_peak_bytes": 2113546,
         "fragmentation": 0.0,
-        "n_allocations": 1024
+        "n_allocations": 512
       },
       "pooled": {
         "label": "block-pool",
@@ -84,7 +84,7 @@
         "logical_bytes": 2097152,
         "physical_bytes": 2097152,
         "peak_physical_bytes": 2097152,
-        "temp_peak_bytes": 6412,
+        "temp_peak_bytes": 4364,
         "fragmentation": 0.0,
         "n_allocations": 512,
         "n_reused": 0,
@@ -94,15 +94,15 @@
     {
       "context_length": 16384,
       "naive": {
-        "label": "naive-realloc",
+        "label": "stock-chunked-concat",
         "context_length": 16384,
         "n_tokens": 16384,
         "logical_bytes": 4194304,
         "physical_bytes": 4194304,
         "peak_physical_bytes": 4194304,
-        "temp_peak_bytes": 8396812,
+        "temp_peak_bytes": 5488652,
         "fragmentation": 0.0,
-        "n_allocations": 2048
+        "n_allocations": 1024
       },
       "pooled": {
         "label": "block-pool",
@@ -111,7 +111,7 @@
         "logical_bytes": 4194304,
         "physical_bytes": 4194304,
         "peak_physical_bytes": 4194304,
-        "temp_peak_bytes": 6412,
+        "temp_peak_bytes": 4364,
         "fragmentation": 0.0,
         "n_allocations": 1024,
         "n_reused": 0,
@@ -121,15 +121,15 @@
     {
       "context_length": 32768,
       "naive": {
-        "label": "naive-realloc",
+        "label": "stock-chunked-concat",
         "context_length": 32768,
         "n_tokens": 32768,
         "logical_bytes": 8388608,
         "physical_bytes": 8388608,
         "peak_physical_bytes": 8388608,
-        "temp_peak_bytes": 14546956,
+        "temp_peak_bytes": 13144076,
         "fragmentation": 0.0,
-        "n_allocations": 4096
+        "n_allocations": 2048
       },
       "pooled": {
         "label": "block-pool",
@@ -138,7 +138,7 @@
         "logical_bytes": 8388608,
         "physical_bytes": 8388608,
         "peak_physical_bytes": 8388608,
-        "temp_peak_bytes": 6412,
+        "temp_peak_bytes": 4364,
         "fragmentation": 0.0,
         "n_allocations": 2048,
         "n_reused": 0,
