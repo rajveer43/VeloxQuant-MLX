@@ -416,6 +416,11 @@
             <td class="td-muted">Per-channel keys / per-token values; measured on Llama-3.2-3B, Qwen2.5-7B, Mistral-7B</td>
           </tr>
           <tr>
+            <td>Block-pool allocator overhead</td>
+            <td class="td-winner">&lt;2%</td>
+            <td class="td-muted">Peak memory, 6 models 135M–7B — eliminates an O(n)-with-context copy tax</td>
+          </tr>
+          <tr>
             <td>Production models validated</td>
             <td class="td-winner">12</td>
             <td class="td-muted">Llama, Mistral, Qwen, Phi, Gemma 3/4, Falcon</td>

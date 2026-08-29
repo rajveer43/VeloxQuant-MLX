@@ -22,3 +22,4 @@ When you edit a post here, mirror the change to the corresponding file in `docs-
 | `qfilters-query-geometry.md` | `docs-site/blog/2026-08-14-qfilters-query-geometry.md` | `/docs/blog/qfilters-query-geometry` |
 | `weight-reservoir.md` | `docs-site/blog/2026-08-26-weight-reservoir.md` | `/docs/blog/weight-reservoir` |
 | _(docs-site only)_ | `docs-site/blog/2026-08-28-rvq-fused-quantize-pack-kernel.md` | `/docs/blog/rvq-fused-quantize-pack-kernel` |
+| _(docs-site only)_ | `docs-site/blog/2026-08-29-kv-cache-fragmentation.md` | `/docs/blog/kv-cache-fragmentation` |

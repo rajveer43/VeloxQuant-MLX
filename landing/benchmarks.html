@@ -320,6 +320,157 @@
         signal for architectures beyond standard multi-head attention.
       </p>
     </section>
+
+    <section id="kv-fragmentation" class="fade-in" style="padding-top:5rem;">
+      <div class="section-head-center">
+        <p class="section-label">Allocator, not arithmetic</p>
+        <h2 class="section-title">Compression ratio doesn't measure resident memory</h2>
+        <p class="section-desc">
+          A compression ratio describes what a token's key/value vector <em>should</em> cost.
+          It says nothing about what growing the buffer that holds it actually spends, on every
+          append, for as long as the sequence keeps growing. These benchmarks isolate that
+          allocator cost — first on a synthetic sweep out to 32K tokens, then on six real models
+          end to end. <a href="/docs/blog/kv-cache-fragmentation" class="t-accent">Full write-up →</a>
+        </p>
+      </div>
+
+      <h3 class="bench-subtitle">Naive copy-and-grow vs. a fixed-size block pool, out to 32K tokens</h3>
+      <p class="section-desc" style="margin-bottom:1.5rem">
+        Both strategies end up holding the same steady-state resident bytes. The difference is
+        the <em>transient</em> memory each append spends getting there — largest rise in MLX's
+        own peak memory during a single append, over the buffer already resident going in.
+        head_dim=128, block_size=16, single growing sequence.
+      </p>
+      <div class="table-wrap fade-in">
+        <table>
+          <caption class="visually-hidden">KV-cache allocator transient memory per append, naive vs block-pool, across context lengths</caption>
+          <thead>
+            <tr>
+              <th scope="col">Context length</th>
+              <th scope="col">Naive temp/append</th>
+              <th scope="col">Pool temp/append</th>
+              <th scope="col">Ratio</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1,024 tok</td>
+              <td>514.0 KiB</td>
+              <td class="td-winner">6.3 KiB</td>
+              <td class="td-winner">82×</td>
+            </tr>
+            <tr>
+              <td>4,096 tok</td>
+              <td>1,958.0 KiB</td>
+              <td class="td-winner">6.3 KiB</td>
+              <td class="td-winner">313×</td>
+            </tr>
+            <tr>
+              <td>8,192 tok</td>
+              <td>3,948.0 KiB</td>
+              <td class="td-winner">6.3 KiB</td>
+              <td class="td-winner">630×</td>
+            </tr>
+            <tr>
+              <td>16,384 tok</td>
+              <td>8,200.0 KiB</td>
+              <td class="td-winner">6.3 KiB</td>
+              <td class="td-winner">1,310×</td>
+            </tr>
+            <tr>
+              <td>32,768 tok</td>
+              <td>14,206.0 KiB</td>
+              <td class="td-winner">6.3 KiB</td>
+              <td class="td-winner">2,269×</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="section-desc" style="margin-top:1rem; font-size:0.9rem;">
+        The naive strategy copies the whole sequence-so-far on every append, so its transient
+        cost grows with context length — at 32K tokens, one append briefly holds ~14 MB of
+        scratch state for a cache whose steady-state footprint is 8 MB. The pool's transient
+        cost is flat: one new block, regardless of how much history already exists. On a
+        misaligned context length (999 tokens, block_size=16) the pool shows a real but small
+        0.9% padding overhead the exact-sized naive allocator doesn't pay — the honest cost of
+        eliminating the copy tax above.
+      </p>
+
+      <h3 class="bench-subtitle">Six real models, end to end through mlx_lm.generate()</h3>
+      <p class="section-desc" style="margin-bottom:1.5rem">
+        Same prompt, same <code>max_tokens=300</code>, run through a stock <code>KVCache</code>
+        and then through <code>PoolBackedKVCache</code> — a drop-in replacement that routes
+        every growth step through the block pool. Throughput parity is the expected, correct
+        result: the pool changes allocation bookkeeping, not the attention/decode math.
+      </p>
+      <div class="table-wrap fade-in">
+        <table>
+          <caption class="visually-hidden">PoolBackedKVCache vs stock KVCache across six real models, throughput and peak memory</caption>
+          <thead>
+            <tr>
+              <th scope="col">Model</th>
+              <th scope="col">Stock tok/s</th>
+              <th scope="col">Pool tok/s</th>
+              <th scope="col">Peak memory (stock → pool)</th>
+              <th scope="col">Block reuse, 2nd request</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>SmolLM2-135M</td>
+              <td>265.4</td>
+              <td>257.5</td>
+              <td>0.315 → 0.318 GB</td>
+              <td class="td-winner">100%</td>
+            </tr>
+            <tr>
+              <td>Qwen2.5-0.5B (4-bit)</td>
+              <td>254.7</td>
+              <td>252.3</td>
+              <td>0.354 → 0.358 GB</td>
+              <td class="td-winner">100%</td>
+            </tr>
+            <tr>
+              <td>Llama-3.2-1B (4-bit)</td>
+              <td>122.3</td>
+              <td>123.1</td>
+              <td>0.838 → 0.849 GB</td>
+              <td class="td-winner">100%</td>
+            </tr>
+            <tr>
+              <td>gemma-3-4b (4-bit)</td>
+              <td>42.9</td>
+              <td>42.7</td>
+              <td>2.666 → 2.707 GB</td>
+              <td class="td-winner">100%</td>
+            </tr>
+            <tr>
+              <td>Mistral-7B-v0.3 (4-bit)</td>
+              <td>22.8</td>
+              <td>24.5</td>
+              <td>4.231 → 4.269 GB</td>
+              <td class="td-winner">100%</td>
+            </tr>
+            <tr>
+              <td>Qwen2.5-7B (4-bit)</td>
+              <td>23.9</td>
+              <td>23.9</td>
+              <td>4.429 → 4.451 GB</td>
+              <td class="td-winner">100%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="section-desc" style="margin-top:1rem; font-size:0.9rem;">
+        Throughput deltas span −3.0% to +7.4% — noise, not signal: an unchanged fp16 baseline on
+        this hardware shows ±25% run-to-run spread from thermal state and scheduling alone (see
+        the <a href="/docs/blog/kivi-metal-kernel-honest-benchmark" class="t-accent">KIVI Metal
+        kernel benchmark post</a>). Peak memory rises a small, consistent +0.5%–+1.5% across
+        every model — real, not noise, and the honest cost of the pool's per-block bookkeeping.
+        Every model shows 100% block reuse on a second sequential request sharing the same pool:
+        once warm, the pool stops growing entirely.
+      </p>
+    </section>
   </main>
 
   <!-- ── FOOTER ── -->
