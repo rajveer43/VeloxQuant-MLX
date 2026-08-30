@@ -1,14 +1,23 @@
 """Benchmark: simdgroup_matrix prefill attend vs the alternatives.
 
-VLM turn-2 shapes: S_q new-turn tokens attending over S_kv compressed
-history slots (image tokens). Three ways to run it:
+Two shape regimes:
+
+  * VLM turn-2 (cross-attention, no mask): S_q new-turn tokens attending
+    over S_kv compressed history slots (image tokens).
+  * Causal self-attention prefill (S_q == S_kv): the from-scratch-prefill
+    regime from issue #277 — no pre-existing cache, standard
+    autoregressive masking.
+
+Three ways to run each:
 
   prefill  — rabitq_prefill_attend: simdgroup_matrix 8x8 tiles, K/V
              decoded on the fly inside the tile loop.
   decode-k — rabitq_fused_attend (the decode-shaped kernel, packed V):
-             correct at any S_q but one scalar-dot threadgroup per query.
+             correct at any S_q but one scalar-dot threadgroup per query
+             (cross-attention shapes only — no causal masking support).
   baseline — dequantize everything (K_hat fp16 + V_hat fp16) and run
-             mx.fast.scaled_dot_product_attention.
+             mx.fast.scaled_dot_product_attention (causal=True for the
+             self-attention rows).
 
 Note: prefill/baseline use exact-dot scores on decoded keys; decode-k
 uses the Hamming estimate — same memory traffic, slightly different
@@ -43,16 +52,17 @@ def _bench(fn, n_warmup: int = N_WARMUP, n_iter: int = N_ITER) -> float:
     return (time.perf_counter() - t0) / n_iter * 1_000
 
 
-def main() -> None:
+def _run_shapes(shapes, *, causal: bool) -> None:
     rng = np.random.default_rng(42)
-    print(f"[bench] rabitq_prefill_attend — VLM turn-2 shapes, B={B} H={H} D={D}")
+    label = "causal self-attention" if causal else "VLM turn-2 (cross-attention)"
+    print(f"[bench] rabitq_prefill_attend — {label} shapes, B={B} H={H} D={D}")
     print(
         f"{'S_q':>5} {'S_kv':>6} | {'prefill (ms)':>12} | {'decode-k (ms)':>13} | "
         f"{'baseline (ms)':>13} | {'vs base':>7}"
     )
     print("-" * 66)
 
-    for S_q, S_kv in ((256, 2048), (256, 8192), (1024, 8192)):
+    for S_q, S_kv in shapes:
         q = mx.array(rng.standard_normal((B, H, S_q, D)).astype(np.float16))
         scale = mx.array([1.0 / np.sqrt(D)], dtype=mx.float32)
         k_bits = mx.array(rng.integers(0, 256, (B, H, S_kv, D // 8), dtype=np.uint8))
@@ -67,9 +77,12 @@ def main() -> None:
         mx.eval(q, scale, k_bits, k_mag, k_const, v_idx, v_cents, v_packed, q_scale)
 
         def prefill():
-            return rabitq_prefill_attend(q, scale, k_bits, k_mag, k_const, v_packed, v_cents)
+            return rabitq_prefill_attend(
+                q, scale, k_bits, k_mag, k_const, v_packed, v_cents, causal=causal
+            )
 
         def decode_k():
+            # No causal-masking support — cross-attention shapes only.
             return rabitq_fused_attend(q, q_scale, k_bits, k_mag, k_const, v_packed, v_cents)
 
         def baseline():
@@ -81,15 +94,20 @@ def main() -> None:
             idx = mx.stack([lo, hi], axis=-1).reshape(B, H, S_kv, D)
             v_hat = v_cents.astype(mx.float16)[idx]
             return mx.fast.scaled_dot_product_attention(
-                q, k_hat, v_hat, scale=1.0 / float(D) ** 0.5
+                q, k_hat, v_hat, scale=1.0 / float(D) ** 0.5, mask="causal" if causal else None
             )
 
         t_p = _bench(prefill)
-        t_d = _bench(decode_k)
+        t_d = None if causal else _bench(decode_k)
         t_b = _bench(baseline)
-        print(
-            f"{S_q:>5} {S_kv:>6} | {t_p:>12.3f} | {t_d:>13.3f} | {t_b:>13.3f} | {t_b / t_p:>6.2f}x"
-        )
+        t_d_str = f"{t_d:>13.3f}" if t_d is not None else f"{'n/a':>13}"
+        print(f"{S_q:>5} {S_kv:>6} | {t_p:>12.3f} | {t_d_str} | {t_b:>13.3f} | {t_b / t_p:>6.2f}x")
+
+
+def main() -> None:
+    _run_shapes([(256, 2048), (256, 8192), (1024, 8192)], causal=False)
+    print()
+    _run_shapes([(2048, 2048), (8192, 8192)], causal=True)
 
 
 if __name__ == "__main__":

@@ -154,6 +154,4 @@ def test_results_to_json_is_serializable_and_round_trips():
     r = results["turboquant_prod"]["tiny"]
     assert reloaded["turboquant_prod"]["tiny"]["total_tokens"] == r.total_tokens
     assert reloaded["turboquant_prod"]["tiny"]["compression_ratio"] == r.compression_ratio
-    assert len(reloaded["turboquant_prod"]["tiny"]["memory_snapshots"]) == len(
-        r.memory_snapshots
-    )
+    assert len(reloaded["turboquant_prod"]["tiny"]["memory_snapshots"]) == len(r.memory_snapshots)

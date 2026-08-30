@@ -173,7 +173,11 @@ class _ShardedPool:
         self.n_shards = n_shards
         self.block_size = block_size
         self.pools = [
-            BlockPoolAllocator(PoolConfig(block_size=block_size, n_blocks=pool_blocks_per_shard, grow_on_exhaustion=False))
+            BlockPoolAllocator(
+                PoolConfig(
+                    block_size=block_size, n_blocks=pool_blocks_per_shard, grow_on_exhaustion=False
+                )
+            )
             for _ in range(n_shards)
         ]
 
@@ -222,7 +226,9 @@ def _run_policy(
     estimator = RateEstimator(half_life=n_sessions)
     planner = CacheRoutePlanner(
         n_shards=n_shards,
-        qcap=float(n_sessions),  # generous: keeps kb=1 for every session, like the paper's primary workload
+        qcap=float(
+            n_sessions
+        ),  # generous: keeps kb=1 for every session, like the paper's primary workload
         warm_slots_per_shard=float(resident_capacity_per_shard),
     )
     table = planner.plan([])
@@ -266,7 +272,9 @@ def _run_policy(
         # n_turns turns; cap its running context like a real chat session's
         # sliding window so per-session footprint stays bounded instead of
         # eventually exceeding what any shard could ever hold.
-        over_context_cap = owner in session_len and session_len[owner] + turn_tokens > max_context_tokens
+        over_context_cap = (
+            owner in session_len and session_len[owner] + turn_tokens > max_context_tokens
+        )
         still_resident = (
             owner in session_caches and session_shard.get(owner) == shard and not over_context_cap
         )
@@ -285,7 +293,9 @@ def _run_policy(
                 break
 
         if not still_resident:
-            session_caches[owner] = build_pooled_caches(model, sharded_pool.pools[shard], owner=owner, step=block_size)
+            session_caches[owner] = build_pooled_caches(
+                model, sharded_pool.pools[shard], owner=owner, step=block_size
+            )
             session_shard[owner] = shard
 
         _prefill(model, session_caches[owner], new_tokens)
@@ -352,7 +362,9 @@ def run_benchmark(
 
 
 def format_summary(results: dict[str, PolicyOutcome]) -> str:
-    header = f"{'Policy':<14}{'Hit rate':>10}{'Imbalance':>12}{'Tokens saved':>14}{'Wall time (s)':>16}"
+    header = (
+        f"{'Policy':<14}{'Hit rate':>10}{'Imbalance':>12}{'Tokens saved':>14}{'Wall time (s)':>16}"
+    )
     sep = "-" * len(header)
     lines = [header, sep]
     for name, r in results.items():

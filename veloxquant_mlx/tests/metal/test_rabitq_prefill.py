@@ -27,8 +27,9 @@ pytestmark = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 
-def _reference_prefill(q, scale, k_bits, k_mag, k_const, v_idx_unpacked, v_cents):
+def _reference_prefill(q, scale, k_bits, k_mag, k_const, v_idx_unpacked, v_cents, causal=False):
     D = q.shape[-1]
+    S_q, S_kv = q.shape[2], k_bits.shape[2]
     signs = (
         np.unpackbits(k_bits, axis=-1, count=D, bitorder="little").astype(np.float32) * 2.0 - 1.0
     )  # [B,H,Skv,D] +-1
@@ -36,6 +37,12 @@ def _reference_prefill(q, scale, k_bits, k_mag, k_const, v_idx_unpacked, v_cents
     scores = (
         np.einsum("bhqd,bhsd->bhqs", q.astype(np.float32), k_hat) * scale + k_const[:, :, None, :]
     )
+    if causal:
+        # Queries align to the tail of the KV cache: q_abs = (S_kv - S_q) + q_pos.
+        q_abs = (S_kv - S_q) + np.arange(S_q)
+        kv_pos = np.arange(S_kv)
+        mask = kv_pos[None, :] > q_abs[:, None]  # [S_q, S_kv]
+        scores = np.where(mask, -np.inf, scores)
     scores = scores - scores.max(axis=-1, keepdims=True)
     w = np.exp(scores)
     w = w / w.sum(axis=-1, keepdims=True)
@@ -55,7 +62,7 @@ def _make_inputs(B, H, S_q, S_kv, D, seed=0):
     return q, scale, k_bits, k_mag, k_const, v_idx, v_cents
 
 
-def _run_kernel(q, scale, k_bits, k_mag, k_const, v_idx_unpacked, v_cents):
+def _run_kernel(q, scale, k_bits, k_mag, k_const, v_idx_unpacked, v_cents, causal=False):
     packed = rabitq_pack_values(mx.array(v_idx_unpacked))
     out = rabitq_prefill_attend(
         mx.array(q),
@@ -65,6 +72,7 @@ def _run_kernel(q, scale, k_bits, k_mag, k_const, v_idx_unpacked, v_cents):
         mx.array(k_const),
         packed,
         mx.array(v_cents),
+        causal=causal,
     )
     mx.eval(out)
     return np.array(out, dtype=np.float32)
@@ -95,6 +103,46 @@ def test_prefill_matches_decode_kernel_semantics():
     expected = _reference_prefill(*args)
     got = _run_kernel(*args)
     np.testing.assert_allclose(got, expected, atol=2e-2, rtol=2e-2)
+
+
+# ---------------------------------------------------------------------------
+# Causal self-attention prefill
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("D", [64, 128])
+@pytest.mark.parametrize("S_q", [1, 8, 33, 256])
+@pytest.mark.parametrize("S_kv", [8, 33, 2048])
+@pytest.mark.parametrize("BH", [(1, 1), (2, 2)])
+def test_prefill_attend_causal_parity(D, S_q, S_kv, BH):
+    """Causal masking (queries aligned to the tail of the KV cache, i.e.
+    q_abs = (S_kv - S_q) + q_pos) matches a masked numpy reference."""
+    if S_q > S_kv:
+        pytest.skip("causal alignment requires S_q <= S_kv")
+    B, H = BH
+    args = _make_inputs(B, H, S_q, S_kv, D, seed=1000 + D + S_q + S_kv + B * H)
+    expected = _reference_prefill(*args, causal=True)
+    got = _run_kernel(*args, causal=True)
+    assert got.shape == (B, H, S_q, D)
+    np.testing.assert_allclose(got, expected, atol=2e-2, rtol=2e-2)
+
+
+def test_prefill_causal_self_attention_shape():
+    """The from-scratch prefill case: S_q == S_kv, standard causal
+    self-attention with no pre-existing cache prefix."""
+    args = _make_inputs(1, 4, 64, 64, 128, seed=99)
+    expected = _reference_prefill(*args, causal=True)
+    got = _run_kernel(*args, causal=True)
+    np.testing.assert_allclose(got, expected, atol=2e-2, rtol=2e-2)
+
+
+def test_prefill_causal_differs_from_cross_attention():
+    """Sanity: causal=True must actually change the output relative to
+    the default cross-attention (unmasked) path on the same inputs."""
+    args = _make_inputs(1, 2, 16, 16, 64, seed=5)
+    cross = _run_kernel(*args, causal=False)
+    causal = _run_kernel(*args, causal=True)
+    assert not np.allclose(cross, causal, atol=1e-3)
 
 
 # ---------------------------------------------------------------------------

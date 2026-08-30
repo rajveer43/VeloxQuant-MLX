@@ -1,14 +1,15 @@
 """Tiled prefill attention over the asymmetric RaBitQ cache — simdgroup_matrix.
 
-The prefill-shaped companion to :func:`rabitq_fused_attend`. Targets the
-multi-turn VLM workload: S_q new-turn tokens attending over S_kv
-compressed history slots (image tokens), a matmul-shaped problem where
-the decode kernel's one-query-per-threadgroup scalar dots waste the
-hardware matrix pipeline. Both matmuls (Q·K̂ᵀ and W·V̂) run on 8×8
-``simdgroup_matrix`` tiles (MSL spec §2.4, §6.7); K is decoded from
-1-bit packed signs and V from nibble-packed 4-bit codebook indices
-on the fly inside the tile loop — no dequantized K or V matrix is ever
-materialized.
+The prefill-shaped companion to :func:`rabitq_fused_attend`. Targets any
+S_q new-turn tokens attending over S_kv compressed history slots — the
+multi-turn VLM workload (cross-attention, image-token history) as well
+as standard autoregressive self-attention prefill (``causal=True``) — a
+matmul-shaped problem where the decode kernel's one-query-per-threadgroup
+scalar dots waste the hardware matrix pipeline. Both matmuls (Q·K̂ᵀ and
+W·V̂) run on 8×8 ``simdgroup_matrix`` tiles (MSL spec §2.4, §6.7); K is
+decoded from 1-bit packed signs and V from nibble-packed 4-bit codebook
+indices on the fly inside the tile loop — no dequantized K or V matrix
+is ever materialized.
 
 Score model (differs from the decode kernel — exact dot, not Hamming):
 
@@ -17,9 +18,12 @@ Score model (differs from the decode kernel — exact dot, not Hamming):
 
 ``scale`` is a plain scalar (fold 1/sqrt(D) here); it is multiplied
 into Q once at staging. Values are nibble-packed only (the format
-:func:`rabitq_pack_values` produces). Cross-attention only: every query
-row attends over all S_kv slots (no causal mask) — new-token
-self-attention belongs on the fp16 path.
+:func:`rabitq_pack_values` produces). Supports both cross-attention
+(every query row attends over all S_kv slots) and causal self-attention
+(``causal=True``) for autoregressive prefill. Causal alignment follows
+the same convention as ``fused_sdpa.metal``: queries align to the tail
+of the KV cache, i.e. ``q_abs = (S_kv - S_q) + q_pos``, and slot ``j``
+is masked when ``j > q_abs``.
 
 Public API:
   - :func:`rabitq_prefill_attend`
@@ -92,6 +96,7 @@ def _prefill_kernel(n_bytes: int, d: int):
                 "k_const",
                 "v_idx",
                 "v_cents",
+                "flags",
             ],
             output_names=["out"],
             source=_RABITQ_PREFILL_SRC,
@@ -113,12 +118,18 @@ def rabitq_prefill_attend(
     k_const: mx.array,  # [B, H, S_kv]        fp32 — additive score bias
     v_idx: mx.array,  # [B, H, S_kv, D/2]   uint8 — nibble-packed value indices
     v_cents: mx.array,  # [n_cents <= 16]     fp32 — scalar value codebook
+    *,
+    causal: bool = False,
 ) -> mx.array:
     """Tiled prefill attention over the compressed asymmetric cache.
 
-    Cross-attention: every query row attends over all ``S_kv`` cached
-    slots (no causal mask). Scores are exact dots with sign-decoded
-    keys — ``(q . signs*k_mag) * scale + k_const`` — computed on
+    By default this is cross-attention: every query row attends over all
+    ``S_kv`` cached slots. Pass ``causal=True`` for autoregressive
+    self-attention prefill — queries then align to the tail of the KV
+    cache (``q_abs = (S_kv - S_q) + q_pos``, matching the convention in
+    ``fused_sdpa.metal``), and slot ``j`` is masked whenever
+    ``j > q_abs``. Scores are exact dots with sign-decoded keys —
+    ``(q . signs*k_mag) * scale + k_const`` — computed on
     simdgroup_matrix 8x8 tiles, as is the weight-value product. Values
     must be nibble-packed (see :func:`rabitq_pack_values`).
 
@@ -159,6 +170,7 @@ def rabitq_prefill_attend(
 
     n_qblk = (S_q + 31) // 32
     n_tg = B * H * n_qblk
+    flags = mx.array([1 if causal else 0], dtype=mx.uint32)
 
     outputs = _prefill_kernel(n_bytes, D)(
         inputs=[
@@ -169,6 +181,7 @@ def rabitq_prefill_attend(
             k_const.astype(mx.float32),
             v_idx.astype(mx.uint8),
             v_cents.astype(mx.float32),
+            flags,
         ],
         template=[("N_BYTES", n_bytes), ("MAX_D", D), ("NSG_C", _N_SIMDGROUPS)],
         # MLX grid = total threads; one (32 x NSG) threadgroup per q-block

@@ -41,6 +41,11 @@
     uint q_base  = ((b_idx * H + h_idx) * S_q) * D;
     uint kv_base = (b_idx * H + h_idx) * S_kv;
     float sc     = scale[0];
+    bool  causal = flags[0] != 0u;
+    // Queries align to the tail of the KV cache — same convention as
+    // fused_sdpa.metal: q_pos's absolute position is offset by the
+    // already-cached prefix (S_kv - S_q).
+    int   q_align = int(S_kv) - int(S_q);
 
     // ---- Stage the 32-row Q block (scale folded; rows past S_q zeroed) ----
     for (uint idx = tid; idx < BQ_TG * D; idx += N_THREADS) {
@@ -91,21 +96,26 @@
         // 3. Online softmax (lanes 0..7 each own one of this sg's rows).
         if (lane < BQ) {
             uint r = lane;
+            int  q_abs = q_align + int(qblk * BQ_TG + sg * BQ + r);
             float s_j[8];
             float chunk_max = -INFINITY;
             for (uint j = 0; j < BK; ++j) {
                 uint slot = s0 + j;
-                s_j[j] = (slot < S_kv)
+                bool valid = slot < S_kv && (!causal || int(slot) <= q_abs);
+                s_j[j] = valid
                     ? float(s_tile[sg][r * BK + j]) + k_const[kv_base + slot]
                     : -INFINITY;
                 chunk_max = metal::max(chunk_max, s_j[j]);
             }
             float m_old  = m_run[sg][r];
             float m_new  = metal::max(m_old, chunk_max);
-            float factor = metal::exp(m_old - m_new);
+            // Guard exp(-inf - -inf) = NaN: a chunk can be fully masked
+            // (causal, or a still-empty running max) with no valid slots.
+            bool  chunk_empty = m_new == -INFINITY;
+            float factor = chunk_empty ? 0.0f : metal::exp(m_old - m_new);
             float wsum   = 0.0f;
             for (uint j = 0; j < BK; ++j) {
-                float w = metal::exp(s_j[j] - m_new);
+                float w = chunk_empty ? 0.0f : metal::exp(s_j[j] - m_new);
                 w_tile[sg][r * BK + j] = half(w);
                 wsum += w;
             }

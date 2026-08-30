@@ -221,7 +221,9 @@ def _run_cacheroute(
     """CacheRoute needs its own loop: admitted-session hits are membership-based, not LRU."""
     from veloxquant_mlx.routing.cacheroute import CacheRoutePlanner, RateEstimator
 
-    planner = CacheRoutePlanner(n_shards=n_shards, qcap=qcap, warm_slots_per_shard=warm_slots_per_shard)
+    planner = CacheRoutePlanner(
+        n_shards=n_shards, qcap=qcap, warm_slots_per_shard=warm_slots_per_shard
+    )
     estimator = RateEstimator(half_life=replan_interval / 2)
     table = planner.plan([])
     admitted_ever_seen: set[int] = set()
@@ -331,7 +333,9 @@ def run_benchmark(
         imbalance=_imbalance(sticky.load_per_shard()),
     )
 
-    cr_hits, cr_load = _run_cacheroute(workload, n_shards, warm_slots_per_shard, qcap, replan_interval)
+    cr_hits, cr_load = _run_cacheroute(
+        workload, n_shards, warm_slots_per_shard, qcap, replan_interval
+    )
     results["cacheroute"] = PolicyResult(
         policy="cacheroute",
         n_arrivals=n_arrivals,
@@ -364,7 +368,9 @@ def results_to_json(results: dict[str, PolicyResult], gini: float) -> dict[str, 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="CacheRoute semi-synthetic admission/placement benchmark")
+    parser = argparse.ArgumentParser(
+        description="CacheRoute semi-synthetic admission/placement benchmark"
+    )
     parser.add_argument("--n-sessions", type=int, default=DEFAULT_N_SESSIONS)
     parser.add_argument("--n-arrivals", type=int, default=DEFAULT_N_ARRIVALS)
     parser.add_argument("--n-shards", type=int, default=DEFAULT_N_SHARDS)

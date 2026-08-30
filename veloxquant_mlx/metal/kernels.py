@@ -32,6 +32,9 @@ from veloxquant_mlx.metal._comm_vq import (
 from veloxquant_mlx.metal._crosskv_rope import (
     crosskv_rope_recode,
 )
+from veloxquant_mlx.metal._flash_prefill import (
+    flash_prefill_attend,
+)
 from veloxquant_mlx.metal._h2o_evict import (
     h2o_fused_evict,
 )
@@ -108,6 +111,7 @@ __all__ = [
     "rabitq_encode",
     "rabitq_pack_values",
     "rabitq_prefill_attend",
+    "flash_prefill_attend",
     "h2o_fused_evict",
     "keyformer_fused_evict",
     "qfilters_fused_evict",
