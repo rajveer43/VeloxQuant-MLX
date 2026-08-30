@@ -162,7 +162,9 @@ class RateEstimator:
 
     def __post_init__(self) -> None:
         if self.half_life <= 0:
-            raise QuantizerConfigError(f"RateEstimator: half_life must be > 0, got {self.half_life}")
+            raise QuantizerConfigError(
+                f"RateEstimator: half_life must be > 0, got {self.half_life}"
+            )
         if self.window < 1:
             raise QuantizerConfigError(f"RateEstimator: window must be >= 1, got {self.window}")
         self._decay = math.pow(0.5, 1.0 / self.half_life)

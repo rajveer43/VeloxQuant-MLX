@@ -235,18 +235,34 @@ def test_cold_tail_load_spread_evenly_across_all_shards():
 
 
 def test_is_admitted_false_for_unknown_owner():
-    table = RoutingTable(shards={}, expected_load=[0.0], n_shards=1, admitted_rate_total=0.0, unadmitted_rate_total=0.0)
+    table = RoutingTable(
+        shards={},
+        expected_load=[0.0],
+        n_shards=1,
+        admitted_rate_total=0.0,
+        unadmitted_rate_total=0.0,
+    )
     assert not table.is_admitted(999)
 
 
 def test_preferred_shard_returns_fallback_when_not_admitted():
-    table = RoutingTable(shards={}, expected_load=[0.0, 0.0], n_shards=2, admitted_rate_total=0.0, unadmitted_rate_total=0.0)
+    table = RoutingTable(
+        shards={},
+        expected_load=[0.0, 0.0],
+        n_shards=2,
+        admitted_rate_total=0.0,
+        unadmitted_rate_total=0.0,
+    )
     assert table.preferred_shard(owner=42, fallback=1) == 1
 
 
 def test_preferred_shard_returns_only_assigned_shard():
     table = RoutingTable(
-        shards={1: (2,)}, expected_load=[0.0, 0.0, 0.0], n_shards=3, admitted_rate_total=5.0, unadmitted_rate_total=0.0
+        shards={1: (2,)},
+        expected_load=[0.0, 0.0, 0.0],
+        n_shards=3,
+        admitted_rate_total=5.0,
+        unadmitted_rate_total=0.0,
     )
     assert table.preferred_shard(1) == 2
 
@@ -264,34 +280,52 @@ def test_preferred_shard_picks_least_loaded_among_replicas():
 
 def test_preferred_shard_breaks_ties_by_lowest_shard_id():
     table = RoutingTable(
-        shards={1: (2, 0)}, expected_load=[10.0, 0.0, 10.0], n_shards=3, admitted_rate_total=5.0, unadmitted_rate_total=0.0
+        shards={1: (2, 0)},
+        expected_load=[10.0, 0.0, 10.0],
+        n_shards=3,
+        admitted_rate_total=5.0,
+        unadmitted_rate_total=0.0,
     )
     assert table.preferred_shard(1) == 0
 
 
 def test_imbalance_is_one_for_perfectly_even_load():
     table = RoutingTable(
-        shards={}, expected_load=[10.0, 10.0, 10.0], n_shards=3, admitted_rate_total=0.0, unadmitted_rate_total=30.0
+        shards={},
+        expected_load=[10.0, 10.0, 10.0],
+        n_shards=3,
+        admitted_rate_total=0.0,
+        unadmitted_rate_total=30.0,
     )
     assert table.imbalance() == pytest.approx(1.0)
 
 
 def test_imbalance_reflects_hot_shard():
     table = RoutingTable(
-        shards={}, expected_load=[100.0, 10.0, 10.0], n_shards=3, admitted_rate_total=0.0, unadmitted_rate_total=120.0
+        shards={},
+        expected_load=[100.0, 10.0, 10.0],
+        n_shards=3,
+        admitted_rate_total=0.0,
+        unadmitted_rate_total=120.0,
     )
     assert table.imbalance() == pytest.approx(100.0 / 40.0)
 
 
 def test_imbalance_is_one_when_all_load_is_zero():
     table = RoutingTable(
-        shards={}, expected_load=[0.0, 0.0], n_shards=2, admitted_rate_total=0.0, unadmitted_rate_total=0.0
+        shards={},
+        expected_load=[0.0, 0.0],
+        n_shards=2,
+        admitted_rate_total=0.0,
+        unadmitted_rate_total=0.0,
     )
     assert table.imbalance() == 1.0
 
 
 def test_imbalance_is_one_for_empty_expected_load():
-    table = RoutingTable(shards={}, expected_load=[], n_shards=0, admitted_rate_total=0.0, unadmitted_rate_total=0.0)
+    table = RoutingTable(
+        shards={}, expected_load=[], n_shards=0, admitted_rate_total=0.0, unadmitted_rate_total=0.0
+    )
     assert table.imbalance() == 1.0
 
 

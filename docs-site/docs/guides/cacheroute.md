@@ -61,9 +61,9 @@ If you don't already track per-session request rates, `RateEstimator` provides a
 from veloxquant_mlx.routing import RateEstimator
 
 estimator = RateEstimator(half_life=20.0)  # smoothing window, in number of record() calls
-estimator.record(owner=session_id)         # call on every request
-estimator.rate(session_id)                 # current smoothed estimate
-estimator.rates()                          # -> list[SessionRate], feed straight into plan()
+estimator.record(owner=session_id)  # call on every request
+estimator.rate(session_id)  # current smoothed estimate
+estimator.rates()  # -> list[SessionRate], feed straight into plan()
 ```
 
 Any other source of `{owner: rate}` works too — including offline aggregate statistics, as in the paper's telemetry-derived workload.
