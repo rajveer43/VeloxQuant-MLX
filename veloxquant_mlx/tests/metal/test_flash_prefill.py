@@ -30,9 +30,7 @@ pytestmark = pytest.mark.skipif(
 
 def _reference_flash(q, k, v, scale):
     S_q, S_kv = q.shape[2], k.shape[2]
-    scores = (
-        np.einsum("bhqd,bhsd->bhqs", q.astype(np.float32), k.astype(np.float32)) * scale
-    )
+    scores = np.einsum("bhqd,bhsd->bhqs", q.astype(np.float32), k.astype(np.float32)) * scale
     q_abs = (S_kv - S_q) + np.arange(S_q)
     kv_pos = np.arange(S_kv)
     mask = kv_pos[None, :] > q_abs[:, None]  # [S_q, S_kv]
