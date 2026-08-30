@@ -22,3 +22,7 @@ jobs:
         run: >
           python -m pytest tests/non_metal/test_mac_recommender.py -q
           --noconftest --import-mode=importlib -c /dev/null -o addopts=
+      - name: Run auto KV-config selector unit tests (no MLX)
+        run: >
+          python -m pytest tests/non_metal/test_auto_kv_config.py -q
+          --noconftest --import-mode=importlib -c /dev/null -o addopts=
