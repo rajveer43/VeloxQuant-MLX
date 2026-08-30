@@ -18,7 +18,7 @@ Prefill is a different problem. The whole prompt goes through attention in one s
 
 None of the existing kernels touch this. They all assume the cache already exists. So the question in #277 was: is there a real software gap here that a `simdgroup_matrix`-tiled kernel (the same technique behind `rabitq_prefill_attend`) could close, or is the ~30x gap purely a hardware FLOPs ceiling that no amount of kernel-writing fixes?
 
-<!-- truncate -->
+{/* truncate */}
 
 ## Step 1: give the existing prefill kernel a causal mask
 
