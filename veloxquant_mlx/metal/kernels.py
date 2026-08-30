@@ -18,6 +18,9 @@ Kernels are organized into focused submodules:
   _keyformer_evict — Fused Keyformer eviction: Gumbel-regularized argmin + evict + RoPE-remap
   _qfilters_evict — Fused Q-Filters eviction: projection scoring + block top-k compaction
   _crosskv_rope    — Cross-model KV transfer: fused source→target RoPE re-encode
+  _flash_prefill   — Plain-fp16 causal flash attention (tiled simdgroup_matrix)
+  _experimental_streaming_prefill — Row-owned streaming causal attention
+                     (experimental alternative decomposition to _flash_prefill)
 """
 
 from __future__ import annotations
@@ -31,6 +34,9 @@ from veloxquant_mlx.metal._comm_vq import (
 )
 from veloxquant_mlx.metal._crosskv_rope import (
     crosskv_rope_recode,
+)
+from veloxquant_mlx.metal._experimental_streaming_prefill import (
+    streaming_prefill_attend,
 )
 from veloxquant_mlx.metal._flash_prefill import (
     flash_prefill_attend,
@@ -112,6 +118,7 @@ __all__ = [
     "rabitq_pack_values",
     "rabitq_prefill_attend",
     "flash_prefill_attend",
+    "streaming_prefill_attend",
     "h2o_fused_evict",
     "keyformer_fused_evict",
     "qfilters_fused_evict",
