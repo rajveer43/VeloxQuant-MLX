@@ -409,6 +409,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.66.0 (2026-08-30)
+
+### Features
+
+- CacheRoute rate-aware session admission and shard placement (#278)
+  ([#279](https://github.com/rajveer43/VeloxQuant-MLX/pull/279),
+  [`2258961`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2258961427a8995d44fbcb17094da378f7c93373))
+
+
 ## v0.65.0 (2026-08-28)
 
 ### Bug Fixes
