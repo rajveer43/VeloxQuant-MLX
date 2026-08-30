@@ -409,6 +409,37 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.67.0 (2026-08-30)
+
+### Bug Fixes
+
+- Use MDX-safe truncate marker in prefill-roofline blog post
+  ([#280](https://github.com/rajveer43/VeloxQuant-MLX/pull/280),
+  [`e85cf3f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e85cf3f118e3ded0838b802c23461e45075af78d))
+
+### Code Style
+
+- Apply ruff format to CacheRoute files (pre-existing, unrelated to #277)
+  ([#280](https://github.com/rajveer43/VeloxQuant-MLX/pull/280),
+  [`e85cf3f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e85cf3f118e3ded0838b802c23461e45075af78d))
+
+- Fix ruff-format violation in test_flash_prefill.py
+  ([#280](https://github.com/rajveer43/VeloxQuant-MLX/pull/280),
+  [`e85cf3f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e85cf3f118e3ded0838b802c23461e45075af78d))
+
+### Features
+
+- Causal prefill attention + from-scratch flash kernel investigation
+  ([#280](https://github.com/rajveer43/VeloxQuant-MLX/pull/280),
+  [`e85cf3f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e85cf3f118e3ded0838b802c23461e45075af78d))
+
+### Performance Improvements
+
+- Measurement-driven tuning pass on flash_prefill_attend
+  ([#280](https://github.com/rajveer43/VeloxQuant-MLX/pull/280),
+  [`e85cf3f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e85cf3f118e3ded0838b802c23461e45075af78d))
+
+
 ## v0.66.0 (2026-08-30)
 
 ### Features
