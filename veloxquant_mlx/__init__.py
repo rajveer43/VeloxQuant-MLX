@@ -49,6 +49,7 @@ from veloxquant_mlx.profiling import (
     profile_layers,
 )
 from veloxquant_mlx.quantizers.base import QuantizerFactory
+from veloxquant_mlx.routing import CacheRoutePlanner, RateEstimator, RoutingTable, SessionRate
 
 __all__ = [
     # Configuration & builders
@@ -102,6 +103,11 @@ __all__ = [
     "WorkloadSpec",
     "detect_hardware_info",
     "select_kv_cache_config",
+    # CacheRoute: rate-aware session admission and shard placement (issue #278)
+    "CacheRoutePlanner",
+    "RateEstimator",
+    "RoutingTable",
+    "SessionRate",
 ]
 
 __version__ = "0.65.0"
