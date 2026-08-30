@@ -73,6 +73,8 @@ def __getattr__(name: str):
         "keyformer_fused_evict",
         "qfilters_fused_evict",
         "qfilters_score",
+        "flash_prefill_attend",
+        "streaming_prefill_attend",
     }
     if name in _turboquant_names:
         from . import kernels as _k
@@ -105,4 +107,6 @@ __all__ = [
     "keyformer_fused_evict",
     "qfilters_fused_evict",
     "qfilters_score",
+    "flash_prefill_attend",
+    "streaming_prefill_attend",
 ]
