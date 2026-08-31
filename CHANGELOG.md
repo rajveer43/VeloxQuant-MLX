@@ -409,6 +409,33 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.67.1 (2026-08-31)
+
+### Bug Fixes
+
+- **docs-site**: Disable Algolia contextualSearch, index has no facets
+  ([#285](https://github.com/rajveer43/VeloxQuant-MLX/pull/285),
+  [`7238456`](https://github.com/rajveer43/VeloxQuant-MLX/commit/72384569acb56d8eb8b9e7307acadd4528ca9098))
+
+### Code Style
+
+- Apply ruff format to metal-kernels.md code blocks
+  ([#284](https://github.com/rajveer43/VeloxQuant-MLX/pull/284),
+  [`9e627e7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9e627e71249e6f9811b1cbd77bc92824aadc37ca))
+
+### Documentation
+
+- Add manual Algolia indexing script
+  ([`9fb24a6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9fb24a62b6d83679e73eac8cdff5a6144f25fa00))
+
+- Document 8 missing Metal kernel modules
+  ([#284](https://github.com/rajveer43/VeloxQuant-MLX/pull/284),
+  [`9e627e7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9e627e71249e6f9811b1cbd77bc92824aadc37ca))
+
+- Rename Algolia env vars to clearer ALGOLIA_* names
+  ([`a95657d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a95657d9b99a58991809c1cb6a14cd6385e7a54d))
+
+
 ## v0.67.0 (2026-08-30)
 
 ### Bug Fixes
