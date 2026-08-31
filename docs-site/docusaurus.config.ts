@@ -162,7 +162,13 @@ const config: Config = {
         appId: process.env.ALGOLIA_APP_ID!,
         apiKey: process.env.ALGOLIA_SEARCH_API_KEY!,
         indexName: 'veloxquant-mlx',
-        contextualSearch: true,
+        // contextualSearch requires facets (lang/docusaurus_tag) that only
+        // the official DocSearch crawler writes. This index is built by our
+        // own scripts/algolia-index.js, which doesn't set those facets, so
+        // contextualSearch's auto-applied filter matches zero records and
+        // every query silently returns no results. Leave it off until the
+        // indexer writes matching facets.
+        contextualSearch: false,
       },
     } : {}),
   } satisfies Preset.ThemeConfig,
