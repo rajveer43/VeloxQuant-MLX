@@ -218,6 +218,28 @@ Measured on Apple M4 (B=1, H=32, D=128, b=2, g=32, S_q=1) vs. dequantize → MLX
 
 ---
 
+## KIVI group quantization
+
+`veloxquant_mlx.metal._kivi_quant`
+
+### `kivi_group_quant_dequant`
+
+```python
+def kivi_group_quant_dequant(
+    x: mx.array,
+    axis: int,
+    group_size: int,
+    levels: int,
+    eps: float = 1e-8,
+) -> mx.array
+```
+
+Fuses `KIVIKVCache._quant_dequant_along`'s full round-trip (moveaxis → pad → group min/max → round/clip → reconstruct → moveaxis back) into one dispatch. `axis=-2` (per-channel, keys) uses one thread per group; `axis=-1` (per-token, values) uses one SIMD-group per group with a `simd_shuffle_xor` reduction. Padding replicates the last live element, rounding is half-to-even, `eps` floors degenerate group scales — all pinned by parity tests against the MLX path.
+
+- Returns: array of `x`'s shape and dtype, quantized and reconstructed
+
+---
+
 ## CommVQ kernels
 
 `veloxquant_mlx.metal._comm_vq`
@@ -235,6 +257,35 @@ def comm_vq_decode_metal(
 ```
 
 Fused centroid gather + RoPE application in a single Metal pass. Returns decoded+position-embedded keys.
+
+---
+
+## Cross-model KV transfer
+
+`veloxquant_mlx.metal._crosskv_rope`
+
+### `crosskv_rope_recode`
+
+```python
+def crosskv_rope_recode(
+    keys: mx.array,        # [BH, N, D] fp16/fp32 — rotated under source_base, D even
+    positions: mx.array,   # [N] absolute positions, shared across BH groups
+    source_base: float,    # source model's rope_theta
+    target_base: float,    # target model's rope_theta
+) -> mx.array
+```
+
+Fuses `strip_rope` → `apply_rope` into a single dispatch when transplanting a KV cache between models with different `rope_theta`: the two rotations on the same `(d, d + D/2)` pair compose into one rotation by the per-dimension angle difference. Numerically equivalent to `veloxquant_mlx.transfer.rope.recode_rope`.
+
+- Returns: `[BH, N, D]` keys rotated as though produced by the target model, same dtype as `keys`
+
+### `is_available`
+
+```python
+def is_available() -> bool
+```
+
+True when a Metal GPU is present to dispatch to.
 
 ---
 
@@ -282,6 +333,144 @@ def turboquant_fused_rvq_decode_attend(
 ```
 
 Two-stage RVQ decode + scaled dot-product attention in a single kernel. Most efficient path for TurboQuant RVQ inference.
+
+---
+
+## Fused RVQ quantize + pack
+
+`veloxquant_mlx.metal._rvq_quant_pack`
+
+### `rvq_quant_pack`
+
+```python
+def rvq_quant_pack(
+    rotated: mx.array,      # [N, D] fp16/fp32 — post-rotation vectors, D power of two <= 1024
+    centroids1: mx.array,   # [2**bits] stage-1 sorted centroids
+    boundaries1: mx.array,  # [2**bits - 1] stage-1 Voronoi boundaries
+    boundaries2: mx.array,  # [2**bits - 1] stage-2 (residual) Voronoi boundaries
+    bits: int,               # 1-4
+) -> tuple[mx.array, mx.array]
+```
+
+Fuses stage-1 quantize, stage-2 (residual) quantize, and both bit-packs into one dispatch — bit-identical to `ScalarCodebook.quantize` + `_pack_indices` run twice.
+
+- Returns: `(packed1, packed2)`, each `[N, ceil(D / (32 // bits))]` uint32
+
+---
+
+## Prefill attention kernels
+
+`veloxquant_mlx.metal._flash_prefill` / `veloxquant_mlx.metal._experimental_streaming_prefill`
+
+### `flash_prefill_attend`
+
+```python
+def flash_prefill_attend(
+    q: mx.array,      # [B, H, S_q, D]  fp16 — queries
+    k: mx.array,      # [B, H, S_kv, D] fp16 — plain (uncompressed) keys
+    v: mx.array,      # [B, H, S_kv, D] fp16 — plain (uncompressed) values
+    scale: mx.array,  # [1] fp32 — 1/sqrt(D)
+) -> mx.array
+```
+
+Causal flash attention over plain fp16 K/V for from-scratch prefill (no existing compressed cache) — `simdgroup_matrix` tiles, `exp2` softmax with pre-folded scale, and a causal block-skip that drops fully-future KV chunks before loading. Always causal (`q_abs = (S_kv - S_q) + q_pos`). Requires `D % 8 == 0`, `D <= 128`.
+
+- Returns: `[B, H, S_q, D]` fp16 attention output
+
+### `streaming_prefill_attend`
+
+```python
+def streaming_prefill_attend(
+    q: mx.array, k: mx.array, v: mx.array,  # same shapes/dtypes as flash_prefill_attend
+    scale: mx.array,
+    implementation: str = "streaming",
+    # one of: "streaming", "streaming_block2", "streaming_block4",
+    #         "streaming_block8", "streaming_multirow"
+) -> mx.array
+```
+
+Experimental row-owned alternative to `flash_prefill_attend`: one SIMD-group owns one query row for the whole kernel, K/V stream from device memory with no threadgroup memory and no barriers. Built to benchmark against the tiled approach, not to replace it — `flash_prefill_attend` remains the production kernel. Requires `D % 32 == 0`, `D <= 128`.
+
+- Returns: `[B, H, S_q, D]` fp16 attention output
+
+---
+
+## KV-cache eviction kernels
+
+`veloxquant_mlx.metal._h2o_evict` / `_keyformer_evict` / `_qfilters_evict`
+
+Callers must only invoke these when every `(batch, head)` group is already over budget — the below-budget case is handled by the existing vectorized MLX path.
+
+### `h2o_fused_evict`
+
+```python
+def h2o_fused_evict(
+    keys_mid: mx.array,      # [BH, n_total, D] fp16
+    values_mid: mx.array,    # [BH, n_total, D] fp16
+    scores_mid: mx.array,    # [BH, n_total] fp32 — appended row's score is 0.0
+    positions_mid: mx.array, # [BH, n_total] int32
+    n_sink: int,
+    rope_base: float,
+    grace: int = 0,
+    nsg: int = 4,
+) -> tuple[mx.array, mx.array, mx.array, mx.array]
+```
+
+Two dispatches: a sink/grace-protected argmin reduction, then a compaction that re-rotates (NeoX-style RoPE) exactly the rows whose position shifted. Matches `h2o_update`'s eviction branch bit-for-bit.
+
+- Returns: `(keys_out, values_out, scores_out, positions_out)`, each with `n_total - 1` rows
+
+### `keyformer_fused_evict`
+
+```python
+def keyformer_fused_evict(
+    keys_mid: mx.array, values_mid: mx.array, scores_mid: mx.array,
+    gumbel_mid: mx.array,     # [BH, n_total] fp32 — frozen per-position Gumbel noise
+    positions_mid: mx.array,
+    n_sink: int,
+    rope_base: float,
+    tau: float = 0.0,   # 0.0 collapses to h2o_fused_evict's raw-score argmin
+    recent: int = 0,
+    nsg: int = 4,
+) -> tuple[mx.array, mx.array, mx.array, mx.array, mx.array]
+```
+
+Structurally `h2o_fused_evict` with the selection value replaced by `score + tau * gumbel`.
+
+- Returns: `(keys_out, values_out, scores_out, gumbel_out, positions_out)`, each with `n_total - 1` rows
+
+### `qfilters_score`
+
+```python
+def qfilters_score(
+    keys: mx.array,        # [BH, n_total, D] fp16
+    filter_dir: mx.array,  # [BH, D] fp32 — per-group unit-norm Q-Filter
+    n_sink: int = 0,
+    recent: int = 0,
+    sign: int = 1,          # +1 keeps highest projections, -1 inverts
+) -> mx.array
+```
+
+Projection scores `sign * <k_i, filter_dir>` (paper Theorem 3.3); sink/recent rows are forced to `+inf` so they always survive downstream selection.
+
+- Returns: `[BH, n_total]` fp32 scores
+
+### `qfilters_fused_evict`
+
+```python
+def qfilters_fused_evict(
+    keys_mid: mx.array, values_mid: mx.array,
+    filter_dir: mx.array,
+    budget: int,             # <= QFILTERS_MAX_BUDGET (4096)
+    n_sink: int = 0,
+    recent: int = 0,
+    sign: int = 1,
+) -> tuple[mx.array, mx.array, mx.array]
+```
+
+Scores every row via `qfilters_score`, picks the keep-threshold with `mx.sort` on the MLX side, then compacts the surviving `budget` rows in temporal order. No RoPE remap (documented limitation) — keys are copied bit-identically.
+
+- Returns: `(keys_out, values_out, scores_out)`, each `[BH, budget, ...]`
 
 ---
 
