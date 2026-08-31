@@ -207,11 +207,11 @@ Two kernel variants exist because KIVI's two schemes have opposite memory layout
 from veloxquant_mlx.metal.kernels import kivi_group_quant_dequant
 
 out = kivi_group_quant_dequant(
-    x,             # [..., S, D] fp16/fp32/bf16
-    axis=-2,       # -2 = per-channel (keys), -1 = per-token (values)
+    x,  # [..., S, D] fp16/fp32/bf16
+    axis=-2,  # -2 = per-channel (keys), -1 = per-token (values)
     group_size=32,
-    levels=3,      # 2**b - 1
-    eps=1e-8,      # floors the scale for degenerate (min == max) groups
+    levels=3,  # 2**b - 1
+    eps=1e-8,  # floors the scale for degenerate (min == max) groups
 )
 ```
 
@@ -225,11 +225,11 @@ Bit-exactness with the MLX path depends on three details the parity tests pin: p
 from veloxquant_mlx.metal.kernels import rvq_quant_pack
 
 packed1, packed2 = rvq_quant_pack(
-    rotated,      # [N, D] fp16/fp32 — post-Hadamard/QR rotated vectors, D a power of two <= 1024
-    centroids1,   # [2**bits] stage-1 sorted centroids
+    rotated,  # [N, D] fp16/fp32 — post-Hadamard/QR rotated vectors, D a power of two <= 1024
+    centroids1,  # [2**bits] stage-1 sorted centroids
     boundaries1,  # [2**bits - 1] stage-1 Voronoi boundaries
     boundaries2,  # [2**bits - 1] stage-2 (residual) Voronoi boundaries
-    bits=2,       # 1-4
+    bits=2,  # 1-4
 )  # -> (packed1, packed2): [N, ceil(D / (32 // bits))] uint32 each
 ```
 
@@ -243,8 +243,8 @@ Matches `ScalarCodebook.quantize`'s boundary-count comparisons (not a naive argm
 from veloxquant_mlx.metal.kernels import crosskv_rope_recode
 
 out = crosskv_rope_recode(
-    keys,         # [BH, N, D] fp16/fp32, rotated under source_base, D even
-    positions,    # [N] absolute positions, shared across BH groups
+    keys,  # [BH, N, D] fp16/fp32, rotated under source_base, D even
+    positions,  # [N] absolute positions, shared across BH groups
     source_base,  # source model's rope_theta
     target_base,  # target model's rope_theta
 )  # -> [BH, N, D], same dtype as keys
@@ -260,9 +260,9 @@ For a fresh conversation there is no compressed cache to exploit yet — K/V exi
 from veloxquant_mlx.metal.kernels import flash_prefill_attend
 
 out = flash_prefill_attend(
-    q,      # [B, H, S_q, D]  fp16 — queries
-    k,      # [B, H, S_kv, D] fp16 — plain (uncompressed) keys
-    v,      # [B, H, S_kv, D] fp16 — plain (uncompressed) values
+    q,  # [B, H, S_q, D]  fp16 — queries
+    k,  # [B, H, S_kv, D] fp16 — plain (uncompressed) keys
+    v,  # [B, H, S_kv, D] fp16 — plain (uncompressed) values
     scale,  # [1] fp32 — 1/sqrt(D)
 )  # -> [B, H, S_q, D] fp16
 ```
@@ -279,7 +279,9 @@ Instead of matrix tiles staged through threadgroup memory, ownership is **by que
 from veloxquant_mlx.metal.kernels import streaming_prefill_attend
 
 out = streaming_prefill_attend(
-    q, k, v,  # same shapes/dtypes as flash_prefill_attend; D must be a multiple of 32, <= 128
+    q,
+    k,
+    v,  # same shapes/dtypes as flash_prefill_attend; D must be a multiple of 32, <= 128
     scale,
     implementation="streaming",  # or streaming_block{2,4,8}, streaming_multirow
 )
@@ -301,14 +303,14 @@ All three require callers to only invoke them when every group is already over b
 from veloxquant_mlx.metal.kernels import h2o_fused_evict
 
 keys_out, values_out, scores_out, positions_out = h2o_fused_evict(
-    keys_mid,      # [BH, n_total, D] fp16 — n_kept stored + 1 newly appended
-    values_mid,    # [BH, n_total, D] fp16
-    scores_mid,    # [BH, n_total] fp32 — cumulative scores, appended row = 0.0
-    positions_mid, # [BH, n_total] int32 — absolute positions
-    n_sink=4,      # leading positions protected from eviction
+    keys_mid,  # [BH, n_total, D] fp16 — n_kept stored + 1 newly appended
+    values_mid,  # [BH, n_total, D] fp16
+    scores_mid,  # [BH, n_total] fp32 — cumulative scores, appended row = 0.0
+    positions_mid,  # [BH, n_total] int32 — absolute positions
+    n_sink=4,  # leading positions protected from eviction
     rope_base=10000.0,  # must match the model's rope_theta
-    grace=0,       # trailing (most-recent) rows also protected
-    nsg=4,         # SIMD-groups per threadgroup for the reduction dispatch
+    grace=0,  # trailing (most-recent) rows also protected
+    nsg=4,  # SIMD-groups per threadgroup for the reduction dispatch
 )  # each output has n_total - 1 rows (one evicted)
 ```
 
@@ -322,13 +324,15 @@ Two dispatches, not one barrier-fused kernel: dispatch 1 is a sink/grace-protect
 from veloxquant_mlx.metal.kernels import keyformer_fused_evict
 
 keys_out, values_out, scores_out, gumbel_out, positions_out = keyformer_fused_evict(
-    keys_mid, values_mid, scores_mid,
-    gumbel_mid,    # [BH, n_total] fp32 — frozen per-position Gumbel noise
+    keys_mid,
+    values_mid,
+    scores_mid,
+    gumbel_mid,  # [BH, n_total] fp32 — frozen per-position Gumbel noise
     positions_mid,
     n_sink=4,
     rope_base=10000.0,
-    tau=0.5,       # annealed Gumbel temperature; 0.0 collapses to H2O's raw-score argmin
-    recent=0,      # trailing rows protected from eviction
+    tau=0.5,  # annealed Gumbel temperature; 0.0 collapses to H2O's raw-score argmin
+    recent=0,  # trailing rows protected from eviction
     nsg=4,
 )
 ```
@@ -341,13 +345,13 @@ Q-Filters evicts a whole block down to `budget` in one shot rather than one row 
 from veloxquant_mlx.metal.kernels import qfilters_fused_evict, qfilters_score
 
 keys_out, values_out, scores_out = qfilters_fused_evict(
-    keys_mid,      # [BH, n_total, D] fp16
-    values_mid,    # [BH, n_total, D] fp16
-    filter_dir,    # [BH, D] fp32 — frozen per-group unit-norm Q-Filter
-    budget=2048,   # rows to retain, <= QFILTERS_MAX_BUDGET (4096)
+    keys_mid,  # [BH, n_total, D] fp16
+    values_mid,  # [BH, n_total, D] fp16
+    filter_dir,  # [BH, D] fp32 — frozen per-group unit-norm Q-Filter
+    budget=2048,  # rows to retain, <= QFILTERS_MAX_BUDGET (4096)
     n_sink=4,
     recent=64,
-    sign=1,        # +1 = paper direction (keep highest projections), -1 = inverted ablation
+    sign=1,  # +1 = paper direction (keep highest projections), -1 = inverted ablation
 )  # -> (keys_out, values_out, scores_out), each [BH, budget, ...], temporal order preserved
 ```
 
