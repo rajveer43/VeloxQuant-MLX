@@ -7,7 +7,7 @@ slug: /guides/metal-kernels
 
 # Metal GPU Kernels
 
-VeloxQuant-MLX compiles eleven Metal kernel modules at runtime using `mx.fast.metal_kernel`. This guide explains what each kernel does, how they are loaded, performance characteristics, and fallback behaviour.
+VeloxQuant-MLX compiles Metal kernel modules at runtime using `mx.fast.metal_kernel`, spanning quantization, fused attention, KV-cache eviction, and cross-model KV transfer. This guide explains what each kernel does, how they are loaded, performance characteristics, and fallback behaviour.
 
 :::warning[Apple Silicon required]
 All Metal kernels require macOS on an M-series chip. On unsupported hardware, VeloxQuant-MLX falls back to MLX Python ops automatically.
@@ -24,12 +24,20 @@ All Metal kernels require macOS on an M-series chip. On unsupported hardware, Ve
 | `metal/_rabitq_values.py` | `rabitq_pack_values` | Nibble packing for 4-bit value indices |
 | `metal/_rabitq_prefill.py` | `rabitq_prefill_attend` | RaBitQ prefill/cross-attention on `simdgroup_matrix` tiles |
 | `metal/_scalar_attend.py` | `scalar_fused_decode_attend` | Group-affine (KIVI / SKVQ / Kitty) decode + attention |
+| `metal/_kivi_quant.py` | `kivi_group_quant_dequant` | KIVI asymmetric group quantize+dequantize round-trip |
 | `metal/_comm_vq.py` | `comm_vq_decode_metal` | CommVQ RoPE |
+| `metal/_crosskv_rope.py` | `crosskv_rope_recode` | Cross-model KV transfer (fused RoPE re-encode) |
 | `metal/_scalar_quant.py` | `turboquant_scalar_quantize`, `turboquant_scalar_dequantize`, `turboquant_hadamard_quantize` | TurboQuant RVQ |
 | `metal/_rvq_attend.py` | `turboquant_fused_rvq_decode_attend` | RVQ + attention fusion |
+| `metal/_rvq_quant_pack.py` | `rvq_quant_pack` | Fused two-stage RVQ quantize, packed to uint32 |
 | `metal/_qjl.py` | `qjl_encode`, `qjl_inner_product` | QJL |
 | `metal/_bit_packing.py` | `turboquant_bit_pack`, `turboquant_bit_unpack` | All algorithms |
 | `metal/fused_sdpa.py` | `metal_fused_sdpa` | All (fused attention) |
+| `metal/_flash_prefill.py` | `flash_prefill_attend` | Plain-fp16 causal flash attention (from-scratch prefill) |
+| `metal/_experimental_streaming_prefill.py` | `streaming_prefill_attend` | Row-owned streaming causal attention (experimental) |
+| `metal/_h2o_evict.py` | `h2o_fused_evict` | H2O fused eviction: sink-protected argmin + evict + RoPE-remap |
+| `metal/_keyformer_evict.py` | `keyformer_fused_evict` | Keyformer fused eviction: Gumbel-regularized argmin + evict + RoPE-remap |
+| `metal/_qfilters_evict.py` | `qfilters_fused_evict`, `qfilters_score` | Q-Filters fused eviction: projection scoring + block top-k compaction |
 
 ## How kernels are loaded
 
@@ -185,6 +193,169 @@ Measured on Apple M4 (10-core GPU), `B=1 H=32 D=128 b=2 g=32 S_q=1`, versus dequ
 | 65536 | 12.2× |
 
 Parity max abs error is `1.2e-4` against the reference — the kernel accumulates its softmax in fp32, so it is *more* accurate than the fp16 baseline it replaces. See `veloxquant_mlx/tests/metal/test_scalar_attend.py`.
+
+## KIVI group quantize+dequantize round-trip
+
+`kivi_group_quant_dequant` fuses the whole `KIVIKVCache._quant_dequant_along` round-trip — `moveaxis → pad → reshape → min/max → round/clip → reconstruct → moveaxis back` — into a single dispatch, instead of materializing each intermediate as a full-size MLX array.
+
+Two kernel variants exist because KIVI's two schemes have opposite memory layouts against the cache's `[..., S, D]` row-contiguous storage:
+
+- **Per-token** (`axis=-1`, values) groups along `D`, the contiguous axis — one SIMD-group per quantization group, lanes split the group, and a `simd_shuffle_xor` butterfly reduces without barriers.
+- **Per-channel** (`axis=-2`, keys) groups along `S`, the strided axis — one thread owns a whole group outright, removing the cross-thread reduction entirely. (Transposing to reuse the per-token kernel was tried and rejected: the transpose's own memory traffic outweighed the fusion's savings.)
+
+```python
+from veloxquant_mlx.metal.kernels import kivi_group_quant_dequant
+
+out = kivi_group_quant_dequant(
+    x,  # [..., S, D] fp16/fp32/bf16
+    axis=-2,  # -2 = per-channel (keys), -1 = per-token (values)
+    group_size=32,
+    levels=3,  # 2**b - 1
+    eps=1e-8,  # floors the scale for degenerate (min == max) groups
+)
+```
+
+Bit-exactness with the MLX path depends on three details the parity tests pin: padding replicates the last live element (not zero), rounding is half-to-even (`rint`, not `metal::round`), and `eps` floors the scale for single-element groups. See `veloxquant_mlx/metal/_kivi_quant.py` for the full rationale.
+
+## Fused RVQ quantize + pack
+
+`rvq_quant_pack` fuses `TurboQuantRVQKVCache.update_and_fetch`'s two-stage codebook quantize (stage-1 nearest-centroid, dequantize, residual, stage-2 nearest-centroid) and both bit-packing passes into one dispatch — the MLX path otherwise materializes two full `(N, D)` uint8 index buffers before packing each with a separate kernel.
+
+```python
+from veloxquant_mlx.metal.kernels import rvq_quant_pack
+
+packed1, packed2 = rvq_quant_pack(
+    rotated,  # [N, D] fp16/fp32 — post-Hadamard/QR rotated vectors, D a power of two <= 1024
+    centroids1,  # [2**bits] stage-1 sorted centroids
+    boundaries1,  # [2**bits - 1] stage-1 Voronoi boundaries
+    boundaries2,  # [2**bits - 1] stage-2 (residual) Voronoi boundaries
+    bits=2,  # 1-4
+)  # -> (packed1, packed2): [N, ceil(D / (32 // bits))] uint32 each
+```
+
+Matches `ScalarCodebook.quantize`'s boundary-count comparisons (not a naive argmin) and `_pack_indices`'s LSB-first packing exactly, so ties and partial trailing words resolve identically to the pure-MLX path.
+
+## Cross-model KV transfer (CrossKV RoPE recode)
+
+`crosskv_rope_recode` fuses the `strip_rope → apply_rope` pair used when transplanting a KV cache from one model to another with a different `rope_theta`. Both rotations act on the same `(d, d + D/2)` element pair at the same position, so they compose into a single rotation by the per-dimension angle *difference* — one dispatch, no intermediate `[N, D]` array, no materialized cos/sin tables.
+
+```python
+from veloxquant_mlx.metal.kernels import crosskv_rope_recode
+
+out = crosskv_rope_recode(
+    keys,  # [BH, N, D] fp16/fp32, rotated under source_base, D even
+    positions,  # [N] absolute positions, shared across BH groups
+    source_base,  # source model's rope_theta
+    target_base,  # target model's rope_theta
+)  # -> [BH, N, D], same dtype as keys
+```
+
+Numerically equivalent to `apply_rope(strip_rope(keys, positions, source_base), positions, target_base)`. Unlike the eviction kernels' RoPE remap (same base, position-delta only), here the *bases* differ between the two rotations, so the angle difference is taken per-dimension after exponentiation rather than collapsing to a position delta.
+
+## Plain-fp16 prefill attention (from-scratch)
+
+For a fresh conversation there is no compressed cache to exploit yet — K/V exist at full precision for the first time. `flash_prefill_attend` targets exactly that case: standard causal self-attention over plain fp16 Q/K/V on `simdgroup_matrix` tiles, with no compression, no cross-attention mode, no mask tensor, and no attention sinks — every one of those is baked out at compile time rather than handled with runtime branches.
+
+```python
+from veloxquant_mlx.metal.kernels import flash_prefill_attend
+
+out = flash_prefill_attend(
+    q,  # [B, H, S_q, D]  fp16 — queries
+    k,  # [B, H, S_kv, D] fp16 — plain (uncompressed) keys
+    v,  # [B, H, S_kv, D] fp16 — plain (uncompressed) values
+    scale,  # [1] fp32 — 1/sqrt(D)
+)  # -> [B, H, S_q, D] fp16
+```
+
+Always causal, aligning queries to the tail of the KV cache (`q_abs = (S_kv - S_q) + q_pos`) — the plain-fp16 counterpart to `rabitq_prefill_attend(causal=True)`, tuned for `S_q ≈ S_kv` with no pre-existing cache. Tile sizes (`BQ`, `BK`, the W·V depth-tile batch `PDT`) are chosen per head-dim from a measured lookup table (see `blogs/prefill-roofline.md`), not a generic memory-budget heuristic — e.g. `BK=32` wins at `D=32` but is structurally infeasible at `D=128` (would blow the 32 KB threadgroup budget). `D` must be divisible by 8 and ≤ 128.
+
+### Experimental: row-owned streaming prefill
+
+`streaming_prefill_attend` is a from-scratch alternative decomposition to `flash_prefill_attend`, built to benchmark a genuinely different design against the tiled `simdgroup_matrix` approach — **not** a replacement; `flash_prefill_attend` remains the production kernel.
+
+Instead of matrix tiles staged through threadgroup memory, ownership is **by query row**: one SIMD-group (32 lanes) owns one query row for the entire kernel, each lane owns a fixed stride-32 slab of head-dims, and K/V stream directly from device memory one (or a small block of) token(s) at a time — relying on the GPU's L2 cache rather than explicit threadgroup reuse. The online-softmax state is redundantly (but bit-identically) computed in every lane, trading a few scalar FLOPs for removing a cross-lane broadcast. Zero threadgroup memory, zero barriers, anywhere in the kernel family.
+
+```python
+from veloxquant_mlx.metal.kernels import streaming_prefill_attend
+
+out = streaming_prefill_attend(
+    q,
+    k,
+    v,  # same shapes/dtypes as flash_prefill_attend; D must be a multiple of 32, <= 128
+    scale,
+    implementation="streaming",  # or streaming_block{2,4,8}, streaming_multirow
+)
+```
+
+`implementation` selects the variant: `"streaming"` is the block=1 baseline; `"streaming_block2/4/8"` unroll the KV loop to amortize the softmax update over more tokens per step; `"streaming_multirow"` dispatches 4 independent SIMD-groups per threadgroup purely for occupancy (no data sharing between them). See `veloxquant_mlx/metal/src/experimental_streaming_prefill_ARCHITECTURE.md` for the full design rationale and the hypotheses the benchmarking step was meant to confirm or refute — matrix-unit throughput is expected to win at large `D`/compute-bound `S`, while the streaming kernel's zero fixed overhead is expected to win at small `S`.
+
+## Fused KV-cache eviction kernels
+
+Three quantizer families — **H2O**, **Keyformer**, and **Q-Filters** — evict cache rows once a budget is exceeded. Each was originally a per-`(batch, head)` Python loop; these kernels batch the eviction decision and the row compaction across every `(batch, head)` group in two GPU dispatches.
+
+All three require callers to only invoke them when every group is already over budget — the below-budget case has no eviction step and is handled entirely by the existing vectorized MLX path.
+
+### H2O fused evict
+
+`h2o_fused_evict` replaces `h2o_update`'s over-budget branch: sink-protected argmin, evict, and RoPE-remap the rows whose position shifted.
+
+```python
+from veloxquant_mlx.metal.kernels import h2o_fused_evict
+
+keys_out, values_out, scores_out, positions_out = h2o_fused_evict(
+    keys_mid,  # [BH, n_total, D] fp16 — n_kept stored + 1 newly appended
+    values_mid,  # [BH, n_total, D] fp16
+    scores_mid,  # [BH, n_total] fp32 — cumulative scores, appended row = 0.0
+    positions_mid,  # [BH, n_total] int32 — absolute positions
+    n_sink=4,  # leading positions protected from eviction
+    rope_base=10000.0,  # must match the model's rope_theta
+    grace=0,  # trailing (most-recent) rows also protected
+    nsg=4,  # SIMD-groups per threadgroup for the reduction dispatch
+)  # each output has n_total - 1 rows (one evicted)
+```
+
+Two dispatches, not one barrier-fused kernel: dispatch 1 is a sink/grace-protected argmin reduction (SIMD butterfly + threadgroup merge, ties resolve to the lowest index like `mx.argmin`) that every thread needs before dispatch 2 can compact the surviving rows and re-rotate (NeoX-style RoPE) only the rows whose position shifted.
+
+### Keyformer fused evict
+
+`keyformer_fused_evict` is structurally the H2O kernel with one addition threaded through both dispatches: a per-row frozen Gumbel value, folded into the selection score as `score + tau * gumbel`. At `tau == 0` the reduction is bit-for-bit identical to H2O's.
+
+```python
+from veloxquant_mlx.metal.kernels import keyformer_fused_evict
+
+keys_out, values_out, scores_out, gumbel_out, positions_out = keyformer_fused_evict(
+    keys_mid,
+    values_mid,
+    scores_mid,
+    gumbel_mid,  # [BH, n_total] fp32 — frozen per-position Gumbel noise
+    positions_mid,
+    n_sink=4,
+    rope_base=10000.0,
+    tau=0.5,  # annealed Gumbel temperature; 0.0 collapses to H2O's raw-score argmin
+    recent=0,  # trailing rows protected from eviction
+    nsg=4,
+)
+```
+
+### Q-Filters fused evict
+
+Q-Filters evicts a whole block down to `budget` in one shot rather than one row per token, so its two dispatches split differently: `qfilters_score` computes a full `[BH, n_total]` projection score array (paper Theorem 3.3) with sink/recent rows forced to `+inf` so they always survive; the keep-threshold is then chosen on the MLX side via `mx.sort` (reusing MLX's own top-k rather than re-deriving one in Metal), and `qfilters_fused_evict`'s second dispatch compacts against that threshold.
+
+```python
+from veloxquant_mlx.metal.kernels import qfilters_fused_evict, qfilters_score
+
+keys_out, values_out, scores_out = qfilters_fused_evict(
+    keys_mid,  # [BH, n_total, D] fp16
+    values_mid,  # [BH, n_total, D] fp16
+    filter_dir,  # [BH, D] fp32 — frozen per-group unit-norm Q-Filter
+    budget=2048,  # rows to retain, <= QFILTERS_MAX_BUDGET (4096)
+    n_sink=4,
+    recent=64,
+    sign=1,  # +1 = paper direction (keep highest projections), -1 = inverted ablation
+)  # -> (keys_out, values_out, scores_out), each [BH, budget, ...], temporal order preserved
+```
+
+Unlike H2O/Keyformer, Q-Filters does **not** remap position ids after eviction (a documented limitation), so keys are copied bit-identically. `budget` is capped at `QFILTERS_MAX_BUDGET = 4096` — the apply kernel stages the survivor index list in threadgroup memory, which must be a compile-time size (16 KB at the cap, within Metal's 32 KB threadgroup budget); larger budgets should use the pure-MLX path.
 
 ## Bit packing
 
