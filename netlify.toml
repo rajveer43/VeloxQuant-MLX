@@ -10,7 +10,7 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  SECRETS_SCAN_OMIT_KEYS = "YOUR_APP_ID,YOUR_SEARCH_API_KEY"
+  SECRETS_SCAN_OMIT_KEYS = "ALGOLIA_APP_ID,ALGOLIA_SEARCH_API_KEY"
 
 # Long-lived caching for hashed/static assets improves LCP (a Core Web
 # Vitals signal Google uses for ranking). HTML is left uncached so

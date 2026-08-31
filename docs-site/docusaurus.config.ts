@@ -157,10 +157,10 @@ const config: Config = {
       additionalLanguages: ['python', 'bash', 'toml'],
     },
     // algolia search is configured via env vars on Netlify; disabled locally
-    ...(process.env.YOUR_APP_ID ? {
+    ...(process.env.ALGOLIA_APP_ID ? {
       algolia: {
-        appId: process.env.YOUR_APP_ID!,
-        apiKey: process.env.YOUR_SEARCH_API_KEY!,
+        appId: process.env.ALGOLIA_APP_ID!,
+        apiKey: process.env.ALGOLIA_SEARCH_API_KEY!,
         indexName: 'veloxquant-mlx',
         contextualSearch: true,
       },
