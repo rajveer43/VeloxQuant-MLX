@@ -409,6 +409,14 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.67.2 (2026-09-01)
+
+### Bug Fixes
+
+- **panel**: Make Copy buttons work reliably in control panel
+  ([`ef67598`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ef67598d74be82ee38bc5fbb1855e802dd4550eb))
+
+
 ## v0.67.1 (2026-08-31)
 
 ### Bug Fixes
