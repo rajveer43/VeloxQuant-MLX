@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://veloxquant-mlx.netlify.app/docs/sitemap.xml
