@@ -409,6 +409,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.68.0 (2026-09-01)
+
+### Features
+
+- **profiling**: Add MLXCacheProfiler + `veloxquant profile` CLI
+  ([#287](https://github.com/rajveer43/VeloxQuant-MLX/pull/287),
+  [`11bb5c1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/11bb5c10b4bfda9f30d3d3d0499b6172de784618))
+
+
 ## v0.67.3 (2026-09-01)
 
 ### Bug Fixes
