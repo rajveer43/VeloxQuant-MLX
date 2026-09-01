@@ -251,6 +251,7 @@ _FAMILY: Dict[str, MethodFamily] = {
     "a2ats": MethodFamily.HYBRID,
     "anchorkv": MethodFamily.HYBRID,
     "rocketkv": MethodFamily.HYBRID,
+    "age_tiered": MethodFamily.QUANTIZATION,
 }
 
 _BLURB: Dict[str, str] = {
@@ -296,6 +297,7 @@ _BLURB: Dict[str, str] = {
     "a2ats": "A2ATS-adapted: rotary-aware vector quantization with distance gating.",
     "anchorkv": "AnchorKV-adapted: anchor-residual compression, no eviction.",
     "rocketkv": "RocketKV-adapted: SnapKV eviction + hybrid sparse attention selection.",
+    "age_tiered": "AgeTieredKV: position/age-gated 3-tier precision (recent/mid/old), no eviction.",
 }
 
 #: Honest "-adapted" notes. Sourced from open issues that document the
@@ -364,6 +366,14 @@ _CONFIG_FIELDS: Dict[str, List[str]] = {
         "rocketkv_head_topk1",
         "rocketkv_obs_window",
         "rocketkv_n_sink",
+    ],
+    "age_tiered": [
+        "age_recent_boundary",
+        "age_mid_boundary",
+        "age_bits_recent",
+        "age_bits_mid",
+        "age_bits_old",
+        "age_group_size",
     ],
 }
 

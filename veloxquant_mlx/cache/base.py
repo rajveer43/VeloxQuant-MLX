@@ -97,6 +97,7 @@ class KVCacheConfig:
         "a2ats",
         "anchorkv",
         "rocketkv",
+        "age_tiered",
     ] = "turboquant_rvq"
     head_dim: int = 128
     bit_width_inlier: Union[int, list] = 2
@@ -372,6 +373,13 @@ class KVCacheConfig:
     )
     rocketkv_obs_window: int = 32  # stage-1 SnapKV observation window
     rocketkv_n_sink: int = 4  # stage-1 SnapKV sink tokens always kept
+    # --- AgeTieredKV configuration (position/age-gated 3-tier precision, issue #256) --
+    age_recent_boundary: int = 128  # age < this -> RECENT tier (age_bits_recent)
+    age_mid_boundary: int = 1024  # age < this (and >= age_recent_boundary) -> MID tier
+    age_bits_recent: int = 8  # bit-width for the newest tokens
+    age_bits_mid: int = 4  # bit-width for mid-age tokens
+    age_bits_old: int = 2  # bit-width for tokens older than age_mid_boundary
+    age_group_size: int = 32  # token-axis group size for the shared min/max quantizer
     # --- KVSink-adapted sink protection (method="kivi_sink") -----------
     n_sink_tokens: int = 5  # top-k high-key-norm tokens kept fp16
     smooth_factors: Any = None  # mx.array | np.ndarray | None
@@ -455,6 +463,7 @@ class KVCacheFactory:
         from veloxquant_mlx.cache.a2ats_cache import A2ATSKVCache
         from veloxquant_mlx.cache.anchorkv_cache import AnchorKVKVCache
         from veloxquant_mlx.cache.rocketkv_cache import RocketKVKVCache
+        from veloxquant_mlx.cache.age_tiered_cache import AgeTieredKVCache
         from veloxquant_mlx.cache.kitty_cache import KittyKVCache
         from veloxquant_mlx.cache.polar_cache import PolarQuantKVCache
         from veloxquant_mlx.cache.qjl_cache import QJLKVCache
@@ -637,13 +646,20 @@ class KVCacheFactory:
             # prefill/decode; the default for_model path (one RocketKVKVCache
             # per layer) is all it needs.
             cache = RocketKVKVCache(config)
+        elif config.method == "age_tiered":
+            # No coordinator: age-tier assignment and re-quantization are
+            # per-layer per-head state recomputed independently every step
+            # (prefill and decode alike, purely from cumulative position);
+            # the default for_model path (one AgeTieredKVCache per layer) is
+            # all it needs.
+            cache = AgeTieredKVCache(config)
         else:
             raise QuantizerConfigError(
                 f"KVCacheFactory: unknown method '{config.method}'. "
                 f"Choices: turboquant_prod, turboquant_mse, turboquant_rvq, "
                 f"polar, qjl, vecinfer, spectral, kivi, kivi_sink, svdq, kitty, "
                 f"adakv, xquant, kvquant, palu, cachegen, minicache, gear, zipcache, snapkv, "
-                f"streaming_llm, h2o, tova, pyramidkv, squeeze, chunkkv, cam, xkv, nsnquant, knorm, skvq, qfilters, keyformer, morphkv, kvzip, kvtc, curdkv, nestedkv, amc, a2ats, anchorkv, rocketkv."
+                f"streaming_llm, h2o, tova, pyramidkv, squeeze, chunkkv, cam, xkv, nsnquant, knorm, skvq, qfilters, keyformer, morphkv, kvzip, kvtc, curdkv, nestedkv, amc, a2ats, anchorkv, rocketkv, age_tiered."
             )
 
         if config.sliding_window is not None:
