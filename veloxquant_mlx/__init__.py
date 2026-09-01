@@ -44,6 +44,7 @@ from veloxquant_mlx.observers import KeyNormObserver, KeyNormReport
 from veloxquant_mlx.profiling import (
     KVCacheProfiler,
     LayerProfile,
+    MLXCacheProfiler,
     ProfileReport,
     format_profile_table,
     profile_layers,
@@ -93,6 +94,7 @@ __all__ = [
     "KeyNormReport",
     # Profiling (issue #252)
     "KVCacheProfiler",
+    "MLXCacheProfiler",
     "LayerProfile",
     "ProfileReport",
     "format_profile_table",

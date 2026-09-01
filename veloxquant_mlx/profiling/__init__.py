@@ -8,6 +8,7 @@ from __future__ import annotations
 from veloxquant_mlx.profiling.kv_profiler import (
     KVCacheProfiler,
     LayerProfile,
+    MLXCacheProfiler,
     ProfileReport,
     format_profile_table,
     profile_layers,
@@ -16,6 +17,7 @@ from veloxquant_mlx.profiling.kv_profiler import (
 __all__ = [
     "KVCacheProfiler",
     "LayerProfile",
+    "MLXCacheProfiler",
     "ProfileReport",
     "format_profile_table",
     "profile_layers",
