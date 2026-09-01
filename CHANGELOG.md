@@ -409,6 +409,19 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.67.3 (2026-09-01)
+
+### Bug Fixes
+
+- **landing**: Cache-bust styles.css to unstick stale immutable cache
+  ([`fb48290`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fb48290125a4a5a1dbabcf100f0e683acdf5afb3))
+
+### Documentation
+
+- Fix stale algorithm counts on intro/overview, add robots.txt
+  ([`d090155`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d0901551514cb86037d6fed68314732a43035cf6))
+
+
 ## v0.67.2 (2026-09-01)
 
 ### Bug Fixes
