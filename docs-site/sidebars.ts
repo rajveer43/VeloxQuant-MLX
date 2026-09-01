@@ -66,6 +66,7 @@ const sidebars: SidebarsConfig = {
         'algorithms/anchorkv',
         'algorithms/rocketkv',
         'algorithms/xkv',
+        'algorithms/age-tiered',
         'algorithms/cross-model-transfer',
       ],
     },

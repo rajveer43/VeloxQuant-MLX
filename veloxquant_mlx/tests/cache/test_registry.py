@@ -25,7 +25,8 @@ from veloxquant_mlx.cache.registry import (
 )
 
 # Locked against the audit in issue #27, re-verified by probe.
-EXPECTED_TOTAL = 42
+# 43 as of age_tiered (issue #256): position/age-gated 3-tier precision.
+EXPECTED_TOTAL = 43
 EXPECTED_CRASHING = {
     "turboquant_prod",
     "turboquant_mse",
@@ -40,6 +41,7 @@ EXPECTED_CRASHING = {
 # used to misreport them as CRASHES, which told users 15 working methods were
 # unavailable (#152).
 EXPECTED_NOT_TRIMMABLE = {
+    "age_tiered",
     "amc",
     "anchorkv",
     "cam",
