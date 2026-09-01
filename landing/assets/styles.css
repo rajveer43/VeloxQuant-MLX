@@ -1449,6 +1449,326 @@ tbody td {
   margin: 3rem 0 0.5rem;
 }
 
+/* ===== BENCHMARKS PAGE: headline takeaway + charts + de-emphasized tables =====
+   Replaces "read the whole table to find the point" with: lead with the
+   conclusion, then a chart for the shape of the data, then the exact figures
+   collapsed behind a disclosure for anyone who wants them. */
+.takeaway {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+  background: var(--max-bg);
+  border: 1px solid rgba(124,58,237,0.22);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.3rem;
+  margin: 1.5rem 0 3rem;
+}
+
+.takeaway-icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-top: 0.15rem;
+  color: var(--max);
+}
+
+.takeaway p {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.takeaway strong { color: var(--max); font-weight: 700; }
+
+/* ---- Correlation comparison bars (Q-Filters vs. K-norm) ---- */
+.chart-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.75rem 1.75rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.legend-item { display: flex; align-items: center; gap: 0.45rem; }
+.legend-dot { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+
+.corr-group { display: flex; flex-direction: column; gap: 1.25rem; }
+
+.corr-row-label {
+  font-size: 0.82rem;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.corr-bars { display: flex; flex-direction: column; gap: 0.4rem; }
+.corr-bar-track { display: flex; align-items: center; gap: 0.7rem; }
+
+.corr-bar-name {
+  width: 118px;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.corr-bar-outer {
+  flex: 1;
+  height: 20px;
+  background: rgba(var(--accent-rgb),0.05);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.corr-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 0.5rem;
+  transition: width 0.4s ease;
+}
+
+.corr-bar-fill.win { background: linear-gradient(90deg, rgba(var(--accent-rgb),0.4), var(--accent)); }
+.corr-bar-fill.base { background: rgba(148,163,184,0.35); }
+
+.corr-bar-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--on-accent);
+}
+
+.corr-bar-val.base-val { color: var(--text); }
+
+/* ---- Perplexity gap-closed rings ---- */
+.gap-chart {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+}
+
+.gap-col { text-align: center; }
+
+.gap-ring-wrap {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  margin: 0 auto 0.6rem;
+}
+
+.gap-ring-num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.gap-budget { font-size: 0.78rem; color: var(--text); font-weight: 600; margin-bottom: 0.15rem; }
+.gap-note { font-size: 0.72rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+.gap-footnote { font-size: 0.78rem; color: var(--muted); margin: 1.5rem 0 0; text-align: center; }
+
+/* ---- De-emphasized reference table (collapsed exact figures) ---- */
+details.ref-table { margin-top: 0; }
+
+details.ref-table > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 500;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+details.ref-table > summary::-webkit-details-marker { display: none; }
+
+details.ref-table > summary::before {
+  content: '▸';
+  font-size: 0.7rem;
+  color: var(--accent);
+  transition: transform 0.15s;
+}
+
+details.ref-table[open] > summary::before { transform: rotate(90deg); }
+
+details.ref-table[open] > summary {
+  border-radius: var(--radius) var(--radius) 0 0;
+  border-bottom: none;
+}
+
+details.ref-table .table-wrap {
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+details.ref-table table { font-size: 0.82rem; }
+details.ref-table thead th { font-size: 0.72rem; text-transform: none; letter-spacing: 0; }
+
+.td-caution { color: var(--caution-text); font-weight: 500; }
+
+/* ---- KIVI model safety grid ---- */
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.85rem;
+  margin-bottom: 1.75rem;
+}
+
+.model-card { border-radius: var(--radius); padding: 1rem 1rem 0.9rem; border: 1px solid; }
+.model-card.good { background: var(--good-bg); border-color: var(--good-bd); }
+.model-card.caution { background: var(--caution-bg); border-color: var(--caution-bd); }
+
+.model-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.55rem;
+  line-height: 1.3;
+}
+
+.model-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  margin-bottom: 0.6rem;
+}
+
+.model-badge.good { color: var(--good); background: rgba(34,197,94,0.14); }
+.model-badge.caution { color: var(--caution-text); background: rgba(245,158,11,0.14); }
+
+.model-metric {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.15rem;
+}
+
+.model-metric b { color: var(--text); font-weight: 600; }
+.model-metric b.hot { color: var(--caution-text); }
+
+.legend-strip { display: flex; gap: 1.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+.legend-chip { display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem; color: var(--muted); }
+.legend-chip .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+/* ---- "What this means for you" callout ---- */
+.callout {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.4rem 1.5rem;
+  margin: 2rem 0 3.5rem;
+}
+
+.callout-title { font-size: 0.85rem; font-weight: 700; color: var(--accent); margin-bottom: 0.5rem; }
+.callout p { color: var(--muted); font-size: 0.88rem; line-height: 1.65; margin: 0; }
+.callout strong { color: var(--text); }
+
+/* ---- Collapsed methodology notes ---- */
+details.methodology { margin-top: 1rem; }
+
+details.methodology > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.78rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+details.methodology > summary::-webkit-details-marker { display: none; }
+details.methodology > summary::before { content: '▸'; font-size: 0.65rem; color: var(--muted); }
+details.methodology[open] > summary::before { content: '▾'; }
+
+.methodology-body {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.7;
+  padding: 0.75rem 0 0 1rem;
+  border-left: 2px solid var(--border);
+  margin-top: 0.5rem;
+}
+
+.methodology-body code {
+  font-family: 'JetBrains Mono', monospace;
+  background: rgba(var(--accent-rgb),0.06);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+/* ---- Mobile: stacked stat cards replace wide tables ---- */
+.stat-stack { display: flex; flex-direction: column; gap: 0.7rem; margin-bottom: 1.25rem; }
+
+.stat-stack .stat-card {
+  padding: 1rem 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  text-align: left;
+}
+
+.stat-card-model { font-size: 0.82rem; font-weight: 600; color: var(--text); }
+
+.stat-card-model .mono-sub {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+.stat-card-vals { display: flex; gap: 0.9rem; align-items: baseline; }
+.stat-val { text-align: right; }
+.stat-val-num { font-family: 'JetBrains Mono', monospace; font-size: 1.05rem; font-weight: 700; }
+.stat-val-num.win { color: var(--accent); }
+.stat-val-num.base { color: var(--muted); font-size: 0.85rem; font-weight: 500; }
+.stat-val-label { font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 0.1rem; }
+
+@media (max-width: 760px) {
+  .gap-chart { grid-template-columns: 1fr; gap: 0.85rem; }
+  .gap-col { display: flex; align-items: center; gap: 1rem; text-align: left; background: var(--bg); }
+  .gap-ring-wrap { margin: 0; flex-shrink: 0; width: 58px; height: 58px; }
+  .gap-ring-num { font-size: 0.78rem; }
+  .model-grid { grid-template-columns: repeat(2, 1fr); }
+  .corr-bar-name { width: 84px; }
+}
+
+@media (max-width: 480px) {
+  .model-grid { grid-template-columns: 1fr; }
+  .takeaway { padding: 1rem 1.1rem; }
+  .chart-block { padding: 1.25rem 1.25rem 1rem; }
+}
+
 /* ===== METHOD PICKER ("choose by goal") ===== */
 .picker-intro {
   margin-bottom: 2.5rem;

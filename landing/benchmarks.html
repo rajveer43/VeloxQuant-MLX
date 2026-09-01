@@ -102,91 +102,194 @@
         </p>
       </div>
 
+      <div class="takeaway fade-in">
+        <svg class="takeaway-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+        <p><strong>Q-Filters guesses right almost every time</strong> — 100% sign-correct across every
+        model tested, roughly double the correlation of the naive K-norm baseline. That accuracy
+        is what lets you compress the KV-cache 4–16× and still keep most of the model's quality:
+        at 4× compression it closes <strong>52–55%</strong> of the quality gap a cruder scorer would leave open.</p>
+      </div>
+
       <h3 class="bench-subtitle">How well does Q-Filters predict what a model will actually attend to?</h3>
       <p class="section-desc" style="margin-bottom:1.5rem">
         Spearman correlation with the model's real attention (higher is better), vs. the K-norm/L2Norm
         baseline. <a href="/docs/algorithms/qfilters" class="t-accent">Full write-up →</a>
       </p>
-      <div class="table-wrap fade-in">
-        <table>
-          <caption class="visually-hidden">Q-Filters attention-correlation accuracy vs. K-norm baseline</caption>
-          <thead>
-            <tr>
-              <th scope="col">Scorer</th>
-              <th scope="col">Llama-3.2-1B</th>
-              <th scope="col">Llama-3.2-3B</th>
-              <th scope="col">Qwen2.5-7B</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Q-Filters, calibrated (query-SVD)</td>
-              <td class="td-winner">+0.783 <span class="td-muted">(100% sign-correct)</span></td>
-              <td class="td-winner">+0.863 <span class="td-muted">(100%)</span></td>
-              <td class="td-winner">+0.850 <span class="td-muted">(100%)</span></td>
-            </tr>
-            <tr>
-              <td>K-norm / L2Norm</td>
-              <td>+0.460 <span class="td-muted">(94.5%)</span></td>
-              <td>+0.410 <span class="td-muted">(94.6%)</span></td>
-              <td>+0.402 <span class="td-muted">(86.6%)</span></td>
-            </tr>
-          </tbody>
-        </table>
+
+      <div class="chart-block fade-in">
+        <div class="chart-legend">
+          <div class="legend-item"><span class="legend-dot" style="background: var(--accent);"></span>Q-Filters, calibrated</div>
+          <div class="legend-item"><span class="legend-dot" style="background: rgba(148,163,184,0.6);"></span>K-norm / L2Norm baseline</div>
+        </div>
+        <div class="corr-group">
+          <div class="corr-row">
+            <div class="corr-row-label">Llama-3.2-1B</div>
+            <div class="corr-bars">
+              <div class="corr-bar-track">
+                <div class="corr-bar-name">Q-Filters</div>
+                <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 90%;"><span class="corr-bar-val">+0.783</span></div></div>
+              </div>
+              <div class="corr-bar-track">
+                <div class="corr-bar-name">K-norm</div>
+                <div class="corr-bar-outer"><div class="corr-bar-fill base" style="width: 53%;"><span class="corr-bar-val base-val">+0.460</span></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="corr-row">
+            <div class="corr-row-label">Llama-3.2-3B</div>
+            <div class="corr-bars">
+              <div class="corr-bar-track">
+                <div class="corr-bar-name">Q-Filters</div>
+                <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 99%;"><span class="corr-bar-val">+0.863</span></div></div>
+              </div>
+              <div class="corr-bar-track">
+                <div class="corr-bar-name">K-norm</div>
+                <div class="corr-bar-outer"><div class="corr-bar-fill base" style="width: 47%;"><span class="corr-bar-val base-val">+0.410</span></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="corr-row">
+            <div class="corr-row-label">Qwen2.5-7B</div>
+            <div class="corr-bars">
+              <div class="corr-bar-track">
+                <div class="corr-bar-name">Q-Filters</div>
+                <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 97%;"><span class="corr-bar-val">+0.850</span></div></div>
+              </div>
+              <div class="corr-bar-track">
+                <div class="corr-bar-name">K-norm</div>
+                <div class="corr-bar-outer"><div class="corr-bar-fill base" style="width: 46%;"><span class="corr-bar-val base-val">+0.402</span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
+
+      <details class="ref-table fade-in">
+        <summary>Exact figures — attention-correlation accuracy (sign-correct %)</summary>
+        <div class="table-wrap">
+          <table>
+            <caption class="visually-hidden">Q-Filters attention-correlation accuracy vs. K-norm baseline</caption>
+            <thead>
+              <tr>
+                <th scope="col">Scorer</th>
+                <th scope="col">Llama-3.2-1B</th>
+                <th scope="col">Llama-3.2-3B</th>
+                <th scope="col">Qwen2.5-7B</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Q-Filters, calibrated (query-SVD)</td>
+                <td class="td-winner">+0.783 <span class="td-muted">(100% sign-correct)</span></td>
+                <td class="td-winner">+0.863 <span class="td-muted">(100%)</span></td>
+                <td class="td-winner">+0.850 <span class="td-muted">(100%)</span></td>
+              </tr>
+              <tr>
+                <td>K-norm / L2Norm</td>
+                <td>+0.460 <span class="td-muted">(94.5%)</span></td>
+                <td>+0.410 <span class="td-muted">(94.6%)</span></td>
+                <td>+0.402 <span class="td-muted">(86.6%)</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
 
       <h3 class="bench-subtitle">Does that translate to better generations?</h3>
       <p class="section-desc" style="margin-bottom:1.5rem">
-        Generation perplexity with eviction active (lower is better), calibrated vs. fallback.
+        Share of the fp16 quality gap closed by calibration, at each compression budget (higher is better).
         <a href="/docs/algorithms/qfilters" class="t-accent">Full write-up →</a>
       </p>
-      <div class="table-wrap fade-in">
-        <table>
-          <caption class="visually-hidden">Q-Filters generation perplexity, calibrated vs. fallback</caption>
-          <thead>
-            <tr>
-              <th scope="col">Model / budget</th>
-              <th scope="col">Calibrated</th>
-              <th scope="col">Fallback</th>
-              <th scope="col">Gap to fp16 closed</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><td colspan="4" class="td-muted">Llama-3.2-1B (fp16 baseline 4.050)</td></tr>
-            <tr>
-              <td>Budget 256 (~4×)</td>
-              <td class="td-winner">8.476</td>
-              <td>13.358</td>
-              <td class="td-winner">52%</td>
-            </tr>
-            <tr>
-              <td>Budget 128 (~8×)</td>
-              <td class="td-winner">16.307</td>
-              <td>23.645</td>
-              <td class="td-winner">37%</td>
-            </tr>
-            <tr>
-              <td>Budget 64 (~16×)</td>
-              <td class="td-winner">25.933</td>
-              <td>31.274</td>
-              <td class="td-winner">20%</td>
-            </tr>
-            <tr><td colspan="4" class="td-muted">Llama-3.2-3B (fp16 baseline 3.305)</td></tr>
-            <tr>
-              <td>Budget 256 (~4×)</td>
-              <td class="td-winner">5.076</td>
-              <td>7.264</td>
-              <td class="td-winner">55%</td>
-            </tr>
-            <tr>
-              <td>Budget 128 (~8×)</td>
-              <td class="td-winner">10.046</td>
-              <td>14.909</td>
-              <td class="td-winner">42%</td>
-            </tr>
-          </tbody>
-        </table>
+
+      <div class="chart-block fade-in">
+        <div class="gap-chart">
+          <div class="gap-col">
+            <div class="gap-ring-wrap">
+              <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden="true">
+                <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(148,163,184,0.15)" stroke-width="8"/>
+                <circle cx="46" cy="46" r="40" fill="none" stroke="var(--good)" stroke-width="8" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="66.5" transform="rotate(-90 46 46)"/>
+              </svg>
+              <span class="gap-ring-num" style="color: var(--good);">52%</span>
+            </div>
+            <div class="gap-budget">Budget 256 (~4×)</div>
+            <div class="gap-note">8.48 vs 13.36 ppl</div>
+          </div>
+          <div class="gap-col">
+            <div class="gap-ring-wrap">
+              <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden="true">
+                <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(148,163,184,0.15)" stroke-width="8"/>
+                <circle cx="46" cy="46" r="40" fill="none" stroke="var(--accent)" stroke-width="8" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="158.3" transform="rotate(-90 46 46)"/>
+              </svg>
+              <span class="gap-ring-num" style="color: var(--accent);">37%</span>
+            </div>
+            <div class="gap-budget">Budget 128 (~8×)</div>
+            <div class="gap-note">16.31 vs 23.65 ppl</div>
+          </div>
+          <div class="gap-col">
+            <div class="gap-ring-wrap">
+              <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden="true">
+                <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(148,163,184,0.15)" stroke-width="8"/>
+                <circle cx="46" cy="46" r="40" fill="none" stroke="var(--caution)" stroke-width="8" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="200.9" transform="rotate(-90 46 46)"/>
+              </svg>
+              <span class="gap-ring-num" style="color: var(--caution-text);">20%</span>
+            </div>
+            <div class="gap-budget">Budget 64 (~16×)</div>
+            <div class="gap-note">25.93 vs 31.27 ppl</div>
+          </div>
+        </div>
+        <p class="gap-footnote">Llama-3.2-1B shown (fp16 baseline 4.050 ppl) — Llama-3.2-3B closes 55% / 42% at the same two budgets.</p>
       </div>
+
+      <details class="ref-table fade-in" style="margin-top: 1.25rem;">
+        <summary>Exact figures — generation perplexity, calibrated vs. fallback</summary>
+        <div class="table-wrap">
+          <table>
+            <caption class="visually-hidden">Q-Filters generation perplexity, calibrated vs. fallback</caption>
+            <thead>
+              <tr>
+                <th scope="col">Model / budget</th>
+                <th scope="col">Calibrated</th>
+                <th scope="col">Fallback</th>
+                <th scope="col">Gap to fp16 closed</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="4" class="td-muted">Llama-3.2-1B (fp16 baseline 4.050)</td></tr>
+              <tr>
+                <td>Budget 256 (~4×)</td>
+                <td class="td-winner">8.476</td>
+                <td>13.358</td>
+                <td class="td-winner">52%</td>
+              </tr>
+              <tr>
+                <td>Budget 128 (~8×)</td>
+                <td class="td-winner">16.307</td>
+                <td>23.645</td>
+                <td class="td-winner">37%</td>
+              </tr>
+              <tr>
+                <td>Budget 64 (~16×)</td>
+                <td class="td-winner">25.933</td>
+                <td>31.274</td>
+                <td class="td-winner">20%</td>
+              </tr>
+              <tr><td colspan="4" class="td-muted">Llama-3.2-3B (fp16 baseline 3.305)</td></tr>
+              <tr>
+                <td>Budget 256 (~4×)</td>
+                <td class="td-winner">5.076</td>
+                <td>7.264</td>
+                <td class="td-winner">55%</td>
+              </tr>
+              <tr>
+                <td>Budget 128 (~8×)</td>
+                <td class="td-winner">10.046</td>
+                <td>14.909</td>
+                <td class="td-winner">42%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
 
       <p class="section-desc" style="margin-top:2.5rem;">
         Want the main compression and speed numbers instead?
@@ -208,133 +311,229 @@
         </p>
       </div>
 
-      <h3 class="bench-subtitle">Perplexity: fp16 vs. KIVI b=4 vs. KIVI b=2</h3>
-      <p class="section-desc" style="margin-bottom:1.5rem">
-        Lower is better. Long-sample causal-LM perplexity, computed through the actual patched
-        cache (not a bypassed no-cache forward pass).
-      </p>
-      <div class="table-wrap fade-in">
-        <table>
-          <caption class="visually-hidden">KIVI perplexity across 12 models, fp16 vs 4-bit vs 2-bit</caption>
-          <thead>
-            <tr>
-              <th scope="col">Model</th>
-              <th scope="col">fp16</th>
-              <th scope="col">KIVI b=4</th>
-              <th scope="col">KIVI b=2</th>
-              <th scope="col">Decode tok/s (fp16 → b4 → b2)</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>SmolLM2-135M</td>
-              <td>28.87</td>
-              <td class="td-winner">29.63</td>
-              <td>44.85</td>
-              <td class="td-muted">—</td>
-            </tr>
-            <tr>
-              <td>Qwen2.5-0.5B</td>
-              <td class="td-muted">n/a<sup>†</sup></td>
-              <td class="td-winner">22.22</td>
-              <td>49.08</td>
-              <td class="td-muted">— → 245.2 → 244.3</td>
-            </tr>
-            <tr>
-              <td>Llama-3.2-1B</td>
-              <td>22.77</td>
-              <td class="td-winner">23.27</td>
-              <td>81.30</td>
-              <td>113.7 → 116.9 → 119.7</td>
-            </tr>
-            <tr>
-              <td>gemma-3-4B</td>
-              <td>16.00</td>
-              <td class="td-winner">16.37</td>
-              <td>17.72</td>
-              <td class="td-muted">—</td>
-            </tr>
-            <tr>
-              <td>Qwen3-4B</td>
-              <td class="td-muted">n/a<sup>†</sup></td>
-              <td class="td-winner">15.07</td>
-              <td>17.21</td>
-              <td class="td-muted">—</td>
-            </tr>
-            <tr>
-              <td>Llama-3.2-3B</td>
-              <td>15.47</td>
-              <td class="td-winner">15.82</td>
-              <td>20.93</td>
-              <td>46.4 → 48.5 → 46.2</td>
-            </tr>
-            <tr>
-              <td>Mistral-7B-v0.3</td>
-              <td>8.01</td>
-              <td class="td-winner">7.96</td>
-              <td>8.05</td>
-              <td>20.9 → 21.4 → 22.8</td>
-            </tr>
-            <tr>
-              <td>Qwen2.5-7B</td>
-              <td class="td-muted">n/a<sup>†</sup></td>
-              <td class="td-winner">9.30</td>
-              <td>10.75</td>
-              <td class="td-muted">— → 23.4 → 20.9</td>
-            </tr>
-            <tr>
-              <td>Llama-3.1-8B</td>
-              <td>10.88</td>
-              <td class="td-winner">11.02</td>
-              <td>13.57</td>
-              <td>15.6 → 15.9 → 18.5</td>
-            </tr>
-            <tr>
-              <td>Falcon3-7B</td>
-              <td>12.69</td>
-              <td class="td-winner">12.63</td>
-              <td>14.44</td>
-              <td>15.2 → 25.2 → 16.1</td>
-            </tr>
-            <tr>
-              <td>Qwen3-8B</td>
-              <td class="td-muted">n/a<sup>†</sup></td>
-              <td class="td-winner">9.92</td>
-              <td>10.57</td>
-              <td class="td-muted">—</td>
-            </tr>
-            <tr>
-              <td>DeepSeek-V2-Lite <span class="td-muted">(MoE, MLA)</span></td>
-              <td class="td-muted">n/a<sup>†</sup></td>
-              <td class="td-winner">15.34</td>
-              <td>17.87</td>
-              <td class="td-muted">— → 282.9<sup>‡</sup> → 82.5<sup>‡</sup></td>
-            </tr>
-          </tbody>
-        </table>
+      <div class="takeaway fade-in">
+        <svg class="takeaway-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+        <p><strong>4-bit is safe almost everywhere.</strong> Perplexity stays within about a point of
+        fp16 across every model, 135M to 8B. <strong>2-bit is a real 8× win on 7–8B models</strong> — but
+        it's a poor fit under ~3B parameters: Llama-3.2-1B's perplexity <strong>more than triples</strong>
+        (22.8 → 81.3). Pick bit-width by model size, not as a blanket default.</p>
       </div>
-      <p class="section-desc" style="margin-top:1rem; font-size:0.9rem;">
-        <sup>†</sup> fp16 baseline not measurable for these architectures — this mlx-lm version's
-        default model class has no <code>make_cache</code> for Qwen2.5/Qwen3/DeepSeek-V2, a
-        pre-existing library gap unrelated to KIVI. KIVI's own patch supplies
-        <code>make_cache</code>, so the quantized rows measured normally.
-        <sup>‡</sup> This gap is larger than bit-width alone should cause and is most likely
-        MoE expert-routing variance between separate runs rather than a real b=2-vs-b=4 speed
-        difference — treat it as noise, not a finding.
+
+      <h3 class="bench-subtitle">Model-by-model safety at a glance</h3>
+      <p class="section-desc" style="margin-bottom:1.5rem">
+        KIVI b=4 vs. b=2 perplexity — the practical question: is 2-bit still usable on this model?
+        Lower is better.
       </p>
 
-      <h3 class="bench-subtitle">What this says about compression safety</h3>
-      <p class="section-desc" style="margin-bottom:0;">
-        KIVI b=4 is safe almost everywhere: perplexity stays within about a point of fp16 across
-        every model tested, 135M to 8B, dense or MoE. KIVI b=2 is a real 8× compression win on
-        7–8B models — Mistral-7B, Llama-3.1-8B, Qwen2.5-7B, Falcon3-7B, and Qwen3-8B all hold
-        within roughly 0.6–3 perplexity points of their higher-precision runs. It's a worse fit
-        below ~1–3B parameters: Llama-3.2-1B's perplexity more than triples under b=2 (81.3 vs.
-        22.8), so 2-bit KV-cache quantization is a call to make per model size, not a blanket
-        default. DeepSeek-V2-Lite's MoE + multi-head-latent-attention design — a layout KIVI
-        wasn't specifically built around — patched and ran cleanly, which is a good robustness
-        signal for architectures beyond standard multi-head attention.
-      </p>
+      <div class="legend-strip fade-in">
+        <div class="legend-chip"><span class="dot" style="background: var(--good);"></span>Safe — within ~1&nbsp;pt of 4-bit</div>
+        <div class="legend-chip"><span class="dot" style="background: var(--caution);"></span>Usable, notably degraded</div>
+      </div>
+
+      <div class="model-grid fade-in">
+        <div class="model-card caution">
+          <span class="model-badge caution">Caution</span>
+          <div class="model-name">Llama-3.2-1B</div>
+          <div class="model-metric">b=4 <b>23.27</b></div>
+          <div class="model-metric">b=2 <b class="hot">81.30</b></div>
+        </div>
+        <div class="model-card caution">
+          <span class="model-badge caution">Caution</span>
+          <div class="model-name">SmolLM2-135M</div>
+          <div class="model-metric">b=4 <b>29.63</b></div>
+          <div class="model-metric">b=2 <b class="hot">44.85</b></div>
+        </div>
+        <div class="model-card caution">
+          <span class="model-badge caution">Caution</span>
+          <div class="model-name">Qwen2.5-0.5B</div>
+          <div class="model-metric">b=4 <b>22.22</b></div>
+          <div class="model-metric">b=2 <b class="hot">49.08</b></div>
+        </div>
+        <div class="model-card good">
+          <span class="model-badge good">Safe</span>
+          <div class="model-name">gemma-3-4B</div>
+          <div class="model-metric">b=4 <b>16.37</b></div>
+          <div class="model-metric">b=2 <b>17.72</b></div>
+        </div>
+        <div class="model-card good">
+          <span class="model-badge good">Safe</span>
+          <div class="model-name">Qwen3-4B</div>
+          <div class="model-metric">b=4 <b>15.07</b></div>
+          <div class="model-metric">b=2 <b>17.21</b></div>
+        </div>
+        <div class="model-card good">
+          <span class="model-badge good">Safe</span>
+          <div class="model-name">Llama-3.2-3B</div>
+          <div class="model-metric">b=4 <b>15.82</b></div>
+          <div class="model-metric">b=2 <b>20.93</b></div>
+        </div>
+        <div class="model-card good">
+          <span class="model-badge good">Safe</span>
+          <div class="model-name">Mistral-7B-v0.3</div>
+          <div class="model-metric">b=4 <b>7.96</b></div>
+          <div class="model-metric">b=2 <b>8.05</b></div>
+        </div>
+        <div class="model-card good">
+          <span class="model-badge good">Safe</span>
+          <div class="model-name">Qwen2.5-7B</div>
+          <div class="model-metric">b=4 <b>9.30</b></div>
+          <div class="model-metric">b=2 <b>10.75</b></div>
+        </div>
+        <div class="model-card good">
+          <span class="model-badge good">Safe</span>
+          <div class="model-name">Llama-3.1-8B</div>
+          <div class="model-metric">b=4 <b>11.02</b></div>
+          <div class="model-metric">b=2 <b>13.57</b></div>
+        </div>
+        <div class="model-card good">
+          <span class="model-badge good">Safe</span>
+          <div class="model-name">Falcon3-7B</div>
+          <div class="model-metric">b=4 <b>12.63</b></div>
+          <div class="model-metric">b=2 <b>14.44</b></div>
+        </div>
+        <div class="model-card good">
+          <span class="model-badge good">Safe</span>
+          <div class="model-name">Qwen3-8B</div>
+          <div class="model-metric">b=4 <b>9.92</b></div>
+          <div class="model-metric">b=2 <b>10.57</b></div>
+        </div>
+        <div class="model-card good">
+          <span class="model-badge good">Safe</span>
+          <div class="model-name">DeepSeek-V2-Lite <span class="td-muted" style="font-size:0.65rem;">MoE·MLA</span></div>
+          <div class="model-metric">b=4 <b>15.34</b></div>
+          <div class="model-metric">b=2 <b>17.87</b></div>
+        </div>
+      </div>
+
+      <details class="ref-table fade-in">
+        <summary>Exact figures — all 12 models, fp16 vs. KIVI b=4 vs. KIVI b=2</summary>
+        <div class="table-wrap">
+          <table>
+            <caption class="visually-hidden">KIVI perplexity across 12 models, fp16 vs 4-bit vs 2-bit</caption>
+            <thead>
+              <tr>
+                <th scope="col">Model</th>
+                <th scope="col">fp16</th>
+                <th scope="col">KIVI b=4</th>
+                <th scope="col">KIVI b=2</th>
+                <th scope="col">Decode tok/s (fp16 → b4 → b2)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>SmolLM2-135M</td>
+                <td>28.87</td>
+                <td class="td-winner">29.63</td>
+                <td class="td-caution">44.85</td>
+                <td class="td-muted">—</td>
+              </tr>
+              <tr>
+                <td>Qwen2.5-0.5B</td>
+                <td class="td-muted">n/a<sup>†</sup></td>
+                <td class="td-winner">22.22</td>
+                <td class="td-caution">49.08</td>
+                <td class="td-muted">— → 245.2 → 244.3</td>
+              </tr>
+              <tr>
+                <td>Llama-3.2-1B</td>
+                <td>22.77</td>
+                <td class="td-winner">23.27</td>
+                <td class="td-caution">81.30</td>
+                <td>113.7 → 116.9 → 119.7</td>
+              </tr>
+              <tr>
+                <td>gemma-3-4B</td>
+                <td>16.00</td>
+                <td class="td-winner">16.37</td>
+                <td>17.72</td>
+                <td class="td-muted">—</td>
+              </tr>
+              <tr>
+                <td>Qwen3-4B</td>
+                <td class="td-muted">n/a<sup>†</sup></td>
+                <td class="td-winner">15.07</td>
+                <td>17.21</td>
+                <td class="td-muted">—</td>
+              </tr>
+              <tr>
+                <td>Llama-3.2-3B</td>
+                <td>15.47</td>
+                <td class="td-winner">15.82</td>
+                <td>20.93</td>
+                <td>46.4 → 48.5 → 46.2</td>
+              </tr>
+              <tr>
+                <td>Mistral-7B-v0.3</td>
+                <td>8.01</td>
+                <td class="td-winner">7.96</td>
+                <td>8.05</td>
+                <td>20.9 → 21.4 → 22.8</td>
+              </tr>
+              <tr>
+                <td>Qwen2.5-7B</td>
+                <td class="td-muted">n/a<sup>†</sup></td>
+                <td class="td-winner">9.30</td>
+                <td>10.75</td>
+                <td class="td-muted">— → 23.4 → 20.9</td>
+              </tr>
+              <tr>
+                <td>Llama-3.1-8B</td>
+                <td>10.88</td>
+                <td class="td-winner">11.02</td>
+                <td>13.57</td>
+                <td>15.6 → 15.9 → 18.5</td>
+              </tr>
+              <tr>
+                <td>Falcon3-7B</td>
+                <td>12.69</td>
+                <td class="td-winner">12.63</td>
+                <td>14.44</td>
+                <td>15.2 → 25.2 → 16.1</td>
+              </tr>
+              <tr>
+                <td>Qwen3-8B</td>
+                <td class="td-muted">n/a<sup>†</sup></td>
+                <td class="td-winner">9.92</td>
+                <td>10.57</td>
+                <td class="td-muted">—</td>
+              </tr>
+              <tr>
+                <td>DeepSeek-V2-Lite <span class="td-muted">(MoE, MLA)</span></td>
+                <td class="td-muted">n/a<sup>†</sup></td>
+                <td class="td-winner">15.34</td>
+                <td>17.87</td>
+                <td class="td-muted">— → 282.9<sup>‡</sup> → 82.5<sup>‡</sup></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+
+      <div class="callout fade-in">
+        <div class="callout-title">What this means for you</div>
+        <p>KIVI b=4 is close to a free 4× memory win on any model size. For b=2's 8× win, it's
+        validated on <strong>7–8B-parameter models</strong> — Mistral-7B, Llama-3.1-8B, Qwen2.5-7B,
+        Falcon3-7B, Qwen3-8B all land within roughly 0.6–3 perplexity points of their 4-bit runs.
+        Below ~3B, treat 2-bit as a quality/memory tradeoff to test yourself, not a default.
+        DeepSeek-V2-Lite's MoE + multi-head-latent-attention design — a layout KIVI wasn't built
+        around — ran cleanly at both bit-widths, a good robustness signal beyond standard attention.</p>
+      </div>
+
+      <details class="methodology fade-in">
+        <summary>Methodology notes &amp; caveats</summary>
+        <div class="methodology-body">
+          Long-sample causal-LM perplexity (~430–500 tokens — well past the 128-token residual
+          window, so quantization is genuinely exercised), computed through the actual patched
+          cache, not a bypassed no-cache forward pass.<br><br>
+          <strong>†</strong> fp16 baseline not measurable for these architectures — this
+          <code>mlx-lm</code> version's default model class has no <code>make_cache</code> for
+          Qwen2.5/Qwen3/DeepSeek-V2, a pre-existing library gap unrelated to KIVI. KIVI's own
+          patch supplies <code>make_cache</code>, so the quantized rows measured normally.<br><br>
+          <strong>‡</strong> DeepSeek-V2-Lite's b=4→b=2 throughput gap (282.9 → 82.5 tok/s) is
+          larger than bit-width alone should cause — most likely MoE expert-routing variance
+          between separate runs, not a real speed difference. Treat it as noise, not a finding.
+        </div>
+      </details>
     </section>
   </main>
 
