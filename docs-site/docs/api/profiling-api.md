@@ -61,6 +61,43 @@ Any attribute not defined on `KVCacheProfiler` (e.g. a method-specific `fused_sd
 
 ---
 
+## MLXCacheProfiler
+
+```python
+from veloxquant_mlx import MLXCacheProfiler
+# or: from veloxquant_mlx.profiling import MLXCacheProfiler
+```
+
+Wraps an `mlx_lm.models.cache.KVCache`-style cache — the interface servable methods actually implement (`update_and_fetch(keys, values) -> (keys, values)`), driven by real `mlx_lm.generate()` runs. Unlike `KVCacheProfiler`'s standalone `append_key` / `append_value` / `attend` triad, `update_and_fetch` fuses quantize, store, and dequantize into one call, so there is no separate latency to attribute to each step — `MLXCacheProfiler` times the whole call and records it as `quantize_ms_total` with `LayerProfile.is_fused=True`; `dequantize_ms_total` and `write_ms_total` stay `0`.
+
+### Constructor
+
+```python
+MLXCacheProfiler(cache: Any, layer_id: Any = 0)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `cache` | `mlx_lm.models.cache.KVCache`-style | required | The cache instance to profile (e.g. one entry from `KVCacheBuilder.for_model()`) |
+| `layer_id` | `Any` | `0` | Label attached to the resulting `LayerProfile` |
+
+### Methods
+
+```python
+def update_and_fetch(self, keys: Any, values: Any) -> Any
+def profile(self) -> LayerProfile
+```
+
+**`update_and_fetch(keys, values)`** — Times the wrapped cache's `update_and_fetch` (forcing evaluation of the returned arrays via `mx.eval` so the timing reflects real compute, not lazy-graph deferral), increments `n_quantize_calls`/`tokens_written`, accumulates the elapsed time into `quantize_ms_total`, adds `n_tokens * 2 * head_dim` to `fp16_baseline_bytes`, and updates `peak_memory_bytes` from the wrapped cache's `nbytes`. Returns the wrapped call's result unchanged.
+
+**`profile()`** — Returns the accumulated `LayerProfile` for this instance.
+
+Substitute a list of `MLXCacheProfiler` instances directly for the list `KVCacheBuilder.for_model()` returns and pass it as `mlx_lm.generate(..., prompt_cache=profilers)`. Any attribute not defined on `MLXCacheProfiler` (e.g. `make_mask`, `trim`, `is_trimmable`, `meta_state`, `state`) is forwarded to the wrapped cache via `__getattr__`, so it substitutes transparently wherever the real cache is expected.
+
+See also: [`veloxquant profile` CLI](../guides/profiling#the-veloxquant-profile-cli), which wires this up end to end against a real model.
+
+---
+
 ## LayerProfile
 
 ```python
@@ -79,19 +116,21 @@ class LayerProfile:
     peak_memory_bytes: int = 0
     tokens_written: int = 0
     fp16_baseline_bytes: int = 0
+    is_fused: bool = False
 ```
 
 | Field / Property | Type | Description |
 |---|---|---|
 | `layer_id` | `Any` | Label identifying the layer |
-| `n_quantize_calls` | `int` | Number of `append_key` calls |
-| `n_dequantize_calls` | `int` | Number of `attend` calls |
-| `quantize_ms_total` | `float` | Cumulative `append_key` wall time, ms |
-| `dequantize_ms_total` | `float` | Cumulative `attend` wall time, ms |
-| `write_ms_total` | `float` | Cumulative `append_value` wall time, ms |
-| `peak_memory_bytes` | `int` | Largest `memory_bytes()` observed after any call |
-| `tokens_written` | `int` | Number of `append_key` calls (proxy for tokens stored) |
+| `n_quantize_calls` | `int` | Number of `append_key` (or `update_and_fetch`) calls |
+| `n_dequantize_calls` | `int` | Number of `attend` calls. Always `0` when `is_fused` is `True` |
+| `quantize_ms_total` | `float` | Cumulative `append_key` wall time, ms. For `MLXCacheProfiler` (`is_fused=True`), this holds the *combined* quantize+dequantize+write time instead — there is no separate number to split it into |
+| `dequantize_ms_total` | `float` | Cumulative `attend` wall time, ms. Always `0` when `is_fused` is `True` |
+| `write_ms_total` | `float` | Cumulative `append_value` wall time, ms. Always `0` when `is_fused` is `True` |
+| `peak_memory_bytes` | `int` | Largest `memory_bytes()` / `nbytes` observed after any call |
+| `tokens_written` | `int` | Number of `append_key` / `update_and_fetch` calls (proxy for tokens stored) |
 | `fp16_baseline_bytes` | `int` | `tokens_written * 2 * head_dim` — what the same tokens would cost in fp16 |
+| `is_fused` | `bool` | `True` when `quantize_ms_total` is a combined measurement (`MLXCacheProfiler`) rather than quantize-only (`KVCacheProfiler`) |
 | `quantize_ms_mean` (property) | `float` | `quantize_ms_total / n_quantize_calls`, or `0.0` if no calls |
 | `dequantize_ms_mean` (property) | `float` | `dequantize_ms_total / n_dequantize_calls`, or `0.0` if no calls |
 | `compression_ratio` (property) | `float` | `fp16_baseline_bytes / peak_memory_bytes`, or `0.0` if `peak_memory_bytes <= 0` |
@@ -129,10 +168,12 @@ from veloxquant_mlx import profile_layers
 ```
 
 ```python
-def profile_layers(profilers: list[KVCacheProfiler], elapsed_s: float = 0.0) -> ProfileReport
+def profile_layers(
+    profilers: list[KVCacheProfiler | MLXCacheProfiler], elapsed_s: float = 0.0
+) -> ProfileReport
 ```
 
-Aggregates a list of `KVCacheProfiler` instances (one per model layer) into a single `ProfileReport`.
+Aggregates a list of `KVCacheProfiler` or `MLXCacheProfiler` instances (one per model layer) into a single `ProfileReport`. Both wrapper types report into the same `LayerProfile` shape, so a list can be aggregated uniformly regardless of which interface it wraps.
 
 ---
 

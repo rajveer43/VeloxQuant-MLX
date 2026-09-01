@@ -1,11 +1,23 @@
-"""Transparent profiling wrapper around any :class:`KVCache`.
+"""Transparent profiling wrappers around a KV cache.
 
-Wraps append_key / append_value / attend and records per-call latency and
-memory footprint without touching the wrapped cache's implementation, so it
-works uniformly across all registered KV-cache methods (see
-``KVCacheConfig.method``). One :class:`KVCacheProfiler` instance profiles a
-single layer; :func:`format_profile_table` renders a multi-layer summary in
-the style requested by issue #252.
+Two wrapper classes cover the two cache interfaces this library exposes:
+
+* :class:`KVCacheProfiler` wraps append_key / append_value / attend — the
+  standalone interface (``veloxquant_mlx.core.abstractions.KVCache``) driven
+  directly by ``benchmark.py`` and research code.
+* :class:`MLXCacheProfiler` wraps ``update_and_fetch`` / ``nbytes`` — the
+  interface servable methods actually implement
+  (``mlx_lm.models.cache.KVCache``), driven by real ``mlx_lm.generate()``
+  runs (see ``cli/profile.py``, issue #45). That interface fuses quantize,
+  dequantize, and write into one call, so there is no separate latency to
+  report for each; ``compute_ms_total`` is the one number this wrapper can
+  honestly measure.
+
+Both report into the same :class:`LayerProfile` shape so
+:func:`format_profile_table` and :func:`profile_layers` work uniformly
+across all registered KV-cache methods (see ``KVCacheConfig.method``). One
+profiler instance profiles a single layer; :func:`format_profile_table`
+renders a multi-layer summary in the style requested by issue #252.
 """
 
 from __future__ import annotations
@@ -26,12 +38,20 @@ class LayerProfile:
         n_quantize_calls: Number of append_key calls (quantization events).
         n_dequantize_calls: Number of attend calls (dequantization events).
         quantize_ms_total: Cumulative append_key wall time, milliseconds.
+            For an ``MLXCacheProfiler`` (fused update_and_fetch interface),
+            this holds the *combined* quantize+dequantize+write time instead
+            — see ``is_fused``. There is no separate number to split it into.
         dequantize_ms_total: Cumulative attend wall time, milliseconds.
+            Always 0 when ``is_fused`` is True.
         write_ms_total: Cumulative append_value wall time, milliseconds.
-        peak_memory_bytes: Largest memory_bytes() observed after any call.
-        tokens_written: Number of append_key calls (proxy for tokens stored).
+            Always 0 when ``is_fused`` is True.
+        peak_memory_bytes: Largest memory_bytes()/nbytes observed after any call.
+        tokens_written: Number of append_key (or update_and_fetch) calls,
+            a proxy for tokens stored.
         fp16_baseline_bytes: What tokens_written * 2 * head_dim would cost in fp16,
             used to derive compression_ratio.
+        is_fused: True when quantize_ms_total is a combined measurement
+            (MLXCacheProfiler) rather than quantize-only (KVCacheProfiler).
     """
 
     layer_id: Any
@@ -43,6 +63,7 @@ class LayerProfile:
     peak_memory_bytes: int = 0
     tokens_written: int = 0
     fp16_baseline_bytes: int = 0
+    is_fused: bool = False
 
     @property
     def quantize_ms_mean(self) -> float:
@@ -173,6 +194,20 @@ class KVCacheProfiler(KVCache):
         """Clear all accumulated profiling stats (does not affect the wrapped cache)."""
         self._profile = LayerProfile(layer_id=self._profile.layer_id)
 
+    def __bool__(self) -> bool:
+        # bool() consults __bool__ before __len__. The base KVCache.__len__
+        # raises NotImplementedError by default, and dunder lookup bypasses
+        # __getattr__, so without this override every wrapped cache would
+        # inherit that raise via truthiness checks regardless of what the
+        # wrapped cache itself supports. mlx_lm's create_attention_mask does
+        # `if cache and hasattr(cache, "make_mask")` on every call, and caches
+        # built for mlx_lm serving (mlx_lm.models.cache.KVCache subclasses,
+        # e.g. turboquant_rvq, kivi) define no __len__ of their own, relying
+        # on the default-truthy `object` — so profiling those (this file's
+        # entire purpose) must present the same default truthiness, not the
+        # unrelated ABC's NotImplementedError.
+        return True
+
     def __len__(self) -> int:
         return len(self._cache)
 
@@ -185,7 +220,75 @@ class KVCacheProfiler(KVCache):
         return getattr(self._cache, name)
 
 
-def profile_layers(profilers: list[KVCacheProfiler], elapsed_s: float = 0.0) -> ProfileReport:
+class MLXCacheProfiler:
+    """Wraps an ``mlx_lm.models.cache.KVCache``-style cache's update_and_fetch.
+
+    Servable methods (the ones ``cli/serve.py`` and ``cli/profile.py`` drive
+    through real ``mlx_lm.generate()`` runs) implement
+    ``update_and_fetch(keys, values) -> (keys, values)``, a single fused call
+    that quantizes, stores, and immediately dequantizes for the caller's
+    attention step — there is no separate append_key/append_value/attend
+    triad to hook into, unlike the standalone interface :class:`KVCacheProfiler`
+    wraps. So this class times update_and_fetch as one unit and records it as
+    ``quantize_ms_total`` with ``is_fused=True``; ``dequantize_ms_total`` and
+    ``write_ms_total`` stay 0 because there is nothing else to attribute them
+    to. Memory comes from the cache's own ``nbytes`` property (the same true
+    packed-byte accounting ``cli/serve.py``'s accounting-only warning already
+    describes — see ``ACCOUNTING_NOTE`` in ``cli/profile.py``).
+
+    Substituted directly into the list ``KVCacheBuilder.for_model()`` returns
+    and passed to ``mlx_lm.generate(..., prompt_cache=profilers)``.
+    """
+
+    def __init__(self, cache: Any, layer_id: Any = 0) -> None:
+        self._cache = cache
+        self._head_dim = getattr(cache, "_head_dim", 0)
+        self._profile = LayerProfile(layer_id=layer_id, is_fused=True)
+
+    def update_and_fetch(self, keys: Any, values: Any) -> Any:
+        import mlx.core as mx
+
+        n_tokens = keys.shape[-2] if hasattr(keys, "shape") else 1
+        t0 = time.perf_counter()
+        out = self._cache.update_and_fetch(keys, values)
+        if isinstance(out, tuple):
+            for item in out:
+                if hasattr(item, "shape"):
+                    mx.eval(item)
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+        self._profile.n_quantize_calls += 1
+        self._profile.quantize_ms_total += elapsed_ms
+        self._profile.tokens_written += n_tokens
+        self._profile.fp16_baseline_bytes += n_tokens * 2 * self._head_dim
+        self._update_peak_memory()
+        return out
+
+    def _update_peak_memory(self) -> None:
+        current = getattr(self._cache, "nbytes", 0)
+        if current > self._profile.peak_memory_bytes:
+            self._profile.peak_memory_bytes = current
+
+    def profile(self) -> LayerProfile:
+        """Return the accumulated LayerProfile for this wrapped cache."""
+        return self._profile
+
+    def __bool__(self) -> bool:
+        return True
+
+    def __repr__(self) -> str:
+        return f"MLXCacheProfiler({self._cache!r})"
+
+    def __getattr__(self, name: str) -> Any:
+        # Forward anything not explicitly overridden (make_mask, trim,
+        # is_trimmable, meta_state, state, ...) straight to the wrapped
+        # cache, so this substitutes transparently for it in prompt_cache.
+        return getattr(self._cache, name)
+
+
+def profile_layers(
+    profilers: "list[KVCacheProfiler | MLXCacheProfiler]", elapsed_s: float = 0.0
+) -> ProfileReport:
     """Aggregate a list of KVCacheProfiler instances into one ProfileReport.
 
     Args:
