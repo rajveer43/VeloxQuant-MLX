@@ -392,6 +392,32 @@ function showError(message) {
 }
 
 /* ── Endpoints ─────────────────────────────────────────── */
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_err) {
+      // fall through to the execCommand fallback below
+    }
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch (_err) {
+    ok = false;
+  }
+  document.body.removeChild(ta);
+  return ok;
+}
+
 function renderEndpoints(ready) {
   const list = $('endpoint-list');
   const empty = $('endpoints-empty');
@@ -411,12 +437,12 @@ function renderEndpoints(ready) {
     li.innerHTML = `<span class="endpoint-label">${labels[key] || key}</span>`
       + `<span class="endpoint-url">${escapeHtml(url)}</span>`
       + `<button class="copy-btn" type="button">Copy</button>`;
-    li.querySelector('.copy-btn').addEventListener('click', (e) => {
-      navigator.clipboard.writeText(url).then(() => {
-        const b = e.target;
-        b.textContent = 'Copied'; b.classList.add('copied');
-        setTimeout(() => { b.textContent = 'Copy'; b.classList.remove('copied'); }, 1400);
-      });
+    li.querySelector('.copy-btn').addEventListener('click', async (e) => {
+      const b = e.currentTarget;
+      const ok = await copyText(url);
+      b.textContent = ok ? 'Copied' : 'Failed';
+      b.classList.toggle('copied', ok);
+      setTimeout(() => { b.textContent = 'Copy'; b.classList.remove('copied'); }, 1400);
     });
     list.appendChild(li);
   }
@@ -445,8 +471,12 @@ async function refreshLogs() {
 $('clear-log').addEventListener('click', () => {
   $('log').innerHTML = '<span class="log-empty">No output yet.</span>';
 });
-$('copy-log').addEventListener('click', () => {
-  navigator.clipboard.writeText($('log').innerText);
+$('copy-log').addEventListener('click', async (e) => {
+  const b = e.currentTarget;
+  const ok = await copyText($('log').innerText);
+  const original = b.textContent;
+  b.textContent = ok ? 'Copied' : 'Failed';
+  setTimeout(() => { b.textContent = original; }, 1400);
 });
 
 /* ── Polling ───────────────────────────────────────────── */
