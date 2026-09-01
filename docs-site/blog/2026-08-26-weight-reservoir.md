@@ -1,6 +1,7 @@
 ---
 slug: weight-reservoir
 title: "The ROM Chip That Wasn't, and the 230× Speedup That Was"
+description: "Testing whether Apple Silicon processes can share quantized LLM weights in memory, and building a reservoir file format that loads models 230x faster."
 date: 2026-08-26
 authors: rajveer
 tags: [quantization, apple-silicon, mlx, weights, benchmarking, memory]

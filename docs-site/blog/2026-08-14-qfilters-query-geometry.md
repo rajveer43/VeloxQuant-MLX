@@ -1,6 +1,7 @@
 ---
 slug: qfilters-query-geometry
 title: "The Sign Was the Whole Paper: Debugging a KV Cache Compressor on Real Models"
+description: "Debugging a KV cache eviction method that scored -0.032 against real attention, tracing it to one wrong SVD source, and fixing it to +0.86."
 date: 2026-08-14
 authors: rajveer
 tags: [kv-cache, q-filters, metal, apple-silicon, mlx, benchmarks]

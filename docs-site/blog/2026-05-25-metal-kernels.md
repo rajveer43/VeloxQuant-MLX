@@ -1,6 +1,7 @@
 ---
 slug: metal-kernels
 title: "I Wrote a Metal Kernel to Stop My Mac From OOMing"
+description: "A 30-line Metal kernel fixes VecInfer's KV cache OOM crash on Falcon3-7B on Apple Silicon, delivering a 13x speedup and 98% peak memory reduction."
 date: 2026-05-25
 authors: rajveer
 tags: [metal, apple-silicon, mlx, gpu, performance]

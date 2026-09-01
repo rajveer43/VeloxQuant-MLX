@@ -1,6 +1,7 @@
 ---
 slug: tensorops-research
 title: "TensorOps Research: What We Learned Optimizing KV Caches"
+description: "Reading Apple's full Metal 4 spec to speed up a KV cache attention kernel: two hardware matmul paths failed, but two smaller fixes shipped."
 date: 2026-06-20
 authors: rajveer
 tags: [metal, apple-silicon, mlx, gpu, research]

@@ -1,6 +1,7 @@
 ---
 slug: prefill-roofline
 title: "Chasing the Mac-vs-CUDA Prefill Gap — and Finding a Wall Instead"
+description: "A Metal kernel benchmark finds Apple Silicon's Mac-vs-CUDA LLM prefill gap is a hardware FLOPs ceiling, not a software problem MLX kernels can fix."
 date: 2026-08-30
 authors: rajveer
 tags: [metal, apple-silicon, mlx, attention, benchmarking, roofline]

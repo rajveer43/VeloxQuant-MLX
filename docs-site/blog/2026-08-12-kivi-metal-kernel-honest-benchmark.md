@@ -1,6 +1,7 @@
 ---
 slug: kivi-metal-kernel-honest-benchmark
 title: "A 5.65× Metal Kernel"
+description: "A 5.65x Metal kernel for KIVI KV cache quantization made zero measurable difference end-to-end, and four separate benchmarking mistakes explain why."
 date: 2026-08-12
 authors: rajveer
 tags: [metal, apple-silicon, mlx, gpu, performance, kivi, benchmarking]

@@ -21,10 +21,14 @@
   <meta property="og:description" content="Free, open-source tool that shrinks the memory a local AI model uses on your Mac — up to 16×, in three lines of code. Runs entirely on your machine." />
   <meta property="og:url" content="https://veloxquant-mlx.netlify.app/" />
   <meta property="og:image" content="https://veloxquant-mlx.netlify.app/assets/metal_summary.png" />
+  <meta property="og:image:width" content="1937" />
+  <meta property="og:image:height" content="835" />
+  <meta property="og:image:alt" content="VeloxQuant-MLX Metal kernel benchmark summary: compression ratio and speedup charts" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="VeloxQuant-MLX — run longer AI conversations on your Mac" />
   <meta name="twitter:description" content="Free, open-source tool that shrinks the memory a local AI model uses on your Mac — up to 16×, in three lines of code. Runs entirely on your machine." />
   <meta name="twitter:image" content="https://veloxquant-mlx.netlify.app/assets/metal_summary.png" />
+  <meta name="twitter:image:alt" content="VeloxQuant-MLX Metal kernel benchmark summary: compression ratio and speedup charts" />
 
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="assets/styles.css" />
@@ -38,11 +42,78 @@
     "operatingSystem": "macOS (Apple Silicon M1 or later)",
     "description": "Shrinks the memory a local AI model uses on Apple Silicon Macs — up to 16× smaller, with near-identical output quality.",
     "url": "https://veloxquant-mlx.netlify.app/",
-    "softwareVersion": "0.49.4",
+    "softwareVersion": "0.67.1",
     "license": "https://opensource.org/licenses/MIT",
     "programmingLanguage": "Python",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
     "author": { "@type": "Person", "name": "Rajveer Rathod" }
+  }
+  </script>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Is this actually free? What's the catch?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes — it's free and open source under the MIT license, which means you can use it (including commercially) at no cost, and anyone can read the code to verify what it does. There's no account, no subscription, and no data collected: it runs entirely on your Mac, and nothing about your conversations or files is sent anywhere."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How is this different from what Ollama or LM Studio already do?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Ollama and LM Studio are built on llama.cpp, which already compresses this memory — but with one fixed setting applied the same way to the whole model. VeloxQuant-MLX offers 41 different methods to choose from, some of which can be tuned per part of the model rather than one setting for everything. It also includes 11 methods that can drop old, low-value parts of a conversation entirely to save even more memory — something neither llama.cpp nor plain mlx_lm does."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does this actually free up memory I'll see in Activity Monitor?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "For the methods that drop old conversation history (marked RSS-reducing in the method list) — yes, today. For most of the other compression methods — not yet by default, since those methods still keep a full-size copy behind the scenes on the default setup."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What hardware do I need?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "An Apple Silicon Mac (M1 or later; M2/M3/M4/M5 recommended), Python 3.11 or 3.12, and Apple's MLX framework (version 0.18 or later — installed automatically). It's a pure-Python tool with optional on-chip acceleration — no separate app to install, and no GPU beyond what's already built into your Mac."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Do I need to re-download or convert my models?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. VeloxQuant-MLX works with any model you've already loaded with mlx_lm — same file format, no conversion step. You add the compression with three lines of code; the model file itself is untouched."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Which method should I start with?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "turboquant_rvq — no setup step required, and it's the default for a reason: it cuts memory use to roughly a third with very little effect on quality. If you need the smallest possible footprint on certain models, vecinfer reaches about a sixteenth of the original size, with a one-time setup step."
+        }
+      }
+    ]
+  }
+  </script>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://veloxquant-mlx.netlify.app/" }
+    ]
   }
   </script>
 

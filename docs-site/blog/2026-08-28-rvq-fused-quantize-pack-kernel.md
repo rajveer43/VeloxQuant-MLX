@@ -1,6 +1,7 @@
 ---
 slug: rvq-fused-quantize-pack-kernel
 title: "Fusing Quantize and Pack Into One Metal Dispatch"
+description: "Fusing quantize and bit-pack into one Metal kernel for RVQ's KV cache, the one method that stores compressed bytes at rest, for a 1.47-2.48x speedup."
 date: 2026-08-28
 authors: rajveer
 tags: [metal, apple-silicon, mlx, gpu, performance, rvq, turboquant]

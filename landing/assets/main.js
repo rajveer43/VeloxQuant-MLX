@@ -80,6 +80,10 @@ function initBadgeTyping() {
     badge.textContent = text;
     return;
   }
+  // Lock the badge at its final rendered width before emptying it, so the
+  // typing animation grows text inside a fixed box instead of reflowing the
+  // hero on every keystroke (was the largest single contributor to CLS).
+  badge.style.minWidth = badge.getBoundingClientRect().width + 'px';
   let i = 0;
   badge.textContent = '';
   const cursor = document.createElement('span');

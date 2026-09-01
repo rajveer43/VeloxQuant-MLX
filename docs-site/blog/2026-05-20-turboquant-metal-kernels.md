@@ -1,6 +1,7 @@
 ---
 slug: turboquant-metal-kernels
 title: "TurboQuant + Metal Kernels: The Combined Writeup"
+description: "Five custom Metal kernels for TurboQuant KV cache quantization on Apple Silicon, including MLX dispatch gotchas and a parallel Hadamard transform bug."
 date: 2026-05-20
 authors: rajveer
 tags: [metal, apple-silicon, mlx, gpu, turboquant, performance]
