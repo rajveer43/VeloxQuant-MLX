@@ -105,7 +105,7 @@ class KVCacheConfig:
     jl_dim: Optional[int] = None
     n_outlier_channels: Optional[int] = None
     n_calib_tokens: Optional[int] = None
-    enable_vectorized_attend: bool = False
+    enable_vectorized_attend: bool = True
     enable_outlier_two_stream: bool = False
     enable_fused_query_dot: bool = False
     seed: int = 42

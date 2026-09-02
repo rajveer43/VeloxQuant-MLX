@@ -4,6 +4,29 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+**`enable_vectorized_attend` now defaults to `True`**
+([#255](https://github.com/rajveer43/VeloxQuant-MLX/issues/255)) —
+investigation into zero-copy KV-cache access
+(`docs/ZERO_COPY_KV_CACHE_FINDINGS.md`) found that `TurboQuantKVCache`'s
+`attend()` spent 89% of its wall time (11.3 of 12.7 ms/call, 500-token
+cache, d=128, b=2) in a per-token Python bit-unpacking loop rather than in
+attention math or in the NumPy↔MLX array-boundary crossing itself. The
+existing `enable_vectorized_attend` flag (`KVCacheConfig`,
+`turboquant_cache.py`) already replaces that loop with a vectorized
+NumPy unpack for bit-widths 1/2/4 (3 keeps the scalar fallback) and was
+verified bit-for-bit identical to the scalar path
+(`test_vectorized_attend_matches_baseline`); it measures 26x faster
+end-to-end (0.48 ms/call) but previously required opting in. Flipping the
+default surfaces this win to every `turboquant_prod`/`turboquant_mse`
+cache without code changes. The remaining ~7% (34 µs/call) of `attend()`
+is genuine NumPy↔MLX marshaling structural to these caches' NumPy-backed
+ring-buffer storage — see the findings doc for why a full MLX-native
+rewrite isn't justified by the data, and where a true zero-copy path
+(the `fused_sdpa`/VecInfer Metal kernel already demonstrates the end
+state) would be worth prototyping instead.
+
 ### Added
 
 **KV-cache-aware block pool allocator**
