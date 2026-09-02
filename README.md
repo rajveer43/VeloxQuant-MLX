@@ -375,6 +375,10 @@ python benchmark_scripts/run_outlier_ratequant.py # RateQuant mixed-precision
 # Which method should I use on my Mac? (new in 0.42.0)
 python -m veloxquant_mlx recommend \
     --chip M4 --ram-gb 16 --model-class 7B --goal everyday
+
+# Hardware-aware config for a specific workload shape (new in 0.70.0)
+python -m veloxquant_mlx auto-config \
+    --head-dim 128 --seq-len 32000 --n-layers 32 --batch-size 4 --json
 ```
 
 The recommender is accounting-aware. It reports the key compression ratio and also tells you when resident RAM savings are unlikely, rather than quoting a ratio that won't show up in RSS:
