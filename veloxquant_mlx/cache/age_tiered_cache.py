@@ -83,7 +83,11 @@ class AgeTieredKVCache(_MLXKVCache):
         bits_recent = int(getattr(config, "age_bits_recent", 8))
         bits_mid = int(getattr(config, "age_bits_mid", 4))
         bits_old = int(getattr(config, "age_bits_old", 2))
-        for name, b in (("age_bits_recent", bits_recent), ("age_bits_mid", bits_mid), ("age_bits_old", bits_old)):
+        for name, b in (
+            ("age_bits_recent", bits_recent),
+            ("age_bits_mid", bits_mid),
+            ("age_bits_old", bits_old),
+        ):
             if not 1 <= b <= 16:
                 raise ValueError(f"AgeTieredKVCache: {name} must be in [1, 16], got {b}.")
         self._tiers = default_age_tiers(bits_recent, bits_mid, bits_old)

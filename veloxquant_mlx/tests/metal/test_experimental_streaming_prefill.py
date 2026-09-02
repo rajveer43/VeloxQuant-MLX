@@ -126,7 +126,10 @@ def test_streaming_prefill_first_middle_last_token(implementation, D):
     _assert_no_nan_inf(got, implementation)
     for row, label in [(0, "first"), (32, "middle"), (64, "last")]:
         np.testing.assert_allclose(
-            got[:, :, row, :], expected[:, :, row, :], atol=_ATOL, rtol=_RTOL,
+            got[:, :, row, :],
+            expected[:, :, row, :],
+            atol=_ATOL,
+            rtol=_RTOL,
             err_msg=f"{implementation} D={D} {label} token (row={row}) mismatch",
         )
 
@@ -239,7 +242,10 @@ def test_streaming_prefill_variants_agree_with_each_other(D):
     for impl, got in outs.items():
         _assert_no_nan_inf(got, impl)
         np.testing.assert_allclose(
-            got, baseline, atol=1e-3, rtol=1e-3,
+            got,
+            baseline,
+            atol=1e-3,
+            rtol=1e-3,
             err_msg=f"{impl} disagrees with block=1 baseline beyond fp arithmetic-order noise",
         )
 

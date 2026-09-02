@@ -67,11 +67,11 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="age_tiered",
     age_recent_boundary=128,  # age < this -> 8-bit
-    age_mid_boundary=1024,    # age < this -> 4-bit; older -> 2-bit
+    age_mid_boundary=1024,  # age < this -> 4-bit; older -> 2-bit
     age_bits_recent=8,
     age_bits_mid=4,
     age_bits_old=2,
-    age_group_size=32,        # min/max group size, shared across tiers
+    age_group_size=32,  # min/max group size, shared across tiers
 )
 caches = KVCacheBuilder.for_model(model, config)
 model.make_cache = lambda *_a, **_k: caches

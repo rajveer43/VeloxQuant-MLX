@@ -148,7 +148,9 @@ def run(n_iter: int, skip_large: bool) -> list[dict]:
         # Shapes to test per D: full prefill (S_q==S_kv) for every S, plus
         # exactly one cache-continuation (S_q<S_kv) case.
         shapes = [(S, S, "full") for S in S_values]
-        shapes.append((max(1, S_values[len(S_values) // 2] // 4), S_values[len(S_values) // 2], "cache_cont"))
+        shapes.append(
+            (max(1, S_values[len(S_values) // 2] // 4), S_values[len(S_values) // 2], "cache_cont")
+        )
 
         for S_q, S_kv, kind in shapes:
             # Reduce iteration count for very large sequences to keep the
