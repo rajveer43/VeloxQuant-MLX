@@ -11,7 +11,7 @@
   <!-- One sentence. Search engines truncate around 160 characters; the old
        1,400-character method dump was never shown in full anywhere. -->
   <meta name="description" content="Free, open-source tool that shrinks the memory a local AI model uses on your Mac, so you can run longer conversations or bigger models. Runs entirely on your machine — nothing is sent anywhere." />
-  <meta name="keywords" content="VeloxQuant-MLX, KV cache compression, KV cache quantization, LLM memory optimization, Apple Silicon, MLX framework, mlx_lm, local LLM inference, on-device AI, long context inference, LLM quantization, key-value cache, GPU memory reduction, Metal kernels, macOS AI tools, token eviction, KIVI, GEAR, KVQuant, RaBitQ, VecInfer, TurboQuant RVQ, H2O, SnapKV, StreamingLLM, SpectralQuant, CommVQ, RateQuant, CacheRoute, low-bit quantization, 4-bit quantization, 2-bit quantization, Llama, Mistral, Qwen, Gemma, open source Python library" />
+  <meta name="keywords" content="VeloxQuant-MLX, KV cache compression, KV cache quantization, LLM memory optimization, Apple Silicon, MLX framework, mlx_lm, local LLM inference, on-device AI, long context inference, LLM quantization, key-value cache, GPU memory reduction, Metal kernels, macOS AI tools, token eviction, KIVI, GEAR, KVQuant, RaBitQ, VecInfer, TurboQuant RVQ, H2O, SnapKV, StreamingLLM, SpectralQuant, CommVQ, RateQuant, CacheRoute, low-bit quantization, 4-bit quantization, 2-bit quantization, Llama, Mistral, Qwen, Gemma, open source Python library, VeloxQuant Rust SDK, VeloxQuant Go SDK, VeloxQuant npm SDK, veloxquant-rs, veloxquant-go, veloxquant crates.io, cargo add veloxquant, go get veloxquant-go, npm install veloxquant, Node.js LLM memory SDK, TypeScript LLM SDK" />
   <link rel="canonical" href="https://veloxquant-mlx.netlify.app/" />
 
   <!-- Open Graph / Twitter — the page had none, so every share on HN,
@@ -47,7 +47,7 @@
     "softwareVersion": "0.70.0",
     "license": "https://opensource.org/licenses/MIT",
     "programmingLanguage": "Python",
-    "keywords": "KV cache compression, KV cache quantization, LLM memory optimization, Apple Silicon, MLX framework, mlx_lm, local LLM inference, long context inference, Metal kernels, KIVI, GEAR, KVQuant, RaBitQ, VecInfer",
+    "keywords": "KV cache compression, KV cache quantization, LLM memory optimization, Apple Silicon, MLX framework, mlx_lm, local LLM inference, long context inference, Metal kernels, KIVI, GEAR, KVQuant, RaBitQ, VecInfer, Rust SDK, Go SDK, npm SDK, TypeScript SDK, veloxquant-rs, veloxquant-go, crates.io, cargo install",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
     "author": { "@type": "Person", "name": "Rajveer Rathod" }
   }
@@ -168,6 +168,7 @@
       <li><a href="#quickstart">Quickstart</a></li>
       <li><a href="#faq">FAQ</a></li>
       <li><a href="#install">Install</a></li>
+      <li><a href="#sdks">SDKs</a></li>
       <li><a href="benchmarks.html">Benchmarks</a></li>
       <li><a href="/docs/" rel="noopener">Docs</a></li>
       <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
@@ -870,6 +871,57 @@ pip install -e ".[dev]"</span></pre>
     </div>
   </section>
 
+  <!-- ── §12 SDKs ──
+       VeloxQuant-MLX (Python/MLX, above) is the compression engine itself.
+       These are separate client libraries for talking to a VeloxQuant
+       runtime from other stacks — not MLX, so they get their own section
+       rather than a tab inside #install's Python-specific requirements
+       list. Plain link cards, no JS: .code-copy still works since main.js
+       binds it by class globally, but no tab-switching is needed here. -->
+  <section id="sdks">
+    <p class="section-label">SDKs</p>
+    <h2 class="section-title">Use VeloxQuant from your own stack</h2>
+    <p class="section-desc" style="margin-bottom:2rem;">
+      Client libraries for talking to a VeloxQuant runtime — memory intelligence,
+      optimization recommendations, and inference — from Node.js, Go, or Rust.
+    </p>
+    <div class="sdk-grid fade-in">
+      <div class="sdk-card">
+        <h3 class="sdk-card-title">Node.js / TypeScript</h3>
+        <div class="code-wrap">
+          <div class="code-header">
+            <span class="code-lang">npm</span>
+            <button class="code-copy" data-target="code-npm">Copy</button>
+          </div>
+          <pre id="code-npm"><span class="id">npm install @veloxquant/sdk</span></pre>
+        </div>
+        <a href="https://www.npmjs.com/package/@veloxquant/sdk" target="_blank" rel="noopener">View on npm →</a>
+      </div>
+      <div class="sdk-card">
+        <h3 class="sdk-card-title">Go</h3>
+        <div class="code-wrap">
+          <div class="code-header">
+            <span class="code-lang">go get</span>
+            <button class="code-copy" data-target="code-go">Copy</button>
+          </div>
+          <pre id="code-go"><span class="id">go get github.com/rajveer43/veloxquant-go</span></pre>
+        </div>
+        <a href="https://pkg.go.dev/github.com/rajveer43/veloxquant-go" target="_blank" rel="noopener">View on pkg.go.dev →</a>
+      </div>
+      <div class="sdk-card">
+        <h3 class="sdk-card-title">Rust</h3>
+        <div class="code-wrap">
+          <div class="code-header">
+            <span class="code-lang">cargo</span>
+            <button class="code-copy" data-target="code-cargo">Copy</button>
+          </div>
+          <pre id="code-cargo"><span class="id">cargo add veloxquant</span></pre>
+        </div>
+        <a href="https://crates.io/crates/veloxquant" target="_blank" rel="noopener">View on crates.io →</a>
+      </div>
+    </div>
+  </section>
+
   <!-- ── FOOTER ── -->
   <footer>
     <div class="footer-groups">
@@ -888,6 +940,9 @@ pip install -e ".[dev]"</span></pre>
         <ul>
           <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
           <li><a href="https://pypi.org/project/VeloxQuant-MLX/" target="_blank" rel="noopener">PyPI</a></li>
+          <li><a href="https://www.npmjs.com/package/@veloxquant/sdk" target="_blank" rel="noopener">npm SDK</a></li>
+          <li><a href="https://pkg.go.dev/github.com/rajveer43/veloxquant-go" target="_blank" rel="noopener">Go SDK</a></li>
+          <li><a href="https://crates.io/crates/veloxquant" target="_blank" rel="noopener">Rust SDK</a></li>
           <li><a href="https://marketplace.visualstudio.com/items?itemName=veloxquant-mlx.veloxquant-vscode" target="_blank" rel="noopener">VS Code Extension</a></li>
           <li><a href="https://github.com/rajveer43/VeloxQuant-Studio/releases/latest" target="_blank" rel="noopener">VeloxQuant Studio (macOS app)</a></li>
           <li><a href="playground.html">Playground</a></li>
