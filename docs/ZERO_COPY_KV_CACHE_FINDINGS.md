@@ -33,16 +33,16 @@ stores everything as `np.ndarray` ring buffers:
 
 ```python
 self._k_indices_packed = np.zeros((capacity, self._idx_packed_len), dtype=np.uint8)
-self._k_signs_packed   = np.zeros((capacity, self._sign_packed_len), dtype=np.uint8)
-self._v_cache           = np.zeros((capacity, self._d), dtype=np.int8)
+self._k_signs_packed = np.zeros((capacity, self._sign_packed_len), dtype=np.uint8)
+self._v_cache = np.zeros((capacity, self._d), dtype=np.int8)
 ```
 
 Every `append_key` converts the incoming MLX key to NumPy to write it in:
 
 ```python
-k_np = np.array(k, dtype=np.float16).reshape(1, -1)   # mx -> np
+k_np = np.array(k, dtype=np.float16).reshape(1, -1)  # mx -> np
 ...
-idx_np = np.array(ev.indices[0], dtype=np.uint8)        # mx -> np (again, post-encode)
+idx_np = np.array(ev.indices[0], dtype=np.uint8)  # mx -> np (again, post-encode)
 ```
 
 Every `attend` slices the NumPy ring buffer by physical index, unpacks bits
@@ -52,9 +52,9 @@ converts back to MLX to run the actual math:
 ```python
 phys = self._physical_indices(n)
 k_indices_np = self._unpack_indices_block(self._k_indices_packed[phys])  # np slice + np loop
-k_indices = mx.array(k_indices_np, dtype=mx.uint8)                        # np -> mx
+k_indices = mx.array(k_indices_np, dtype=mx.uint8)  # np -> mx
 ...
-v_int8 = mx.array(self._v_cache[phys], dtype=mx.int8)                     # np -> mx
+v_int8 = mx.array(self._v_cache[phys], dtype=mx.int8)  # np -> mx
 ```
 
 This hits all four boundaries issue #255 called out:
@@ -132,7 +132,11 @@ actual KV-cache storage" the issue describes.
 
 ```python
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
-from veloxquant_mlx.profiling.kv_profiler import KVCacheProfiler, format_profile_table, profile_layers
+from veloxquant_mlx.profiling.kv_profiler import (
+    KVCacheProfiler,
+    format_profile_table,
+    profile_layers,
+)
 import mlx.core as mx
 
 cfg = KVCacheConfig(method="turboquant_prod", head_dim=128, bit_width_inlier=2, seed=42)
@@ -146,7 +150,9 @@ q = mx.random.normal((128,)).astype(mx.float16)
 mx.eval(keys, vals, q)
 
 for i in range(500):
-    prof.append_key(keys[i]); prof.append_value(vals[i]); prof.attend(q)
+    prof.append_key(keys[i])
+    prof.append_value(vals[i])
+    prof.attend(q)
 
 print(format_profile_table(profile_layers([prof])))
 ```

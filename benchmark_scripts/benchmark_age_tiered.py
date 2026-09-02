@@ -330,7 +330,9 @@ def _run_config(
             val_fp16 += c.full_seq_bytes - c.full_seq_bytes // 2
     if caches and hasattr(caches[0], "assigned_avg_bits"):
         avg_bits = float(caches[0].assigned_avg_bits)
-    elif caches and hasattr(caches[0], "compression_ratio") and hasattr(caches[0], "full_seq_bytes"):
+    elif (
+        caches and hasattr(caches[0], "compression_ratio") and hasattr(caches[0], "full_seq_bytes")
+    ):
         # Back out an effective avg-bits from the realized compression ratio
         # (fp16 baseline is 16 bits/element by construction).
         ratio = caches[0].compression_ratio
