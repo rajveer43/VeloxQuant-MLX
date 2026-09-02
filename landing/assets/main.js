@@ -410,6 +410,27 @@ function initThemeToggle() {
   });
 }
 
+// ── ANNOUNCEMENT BANNER (dismissible, persisted in localStorage) ──
+function initAnnouncementBanner() {
+  const banner = document.getElementById('announcement-banner');
+  if (!banner) return;
+
+  const dismissKey = 'vq-announcement-dismissed-studio-v0.1.0';
+  try {
+    if (localStorage.getItem(dismissKey)) return;
+  } catch (e) { /* storage unavailable — fall through and show it */ }
+
+  banner.hidden = false;
+
+  const closeBtn = document.getElementById('announcement-banner-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      banner.hidden = true;
+      try { localStorage.setItem(dismissKey, '1'); } catch (e) { /* storage unavailable */ }
+    });
+  }
+}
+
 // ── TOAST ──
 function showToast({ title, desc, duration = 6000 }) {
   const stack = document.getElementById('toast-stack');
@@ -452,4 +473,5 @@ document.addEventListener('DOMContentLoaded', () => {
   initActiveNav();
   initHamburgerMenu();
   initThemeToggle();
+  initAnnouncementBanner();
 });

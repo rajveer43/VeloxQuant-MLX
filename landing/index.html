@@ -138,6 +138,22 @@
 </head>
 <body>
 
+  <!-- ── ANNOUNCEMENT BANNER ──
+       VeloxQuant Studio v0.1.0 (macOS app) shipped — see #download below.
+       Dismissible, persisted in localStorage like the theme toggle, so a
+       returning visitor who already dismissed it doesn't see it again
+       (see initAnnouncementBanner in main.js). Hidden entirely if JS is
+       disabled or localStorage throws, rather than defaulting to shown,
+       since a banner that can never be dismissed is worse than none. -->
+  <div id="announcement-banner" class="announcement-banner" hidden>
+    <a href="#download" class="announcement-banner-link">
+      <span class="announcement-banner-badge">New</span>
+      <span>VeloxQuant Studio for macOS is here — a native app for this library.</span>
+      <span class="announcement-banner-cta">Download it free <span data-icon>→</span></span>
+    </a>
+    <button type="button" class="announcement-banner-close" id="announcement-banner-close" aria-label="Dismiss announcement">×</button>
+  </div>
+
   <!-- ── NAVIGATION ── -->
   <nav id="navbar">
     <a href="#hero" class="nav-logo"><img src="assets/logo.svg" alt="" width="28" height="28" class="nav-logo-mark" />VeloxQuant-MLX</a>
