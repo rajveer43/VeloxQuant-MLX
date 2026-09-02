@@ -28,7 +28,7 @@
        "badge/tests-<n>%20passing-" and "badge/changelog-<version>-" patterns.
        Keep both in badge form — converting either to a text link silently
        disables that sync. -->
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.69.0-64748b?style=flat-square" alt="Changelog"/></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.69.1-64748b?style=flat-square" alt="Changelog"/></a>
   <a href="SECURITY.md"><img src="https://img.shields.io/badge/security-policy-1f6feb?style=flat-square" alt="Security policy"/></a>
 </p>
 
