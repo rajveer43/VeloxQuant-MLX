@@ -440,49 +440,6 @@ function showToast({ title, desc, duration = 6000 }) {
   setTimeout(dismiss, duration);
 }
 
-// ── WAITLIST FORM ──
-// Netlify Forms: the static <form data-netlify="true"> is enough for Netlify's
-// build-time HTML parser to register the "waitlist" form and start capturing
-// submissions server-side, with zero backend of our own. This just upgrades
-// the UX from "reload to a plain success page" to an inline swap plus a
-// toast, and falls back to a normal (non-JS) POST if fetch is unavailable
-// or fails.
-function initWaitlistForm() {
-  const form = document.getElementById('waitlist-form');
-  if (!form) return;
-
-  const success = document.getElementById('waitlist-success');
-  const submitBtn = document.getElementById('waitlist-submit');
-
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Joining…';
-
-    const body = new URLSearchParams(new FormData(form)).toString();
-
-    fetch('/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body,
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error('Network response was not ok');
-        form.hidden = true;
-        success.hidden = false;
-        showToast({
-          title: "You're on the waitlist",
-          desc: "We'll announce VeloxQuant Studio here as soon as we start building — watch your inbox.",
-        });
-      })
-      .catch(() => {
-        // Fall back to a real form submission (full Netlify redirect flow)
-        // rather than stranding the user on a form that silently did nothing.
-        form.submit();
-      });
-  });
-}
-
 // ── INIT ──
 document.addEventListener('DOMContentLoaded', () => {
   initCopyButtons();
@@ -495,5 +452,4 @@ document.addEventListener('DOMContentLoaded', () => {
   initActiveNav();
   initHamburgerMenu();
   initThemeToggle();
-  initWaitlistForm();
 });

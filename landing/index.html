@@ -165,7 +165,7 @@
        Atmospheric decoration (matrix-canvas, aurora blobs, floating
        particles) removed for the calmer "oMLX-style" restyle — background is
        flat/static now (see #hero rules in styles.css). Nav trimmed to 6
-       links for a calmer bar; "macOS app" (#waitlist), "Start here"
+       links for a calmer bar; "macOS app" (#download), "Start here"
        (#scenarios) and "Playground" (playground.html) are no longer linked
        from nav, but their target IDs are preserved below since main.js's
        scroll-spy and other pages still reference them. -->
@@ -340,11 +340,10 @@
 
   <div class="divider"></div>
 
-  <!-- Toast — fires on successful waitlist join, independent of scroll
-       position, so the confirmation lands even if the inline success box
-       (inside #waitlist, further down the page) has already scrolled out
-       of view. Kept high in the DOM (fixed-position, so location doesn't
-       matter visually) rather than moved with #waitlist itself. -->
+  <!-- Toast stack — fixed-position container for main.js's showToast().
+       Not currently wired to anything (the waitlist form it originally
+       served was replaced by a direct Studio download link), kept for the
+       next feature that needs an inline confirmation toast. -->
   <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="true"></div>
 
   <!-- Legacy anchor aliases. #benefits was the old stats section, dropped in
@@ -530,18 +529,20 @@
 
   <div class="divider"></div>
 
-  <!-- ── §1.5 MACOS APP WAITLIST ──
+  <!-- ── §1.5 MACOS APP DOWNLOAD ──
        VeloxQuant Studio is a native SwiftUI control panel for this library
-       (separate repo) — drives `veloxquant methods/serve/recommend` as a
-       subprocess instead of reimplementing the engine. Not shipped yet, so
-       this collects interest via Netlify Forms rather than linking a build.
-       Repositioned here (was right after the hero) to match the new section
-       order; id and JS hooks (#waitlist-form/#waitlist-success/#waitlist-submit)
-       are unchanged. -->
-  <section id="waitlist">
+       (separate repo, github.com/rajveer43/VeloxQuant-Studio) — drives
+       `veloxquant methods/serve/recommend` as a subprocess instead of
+       reimplementing the engine. Shipped as of v0.1.0: links straight to the
+       GitHub Release DMG rather than the old waitlist form. Ad-hoc signed,
+       not notarized (no Apple Developer Program account yet), so Gatekeeper
+       warns on first launch — called out explicitly below so it doesn't read
+       as broken. Uses /releases/latest/download/... so this link keeps
+       resolving to the newest release without an edit here. -->
+  <section id="download">
     <div class="waitlist-shell fade-in">
       <div class="waitlist-copy">
-        <p class="section-label">Coming soon</p>
+        <p class="section-label">Available now</p>
         <h2 class="section-title">VeloxQuant Studio — a native macOS app</h2>
         <p class="section-desc" style="margin-left:0">
           A point-and-click app for this tool: pick a model, pick a compression setting, and
@@ -557,41 +558,22 @@
       </div>
 
       <div class="waitlist-form-wrap">
-        <form
-          id="waitlist-form"
-          name="waitlist"
-          method="POST"
-          data-netlify="true"
-          netlify-honeypot="waitlist-company"
+        <a
+          href="https://github.com/rajveer43/VeloxQuant-Studio/releases/latest/download/VeloxQuant-Studio-0.1.0.dmg"
+          class="btn btn-filled"
+          id="studio-download-btn"
         >
-          <input type="hidden" name="form-name" value="waitlist" />
-          <p class="waitlist-hp-field" aria-hidden="true">
-            <label>Company<input name="waitlist-company" tabindex="-1" autocomplete="off" /></label>
-          </p>
-
-          <label for="waitlist-email" class="waitlist-label">Email address</label>
-          <div class="waitlist-field-row">
-            <input
-              type="email"
-              id="waitlist-email"
-              name="email"
-              placeholder="you@example.com"
-              required
-              autocomplete="email"
-            />
-            <button type="submit" class="btn btn-filled" id="waitlist-submit">
-              Join waitlist <span data-icon>→</span>
-            </button>
-          </div>
-          <p class="waitlist-note" id="waitlist-status">
-            No spam — we'll announce it here the moment we start building.
-          </p>
-        </form>
-
-        <div class="waitlist-success" id="waitlist-success" hidden>
-          <p class="waitlist-success-title">You're on the list.</p>
-          <p class="waitlist-success-body">We'll email you as soon as we start building. In the meantime, the CLI works today — see the <a href="#quickstart" class="t-accent">quickstart</a> above.</p>
-        </div>
+          Download for Mac <span data-icon>↓</span>
+        </a>
+        <p class="waitlist-note">
+          macOS will warn this is from an unidentified developer the first time you open it —
+          right-click the app → Open (or System Settings → Privacy &amp; Security → Open Anyway)
+          to run it. Requires a local Python environment with
+          <code>veloxquant_mlx</code> installed.
+        </p>
+        <p class="waitlist-note">
+          <a href="https://github.com/rajveer43/VeloxQuant-Studio/releases/tag/v0.1.0" class="t-accent" target="_blank" rel="noopener">Release notes for v0.1.0 →</a>
+        </p>
       </div>
     </div>
   </section>
@@ -888,6 +870,7 @@ pip install -e ".[dev]"</span></pre>
           <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
           <li><a href="https://pypi.org/project/VeloxQuant-MLX/" target="_blank" rel="noopener">PyPI</a></li>
           <li><a href="https://marketplace.visualstudio.com/items?itemName=veloxquant-mlx.veloxquant-vscode" target="_blank" rel="noopener">VS Code Extension</a></li>
+          <li><a href="https://github.com/rajveer43/VeloxQuant-Studio/releases/latest" target="_blank" rel="noopener">VeloxQuant Studio (macOS app)</a></li>
           <li><a href="playground.html">Playground</a></li>
           <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
           <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/issues" target="_blank" rel="noopener">Issues</a></li>
