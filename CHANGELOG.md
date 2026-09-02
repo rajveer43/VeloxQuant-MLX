@@ -432,6 +432,19 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.71.1 (2026-09-02)
+
+### Bug Fixes
+
+- **landing**: Bump styles.css cache-busting version
+  ([#300](https://github.com/rajveer43/VeloxQuant-MLX/pull/300),
+  [`cf027e6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cf027e6c0f8e8d9540d45c385b4e1464ea262513))
+
+- **landing**: Cache-bust main.js/calc.js/playground.js
+  ([#299](https://github.com/rajveer43/VeloxQuant-MLX/pull/299),
+  [`bb6dbcf`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bb6dbcfbc39765d908926a50234e153c93731411))
+
+
 ## v0.71.0 (2026-09-02)
 
 ### Documentation
