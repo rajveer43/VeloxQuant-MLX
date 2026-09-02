@@ -432,6 +432,25 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.72.0 (2026-09-02)
+
+### Bug Fixes
+
+- **landing**: Bump styles.css cache-busting version
+  ([#301](https://github.com/rajveer43/VeloxQuant-MLX/pull/301),
+  [`9789f69`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9789f6979a1664aedf69cb586abd18e4575d9e52))
+
+### Features
+
+- **landing**: Add npm/Go/Rust SDK links to install, footer, and nav
+  ([#301](https://github.com/rajveer43/VeloxQuant-MLX/pull/301),
+  [`9789f69`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9789f6979a1664aedf69cb586abd18e4575d9e52))
+
+- **landing**: Add SDK keywords to meta/JSON-LD for search visibility
+  ([#301](https://github.com/rajveer43/VeloxQuant-MLX/pull/301),
+  [`9789f69`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9789f6979a1664aedf69cb586abd18e4575d9e52))
+
+
 ## v0.71.1 (2026-09-02)
 
 ### Bug Fixes
