@@ -202,6 +202,80 @@ body {
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+/* ===== ANNOUNCEMENT BANNER ===== */
+/* Sits above the sticky nav in normal flow, so it scrolls away with the
+   page and nav then sticks at top:0 on its own — no extra offset math
+   needed between the two. Shown/hidden via main.js (initAnnouncementBanner),
+   default [hidden] so a no-JS visitor never sees a banner they can't
+   dismiss. */
+.announcement-banner[hidden] { display: none; }
+
+.announcement-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.6rem 2.5rem 0.6rem 1rem;
+  background: var(--accent);
+  color: var(--on-accent);
+  position: relative;
+  text-align: center;
+}
+
+.announcement-banner-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--on-accent);
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.announcement-banner-link:hover .announcement-banner-cta {
+  text-decoration: underline;
+}
+
+.announcement-banner-badge {
+  background: var(--on-accent);
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+}
+
+.announcement-banner-cta {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.announcement-banner-close {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--on-accent);
+  opacity: 0.75;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.25rem;
+}
+
+.announcement-banner-close:hover { opacity: 1; }
+
+@media (max-width: 640px) {
+  .announcement-banner { padding: 0.6rem 2.25rem 0.6rem 0.75rem; font-size: 0.8rem; }
+  .announcement-banner-link { font-size: 0.8rem; }
+}
+
 /* ===== NAV ===== */
 nav {
   position: sticky;
