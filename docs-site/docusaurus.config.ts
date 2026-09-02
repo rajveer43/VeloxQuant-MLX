@@ -7,6 +7,20 @@ const config: Config = {
   tagline: '16× KV cache compression for Apple Silicon',
   favicon: 'img/favicon.ico',
 
+  // Site-wide <meta name="keywords"> — real vocabulary used throughout the
+  // docs (method names, concepts) rather than generic filler, so it stays
+  // truthful to what each page actually covers.
+  headTags: [
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'keywords',
+        content:
+          'KV cache compression, KV cache quantization, LLM memory optimization, Apple Silicon, MLX framework, mlx_lm, local LLM inference, on-device AI, long context inference, key-value cache, Metal kernels, token eviction, KIVI, GEAR, KVQuant, RaBitQ, VecInfer, TurboQuant RVQ, H2O, SnapKV, StreamingLLM, SpectralQuant, CommVQ, RateQuant, CacheRoute, low-bit quantization, Llama, Mistral, Qwen, Gemma',
+      },
+    },
+  ],
+
   future: {
     v4: true,
   },
