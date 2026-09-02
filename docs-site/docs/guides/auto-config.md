@@ -89,6 +89,41 @@ print(result.reason)
 # "seq_len=100 < 2048 (short context): selected turboquant_rvq (4-bit) for higher precision"
 ```
 
+## CLI
+
+`select_kv_cache_config()` is also exposed as `veloxquant auto-config`, for callers that want to shell out rather than import Python — e.g. a driver app that already knows the workload shape and wants a JSON config back.
+
+```bash
+veloxquant auto-config \
+  --head-dim 128 \
+  --seq-len 32000 \
+  --n-layers 32 \
+  --batch-size 4
+
+# Machine-readable JSON
+veloxquant auto-config --seq-len 32000 --json
+
+# Skip hardware auto-detection and supply memory explicitly
+# (e.g. a caller that already read the Mac's memory via sysctl)
+veloxquant auto-config \
+  --seq-len 32000 \
+  --total-memory-bytes 34359738368 \
+  --active-memory-bytes 4294967296
+```
+
+All four `WorkloadSpec` fields have defaults (`--head-dim 128 --seq-len 4096 --n-layers 1 --batch-size 1`), so a bare `veloxquant auto-config` runs too. `--json` output reports only the selected method's own knob fields — not the other pool methods' unrelated `KVCacheConfig` defaults — alongside the `workload`, `hardware`, and `reason` that produced the pick:
+
+```json
+{
+  "workload": {"head_dim": 128, "seq_len": 32000, "n_layers": 32, "batch_size": 4},
+  "hardware": {"total_memory_bytes": 34359738368, "active_memory_bytes": 4294967296},
+  "config": {"method": "kvquant", "head_dim": 128, "kvquant_bits": 3, "kvquant_group_size": 32, "kvquant_outlier_fraction": 0.01},
+  "reason": "seq_len=32000 >= 16384 (long context): selected kvquant (3-bit NUQ + outlier isolation) for aggressive compression"
+}
+```
+
+`--total-memory-bytes` and `--active-memory-bytes` mirror the `HardwareInfo` override shown above — pass `--total-memory-bytes` to skip `detect_hardware_info()` entirely; `--active-memory-bytes` is ignored unless `--total-memory-bytes` is also set.
+
 ## Good to know
 
 - **Deterministic.** The same `WorkloadSpec` + `HardwareInfo` always produce the same `config` — there's no randomness or hidden state between calls.
