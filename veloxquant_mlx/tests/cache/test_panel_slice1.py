@@ -53,14 +53,21 @@ def _get(base, path):
 
 
 def test_coverage_split_is_stable():
-    """Locks the measured 13/5/19 split; drift should be a deliberate change."""
+    """Locks the measured 13/5/20 split; drift should be a deliberate change.
+
+    age_tiered (issue #256) joined the NONE bucket in the same 20/13/5 -> the
+    only place a fourth split component (13/5/20) added a servable method
+    without a per-K/V ``compressed_key_bytes``/``compressed_value_bytes``
+    pair — same accounting shape as amc, which reports NONE for the same
+    reason.
+    """
     counts = {c: 0 for c in TelemetryCoverage}
     for info in list_methods(servable_only=True):
         counts[info.coverage] += 1
 
     assert counts[TelemetryCoverage.KEYS_AND_VALUES] == 13
     assert counts[TelemetryCoverage.KEYS_ONLY] == 5
-    assert counts[TelemetryCoverage.NONE] == 19
+    assert counts[TelemetryCoverage.NONE] == 20
 
 
 def test_default_method_is_keys_only():

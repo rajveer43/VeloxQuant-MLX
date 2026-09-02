@@ -409,6 +409,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.69.0 (2026-09-01)
+
+### Features
+
+- **cache**: Add AgeTieredKV (issue #256) — investigates position/age-gated multi-tier KV precision
+  ([#289](https://github.com/rajveer43/VeloxQuant-MLX/pull/289),
+  [`801f7f2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/801f7f255ebe324fc8cced8a0a1a464635f76a00))
+
+
 ## v0.68.0 (2026-09-01)
 
 ### Features

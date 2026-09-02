@@ -205,7 +205,7 @@ def test_api_status_reports_version(panel):
 def test_api_methods_matches_registry(panel):
     base, _ = panel
     _, body = _get(base, "/api/methods")
-    assert len(body["methods"]) == 42
+    assert len(body["methods"]) == 43
     assert body["accounting_only"] is True
     assert sum(1 for m in body["methods"] if not m["is_servable"]) == 5
 

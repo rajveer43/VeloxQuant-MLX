@@ -120,7 +120,7 @@ tomli==2.4.1
 tomli_w==1.2.0
 tomlkit==0.14.0
 tqdm==4.67.3
-transformers==5.7.0
+transformers==5.10.1
 tree-sitter==0.25.2
 tree-sitter-c==0.24.2
 tree-sitter-c-sharp==0.23.5
