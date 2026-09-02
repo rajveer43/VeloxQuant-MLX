@@ -3422,6 +3422,44 @@ code.inline.max { color: var(--max); }
   font-weight: 500;
 }
 
+/* ── SDK cards (§12) ── */
+.sdk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+.sdk-card {
+  padding: 1.15rem 1.2rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.sdk-card .code-wrap { margin: 0.75rem 0; }
+/* Cards are narrow (min 260px) and the Go install command in particular
+   doesn't fit on one line at that width — wrap instead of leaving it
+   clipped behind a scrollbar with no obvious affordance, same reasoning
+   as the old #install command wrap (see comment above pre {}), just
+   scoped here instead of globally since #install itself is wide enough
+   not to need it. */
+.sdk-card pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 1rem 1.1rem;
+  font-size: 0.82rem;
+}
+.sdk-card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+.sdk-card > a {
+  font-size: 0.85rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+.sdk-card > a:hover { text-decoration: underline; }
+
 /* ── Inline calculator ── */
 .calc-shell {
   background: var(--surface);
