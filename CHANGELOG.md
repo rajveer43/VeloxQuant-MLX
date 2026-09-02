@@ -432,6 +432,26 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.70.0 (2026-09-02)
+
+### Code Style
+
+- Fix ruff-format drift on master ([#294](https://github.com/rajveer43/VeloxQuant-MLX/pull/294),
+  [`9678bc7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9678bc7a47a45ec29bc0603f4cd109ffc61ff1a4))
+
+### Documentation
+
+- **kernels**: Roofline analysis of KV-cache quantize/dequantize kernels (issue #259)
+  ([#293](https://github.com/rajveer43/VeloxQuant-MLX/pull/293),
+  [`22cf4d2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/22cf4d2e5799a1a3c4eaa192a728a0058cae3a43))
+
+### Features
+
+- Add `veloxquant auto-config` CLI for select_kv_cache_config()
+  ([#295](https://github.com/rajveer43/VeloxQuant-MLX/pull/295),
+  [`afd425c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/afd425cf341fcc0c527249890cd08b96b2c9c99b))
+
+
 ## v0.69.1 (2026-09-02)
 
 ### Build System
