@@ -432,6 +432,29 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.69.1 (2026-09-02)
+
+### Build System
+
+- **deps**: Bump browserslist from 4.28.2 to 4.28.8 in /docs-site
+  ([#291](https://github.com/rajveer43/VeloxQuant-MLX/pull/291),
+  [`1829678`](https://github.com/rajveer43/VeloxQuant-MLX/commit/182967829ab832727981f25077db3f18400b4537))
+
+- **deps**: Bump postcss-selector-parser in /docs-site
+  ([#288](https://github.com/rajveer43/VeloxQuant-MLX/pull/288),
+  [`fef0881`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fef088122d6e3c786c21092419bfbef16486946d))
+
+- **deps**: Bump transformers from 5.7.0 to 5.10.1
+  ([#290](https://github.com/rajveer43/VeloxQuant-MLX/pull/290),
+  [`a5b2a9c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a5b2a9cdfc88ac431b1d9cfd2f9b0bc8d20a9e97))
+
+### Performance Improvements
+
+- **cache**: Investigate zero-copy KV-cache access (issue #255)
+  ([#292](https://github.com/rajveer43/VeloxQuant-MLX/pull/292),
+  [`6eb204d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6eb204d6143f7121b815cfbdcc36646df0b86b57))
+
+
 ## v0.69.0 (2026-09-01)
 
 ### Features
