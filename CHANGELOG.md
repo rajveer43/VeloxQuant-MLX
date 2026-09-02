@@ -432,6 +432,25 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.71.0 (2026-09-02)
+
+### Documentation
+
+- Document `veloxquant auto-config` CLI (issue #253, PR #295)
+  ([#296](https://github.com/rajveer43/VeloxQuant-MLX/pull/296),
+  [`0c6ff17`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0c6ff17c1cd8927a7c7867b8621eb73c0eb2b1a9))
+
+### Features
+
+- **landing**: Add dismissible Studio release announcement banner
+  ([#297](https://github.com/rajveer43/VeloxQuant-MLX/pull/297),
+  [`59b7ce3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/59b7ce3acdf4f3399fc3991b89105320f9f64f0b))
+
+- **landing**: Replace Studio waitlist with direct download link
+  ([#297](https://github.com/rajveer43/VeloxQuant-MLX/pull/297),
+  [`59b7ce3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/59b7ce3acdf4f3399fc3991b89105320f9f64f0b))
+
+
 ## v0.70.0 (2026-09-02)
 
 ### Code Style
