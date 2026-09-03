@@ -432,6 +432,40 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.74.0 (2026-09-03)
+
+### Chores
+
+- **ci**: Stop landing/docs-only pushes from bumping the package version
+  ([#304](https://github.com/rajveer43/VeloxQuant-MLX/pull/304),
+  [`2d98f3f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2d98f3f544f9ecb924f6bce9165f536bfe33c467))
+
+### Documentation
+
+- **kernels**: Explain why no real-model benchmark was run for #307/#308
+  ([#309](https://github.com/rajveer43/VeloxQuant-MLX/pull/309),
+  [`32a872c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/32a872c6097c1939570641c42a43c9bcd5a6ee9e))
+
+### Features
+
+- **landing**: Add Zendesk web widget for support chat
+  ([`4b40325`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4b4032529953edff0891a3cec4df3795f3c5e635))
+
+### Performance Improvements
+
+- **metal**: Add GQA head-packing to scalar_fused_decode_attend
+  ([#309](https://github.com/rajveer43/VeloxQuant-MLX/pull/309),
+  [`32a872c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/32a872c6097c1939570641c42a43c9bcd5a6ee9e))
+
+- **metal**: GQA head-packing + SIMD-shuffle spike for scalar_fused_decode_attend (#307, #308)
+  ([#309](https://github.com/rajveer43/VeloxQuant-MLX/pull/309),
+  [`32a872c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/32a872c6097c1939570641c42a43c9bcd5a6ee9e))
+
+- **metal**: Investigate SIMD-shuffle sharing for GQA decode (issue #308)
+  ([#309](https://github.com/rajveer43/VeloxQuant-MLX/pull/309),
+  [`32a872c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/32a872c6097c1939570641c42a43c9bcd5a6ee9e))
+
+
 ## v0.73.0 (2026-09-03)
 
 ### Bug Fixes
