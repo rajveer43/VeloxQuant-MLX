@@ -73,6 +73,16 @@
   --good:        #22c55e;
   --good-bg:     rgba(34,197,94,0.09);
   --good-bd:     rgba(34,197,94,0.28);
+
+  /* ── Section rhythm ──
+     Sections no longer share one flat padding value. "Statement" sections
+     (hero, download, install — the ones carrying the page's few big beats)
+     get more vertical room to breathe; standard sections keep a middle
+     value; dense list/table sections (quickstart, faq, sdks) get slightly
+     less so they don't feel padded-out relative to how much they contain. */
+  --space-section-lg: clamp(4.5rem, 10vw, 8rem);
+  --space-section-md: clamp(3.5rem, 7vw, 5.5rem);
+  --space-section-sm: clamp(3rem, 6vw, 4.5rem);
 }
 
 /* Light theme — applied when the OS prefers light, or when the user
@@ -450,9 +460,9 @@ nav {
 }
 
 h1 {
-  font-size: clamp(2rem, 5vw, 3.4rem);
+  font-size: clamp(2.25rem, 6vw, 4.5rem);
   font-weight: 700;
-  line-height: 1.15;
+  line-height: 1.1;
   letter-spacing: -0.03em;
   margin-bottom: 1rem;
   animation: headline-slide-in 0.8s ease-out;
@@ -720,23 +730,45 @@ h1 span::after {
 }
 
 /* ===== SECTIONS COMMON ===== */
+/* Default (standard) rhythm — most sections. Statement sections (hero,
+   download, install) and dense sections (quickstart, faq, sdks) override
+   this below, per-id, using the --space-section-* scale defined in :root. */
 section {
-  padding: 5rem 1.5rem;
+  padding: var(--space-section-md) 1.5rem;
   max-width: 1100px;
   margin: 0 auto;
 }
 
+#hero,
+#download,
+#install {
+  padding-top: var(--space-section-lg);
+  padding-bottom: var(--space-section-lg);
+}
+
+#quickstart,
+#faq,
+#sdks {
+  padding-top: var(--space-section-sm);
+  padding-bottom: var(--space-section-sm);
+}
+
+/* .section-label defaults to --muted, not --accent: an all-caps eyebrow on
+   every single section made cyan the loudest color on the page by sheer
+   repetition. Cyan is reserved for the one or two truly primary elements
+   per screen (hero CTA, the install command, a hero stat) — see those
+   rules individually rather than inheriting it here. */
 .section-label {
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.1em;
-  color: var(--accent);
+  color: var(--muted);
   text-transform: uppercase;
   margin-bottom: 0.5rem;
 }
 
 .section-title {
-  font-size: clamp(1.5rem, 3vw, 2.2rem);
+  font-size: clamp(1.75rem, 4vw, 3rem);
   font-weight: 700;
   letter-spacing: -0.02em;
   margin-bottom: 0.75rem;
@@ -2064,39 +2096,33 @@ details.methodology[open] > summary::before { content: '▾'; }
   line-height: 1.4;
 }
 
-/* ===== FEATURE GRID ("Why VeloxQuant-MLX") ===== */
+/* ===== FEATURE GRID ("Why VeloxQuant-MLX") =====
+   Six cards of identical weight with a placeholder-grade glyph on each
+   read as generic SaaS-template chrome. Replaced with a plain list: no
+   card border/background, no icon — the numbered mono eyebrow (already
+   present, now made the primary visual anchor) carries what the icon
+   used to carry, and dropping the border-box treatment here reserves
+   "bordered card" for .scenario-grid, where three parallel-weighted
+   choices genuinely benefit from being visually separated. */
 .feature-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1.25rem;
+  gap: 2rem 1.75rem;
 }
 
 .feature-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1.6rem 1.5rem;
-  transition: border-color 0.2s ease, transform 0.2s ease;
-}
-
-.feature-card:hover {
-  border-color: var(--accent);
-  transform: translateY(-2px);
-}
-
-.feature-icon {
-  font-size: 1.3rem;
-  margin-bottom: 0.9rem;
-  line-height: 1;
+  padding: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
 }
 
 .feature-eyebrow {
-  font-size: 0.7rem;
+  font-size: 0.95rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--accent);
+  letter-spacing: 0.04em;
+  color: var(--text);
   text-transform: uppercase;
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.9rem;
   font-family: 'JetBrains Mono', monospace;
 }
 
@@ -2307,7 +2333,7 @@ footer {
   .explainer-grid,
   .explainer-grid-3 { grid-template-columns: 1fr; }
   .nav-links { gap: 1rem; }
-  h1 { font-size: 2rem; }
+  h1 { font-size: clamp(2rem, 8vw, 2.5rem); }
   .stat-number { font-size: 2.2rem; }
   .stat-row { grid-template-columns: repeat(2, 1fr); }
   .whats-new-list li { grid-template-columns: 1fr; gap: 0.15rem; }
