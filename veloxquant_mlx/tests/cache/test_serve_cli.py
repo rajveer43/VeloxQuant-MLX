@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from veloxquant_mlx.cache.registry import DEFAULT_SERVE_METHOD
+from veloxquant_mlx.cache.registry import DEFAULT_SERVE_METHOD, ServeTier, probe_serve_tier
 from veloxquant_mlx.cli import serve as serve_cli
 
 
@@ -85,7 +85,14 @@ def test_mlx_server_defaults_are_readable():
     namespace = parser.parse_args([])
 
     # Fields mlx_lm.server reads off cli_args at request time.
-    for field in ("draft_model", "pipeline", "prompt_cache_size", "temp", "top_p"):
+    for field in (
+        "draft_model",
+        "pipeline",
+        "prompt_cache_size",
+        "prompt_cache_bytes",
+        "temp",
+        "top_p",
+    ):
         assert hasattr(namespace, field), f"missing {field}"
 
 
@@ -99,3 +106,64 @@ def test_mlx_server_args_override_ours():
     assert ns.port == 1234
     assert ns.max_tokens == 77
     assert hasattr(ns, "draft_model")
+
+
+def test_prompt_cache_size_default_is_ten():
+    args = serve_cli.build_parser().parse_args(["--model", "some/model"])
+    assert args.prompt_cache_size == 10
+
+
+def test_prompt_cache_size_flag_reaches_mlx_namespace():
+    args = serve_cli.build_parser().parse_args(
+        ["--model", "m/x", "--prompt-cache-size", "25"]
+    )
+    ns = serve_cli._mlx_server_args(args)
+    assert ns.prompt_cache_size == 25
+
+
+def test_prompt_cache_bytes_default_is_none():
+    args = serve_cli.build_parser().parse_args(["--model", "some/model"])
+    assert args.prompt_cache_bytes is None
+
+
+def test_prompt_cache_bytes_flag_parses_size_suffix_and_reaches_namespace():
+    args = serve_cli.build_parser().parse_args(
+        ["--model", "m/x", "--prompt-cache-bytes", "2G"]
+    )
+    assert args.prompt_cache_bytes == 2_000_000_000
+
+    ns = serve_cli._mlx_server_args(args)
+    assert ns.prompt_cache_bytes == 2_000_000_000
+
+
+def test_prompt_cache_bytes_inert_flag_warns(monkeypatch, capsys):
+    """--prompt-cache-bytes is parsed but not applied by the installed
+    mlx_lm server (verified by reading mlx_lm/server.py directly: it builds
+    LRUPromptCache with only prompt_cache_size). Setting it must warn, not
+    silently pretend it works -- this repo's "no silent fallback" rule."""
+    monkeypatch.setattr(serve_cli, "run_server", lambda args: None)
+
+    serve_cli.main(
+        ["--model", "some/model", "--prompt-cache-bytes", "1G"]
+    )
+
+    err = capsys.readouterr().err
+    assert "--prompt-cache-bytes is parsed but not applied" in err
+
+
+def test_prompt_cache_bytes_unset_does_not_warn(monkeypatch, capsys):
+    monkeypatch.setattr(serve_cli, "run_server", lambda args: None)
+
+    serve_cli.main(["--model", "some/model"])
+
+    err = capsys.readouterr().err
+    assert "--prompt-cache-bytes is parsed but not applied" not in err
+
+
+def test_not_trimmable_method_gate_used_by_serve_warning():
+    """_Provider._load (only reachable with real model weights, see module
+    docstring) warns when probe_serve_tier(args.method) is NOT_TRIMMABLE --
+    this pins the gating condition itself, since the warning site can't be
+    exercised without a real model load."""
+    assert probe_serve_tier("h2o") is ServeTier.NOT_TRIMMABLE
+    assert probe_serve_tier(DEFAULT_SERVE_METHOD) is not ServeTier.NOT_TRIMMABLE

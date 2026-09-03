@@ -15,6 +15,15 @@ longer than the ten lines #27 predicted:
   where users assume otherwise, so the warning is unconditional.
 * There is no fp16 fallback, silent or otherwise. A method that cannot serve
   stops the process.
+
+Model-identity keying for prefix-cache reuse (issue #310): ``mlx_lm.server``
+keys its prompt-prefix cache on ``model_key = (model_path, adapter_path,
+draft_model_path)`` -- a plain path tuple, not a content hash. Swapping
+weights at the same path between requests could serve a stale prefix cache.
+This is pre-existing ``mlx_lm`` behavior, not something this file introduces
+or fixes -- doing so would mean forking ``ModelProvider``/``APIHandler``
+internals, against this file's own "thin launcher" design above. Track
+upstream if this needs fixing.
 """
 
 from __future__ import annotations
@@ -25,6 +34,22 @@ import sys
 from typing import Any, List, Optional
 
 from veloxquant_mlx.cache.registry import DEFAULT_SERVE_METHOD, get_method
+
+try:
+    from mlx_lm.utils import _parse_size
+except ImportError:  # pragma: no cover - defensive, mirrors _capture_mlx_parser's stance
+
+    def _parse_size(x: str) -> int:
+        sizes = {"K": 1e3, "M": 1e6, "G": 1e9, "KB": 1e3, "MB": 1e6, "GB": 1e9, "": 1}
+        split = 0
+        for xi in x:
+            if not (xi.isdigit() or xi == "."):
+                break
+            split += 1
+        digits = float(x[:split])
+        suffix = x[split:].strip().upper()
+        return int(digits * sizes[suffix])
+
 
 #: stdout handshake for the control panel. Printed once the model is loaded
 #: and the cache is wired, immediately before mlx_lm.server binds the port.
@@ -87,6 +112,22 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         help="Default nucleus sampling p (default: 1.0).",
+    )
+    parser.add_argument(
+        "--prompt-cache-size",
+        type=int,
+        default=10,
+        help="Max number of distinct prompt-prefix KV caches to retain across "
+        "requests for reuse (default: 10). Forwarded to mlx_lm's LRUPromptCache.",
+    )
+    parser.add_argument(
+        "--prompt-cache-bytes",
+        type=_parse_size,
+        default=None,
+        help="Max total bytes across retained prompt-prefix caches (e.g. '2G'). "
+        "NOTE: as of the installed mlx_lm version, this value is parsed but "
+        "never applied by mlx_lm's own server -- forwarded for forward-compat "
+        "only; see the warning printed at startup if you set it.",
     )
     parser.add_argument(
         "--set",
@@ -258,6 +299,8 @@ def _mlx_server_args(args: argparse.Namespace) -> argparse.Namespace:
     ns.max_tokens = args.max_tokens
     ns.temp = args.temp
     ns.top_p = args.top_p
+    ns.prompt_cache_size = args.prompt_cache_size
+    ns.prompt_cache_bytes = args.prompt_cache_bytes
     return ns
 
 
@@ -372,6 +415,16 @@ def run_server(args: argparse.Namespace) -> None:
                 )
 
             _warn(f"wired {n_layers} layer cache(s) with method={args.method!r} bits={args.bits}")
+
+            from veloxquant_mlx.cache.registry import ServeTier, probe_serve_tier
+
+            if probe_serve_tier(args.method) is ServeTier.NOT_TRIMMABLE:
+                _warn(
+                    f"method {args.method!r} does not support prefix-cache "
+                    "trimming (NOT_TRIMMABLE); only exact full-prompt repeats "
+                    "will be reused, not partial-prefix overlap."
+                )
+
             if not state["announced"]:
                 emit_ready(args, n_layers)
                 state["announced"] = True
@@ -391,6 +444,14 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     validate_method(args.method)
     _warn(f"NOTE: {ACCOUNTING_WARNING}")
+
+    if args.prompt_cache_bytes is not None:
+        _warn(
+            "NOTE: --prompt-cache-bytes is parsed but not applied by the "
+            "installed mlx_lm version's server -- it will not actually bound "
+            "prompt-cache memory. Use --prompt-cache-size to control retained "
+            "cache count."
+        )
 
     # The model loads lazily inside mlx_lm's generation thread, so the READY
     # handshake is emitted from there once the cache is actually wired.

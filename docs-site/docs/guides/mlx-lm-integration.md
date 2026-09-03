@@ -7,7 +7,7 @@ slug: /guides/mlx-lm-integration
 
 # mlx_lm Integration
 
-VeloxQuant-MLX is designed to work as a drop-in extension for `mlx_lm`. This guide covers the three integration patterns: the `KVCacheBuilder` helper, the `mlx_lm_patch` monkey-patch, and the fused SDPA kernel.
+VeloxQuant-MLX is designed to work as a drop-in extension for `mlx_lm`. This guide covers the integration patterns: the `KVCacheBuilder` helper, the `mlx_lm_patch` monkey-patch, the fused SDPA kernel, and `PrefixCache` for multi-call prefix reuse.
 
 ## Pattern 1 — KVCacheBuilder (recommended)
 
@@ -111,6 +111,60 @@ is_supported = supports_shape(
 )
 print(f"Fused SDPA supported: {is_supported}")
 ```
+
+## Pattern 4 — PrefixCache (multi-call prefix reuse)
+
+`patch_model_kv_cache` gives every `generate()` call a fresh cache — correct for a single call, but a program that calls `generate()` repeatedly with a shared prefix (a system prompt, an agent's growing conversation history) re-prefills that shared prefix from scratch every time. This is the same gap reported against Ollama's MLX engine ([ollama/ollama#17829](https://github.com/ollama/ollama/issues/17829)): with no prefix-cache reuse, time-to-first-token scales with total conversation history instead of just the new turn.
+
+`veloxquant serve` does not have this problem — it hands off to `mlx_lm.server`, which already reuses prefixes internally via `mlx_lm.models.cache.LRUPromptCache`. `PrefixCache` brings that same mechanism to direct `mlx_lm.generate()`/`stream_generate()` callers:
+
+```python
+import mlx_lm
+from veloxquant_mlx.cache.base import KVCacheConfig
+from veloxquant_mlx.integration.prefix_cache import PrefixCache
+
+model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
+config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)
+prefix_cache = PrefixCache(config)
+
+system_prompt = "You are a careful coding assistant. ..." * 50  # long, shared prefix
+
+# First call: full prefill.
+reply_1 = prefix_cache.generate(model, tokenizer, system_prompt + "What does this function do?")
+
+# Second call: the shared prefix is reused from cache — only the new
+# suffix is prefilled, so time-to-first-token no longer scales with the
+# full accumulated history.
+reply_2 = prefix_cache.generate(model, tokenizer, system_prompt + "Now refactor it.")
+```
+
+For callers that want to drive `stream_generate` themselves (streaming UIs, custom sampling loops), use the lower-level `.fetch()` / `.insert()` pair directly — `.generate()` is a convenience wrapper around exactly this:
+
+```python
+tokens = tokenizer.encode(prompt)
+cache, rest = prefix_cache.fetch(model, tokens)  # rest = only the uncached suffix
+
+cache_key = list(tokens)
+for response in mlx_lm.stream_generate(model, tokenizer, prompt=rest, prompt_cache=cache):
+    cache_key.append(response.token)
+    print(response.text, end="", flush=True)
+
+prefix_cache.insert(model, cache_key, cache)  # store prompt + generated tokens together
+```
+
+:::warning Only exact-prefix hits for eviction methods
+Eviction/hybrid methods (`h2o`, `snapkv`, `streaming_llm`, `tova`, `pyramidkv`, and 14 others) intentionally report `is_trimmable() == False`, so a partial-overlap prefix can never be reused — only a byte-identical repeat of a previously seen prompt hits the cache. This is a deliberate safety boundary, not a bug: these methods keep internal importance/eviction bookkeeping (attention-score EMAs, sink/window pointers) that a generic offset-only `trim()` cannot roll back without risking silent corruption. `PrefixCache` prints a one-time note at construction when the configured method falls in this group. Compression-only methods (`turboquant_rvq`, `vecinfer`, `kivi`, and most others) support full partial-prefix reuse.
+:::
+
+:::info Model-identity keying
+By default the cache is keyed on `id(model)`, valid only for the lifetime of that Python object — reloading the same weights into a new model object starts a cold cache. Pass `model_key=` explicitly (any hashable, e.g. the model path) if your process reloads model objects across calls but wants cache reuse to survive that:
+
+```python
+prefix_cache.generate(model, tokenizer, prompt, model_key="llama-3.2-3b-instruct")
+```
+
+This has an equivalent, not worse, risk profile to `mlx_lm.server`'s own `model_key` (a plain path tuple, not a content hash) — swapping weights at the same path between calls can serve a stale cache either way.
+:::
 
 ## Streaming generation
 

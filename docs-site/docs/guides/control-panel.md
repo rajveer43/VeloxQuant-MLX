@@ -114,3 +114,14 @@ veloxquant serve \
   --model mlx-community/Llama-3.2-1B-Instruct-4bit \
   --host 127.0.0.1 --port 8000
 ```
+
+The server reuses prompt prefixes across requests automatically (so a second
+request sharing a long system prompt with an earlier one skips re-prefilling
+it) — tune how much it retains with `--prompt-cache-size` (max number of
+distinct prefixes kept, default 10). `--prompt-cache-bytes` is also accepted
+but, in the currently supported `mlx_lm` version, is parsed and not actually
+applied by its server — the CLI will warn if you set it. Use
+`--prompt-cache-size` to control memory instead. See the
+[mlx_lm Integration guide](../guides/mlx-lm-integration#pattern-4--prefixcache-multi-call-prefix-reuse)
+for the equivalent for direct `mlx_lm.generate()` callers, and for which KV-cache
+methods support partial-prefix reuse versus exact-repeat-only.
