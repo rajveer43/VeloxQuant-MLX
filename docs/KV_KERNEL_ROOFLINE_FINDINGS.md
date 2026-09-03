@@ -259,6 +259,84 @@ this hardware, and occupancy should win until part 1 changes what
 structure enough that revisiting packing at that point is a fair
 question, not a re-run of this same experiment).
 
+## Addendum: SIMD-shuffle spike and two-pass decode-once (issue #308)
+
+Issue #308 asked whether `simd_shuffle`/`quad_shuffle` — a genuine, cheap
+(single hardware crossbar instruction, no barrier) cross-*lane* exchange
+confirmed to exist unconditionally on all Apple Silicon since MSL 2.2 —
+could give head-packing's K/V-decode-sharing benefit without sacrificing
+threadgroup count the way part 2 above does.
+
+**It cannot, and this is a straightforward consequence of the same
+architectural fact already established above, not a new limit.**
+`simd_shuffle` exchanges data only between lanes already co-resident in
+one SIMD-group, which is a subset of one threadgroup. Under the
+full-occupancy dispatch shape (`B*H_q*S_q` threadgroups, one per query
+head) that this document recommends, a single threadgroup by construction
+only ever holds *one* query head's work for its entire lifetime — there is
+no other query head's data anywhere in that threadgroup's address space to
+shuffle with. Getting any cross-head sharing still requires those heads to
+be co-resident in one threadgroup, which means dropping to `B*H_kv*S_q`
+threadgroups — reproducing part 2's already-measured tradeoff, just with a
+cheaper merge mechanism, not a way to avoid the threadgroup-count cost.
+
+**A genuinely different two-pass alternative was implemented and measured
+instead**, trading a different resource: one extra DRAM round-trip instead
+of threadgroup count. `scalar_decode_once` (new:
+`veloxquant_mlx/metal/src/scalar_affine_decode_once.metal`) decodes every
+K/V code exactly once into a `[B, H_kv, S_kv, D]` fp16 device buffer,
+dispatched flat over all elements — occupancy-friendly by construction,
+since it scales with `S_kv` rather than `S_q`. `scalar_predecoded_attend`
+(new: `veloxquant_mlx/metal/src/scalar_predecoded_attend.metal`) then runs
+the *original* full-occupancy `B*H_q*S_q` dispatch against the
+already-decoded buffer — heads sharing a kv head still redundantly re-read
+the same decoded fp16 rows from DRAM, but no longer redundantly re-decode
+them (no dequant multiply-add repeated per head).
+
+Correctness: 10/10 new tests pass, including parity against the same
+numpy reference used throughout this document across three head ratios
+(`(H_q,H_kv) ∈ {(4,4), (8,2), (32,4)}`) and `S_kv ∈ {64, 512, 2048}`.
+
+**Result: a genuine, S_kv-dependent crossover, not a uniform win or
+loss.** Measured on the same M4 hardware at `H_q=32, H_kv=4, D=128, nsg=2`
+against the unpacked-redundant baseline (this document's fastest
+measurement so far):
+
+| S_kv | unpacked ms | two-pass ms | two-pass vs. unpacked |
+|------|-------------|-------------|------------------------|
+| 256  | 1.22 | 0.38 | **3.18x faster** |
+| 1024 | 1.33 | 0.98 | **1.36x faster** |
+| 2048 | 2.05 | 1.94 | **1.06x faster** |
+| 3072 | 2.77 | 3.27 | 0.85x (slower) |
+| 4096 | 3.63 | 4.41 | 0.82x (slower) |
+| 8192 | 7.25 | 9.10 | 0.80x (slower) |
+| 16384 | 13.89 | 17.44 | 0.80x (slower) |
+
+The crossover (~S_kv 2048-3072 at this shape) holds directionally across
+`(H_q,H_kv) ∈ {(32,4), (32,8), (8,2)}` — two-pass wins by 1.1-3.2x at
+short/moderate context and loses by 0.7-0.85x at long context in every
+ratio tested. The mechanism: the decode pass's own read-then-write cost
+scales with `S_kv * H_kv * D` regardless of `heads_per_kv`, while the
+*savings* (redundant on-the-fly decode arithmetic avoided) scale with
+`S_kv * H_kv * D * (heads_per_kv - 1)`. At small `S_kv` the saved
+redundant-decode ALU work outweighs the extra round-trip; at large `S_kv`
+the fixed per-byte round-trip overhead — a real DRAM write plus a second
+real DRAM read that redundant on-the-fly decode never pays at all —
+dominates over the saved arithmetic, which is cheap relative to a byte
+round-trip in the first place.
+
+**Disposition:** not adopted for the same reason part 2 wasn't — this
+repo's realistic decode targets (long-context KV caches, `S_kv` in the
+thousands to tens of thousands) sit past the crossover, where two-pass is
+a net loss. Kept as correct, tested code (same rationale as part 2:
+available groundwork, not dead weight) rather than reverted, since the
+short-context win is real and could matter for a caller with a small
+context budget, and because `scalar_decode_once` in particular could be a
+useful building block outside this specific attend pairing. Reproduction:
+`pytest veloxquant_mlx/tests/metal/test_scalar_attend.py -v -k
+"decode_once or two_pass"` for correctness; the crossover table prints
+from `test_scalar_attend_two_pass_benchmark`.
+
 ## Recommendation
 
 1. **Kernels already at or near the bandwidth roofline** (`kivi_group_quant_dequant`

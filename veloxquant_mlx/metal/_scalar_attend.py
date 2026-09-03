@@ -51,8 +51,36 @@ and reused across all heads that share it, instead of being redundantly
 redecoded per query head. ``H_q == H_kv`` (plain MHA, ``heads_per_kv=1``)
 degenerates to the original per-head dispatch with bit-identical output.
 
+Two-pass decode-once + predecoded-attend (issue #308 spike)
+-------------------------------------------------------------
+Issue #307's GQA head-packing (above) trades away threadgroup count
+(``B*H_q*S_q`` -> ``B*H_kv*S_q``) to save K/V decode work, and was
+measured 2.7-4.7x *slower* because occupancy, not bandwidth or decode
+compute, is the binding constraint at realistic decode shapes. Issue #308
+investigated a SIMD-shuffle-based alternative and found it inapplicable:
+``simd_shuffle`` only exchanges data between lanes already co-resident in
+one threadgroup, so it cannot share decoded state across query heads that
+live in *different*, independently-dispatched threadgroups without first
+sacrificing the same threadgroup count as head-packing already does.
+
+This module instead offers a genuinely different two-pass experiment:
+:func:`scalar_decode_once` decodes every K/V code exactly once into a
+``[B, H_kv, S_kv, D]`` fp16 device buffer (dispatched flat over all
+elements -- large and occupancy-friendly by construction, since it scales
+with ``S_kv`` rather than ``S_q``), and :func:`scalar_predecoded_attend`
+then runs the *original* full-occupancy ``B*H_q*S_q`` dispatch against
+that already-decoded buffer -- heads sharing a kv head still redundantly
+*re-read* the same decoded fp16 rows from DRAM, but no longer redundantly
+*re-decode* them. This trades one extra DRAM round-trip (the decode
+pass's own read-then-write) for eliminating the redundant per-head decode
+arithmetic, without touching threadgroup count on the attend dispatch.
+Whether that round-trip is cheaper than redundant on-the-fly decode is
+exactly the open, unverified question this spike measures.
+
 Public API:
   - :func:`scalar_fused_decode_attend`
+  - :func:`scalar_decode_once`
+  - :func:`scalar_predecoded_attend`
 """
 
 from __future__ import annotations
@@ -99,6 +127,8 @@ _cache: dict = {}
 # the original non-GQA code path.
 
 _SCALAR_AFFINE_ATTEND_SRC = _read_kernel_source("scalar_affine_attend.metal")
+_SCALAR_AFFINE_DECODE_ONCE_SRC = _read_kernel_source("scalar_affine_decode_once.metal")
+_SCALAR_PREDECODED_ATTEND_SRC = _read_kernel_source("scalar_predecoded_attend.metal")
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +155,35 @@ def _scalar_affine_attend_kernel(D: int, nsg: int, heads_per_kv: int):
             output_names=["out"],
             header=f"#define NSG_C {nsg}\n#define HEADS_PER_KV_C {heads_per_kv}\n",
             source=_SCALAR_AFFINE_ATTEND_SRC,
+            ensure_row_contiguous=True,
+        )
+    return _cache[key]
+
+
+def _scalar_affine_decode_kernel(mode: str):
+    assert mode in ("K", "V")
+    key = ("scalar_affine_decode_once", mode)
+    if key not in _cache:
+        _cache[key] = mx.fast.metal_kernel(
+            name=f"scalar_affine_decode_once_{mode.lower()}",
+            input_names=["codes", "scale", "zero", "gsize"],
+            output_names=["out"],
+            header=f"#define DECODE_MODE_K {1 if mode == 'K' else 0}\n",
+            source=_SCALAR_AFFINE_DECODE_ONCE_SRC,
+            ensure_row_contiguous=True,
+        )
+    return _cache[key]
+
+
+def _scalar_predecoded_attend_kernel(nsg: int):
+    key = ("scalar_predecoded_attend", nsg)
+    if key not in _cache:
+        _cache[key] = mx.fast.metal_kernel(
+            name=f"scalar_predecoded_attend_nsg{nsg}",
+            input_names=["q", "k_hat", "v_hat", "scale_arr"],
+            output_names=["out"],
+            header=f"#define NSG_C {nsg}\n",
+            source=_SCALAR_PREDECODED_ATTEND_SRC,
             ensure_row_contiguous=True,
         )
     return _cache[key]
@@ -200,9 +259,7 @@ def scalar_fused_decode_attend(
 
     Bk, H_kv, _, Dk = k_codes.shape
     if Bk != B:
-        raise ValueError(
-            f"scalar_fused_decode_attend: batch mismatch: q B={B} vs k_codes B={Bk}"
-        )
+        raise ValueError(f"scalar_fused_decode_attend: batch mismatch: q B={B} vs k_codes B={Bk}")
     if Dk != D:
         raise ValueError(
             f"scalar_fused_decode_attend: head_dim mismatch: q D={D} vs k_codes D={Dk}"
@@ -260,4 +317,134 @@ def scalar_fused_decode_attend(
     return outputs[0]
 
 
-__all__ = ["scalar_fused_decode_attend"]
+def scalar_decode_once(
+    codes: mx.array,
+    scale: mx.array,
+    zero: mx.array,
+    group_size: int,
+    mode: str,
+) -> mx.array:
+    """Decode a group-affine quantized K or V tensor to fp16, once.
+
+    Part of the issue #308 two-pass spike: decodes every code exactly
+    once into a full ``[B, H_kv, S, D]`` fp16 buffer, dispatched flat
+    over all elements (occupancy scales with ``S``, not ``S_q`` -- large
+    and GPU-friendly by construction). Feeds
+    :func:`scalar_predecoded_attend`.
+
+    Args:
+        codes: ``[B, H_kv, S, D]`` uint8 codes (K or V).
+        scale: K -> ``[B, H_kv, GK, D]``; V -> ``[B, H_kv, S, GV]``, fp32.
+        zero:  same shape as ``scale``, fp32.
+        group_size: quantization group size g.
+        mode: ``"K"`` (per-channel groups along tokens) or ``"V"``
+            (per-token groups along channels) -- selects the group-index
+            arithmetic matching the two layouts documented on
+            :func:`scalar_fused_decode_attend`.
+
+    Returns:
+        ``[B, H_kv, S, D]`` fp16 decoded tensor.
+    """
+    if mode not in ("K", "V"):
+        raise ValueError(f"scalar_decode_once: mode must be 'K' or 'V', got {mode!r}")
+    if codes.ndim != 4:
+        raise ValueError(f"scalar_decode_once: codes must be 4D, got {codes.shape}")
+
+    B, H_kv, S, D = codes.shape
+    N = B * H_kv * S * D
+    gsize = mx.array([group_size], dtype=mx.uint32)
+
+    outputs = _scalar_affine_decode_kernel(mode)(
+        inputs=[
+            codes.astype(mx.uint8),
+            scale.astype(mx.float32),
+            zero.astype(mx.float32),
+            gsize,
+        ],
+        grid=(N, 1, 1),
+        threadgroup=(min(256, N), 1, 1),
+        output_shapes=[(B, H_kv, S, D)],
+        output_dtypes=[mx.float16],
+    )
+    return outputs[0]
+
+
+def scalar_predecoded_attend(
+    q: mx.array,
+    k_hat: mx.array,
+    v_hat: mx.array,
+    scale: float,
+    nsg: int = 4,
+) -> mx.array:
+    """Flash-decoding SDPA over already-decoded fp16 k_hat/v_hat.
+
+    Part of the issue #308 two-pass spike: pairs with
+    :func:`scalar_decode_once`. Dispatches the full
+    ``B*H_q*S_q`` threadgroups (one per query head), matching the
+    high-occupancy baseline from issue #307's addendum -- heads sharing a
+    kv head redundantly re-read the same decoded fp16 rows, but no
+    on-the-fly dequantization happens in this kernel.
+
+    Args:
+        q:     ``[B, H_q, S_q, D]`` fp16/fp32 queries (pre-rotated).
+        k_hat: ``[B, H_kv, S_kv, D]`` fp16 decoded keys (from
+            ``scalar_decode_once(..., mode="K")``).
+        v_hat: ``[B, H_kv, S_kv, D]`` fp16 decoded values (from
+            ``scalar_decode_once(..., mode="V")``).
+        scale: attention scale applied to the raw dot (e.g. 1/sqrt(D)).
+        nsg:   SIMD-groups per threadgroup splitting the kv axis.
+
+    Returns:
+        ``[B, H_q, S_q, D]`` fp16 attention output.
+    """
+    if q.ndim != 4:
+        raise ValueError(f"scalar_predecoded_attend: q must be 4D, got {q.shape}")
+    if k_hat.ndim != 4 or v_hat.ndim != 4:
+        raise ValueError(
+            "scalar_predecoded_attend: k_hat and v_hat must be 4D, "
+            f"got k_hat={k_hat.shape}, v_hat={v_hat.shape}"
+        )
+    B, H, S_q, D = q.shape
+    if D > 256:
+        raise ValueError(f"scalar_predecoded_attend: D={D} must be <= 256")
+    if not (1 <= nsg <= 32):
+        raise ValueError(f"scalar_predecoded_attend: nsg={nsg} must be in 1..32")
+
+    Bk, H_kv, _, Dk = k_hat.shape
+    if Bk != B:
+        raise ValueError(f"scalar_predecoded_attend: batch mismatch: q B={B} vs k_hat B={Bk}")
+    if Dk != D:
+        raise ValueError(f"scalar_predecoded_attend: head_dim mismatch: q D={D} vs k_hat D={Dk}")
+    if v_hat.shape != k_hat.shape:
+        raise ValueError(
+            f"scalar_predecoded_attend: k_hat shape={k_hat.shape} vs "
+            f"v_hat shape={v_hat.shape} mismatch"
+        )
+    if H % H_kv != 0:
+        raise ValueError(
+            f"scalar_predecoded_attend: H_q={H} must be a multiple of H_kv={H_kv} (k_hat.shape[1])"
+        )
+
+    n_tg = B * H * S_q
+    scale_arr = mx.array([scale], dtype=mx.float32)
+
+    outputs = _scalar_predecoded_attend_kernel(nsg)(
+        inputs=[
+            q.astype(mx.float16),
+            k_hat.astype(mx.float16),
+            v_hat.astype(mx.float16),
+            scale_arr,
+        ],
+        grid=(n_tg * 32, nsg, 1),
+        threadgroup=(32, nsg, 1),
+        output_shapes=[(B, H, S_q, D)],
+        output_dtypes=[mx.float16],
+    )
+    return outputs[0]
+
+
+__all__ = [
+    "scalar_fused_decode_attend",
+    "scalar_decode_once",
+    "scalar_predecoded_attend",
+]
