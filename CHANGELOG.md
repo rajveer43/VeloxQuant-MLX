@@ -432,6 +432,20 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.75.0 (2026-09-03)
+
+### Code Style
+
+- Apply ruff format ([#312](https://github.com/rajveer43/VeloxQuant-MLX/pull/312),
+  [`0671348`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0671348d8c1131ad486a7d617aa6a2e1741cdb47))
+
+### Features
+
+- **cache**: Verify, tune, and extend MLX prefix-cache reuse
+  ([#312](https://github.com/rajveer43/VeloxQuant-MLX/pull/312),
+  [`0671348`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0671348d8c1131ad486a7d617aa6a2e1741cdb47))
+
+
 ## v0.74.0 (2026-09-03)
 
 ### Chores
