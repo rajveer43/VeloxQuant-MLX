@@ -100,10 +100,10 @@
 
       <p>
         Short version: VeloxQuant-MLX runs entirely on your own Mac and sends nothing anywhere.
-        VeloxQuant Studio needs an account (email + password) to unlock the app, which is handled
-        by Supabase — that's the only place your personal data goes. Everything else — your
-        models, your prompts, your job history — stays on your machine. This page explains exactly
-        what's collected, by what, and why.
+        VeloxQuant Studio needs an account (email + password) to unlock the app, handled by a
+        third-party authentication service — that's the only place your personal data goes.
+        Everything else — your models, your prompts, your job history — stays on your machine.
+        This page explains exactly what's collected and why.
       </p>
 
       <h3>1. The VeloxQuant-MLX library</h3>
@@ -126,13 +126,13 @@
         </thead>
         <tbody>
           <tr>
-            <td>Email address, password (as a Supabase-managed credential, not plaintext)</td>
-            <td>Supabase (our authentication provider)</td>
+            <td>Email address, password (stored as a credential, never in plaintext)</td>
+            <td>Our authentication provider</td>
             <td>To create your account and sign you in</td>
           </tr>
           <tr>
             <td>Session token</td>
-            <td>Stored locally in the macOS Keychain only</td>
+            <td>Stored locally on your Mac's secure credential storage only</td>
             <td>Keeps you signed in between launches</td>
           </tr>
           <tr>
@@ -163,9 +163,9 @@
 
       <p>
         The app never uploads your models, prompts, or job logs. The only network calls it makes
-        are to Supabase, to sign you in and keep your session valid. Everything else it does —
-        running VeloxQuant-MLX, reading and writing model files, storing your job history — happens
-        locally on your Mac.
+        are to our authentication provider, to sign you in and keep your session valid. Everything
+        else it does — running VeloxQuant-MLX, reading and writing model files, storing your job
+        history — happens locally on your Mac.
       </p>
 
       <h3>3. What we don't do</h3>
@@ -178,11 +178,10 @@
 
       <h3>4. This website (veloxquant-mlx.netlify.app)</h3>
       <p>
-        This site uses two privacy-focused, cookieless analytics tools — <a href="https://plausible.io" target="_blank" rel="noopener">Plausible</a>
-        and <a href="https://www.goatcounter.com" target="_blank" rel="noopener">GoatCounter</a> — to count page
-        views. Neither uses cookies, neither builds a cross-site profile of you, and neither collects anything
-        that identifies you personally. It's aggregate traffic counts only (which pages get visited, roughly how
-        often), the same category of information any web server log already contains.
+        This site uses privacy-focused, cookieless analytics to count page views. It doesn't use
+        cookies, doesn't build a cross-site profile of you, and doesn't collect anything that
+        identifies you personally. It's aggregate traffic counts only (which pages get visited,
+        roughly how often) — the same category of information any web server log already contains.
       </p>
 
       <h3>5. Your account and data</h3>
