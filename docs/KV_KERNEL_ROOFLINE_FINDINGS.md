@@ -159,6 +159,228 @@ memory bandwidth at all** — it's that a single-query decode step doesn't
 generate enough parallel work to fill a modern GPU's core count, no matter
 how efficiently each unit of that work is streamed.
 
+## Addendum: GQA head-packing experiment (issue #307, part 2)
+
+Issue #307 proposed two fixes on top of this analysis. Part 2 — GQA-style
+head-packing, where the `heads_per_kv` query heads sharing one kv head are
+packed into a single threadgroup so each K/V code is decoded once and
+reused across those heads instead of redundantly redecoded per head — has
+been implemented in `scalar_fused_decode_attend`
+(`veloxquant_mlx/metal/src/scalar_affine_attend.metal`,
+`veloxquant_mlx/metal/_scalar_attend.py`) and is correctness-verified:
+43/43 tests pass, including new GQA-shaped parity cases
+(`H_q/H_kv ∈ {(8,2), (32,4), (32,8)}`, max abs error < 2e-3 against a
+numpy reference) and confirmation that `H_q == H_kv` (plain MHA) produces
+unchanged output on every pre-existing test.
+
+**The performance result is a clear negative, and it directly confirms
+this document's own occupancy diagnosis rather than contradicting it.**
+Packing trades away threadgroup *count* to save K/V byte traffic — but
+byte traffic isn't the bottleneck at these shapes; occupancy is. Packing
+`H_q=32, H_kv=4` (`heads_per_kv=8`) into one threadgroup per kv-head drops
+total dispatched threadgroups to `B*H_kv*S_q = 4` — *below* the
+`B=1,H=8,S_q=1` (8 threadgroups) row this document already measured at
+6.1% of peak bandwidth. Measured on the same M4 hardware, `S_kv=16384`:
+
+| Variant | threadgroups | latency | vs. packed |
+|---|---|---|---|
+| packed (nsg=2) | 4 | 43.8 ms | 1.0x |
+| unpacked, 32 separate 1-threadgroup dispatches (nsg=2) | 32 (across 32 dispatches) | 16.3 ms | **2.7x faster** |
+| unpacked, 32 separate 1-threadgroup dispatches (nsg=8) | 32 (across 32 dispatches) | 9.4 ms | **4.7x faster** |
+
+The "unpacked" baseline here is deliberately the redundant-redecode
+anti-pattern (each query head independently redecodes the same shared
+K/V codes) — i.e. strictly *more* total DRAM traffic than packed — and it
+still wins by 2.7-4.7x, because 32 independent small dispatches give the
+GPU scheduler enough concurrent work to fill its cores, while 4 large
+dispatches (even without any redundant work inside them) do not. This
+matches this document's Recommendation #2 below almost exactly: dispatch
+count is the lever that matters at these shapes, not bytes moved.
+
+**Conclusion: GQA head-packing, as scoped in issue #307 part 2, is not a
+net win in isolation and should not be adopted as implemented.** It
+remains correct and available (useful if a future caller needs the
+byte-traffic reduction for a different reason, e.g. once part 1's
+cross-layer batching fixes occupancy first — packing would then compose
+with a large multi-layer dispatch rather than being the sole source of
+threadgroup count). But taken alone, it makes the exact metric this
+document identified as the actual bottleneck (threadgroup count) worse in
+exchange for optimizing a metric (K/V byte traffic) that isn't yet the
+constraint. Issue #307 should be updated to reflect this: part 1
+(cross-layer batched dispatch, which increases threadgroup count) is the
+correct next step, not an optional companion to part 2 — packing should
+be revisited only after occupancy is fixed, to see whether it adds
+further gains once dispatch count is no longer the limiter.
+
+Reproduction: `pytest veloxquant_mlx/tests/metal/test_scalar_attend.py -v
+-k gqa` for correctness; the packing-vs-unpacked timing table prints from
+`test_scalar_attend_gqa_packing_benchmark`.
+
+**Why this isn't fixable with a smarter packing design.** Before
+concluding, we checked whether some other threadgroup layout could get
+both K/V-decode sharing *and* full `B*H_q*S_q` threadgroup count
+simultaneously. It cannot, on Metal, and this is an architectural limit,
+not a gap in this design:
+
+- Metal `threadgroup`-address-space memory is scoped strictly to threads
+  co-resident in one threadgroup; there is no barrier, SIMD-group
+  primitive, imageblock mechanism, or Metal 3/4 feature that lets two
+  independently-dispatched threadgroups read each other's on-chip state.
+  The only way to make a value visible across a threadgroup boundary is
+  `device` (DRAM) memory — exactly the round-trip this kernel family
+  exists to avoid.
+- GPU occupancy at these shapes is gated by threadgroup *count* (the
+  hardware scheduler needs enough independently-schedulable units to
+  spread across the GPU's cores), not by making individual threadgroups
+  internally wider. A "fatter" threadgroup (more SIMD-groups packed in to
+  add real concurrency instead of a serial per-head loop) is still one
+  scheduling unit landing on one core — it doesn't recover the cross-core
+  distribution that dispatching 32 separate threadgroups gives for free.
+- **This is confirmed by MLX's own production kernel.** We read MLX's
+  vendored `sdpa_vector.h` (the Metal kernel `mx.fast.scaled_dot_product_
+  attention` itself dispatches to at decode/small-S_q shapes) directly:
+  it uses one threadgroup per query head with **no K/V-decode sharing
+  across heads that share a kv-head** — `gqa_factor` is used only for
+  pointer arithmetic (`kv_head_idx = q_head_idx / gqa_factor`), and every
+  threadgroup independently re-reads the same K/V data. Where MLX's own
+  2-pass long-context variant *does* need state visible across
+  independently-scheduled threadgroups (merging partial softmax across a
+  KV-axis split), it goes through a `device`-space scratch buffer between
+  kernel launches — the same DRAM round-trip this analysis says is the
+  only way to do it. MLX had every incentive to solve this if it were
+  solvable; it makes the same redundant-refetch-for-occupancy tradeoff
+  this document now recommends.
+
+So the recommendation isn't "revert and try again later" in the sense of
+expecting a different kernel design to close the gap — it's that
+head-packing and full decode-shape occupancy are in genuine tension on
+this hardware, and occupancy should win until part 1 changes what
+"occupancy" costs (batching across layers changes `S_q`/dispatch
+structure enough that revisiting packing at that point is a fair
+question, not a re-run of this same experiment).
+
+## Addendum: SIMD-shuffle spike and two-pass decode-once (issue #308)
+
+Issue #308 asked whether `simd_shuffle`/`quad_shuffle` — a genuine, cheap
+(single hardware crossbar instruction, no barrier) cross-*lane* exchange
+confirmed to exist unconditionally on all Apple Silicon since MSL 2.2 —
+could give head-packing's K/V-decode-sharing benefit without sacrificing
+threadgroup count the way part 2 above does.
+
+**It cannot, and this is a straightforward consequence of the same
+architectural fact already established above, not a new limit.**
+`simd_shuffle` exchanges data only between lanes already co-resident in
+one SIMD-group, which is a subset of one threadgroup. Under the
+full-occupancy dispatch shape (`B*H_q*S_q` threadgroups, one per query
+head) that this document recommends, a single threadgroup by construction
+only ever holds *one* query head's work for its entire lifetime — there is
+no other query head's data anywhere in that threadgroup's address space to
+shuffle with. Getting any cross-head sharing still requires those heads to
+be co-resident in one threadgroup, which means dropping to `B*H_kv*S_q`
+threadgroups — reproducing part 2's already-measured tradeoff, just with a
+cheaper merge mechanism, not a way to avoid the threadgroup-count cost.
+
+**A genuinely different two-pass alternative was implemented and measured
+instead**, trading a different resource: one extra DRAM round-trip instead
+of threadgroup count. `scalar_decode_once` (new:
+`veloxquant_mlx/metal/src/scalar_affine_decode_once.metal`) decodes every
+K/V code exactly once into a `[B, H_kv, S_kv, D]` fp16 device buffer,
+dispatched flat over all elements — occupancy-friendly by construction,
+since it scales with `S_kv` rather than `S_q`. `scalar_predecoded_attend`
+(new: `veloxquant_mlx/metal/src/scalar_predecoded_attend.metal`) then runs
+the *original* full-occupancy `B*H_q*S_q` dispatch against the
+already-decoded buffer — heads sharing a kv head still redundantly re-read
+the same decoded fp16 rows from DRAM, but no longer redundantly re-decode
+them (no dequant multiply-add repeated per head).
+
+Correctness: 10/10 new tests pass, including parity against the same
+numpy reference used throughout this document across three head ratios
+(`(H_q,H_kv) ∈ {(4,4), (8,2), (32,4)}`) and `S_kv ∈ {64, 512, 2048}`.
+
+**Result: a genuine, S_kv-dependent crossover, not a uniform win or
+loss.** Measured on the same M4 hardware at `H_q=32, H_kv=4, D=128, nsg=2`
+against the unpacked-redundant baseline (this document's fastest
+measurement so far):
+
+| S_kv | unpacked ms | two-pass ms | two-pass vs. unpacked |
+|------|-------------|-------------|------------------------|
+| 256  | 1.22 | 0.38 | **3.18x faster** |
+| 1024 | 1.33 | 0.98 | **1.36x faster** |
+| 2048 | 2.05 | 1.94 | **1.06x faster** |
+| 3072 | 2.77 | 3.27 | 0.85x (slower) |
+| 4096 | 3.63 | 4.41 | 0.82x (slower) |
+| 8192 | 7.25 | 9.10 | 0.80x (slower) |
+| 16384 | 13.89 | 17.44 | 0.80x (slower) |
+
+The crossover (~S_kv 2048-3072 at this shape) holds directionally across
+`(H_q,H_kv) ∈ {(32,4), (32,8), (8,2)}` — two-pass wins by 1.1-3.2x at
+short/moderate context and loses by 0.7-0.85x at long context in every
+ratio tested. The mechanism: the decode pass's own read-then-write cost
+scales with `S_kv * H_kv * D` regardless of `heads_per_kv`, while the
+*savings* (redundant on-the-fly decode arithmetic avoided) scale with
+`S_kv * H_kv * D * (heads_per_kv - 1)`. At small `S_kv` the saved
+redundant-decode ALU work outweighs the extra round-trip; at large `S_kv`
+the fixed per-byte round-trip overhead — a real DRAM write plus a second
+real DRAM read that redundant on-the-fly decode never pays at all —
+dominates over the saved arithmetic, which is cheap relative to a byte
+round-trip in the first place.
+
+**Disposition:** not adopted for the same reason part 2 wasn't — this
+repo's realistic decode targets (long-context KV caches, `S_kv` in the
+thousands to tens of thousands) sit past the crossover, where two-pass is
+a net loss. Kept as correct, tested code (same rationale as part 2:
+available groundwork, not dead weight) rather than reverted, since the
+short-context win is real and could matter for a caller with a small
+context budget, and because `scalar_decode_once` in particular could be a
+useful building block outside this specific attend pairing. Reproduction:
+`pytest veloxquant_mlx/tests/metal/test_scalar_attend.py -v -k
+"decode_once or two_pass"` for correctness; the crossover table prints
+from `test_scalar_attend_two_pass_benchmark`.
+
+**Why real-model end-to-end integration was not attempted, despite the
+short-context win above being real.** All numbers in this document and
+its addenda are synthetic microbenchmarks: a fresh `q`/`k`/`v` call per
+measurement, decoding K/V from scratch every time. A real decode loop
+does not look like this — `mlx_lm`'s standard `KVCache` materializes and
+*retains* the dequantized fp16 `K_hat`/`V_hat` tensor across decode
+steps, so per-step dequantization cost is already amortized to
+effectively zero on the standard path. Any fused kernel that redoes
+decode work (or, for the two-pass design, pays a fresh DRAM round-trip)
+on every call is competing against a baseline that mostly isn't doing
+that redundant work in the first place during real generation — a
+materially different comparison than this document's isolated-call
+benchmarks.
+
+This is not a hypothesis — **this exact experiment has already been run
+in this repo, on a real model, for the closest sibling kernel family**.
+`veloxquant_mlx/cache/vecinfer_cache.py`'s `fused_sdpa` opt-in path pairs
+a fused Metal decode+attend kernel (`metal/fused_sdpa.py`) with codebook
+(VQ) index storage, structurally the same shape of integration this
+document's kernels would need for KIVI. `patch_mlx_lm_for_fused_sdpa()`
+(`veloxquant_mlx/metal/fused_sdpa.py:317-351`) is the dispatcher that
+would route real `mlx_lm.generate()` calls to it — and its own inline
+comment records the result: *"Profiling on Llama-3.1-8B showed that the
+fused kernel cannot beat MLX SDPA on an already-materialized K_hat
+tensor because the per-step dequant cost is amortized to zero by
+mlx_lm's persistent cache buffer."* The dispatcher is coded as a
+pass-through no-op today specifically because of this measured result —
+not a stub awaiting completion.
+
+Given a first-party, already-measured result on this exact failure mode
+for a structurally identical integration, re-running it for
+`scalar_predecoded_attend`/`scalar_fused_decode_attend` against KIVI was
+judged unlikely to produce new information proportional to the
+integration cost (wiring compressed-state storage into `KIVIKVCache`,
+a monkeypatch dispatcher, and real-model benchmark plumbing — see
+`docs/RVQ_PACKED_STORAGE_FINDINGS.md` for how much work the analogous
+`turboquant_rvq` conversion took). If a future change alters the premise
+— e.g. part 1's cross-layer batched dispatch changes what "amortized"
+means by changing the call granularity itself, or a caller emerges that
+genuinely cannot retain a materialized fp16 `K_hat` (the memory-bound
+case `fused_sdpa`'s docstring already names as its own remaining
+rationale) — this is the reference point to revisit, not a closed
+question in principle.
+
 ## Recommendation
 
 1. **Kernels already at or near the bandwidth roofline** (`kivi_group_quant_dequant`
