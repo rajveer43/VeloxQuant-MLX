@@ -432,6 +432,35 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.73.0 (2026-09-03)
+
+### Bug Fixes
+
+- **landing**: Don't name third-party vendors in privacy policy
+  ([#303](https://github.com/rajveer43/VeloxQuant-MLX/pull/303),
+  [`d9a5788`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d9a578841d037c8640702fa3e603767583136d84))
+
+- **landing**: Unlink privacy.html from site navigation
+  ([#303](https://github.com/rajveer43/VeloxQuant-MLX/pull/303),
+  [`d9a5788`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d9a578841d037c8640702fa3e603767583136d84))
+
+### Build System
+
+- **deps**: Bump fast-uri from 3.1.5 to 3.1.7 in /docs-site
+  ([#302](https://github.com/rajveer43/VeloxQuant-MLX/pull/302),
+  [`3b23d1b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3b23d1b2f5bc21854946059190167be0068e05dd))
+
+### Features
+
+- **landing**: Add privacy policy page, update Studio link to v0.1.1
+  ([#303](https://github.com/rajveer43/VeloxQuant-MLX/pull/303),
+  [`d9a5788`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d9a578841d037c8640702fa3e603767583136d84))
+
+- **landing**: Add privacy policy, update Studio download to v0.1.1
+  ([#303](https://github.com/rajveer43/VeloxQuant-MLX/pull/303),
+  [`d9a5788`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d9a578841d037c8640702fa3e603767583136d84))
+
+
 ## v0.72.0 (2026-09-02)
 
 ### Bug Fixes
