@@ -159,6 +159,106 @@ memory bandwidth at all** — it's that a single-query decode step doesn't
 generate enough parallel work to fill a modern GPU's core count, no matter
 how efficiently each unit of that work is streamed.
 
+## Addendum: GQA head-packing experiment (issue #307, part 2)
+
+Issue #307 proposed two fixes on top of this analysis. Part 2 — GQA-style
+head-packing, where the `heads_per_kv` query heads sharing one kv head are
+packed into a single threadgroup so each K/V code is decoded once and
+reused across those heads instead of redundantly redecoded per head — has
+been implemented in `scalar_fused_decode_attend`
+(`veloxquant_mlx/metal/src/scalar_affine_attend.metal`,
+`veloxquant_mlx/metal/_scalar_attend.py`) and is correctness-verified:
+43/43 tests pass, including new GQA-shaped parity cases
+(`H_q/H_kv ∈ {(8,2), (32,4), (32,8)}`, max abs error < 2e-3 against a
+numpy reference) and confirmation that `H_q == H_kv` (plain MHA) produces
+unchanged output on every pre-existing test.
+
+**The performance result is a clear negative, and it directly confirms
+this document's own occupancy diagnosis rather than contradicting it.**
+Packing trades away threadgroup *count* to save K/V byte traffic — but
+byte traffic isn't the bottleneck at these shapes; occupancy is. Packing
+`H_q=32, H_kv=4` (`heads_per_kv=8`) into one threadgroup per kv-head drops
+total dispatched threadgroups to `B*H_kv*S_q = 4` — *below* the
+`B=1,H=8,S_q=1` (8 threadgroups) row this document already measured at
+6.1% of peak bandwidth. Measured on the same M4 hardware, `S_kv=16384`:
+
+| Variant | threadgroups | latency | vs. packed |
+|---|---|---|---|
+| packed (nsg=2) | 4 | 43.8 ms | 1.0x |
+| unpacked, 32 separate 1-threadgroup dispatches (nsg=2) | 32 (across 32 dispatches) | 16.3 ms | **2.7x faster** |
+| unpacked, 32 separate 1-threadgroup dispatches (nsg=8) | 32 (across 32 dispatches) | 9.4 ms | **4.7x faster** |
+
+The "unpacked" baseline here is deliberately the redundant-redecode
+anti-pattern (each query head independently redecodes the same shared
+K/V codes) — i.e. strictly *more* total DRAM traffic than packed — and it
+still wins by 2.7-4.7x, because 32 independent small dispatches give the
+GPU scheduler enough concurrent work to fill its cores, while 4 large
+dispatches (even without any redundant work inside them) do not. This
+matches this document's Recommendation #2 below almost exactly: dispatch
+count is the lever that matters at these shapes, not bytes moved.
+
+**Conclusion: GQA head-packing, as scoped in issue #307 part 2, is not a
+net win in isolation and should not be adopted as implemented.** It
+remains correct and available (useful if a future caller needs the
+byte-traffic reduction for a different reason, e.g. once part 1's
+cross-layer batching fixes occupancy first — packing would then compose
+with a large multi-layer dispatch rather than being the sole source of
+threadgroup count). But taken alone, it makes the exact metric this
+document identified as the actual bottleneck (threadgroup count) worse in
+exchange for optimizing a metric (K/V byte traffic) that isn't yet the
+constraint. Issue #307 should be updated to reflect this: part 1
+(cross-layer batched dispatch, which increases threadgroup count) is the
+correct next step, not an optional companion to part 2 — packing should
+be revisited only after occupancy is fixed, to see whether it adds
+further gains once dispatch count is no longer the limiter.
+
+Reproduction: `pytest veloxquant_mlx/tests/metal/test_scalar_attend.py -v
+-k gqa` for correctness; the packing-vs-unpacked timing table prints from
+`test_scalar_attend_gqa_packing_benchmark`.
+
+**Why this isn't fixable with a smarter packing design.** Before
+concluding, we checked whether some other threadgroup layout could get
+both K/V-decode sharing *and* full `B*H_q*S_q` threadgroup count
+simultaneously. It cannot, on Metal, and this is an architectural limit,
+not a gap in this design:
+
+- Metal `threadgroup`-address-space memory is scoped strictly to threads
+  co-resident in one threadgroup; there is no barrier, SIMD-group
+  primitive, imageblock mechanism, or Metal 3/4 feature that lets two
+  independently-dispatched threadgroups read each other's on-chip state.
+  The only way to make a value visible across a threadgroup boundary is
+  `device` (DRAM) memory — exactly the round-trip this kernel family
+  exists to avoid.
+- GPU occupancy at these shapes is gated by threadgroup *count* (the
+  hardware scheduler needs enough independently-schedulable units to
+  spread across the GPU's cores), not by making individual threadgroups
+  internally wider. A "fatter" threadgroup (more SIMD-groups packed in to
+  add real concurrency instead of a serial per-head loop) is still one
+  scheduling unit landing on one core — it doesn't recover the cross-core
+  distribution that dispatching 32 separate threadgroups gives for free.
+- **This is confirmed by MLX's own production kernel.** We read MLX's
+  vendored `sdpa_vector.h` (the Metal kernel `mx.fast.scaled_dot_product_
+  attention` itself dispatches to at decode/small-S_q shapes) directly:
+  it uses one threadgroup per query head with **no K/V-decode sharing
+  across heads that share a kv-head** — `gqa_factor` is used only for
+  pointer arithmetic (`kv_head_idx = q_head_idx / gqa_factor`), and every
+  threadgroup independently re-reads the same K/V data. Where MLX's own
+  2-pass long-context variant *does* need state visible across
+  independently-scheduled threadgroups (merging partial softmax across a
+  KV-axis split), it goes through a `device`-space scratch buffer between
+  kernel launches — the same DRAM round-trip this analysis says is the
+  only way to do it. MLX had every incentive to solve this if it were
+  solvable; it makes the same redundant-refetch-for-occupancy tradeoff
+  this document now recommends.
+
+So the recommendation isn't "revert and try again later" in the sense of
+expecting a different kernel design to close the gap — it's that
+head-packing and full decode-shape occupancy are in genuine tension on
+this hardware, and occupancy should win until part 1 changes what
+"occupancy" costs (batching across layers changes `S_q`/dispatch
+structure enough that revisiting packing at that point is a fair
+question, not a re-run of this same experiment).
+
 ## Recommendation
 
 1. **Kernels already at or near the bandwidth roofline** (`kivi_group_quant_dequant`

@@ -19,15 +19,15 @@ S_kv while the packed codes are ``16/b`` times smaller.
 Quantization layout (matches KIVI's ``_quant_dequant_along``)
 ------------------------------------------------------------
 Keys — per-CHANNEL groups (group along the token axis):
-  * ``k_codes [B, H, S_kv, D]``  uint8 codes in ``[0, 2^b - 1]``
-  * ``k_scale [B, H, GK,   D]``  fp32, GK = ceil(S_kv / g)
-  * ``k_zero  [B, H, GK,   D]``  fp32
+  * ``k_codes [B, H_kv, S_kv, D]``  uint8 codes in ``[0, 2^b - 1]``
+  * ``k_scale [B, H_kv, GK,   D]``  fp32, GK = ceil(S_kv / g)
+  * ``k_zero  [B, H_kv, GK,   D]``  fp32
   reconstruction: ``k_hat[.., sk, d] = k_codes[..,sk,d] * k_scale[..,sk/g,d] + k_zero[..,sk/g,d]``
 
 Values — per-TOKEN groups (group along the channel axis):
-  * ``v_codes [B, H, S_kv, D]``  uint8
-  * ``v_scale [B, H, S_kv, GV]`` fp32, GV = ceil(D / g)
-  * ``v_zero  [B, H, S_kv, GV]`` fp32
+  * ``v_codes [B, H_kv, S_kv, D]``  uint8
+  * ``v_scale [B, H_kv, S_kv, GV]`` fp32, GV = ceil(D / g)
+  * ``v_zero  [B, H_kv, S_kv, GV]`` fp32
   reconstruction: ``v_hat[.., sk, d] = v_codes[..,sk,d] * v_scale[..,sk,d/g] + v_zero[..,sk,d/g]``
 
 Score model (per kv slot sk, query (b, h, sq)):
@@ -36,6 +36,20 @@ Score model (per kv slot sk, query (b, h, sq)):
 
 ``scale`` (typically ``1/sqrt(D)``) is passed in and applied by the
 kernel; no other scaling is folded in.
+
+GQA head-packing
+-----------------
+``q`` carries ``H_q`` query heads while ``k_codes``/``v_codes`` (and their
+scale/zero arrays) carry ``H_kv`` key/value heads, with ``H_q`` required to
+be an exact multiple of ``H_kv``. ``H_kv`` is inferred from
+``k_codes.shape[1]`` — no separate parameter is needed. When ``H_q >
+H_kv``, the ``heads_per_kv = H_q // H_kv`` query heads that share one kv
+head (contiguous blocks: query heads ``[h_kv*heads_per_kv,
+(h_kv+1)*heads_per_kv)`` map to kv head ``h_kv``, i.e. ``repeat_interleave``
+order) are packed into one threadgroup, so each K/V code is decoded once
+and reused across all heads that share it, instead of being redundantly
+redecoded per query head. ``H_q == H_kv`` (plain MHA, ``heads_per_kv=1``)
+degenerates to the original per-head dispatch with bit-identical output.
 
 Public API:
   - :func:`scalar_fused_decode_attend`
@@ -59,16 +73,20 @@ _cache: dict = {}
 # ===========================================================================
 # Metal source — fused affine decode + flash-decoding attend
 # ===========================================================================
-# Grid:        (B * H * S_q * 32, NSG_C, 1) — MLX grid = total threads.
-# Threadgroup: (32, NSG_C, 1)               — NSG_C SIMD-groups of 32 lanes.
+# Grid:        (B * H_kv * S_q * 32, NSG_C, 1) — MLX grid = total threads.
+# Threadgroup: (32, NSG_C, 1)                  — NSG_C SIMD-groups of 32 lanes.
 #
-# Each threadgroup handles one query position (b, h, sq). A single
-# 32-lane pass over S_kv under-fills the GPU for decode shapes
-# (B*H*S_q small), so the kv axis is split flash-decoding style:
-# SIMD-group sg processes slots sk = sg, sg + NSG_C, ... with its own
-# online softmax (running_m, running_d, my_out[]). The NSG_C partial
-# results are merged through threadgroup memory at the end (identical
-# merge to _rabitq_attend).
+# Each threadgroup handles one (b, h_kv, sq) slot and ALL HEADS_PER_KV_C
+# query heads sharing that kv head — K/V codes are decoded once per
+# (sk, d) and the dot-product/weighted-accumulate is repeated per packed
+# head against the already-decoded value, so K/V DRAM reads don't scale
+# with heads_per_kv. A single 32-lane pass over S_kv under-fills the GPU
+# for decode shapes (B*H_kv*S_q small), so the kv axis is also split
+# flash-decoding style: SIMD-group sg processes slots sk = sg, sg +
+# NSG_C, ... with its own per-packed-head online softmax (running_m[],
+# running_d[], my_out[][]). The NSG_C partial results are merged through
+# threadgroup memory at the end (identical merge to _rabitq_attend, just
+# repeated per packed head).
 #
 # Within one SIMD-group the 32 lanes stripe the D-dim vectors in steps
 # of 32; simd_sum reduces the partial dot product, so the per-slot loop
@@ -76,7 +94,9 @@ _cache: dict = {}
 #
 # GK (key groups along tokens) and GV (value groups along channels) and
 # the group size G are read from the passed shapes / a param, so one
-# compiled kernel serves any (S_kv, D, g).
+# compiled kernel serves any (S_kv, D, g). heads_per_kv=1 (H_q == H_kv)
+# degenerates every per-head loop to a single trip, compiling down to
+# the original non-GQA code path.
 
 _SCALAR_AFFINE_ATTEND_SRC = _read_kernel_source("scalar_affine_attend.metal")
 
@@ -86,11 +106,11 @@ _SCALAR_AFFINE_ATTEND_SRC = _read_kernel_source("scalar_affine_attend.metal")
 # ---------------------------------------------------------------------------
 
 
-def _scalar_affine_attend_kernel(D: int, nsg: int):
-    key = ("scalar_affine_attend", D, nsg)
+def _scalar_affine_attend_kernel(D: int, nsg: int, heads_per_kv: int):
+    key = ("scalar_affine_attend", D, nsg, heads_per_kv)
     if key not in _cache:
         _cache[key] = mx.fast.metal_kernel(
-            name=f"scalar_affine_attend_d{D}_nsg{nsg}",
+            name=f"scalar_affine_attend_d{D}_nsg{nsg}_hpk{heads_per_kv}",
             input_names=[
                 "q",
                 "k_codes",
@@ -103,11 +123,21 @@ def _scalar_affine_attend_kernel(D: int, nsg: int):
                 "scale_arr",
             ],
             output_names=["out"],
-            header=f"#define NSG_C {nsg}\n",
+            header=f"#define NSG_C {nsg}\n#define HEADS_PER_KV_C {heads_per_kv}\n",
             source=_SCALAR_AFFINE_ATTEND_SRC,
             ensure_row_contiguous=True,
         )
     return _cache[key]
+
+
+# Threadgroup-memory budget (bytes), matching the 32KB ceiling
+# _flash_prefill.py's _PDT_HARD_BUDGET already assumes for this GPU family.
+_TG_MEM_BUDGET_BYTES = 32768
+
+# Defensive ceiling on heads_per_kv — 2x the largest ratio in any current
+# open-weights model (Qwen2's 7x), bounding the compile-time per-lane
+# register-array sizes (running_m/running_d/my_out) against pathological inputs.
+_MAX_HEADS_PER_KV = 16
 
 
 # ---------------------------------------------------------------------------
@@ -133,34 +163,83 @@ def scalar_fused_decode_attend(
     and ``v_hat = v_codes*v_scale + v_zero`` (per-token groups) on-the-fly
     inside an online-softmax loop — no intermediate fp16 K_hat/V_hat.
 
+    Supports grouped-query attention: ``k_codes``/``v_codes`` (and their
+    scale/zero arrays) may carry fewer heads than ``q``. ``H_kv`` is
+    inferred from ``k_codes.shape[1]`` and must evenly divide ``q``'s head
+    count ``H_q``; the ``heads_per_kv = H_q // H_kv`` query heads sharing
+    a kv head are packed into one threadgroup so each K/V code is decoded
+    once and reused across them. ``H_q == H_kv`` (plain MHA) is unaffected.
+
     Args:
-        q:        ``[B, H, S_q, D]`` fp16/fp32 queries (pre-rotated).
-        k_codes:  ``[B, H, S_kv, D]`` uint8 key codes.
-        k_scale:  ``[B, H, GK, D]``   fp32, GK = ceil(S_kv/group_size).
-        k_zero:   ``[B, H, GK, D]``   fp32.
-        v_codes:  ``[B, H, S_kv, D]`` uint8 value codes.
-        v_scale:  ``[B, H, S_kv, GV]`` fp32, GV = ceil(D/group_size).
-        v_zero:   ``[B, H, S_kv, GV]`` fp32.
+        q:        ``[B, H_q, S_q, D]`` fp16/fp32 queries (pre-rotated).
+        k_codes:  ``[B, H_kv, S_kv, D]`` uint8 key codes.
+        k_scale:  ``[B, H_kv, GK, D]``   fp32, GK = ceil(S_kv/group_size).
+        k_zero:   ``[B, H_kv, GK, D]``   fp32.
+        v_codes:  ``[B, H_kv, S_kv, D]`` uint8 value codes.
+        v_scale:  ``[B, H_kv, S_kv, GV]`` fp32, GV = ceil(D/group_size).
+        v_zero:   ``[B, H_kv, S_kv, GV]`` fp32.
         group_size: quantization group size g.
         scale:    attention scale applied to the raw dot (e.g. 1/sqrt(D)).
         nsg:      SIMD-groups per threadgroup splitting the kv axis.
 
     Returns:
-        ``[B, H, S_q, D]`` fp16 attention output.
+        ``[B, H_q, S_q, D]`` fp16 attention output.
     """
     if q.ndim != 4:
         raise ValueError(f"scalar_fused_decode_attend: q must be 4D, got {q.shape}")
+    if k_codes.ndim != 4 or v_codes.ndim != 4:
+        raise ValueError(
+            "scalar_fused_decode_attend: k_codes and v_codes must be 4D, "
+            f"got k_codes={k_codes.shape}, v_codes={v_codes.shape}"
+        )
     B, H, S_q, D = q.shape
     if D > 256:
         raise ValueError(f"scalar_fused_decode_attend: D={D} must be <= 256")
     if not (1 <= nsg <= 32):
         raise ValueError(f"scalar_fused_decode_attend: nsg={nsg} must be in 1..32")
 
-    n_tg = B * H * S_q
+    Bk, H_kv, _, Dk = k_codes.shape
+    if Bk != B:
+        raise ValueError(
+            f"scalar_fused_decode_attend: batch mismatch: q B={B} vs k_codes B={Bk}"
+        )
+    if Dk != D:
+        raise ValueError(
+            f"scalar_fused_decode_attend: head_dim mismatch: q D={D} vs k_codes D={Dk}"
+        )
+    if v_codes.shape[1] != H_kv:
+        raise ValueError(
+            f"scalar_fused_decode_attend: k_codes H_kv={H_kv} vs "
+            f"v_codes H_kv={v_codes.shape[1]} mismatch"
+        )
+    if H % H_kv != 0:
+        raise ValueError(
+            f"scalar_fused_decode_attend: H_q={H} must be a multiple of "
+            f"H_kv={H_kv} (k_codes.shape[1]) for GQA head-packing"
+        )
+    heads_per_kv = H // H_kv
+    if heads_per_kv > _MAX_HEADS_PER_KV:
+        raise ValueError(
+            f"scalar_fused_decode_attend: heads_per_kv={heads_per_kv} exceeds "
+            f"the supported maximum of {_MAX_HEADS_PER_KV}"
+        )
+    # sh_o[NSG_C*HEADS_PER_KV_C*8*32] + sh_m[NSG_C*HEADS_PER_KV_C] + sh_d[NSG_C*HEADS_PER_KV_C],
+    # all float32 — must match scalar_affine_attend.metal's threadgroup array declarations.
+    n_slots = nsg * heads_per_kv
+    tg_mem_bytes = (n_slots * 8 * 32 + n_slots + n_slots) * 4
+    if tg_mem_bytes > _TG_MEM_BUDGET_BYTES:
+        raise ValueError(
+            f"scalar_fused_decode_attend: nsg={nsg} * heads_per_kv={heads_per_kv} "
+            f"exceeds the {_TG_MEM_BUDGET_BYTES}B threadgroup-memory budget for "
+            f"the softmax merge buffers ({tg_mem_bytes}B); reduce nsg or use a "
+            f"smaller H_q/H_kv ratio"
+        )
+
+    n_tg = B * H_kv * S_q
     gsize = mx.array([group_size], dtype=mx.uint32)
     scale_arr = mx.array([scale], dtype=mx.float32)
 
-    outputs = _scalar_affine_attend_kernel(D, nsg)(
+    outputs = _scalar_affine_attend_kernel(D, nsg, heads_per_kv)(
         inputs=[
             q.astype(mx.float16),
             k_codes.astype(mx.uint8),
