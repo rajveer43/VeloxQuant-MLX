@@ -17,6 +17,18 @@ name: release
 on:
   push:
     branches: [master]
+    # Belt-and-suspenders alongside the commit-type discipline in
+    # CONTRIBUTING.md ("Commit conventions"): PSR bumps purely on commit
+    # *type* (feat/fix/perf), not on which files changed, so a landing-only
+    # push typed as feat(landing)/fix(landing) still bumps the Python
+    # package version and republishes to PyPI with zero package changes.
+    # This only skips the run when EVERY changed file matches below -- a
+    # push that also touches veloxquant_mlx/** still runs normally and
+    # still syncs landing/index.html via scripts/sync_release_badges.py.
+    paths-ignore:
+      - 'landing/**'
+      - 'docs/**'
+      - '**.md'
 
 # `cancel-in-progress: false` is deliberate and must stay that way: this job
 # pushes a tag, publishes a GitHub Release, and uploads to PyPI. Cancelling it
