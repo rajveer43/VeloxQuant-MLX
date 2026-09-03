@@ -337,6 +337,50 @@ useful building block outside this specific attend pairing. Reproduction:
 "decode_once or two_pass"` for correctness; the crossover table prints
 from `test_scalar_attend_two_pass_benchmark`.
 
+**Why real-model end-to-end integration was not attempted, despite the
+short-context win above being real.** All numbers in this document and
+its addenda are synthetic microbenchmarks: a fresh `q`/`k`/`v` call per
+measurement, decoding K/V from scratch every time. A real decode loop
+does not look like this — `mlx_lm`'s standard `KVCache` materializes and
+*retains* the dequantized fp16 `K_hat`/`V_hat` tensor across decode
+steps, so per-step dequantization cost is already amortized to
+effectively zero on the standard path. Any fused kernel that redoes
+decode work (or, for the two-pass design, pays a fresh DRAM round-trip)
+on every call is competing against a baseline that mostly isn't doing
+that redundant work in the first place during real generation — a
+materially different comparison than this document's isolated-call
+benchmarks.
+
+This is not a hypothesis — **this exact experiment has already been run
+in this repo, on a real model, for the closest sibling kernel family**.
+`veloxquant_mlx/cache/vecinfer_cache.py`'s `fused_sdpa` opt-in path pairs
+a fused Metal decode+attend kernel (`metal/fused_sdpa.py`) with codebook
+(VQ) index storage, structurally the same shape of integration this
+document's kernels would need for KIVI. `patch_mlx_lm_for_fused_sdpa()`
+(`veloxquant_mlx/metal/fused_sdpa.py:317-351`) is the dispatcher that
+would route real `mlx_lm.generate()` calls to it — and its own inline
+comment records the result: *"Profiling on Llama-3.1-8B showed that the
+fused kernel cannot beat MLX SDPA on an already-materialized K_hat
+tensor because the per-step dequant cost is amortized to zero by
+mlx_lm's persistent cache buffer."* The dispatcher is coded as a
+pass-through no-op today specifically because of this measured result —
+not a stub awaiting completion.
+
+Given a first-party, already-measured result on this exact failure mode
+for a structurally identical integration, re-running it for
+`scalar_predecoded_attend`/`scalar_fused_decode_attend` against KIVI was
+judged unlikely to produce new information proportional to the
+integration cost (wiring compressed-state storage into `KIVIKVCache`,
+a monkeypatch dispatcher, and real-model benchmark plumbing — see
+`docs/RVQ_PACKED_STORAGE_FINDINGS.md` for how much work the analogous
+`turboquant_rvq` conversion took). If a future change alters the premise
+— e.g. part 1's cross-layer batched dispatch changes what "amortized"
+means by changing the call granularity itself, or a caller emerges that
+genuinely cannot retain a materialized fp16 `K_hat` (the memory-bound
+case `fused_sdpa`'s docstring already names as its own remaining
+rationale) — this is the reference point to revisit, not a closed
+question in principle.
+
 ## Recommendation
 
 1. **Kernels already at or near the bandwidth roofline** (`kivi_group_quant_dequant`
