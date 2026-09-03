@@ -114,9 +114,7 @@ def test_prompt_cache_size_default_is_ten():
 
 
 def test_prompt_cache_size_flag_reaches_mlx_namespace():
-    args = serve_cli.build_parser().parse_args(
-        ["--model", "m/x", "--prompt-cache-size", "25"]
-    )
+    args = serve_cli.build_parser().parse_args(["--model", "m/x", "--prompt-cache-size", "25"])
     ns = serve_cli._mlx_server_args(args)
     assert ns.prompt_cache_size == 25
 
@@ -127,9 +125,7 @@ def test_prompt_cache_bytes_default_is_none():
 
 
 def test_prompt_cache_bytes_flag_parses_size_suffix_and_reaches_namespace():
-    args = serve_cli.build_parser().parse_args(
-        ["--model", "m/x", "--prompt-cache-bytes", "2G"]
-    )
+    args = serve_cli.build_parser().parse_args(["--model", "m/x", "--prompt-cache-bytes", "2G"])
     assert args.prompt_cache_bytes == 2_000_000_000
 
     ns = serve_cli._mlx_server_args(args)
@@ -143,9 +139,7 @@ def test_prompt_cache_bytes_inert_flag_warns(monkeypatch, capsys):
     silently pretend it works -- this repo's "no silent fallback" rule."""
     monkeypatch.setattr(serve_cli, "run_server", lambda args: None)
 
-    serve_cli.main(
-        ["--model", "some/model", "--prompt-cache-bytes", "1G"]
-    )
+    serve_cli.main(["--model", "some/model", "--prompt-cache-bytes", "1G"])
 
     err = capsys.readouterr().err
     assert "--prompt-cache-bytes is parsed but not applied" in err

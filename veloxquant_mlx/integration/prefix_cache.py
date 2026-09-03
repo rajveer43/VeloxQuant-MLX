@@ -74,9 +74,7 @@ class PrefixCache:
         self._config = config
         self._lru = LRUPromptCache(max_size=max_size, max_bytes=max_bytes)
         if probe_serve_tier(config.method) is ServeTier.NOT_TRIMMABLE:
-            print(
-                f"[veloxquant_mlx] NOTE: {_NOT_TRIMMABLE_NOTE.format(method=config.method)}"
-            )
+            print(f"[veloxquant_mlx] NOTE: {_NOT_TRIMMABLE_NOTE.format(method=config.method)}")
 
     def _key_for(self, model: Any, model_key: Optional[Hashable]) -> Hashable:
         return model_key if model_key is not None else id(model)
