@@ -169,6 +169,16 @@ Reference the relevant issue number when one exists (`Closes #12`). Avoid
 commits that mix unrelated changes — each commit/PR should map to one
 semver-meaningful change so the automated changelog entry stays accurate.
 
+**`landing/` changes are not package releases.** The commit parser looks
+only at the `feat`/`fix`/`perf` prefix, not at which files changed, so
+`feat(landing): ...` or `fix(landing): ...` still bumps `VeloxQuant-MLX`'s
+version and republishes to PyPI even though nothing in `veloxquant_mlx/`
+changed. Use `chore(landing): ...` or `docs(landing): ...` for landing-page
+work instead — both are recognized types with no version effect. (The
+release workflow also skips entirely for pushes that touch only
+`landing/`, `docs/`, or `*.md` as a second line of defense, but the commit
+type should still be correct.)
+
 ## Code of conduct
 
 Please be respectful and constructive. We follow the
