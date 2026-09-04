@@ -411,24 +411,19 @@ function initThemeToggle() {
 }
 
 // ── ANNOUNCEMENT BANNER (dismissible, persisted in localStorage) ──
+// Visibility itself is decided pre-paint by the inline script in <head>
+// (sets data-show-announcement="1" on <html>), so it never pops in after
+// layout has settled. This just wires up the dismiss button.
 function initAnnouncementBanner() {
   const banner = document.getElementById('announcement-banner');
-  if (!banner) return;
+  const closeBtn = document.getElementById('announcement-banner-close');
+  if (!banner || !closeBtn) return;
 
   const dismissKey = 'vq-announcement-dismissed-studio-v0.1.0';
-  try {
-    if (localStorage.getItem(dismissKey)) return;
-  } catch (e) { /* storage unavailable — fall through and show it */ }
-
-  banner.hidden = false;
-
-  const closeBtn = document.getElementById('announcement-banner-close');
-  if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
-      banner.hidden = true;
-      try { localStorage.setItem(dismissKey, '1'); } catch (e) { /* storage unavailable */ }
-    });
-  }
+  closeBtn.addEventListener('click', () => {
+    document.documentElement.removeAttribute('data-show-announcement');
+    try { localStorage.setItem(dismissKey, '1'); } catch (e) { /* storage unavailable */ }
+  });
 }
 
 // ── TOAST ──

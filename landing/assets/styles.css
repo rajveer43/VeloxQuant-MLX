@@ -215,12 +215,15 @@ body {
 /* ===== ANNOUNCEMENT BANNER ===== */
 /* Sits above the sticky nav in normal flow, so it scrolls away with the
    page and nav then sticks at top:0 on its own — no extra offset math
-   needed between the two. Shown/hidden via main.js (initAnnouncementBanner),
-   default [hidden] so a no-JS visitor never sees a banner they can't
-   dismiss. */
-.announcement-banner[hidden] { display: none; }
+   needed between the two. Hidden by default (so a no-JS visitor, or one who
+   already dismissed it, never sees it) and revealed only when the pre-paint
+   script in <head> sets data-show-announcement="1" on <html> — done there
+   rather than in main.js (deferred, runs after first paint) so an
+   undismissed banner doesn't pop in and shift the nav/hero down after
+   layout has already settled (a measurable CLS hit). */
+.announcement-banner { display: none; }
 
-.announcement-banner {
+:root[data-show-announcement="1"] .announcement-banner {
   display: flex;
   align-items: center;
   justify-content: center;

@@ -130,6 +130,19 @@
         }
       } catch (e) { /* storage unavailable */ }
     })();
+
+    // Reveal the announcement banner before first paint too, so a
+    // not-yet-dismissed visitor never sees a layout shift when it appears
+    // (this used to run in main.js, after deferred scripts execute post-paint,
+    // shifting everything below the nav down — a measurable CLS hit on every
+    // first-time visit since the banner is undismissed by default).
+    (function () {
+      try {
+        if (!localStorage.getItem('vq-announcement-dismissed-studio-v0.1.0')) {
+          document.documentElement.setAttribute('data-show-announcement', '1');
+        }
+      } catch (e) { /* storage unavailable — leave it hidden */ }
+    })();
   </script>
 
   <!-- Privacy-friendly analytics by Plausible -->
@@ -148,7 +161,7 @@
        (see initAnnouncementBanner in main.js). Hidden entirely if JS is
        disabled or localStorage throws, rather than defaulting to shown,
        since a banner that can never be dismissed is worse than none. -->
-  <div id="announcement-banner" class="announcement-banner" hidden>
+  <div id="announcement-banner" class="announcement-banner">
     <a href="#download" class="announcement-banner-link">
       <span class="announcement-banner-badge">New</span>
       <span>VeloxQuant Studio for macOS is here — a native app for this library.</span>
@@ -965,7 +978,30 @@ pip install -e ".[dev]"</span></pre>
   <script data-goatcounter="https://veloxquant.goatcounter.com/count"
           async src="//gc.zgo.at/count.js"></script>
 
-  <!-- Zendesk Web Widget: live chat / support for product questions -->
-  <script id="ze-snippet" src="https://static.zdassets.com/ekr/snippet.js?key=4e096002-a5bc-474f-9534-08aca170627c"></script>
+  <!-- Zendesk Web Widget: live chat / support for product questions.
+       Loaded lazily — the snippet pulls in its own iframe/CSS and was
+       measurable main-thread + network weight on every page load for a
+       widget almost no first-time visitor opens immediately. Deferred to
+       first interaction (or ~5s idle, so it's still there for someone who
+       never scrolls/moves the mouse) rather than removed. -->
+  <script>
+    (function () {
+      var loaded = false;
+      function loadZendesk() {
+        if (loaded) return;
+        loaded = true;
+        var s = document.createElement('script');
+        s.id = 'ze-snippet';
+        s.src = 'https://static.zdassets.com/ekr/snippet.js?key=4e096002-a5bc-474f-9534-08aca170627c';
+        document.body.appendChild(s);
+        events.forEach(function (ev) { window.removeEventListener(ev, loadZendesk, opts); });
+        clearTimeout(idleTimer);
+      }
+      var events = ['scroll', 'mousemove', 'keydown', 'touchstart', 'click'];
+      var opts = { passive: true };
+      events.forEach(function (ev) { window.addEventListener(ev, loadZendesk, opts); });
+      var idleTimer = setTimeout(loadZendesk, 5000);
+    })();
+  </script>
 </body>
 </html>
