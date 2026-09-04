@@ -4,7 +4,11 @@
     cd docs-site && npm install && npm run build && cd .. &&
     mkdir -p dist/docs &&
     cp -r docs-site/build/* dist/docs/ &&
-    cp -r landing/* dist/
+    cp -r landing/* dist/ &&
+    npx -y csso-cli dist/assets/styles.css -o dist/assets/styles.css &&
+    npx -y terser dist/assets/main.js -c -m -o dist/assets/main.js &&
+    npx -y terser dist/assets/calc.js -c -m -o dist/assets/calc.js &&
+    npx -y terser dist/assets/playground.js -c -m -o dist/assets/playground.js
   """
   publish = "dist"
 
