@@ -26,7 +26,10 @@ from veloxquant_mlx.metal._scalar_attend import (
     scalar_decode_once,
     scalar_predecoded_attend,
 )
-from veloxquant_mlx.metal.kernels import scalar_fused_decode_attend
+from veloxquant_mlx.metal.kernels import (
+    scalar_fused_decode_attend,
+    scalar_fused_decode_attend_batched,
+)
 
 pytestmark = pytest.mark.skipif(
     not metal_available(),
@@ -573,3 +576,521 @@ def test_scalar_attend_two_pass_benchmark(capsys):
             tu = _timeit(_unpacked)
             tt = _timeit(_two_pass)
             print(f"| {S_kv:5d} | {tp:9.3f} | {tu:11.3f} | {tt:11.3f} | {tu / tt:21.2f}x |")
+
+
+# ---------------------------------------------------------------------------
+# Cross-layer batched dispatch (issue #307 part 1)
+# ---------------------------------------------------------------------------
+
+
+def _make_layer_stack(NL, B, H, S_kv, D, b, g, seed=0, H_kv=None):
+    """Build NL independently-random layers' worth of _make_inputs, pre-stacked
+    along a new leading axis — the precondition scalar_fused_decode_attend_batched
+    documents (caller stacks; kernel does not gather)."""
+    qs, kcs, kss, kzs, vcs, vss, vzs = [], [], [], [], [], [], []
+    for layer_idx in range(NL):
+        q, kc, ks, kz, vc, vs, vz = _make_inputs(
+            B, H, S_kv, D, b, g, seed=seed + layer_idx, H_kv=H_kv
+        )
+        qs.append(q)
+        kcs.append(kc)
+        kss.append(ks)
+        kzs.append(kz)
+        vcs.append(vc)
+        vss.append(vs)
+        vzs.append(vz)
+    return (
+        np.stack(qs, axis=0),
+        np.stack(kcs, axis=0),
+        np.stack(kss, axis=0),
+        np.stack(kzs, axis=0),
+        np.stack(vcs, axis=0),
+        np.stack(vss, axis=0),
+        np.stack(vzs, axis=0),
+    )
+
+
+@pytest.mark.parametrize("NL", [1, 4, 32])
+def test_scalar_attend_batched_parity_vs_single_layer_loop(NL):
+    """Load-bearing correctness test: batched dispatch vs. calling the
+    single-layer kernel NL times in a loop and stacking the outputs must be
+    bit-identical — the new NL grid axis is pure batching, not a semantic
+    change to the math."""
+    B, H, S_kv, D, b, g = 1, 8, 512, 128, 2, 32
+    scale = 1.0 / math.sqrt(D)
+    q, kc, ks, kz, vc, vs, vz = _make_layer_stack(NL, B, H, S_kv, D, b, g, seed=100)
+
+    loop_outs = []
+    for layer_idx in range(NL):
+        out = scalar_fused_decode_attend(
+            mx.array(q[layer_idx]),
+            mx.array(kc[layer_idx]),
+            mx.array(ks[layer_idx]),
+            mx.array(kz[layer_idx]),
+            mx.array(vc[layer_idx]),
+            mx.array(vs[layer_idx]),
+            mx.array(vz[layer_idx]),
+            g,
+            scale,
+            nsg=2,
+        )
+        mx.eval(out)
+        loop_outs.append(np.array(out))
+    ref = np.stack(loop_outs, axis=0)
+
+    got = scalar_fused_decode_attend_batched(
+        mx.array(q),
+        mx.array(kc),
+        mx.array(ks),
+        mx.array(kz),
+        mx.array(vc),
+        mx.array(vs),
+        mx.array(vz),
+        g,
+        scale,
+        nsg=2,
+    )
+    mx.eval(got)
+    got_np = np.array(got)
+
+    assert got_np.shape == ref.shape == (NL, B, H, 1, D)
+    max_abs = np.abs(got_np.astype(np.float32) - ref.astype(np.float32)).max()
+    assert max_abs == 0.0, (
+        f"NL={NL}: batched must be bit-identical to the single-layer loop, got {max_abs:.3e}"
+    )
+
+
+@pytest.mark.parametrize("NL", [1, 8])
+@pytest.mark.parametrize("H_q,H_kv", [(4, 4), (8, 2), (32, 4), (32, 8)])
+def test_scalar_attend_batched_parity_vs_numpy_reference(NL, H_q, H_kv):
+    """Batched output must match the same numpy reference used for the
+    single-layer kernel, applied independently per layer."""
+    B, S_kv, D, b, g = 1, 256, 128, 2, 32
+    scale = 1.0 / math.sqrt(D)
+    q, kc, ks, kz, vc, vs, vz = _make_layer_stack(NL, B, H_q, S_kv, D, b, g, seed=200, H_kv=H_kv)
+
+    got = scalar_fused_decode_attend_batched(
+        mx.array(q),
+        mx.array(kc),
+        mx.array(ks),
+        mx.array(kz),
+        mx.array(vc),
+        mx.array(vs),
+        mx.array(vz),
+        g,
+        scale,
+        nsg=2,
+    )
+    mx.eval(got)
+    got_np = np.array(got).astype(np.float32)
+
+    for layer_idx in range(NL):
+        ref_l = _reference_attend(
+            q[layer_idx],
+            kc[layer_idx],
+            ks[layer_idx],
+            kz[layer_idx],
+            vc[layer_idx],
+            vs[layer_idx],
+            vz[layer_idx],
+            g,
+            scale,
+        )
+        max_abs = np.abs(got_np[layer_idx] - ref_l).max()
+        assert max_abs < 2e-3, (
+            f"NL={NL} layer={layer_idx} H_q={H_q} H_kv={H_kv}: max|abs|={max_abs:.3e}"
+        )
+
+
+def test_scalar_attend_batched_degenerate_nl1_matches_single_layer():
+    """NL=1 must degenerate to the single-layer kernel with a bit-identical
+    result — the batched-shape wrapper around a trivial one-layer stack."""
+    B, H, S_kv, D, b, g = 2, 8, 512, 128, 2, 32
+    scale = 1.0 / math.sqrt(D)
+    q, kc, ks, kz, vc, vs, vz = _make_inputs(B, H, S_kv, D, b, g, seed=42)
+
+    single = scalar_fused_decode_attend(
+        mx.array(q),
+        mx.array(kc),
+        mx.array(ks),
+        mx.array(kz),
+        mx.array(vc),
+        mx.array(vs),
+        mx.array(vz),
+        g,
+        scale,
+        nsg=4,
+    )
+    mx.eval(single)
+
+    batched = scalar_fused_decode_attend_batched(
+        mx.array(q[None]),
+        mx.array(kc[None]),
+        mx.array(ks[None]),
+        mx.array(kz[None]),
+        mx.array(vc[None]),
+        mx.array(vs[None]),
+        mx.array(vz[None]),
+        g,
+        scale,
+        nsg=4,
+    )
+    mx.eval(batched)
+
+    assert batched.shape == (1,) + tuple(single.shape)
+    max_abs = np.abs(
+        np.array(batched)[0].astype(np.float32) - np.array(single).astype(np.float32)
+    ).max()
+    assert max_abs == 0.0, (
+        f"NL=1 must be bit-identical to the single-layer kernel, got {max_abs:.3e}"
+    )
+
+
+def test_scalar_attend_batched_adversarial_nl_and_batch_indexing():
+    """NL=3, B=2 with per-(layer,batch) distinct random data — deliberately
+    adversarial to catch a swapped stride order between the layer and batch
+    axes in bh_kv / q_off / out_off (a bug that a same-content-per-layer test
+    could miss)."""
+    NL, B, H, H_kv, S_kv, D, b, g = 3, 2, 8, 2, 384, 128, 2, 32
+    scale = 1.0 / math.sqrt(D)
+
+    qs, kcs, kss, kzs, vcs, vss, vzs = [], [], [], [], [], [], []
+    for layer_idx in range(NL):
+        for bi in range(B):
+            q, kc, ks, kz, vc, vs, vz = _make_inputs(
+                1, H, S_kv, D, b, g, seed=1000 * layer_idx + bi, H_kv=H_kv
+            )
+            qs.append(q[0])
+            kcs.append(kc[0])
+            kss.append(ks[0])
+            kzs.append(kz[0])
+            vcs.append(vc[0])
+            vss.append(vs[0])
+            vzs.append(vz[0])
+
+    def _stack_nl_b(items):
+        arr = np.stack(items, axis=0).reshape(NL, B, *items[0].shape)
+        return arr
+
+    q_b = _stack_nl_b(qs)
+    kc_b = _stack_nl_b(kcs)
+    ks_b = _stack_nl_b(kss)
+    kz_b = _stack_nl_b(kzs)
+    vc_b = _stack_nl_b(vcs)
+    vs_b = _stack_nl_b(vss)
+    vz_b = _stack_nl_b(vzs)
+
+    got = scalar_fused_decode_attend_batched(
+        mx.array(q_b),
+        mx.array(kc_b),
+        mx.array(ks_b),
+        mx.array(kz_b),
+        mx.array(vc_b),
+        mx.array(vs_b),
+        mx.array(vz_b),
+        g,
+        scale,
+        nsg=2,
+    )
+    mx.eval(got)
+    got_np = np.array(got).astype(np.float32)
+
+    for layer_idx in range(NL):
+        for bi in range(B):
+            ref = _reference_attend(
+                q_b[layer_idx, bi : bi + 1],
+                kc_b[layer_idx, bi : bi + 1],
+                ks_b[layer_idx, bi : bi + 1],
+                kz_b[layer_idx, bi : bi + 1],
+                vc_b[layer_idx, bi : bi + 1],
+                vs_b[layer_idx, bi : bi + 1],
+                vz_b[layer_idx, bi : bi + 1],
+                g,
+                scale,
+            )
+            max_abs = np.abs(got_np[layer_idx, bi : bi + 1] - ref).max()
+            assert max_abs < 2e-3, (
+                f"NL={layer_idx} B={bi}: max|abs|={max_abs:.3e} (possible l_idx/b_idx stride swap)"
+            )
+
+
+def test_scalar_attend_batched_distinct_content_not_broadcast_layer0():
+    """Two layers with deliberately different content (not shape) must each
+    get their own layer's K/V, not layer 0's broadcast across all layers —
+    a copy-paste stride bug (missing l_idx term) would silently pass a
+    same-content test but fail this one."""
+    B, H, H_kv, S_kv, D, b, g = 1, 8, 2, 256, 128, 2, 32
+    scale = 1.0 / math.sqrt(D)
+    q0, kc0, ks0, kz0, vc0, vs0, vz0 = _make_inputs(B, H, S_kv, D, b, g, seed=10, H_kv=H_kv)
+    q1, kc1, ks1, kz1, vc1, vs1, vz1 = _make_inputs(B, H, S_kv, D, b, g, seed=20, H_kv=H_kv)
+
+    q_b = np.stack([q0, q1], axis=0)
+    kc_b = np.stack([kc0, kc1], axis=0)
+    ks_b = np.stack([ks0, ks1], axis=0)
+    kz_b = np.stack([kz0, kz1], axis=0)
+    vc_b = np.stack([vc0, vc1], axis=0)
+    vs_b = np.stack([vs0, vs1], axis=0)
+    vz_b = np.stack([vz0, vz1], axis=0)
+
+    got = scalar_fused_decode_attend_batched(
+        mx.array(q_b),
+        mx.array(kc_b),
+        mx.array(ks_b),
+        mx.array(kz_b),
+        mx.array(vc_b),
+        mx.array(vs_b),
+        mx.array(vz_b),
+        g,
+        scale,
+        nsg=2,
+    )
+    mx.eval(got)
+    got_np = np.array(got).astype(np.float32)
+
+    ref0 = _reference_attend(q0, kc0, ks0, kz0, vc0, vs0, vz0, g, scale)
+    ref1 = _reference_attend(q1, kc1, ks1, kz1, vc1, vs1, vz1, g, scale)
+
+    assert np.abs(got_np[0] - ref0).max() < 2e-3
+    assert np.abs(got_np[1] - ref1).max() < 2e-3
+    # The two layers' references must actually differ (sanity on the test
+    # itself) so a broadcast-layer-0 bug would be caught, not vacuously pass.
+    assert np.abs(ref0 - ref1).max() > 1e-2
+
+
+def test_scalar_attend_batched_threadgroup_memory_budget_unaffected_by_nl():
+    """The threadgroup-memory budget check must scale with nsg*heads_per_kv
+    only, not with NL — batching lives on the grid axis, not inside one
+    threadgroup's per-lane state."""
+    B, H_q, H_kv, S_kv, D, b, g = 1, 32, 4, 64, 128, 2, 32  # heads_per_kv=8
+    scale = 1.0 / math.sqrt(D)
+
+    # nsg=4 * heads_per_kv=8 -> 33024B > 32768B budget: must fail regardless of NL.
+    for NL in (1, 16):
+        q, kc, ks, kz, vc, vs, vz = _make_layer_stack(
+            NL, B, H_q, S_kv, D, b, g, seed=300, H_kv=H_kv
+        )
+        with pytest.raises(ValueError, match="threadgroup-memory budget"):
+            scalar_fused_decode_attend_batched(
+                mx.array(q),
+                mx.array(kc),
+                mx.array(ks),
+                mx.array(kz),
+                mx.array(vc),
+                mx.array(vs),
+                mx.array(vz),
+                g,
+                scale,
+                nsg=4,
+            )
+
+    # nsg=2 * heads_per_kv=8 fits the budget: must pass for both a small and
+    # a large NL, proving the budget doesn't scale with NL.
+    for NL in (1, 16):
+        q, kc, ks, kz, vc, vs, vz = _make_layer_stack(
+            NL, B, H_q, S_kv, D, b, g, seed=400, H_kv=H_kv
+        )
+        got = scalar_fused_decode_attend_batched(
+            mx.array(q),
+            mx.array(kc),
+            mx.array(ks),
+            mx.array(kz),
+            mx.array(vc),
+            mx.array(vs),
+            mx.array(vz),
+            g,
+            scale,
+            nsg=2,
+        )
+        mx.eval(got)
+        assert got.shape == (NL, B, H_q, 1, D)
+
+
+def test_scalar_attend_batched_validation():
+    q4d = mx.zeros((1, 4, 1, 128), dtype=mx.float16)  # wrong ndim (4D, needs 5D)
+    q5d = mx.zeros((1, 1, 4, 1, 128), dtype=mx.float16)
+    z5 = mx.zeros((1, 1, 4, 8, 128), dtype=mx.uint8)
+    s5 = mx.zeros((1, 1, 4, 1, 4), dtype=mx.float32)
+
+    # q must be 5D
+    with pytest.raises(ValueError, match="must be 5D"):
+        scalar_fused_decode_attend_batched(
+            q4d, z5, z5.astype(mx.float32), z5.astype(mx.float32), z5, s5, s5, 32, 0.1
+        )
+    # k_codes must be 5D
+    with pytest.raises(ValueError, match="must be 5D"):
+        scalar_fused_decode_attend_batched(
+            q5d,
+            mx.zeros((1, 4, 8, 128), dtype=mx.uint8),  # 4D
+            z5.astype(mx.float32),
+            z5.astype(mx.float32),
+            z5,
+            s5,
+            s5,
+            32,
+            0.1,
+        )
+    # NL mismatch between q and k_codes
+    with pytest.raises(ValueError, match="NL mismatch"):
+        scalar_fused_decode_attend_batched(
+            mx.zeros((2, 1, 4, 1, 128), dtype=mx.float16),  # NL=2
+            z5,  # NL=1
+            z5.astype(mx.float32),
+            z5.astype(mx.float32),
+            z5,
+            s5,
+            s5,
+            32,
+            0.1,
+        )
+    # D > 256 rejected
+    with pytest.raises(ValueError, match="D=.*must be <= 256"):
+        scalar_fused_decode_attend_batched(
+            mx.zeros((1, 1, 4, 1, 512), dtype=mx.float16),
+            mx.zeros((1, 1, 4, 8, 512), dtype=mx.uint8),
+            mx.zeros((1, 1, 4, 1, 512), dtype=mx.float32),
+            mx.zeros((1, 1, 4, 1, 512), dtype=mx.float32),
+            mx.zeros((1, 1, 4, 8, 512), dtype=mx.uint8),
+            mx.zeros((1, 1, 4, 8, 16), dtype=mx.float32),
+            mx.zeros((1, 1, 4, 8, 16), dtype=mx.float32),
+            32,
+            0.1,
+        )
+    # bad nsg rejected
+    with pytest.raises(ValueError, match="nsg=.*must be in"):
+        scalar_fused_decode_attend_batched(
+            q5d, z5, z5.astype(mx.float32), z5.astype(mx.float32), z5, s5, s5, 32, 0.1, nsg=0
+        )
+    # H_q not a multiple of H_kv rejected
+    with pytest.raises(ValueError, match="must be a multiple"):
+        scalar_fused_decode_attend_batched(
+            mx.zeros((1, 1, 5, 1, 128), dtype=mx.float16),  # H_q=5
+            mx.zeros((1, 1, 2, 8, 128), dtype=mx.uint8),  # H_kv=2, 5 % 2 != 0
+            mx.zeros((1, 1, 2, 1, 128), dtype=mx.float32),
+            mx.zeros((1, 1, 2, 1, 128), dtype=mx.float32),
+            mx.zeros((1, 1, 2, 8, 128), dtype=mx.uint8),
+            mx.zeros((1, 1, 2, 8, 4), dtype=mx.float32),
+            mx.zeros((1, 1, 2, 8, 4), dtype=mx.float32),
+            32,
+            0.1,
+        )
+    # heads_per_kv exceeding _MAX_HEADS_PER_KV rejected
+    with pytest.raises(ValueError, match="heads_per_kv=.*exceeds"):
+        scalar_fused_decode_attend_batched(
+            mx.zeros((1, 1, 32, 1, 128), dtype=mx.float16),  # H_q=32
+            mx.zeros((1, 1, 1, 8, 128), dtype=mx.uint8),  # H_kv=1 -> heads_per_kv=32
+            mx.zeros((1, 1, 1, 1, 128), dtype=mx.float32),
+            mx.zeros((1, 1, 1, 1, 128), dtype=mx.float32),
+            mx.zeros((1, 1, 1, 8, 128), dtype=mx.uint8),
+            mx.zeros((1, 1, 1, 8, 4), dtype=mx.float32),
+            mx.zeros((1, 1, 1, 8, 4), dtype=mx.float32),
+            32,
+            0.1,
+            nsg=1,
+        )
+
+
+def test_scalar_attend_batched_gqa_carries_through():
+    """GQA support (H_q/H_kv ratio) must carry through unchanged — not
+    special-cased to MHA-only for v1."""
+    NL, S_kv, D, b, g = 4, 512, 128, 2, 32
+    scale = 1.0 / math.sqrt(D)
+    for H_q, H_kv in [(8, 2), (32, 4), (32, 8)]:
+        q, kc, ks, kz, vc, vs, vz = _make_layer_stack(
+            NL, 1, H_q, S_kv, D, b, g, seed=500, H_kv=H_kv
+        )
+        got = scalar_fused_decode_attend_batched(
+            mx.array(q),
+            mx.array(kc),
+            mx.array(ks),
+            mx.array(kz),
+            mx.array(vc),
+            mx.array(vs),
+            mx.array(vz),
+            g,
+            scale,
+            nsg=2,
+        )
+        mx.eval(got)
+        got_np = np.array(got).astype(np.float32)
+        for layer_idx in range(NL):
+            ref_l = _reference_attend(
+                q[layer_idx],
+                kc[layer_idx],
+                ks[layer_idx],
+                kz[layer_idx],
+                vc[layer_idx],
+                vs[layer_idx],
+                vz[layer_idx],
+                g,
+                scale,
+            )
+            max_abs = np.abs(got_np[layer_idx] - ref_l).max()
+            assert max_abs < 2e-3, (
+                f"H_q={H_q} H_kv={H_kv} layer={layer_idx}: max|abs|={max_abs:.3e}"
+            )
+
+
+def test_scalar_attend_batched_benchmark(capsys):
+    """NL sequential single-layer calls vs. one batched call — printed only,
+    not asserted, matching this file's other benchmark tests' style. See
+    benchmark_scripts/benchmark_crosslayer_decode_batch.py for the full
+    roofline-calibrated version; this is a quick in-suite sanity check."""
+    B, H_kv, D, b, g = 1, 4, 128, 2, 32
+    heads_per_kv = 8
+    H_q = H_kv * heads_per_kv
+    scale = 1.0 / math.sqrt(D)
+    nsg = 2
+
+    def _timeit(fn, iters=20, warmup=10):
+        for _ in range(warmup):
+            mx.eval(fn())
+        mx.synchronize()
+        t0 = time.perf_counter()
+        for _ in range(iters):
+            mx.eval(fn())
+        mx.synchronize()
+        return (time.perf_counter() - t0) / iters * 1e3
+
+    with capsys.disabled():
+        print(
+            f"\n# Cross-layer batched dispatch (issue #307 pt.1)  |  "
+            f"B={B} H_q={H_q} H_kv={H_kv} D={D} b={b} g={g} nsg={nsg}  |  MLX {mx.__version__}"
+        )
+        print("| S_kv | NL | sequential ms | batched ms | speedup |")
+        print("|------|----|--------------:|-----------:|--------:|")
+        for S_kv in [128, 2048, 16384]:
+            for NL in [28, 32]:
+                q, kc, ks, kz, vc, vs, vz = _make_layer_stack(
+                    NL, B, H_q, S_kv, D, b, g, seed=600, H_kv=H_kv
+                )
+                aq = mx.array(q)
+                akc, aks, akz = mx.array(kc), mx.array(ks), mx.array(kz)
+                avc, avs, avz = mx.array(vc), mx.array(vs), mx.array(vz)
+                mx.eval(aq, akc, aks, akz, avc, avs, avz)
+
+                def _sequential(aq=aq, akc=akc, aks=aks, akz=akz, avc=avc, avs=avs, avz=avz, NL=NL):
+                    outs = [
+                        scalar_fused_decode_attend(
+                            aq[layer_idx],
+                            akc[layer_idx],
+                            aks[layer_idx],
+                            akz[layer_idx],
+                            avc[layer_idx],
+                            avs[layer_idx],
+                            avz[layer_idx],
+                            g,
+                            scale,
+                            nsg=nsg,
+                        )
+                        for layer_idx in range(NL)
+                    ]
+                    return mx.stack(outs, axis=0)
+
+                def _batched(aq=aq, akc=akc, aks=aks, akz=akz, avc=avc, avs=avs, avz=avz):
+                    return scalar_fused_decode_attend_batched(
+                        aq, akc, aks, akz, avc, avs, avz, g, scale, nsg=nsg
+                    )
+
+                ts = _timeit(_sequential)
+                tb = _timeit(_batched)
+                print(f"| {S_kv:5d} | {NL:2d} | {ts:13.3f} | {tb:10.3f} | {ts / tb:6.2f}x |")

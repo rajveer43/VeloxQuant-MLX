@@ -4,7 +4,8 @@ Kernels are organized into focused submodules:
   _vecinfer      — VecInfer codebook dequantize, quantize, encode+decode
   _bit_packing   — TurboQuant b-bit index pack/unpack
   _scalar_quant  — TurboQuant scalar quantize/dequantize + fused Hadamard
-  _scalar_attend — Fused group-affine (KIVI-style) decode + attention
+  _scalar_attend — Fused group-affine (KIVI-style) decode + attention,
+                   plus a cross-layer batched dispatch variant (#307 pt. 1)
   _kivi_quant    — Fused KIVI asymmetric group quantize+dequantize round-trip
   _qjl           — QJL encode and inner product
   _rvq_attend    — Fused RVQ decode + attention
@@ -81,6 +82,7 @@ from veloxquant_mlx.metal._rvq_quant_pack import (
 )
 from veloxquant_mlx.metal._scalar_attend import (
     scalar_fused_decode_attend,
+    scalar_fused_decode_attend_batched,
 )
 from veloxquant_mlx.metal._scalar_quant import (
     turboquant_hadamard_quantize,
@@ -106,6 +108,7 @@ __all__ = [
     "turboquant_scalar_dequantize",
     "turboquant_hadamard_quantize",
     "scalar_fused_decode_attend",
+    "scalar_fused_decode_attend_batched",
     "kivi_group_quant_dequant",
     "qjl_encode",
     "qjl_inner_product",
