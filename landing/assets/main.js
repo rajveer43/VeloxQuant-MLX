@@ -33,24 +33,18 @@ function initCopyButtons() {
       if (pre) copyText(pre.innerText, btn);
     });
   });
-}
 
-function initSdkTabs() {
-  const sdkButtons = document.querySelectorAll('.sdk-tab-btn');
-  const copyBtn = document.getElementById('install-copy-btn');
-  sdkButtons.forEach(btn => {
+  document.querySelectorAll('.eco-copy-trigger').forEach(btn => {
     btn.addEventListener('click', () => {
-      const sdk = btn.dataset.sdk;
-      sdkButtons.forEach(b => {
-        b.classList.remove('active');
-        b.setAttribute('aria-selected', 'false');
+      const textToCopy = btn.getAttribute('data-copy') || 'npm i @veloxquant/sdk';
+      const label = btn.querySelector('.eco-copy-label');
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        if (label) {
+          const orig = label.textContent;
+          label.textContent = '✓ Copied to clipboard!';
+          setTimeout(() => { label.textContent = orig; }, 2000);
+        }
       });
-      btn.classList.add('active');
-      btn.setAttribute('aria-selected', 'true');
-      document.querySelectorAll('.sdk-panel').forEach(p => p.classList.remove('active'));
-      const targetPanel = document.getElementById('sdk-panel-' + sdk);
-      if (targetPanel) targetPanel.classList.add('active');
-      if (copyBtn) copyBtn.dataset.target = 'code-install-' + sdk;
     });
   });
 }
@@ -371,13 +365,13 @@ function initScrollFadeIn() {
 // ── ACTIVE NAV LINK ON SCROLL ──
 function initActiveNav() {
   const sections = document.querySelectorAll('section[id]');
-  const navLinks = document.querySelectorAll('.nav-links a');
+  const navLinks = document.querySelectorAll('#nav-links a');
 
   const navObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
         navLinks.forEach(a => a.classList.remove('active'));
-        const active = document.querySelector(`.nav-links a[href="#${entry.target.id}"]`);
+        const active = document.querySelector(`#nav-links a[href="#${entry.target.id}"]`);
         if (active) active.classList.add('active');
       }
     });
@@ -476,11 +470,270 @@ function showToast({ title, desc, duration = 6000 }) {
   setTimeout(dismiss, duration);
 }
 
+// ── BENCHMARK PAGE INTERACTIVITY ──
+function initBenchmarkFilters() {
+  const filterWrap = document.getElementById('model-filter-pills');
+  const cards = document.querySelectorAll('#benchmark-model-grid .model-card');
+  if (!filterWrap || !cards.length) return;
+
+  const pills = filterWrap.querySelectorAll('.filter-pill');
+  pills.forEach((pill) => {
+    pill.addEventListener('click', () => {
+      pills.forEach((p) => p.classList.remove('active'));
+      pill.classList.add('active');
+
+      const filter = pill.dataset.filter;
+      cards.forEach((card) => {
+        const size = card.dataset.size;
+        const arch = card.dataset.arch;
+        let match = false;
+
+        if (filter === 'all') match = true;
+        else if (filter === 'large') match = size === 'large';
+        else if (filter === 'mid') match = size === 'mid';
+        else if (filter === 'small') match = size === 'small';
+        else if (filter === 'moe') match = size === 'moe' || arch === 'moe';
+
+        if (match) {
+          card.style.display = 'flex';
+          setTimeout(() => {
+            card.style.opacity = '1';
+            card.style.transform = 'translateY(0)';
+          }, 10);
+        } else {
+          card.style.opacity = '0';
+          card.style.transform = 'translateY(6px)';
+          setTimeout(() => {
+            if (card.style.opacity === '0') card.style.display = 'none';
+          }, 200);
+        }
+      });
+    });
+  });
+
+  // Highlight active benchmark category nav pill on scroll
+  const navPills = document.querySelectorAll('.bench-nav-pill');
+  if (navPills.length) {
+    const sections = document.querySelectorAll('.bench-section');
+    window.addEventListener('scroll', () => {
+      let currentId = '';
+      sections.forEach((sec) => {
+        const top = sec.offsetTop - 140;
+        if (window.scrollY >= top) {
+          currentId = sec.getAttribute('id');
+        }
+      });
+      if (currentId) {
+        navPills.forEach((p) => {
+          p.classList.toggle('active', p.getAttribute('href') === '#' + currentId);
+        });
+      }
+    }, { passive: true });
+  }
+}
+
+// ── DYNAMIC FLUID AURORA & MEMORY FLUX (Hero Background) ──
+function initHeroAurora() {
+  const canvas = document.getElementById('hero-aurora-canvas');
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const hero = document.getElementById('hero');
+  if (!hero) return;
+
+  let width = 0;
+  let height = 0;
+  let animationFrameId = null;
+  let isVisible = true;
+
+  // Mouse parallax state
+  let mouse = { x: 0.5, y: 0.5 };
+  let targetMouse = { x: 0.5, y: 0.5 };
+
+  function onMouseMove(e) {
+    const rect = hero.getBoundingClientRect();
+    if (e.clientY < rect.top || e.clientY > rect.bottom) return;
+    targetMouse.x = (e.clientX - rect.left) / rect.width;
+    targetMouse.y = (e.clientY - rect.top) / rect.height;
+  }
+  window.addEventListener('mousemove', onMouseMove, { passive: true });
+
+  // Handle high-DPI crisp rendering
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+    width = hero.clientWidth;
+    height = hero.clientHeight;
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize, { passive: true });
+  resize();
+
+  // 4 Organic Fluid Blobs (Electric Cyan, Apple Silicon Violet, Indigo, Ice Mint)
+  const blobs = [
+    {
+      baseX: 0.40, baseY: 0.36, radius: 0.48,
+      speedX: 0.00065, speedY: 0.00085,
+      colorDark: [56, 189, 248, 0.44],
+      colorLight: [56, 189, 248, 0.22]
+    },
+    {
+      baseX: 0.65, baseY: 0.38, radius: 0.52,
+      speedX: 0.00055, speedY: 0.00072,
+      colorDark: [124, 58, 237, 0.48],
+      colorLight: [147, 51, 234, 0.20]
+    },
+    {
+      baseX: 0.50, baseY: 0.56, radius: 0.55,
+      speedX: 0.00045, speedY: 0.00062,
+      colorDark: [79, 70, 229, 0.36],
+      colorLight: [99, 102, 241, 0.16]
+    },
+    {
+      baseX: 0.32, baseY: 0.48, radius: 0.32,
+      speedX: 0.00095, speedY: 0.00110,
+      colorDark: [45, 212, 191, 0.28],
+      colorLight: [20, 184, 166, 0.14]
+    }
+  ];
+
+  // 42 Floating Quantized Memory Tokens (Product vision particle flux)
+  const particleCount = 42;
+  const particles = [];
+  for (let i = 0; i < particleCount; i++) {
+    particles.push({
+      x: Math.random() * (width || 1000),
+      y: Math.random() * (height || 800),
+      radius: Math.random() * 1.5 + 0.8,
+      vy: -(Math.random() * 0.35 + 0.15),
+      vxFactor: Math.random() * 0.008 + 0.004,
+      phase: Math.random() * Math.PI * 2,
+      alpha: Math.random() * 0.45 + 0.15,
+      hue: Math.random() > 0.5 ? 'cyan' : 'violet'
+    });
+  }
+
+  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const startTime = performance.now();
+
+  function render(now) {
+    if (!isVisible) return;
+
+    const t = prefersReduced ? 1000 : (now - startTime);
+
+    // Smooth mouse parallax lerp
+    mouse.x += (targetMouse.x - mouse.x) * 0.04;
+    mouse.y += (targetMouse.y - mouse.y) * 0.04;
+
+    ctx.clearRect(0, 0, width, height);
+
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+
+    // 1. Draw Organic Fluid Blobs
+    ctx.globalCompositeOperation = isLight ? 'multiply' : 'screen';
+
+    blobs.forEach((b, idx) => {
+      const offsetX = Math.sin(t * b.speedX + idx) * 0.16 + Math.cos(t * b.speedX * 0.7) * 0.08;
+      const offsetY = Math.cos(t * b.speedY + idx * 1.5) * 0.14 + Math.sin(t * b.speedY * 0.6) * 0.06;
+
+      // Parallax offset
+      const px = (b.baseX + offsetX) * width + (mouse.x - 0.5) * 70;
+      const py = (b.baseY + offsetY) * height + (mouse.y - 0.5) * 50;
+      const r = Math.min(width, height) * b.radius * (1 + Math.sin(t * 0.0008 + idx) * 0.08);
+
+      const color = isLight ? b.colorLight : b.colorDark;
+      const grad = ctx.createRadialGradient(px, py, 0, px, py, Math.max(r, 10));
+      grad.addColorStop(0, `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${color[3]})`);
+      grad.addColorStop(0.45, `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${color[3] * 0.5})`);
+      grad.addColorStop(1, `rgba(${color[0]}, ${color[1]}, ${color[2]}, 0)`);
+
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(px, py, Math.max(r, 10), 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // 2. Draw Subtle Memory Token Flux Particles
+    ctx.globalCompositeOperation = 'source-over';
+
+    if (!prefersReduced) {
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        p.y += p.vy;
+        p.x += Math.sin(p.y * p.vxFactor + p.phase) * 0.35;
+
+        // Wrap around vertically
+        if (p.y < -10) {
+          p.y = height + 10;
+          p.x = Math.random() * width;
+        }
+
+        // Draw particle
+        const pColor = p.hue === 'cyan'
+          ? (isLight ? 'rgba(2, 132, 199, ' : 'rgba(56, 189, 248, ')
+          : (isLight ? 'rgba(126, 34, 206, ' : 'rgba(192, 132, 252, ');
+
+        ctx.fillStyle = pColor + p.alpha + ')';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Connect nearby tokens with faint memory tensor links
+        for (let j = i + 1; j < particles.length; j++) {
+          const p2 = particles[j];
+          const dx = p.x - p2.x;
+          const dy = p.y - p2.y;
+          const dist = Math.hypot(dx, dy);
+
+          if (dist < 80) {
+            const lineAlpha = (1 - dist / 80) * (isLight ? 0.08 : 0.16);
+            ctx.strokeStyle = isLight
+              ? `rgba(99, 102, 241, ${lineAlpha})`
+              : `rgba(124, 58, 237, ${lineAlpha})`;
+            ctx.lineWidth = 0.8;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
+    if (!prefersReduced) {
+      animationFrameId = requestAnimationFrame(render);
+    }
+  }
+
+  // IntersectionObserver: Pause completely when scrolled past hero to save battery
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          isVisible = entry.isIntersecting;
+          if (isVisible && !prefersReduced) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = requestAnimationFrame(render);
+          } else {
+            cancelAnimationFrame(animationFrameId);
+          }
+        });
+      },
+      { threshold: 0.05 }
+    );
+    observer.observe(hero);
+  } else {
+    animationFrameId = requestAnimationFrame(render);
+  }
+}
+
 // ── INIT ──
 document.addEventListener('DOMContentLoaded', () => {
   initCopyButtons();
   initCodeTabs();
-  initSdkTabs();
   initBadgeTyping();
   initMagneticButtons();
   initCodeBootAnimation();
@@ -490,4 +743,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initHamburgerMenu();
   initThemeToggle();
   initAnnouncementBanner();
+  initBenchmarkFilters();
+  initHeroAurora();
 });
+
+

@@ -29,7 +29,7 @@
   <!-- Fonts are self-hosted in styles.css (assets/fonts/*.woff2) — no
        third-party hop, no render-blocking preconnect. -->
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="assets/styles.css?v=20260902" />
+  <link rel="stylesheet" href="assets/styles.css?v=20260905" />
 
   <script type="application/ld+json">
   {
@@ -63,287 +63,355 @@
 </head>
 <body>
 
-  <!-- ── NAVIGATION ── -->
-  <nav id="navbar">
-    <a href="index.html#hero" class="nav-logo"><img src="assets/logo.svg" alt="" width="28" height="28" class="nav-logo-mark" />VeloxQuant-MLX</a>
-    <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
-      <span></span><span></span><span></span>
-    </button>
-    <ul class="nav-links" id="nav-links">
-      <li><a href="index.html#scenarios">Start here</a></li>
-      <li><a href="index.html#calculator">Calculator</a></li>
-      <li><a href="index.html#methods">Methods</a></li>
-      <li><a href="index.html#quickstart">Quickstart</a></li>
-      <li><a href="index.html#compare">Compare</a></li>
-      <li><a href="index.html#benchmarks">Benchmarks</a></li>
-      <li><a href="index.html#quality">Quality cost</a></li>
-      <li><a href="playground.html" aria-current="page">Playground</a></li>
-      <li><a href="index.html#install">Install</a></li>
-      <li><a href="/docs/" rel="noopener">Docs</a></li>
-      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
-      <li>
+  <!-- ── FLOATING PILL NAVIGATION ── -->
+  <header class="pill-nav-header">
+    <nav id="navbar" class="pill-nav" aria-label="Primary navigation">
+      <a href="index.html#hero" class="pill-nav-logo">
+        <img src="assets/logo.svg" alt="" width="22" height="22" class="pill-nav-logo-mark" />
+        <span>VeloxQuant-MLX</span>
+      </a>
+      <div class="pill-nav-links" id="nav-links">
+        <a href="index.html#methods">Methods</a>
+        <a href="index.html#install">Install</a>
+        <a href="index.html#calculator">Calculator</a>
+        <a href="index.html#faq">FAQ</a>
+        <a href="benchmarks.html">Benchmarks</a>
+        <a href="playground.html" aria-current="page" class="active">Playground</a>
+        <a href="/docs/">Docs</a>
+      </div>
+      <div class="pill-nav-actions">
         <button class="theme-toggle" id="theme-toggle" aria-label="Switch to light theme" title="Toggle light / dark theme">
           <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
           <span class="theme-icon theme-icon-moon" aria-hidden="true">☾</span>
         </button>
-      </li>
-    </ul>
-  </nav>
-
-  <!-- ── PLAYGROUND ── -->
-  <main id="playground">
-    <header class="pg-header">
-      <span class="pg-eyebrow">Free · runs in your browser · nothing is sent anywhere</span>
-      <h1>Run bigger models on the <span>Mac you already have</span></h1>
-      <p class="pg-sub">
-        Tell us your Mac and what you want to run. We'll show you which setting
-        to use and how long a conversation will fit in your memory.
-      </p>
-      <p class="pg-headline" id="pg-headline" aria-live="polite">
-        <!-- animated headline metric injected by playground.js -->
-      </p>
-
-      <!-- Plain-language primer: the page's central noun, defined once, up
-           front, before any control asks the visitor to care about it. -->
-      <details class="pg-primer">
-        <summary>New here? What this actually does</summary>
-        <p>
-          As a chatbot reads your conversation it keeps notes on every word so
-          far, so it doesn't have to re-read everything to write the next word.
-          Those notes are called the <strong>KV cache</strong>, and they live in
-          your Mac's memory. The longer the conversation, the bigger they get —
-          and on a Mac, memory is the wall you hit first.
-        </p>
-        <p>
-          VeloxQuant-MLX stores those notes in a more compact form. Smaller
-          notes mean longer conversations, or a bigger model, in the same Mac.
-          This page works out which approach suits your machine.
-        </p>
-      </details>
-
-      <p class="pg-trust">
-        Every number here is worked out live from the same code that ships in the
-        tool itself, or read from real benchmark runs we've committed to the
-        repository. <strong>Nothing is made up</strong>, and where a number is an
-        estimate rather than a measurement, we say so.
-      </p>
-    </header>
-
-    <!-- ── Persistent "Your setup" control bar (sticky) ── -->
-    <section class="pg-setup" id="pg-setup" aria-label="Your setup">
-      <div class="pg-setup-top">
-        <div class="pg-field pg-field-chip">
-          <label for="pg-chip">Chip</label>
-          <select id="pg-chip">
-            <option value="M1">M1</option>
-            <option value="M2">M2</option>
-            <option value="M3" selected>M3</option>
-            <option value="M4">M4</option>
-          </select>
-        </div>
-        <div class="pg-field pg-field-chip">
-          <label for="pg-ram">Unified RAM</label>
-          <select id="pg-ram">
-            <option value="8">8 GB</option>
-            <option value="16" selected>16 GB</option>
-            <option value="24">24 GB</option>
-            <option value="32">32 GB</option>
-            <option value="36">36 GB</option>
-            <option value="48">48 GB</option>
-            <option value="64">64 GB</option>
-            <option value="128">128 GB</option>
-          </select>
-        </div>
-        <div class="pg-field pg-field-goal">
-          <label for="pg-goal">What matters most</label>
-          <!-- Values are the recommender's own goal enum and must not change:
-               they are the API contract and the ?goal= share-link key. Only
-               the visible labels are consumer-facing. -->
-          <select id="pg-goal">
-            <option value="everyday" selected>Just work well by default</option>
-            <option value="max_key_accounting">Squeeze the cache as small as possible</option>
-            <option value="max_context">Fit the longest conversation</option>
-            <option value="best_quality">Keep answers as accurate as possible</option>
-            <option value="constant_memory">Never grow past a fixed memory limit</option>
-          </select>
-        </div>
-        <button type="button" class="pg-share-btn" id="pg-share-btn"
-                title="Copy a link that brings you back to exactly this setup">
-          <span aria-hidden="true">🔗</span> Save my setup
+        <a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener" class="pill-nav-github">
+          <svg class="star-icon" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <span>GITHUB</span>
+        </a>
+        <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+          <span></span><span></span><span></span>
         </button>
       </div>
+    </nav>
+  </header>
 
-      <!-- Model presets — one click fills the shape fields -->
-      <div class="pg-presets" role="group" aria-label="Pick the model you want to run">
-        <span class="pg-presets-label">Which model do you want to run?</span>
-        <div class="pg-preset-row" id="pg-preset-row">
-          <!-- chips injected by playground.js -->
-        </div>
-      </div>
-
-      <!-- Conversation length lives in the main bar, not under Advanced: it is
-           the most intuitive knob on the page and the one a newcomer most wants
-           to move. The id and its ?seq= share-link key are unchanged. -->
-      <div class="pg-field pg-field-seq">
-        <label for="pg-seqlen">How long is your conversation?</label>
-        <div class="pg-seq-control">
-          <input id="pg-seqlen" type="number" min="1" step="256" value="4096"
-                 inputmode="numeric" aria-describedby="pg-seq-hint" />
-          <span class="pg-seq-unit" aria-hidden="true">words-ish</span>
-        </div>
-        <span id="pg-seq-hint" class="pg-seq-hint" aria-live="polite"></span>
-      </div>
-
-      <!-- Advanced disclosure — raw architecture fields -->
-      <details class="pg-advanced" id="pg-advanced">
-        <summary>
-          <span class="pg-adv-label">Advanced — exact model shape</span>
-          <span class="pg-adv-hint" id="pg-adv-hint"></span>
-        </summary>
-        <p class="pg-adv-note">
-          Only needed if your model isn't listed above. Picking a model sets
-          these for you.
+  <!-- ── PLAYGROUND STUDIO WORKBENCH ── -->
+  <main id="playground" class="pg-studio-page">
+    <div class="pg-studio-container">
+      
+      <!-- Studio Header: Clean, modern developer headline -->
+      <header class="pg-header pg-studio-header">
+        <div class="section-kicker">INTERACTIVE MEMORY WORKBENCH</div>
+        <h1 class="hero-headline pg-studio-title">
+          Run bigger models on the<br>Mac you already have.
+        </h1>
+        <p class="hero-subheadline pg-studio-desc">
+          Live Apple Silicon KV-cache quantization studio. Configure your hardware and target model on the left to see the optimal quantization strategy, live memory compression, and Metal kernel speedup.
         </p>
-        <div class="pg-adv-grid">
-          <div class="pg-field">
-            <label for="pg-model">Model size</label>
-            <select id="pg-model">
-              <option value="1B">1B</option>
-              <option value="3B">3B</option>
-              <option value="7B" selected>7B</option>
-              <option value="14B">14B</option>
-              <option value="32B">32B</option>
-            </select>
-          </div>
-          <div class="pg-field">
-            <label for="pg-layers">Layers</label>
-            <input id="pg-layers" type="number" min="1" step="1" value="32" inputmode="numeric" />
-          </div>
-          <div class="pg-field">
-            <label for="pg-heads">KV heads</label>
-            <input id="pg-heads" type="number" min="1" step="1" value="8" inputmode="numeric" />
-          </div>
-          <div class="pg-field">
-            <label for="pg-headdim">Head dimension</label>
-            <input id="pg-headdim" type="number" min="1" step="8" value="128" inputmode="numeric" />
-          </div>
-        </div>
-      </details>
-    </section>
+        <p class="pg-headline" id="pg-headline" aria-live="polite">
+          <!-- animated headline metric injected by playground.js -->
+        </p>
 
-    <!-- ── Stepper / segmented control ── -->
-    <div class="pg-stepper" role="tablist" aria-label="Playground tools">
-      <button class="pg-step active" data-pgtab="rec" role="tab" id="pg-tab-rec"
-              aria-selected="true" aria-controls="pg-panel-rec">
-        <span class="pg-step-num">1</span>
-        <span class="pg-step-txt"><strong>What should I use?</strong><em>the right setting for your Mac</em></span>
-      </button>
-      <button class="pg-step" data-pgtab="lab" role="tab" id="pg-tab-lab"
-              aria-selected="false" aria-controls="pg-panel-lab" tabindex="-1">
-        <span class="pg-step-num">2</span>
-        <span class="pg-step-txt"><strong>How much fits?</strong><em>conversation length in your RAM</em></span>
-      </button>
-      <button class="pg-step" data-pgtab="bench" role="tab" id="pg-tab-bench"
-              aria-selected="false" aria-controls="pg-panel-bench" tabindex="-1">
-        <span class="pg-step-num">3</span>
-        <span class="pg-step-txt"><strong>Is this real?</strong><em>benchmarks we measured</em></span>
-      </button>
+        <!-- Collapsible Primer Box -->
+        <details class="pg-primer">
+          <summary>New here? What this actually does</summary>
+          <div class="pg-primer-content">
+            <p>
+              As an LLM generates tokens, it stores key-value pairs (the <strong>KV cache</strong>) in unified RAM so it doesn't recompute previous context. The longer the conversation, the more memory the KV cache consumes — quickly exceeding unified RAM.
+            </p>
+            <p>
+              <strong>VeloxQuant-MLX</strong> compresses these cache entries up to 8× with specialized Apple Silicon Metal kernels. This studio calculates the best algorithm, memory headroom, and context limits for your exact hardware setup.
+            </p>
+          </div>
+        </details>
+      </header>
+
+      <!-- 2-Column Studio Workbench Grid -->
+      <div class="pg-studio-grid">
+        
+        <!-- LEFT SIDEBAR: Configuration & Hardware Setup -->
+        <aside class="pg-studio-sidebar" aria-label="Playground Controls">
+          <section class="pg-setup" id="pg-setup" aria-label="Your setup">
+            
+            <div class="pg-sidebar-header">
+              <div class="pg-sidebar-title">
+                <svg class="pg-sidebar-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/>
+                  <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                </svg>
+                <span>SETUP CONFIG</span>
+              </div>
+              <button type="button" class="pg-share-btn" id="pg-share-btn"
+                      title="Copy a link that brings you back to exactly this setup">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/>
+                  <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>
+                </svg>
+                <span>Save link</span>
+              </button>
+            </div>
+
+            <!-- Group 1: Hardware -->
+            <div class="pg-sidebar-group">
+              <span class="pg-group-num">01</span>
+              <span class="pg-group-title">Hardware Target</span>
+              <div class="pg-hw-row">
+                <div class="pg-field pg-field-chip">
+                  <label for="pg-chip">Apple Silicon Chip</label>
+                  <div class="pg-select-wrap">
+                    <select id="pg-chip">
+                      <option value="M1">M1</option>
+                      <option value="M2">M2</option>
+                      <option value="M3" selected>M3</option>
+                      <option value="M4">M4</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="pg-field pg-field-ram">
+                  <label for="pg-ram">Unified RAM</label>
+                  <div class="pg-select-wrap">
+                    <select id="pg-ram">
+                      <option value="8">8 GB</option>
+                      <option value="16" selected>16 GB</option>
+                      <option value="24">24 GB</option>
+                      <option value="32">32 GB</option>
+                      <option value="36">36 GB</option>
+                      <option value="48">48 GB</option>
+                      <option value="64">64 GB</option>
+                      <option value="128">128 GB</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Group 2: Target Model -->
+            <div class="pg-sidebar-group">
+              <span class="pg-group-num">02</span>
+              <span class="pg-group-title">Target Model</span>
+              <div class="pg-presets" role="group" aria-label="Pick the model you want to run">
+                <div class="pg-preset-row" id="pg-preset-row">
+                  <!-- chips injected by playground.js -->
+                </div>
+              </div>
+
+              <!-- Advanced Architecture Accordion -->
+              <details class="pg-advanced" id="pg-advanced">
+                <summary>
+                  <span class="pg-adv-label">Custom Architecture</span>
+                  <span class="pg-adv-hint" id="pg-adv-hint"></span>
+                </summary>
+                <div class="pg-adv-content">
+                  <p class="pg-adv-note">
+                    Manual override for unlisted models.
+                  </p>
+                  <div class="pg-adv-grid">
+                    <div class="pg-field">
+                      <label for="pg-model">Model size</label>
+                      <select id="pg-model">
+                        <option value="1B">1B</option>
+                        <option value="3B">3B</option>
+                        <option value="7B" selected>7B</option>
+                        <option value="14B">14B</option>
+                        <option value="32B">32B</option>
+                      </select>
+                    </div>
+                    <div class="pg-field">
+                      <label for="pg-layers">Layers</label>
+                      <input id="pg-layers" type="number" min="1" step="1" value="32" inputmode="numeric" />
+                    </div>
+                    <div class="pg-field">
+                      <label for="pg-heads">KV heads</label>
+                      <input id="pg-heads" type="number" min="1" step="1" value="8" inputmode="numeric" />
+                    </div>
+                    <div class="pg-field">
+                      <label for="pg-headdim">Head dimension</label>
+                      <input id="pg-headdim" type="number" min="1" step="8" value="128" inputmode="numeric" />
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            <!-- Group 3: Context Window -->
+            <div class="pg-sidebar-group">
+              <span class="pg-group-num">03</span>
+              <span class="pg-group-title">Context Window</span>
+              <div class="pg-field pg-field-seq">
+                <label for="pg-seqlen">Sequence Length (Tokens / Words)</label>
+                <div class="pg-seq-control">
+                  <input id="pg-seqlen" type="number" min="1" step="256" value="4096"
+                         inputmode="numeric" aria-describedby="pg-seq-hint" />
+                  <span class="pg-seq-unit" aria-hidden="true">tokens</span>
+                </div>
+                <span id="pg-seq-hint" class="pg-seq-hint" aria-live="polite"></span>
+              </div>
+            </div>
+
+            <!-- Group 4: Optimization Priority -->
+            <div class="pg-sidebar-group">
+              <span class="pg-group-num">04</span>
+              <span class="pg-group-title">Optimization Goal</span>
+              <div class="pg-field pg-field-goal">
+                <label for="pg-goal">Priority</label>
+                <div class="pg-select-wrap">
+                  <select id="pg-goal">
+                    <option value="everyday" selected>Balanced — Best overall default</option>
+                    <option value="max_key_accounting">Extreme Compression — Squeeze cache</option>
+                    <option value="max_context">Long Context — Maximize token capacity</option>
+                    <option value="best_quality">Highest Accuracy — Preserve perplexity</option>
+                    <option value="constant_memory">Fixed Limit — Never exceed RAM cap</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+          </section>
+        </aside>
+
+        <!-- RIGHT STAGE: Live Memory Intelligence Dashboard -->
+        <section class="pg-studio-main">
+          
+          <!-- Segmented Stepper Pill Switcher -->
+          <div class="pg-stepper" role="tablist" aria-label="Playground tools">
+            <button class="pg-step active" data-pgtab="rec" role="tab" id="pg-tab-rec"
+                    aria-selected="true" aria-controls="pg-panel-rec">
+              <span class="pg-step-num">1</span>
+              <span class="pg-step-txt">
+                <strong>Recommended Setting</strong>
+                <em>Optimal algorithm for your Mac</em>
+              </span>
+            </button>
+            <button class="pg-step" data-pgtab="lab" role="tab" id="pg-tab-lab"
+                    aria-selected="false" aria-controls="pg-panel-lab" tabindex="-1">
+              <span class="pg-step-num">2</span>
+              <span class="pg-step-txt">
+                <strong>Compression Lab</strong>
+                <em>Capacity & token limits in RAM</em>
+              </span>
+            </button>
+            <button class="pg-step" data-pgtab="bench" role="tab" id="pg-tab-bench"
+                    aria-selected="false" aria-controls="pg-panel-bench" tabindex="-1">
+              <span class="pg-step-num">3</span>
+              <span class="pg-step-txt">
+                <strong>Metal Benchmarks</strong>
+                <em>Measured speedup & latency</em>
+              </span>
+            </button>
+          </div>
+
+          <!-- Panel 1: Recommender (Live Recommendation Card) -->
+          <section class="pg-panel active" id="pg-panel-rec" role="tabpanel"
+                   aria-labelledby="pg-tab-rec" tabindex="0">
+            <div class="pg-output" id="rec-output" aria-live="polite"></div>
+          </section>
+
+          <!-- Panel 2: Compression Lab -->
+          <section class="pg-panel" id="pg-panel-lab" role="tabpanel"
+                   aria-labelledby="pg-tab-lab" tabindex="0">
+            <div class="pg-lab-controls">
+              <span class="pg-controls-label" id="pg-method-label">Choose Quantization Algorithm</span>
+              <input type="hidden" id="pg-cmethod" value="turboquant_rvq" />
+              <div class="pg-method-cards" id="pg-method-cards" role="radiogroup"
+                   aria-labelledby="pg-method-label">
+                <!-- method cards injected by playground.js -->
+              </div>
+              <div class="pg-field pg-field-budget">
+                <label for="pg-budget-input" id="pg-budget-label">Memory Budget for KV Cache</label>
+                <input type="hidden" id="pg-budget" value="" />
+                <div class="pg-budget-control">
+                  <input id="pg-budget-input" type="number" min="0.5" step="0.5"
+                         inputmode="decimal" aria-describedby="pg-budget-src" />
+                  <span class="pg-budget-unit" aria-hidden="true">GB</span>
+                  <button type="button" id="pg-budget-auto" class="pg-budget-auto"
+                          aria-pressed="true"
+                          title="Work this out from the Mac you picked above">Auto</button>
+                </div>
+                <span id="pg-budget-src" class="pg-budget-src" aria-live="polite"></span>
+              </div>
+            </div>
+            <div class="pg-output" id="lab-output" aria-live="polite"></div>
+          </section>
+
+          <!-- Panel 3: Benchmarks -->
+          <section class="pg-panel" id="pg-panel-bench" role="tabpanel"
+                   aria-labelledby="pg-tab-bench" tabindex="0">
+            <div class="pg-lab-controls">
+              <div class="pg-field pg-field-bench">
+                <label id="pg-bench-label">Benchmark Suite</label>
+                <input type="hidden" id="pg-bench" value="metal" />
+                <div class="pg-seg" id="pg-bench-seg" role="radiogroup" aria-labelledby="pg-bench-label">
+                  <!-- segmented buttons injected by playground.js -->
+                </div>
+              </div>
+              <div class="pg-field pg-field-bench" id="pg-bench-model-wrap" hidden>
+                <label for="pg-bench-model">Target Model</label>
+                <select id="pg-bench-model">
+                  <option value="Llama-3.2-3B-Instruct-4bit">Llama-3.2-3B</option>
+                  <option value="Mistral-7B-Instruct-v0.3-4bit">Mistral-7B</option>
+                  <option value="Qwen2.5-7B-Instruct-4bit">Qwen2.5-7B</option>
+                </select>
+              </div>
+            </div>
+            <div class="pg-output" id="bench-output" aria-live="polite"></div>
+          </section>
+
+          <!-- Disclaimer & Trust Footer -->
+          <p class="pg-disclaimer">
+            <strong>Where these numbers come from:</strong> Sizing formulas and recommendations run the same logic that powers the <code>veloxquant recommend</code> CLI tool (<code>veloxquant_mlx/tools/mac_recommender.py</code>). Benchmark curves in Step 3 are exact Metal kernel measurements committed under <code>figures/</code>. To run native profiling on your machine, run <code>python -m veloxquant_mlx benchmark</code>.
+          </p>
+        </section>
+      </div>
     </div>
-
-    <!-- Panel 1: Recommender (hero card) -->
-    <section class="pg-panel active" id="pg-panel-rec" role="tabpanel"
-             aria-labelledby="pg-tab-rec" tabindex="0">
-      <div class="pg-output" id="rec-output" aria-live="polite"></div>
-    </section>
-
-    <!-- Panel 2: Compression lab -->
-    <section class="pg-panel" id="pg-panel-lab" role="tabpanel"
-             aria-labelledby="pg-tab-lab" tabindex="0">
-      <div class="pg-lab-controls">
-        <span class="pg-controls-label" id="pg-method-label">Try a different approach</span>
-        <!-- Hidden input holds the selected method so URL state, the engine,
-             and the recommender CTA can all read/write one source of truth. -->
-        <input type="hidden" id="pg-cmethod" value="turboquant_rvq" />
-        <div class="pg-method-cards" id="pg-method-cards" role="radiogroup"
-             aria-labelledby="pg-method-label">
-          <!-- method cards injected by playground.js -->
-        </div>
-        <div class="pg-field pg-field-budget">
-          <label for="pg-budget-input" id="pg-budget-label">Memory you can spare</label>
-          <!-- Hidden input remains the single source of truth for URL state + engine. -->
-          <input type="hidden" id="pg-budget" value="" />
-          <div class="pg-budget-control">
-            <input id="pg-budget-input" type="number" min="0.5" step="0.5"
-                   inputmode="decimal" aria-describedby="pg-budget-src" />
-            <span class="pg-budget-unit" aria-hidden="true">GB</span>
-            <button type="button" id="pg-budget-auto" class="pg-budget-auto"
-                    aria-pressed="true"
-                    title="Work this out from the Mac you picked above">Auto</button>
-          </div>
-          <span id="pg-budget-src" class="pg-budget-src" aria-live="polite"></span>
-        </div>
-      </div>
-      <div class="pg-output" id="lab-output" aria-live="polite"></div>
-    </section>
-
-    <!-- Panel 3: Benchmarks -->
-    <section class="pg-panel" id="pg-panel-bench" role="tabpanel"
-             aria-labelledby="pg-tab-bench" tabindex="0">
-      <div class="pg-lab-controls">
-        <div class="pg-field pg-field-bench">
-          <label id="pg-bench-label">Which result?</label>
-          <!-- Hidden input remains the single source of truth (URL state,
-               engine, hero CTA all read/write it); the segmented control
-               below is the accessible view over it. -->
-          <input type="hidden" id="pg-bench" value="metal" />
-          <div class="pg-seg" id="pg-bench-seg" role="radiogroup" aria-labelledby="pg-bench-label">
-            <!-- segmented buttons injected by playground.js -->
-          </div>
-        </div>
-        <div class="pg-field pg-field-bench" id="pg-bench-model-wrap" hidden>
-          <label for="pg-bench-model">Model</label>
-          <select id="pg-bench-model">
-            <option value="Llama-3.2-3B-Instruct-4bit">Llama-3.2-3B</option>
-            <option value="Mistral-7B-Instruct-v0.3-4bit">Mistral-7B</option>
-            <option value="Qwen2.5-7B-Instruct-4bit">Qwen2.5-7B</option>
-          </select>
-        </div>
-      </div>
-      <div class="pg-output" id="bench-output" aria-live="polite"></div>
-    </section>
-
-    <p class="pg-disclaimer">
-      <strong>Where these numbers come from.</strong> The recommendation and the
-      cache sizes are calculated, not measured — they use the same rules as the
-      <code>veloxquant recommend</code> command
-      (<code>veloxquant_mlx/tools/mac_recommender.py</code>), and they tell you
-      when a method is unlikely to free real memory rather than quietly
-      overstating it. Conversation lengths and the page comparison are estimates
-      that assume memory grows evenly with length. The charts in step 3 are real
-      measurements committed under <code>figures/</code>. To measure your own Mac
-      instead of estimating, run <code>python -m veloxquant_mlx benchmark</code>.
-    </p>
   </main>
 
-  <!-- ── FOOTER ── -->
-  <footer>
-    <ul class="footer-links">
-      <li><a href="index.html">Home</a></li>
-      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
-      <li><a href="https://pypi.org/project/VeloxQuant-MLX/" target="_blank" rel="noopener">PyPI</a></li>
-      <li><a href="https://www.npmjs.com/package/@veloxquant/sdk" target="_blank" rel="noopener">npm SDK</a></li>
-      <li><a href="https://pkg.go.dev/github.com/rajveer43/veloxquant-go" target="_blank" rel="noopener">Go SDK</a></li>
-      <li><a href="https://crates.io/crates/veloxquant" target="_blank" rel="noopener">Rust SDK</a></li>
-      <li><a href="/docs/" rel="noopener">Docs</a></li>
-      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
-    </ul>
-    <p class="footer-copy">© 2026 Rajveer Rathod · MIT License</p>
-    <p class="footer-tagline">BUILT FOR APPLE SILICON. ENGINEERED FOR SPEED.</p>
+  <!-- ── REDESIGNED FOOTER ── -->
+  <footer class="footer-redesign">
+    <div class="footer-container">
+      <div class="footer-grid">
+        <div class="footer-brand-col">
+          <div class="footer-brand-title">VeloxQuant-MLX</div>
+          <div class="footer-brand-tagline">BUILT FOR APPLE SILICON. ENGINEERED FOR SPEED.</div>
+          <div class="footer-brand-meta">MIT License · v0.74.0</div>
+        </div>
+        <div class="footer-links-col">
+          <h4 class="footer-col-title">PRODUCT</h4>
+          <ul>
+            <li><a href="index.html#methods">Methods</a></li>
+            <li><a href="benchmarks.html">Benchmarks</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-Studio" target="_blank" rel="noopener">Studio</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-links-col">
+          <h4 class="footer-col-title">DEVELOPERS</h4>
+          <ul>
+            <li><a href="/docs/">Documentation</a></li>
+            <li><a href="index.html#install">Quickstart</a></li>
+            <li><a href="/docs/algorithms/overview">Algorithm reference</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
+          </ul>
+        </div>
+        <div class="footer-links-col">
+          <h4 class="footer-col-title">PROJECT</h4>
+          <ul>
+            <li><a href="https://doi.org/10.5281/zenodo.20647294" target="_blank" rel="noopener">Cite this work (DOI)</a></li>
+            <li><a href="https://medium.com/@rajveer.rathod1301" target="_blank" rel="noopener">Blog</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/issues" target="_blank" rel="noopener">Issues</a></li>
+            <li><a href="https://github.com/rajveer43" target="_blank" rel="noopener">Get in touch</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom-bar">
+        <div>© 2026 Rajveer Rathod · MIT License</div>
+        <div>DOI: 10.5281/zenodo.20647294</div>
+      </div>
+    </div>
   </footer>
 
-  <script src="assets/calc.js?v=20260902" defer></script>
-  <script src="assets/main.js?v=20260902" defer></script>
-  <script src="assets/playground.js?v=20260902" defer></script>
+  <script src="assets/calc.js?v=20260905" defer></script>
+  <script src="assets/main.js?v=20260905" defer></script>
+  <script src="assets/playground.js?v=20260905" defer></script>
 
   <!-- GoatCounter: privacy-friendly, cookieless page counts. Client-side, so
        it records browsers rather than crawlers — expect it to read lower than

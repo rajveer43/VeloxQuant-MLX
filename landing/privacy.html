@@ -67,29 +67,37 @@
 </head>
 <body>
 
-  <!-- ── NAVIGATION ── -->
-  <nav id="navbar">
-    <a href="index.html#hero" class="nav-logo"><img src="assets/logo.svg" alt="" width="28" height="28" class="nav-logo-mark" />VeloxQuant-MLX</a>
-    <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
-      <span></span><span></span><span></span>
-    </button>
-    <ul class="nav-links" id="nav-links">
-      <li><a href="index.html#calculator">Calculator</a></li>
-      <li><a href="index.html#quickstart">Quickstart</a></li>
-      <li><a href="index.html#faq">FAQ</a></li>
-      <li><a href="index.html#install">Install</a></li>
-      <li><a href="benchmarks.html">Benchmarks</a></li>
-      <li><a href="playground.html">Playground</a></li>
-      <li><a href="/docs/" rel="noopener">Docs</a></li>
-      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
-      <li>
+  <!-- ── FLOATING PILL NAVIGATION ── -->
+  <header class="pill-nav-header">
+    <nav id="navbar" class="pill-nav" aria-label="Primary navigation">
+      <a href="index.html#hero" class="pill-nav-logo">
+        <img src="assets/logo.svg" alt="" width="22" height="22" class="pill-nav-logo-mark" />
+        <span>VeloxQuant-MLX</span>
+      </a>
+      <div class="pill-nav-links" id="nav-links">
+        <a href="index.html#methods">Methods</a>
+        <a href="index.html#install">Install</a>
+        <a href="index.html#calculator">Calculator</a>
+        <a href="index.html#faq">FAQ</a>
+        <a href="benchmarks.html">Benchmarks</a>
+        <a href="playground.html">Playground</a>
+        <a href="/docs/">Docs</a>
+      </div>
+      <div class="pill-nav-actions">
         <button class="theme-toggle" id="theme-toggle" aria-label="Switch to light theme" title="Toggle light / dark theme">
           <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
           <span class="theme-icon theme-icon-moon" aria-hidden="true">☾</span>
         </button>
-      </li>
-    </ul>
-  </nav>
+        <a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener" class="pill-nav-github">
+          <svg class="star-icon" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <span>GITHUB</span>
+        </a>
+        <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </nav>
+  </header>
 
   <!-- ── PRIVACY POLICY ── -->
   <main>

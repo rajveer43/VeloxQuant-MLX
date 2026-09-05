@@ -33,7 +33,7 @@
   <meta name="twitter:image:alt" content="VeloxQuant-MLX Metal kernel benchmark summary: compression ratio and speedup charts" />
 
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="assets/styles.css?v=20260902" />
+  <link rel="stylesheet" href="assets/styles.css?v=20260905" />
 
   <script type="application/ld+json">
   {
@@ -162,7 +162,7 @@
        disabled or localStorage throws, rather than defaulting to shown,
        since a banner that can never be dismissed is worse than none. -->
   <div id="announcement-banner" class="announcement-banner">
-    <a href="#download" class="announcement-banner-link">
+    <a href="https://github.com/rajveer43/VeloxQuant-Studio/releases/latest/download/VeloxQuant-Studio-0.1.1.dmg" class="announcement-banner-link">
       <span class="announcement-banner-badge">New</span>
       <span>VeloxQuant Studio for macOS is here — a native app for this library.</span>
       <span class="announcement-banner-cta">Download it free <span data-icon>→</span></span>
@@ -183,6 +183,7 @@
         <a href="#calculator">Calculator</a>
         <a href="#faq">FAQ</a>
         <a href="benchmarks.html">Benchmarks</a>
+        <a href="playground.html">Playground</a>
         <a href="/docs/">Docs</a>
       </div>
       <div class="pill-nav-actions">
@@ -203,6 +204,11 @@
 
   <!-- ── §1 HERO ── -->
   <section id="hero" class="hero-redesign">
+    <div class="hero-aurora-wrap" aria-hidden="true">
+      <div class="hero-aurora-glow"></div>
+      <canvas id="hero-aurora-canvas" class="hero-aurora-canvas"></canvas>
+      <div class="hero-aurora-vignette"></div>
+    </div>
     <div class="hero-container">
       <h1 class="hero-headline">The memory<br>bottleneck for on-<br>device AI. Solved.</h1>
 
@@ -272,6 +278,9 @@
   </section>
 
   <!-- ── §3 HOW IT WORKS (STRATEGIES) ── -->
+  <!-- Legacy jump anchors for methods/scenarios/benefits -->
+  <span id="scenarios" class="anchor-alias" aria-hidden="true"></span>
+  <span id="benefits" class="anchor-alias" aria-hidden="true"></span>
   <section id="methods" class="section-strategies">
     <div class="strategies-container">
       <div class="strategies-header">
@@ -371,6 +380,9 @@
   </section>
 
   <!-- ── §4 INSTALLATION ── -->
+  <!-- Legacy jump anchors for install/quickstart/sdks -->
+  <span id="quickstart" class="anchor-alias" aria-hidden="true"></span>
+  <span id="sdks" class="anchor-alias" aria-hidden="true"></span>
   <section id="install" class="section-install">
     <div class="install-container">
       <div class="install-header">
@@ -393,48 +405,36 @@
             <span>NUMPY 1.26+</span>
           </div>
           <p class="install-req-desc">
-            Requires Apple Silicon and an existing mlx_lm setup. Pick your SDK below.
+            Requires Apple Silicon and an existing mlx_lm setup.
           </p>
+        </div>
+
+        <div class="install-pip-row">
+          <span class="install-pip-prompt">$</span>
+          <code class="install-pip-cmd" id="install-pip-cmd">pip install VeloxQuant-MLX</code>
+          <button class="code-copy-btn" data-target="install-pip-cmd" aria-label="Copy install command">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span>COPY</span>
+          </button>
         </div>
 
         <div class="install-code-box">
           <div class="install-code-topbar">
-            <div class="install-tabs" role="tablist" aria-label="SDK selection">
-              <button class="sdk-tab-btn active" data-sdk="python" role="tab" aria-selected="true">Python</button>
-              <button class="sdk-tab-btn" data-sdk="go" role="tab" aria-selected="false">Go</button>
-              <button class="sdk-tab-btn" data-sdk="rust" role="tab" aria-selected="false">Rust</button>
-            </div>
-            <button class="code-copy-btn" id="install-copy-btn" data-target="code-install-python" aria-label="Copy snippet">
+            <span class="install-code-label">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 0C5.72 0 6.12 2.71 6.12 2.71l.01 2.8h5.98v.85H3.79S0 5.94 0 12.29c0 6.34 3.29 6.11 3.29 6.11h1.97v-2.92s-.11-3.29 3.23-3.29h5.94s3.13.05 3.13-3.02V3.29S17.9 0 12 0zM8.7 1.98c.58 0 1.05.47 1.05 1.05 0 .58-.47 1.04-1.05 1.04-.58 0-1.05-.47-1.05-1.04 0-.58.47-1.05 1.05-1.05z"/><path d="M12 24c6.28 0 5.88-2.71 5.88-2.71l-.01-2.8h-5.98v-.85h8.32S24 18.06 24 11.71c0-6.34-3.29-6.11-3.29-6.11h-1.97v2.92s.11 3.29-3.23 3.29H9.57s-3.13-.05-3.13 3.02v5.88S6.1 24 12 24zm3.3-1.98c-.58 0-1.05-.47-1.05-1.05 0-.58.47-1.04 1.05-1.04.58 0 1.05.47 1.05 1.04 0 .58-.47 1.05-1.05 1.05z"/></svg>
+              <span>example.py</span>
+            </span>
+            <button class="code-copy-btn" data-target="code-install-python" aria-label="Copy snippet">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
               <span>COPY</span>
             </button>
           </div>
 
           <div class="install-code-content">
-            <div class="sdk-panel active" id="sdk-panel-python">
-              <pre id="code-install-python"><code><span class="code-dim">python</span>                               <span class="code-accent">pip install VeloxQuant-MLX</span>
-
-<span class="kw">from</span> <span class="id">veloxquant_mlx</span> <span class="kw">import</span> <span class="fn">KVCacheBuilder</span>, <span class="fn">KVCacheConfig</span>
+            <pre id="code-install-python"><code><span class="kw">from</span> <span class="id">veloxquant_mlx</span> <span class="kw">import</span> <span class="fn">KVCacheBuilder</span>, <span class="fn">KVCacheConfig</span>
 
 <span class="id">config</span> = <span class="fn">KVCacheConfig</span>(<span class="at">method</span>=<span class="st">"turboquant_rvq"</span>, <span class="at">bit_width_inlier</span>=<span class="nu">1</span>, <span class="at">seed</span>=<span class="nu">42</span>)
 <span class="id">caches</span> = <span class="fn">KVCacheBuilder</span>.<span class="fn">for_model</span>(<span class="id">model</span>, <span class="id">config</span>)</code></pre>
-            </div>
-            <div class="sdk-panel" id="sdk-panel-go">
-              <pre id="code-install-go"><code><span class="code-dim">go</span>                                   <span class="code-accent">go get github.com/rajveer43/veloxquant-go</span>
-
-<span class="kw">import</span> <span class="st">"github.com/rajveer43/veloxquant-go"</span>
-
-<span class="id">config</span> := <span class="id">veloxquant</span>.<span class="fn">NewKVCacheConfig</span>(<span class="st">"turboquant_rvq"</span>, <span class="nu">1</span>, <span class="nu">42</span>)
-<span class="id">caches</span>, <span class="id">err</span> := <span class="id">veloxquant</span>.<span class="fn">BuildForModel</span>(<span class="id">model</span>, <span class="id">config</span>)</code></pre>
-            </div>
-            <div class="sdk-panel" id="sdk-panel-rust">
-              <pre id="code-install-rust"><code><span class="code-dim">cargo</span>                                <span class="code-accent">cargo add veloxquant</span>
-
-<span class="kw">use</span> <span class="id">veloxquant</span>::{<span class="fn">KVCacheBuilder</span>, <span class="fn">KVCacheConfig</span>};
-
-<span class="kw">let</span> <span class="id">config</span> = <span class="fn">KVCacheConfig</span>::<span class="fn">new</span>(<span class="st">"turboquant_rvq"</span>).<span class="fn">with_inlier_bits</span>(<span class="nu">1</span>);
-<span class="kw">let</span> <span class="id">caches</span> = <span class="fn">KVCacheBuilder</span>::<span class="fn">for_model</span>(&amp;<span class="id">model</span>, <span class="id">config</span>)?;</code></pre>
-            </div>
           </div>
         </div>
 
@@ -569,12 +569,205 @@
     </div>
   </section>
 
-  <!-- Legacy jump anchors to preserve external links -->
-  <span id="quickstart" class="anchor-alias" aria-hidden="true"></span>
+  <!-- Legacy jump anchor for downloads/apps -->
   <span id="download" class="anchor-alias" aria-hidden="true"></span>
-  <span id="sdks" class="anchor-alias" aria-hidden="true"></span>
-  <span id="scenarios" class="anchor-alias" aria-hidden="true"></span>
-  <span id="benefits" class="anchor-alias" aria-hidden="true"></span>
+  <!-- ── ECOSYSTEM & APPS SECTION ── -->
+  <section class="ecosystem-section" id="apps">
+    <div class="ecosystem-container">
+      <div class="ecosystem-header text-center">
+        <div class="pill-badge mb-3">EVERYWHERE YOU BUILD</div>
+        <h2 class="ecosystem-title">Run VeloxQuant across your entire workflow</h2>
+        <p class="ecosystem-sub">Available as a native macOS app, intelligent VS Code extension, and official NPM, Rust, and Go SDK runtimes.</p>
+      </div>
+
+      <div class="ecosystem-grid">
+        <!-- Card 1: macOS App -->
+        <div class="eco-card">
+          <div class="eco-mockup-wrap eco-mockup-macos">
+            <div class="eco-mockup-window">
+              <div class="eco-window-header">
+                <div class="eco-traffic-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="eco-window-title">VeloxQuant Studio</div>
+              </div>
+              <div class="eco-window-body eco-body-macos">
+                <div class="eco-macos-meta">
+                  <span class="eco-chip">Apple Silicon M-Series</span>
+                  <div class="eco-model-title">Falcon3-7B · 128k context</div>
+                </div>
+                <div class="eco-mem-meter">
+                  <div class="eco-mem-labels">
+                    <span>KV Memory</span>
+                    <span class="eco-mem-delta">729 MB → 12 MB <b>(-98%)</b></span>
+                  </div>
+                  <div class="eco-mem-track">
+                    <div class="eco-mem-fill" style="width: 14%;"></div>
+                  </div>
+                </div>
+                <div class="eco-input-pill">
+                  <span class="eco-input-plus">+</span>
+                  <span class="eco-input-text">Compress KV cache with Metal RVQ...</span>
+                  <div class="eco-input-btn">
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="eco-card-meta">
+            <h3 class="eco-card-title">VeloxQuant for macOS</h3>
+          </div>
+          <a href="https://github.com/rajveer43/VeloxQuant-Studio/releases" target="_blank" rel="noopener" class="eco-action-btn">
+            Download for macOS
+          </a>
+        </div>
+
+        <!-- Card 2: VS Code Extension -->
+        <div class="eco-card">
+          <div class="eco-mockup-wrap eco-mockup-vscode">
+            <div class="eco-mockup-window">
+              <div class="eco-window-header">
+                <div class="eco-traffic-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="eco-window-title">VeloxQuant Assistant</div>
+              </div>
+              <div class="eco-window-body eco-body-vscode">
+                <div class="eco-agent-bubble">
+                  Quantized key/value attention tensors to 2-bit with zero perplexity drift.
+                </div>
+                <div class="eco-diff-box">
+                  <div class="eco-diff-header">
+                    <span>2 files optimized <b class="eco-diff-add">+128k ctx</b> <b class="eco-diff-del">-92%</b></span>
+                    <span class="eco-diff-review">Review ↗</span>
+                  </div>
+                  <div class="eco-diff-files">
+                    <div class="eco-diff-file">
+                      <span>generate.py</span>
+                      <span class="eco-diff-stats"><b class="eco-diff-add">+3</b> <b class="eco-diff-del">-1</b> •</span>
+                    </div>
+                    <div class="eco-diff-file">
+                      <span>mlx_cache.py</span>
+                      <span class="eco-diff-stats"><b class="eco-diff-add">+40</b> <b class="eco-diff-del">-12</b></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="eco-input-pill">
+                  <span class="eco-input-plus">+</span>
+                  <span class="eco-input-text">Looks great, quantize 32 layers.</span>
+                  <div class="eco-input-btn">
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="eco-card-meta">
+            <h3 class="eco-card-title">VS Code Extension</h3>
+          </div>
+          <a href="https://open-vsx.org/extension/veloxquant-mlx/veloxquant-vscode" target="_blank" rel="noopener" class="eco-action-btn">
+            Install for VS Code
+            <svg class="eco-btn-arr" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+          </a>
+        </div>
+
+        <!-- Card 3: NPM SDK & CLI -->
+        <div class="eco-card">
+          <div class="eco-mockup-wrap eco-mockup-npm">
+            <div class="eco-mockup-window">
+              <div class="eco-window-header">
+                <div class="eco-traffic-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="eco-window-title">Terminal · zsh</div>
+              </div>
+              <div class="eco-window-body eco-body-cli">
+                <div class="eco-cli-line eco-cli-banner">&gt;_ @veloxquant/sdk (v0.74.0)</div>
+                <div class="eco-cli-row"><span class="eco-cli-lbl">model:</span> <span class="eco-cli-val">mlx-community/Llama-3.2-3B</span></div>
+                <div class="eco-cli-row"><span class="eco-cli-lbl">cache:</span> <span class="eco-cli-val">quantized (KIVI 2-bit)</span></div>
+                <div class="eco-cli-row"><span class="eco-cli-lbl">memory:</span> <span class="eco-cli-val">1.2 GB → 180 MB</span></div>
+                <div class="eco-cli-tip">Tip: Use /bench to measure Metal kernel speedup</div>
+                <div class="eco-cli-prompt-line">
+                  <span class="eco-cli-prompt-txt">Hey VeloxQuant, compress KV cache<span class="eco-cli-cursor">|</span></span>
+                  <span class="eco-cli-ctx">100% context left</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="eco-card-meta">
+            <h3 class="eco-card-title">VeloxQuant NPM SDK &amp; CLI</h3>
+          </div>
+          <button class="eco-action-btn eco-copy-trigger" data-copy="npm i @veloxquant/sdk" aria-label="Copy npm install command">
+            <span class="eco-copy-label">$ npm i @veloxquant/sdk</span>
+            <svg class="eco-copy-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+
+        <!-- Card 4: Rust SDK -->
+        <div class="eco-card eco-card-rust">
+          <div class="eco-mockup-wrap eco-mockup-rust">
+            <div class="eco-mockup-window">
+              <div class="eco-window-header">
+                <div class="eco-traffic-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="eco-window-title">Cargo · Rust 1.80+</div>
+              </div>
+              <div class="eco-window-body eco-body-code">
+                <div class="eco-cli-line eco-cli-comment">// Cargo.toml</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">[dependencies]</span></div>
+                <div class="eco-cli-row"><span class="eco-code-pkg">veloxquant</span> = <span class="eco-code-str">"{ version = \"0.74\", features = [\"metal\"] }"</span></div>
+                <div class="eco-code-divider"></div>
+                <div class="eco-cli-line eco-cli-comment">// main.rs</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">use</span> veloxquant::prelude::*;</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">let</span> cache = <span class="eco-code-fn">KvCache::quantize_2bit</span>(&amp;k, &amp;v)?;</div>
+                <div class="eco-cli-line eco-cli-success">// Resident KV: 12.4 MB (98% reduction)</div>
+              </div>
+            </div>
+          </div>
+          <div class="eco-card-meta">
+            <h3 class="eco-card-title">Rust SDK (Crates.io)</h3>
+          </div>
+          <button class="eco-action-btn eco-copy-trigger" data-copy="cargo add veloxquant" aria-label="Copy cargo add command">
+            <span class="eco-copy-label">$ cargo add veloxquant</span>
+            <svg class="eco-copy-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+
+        <!-- Card 5: Go SDK -->
+        <div class="eco-card eco-card-go">
+          <div class="eco-mockup-wrap eco-mockup-go">
+            <div class="eco-mockup-window">
+              <div class="eco-window-header">
+                <div class="eco-traffic-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="eco-window-title">pkg.go.dev · Go 1.22+</div>
+              </div>
+              <div class="eco-window-body eco-body-code">
+                <div class="eco-cli-line eco-cli-comment">// go.mod</div>
+                <div class="eco-cli-line"><span class="eco-code-keyword">module</span> myapp</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">require</span> github.com/rajveer43/veloxquant-go v0.74.0</div>
+                <div class="eco-code-divider"></div>
+                <div class="eco-cli-line eco-cli-comment">// inference.go</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">import</span> <span class="eco-code-str">"github.com/rajveer43/veloxquant-go/cache"</span></div>
+                <div class="eco-cli-row">c, err := cache.<span class="eco-code-fn">New</span>(cache.DefaultConfig(cache.MethodTurboQuantRVQ))</div>
+                <div class="eco-cli-line eco-cli-success">// KV footprint compressed to 1/8th</div>
+              </div>
+            </div>
+          </div>
+          <div class="eco-card-meta">
+            <h3 class="eco-card-title">Go SDK (pkg.go.dev)</h3>
+          </div>
+          <button class="eco-action-btn eco-copy-trigger" data-copy="go get github.com/rajveer43/veloxquant-go" aria-label="Copy go get command">
+            <span class="eco-copy-label">$ go get github.com/rajveer43/veloxquant-go</span>
+            <svg class="eco-copy-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <!-- ── REDESIGNED FOOTER ── -->
   <footer class="footer-redesign">
@@ -601,6 +794,10 @@
             <li><a href="#install">Quickstart</a></li>
             <li><a href="/docs/algorithms/overview">Algorithm reference</a></li>
             <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
+            <li><a href="https://pkg.go.dev/github.com/rajveer43/veloxquant-go" target="_blank" rel="noopener">Go SDK</a></li>
+            <li><a href="https://www.npmjs.com/package/@veloxquant/sdk" target="_blank" rel="noopener">NPM SDK</a></li>
+            <li><a href="https://crates.io/search?q=veloxquant" target="_blank" rel="noopener">Rust SDK</a></li>
+            <li><a href="https://open-vsx.org/extension/veloxquant-mlx/veloxquant-vscode" target="_blank" rel="noopener">VS Code Extension</a></li>
           </ul>
         </div>
         <div class="footer-links-col">
@@ -620,8 +817,8 @@
     </div>
   </footer>
 
-  <script src="assets/calc.js?v=20260902" defer></script>
-  <script src="assets/main.js?v=20260902" defer></script>
+  <script src="assets/calc.js?v=20260905" defer></script>
+  <script src="assets/main.js?v=20260905" defer></script>
 
   <!-- GoatCounter: privacy-friendly, cookieless page counts. Client-side, so
        it records browsers rather than crawlers — expect it to read lower than

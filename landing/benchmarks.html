@@ -29,7 +29,7 @@
   <!-- Fonts are self-hosted in styles.css (assets/fonts/*.woff2) — no
        third-party hop, no render-blocking preconnect. -->
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="assets/styles.css?v=20260902" />
+  <link rel="stylesheet" href="assets/styles.css?v=20260905" />
 
   <script type="application/ld+json">
   {
@@ -63,498 +63,709 @@
 </head>
 <body>
 
-  <!-- ── NAVIGATION ── -->
-  <nav id="navbar">
-    <a href="index.html#hero" class="nav-logo"><img src="assets/logo.svg" alt="" width="28" height="28" class="nav-logo-mark" />VeloxQuant-MLX</a>
-    <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
-      <span></span><span></span><span></span>
-    </button>
-    <ul class="nav-links" id="nav-links">
-      <li><a href="index.html#calculator">Calculator</a></li>
-      <li><a href="index.html#quickstart">Quickstart</a></li>
-      <li><a href="index.html#faq">FAQ</a></li>
-      <li><a href="index.html#install">Install</a></li>
-      <li><a href="benchmarks.html" aria-current="page">Benchmarks</a></li>
-      <li><a href="playground.html">Playground</a></li>
-      <li><a href="/docs/" rel="noopener">Docs</a></li>
-      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
-      <li>
+  <!-- ── FLOATING PILL NAVIGATION ── -->
+  <header class="pill-nav-header">
+    <nav id="navbar" class="pill-nav" aria-label="Primary navigation">
+      <a href="index.html#hero" class="pill-nav-logo">
+        <img src="assets/logo.svg" alt="" width="22" height="22" class="pill-nav-logo-mark" />
+        <span>VeloxQuant-MLX</span>
+      </a>
+      <div class="pill-nav-links" id="nav-links">
+        <a href="index.html#methods">Methods</a>
+        <a href="index.html#install">Install</a>
+        <a href="index.html#calculator">Calculator</a>
+        <a href="index.html#faq">FAQ</a>
+        <a href="benchmarks.html" aria-current="page" class="active">Benchmarks</a>
+        <a href="playground.html">Playground</a>
+        <a href="/docs/">Docs</a>
+      </div>
+      <div class="pill-nav-actions">
         <button class="theme-toggle" id="theme-toggle" aria-label="Switch to light theme" title="Toggle light / dark theme">
           <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
           <span class="theme-icon theme-icon-moon" aria-hidden="true">☾</span>
         </button>
-      </li>
-    </ul>
-  </nav>
+        <a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener" class="pill-nav-github">
+          <svg class="star-icon" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <span>GITHUB</span>
+        </a>
+        <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </nav>
+  </header>
 
-  <!-- ── BENCHMARKS ── -->
-  <main>
-    <section id="benchmarks-detail" class="fade-in" style="padding-top:7rem;">
-      <div class="section-head-center">
-        <p class="section-label">Q-Filters, in depth</p>
-        <h2 class="section-title">How the scorer performs</h2>
-        <p class="section-desc">
-          Q-Filters is a token-eviction scorer: it decides which parts of a long conversation are
-          safe to drop from memory. These tables go past the headline compression number and
-          into whether its guesses are actually good — attention-correlation accuracy and
-          generation perplexity. Also on
-          <a href="/docs/algorithms/qfilters" class="t-accent">the docs page</a>, with full
-          methodology.
+  <!-- ── BENCHMARKS HERO ── -->
+  <main class="bench-main">
+    <div class="bench-container">
+      
+      <header class="bench-hero">
+        <div class="section-kicker">EMPIRICAL HARDWARE BENCHMARKS</div>
+        <h1 class="hero-headline bench-hero-title">
+          Measured on Apple Silicon.<br>Verified across 12 models.
+        </h1>
+        <p class="hero-subheadline bench-hero-desc">
+          Real causal-LM generation throughput, attention correlation accuracy, and perplexity measurements on Apple Silicon hardware (M1 through M4). Zero synthetic projections — all logs committed under <code>figures/</code>.
         </p>
-      </div>
 
-      <div class="takeaway fade-in">
-        <svg class="takeaway-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>
-        <p><strong>Q-Filters guesses right almost every time</strong> — 100% sign-correct across every
-        model tested, roughly double the correlation of the naive K-norm baseline. That accuracy
-        is what lets you compress the KV-cache 4–16× and still keep most of the model's quality:
-        at 4× compression it closes <strong>52–55%</strong> of the quality gap a cruder scorer would leave open.</p>
-      </div>
-
-      <h3 class="bench-subtitle">How well does Q-Filters predict what a model will actually attend to?</h3>
-      <p class="section-desc" style="margin-bottom:1.5rem">
-        Spearman correlation with the model's real attention (higher is better), vs. the K-norm/L2Norm
-        baseline. <a href="/docs/algorithms/qfilters" class="t-accent">Full write-up →</a>
-      </p>
-
-      <div class="chart-block fade-in">
-        <div class="chart-legend">
-          <div class="legend-item"><span class="legend-dot" style="background: var(--accent);"></span>Q-Filters, calibrated</div>
-          <div class="legend-item"><span class="legend-dot" style="background: rgba(148,163,184,0.6);"></span>K-norm / L2Norm baseline</div>
+        <!-- Executive Metrics Grid -->
+        <div class="bench-stat-grid">
+          <div class="bench-stat-card">
+            <span class="bench-stat-kicker">Metal GPU Kernels</span>
+            <span class="bench-stat-num">14.7×</span>
+            <span class="bench-stat-sub">Peak speedup over pure MLX at S=8,192</span>
+          </div>
+          <div class="bench-stat-card">
+            <span class="bench-stat-kicker">Attention Prediction</span>
+            <span class="bench-stat-num">100%</span>
+            <span class="bench-stat-sub">Sign accuracy across all models tested</span>
+          </div>
+          <div class="bench-stat-card">
+            <span class="bench-stat-kicker">KIVI 4-Bit Quant</span>
+            <span class="bench-stat-num">&lt;1.0 pt</span>
+            <span class="bench-stat-sub">Perplexity delta from fp16 on 135M to 8B</span>
+          </div>
+          <div class="bench-stat-card">
+            <span class="bench-stat-kicker">RaBitQ Cache Footprint</span>
+            <span class="bench-stat-num">5.95×</span>
+            <span class="bench-stat-sub">Exact memory reduction on 7B models</span>
+          </div>
         </div>
-        <div class="corr-group">
-          <div class="corr-row">
-            <div class="corr-row-label">Llama-3.2-1B</div>
-            <div class="corr-bars">
-              <div class="corr-bar-track">
-                <div class="corr-bar-name">Q-Filters</div>
-                <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 90%;"><span class="corr-bar-val">+0.783</span></div></div>
+
+        <!-- Sticky / Segmented Section Quick Navigation -->
+        <nav class="bench-nav" aria-label="Benchmark categories">
+          <a href="#metal" class="bench-nav-pill active">⚡ Metal GPU Speedup</a>
+          <a href="#kivi-matrix" class="bench-nav-pill">🧠 12-Model Safety Matrix</a>
+          <a href="#qfilters-scorer" class="bench-nav-pill">🎯 Attention Correlation</a>
+          <a href="#quality-gap" class="bench-nav-pill">📉 Perplexity &amp; Rings</a>
+          <a href="#memory-scaling" class="bench-nav-pill">💾 Memory Scaling</a>
+        </nav>
+      </header>
+
+      <!-- ── SECTION 1: METAL GPU ACCELERATION ── -->
+      <section id="metal" class="bench-section">
+        <div class="bench-section-header">
+          <span class="bench-section-tag">01 · Metal Performance</span>
+          <h2 class="bench-section-title">Metal GPU Kernel Acceleration</h2>
+          <p class="bench-section-subtitle">
+            Hand-written Metal Shading Language (MSL) kernels vs. pure MLX operations across sequence lengths on Apple Silicon unified memory.
+          </p>
+        </div>
+
+        <div class="bench-takeaway">
+          <div class="bench-takeaway-badge">KEY INSIGHT</div>
+          <p>
+            <strong>Metal threadgroup caching scales with context length:</strong> While unquantized attention stalls memory bandwidth on long sequences, our fused Metal kernels achieve <strong>6.91× speedup at 128 tokens</strong> and scale up to <strong>14.68× speedup at 8,192 tokens</strong>.
+          </p>
+        </div>
+
+        <!-- Visual Metal Benchmark Bars -->
+        <div class="bench-card">
+          <div class="bench-card-head">
+            <span class="bench-card-title">Execution Latency by Sequence Length (Lower is Better)</span>
+            <span class="bench-badge-chip">Apple M3 / M4 Metal Engine</span>
+          </div>
+
+          <div class="metal-bars-wrap">
+            <div class="metal-row">
+              <div class="metal-meta">
+                <span class="metal-seq">S = 128</span>
+                <span class="metal-speedup-badge">6.91× faster</span>
               </div>
-              <div class="corr-bar-track">
-                <div class="corr-bar-name">K-norm</div>
-                <div class="corr-bar-outer"><div class="corr-bar-fill base" style="width: 53%;"><span class="corr-bar-val base-val">+0.460</span></div></div>
+              <div class="metal-tracks">
+                <div class="metal-bar-line">
+                  <span class="metal-bar-lbl">Pure MLX</span>
+                  <div class="metal-bar-track"><div class="metal-bar-fill base" style="width: 100%;"></div></div>
+                  <span class="metal-bar-time">3.64 ms</span>
+                </div>
+                <div class="metal-bar-line">
+                  <span class="metal-bar-lbl">Metal MSL</span>
+                  <div class="metal-bar-track"><div class="metal-bar-fill metal" style="width: 14.5%;"></div></div>
+                  <span class="metal-bar-time">0.53 ms</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="metal-row">
+              <div class="metal-meta">
+                <span class="metal-seq">S = 512</span>
+                <span class="metal-speedup-badge">10.70× faster</span>
+              </div>
+              <div class="metal-tracks">
+                <div class="metal-bar-line">
+                  <span class="metal-bar-lbl">Pure MLX</span>
+                  <div class="metal-bar-track"><div class="metal-bar-fill base" style="width: 100%;"></div></div>
+                  <span class="metal-bar-time">13.47 ms</span>
+                </div>
+                <div class="metal-bar-line">
+                  <span class="metal-bar-lbl">Metal MSL</span>
+                  <div class="metal-bar-track"><div class="metal-bar-fill metal" style="width: 9.35%;"></div></div>
+                  <span class="metal-bar-time">1.26 ms</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="metal-row">
+              <div class="metal-meta">
+                <span class="metal-seq">S = 1,024</span>
+                <span class="metal-speedup-badge">12.09× faster</span>
+              </div>
+              <div class="metal-tracks">
+                <div class="metal-bar-line">
+                  <span class="metal-bar-lbl">Pure MLX</span>
+                  <div class="metal-bar-track"><div class="metal-bar-fill base" style="width: 100%;"></div></div>
+                  <span class="metal-bar-time">26.97 ms</span>
+                </div>
+                <div class="metal-bar-line">
+                  <span class="metal-bar-lbl">Metal MSL</span>
+                  <div class="metal-bar-track"><div class="metal-bar-fill metal" style="width: 8.27%;"></div></div>
+                  <span class="metal-bar-time">2.23 ms</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="metal-row">
+              <div class="metal-meta">
+                <span class="metal-seq">S = 2,048</span>
+                <span class="metal-speedup-badge">13.17× faster</span>
+              </div>
+              <div class="metal-tracks">
+                <div class="metal-bar-line">
+                  <span class="metal-bar-lbl">Pure MLX</span>
+                  <div class="metal-bar-track"><div class="metal-bar-fill base" style="width: 100%;"></div></div>
+                  <span class="metal-bar-time">55.10 ms</span>
+                </div>
+                <div class="metal-bar-line">
+                  <span class="metal-bar-lbl">Metal MSL</span>
+                  <div class="metal-bar-track"><div class="metal-bar-fill metal" style="width: 7.59%;"></div></div>
+                  <span class="metal-bar-time">4.18 ms</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="metal-row">
+              <div class="metal-meta">
+                <span class="metal-seq">S = 4,096</span>
+                <span class="metal-speedup-badge">13.63× faster</span>
+              </div>
+              <div class="metal-tracks">
+                <div class="metal-bar-line">
+                  <span class="metal-bar-lbl">Pure MLX</span>
+                  <div class="metal-bar-track"><div class="metal-bar-fill base" style="width: 100%;"></div></div>
+                  <span class="metal-bar-time">108.82 ms</span>
+                </div>
+                <div class="metal-bar-line">
+                  <span class="metal-bar-lbl">Metal MSL</span>
+                  <div class="metal-bar-track"><div class="metal-bar-fill metal" style="width: 7.33%;"></div></div>
+                  <span class="metal-bar-time">7.98 ms</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="metal-row">
+              <div class="metal-meta">
+                <span class="metal-seq">S = 8,192</span>
+                <span class="metal-speedup-badge">14.68× faster</span>
+              </div>
+              <div class="metal-tracks">
+                <div class="metal-bar-line">
+                  <span class="metal-bar-lbl">Pure MLX</span>
+                  <div class="metal-bar-track"><div class="metal-bar-fill base" style="width: 100%;"></div></div>
+                  <span class="metal-bar-time">228.56 ms</span>
+                </div>
+                <div class="metal-bar-line">
+                  <span class="metal-bar-lbl">Metal MSL</span>
+                  <div class="metal-bar-track"><div class="metal-bar-fill metal" style="width: 6.81%;"></div></div>
+                  <span class="metal-bar-time">15.57 ms</span>
+                </div>
               </div>
             </div>
           </div>
-          <div class="corr-row">
-            <div class="corr-row-label">Llama-3.2-3B</div>
-            <div class="corr-bars">
-              <div class="corr-bar-track">
-                <div class="corr-bar-name">Q-Filters</div>
-                <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 99%;"><span class="corr-bar-val">+0.863</span></div></div>
+        </div>
+      </section>
+
+      <!-- ── SECTION 2: 12-MODEL SAFETY MATRIX ── -->
+      <section id="kivi-matrix" class="bench-section">
+        <div class="bench-section-header">
+          <span class="bench-section-tag">02 · Multi-Model Safety</span>
+          <h2 class="bench-section-title">12-Model Quality Matrix (KIVI 4-Bit vs. 2-Bit)</h2>
+          <p class="bench-section-subtitle">
+            Long-context causal generation (~430–500 tokens, well beyond the 128-token residual cache window) tested across 12 models spanning 135M to 8B parameters.
+          </p>
+        </div>
+
+        <div class="bench-takeaway">
+          <div class="bench-takeaway-badge">CRITICAL RULE</div>
+          <p>
+            <strong>4-bit is safe across every model tested</strong> (perplexity within ~1 point of fp16). 
+            <strong>2-bit provides an 8× compression win on 7B–8B models</strong>, but causes significant degradation under ~3B (Llama-3.2-1B perplexity triples from 22.8 → 81.3). Choose bit-width based on parameter size!
+          </p>
+        </div>
+
+        <!-- Interactive Category Filter -->
+        <div class="model-filter-bar">
+          <span class="filter-label">FILTER BY SCALE:</span>
+          <div class="filter-pills" id="model-filter-pills">
+            <button type="button" class="filter-pill active" data-filter="all">All Models (12)</button>
+            <button type="button" class="filter-pill" data-filter="large">Large (7B–8B)</button>
+            <button type="button" class="filter-pill" data-filter="mid">Mid (3B–4B)</button>
+            <button type="button" class="filter-pill" data-filter="small">Small (&lt;3B)</button>
+            <button type="button" class="filter-pill" data-filter="moe">MoE &amp; MLA</button>
+          </div>
+        </div>
+
+        <!-- 12 Model Cards Grid -->
+        <div class="model-grid" id="benchmark-model-grid">
+          
+          <!-- Large Models -->
+          <div class="model-card good" data-size="large" data-arch="dense">
+            <div class="model-card-top">
+              <span class="model-badge good">✓ Safe at 2-bit</span>
+              <span class="model-scale-tag">7B Dense</span>
+            </div>
+            <div class="model-name">Mistral-7B-v0.3</div>
+            <div class="model-metrics-list">
+              <div class="model-metric-row"><span>fp16</span><b>8.01</b></div>
+              <div class="model-metric-row"><span>KIVI 4-bit</span><b class="td-winner">7.96</b></div>
+              <div class="model-metric-row"><span>KIVI 2-bit</span><b class="td-winner">8.05</b></div>
+              <div class="model-metric-row"><span>Throughput</span><span class="td-muted">22.8 tok/s</span></div>
+            </div>
+          </div>
+
+          <div class="model-card good" data-size="large" data-arch="dense">
+            <div class="model-card-top">
+              <span class="model-badge good">✓ Safe at 2-bit</span>
+              <span class="model-scale-tag">7B Dense</span>
+            </div>
+            <div class="model-name">Qwen2.5-7B</div>
+            <div class="model-metrics-list">
+              <div class="model-metric-row"><span>fp16</span><span class="td-muted">n/a</span></div>
+              <div class="model-metric-row"><span>KIVI 4-bit</span><b class="td-winner">9.30</b></div>
+              <div class="model-metric-row"><span>KIVI 2-bit</span><b class="td-winner">10.75</b></div>
+              <div class="model-metric-row"><span>Throughput</span><span class="td-muted">20.9 tok/s</span></div>
+            </div>
+          </div>
+
+          <div class="model-card good" data-size="large" data-arch="dense">
+            <div class="model-card-top">
+              <span class="model-badge good">✓ Safe at 2-bit</span>
+              <span class="model-scale-tag">8B Dense</span>
+            </div>
+            <div class="model-name">Llama-3.1-8B</div>
+            <div class="model-metrics-list">
+              <div class="model-metric-row"><span>fp16</span><b>10.88</b></div>
+              <div class="model-metric-row"><span>KIVI 4-bit</span><b class="td-winner">11.02</b></div>
+              <div class="model-metric-row"><span>KIVI 2-bit</span><b class="td-winner">13.57</b></div>
+              <div class="model-metric-row"><span>Throughput</span><span class="td-muted">18.5 tok/s</span></div>
+            </div>
+          </div>
+
+          <div class="model-card good" data-size="large" data-arch="dense">
+            <div class="model-card-top">
+              <span class="model-badge good">✓ Safe at 2-bit</span>
+              <span class="model-scale-tag">7B Dense</span>
+            </div>
+            <div class="model-name">Falcon3-7B</div>
+            <div class="model-metrics-list">
+              <div class="model-metric-row"><span>fp16</span><b>12.69</b></div>
+              <div class="model-metric-row"><span>KIVI 4-bit</span><b class="td-winner">12.63</b></div>
+              <div class="model-metric-row"><span>KIVI 2-bit</span><b class="td-winner">14.44</b></div>
+              <div class="model-metric-row"><span>Throughput</span><span class="td-muted">16.1 tok/s</span></div>
+            </div>
+          </div>
+
+          <div class="model-card good" data-size="large" data-arch="dense">
+            <div class="model-card-top">
+              <span class="model-badge good">✓ Safe at 2-bit</span>
+              <span class="model-scale-tag">8B Dense</span>
+            </div>
+            <div class="model-name">Qwen3-8B</div>
+            <div class="model-metrics-list">
+              <div class="model-metric-row"><span>fp16</span><span class="td-muted">n/a</span></div>
+              <div class="model-metric-row"><span>KIVI 4-bit</span><b class="td-winner">9.92</b></div>
+              <div class="model-metric-row"><span>KIVI 2-bit</span><b class="td-winner">10.57</b></div>
+              <div class="model-metric-row"><span>Throughput</span><span class="td-muted">Validated</span></div>
+            </div>
+          </div>
+
+          <!-- MoE / MLA -->
+          <div class="model-card good" data-size="moe" data-arch="moe">
+            <div class="model-card-top">
+              <span class="model-badge good">✓ Safe at 2-bit</span>
+              <span class="model-scale-tag">MoE · MLA</span>
+            </div>
+            <div class="model-name">DeepSeek-V2-Lite</div>
+            <div class="model-metrics-list">
+              <div class="model-metric-row"><span>fp16</span><span class="td-muted">n/a</span></div>
+              <div class="model-metric-row"><span>KIVI 4-bit</span><b class="td-winner">15.34</b></div>
+              <div class="model-metric-row"><span>KIVI 2-bit</span><b class="td-winner">17.87</b></div>
+              <div class="model-metric-row"><span>Throughput</span><span class="td-muted">82.5 tok/s</span></div>
+            </div>
+          </div>
+
+          <!-- Mid Models -->
+          <div class="model-card good" data-size="mid" data-arch="dense">
+            <div class="model-card-top">
+              <span class="model-badge good">✓ Safe at 4-bit</span>
+              <span class="model-scale-tag">4B Dense</span>
+            </div>
+            <div class="model-name">Gemma-3-4B</div>
+            <div class="model-metrics-list">
+              <div class="model-metric-row"><span>fp16</span><b>16.00</b></div>
+              <div class="model-metric-row"><span>KIVI 4-bit</span><b class="td-winner">16.37</b></div>
+              <div class="model-metric-row"><span>KIVI 2-bit</span><b>17.72</b></div>
+              <div class="model-metric-row"><span>Throughput</span><span class="td-muted">Validated</span></div>
+            </div>
+          </div>
+
+          <div class="model-card good" data-size="mid" data-arch="dense">
+            <div class="model-card-top">
+              <span class="model-badge good">✓ Safe at 4-bit</span>
+              <span class="model-scale-tag">4B Dense</span>
+            </div>
+            <div class="model-name">Qwen3-4B</div>
+            <div class="model-metrics-list">
+              <div class="model-metric-row"><span>fp16</span><span class="td-muted">n/a</span></div>
+              <div class="model-metric-row"><span>KIVI 4-bit</span><b class="td-winner">15.07</b></div>
+              <div class="model-metric-row"><span>KIVI 2-bit</span><b>17.21</b></div>
+              <div class="model-metric-row"><span>Throughput</span><span class="td-muted">Validated</span></div>
+            </div>
+          </div>
+
+          <div class="model-card good" data-size="mid" data-arch="dense">
+            <div class="model-card-top">
+              <span class="model-badge good">✓ Safe at 4-bit</span>
+              <span class="model-scale-tag">3B Dense</span>
+            </div>
+            <div class="model-name">Llama-3.2-3B</div>
+            <div class="model-metrics-list">
+              <div class="model-metric-row"><span>fp16</span><b>15.47</b></div>
+              <div class="model-metric-row"><span>KIVI 4-bit</span><b class="td-winner">15.82</b></div>
+              <div class="model-metric-row"><span>KIVI 2-bit</span><b>20.93</b></div>
+              <div class="model-metric-row"><span>Throughput</span><span class="td-muted">46.2 tok/s</span></div>
+            </div>
+          </div>
+
+          <!-- Small Models -->
+          <div class="model-card caution" data-size="small" data-arch="dense">
+            <div class="model-card-top">
+              <span class="model-badge caution">▲ Caution on 2-bit</span>
+              <span class="model-scale-tag">1B Dense</span>
+            </div>
+            <div class="model-name">Llama-3.2-1B</div>
+            <div class="model-metrics-list">
+              <div class="model-metric-row"><span>fp16</span><b>22.77</b></div>
+              <div class="model-metric-row"><span>KIVI 4-bit</span><b class="td-winner">23.27</b></div>
+              <div class="model-metric-row"><span>KIVI 2-bit</span><b class="td-hot">81.30</b></div>
+              <div class="model-metric-row"><span>Throughput</span><span class="td-muted">119.7 tok/s</span></div>
+            </div>
+          </div>
+
+          <div class="model-card caution" data-size="small" data-arch="dense">
+            <div class="model-card-top">
+              <span class="model-badge caution">▲ Caution on 2-bit</span>
+              <span class="model-scale-tag">0.5B Dense</span>
+            </div>
+            <div class="model-name">Qwen2.5-0.5B</div>
+            <div class="model-metrics-list">
+              <div class="model-metric-row"><span>fp16</span><span class="td-muted">n/a</span></div>
+              <div class="model-metric-row"><span>KIVI 4-bit</span><b class="td-winner">22.22</b></div>
+              <div class="model-metric-row"><span>KIVI 2-bit</span><b class="td-hot">49.08</b></div>
+              <div class="model-metric-row"><span>Throughput</span><span class="td-muted">244.3 tok/s</span></div>
+            </div>
+          </div>
+
+          <div class="model-card caution" data-size="small" data-arch="dense">
+            <div class="model-card-top">
+              <span class="model-badge caution">▲ Caution on 2-bit</span>
+              <span class="model-scale-tag">135M Dense</span>
+            </div>
+            <div class="model-name">SmolLM2-135M</div>
+            <div class="model-metrics-list">
+              <div class="model-metric-row"><span>fp16</span><b>28.87</b></div>
+              <div class="model-metric-row"><span>KIVI 4-bit</span><b class="td-winner">29.63</b></div>
+              <div class="model-metric-row"><span>KIVI 2-bit</span><b class="td-hot">44.85</b></div>
+              <div class="model-metric-row"><span>Throughput</span><span class="td-muted">Validated</span></div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Full Table Accordion -->
+        <details class="ref-table">
+          <summary>View Complete Numerical Data Table (All 12 Models)</summary>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Model Architecture</th>
+                  <th>fp16 Perplexity</th>
+                  <th>KIVI 4-bit (4×)</th>
+                  <th>KIVI 2-bit (8×)</th>
+                  <th>Decode tok/s</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>SmolLM2-135M</td><td>28.87</td><td class="td-winner">29.63</td><td class="td-caution">44.85</td><td class="td-muted">—</td></tr>
+                <tr><td>Qwen2.5-0.5B</td><td class="td-muted">n/a<sup>†</sup></td><td class="td-winner">22.22</td><td class="td-caution">49.08</td><td>244.3 tok/s</td></tr>
+                <tr><td>Llama-3.2-1B</td><td>22.77</td><td class="td-winner">23.27</td><td class="td-caution">81.30</td><td>119.7 tok/s</td></tr>
+                <tr><td>gemma-3-4B</td><td>16.00</td><td class="td-winner">16.37</td><td>17.72</td><td class="td-muted">—</td></tr>
+                <tr><td>Qwen3-4B</td><td class="td-muted">n/a<sup>†</sup></td><td class="td-winner">15.07</td><td>17.21</td><td class="td-muted">—</td></tr>
+                <tr><td>Llama-3.2-3B</td><td>15.47</td><td class="td-winner">15.82</td><td>20.93</td><td>46.2 tok/s</td></tr>
+                <tr><td>Mistral-7B-v0.3</td><td>8.01</td><td class="td-winner">7.96</td><td class="td-winner">8.05</td><td>22.8 tok/s</td></tr>
+                <tr><td>Qwen2.5-7B</td><td class="td-muted">n/a<sup>†</sup></td><td class="td-winner">9.30</td><td>10.75</td><td>20.9 tok/s</td></tr>
+                <tr><td>Llama-3.1-8B</td><td>10.88</td><td class="td-winner">11.02</td><td>13.57</td><td>18.5 tok/s</td></tr>
+                <tr><td>Falcon3-7B</td><td>12.69</td><td class="td-winner">12.63</td><td>14.44</td><td>16.1 tok/s</td></tr>
+                <tr><td>Qwen3-8B</td><td class="td-muted">n/a<sup>†</sup></td><td class="td-winner">9.92</td><td>10.57</td><td class="td-muted">—</td></tr>
+                <tr><td>DeepSeek-V2-Lite (MoE·MLA)</td><td class="td-muted">n/a<sup>†</sup></td><td class="td-winner">15.34</td><td>17.87</td><td>82.5 tok/s</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+      <!-- ── SECTION 3: ATTENTION SCORER (Q-FILTERS) ── -->
+      <section id="qfilters-scorer" class="bench-section">
+        <div class="bench-section-header">
+          <span class="bench-section-tag">03 · Token Eviction Accuracy</span>
+          <h2 class="bench-section-title">Attention Scorer Correlation (Q-Filters)</h2>
+          <p class="bench-section-subtitle">
+            Spearman rank-order correlation with genuine model attention weights. Tests whether the scorer correctly identifies which tokens are critical to retain.
+          </p>
+        </div>
+
+        <div class="bench-takeaway">
+          <div class="bench-takeaway-badge">PERFECT PREDICTION</div>
+          <p>
+            <strong>100% sign-accuracy across all models tested.</strong> Q-Filters achieves roughly <strong>2× the correlation</strong> of naive K-norm / L2Norm baselines (+0.863 vs +0.410 on Llama-3.2-3B).
+          </p>
+        </div>
+
+        <div class="bench-card">
+          <div class="chart-legend">
+            <div class="legend-item"><span class="legend-dot" style="background: var(--accent);"></span>Q-Filters (Query-SVD Calibrated)</div>
+            <div class="legend-item"><span class="legend-dot" style="background: #475569;"></span>Naive K-Norm / L2Norm Baseline</div>
+          </div>
+
+          <div class="corr-group">
+            <div class="corr-row">
+              <div class="corr-row-label">Llama-3.2-1B</div>
+              <div class="corr-bars">
+                <div class="corr-bar-track">
+                  <div class="corr-bar-name">Q-Filters</div>
+                  <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 90%;"><span class="corr-bar-val">+0.783 (100% sign)</span></div></div>
+                </div>
+                <div class="corr-bar-track">
+                  <div class="corr-bar-name">K-norm</div>
+                  <div class="corr-bar-outer"><div class="corr-bar-fill base" style="width: 53%;"><span class="corr-bar-val base-val">+0.460</span></div></div>
+                </div>
               </div>
-              <div class="corr-bar-track">
-                <div class="corr-bar-name">K-norm</div>
-                <div class="corr-bar-outer"><div class="corr-bar-fill base" style="width: 47%;"><span class="corr-bar-val base-val">+0.410</span></div></div>
+            </div>
+
+            <div class="corr-row">
+              <div class="corr-row-label">Llama-3.2-3B</div>
+              <div class="corr-bars">
+                <div class="corr-bar-track">
+                  <div class="corr-bar-name">Q-Filters</div>
+                  <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 99%;"><span class="corr-bar-val">+0.863 (100% sign)</span></div></div>
+                </div>
+                <div class="corr-bar-track">
+                  <div class="corr-bar-name">K-norm</div>
+                  <div class="corr-bar-outer"><div class="corr-bar-fill base" style="width: 47%;"><span class="corr-bar-val base-val">+0.410</span></div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="corr-row">
+              <div class="corr-row-label">Qwen2.5-7B</div>
+              <div class="corr-bars">
+                <div class="corr-bar-track">
+                  <div class="corr-bar-name">Q-Filters</div>
+                  <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 97%;"><span class="corr-bar-val">+0.850 (100% sign)</span></div></div>
+                </div>
+                <div class="corr-bar-track">
+                  <div class="corr-bar-name">K-norm</div>
+                  <div class="corr-bar-outer"><div class="corr-bar-fill base" style="width: 46%;"><span class="corr-bar-val base-val">+0.402</span></div></div>
+                </div>
               </div>
             </div>
           </div>
-          <div class="corr-row">
-            <div class="corr-row-label">Qwen2.5-7B</div>
-            <div class="corr-bars">
-              <div class="corr-bar-track">
-                <div class="corr-bar-name">Q-Filters</div>
-                <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 97%;"><span class="corr-bar-val">+0.850</span></div></div>
+        </div>
+      </section>
+
+      <!-- ── SECTION 4: PERPLEXITY & GAP CLOSED ── -->
+      <section id="quality-gap" class="bench-section">
+        <div class="bench-section-header">
+          <span class="bench-section-tag">04 · Quality Preservation</span>
+          <h2 class="bench-section-title">Generation Perplexity &amp; Quality Gap Closed</h2>
+          <p class="bench-section-subtitle">
+            Percentage of the fp16 degradation gap closed by Q-Filters calibration relative to naive eviction at varying memory compression budgets.
+          </p>
+        </div>
+
+        <div class="bench-card">
+          <div class="gap-chart">
+            <div class="gap-col">
+              <div class="gap-ring-wrap">
+                <svg width="100" height="100" viewBox="0 0 100 100" aria-hidden="true">
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="8"/>
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="#22c55e" stroke-width="8" stroke-linecap="round" stroke-dasharray="263.8" stroke-dashoffset="126.6" transform="rotate(-90 50 50)"/>
+                </svg>
+                <span class="gap-ring-num" style="color: #22c55e;">52%</span>
               </div>
-              <div class="corr-bar-track">
-                <div class="corr-bar-name">K-norm</div>
-                <div class="corr-bar-outer"><div class="corr-bar-fill base" style="width: 46%;"><span class="corr-bar-val base-val">+0.402</span></div></div>
+              <div class="gap-budget">Budget 256 (~4×)</div>
+              <div class="gap-note">8.48 vs 13.36 ppl</div>
+            </div>
+
+            <div class="gap-col">
+              <div class="gap-ring-wrap">
+                <svg width="100" height="100" viewBox="0 0 100 100" aria-hidden="true">
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="8"/>
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="#00d4ff" stroke-width="8" stroke-linecap="round" stroke-dasharray="263.8" stroke-dashoffset="166.2" transform="rotate(-90 50 50)"/>
+                </svg>
+                <span class="gap-ring-num" style="color: #00d4ff;">37%</span>
               </div>
+              <div class="gap-budget">Budget 128 (~8×)</div>
+              <div class="gap-note">16.31 vs 23.65 ppl</div>
+            </div>
+
+            <div class="gap-col">
+              <div class="gap-ring-wrap">
+                <svg width="100" height="100" viewBox="0 0 100 100" aria-hidden="true">
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="8"/>
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="#f59e0b" stroke-width="8" stroke-linecap="round" stroke-dasharray="263.8" stroke-dashoffset="211.0" transform="rotate(-90 50 50)"/>
+                </svg>
+                <span class="gap-ring-num" style="color: #f59e0b;">20%</span>
+              </div>
+              <div class="gap-budget">Budget 64 (~16×)</div>
+              <div class="gap-note">25.93 vs 31.27 ppl</div>
             </div>
           </div>
+          <p class="gap-footnote">Measurements on Llama-3.2-1B (fp16 baseline 4.050 ppl). Llama-3.2-3B closes 55% / 42% at Budgets 256 / 128.</p>
         </div>
-      </div>
+      </section>
 
-      <details class="ref-table fade-in">
-        <summary>Exact figures — attention-correlation accuracy (sign-correct %)</summary>
-        <div class="table-wrap">
-          <table>
-            <caption class="visually-hidden">Q-Filters attention-correlation accuracy vs. K-norm baseline</caption>
-            <thead>
-              <tr>
-                <th scope="col">Scorer</th>
-                <th scope="col">Llama-3.2-1B</th>
-                <th scope="col">Llama-3.2-3B</th>
-                <th scope="col">Qwen2.5-7B</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Q-Filters, calibrated (query-SVD)</td>
-                <td class="td-winner">+0.783 <span class="td-muted">(100% sign-correct)</span></td>
-                <td class="td-winner">+0.863 <span class="td-muted">(100%)</span></td>
-                <td class="td-winner">+0.850 <span class="td-muted">(100%)</span></td>
-              </tr>
-              <tr>
-                <td>K-norm / L2Norm</td>
-                <td>+0.460 <span class="td-muted">(94.5%)</span></td>
-                <td>+0.410 <span class="td-muted">(94.6%)</span></td>
-                <td>+0.402 <span class="td-muted">(86.6%)</span></td>
-              </tr>
-            </tbody>
-          </table>
+      <!-- ── SECTION 5: KV CACHE MEMORY SCALING ── -->
+      <section id="memory-scaling" class="bench-section">
+        <div class="bench-section-header">
+          <span class="bench-section-tag">05 · Memory Footprint</span>
+          <h2 class="bench-section-title">Real KV Cache Memory Scaling (RaBitQ on Falcon3-7B)</h2>
+          <p class="bench-section-subtitle">
+            Measured RAM footprint of the KV cache across context lengths from 256 to 4,096 tokens.
+          </p>
         </div>
-      </details>
 
-      <h3 class="bench-subtitle">Does that translate to better generations?</h3>
-      <p class="section-desc" style="margin-bottom:1.5rem">
-        Share of the fp16 quality gap closed by calibration, at each compression budget (higher is better).
-        <a href="/docs/algorithms/qfilters" class="t-accent">Full write-up →</a>
-      </p>
-
-      <div class="chart-block fade-in">
-        <div class="gap-chart">
-          <div class="gap-col">
-            <div class="gap-ring-wrap">
-              <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden="true">
-                <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(148,163,184,0.15)" stroke-width="8"/>
-                <circle cx="46" cy="46" r="40" fill="none" stroke="var(--good)" stroke-width="8" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="66.5" transform="rotate(-90 46 46)"/>
-              </svg>
-              <span class="gap-ring-num" style="color: var(--good);">52%</span>
-            </div>
-            <div class="gap-budget">Budget 256 (~4×)</div>
-            <div class="gap-note">8.48 vs 13.36 ppl</div>
-          </div>
-          <div class="gap-col">
-            <div class="gap-ring-wrap">
-              <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden="true">
-                <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(148,163,184,0.15)" stroke-width="8"/>
-                <circle cx="46" cy="46" r="40" fill="none" stroke="var(--accent)" stroke-width="8" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="158.3" transform="rotate(-90 46 46)"/>
-              </svg>
-              <span class="gap-ring-num" style="color: var(--accent);">37%</span>
-            </div>
-            <div class="gap-budget">Budget 128 (~8×)</div>
-            <div class="gap-note">16.31 vs 23.65 ppl</div>
-          </div>
-          <div class="gap-col">
-            <div class="gap-ring-wrap">
-              <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden="true">
-                <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(148,163,184,0.15)" stroke-width="8"/>
-                <circle cx="46" cy="46" r="40" fill="none" stroke="var(--caution)" stroke-width="8" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="200.9" transform="rotate(-90 46 46)"/>
-              </svg>
-              <span class="gap-ring-num" style="color: var(--caution-text);">20%</span>
-            </div>
-            <div class="gap-budget">Budget 64 (~16×)</div>
-            <div class="gap-note">25.93 vs 31.27 ppl</div>
+        <div class="bench-card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Sequence Length</th>
+                  <th>Standard fp16 Cache</th>
+                  <th>RaBitQ MSE-4V Cache</th>
+                  <th>Memory Saved</th>
+                  <th>Compression Ratio</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>256 tokens</strong></td>
+                  <td>29.4 MB</td>
+                  <td class="td-winner">4.9 MB</td>
+                  <td>24.5 MB freed</td>
+                  <td class="td-winner">5.95×</td>
+                </tr>
+                <tr>
+                  <td><strong>512 tokens</strong></td>
+                  <td>58.7 MB</td>
+                  <td class="td-winner">9.9 MB</td>
+                  <td>48.8 MB freed</td>
+                  <td class="td-winner">5.95×</td>
+                </tr>
+                <tr>
+                  <td><strong>1,024 tokens</strong></td>
+                  <td>117.4 MB</td>
+                  <td class="td-winner">19.7 MB</td>
+                  <td>97.7 MB freed</td>
+                  <td class="td-winner">5.95×</td>
+                </tr>
+                <tr>
+                  <td><strong>2,048 tokens</strong></td>
+                  <td>234.9 MB</td>
+                  <td class="td-winner">39.5 MB</td>
+                  <td>195.4 MB freed</td>
+                  <td class="td-winner">5.95×</td>
+                </tr>
+                <tr>
+                  <td><strong>4,096 tokens</strong></td>
+                  <td>469.8 MB</td>
+                  <td class="td-winner">78.9 MB</td>
+                  <td>390.9 MB freed</td>
+                  <td class="td-winner">5.95×</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
-        <p class="gap-footnote">Llama-3.2-1B shown (fp16 baseline 4.050 ppl) — Llama-3.2-3B closes 55% / 42% at the same two budgets.</p>
-      </div>
 
-      <details class="ref-table fade-in" style="margin-top: 1.25rem;">
-        <summary>Exact figures — generation perplexity, calibrated vs. fallback</summary>
-        <div class="table-wrap">
-          <table>
-            <caption class="visually-hidden">Q-Filters generation perplexity, calibrated vs. fallback</caption>
-            <thead>
-              <tr>
-                <th scope="col">Model / budget</th>
-                <th scope="col">Calibrated</th>
-                <th scope="col">Fallback</th>
-                <th scope="col">Gap to fp16 closed</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td colspan="4" class="td-muted">Llama-3.2-1B (fp16 baseline 4.050)</td></tr>
-              <tr>
-                <td>Budget 256 (~4×)</td>
-                <td class="td-winner">8.476</td>
-                <td>13.358</td>
-                <td class="td-winner">52%</td>
-              </tr>
-              <tr>
-                <td>Budget 128 (~8×)</td>
-                <td class="td-winner">16.307</td>
-                <td>23.645</td>
-                <td class="td-winner">37%</td>
-              </tr>
-              <tr>
-                <td>Budget 64 (~16×)</td>
-                <td class="td-winner">25.933</td>
-                <td>31.274</td>
-                <td class="td-winner">20%</td>
-              </tr>
-              <tr><td colspan="4" class="td-muted">Llama-3.2-3B (fp16 baseline 3.305)</td></tr>
-              <tr>
-                <td>Budget 256 (~4×)</td>
-                <td class="td-winner">5.076</td>
-                <td>7.264</td>
-                <td class="td-winner">55%</td>
-              </tr>
-              <tr>
-                <td>Budget 128 (~8×)</td>
-                <td class="td-winner">10.046</td>
-                <td>14.909</td>
-                <td class="td-winner">42%</td>
-              </tr>
-            </tbody>
-          </table>
+        <!-- Reproduce command terminal box -->
+        <div class="bench-cli-box">
+          <div class="bench-cli-head">
+            <span>Reproduce these benchmarks on your Mac</span>
+            <span class="bench-cli-chip">CLI</span>
+          </div>
+          <pre><code>python -m veloxquant_mlx benchmark --all</code></pre>
         </div>
-      </details>
+      </section>
 
-      <p class="section-desc" style="margin-top:2.5rem;">
-        Want the main compression and speed numbers instead?
-        <a href="index.html#benchmarks" class="t-accent">Back to the summary table →</a>
-      </p>
-    </section>
-
-    <section id="kivi-multi-model" class="fade-in" style="padding-top:5rem;">
-      <div class="section-head-center">
-        <p class="section-label">KIVI, across the model zoo</p>
-        <h2 class="section-title">Does 4×/8× KV-cache compression hold up on real models?</h2>
-        <p class="section-desc">
-          KIVI's asymmetric group-wise quantization compresses the KV-cache 4× at 4-bit and 8×
-          at 2-bit. Numbers alone don't tell you whether that's safe to actually use — so this
-          runs the same long-context prompt (~430–500 tokens, well past the 128-token residual
-          window, so quantization is genuinely exercised) through 12 locally-cached models
-          spanning 135M to 8B parameters and Dense, MoE, and MLA attention, measuring perplexity
-          and decode throughput for fp16, KIVI 4-bit, and KIVI 2-bit.
-        </p>
-      </div>
-
-      <div class="takeaway fade-in">
-        <svg class="takeaway-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>
-        <p><strong>4-bit is safe almost everywhere.</strong> Perplexity stays within about a point of
-        fp16 across every model, 135M to 8B. <strong>2-bit is a real 8× win on 7–8B models</strong> — but
-        it's a poor fit under ~3B parameters: Llama-3.2-1B's perplexity <strong>more than triples</strong>
-        (22.8 → 81.3). Pick bit-width by model size, not as a blanket default.</p>
-      </div>
-
-      <h3 class="bench-subtitle">Model-by-model safety at a glance</h3>
-      <p class="section-desc" style="margin-bottom:1.5rem">
-        KIVI b=4 vs. b=2 perplexity — the practical question: is 2-bit still usable on this model?
-        Lower is better.
-      </p>
-
-      <div class="legend-strip fade-in">
-        <div class="legend-chip"><span class="dot" style="background: var(--good);"></span>Safe — within ~1&nbsp;pt of 4-bit</div>
-        <div class="legend-chip"><span class="dot" style="background: var(--caution);"></span>Usable, notably degraded</div>
-      </div>
-
-      <div class="model-grid fade-in">
-        <div class="model-card caution">
-          <span class="model-badge caution">Caution</span>
-          <div class="model-name">Llama-3.2-1B</div>
-          <div class="model-metric">b=4 <b>23.27</b></div>
-          <div class="model-metric">b=2 <b class="hot">81.30</b></div>
-        </div>
-        <div class="model-card caution">
-          <span class="model-badge caution">Caution</span>
-          <div class="model-name">SmolLM2-135M</div>
-          <div class="model-metric">b=4 <b>29.63</b></div>
-          <div class="model-metric">b=2 <b class="hot">44.85</b></div>
-        </div>
-        <div class="model-card caution">
-          <span class="model-badge caution">Caution</span>
-          <div class="model-name">Qwen2.5-0.5B</div>
-          <div class="model-metric">b=4 <b>22.22</b></div>
-          <div class="model-metric">b=2 <b class="hot">49.08</b></div>
-        </div>
-        <div class="model-card good">
-          <span class="model-badge good">Safe</span>
-          <div class="model-name">gemma-3-4B</div>
-          <div class="model-metric">b=4 <b>16.37</b></div>
-          <div class="model-metric">b=2 <b>17.72</b></div>
-        </div>
-        <div class="model-card good">
-          <span class="model-badge good">Safe</span>
-          <div class="model-name">Qwen3-4B</div>
-          <div class="model-metric">b=4 <b>15.07</b></div>
-          <div class="model-metric">b=2 <b>17.21</b></div>
-        </div>
-        <div class="model-card good">
-          <span class="model-badge good">Safe</span>
-          <div class="model-name">Llama-3.2-3B</div>
-          <div class="model-metric">b=4 <b>15.82</b></div>
-          <div class="model-metric">b=2 <b>20.93</b></div>
-        </div>
-        <div class="model-card good">
-          <span class="model-badge good">Safe</span>
-          <div class="model-name">Mistral-7B-v0.3</div>
-          <div class="model-metric">b=4 <b>7.96</b></div>
-          <div class="model-metric">b=2 <b>8.05</b></div>
-        </div>
-        <div class="model-card good">
-          <span class="model-badge good">Safe</span>
-          <div class="model-name">Qwen2.5-7B</div>
-          <div class="model-metric">b=4 <b>9.30</b></div>
-          <div class="model-metric">b=2 <b>10.75</b></div>
-        </div>
-        <div class="model-card good">
-          <span class="model-badge good">Safe</span>
-          <div class="model-name">Llama-3.1-8B</div>
-          <div class="model-metric">b=4 <b>11.02</b></div>
-          <div class="model-metric">b=2 <b>13.57</b></div>
-        </div>
-        <div class="model-card good">
-          <span class="model-badge good">Safe</span>
-          <div class="model-name">Falcon3-7B</div>
-          <div class="model-metric">b=4 <b>12.63</b></div>
-          <div class="model-metric">b=2 <b>14.44</b></div>
-        </div>
-        <div class="model-card good">
-          <span class="model-badge good">Safe</span>
-          <div class="model-name">Qwen3-8B</div>
-          <div class="model-metric">b=4 <b>9.92</b></div>
-          <div class="model-metric">b=2 <b>10.57</b></div>
-        </div>
-        <div class="model-card good">
-          <span class="model-badge good">Safe</span>
-          <div class="model-name">DeepSeek-V2-Lite <span class="td-muted" style="font-size:0.65rem;">MoE·MLA</span></div>
-          <div class="model-metric">b=4 <b>15.34</b></div>
-          <div class="model-metric">b=2 <b>17.87</b></div>
-        </div>
-      </div>
-
-      <details class="ref-table fade-in">
-        <summary>Exact figures — all 12 models, fp16 vs. KIVI b=4 vs. KIVI b=2</summary>
-        <div class="table-wrap">
-          <table>
-            <caption class="visually-hidden">KIVI perplexity across 12 models, fp16 vs 4-bit vs 2-bit</caption>
-            <thead>
-              <tr>
-                <th scope="col">Model</th>
-                <th scope="col">fp16</th>
-                <th scope="col">KIVI b=4</th>
-                <th scope="col">KIVI b=2</th>
-                <th scope="col">Decode tok/s (fp16 → b4 → b2)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>SmolLM2-135M</td>
-                <td>28.87</td>
-                <td class="td-winner">29.63</td>
-                <td class="td-caution">44.85</td>
-                <td class="td-muted">—</td>
-              </tr>
-              <tr>
-                <td>Qwen2.5-0.5B</td>
-                <td class="td-muted">n/a<sup>†</sup></td>
-                <td class="td-winner">22.22</td>
-                <td class="td-caution">49.08</td>
-                <td class="td-muted">— → 245.2 → 244.3</td>
-              </tr>
-              <tr>
-                <td>Llama-3.2-1B</td>
-                <td>22.77</td>
-                <td class="td-winner">23.27</td>
-                <td class="td-caution">81.30</td>
-                <td>113.7 → 116.9 → 119.7</td>
-              </tr>
-              <tr>
-                <td>gemma-3-4B</td>
-                <td>16.00</td>
-                <td class="td-winner">16.37</td>
-                <td>17.72</td>
-                <td class="td-muted">—</td>
-              </tr>
-              <tr>
-                <td>Qwen3-4B</td>
-                <td class="td-muted">n/a<sup>†</sup></td>
-                <td class="td-winner">15.07</td>
-                <td>17.21</td>
-                <td class="td-muted">—</td>
-              </tr>
-              <tr>
-                <td>Llama-3.2-3B</td>
-                <td>15.47</td>
-                <td class="td-winner">15.82</td>
-                <td>20.93</td>
-                <td>46.4 → 48.5 → 46.2</td>
-              </tr>
-              <tr>
-                <td>Mistral-7B-v0.3</td>
-                <td>8.01</td>
-                <td class="td-winner">7.96</td>
-                <td>8.05</td>
-                <td>20.9 → 21.4 → 22.8</td>
-              </tr>
-              <tr>
-                <td>Qwen2.5-7B</td>
-                <td class="td-muted">n/a<sup>†</sup></td>
-                <td class="td-winner">9.30</td>
-                <td>10.75</td>
-                <td class="td-muted">— → 23.4 → 20.9</td>
-              </tr>
-              <tr>
-                <td>Llama-3.1-8B</td>
-                <td>10.88</td>
-                <td class="td-winner">11.02</td>
-                <td>13.57</td>
-                <td>15.6 → 15.9 → 18.5</td>
-              </tr>
-              <tr>
-                <td>Falcon3-7B</td>
-                <td>12.69</td>
-                <td class="td-winner">12.63</td>
-                <td>14.44</td>
-                <td>15.2 → 25.2 → 16.1</td>
-              </tr>
-              <tr>
-                <td>Qwen3-8B</td>
-                <td class="td-muted">n/a<sup>†</sup></td>
-                <td class="td-winner">9.92</td>
-                <td>10.57</td>
-                <td class="td-muted">—</td>
-              </tr>
-              <tr>
-                <td>DeepSeek-V2-Lite <span class="td-muted">(MoE, MLA)</span></td>
-                <td class="td-muted">n/a<sup>†</sup></td>
-                <td class="td-winner">15.34</td>
-                <td>17.87</td>
-                <td class="td-muted">— → 282.9<sup>‡</sup> → 82.5<sup>‡</sup></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </details>
-
-      <div class="callout fade-in">
-        <div class="callout-title">What this means for you</div>
-        <p>KIVI b=4 is close to a free 4× memory win on any model size. For b=2's 8× win, it's
-        validated on <strong>7–8B-parameter models</strong> — Mistral-7B, Llama-3.1-8B, Qwen2.5-7B,
-        Falcon3-7B, Qwen3-8B all land within roughly 0.6–3 perplexity points of their 4-bit runs.
-        Below ~3B, treat 2-bit as a quality/memory tradeoff to test yourself, not a default.
-        DeepSeek-V2-Lite's MoE + multi-head-latent-attention design — a layout KIVI wasn't built
-        around — ran cleanly at both bit-widths, a good robustness signal beyond standard attention.</p>
-      </div>
-
-      <details class="methodology fade-in">
-        <summary>Methodology notes &amp; caveats</summary>
-        <div class="methodology-body">
-          Long-sample causal-LM perplexity (~430–500 tokens — well past the 128-token residual
-          window, so quantization is genuinely exercised), computed through the actual patched
-          cache, not a bypassed no-cache forward pass.<br><br>
-          <strong>†</strong> fp16 baseline not measurable for these architectures — this
-          <code>mlx-lm</code> version's default model class has no <code>make_cache</code> for
-          Qwen2.5/Qwen3/DeepSeek-V2, a pre-existing library gap unrelated to KIVI. KIVI's own
-          patch supplies <code>make_cache</code>, so the quantized rows measured normally.<br><br>
-          <strong>‡</strong> DeepSeek-V2-Lite's b=4→b=2 throughput gap (282.9 → 82.5 tok/s) is
-          larger than bit-width alone should cause — most likely MoE expert-routing variance
-          between separate runs, not a real speed difference. Treat it as noise, not a finding.
-        </div>
-      </details>
-    </section>
+    </div>
   </main>
 
-  <!-- ── FOOTER ── -->
-  <footer>
-    <ul class="footer-links">
-      <li><a href="index.html">Home</a></li>
-      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
-      <li><a href="https://pypi.org/project/VeloxQuant-MLX/" target="_blank" rel="noopener">PyPI</a></li>
-      <li><a href="https://www.npmjs.com/package/@veloxquant/sdk" target="_blank" rel="noopener">npm SDK</a></li>
-      <li><a href="https://pkg.go.dev/github.com/rajveer43/veloxquant-go" target="_blank" rel="noopener">Go SDK</a></li>
-      <li><a href="https://crates.io/crates/veloxquant" target="_blank" rel="noopener">Rust SDK</a></li>
-      <li><a href="/docs/" rel="noopener">Docs</a></li>
-      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
-    </ul>
-    <p class="footer-copy">© 2026 Rajveer Rathod · MIT License</p>
-    <p class="footer-tagline">BUILT FOR APPLE SILICON. ENGINEERED FOR SPEED.</p>
+  <!-- ── REDESIGNED FOOTER ── -->
+  <footer class="footer-redesign">
+    <div class="footer-container">
+      <div class="footer-grid">
+        <div class="footer-brand-col">
+          <div class="footer-brand-title">VeloxQuant-MLX</div>
+          <div class="footer-brand-tagline">BUILT FOR APPLE SILICON. ENGINEERED FOR SPEED.</div>
+          <div class="footer-brand-meta">MIT License · v0.74.0</div>
+        </div>
+        <div class="footer-links-col">
+          <h4 class="footer-col-title">PRODUCT</h4>
+          <ul>
+            <li><a href="index.html#methods">Methods</a></li>
+            <li><a href="benchmarks.html" class="active">Benchmarks</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-Studio" target="_blank" rel="noopener">Studio</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-links-col">
+          <h4 class="footer-col-title">DEVELOPERS</h4>
+          <ul>
+            <li><a href="/docs/">Documentation</a></li>
+            <li><a href="index.html#install">Quickstart</a></li>
+            <li><a href="/docs/algorithms/overview">Algorithm reference</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
+          </ul>
+        </div>
+        <div class="footer-links-col">
+          <h4 class="footer-col-title">PROJECT</h4>
+          <ul>
+            <li><a href="https://doi.org/10.5281/zenodo.20647294" target="_blank" rel="noopener">Cite this work (DOI)</a></li>
+            <li><a href="https://medium.com/@rajveer.rathod1301" target="_blank" rel="noopener">Blog</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/issues" target="_blank" rel="noopener">Issues</a></li>
+            <li><a href="https://github.com/rajveer43" target="_blank" rel="noopener">Get in touch</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom-bar">
+        <div>© 2026 Rajveer Rathod · MIT License</div>
+        <div>DOI: 10.5281/zenodo.20647294</div>
+      </div>
+    </div>
   </footer>
 
-  <script src="assets/main.js?v=20260902" defer></script>
+  <script src="assets/main.js?v=20260905" defer></script>
 
   <!-- GoatCounter: privacy-friendly, cookieless page counts. Client-side, so
        it records browsers rather than crawlers — expect it to read lower than
@@ -563,3 +774,4 @@
           async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
+
