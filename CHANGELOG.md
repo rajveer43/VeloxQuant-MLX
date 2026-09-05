@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.75.1 (2026-09-04)
+
+### Performance Improvements
+
+- **landing**: Fix CLS from announcement banner, lazy-load Zendesk, minify at build
+  ([#314](https://github.com/rajveer43/VeloxQuant-MLX/pull/314),
+  [`d2d3f55`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d2d3f5540bf04720d55ecdb335b79feb6fad59b1))
+
+
 ## v0.75.0 (2026-09-03)
 
 ### Code Style
