@@ -433,7 +433,11 @@ function initAnnouncementBanner() {
   const closeBtn = document.getElementById('announcement-banner-close');
   if (!banner || !closeBtn) return;
 
-  const dismissKey = 'vq-announcement-dismissed-studio-v0.1.0';
+  // Bumped when the banner's message changes: the v0.1.0 key was for the
+  // "download the app" announcement, and someone who dismissed that has not
+  // seen this beta-recruitment message. Must stay in sync with the pre-paint
+  // visibility check in index.html's <head>.
+  const dismissKey = 'vq-announcement-dismissed-studio-beta';
   closeBtn.addEventListener('click', () => {
     document.documentElement.removeAttribute('data-show-announcement');
     try { localStorage.setItem(dismissKey, '1'); } catch (e) { /* storage unavailable */ }

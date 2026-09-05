@@ -4230,6 +4230,48 @@ span.anchor-alias {
   color: #ffffff;
 }
 
+/* Studio "coming soon" line. Sits between the CTAs and the license meta,
+   deliberately quieter than a button so it reads as status, not an action —
+   the app has no download until beta validation completes. */
+.hero-studio-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 0 0 0.9rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+}
+
+.hero-studio-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-shadow: none;
+}
+
+.hero-studio-status a {
+  color: #ffffff;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.45);
+  transition: border-color 0.15s ease;
+}
+
+.hero-studio-status a:hover {
+  border-bottom-color: #ffffff;
+}
+
 .hero-license-meta {
   font-size: 0.84rem;
   color: rgba(255, 255, 255, 0.78);
@@ -5713,6 +5755,22 @@ details.faq-accordion-item[open] .faq-chevron {
 :root[data-theme="light"] .hero-license-meta {
   color: #64748b;
   text-shadow: none;
+}
+:root[data-theme="light"] .hero-studio-status {
+  color: #475569;
+  text-shadow: none;
+}
+:root[data-theme="light"] .hero-studio-badge {
+  border-color: rgba(0, 0, 0, 0.16);
+  background: rgba(0, 0, 0, 0.05);
+  color: #334155;
+}
+:root[data-theme="light"] .hero-studio-status a {
+  color: #09090b;
+  border-bottom-color: rgba(0, 0, 0, 0.35);
+}
+:root[data-theme="light"] .hero-studio-status a:hover {
+  border-bottom-color: #09090b;
 }
 :root[data-theme="light"] .btn-primary-white {
   background: #09090b;
@@ -8456,6 +8514,38 @@ details.faq-accordion-item[open] .faq-chevron {
   transform: translateY(0);
 }
 
+/* The macOS card ships no binary yet, so its button is outlined rather than
+   solid-white: it must not compete visually with the SDK cards, which link to
+   real installable packages. */
+.eco-action-btn-soon {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: none;
+}
+
+.eco-action-btn-soon:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: none;
+}
+
+.eco-soon-tag {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.78);
+  vertical-align: middle;
+}
+
 .eco-btn-arr,
 .eco-copy-icon {
   flex-shrink: 0;
@@ -8494,4 +8584,26 @@ details.faq-accordion-item[open] .faq-chevron {
   background: #18181b;
   color: #ffffff;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+/* Must follow the solid .eco-action-btn light rules above to keep the
+   coming-soon button outlined in both themes. */
+:root[data-theme="light"] .eco-action-btn-soon {
+  background: transparent;
+  color: #334155;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .eco-action-btn-soon:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: #09090b;
+  border-color: rgba(0, 0, 0, 0.32);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .eco-soon-tag {
+  border-color: rgba(0, 0, 0, 0.14);
+  background: rgba(0, 0, 0, 0.05);
+  color: #475569;
 }
