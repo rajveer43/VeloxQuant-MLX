@@ -432,6 +432,39 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.77.0 (2026-09-05)
+
+### Bug Fixes
+
+- **landing**: Improve hero text contrast against background
+  ([`d814379`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d814379c60853d60b5bd5760ef93426d9bcc35e5))
+
+- **landing**: Unify footer across pages, fix privacy.html SEO gaps, correct method count
+  ([#316](https://github.com/rajveer43/VeloxQuant-MLX/pull/316),
+  [`78a010c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/78a010c941fd5f49be116297b942e1846ba3ce82))
+
+### Features
+
+- **landing**: Add interactive Studio showcase and kernel roofline benchmarks
+  ([`012d99c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/012d99c1208f463d301388927496011558b40ff0))
+
+### Performance Improvements
+
+- **metal**: Autotune nsg in scalar_fused_decode_attend (1.2-4.2x)
+  ([#317](https://github.com/rajveer43/VeloxQuant-MLX/pull/317),
+  [`3ef8c98`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3ef8c9863462b52d3d1acdc63d3e035eb423b859))
+
+### Refactoring
+
+- **landing**: Refresh hero, nav, and add methods/why-it-matters sections
+  ([#316](https://github.com/rajveer43/VeloxQuant-MLX/pull/316),
+  [`78a010c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/78a010c941fd5f49be116297b942e1846ba3ce82))
+
+- **landing**: Unify pill nav across all pages, restyle playground/benchmarks
+  ([#316](https://github.com/rajveer43/VeloxQuant-MLX/pull/316),
+  [`78a010c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/78a010c941fd5f49be116297b942e1846ba3ce82))
+
+
 ## v0.76.0 (2026-09-05)
 
 ### Code Style
