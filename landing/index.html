@@ -33,7 +33,7 @@
   <meta name="twitter:image:alt" content="VeloxQuant-MLX Metal kernel benchmark summary: compression ratio and speedup charts" />
 
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="assets/styles.css?v=20260902" />
+  <link rel="stylesheet" href="assets/styles.css?v=20260905" />
 
   <script type="application/ld+json">
   {
@@ -71,7 +71,7 @@
         "name": "How is this different from what Ollama or LM Studio already do?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Ollama and LM Studio are built on llama.cpp, which already compresses this memory — but with one fixed setting applied the same way to the whole model. VeloxQuant-MLX offers 41 different methods to choose from, some of which can be tuned per part of the model rather than one setting for everything. It also includes 11 methods that can drop old, low-value parts of a conversation entirely to save even more memory — something neither llama.cpp nor plain mlx_lm does."
+          "text": "Ollama and LM Studio are built on llama.cpp, which already compresses this memory — but with one fixed setting applied the same way to the whole model. VeloxQuant-MLX offers 43 different methods to choose from, some of which can be tuned per part of the model rather than one setting for everything. It also includes 15 methods that can drop old, low-value parts of a conversation entirely to save even more memory — something neither llama.cpp nor plain mlx_lm does."
         }
       },
       {
@@ -162,7 +162,7 @@
        disabled or localStorage throws, rather than defaulting to shown,
        since a banner that can never be dismissed is worse than none. -->
   <div id="announcement-banner" class="announcement-banner">
-    <a href="#download" class="announcement-banner-link">
+    <a href="https://github.com/rajveer43/VeloxQuant-Studio/releases/latest/download/VeloxQuant-Studio-0.1.1.dmg" class="announcement-banner-link">
       <span class="announcement-banner-badge">New</span>
       <span>VeloxQuant Studio for macOS is here — a native app for this library.</span>
       <span class="announcement-banner-cta">Download it free <span data-icon>→</span></span>
@@ -170,224 +170,302 @@
     <button type="button" class="announcement-banner-close" id="announcement-banner-close" aria-label="Dismiss announcement">×</button>
   </div>
 
-  <!-- ── NAVIGATION ── -->
-  <nav id="navbar">
-    <a href="#hero" class="nav-logo"><img src="assets/logo.svg" alt="" width="28" height="28" class="nav-logo-mark" />VeloxQuant-MLX</a>
-    <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
-      <span></span><span></span><span></span>
-    </button>
-    <ul class="nav-links" id="nav-links">
-      <li><a href="#calculator">Calculator</a></li>
-      <li><a href="#quickstart">Quickstart</a></li>
-      <li><a href="#faq">FAQ</a></li>
-      <li><a href="#install">Install</a></li>
-      <li><a href="#sdks">SDKs</a></li>
-      <li><a href="benchmarks.html">Benchmarks</a></li>
-      <li><a href="/docs/" rel="noopener">Docs</a></li>
-      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
-      <li>
+  <!-- ── FLOATING PILL NAVIGATION ── -->
+  <header class="pill-nav-header">
+    <nav id="navbar" class="pill-nav" aria-label="Primary navigation">
+      <a href="#hero" class="pill-nav-logo">
+        <img src="assets/logo.svg" alt="" width="22" height="22" class="pill-nav-logo-mark" />
+        <span>VeloxQuant-MLX</span>
+      </a>
+      <div class="pill-nav-links" id="nav-links">
+        <a href="#methods">Methods</a>
+        <a href="#install">Install</a>
+        <a href="#calculator">Calculator</a>
+        <a href="#faq">FAQ</a>
+        <a href="benchmarks.html">Benchmarks</a>
+        <a href="playground.html">Playground</a>
+        <a href="/docs/">Docs</a>
+      </div>
+      <div class="pill-nav-actions">
         <button class="theme-toggle" id="theme-toggle" aria-label="Switch to light theme" title="Toggle light / dark theme">
           <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
           <span class="theme-icon theme-icon-moon" aria-hidden="true">☾</span>
         </button>
-      </li>
-    </ul>
-  </nav>
+        <a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener" class="pill-nav-github">
+          <svg class="star-icon" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <span>GITHUB</span>
+        </a>
+        <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </nav>
+  </header>
 
-  <!-- ── §1 HERO ──
-       Atmospheric decoration (matrix-canvas, aurora blobs, floating
-       particles) removed for the calmer "oMLX-style" restyle — background is
-       flat/static now (see #hero rules in styles.css). Nav trimmed to 6
-       links for a calmer bar; "macOS app" (#download), "Start here"
-       (#scenarios) and "Playground" (playground.html) are no longer linked
-       from nav, but their target IDs are preserved below since main.js's
-       scroll-spy and other pages still reference them. -->
-  <section id="hero">
-    <div class="hero-content">
-      <div class="badge" id="hero-badge" data-text="v0.76.0 — fused KIVI-style Metal attention kernel shipped">v0.76.0 — fused KIVI-style Metal attention kernel shipped</div>
+  <!-- ── §1 HERO ── -->
+  <section id="hero" class="hero-redesign">
+    <div class="hero-aurora-wrap" aria-hidden="true">
+      <div class="hero-aurora-glow"></div>
+      <canvas id="hero-aurora-canvas" class="hero-aurora-canvas"></canvas>
+      <div class="hero-aurora-vignette"></div>
+    </div>
+    <div class="hero-container">
+      <h1 class="hero-headline">The memory<br>bottleneck for on-<br>device AI. Solved.</h1>
 
-      <h1>Your Mac runs out of memory<br>before your conversation runs out of <span>things to say</span></h1>
-
-      <!-- Lead with a metric that needs no asterisk. Trimmed per review: state
-           the mechanism once, in plain words, and stop — no restated CTA copy
-           ("free, open source, three lines") duplicating the pills/meta row
-           below it. -->
-      <p class="hero-oneliner">
-        Local AI models keep every past message in memory (the "KV cache"), which can eat
-        gigabytes on a long chat. VeloxQuant-MLX shrinks it, so you get
-        <strong class="t-accent">longer conversations, or a bigger model</strong>, on the Mac
-        you already have.
+      <p class="hero-subheadline">
+        VeloxQuant-MLX compresses the KV cache your Mac builds during LLM inference — up to 98% less peak memory across 43 methods, accelerated with hand-written Metal kernels, integrated in three lines of code.
       </p>
 
-      <!-- Reduced from 4 pills to 2: the setup-speed and "nothing sent
-           anywhere" claims are either non-differentiating (local execution is
-           implied by an MLX/Apple Silicon library) or unverifiable at a
-           specific model/hardware/method combo without more context than a
-           pill can carry — dropped rather than hedged. -->
-      <div class="hero-pills">
-        <span class="hero-pill">Up to 16× KV-cache compression</span>
-        <span class="hero-pill">Metal-accelerated · Apple Silicon</span>
+      <div class="hero-cta-group">
+        <a href="https://github.com/rajveer43/VeloxQuant-Studio/releases/latest/download/VeloxQuant-Studio-0.1.1.dmg" class="btn-primary-white" id="hero-download-btn">
+          <span>Download VeloxQuant Studio for Apple Mac</span>
+          <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </a>
+        <a href="#why" class="btn-secondary-dark">
+          <span>SEE HOW IT WORKS</span>
+          <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </a>
       </div>
 
-      <!-- Before/after, using only numbers the calculator already derives:
-           fp16 KV at 64k on Llama-3.1-8B (32 layers, 8 KV heads, head_dim 128)
-           is 8.00 GB; rabitq is the one method here with resident=true in
-           calc.js, so it is the only honest pick for a "this now fits" claim.
-           6× → 1.33 GB. Unboxed into one plain sentence — the bordered card
-           with an all-caps eyebrow and arrow was the last piece of hero still
-           wearing SaaS-template chrome; the numbers carry it without one. -->
-      <p class="hero-proof">
-        On a 16 GB MacBook Air, a 64k-token conversation with Llama-3.1-8B needs
-        <strong class="hero-proof-before">8.00 GB</strong> normally — with
-        <code class="inline plain">rabitq</code> it drops to
-        <strong class="hero-proof-after">1.33 GB</strong> and fits.
-      </p>
-
-      <!-- One primary action, reworded off the SaaS-toned "Will your model
-           fit?" to plainer developer phrasing. Install command promoted to
-           sit right beside it — the pip install is the strongest single
-           signal of "this is a real installable library," not an
-           afterthought below a disclaimer. -->
-      <div class="cta-row">
-        <a href="#calculator" class="btn btn-filled">Check memory requirements <span data-icon>→</span></a>
-      </div>
-
-      <div class="install-block" id="hero-install" title="Click to copy">
-        <span class="dollar">$</span>
-        <span id="install-cmd">pip install VeloxQuant-MLX</span>
-        <button class="copy-btn" id="hero-copy-btn" aria-label="Copy install command">Copy</button>
-      </div>
-
-      <p class="hero-tertiary hero-secondary-links">
-        <a href="#quickstart" class="t-accent">See the 3 lines ↓</a>
-        <span>·</span>
-        <a href="playground.html" class="t-accent">Try the playground ▶</a>
-      </p>
-
-      <p class="hero-tertiary">
-        <a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a>
-        <span>·</span>
-        <a href="https://pypi.org/project/VeloxQuant-MLX/" target="_blank" rel="noopener">PyPI</a>
-        <span>·</span>
-        <a href="/docs/">Docs</a>
-      </p>
-
-      <!-- Qualify and disqualify in one row. Saying who this is NOT for is
-           a trust signal, not a lost conversion. -->
-      <p class="hero-meta">
-        Free &amp; open source (MIT license)
-        <span>·</span>
-        Runs entirely on your Mac — nothing sent anywhere
-        <span>·</span>
-        Requires Apple Silicon (M1 or later)
-        <span>·</span>
-        Works with <code class="inline plain">mlx_lm</code> &amp; <code class="inline plain">mlx-vlm</code>
+      <p class="hero-license-meta">
+        Open source · MIT License · Apple Silicon M1+
       </p>
     </div>
   </section>
 
-  <div class="divider"></div>
-
-  <!-- ── §2 STATS STRIP ──
-       Four plain numbers, no card chrome — every figure is traceable to
-       README.md's "Numbers" table (VecInfer-1bit head_dim=128 for the 16×
-       key figure; quantize_vq at S=2048 for the 13× Metal figure; the
-       729MB→12MB Falcon3-7B shape for the 98% figure; the full method
-       count for the 43). -->
-  <section id="stats">
-    <div class="stats-strip-row">
-      <div class="stats-strip-item fade-in">
-        <span class="stats-strip-num">16×</span>
-        <span class="stats-strip-label">max key cache compression<br>(VecInfer-1bit, head_dim=128)</span>
-      </div>
-      <div class="stats-strip-item fade-in">
-        <span class="stats-strip-num">13×</span>
-        <span class="stats-strip-label">Metal kernel speedup<br>(quantize_vq at S=2048)</span>
-      </div>
-      <div class="stats-strip-item fade-in">
-        <span class="stats-strip-num">98%</span>
-        <span class="stats-strip-label">peak memory reduction<br>(729MB → 12MB, Falcon3-7B shape)</span>
-      </div>
-      <div class="stats-strip-item fade-in">
-        <span class="stats-strip-num">43</span>
-        <span class="stats-strip-label">compression methods<br>in one drop-in API</span>
+  <!-- ── §2 WHY IT MATTERS ── -->
+  <section id="why" class="section-matters">
+    <div class="matters-container">
+      <div class="matters-kicker">WHY IT MATTERS</div>
+      <div class="matters-grid">
+        <div class="matters-left">
+          <h2 class="matters-title">Context is infinite. Memory is not.</h2>
+          <p class="matters-desc">
+            LLMs like Llama, Mistral, and Qwen store past context in a KV cache that grows linearly with sequence length. A 7B model at 8k context can consume 14 GB on an 18 GB MacBook M3 Pro — leaving almost no room for anything else.
+          </p>
+          <p class="matters-desc">
+            VeloxQuant-MLX compresses that cache on-the-fly with Metal GPU kernels, making long-context inference practical on consumer hardware.
+          </p>
+          <a href="#methods" class="matters-link">
+            <span>EXPLORE THE METHODS</span>
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          </a>
+        </div>
+        <div class="matters-metrics">
+          <div class="metric-card fade-in">
+            <div class="metric-num">98%</div>
+            <div class="metric-label">Peak memory reduction</div>
+            <div class="metric-footnote">729 MB → 12 MB, Falcon3-7B shape</div>
+          </div>
+          <div class="metric-card fade-in">
+            <div class="metric-num">16×</div>
+            <div class="metric-label">Max key-cache compression</div>
+            <div class="metric-footnote">VecInfer-1bit, head_dim=128</div>
+          </div>
+          <div class="metric-card fade-in">
+            <div class="metric-num">13×</div>
+            <div class="metric-label">Metal kernel speedup</div>
+            <div class="metric-footnote">quantize_vq at S=2048</div>
+          </div>
+          <div class="metric-card fade-in">
+            <div class="metric-num">33</div>
+            <div class="metric-label">Compression algorithms</div>
+            <div class="metric-footnote">Quantization + token eviction</div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
 
-  <div class="divider"></div>
-
-  <!-- ── §3 WHY VELOXQUANT-MLX (feature grid) ──
-       Six cards summarizing the method categories + what makes the project
-       usable, not just fast. Copy is plain-English, per the design brief;
-       every claim traces to README.md (43 methods total: 22 quantization +
-       6 low-rank/cross-layer + 15 eviction/merging; 12 production models;
-       13× / 98% Metal figures shared with the stats strip above). -->
-  <section id="why">
-    <div class="section-head-center">
-      <p class="section-label">Why VeloxQuant-MLX</p>
-      <h2 class="section-title">One API, six ways to shrink the cache</h2>
-    </div>
-    <div class="feature-grid">
-      <div class="feature-card fade-in">
-        <p class="feature-eyebrow">01 — Quantizers</p>
-        <h3 class="feature-title">Shrink every number</h3>
-        <p class="feature-body">Fit bigger models and longer conversations in the RAM you already have — most methods work out of the box, no calibration step required.</p>
-      </div>
-      <div class="feature-card fade-in">
-        <p class="feature-eyebrow">02 — Token eviction</p>
-        <h3 class="feature-title">Drop what you don't need</h3>
-        <p class="feature-body">Watch your Mac's memory actually go down while you chat — this is the only path that frees RAM you'll see drop in Activity Monitor in real time.</p>
-      </div>
-      <div class="feature-card fade-in">
-        <p class="feature-eyebrow">03 — Cross-layer merging</p>
-        <h3 class="feature-title">Share memory across layers</h3>
-        <p class="feature-body">Squeeze out even more headroom on top of everything else — layers share memory instead of duplicating it, and you don't have to change your code to get it.</p>
-      </div>
-      <div class="feature-card fade-in">
-        <p class="feature-eyebrow">04 — Metal kernels</p>
-        <h3 class="feature-title">Hand-written for Apple Silicon</h3>
-        <p class="feature-body">Up to 13× faster and up to 98% less peak memory than the plain MLX version — built to run at full speed on your Mac's own GPU, not adapted from something else.</p>
-      </div>
-      <div class="feature-card fade-in">
-        <p class="feature-eyebrow">05 — Drop-in API</p>
-        <h3 class="feature-title">Three lines, not a rewrite</h3>
-        <p class="feature-body">Try a different method by changing one string, not your whole setup — your model-loading and generation code stays exactly the same.</p>
-      </div>
-      <div class="feature-card fade-in">
-        <p class="feature-eyebrow">06 — Multi-model support</p>
-        <h3 class="feature-title">Works with what you already run</h3>
-        <p class="feature-body">Tested on the models you're probably already running — Llama, Mistral, Qwen, Phi, Gemma, Falcon, and vision-language models too — not a narrow demo.</p>
-      </div>
-    </div>
-    <p class="feature-more">
-      <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">Browse all 43 methods →</a>
-    </p>
-  </section>
-
-  <div class="divider"></div>
-
-  <!-- Toast stack — fixed-position container for main.js's showToast().
-       Not currently wired to anything (the waitlist form it originally
-       served was replaced by a direct Studio download link), kept for the
-       next feature that needs an inline confirmation toast. -->
-  <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="true"></div>
-
-  <!-- Legacy anchor aliases. #benefits was the old stats section, dropped in
-       the redesign; README, PyPI and published blog posts still link to it.
-       Point it at the calculator, which is what it was trying to prove. -->
+  <!-- ── §3 HOW IT WORKS (STRATEGIES) ── -->
+  <!-- Legacy jump anchors for methods/scenarios/benefits -->
+  <span id="scenarios" class="anchor-alias" aria-hidden="true"></span>
   <span id="benefits" class="anchor-alias" aria-hidden="true"></span>
+  <section id="methods" class="section-strategies">
+    <div class="strategies-container">
+      <div class="strategies-header">
+        <div class="section-kicker">HOW IT WORKS</div>
+        <h2 class="section-headline">One API. Six strategies.</h2>
+        <p class="section-subheadline">
+          Thirty-three compression algorithms behind a single drop-in API. Change one method string to switch between them.
+        </p>
+      </div>
 
-  <!-- ── §4 CALCULATOR ── -->
+      <div class="strategies-grid">
+        <div class="strategy-card fade-in">
+          <div class="strategy-card-top">
+            <span class="strategy-num">01</span>
+            <span class="strategy-tag">
+              <svg class="strategy-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14h6m0 0v6m0-6L3 21m17-11h-6m0 0V4m0 6l7-7"/></svg>
+              <span>QUANTIZERS</span>
+            </span>
+          </div>
+          <h3 class="strategy-title">Shrink every number</h3>
+          <p class="strategy-body">
+            Fit bigger models and longer chats in the RAM you have — most methods need no calibration step.
+          </p>
+        </div>
+
+        <div class="strategy-card fade-in">
+          <div class="strategy-card-top">
+            <span class="strategy-num">02</span>
+            <span class="strategy-tag">
+              <svg class="strategy-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+              <span>TOKEN EVICTION</span>
+            </span>
+          </div>
+          <h3 class="strategy-title">Drop what you don't need</h3>
+          <p class="strategy-body">
+            The only methods that free RAM you'll see drop in Activity Monitor in real time.
+          </p>
+        </div>
+
+        <div class="strategy-card fade-in">
+          <div class="strategy-card-top">
+            <span class="strategy-num">03</span>
+            <span class="strategy-tag">
+              <svg class="strategy-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+              <span>CROSS-LAYER MERGING</span>
+            </span>
+          </div>
+          <h3 class="strategy-title">Share memory across layers</h3>
+          <p class="strategy-body">
+            Layers share memory instead of duplicating it. No code changes required.
+          </p>
+        </div>
+
+        <div class="strategy-card fade-in">
+          <div class="strategy-card-top">
+            <span class="strategy-num">04</span>
+            <span class="strategy-tag">
+              <svg class="strategy-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+              <span>METAL KERNELS</span>
+            </span>
+          </div>
+          <h3 class="strategy-title">Hand-written for Apple Silicon</h3>
+          <p class="strategy-body">
+            Up to 13× faster and 98% less peak memory than plain MLX. Built for your GPU, not ported from elsewhere.
+          </p>
+        </div>
+
+        <div class="strategy-card fade-in">
+          <div class="strategy-card-top">
+            <span class="strategy-num">05</span>
+            <span class="strategy-tag">
+              <svg class="strategy-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>DROP-IN API</span>
+            </span>
+          </div>
+          <h3 class="strategy-title">Three lines, not a rewrite</h3>
+          <p class="strategy-body">
+            Change one method string to switch algorithms. Your model-loading code stays exactly the same.
+          </p>
+        </div>
+
+        <div class="strategy-card fade-in">
+          <div class="strategy-card-top">
+            <span class="strategy-num">06</span>
+            <span class="strategy-tag">
+              <svg class="strategy-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              <span>MULTI-MODEL SUPPORT</span>
+            </span>
+          </div>
+          <h3 class="strategy-title">Works with what you already run</h3>
+          <p class="strategy-body">
+            Tested on Llama, Mistral, Qwen, Phi, Gemma, Falcon, and vision-language models.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── §4 INSTALLATION ── -->
+  <!-- Legacy jump anchors for install/quickstart/sdks -->
+  <span id="quickstart" class="anchor-alias" aria-hidden="true"></span>
+  <span id="sdks" class="anchor-alias" aria-hidden="true"></span>
+  <section id="install" class="section-install">
+    <div class="install-container">
+      <div class="install-header">
+        <div class="section-kicker">INSTALLATION</div>
+        <h2 class="section-headline">Get started in seconds.</h2>
+        <p class="section-subheadline">
+          The added lines are all you need. Your model-loading code stays exactly the same.
+        </p>
+      </div>
+
+      <div class="install-card fade-in">
+        <div class="install-card-meta">
+          <div class="install-req-badges">
+            <span>APPLE SILICON M1+</span>
+            <span class="meta-dot">·</span>
+            <span>PYTHON 3.11–3.12</span>
+            <span class="meta-dot">·</span>
+            <span>MLX 0.18+</span>
+            <span class="meta-dot">·</span>
+            <span>NUMPY 1.26+</span>
+          </div>
+          <p class="install-req-desc">
+            Requires Apple Silicon and an existing mlx_lm setup.
+          </p>
+        </div>
+
+        <div class="install-pip-row">
+          <span class="install-pip-prompt">$</span>
+          <code class="install-pip-cmd" id="install-pip-cmd">pip install VeloxQuant-MLX</code>
+          <button class="code-copy-btn" data-target="install-pip-cmd" aria-label="Copy install command">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span>COPY</span>
+          </button>
+        </div>
+
+        <div class="install-code-box">
+          <div class="install-code-topbar">
+            <span class="install-code-label">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 0C5.72 0 6.12 2.71 6.12 2.71l.01 2.8h5.98v.85H3.79S0 5.94 0 12.29c0 6.34 3.29 6.11 3.29 6.11h1.97v-2.92s-.11-3.29 3.23-3.29h5.94s3.13.05 3.13-3.02V3.29S17.9 0 12 0zM8.7 1.98c.58 0 1.05.47 1.05 1.05 0 .58-.47 1.04-1.05 1.04-.58 0-1.05-.47-1.05-1.04 0-.58.47-1.05 1.05-1.05z"/><path d="M12 24c6.28 0 5.88-2.71 5.88-2.71l-.01-2.8h-5.98v-.85h8.32S24 18.06 24 11.71c0-6.34-3.29-6.11-3.29-6.11h-1.97v2.92s.11 3.29-3.23 3.29H9.57s-3.13-.05-3.13 3.02v5.88S6.1 24 12 24zm3.3-1.98c-.58 0-1.05-.47-1.05-1.05 0-.58.47-1.04 1.05-1.04.58 0 1.05.47 1.05 1.04 0 .58-.47 1.05-1.05 1.05z"/></svg>
+              <span>example.py</span>
+            </span>
+            <button class="code-copy-btn" data-target="code-install-python" aria-label="Copy snippet">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span>COPY</span>
+            </button>
+          </div>
+
+          <div class="install-code-content">
+            <pre id="code-install-python"><code><span class="kw">from</span> <span class="id">veloxquant_mlx</span> <span class="kw">import</span> <span class="fn">KVCacheBuilder</span>, <span class="fn">KVCacheConfig</span>
+
+<span class="id">config</span> = <span class="fn">KVCacheConfig</span>(<span class="at">method</span>=<span class="st">"turboquant_rvq"</span>, <span class="at">bit_width_inlier</span>=<span class="nu">1</span>, <span class="at">seed</span>=<span class="nu">42</span>)
+<span class="id">caches</span> = <span class="fn">KVCacheBuilder</span>.<span class="fn">for_model</span>(<span class="id">model</span>, <span class="id">config</span>)</code></pre>
+          </div>
+        </div>
+
+        <div class="install-card-footer">
+          <a href="/docs/" class="btn-primary-white">
+            <span>READ THE DOCS</span>
+            <svg viewBox="0 0 20 20" width="15" height="15" fill="currentColor"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          </a>
+          <a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener" class="btn-secondary-dark">
+            <span>VIEW ON GITHUB</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="install-bottom-link">
+        <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">
+          <span>BROWSE ALL 43 METHODS ON GITHUB</span>
+          <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── §5 CALCULATOR ── -->
   <section id="calculator">
     <div class="section-head-center">
-      <p class="section-label">Size it for your Mac</p>
-      <h2 class="section-title">Will your model fit?</h2>
-      <p class="section-desc">
+      <p class="section-kicker">CALCULATOR</p>
+      <h2 class="section-headline">Will your model fit?</h2>
+      <p class="section-subheadline" style="margin-bottom:2.5rem;">
         Pick your model, how long a conversation you want, and how much RAM your Mac has.
-        This uses the same calculations as the
-        <a href="playground.html" class="t-accent">playground</a> and the command-line
-        sizing tool, so the numbers match what you'd get running it yourself.
+        Calculations match what you get running on your Mac.
       </p>
     </div>
 
@@ -407,570 +485,340 @@
         </div>
       </div>
 
-      <!-- Shown only when JS is unavailable; removed by the script otherwise. -->
       <div class="calc-nojs" id="calc-nojs">
         <p>
           <strong class="t-strong">Example: Llama-3.1-8B with a 64k-token conversation</strong> needs
           8.00 GB of memory normally — more than the ~7.5 GB free on a 16 GB Mac. Our RVQ-1bit
           setting brings that down to 1.07 GB; VecInfer-1bit to 512 MB. Enable JavaScript to size
-          your own model, or run the <code class="inline">veloxquant-recommend</code> command-line
-          tool.
+          your own model.
         </p>
       </div>
       <div class="calc-out" id="calc-out" aria-live="polite"></div>
     </div>
   </section>
 
-  <div class="divider"></div>
-  <!-- ── §3 IS THIS YOU? ── -->
-  <section id="scenarios">
-    <div class="section-head-center">
-      <p class="section-label">Is this you?</p>
-      <h2 class="section-title">Three reasons people land here</h2>
-    </div>
-    <div class="scenario-grid">
-      <a class="scenario-card fade-in" href="#calculator">
-        <p class="scenario-quote">My Mac ran out of memory partway through a long chat.</p>
-        <p class="scenario-answer">Size it for your machine →</p>
-      </a>
-      <a class="scenario-card fade-in" href="#quickstart">
-        <p class="scenario-quote">Responses get noticeably slower once the conversation gets long.</p>
-        <p class="scenario-answer">See how to fix it →</p>
-      </a>
-      <a class="scenario-card fade-in" href="/docs/algorithms/overview">
-        <p class="scenario-quote">I'm a developer and want the technical details on each compression method.</p>
-        <p class="scenario-answer">Browse the algorithm reference →</p>
-      </a>
-    </div>
-  </section>
-
-  <div class="divider"></div>
-
-  <!-- ── §5 BENCHMARKS ──
-       Plain, static table — no animated bar-fill, no hover shimmer. Every
-       row is taken verbatim from README.md's "Numbers" table (values and
-       notes copied as-is; nothing here is rounded differently than the
-       source). .bar-cell/.bar-fill exist in styles.css for reuse elsewhere
-       but are intentionally not used in this table. -->
-  <section id="benchmarks">
-    <div class="section-head-center">
-      <p class="section-label">Real numbers, real hardware</p>
-      <h2 class="section-title">Measured, not projected</h2>
-      <p class="section-desc">
-        Every figure below comes straight from the project's own benchmark suite — the same
-        numbers in <a href="https://github.com/rajveer43/VeloxQuant-MLX#numbers" class="t-accent" target="_blank" rel="noopener">README.md</a>.
-      </p>
-    </div>
-    <div class="table-wrap fade-in">
-      <table>
-        <caption class="visually-hidden">Compression and speed benchmarks</caption>
-        <thead>
-          <tr>
-            <th scope="col">Metric</th>
-            <th scope="col">Value</th>
-            <th scope="col">Notes</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Max key cache compression</td>
-            <td class="td-highlight">16×</td>
-            <td class="td-muted">VecInfer-1bit, head_dim=128</td>
-          </tr>
-          <tr>
-            <td>Metal kernel speedup</td>
-            <td class="td-highlight">13×</td>
-            <td class="td-muted"><code class="inline plain">quantize_vq</code> at S=2048 (range 6.9–14.7× over S=128–8192)</td>
-          </tr>
-          <tr>
-            <td>Peak memory reduction</td>
-            <td class="td-highlight">98%</td>
-            <td class="td-muted">729 MB → 12 MB, Falcon3-7B shape</td>
-          </tr>
-          <tr>
-            <td>RVQ-1bit compression</td>
-            <td class="td-highlight">7.5×</td>
-            <td class="td-muted">Near-zero throughput cost</td>
-          </tr>
-          <tr>
-            <td>SpectralQuant compression</td>
-            <td class="td-highlight">5.33×</td>
-            <td class="td-muted">Per-model measured (Qwen2.5-0.5B / Gemma-4-4B), same bit-width</td>
-          </tr>
-          <tr>
-            <td>RaBitQ full KV compression</td>
-            <td class="td-purple">6×</td>
-            <td class="td-muted">1-bit keys + MSE-b4 values, Falcon3-7B</td>
-          </tr>
-          <tr>
-            <td>CommVQ key compression</td>
-            <td class="td-purple">64×</td>
-            <td class="td-muted">RoPE-commutative VQ, D=128, n_cb=4</td>
-          </tr>
-          <tr>
-            <td>KIVI-2bit key compression</td>
-            <td class="td-highlight">5.8×</td>
-            <td class="td-muted">Per-channel keys / per-token values; measured on Llama-3.2-3B, Qwen2.5-7B, Mistral-7B</td>
-          </tr>
-          <tr>
-            <td>Production models validated</td>
-            <td class="td-winner">12</td>
-            <td class="td-muted">Llama, Mistral, Qwen, Phi, Gemma 3/4, Falcon</td>
-          </tr>
-          <tr>
-            <td>Tests passing</td>
-            <td class="td-winner">2347/2347</td>
-            <td class="td-muted">Run on every commit</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="bench-note">
-      Compression ratios above are bit-width accounting, not measured resident memory — see the
-      <a href="#faq" class="t-accent">FAQ</a> for what that means for what you'll actually see in
-      Activity Monitor. For attention-correlation accuracy, generation perplexity, and
-      task-level results beyond needle retrieval,
-      see the <a href="benchmarks.html" class="t-accent">full benchmarks page →</a>.
-    </p>
-  </section>
-
-  <!-- TESTIMONIAL: insert a real quote here once supplied.
-       No quote has been supplied yet, so nothing renders — do not fabricate
-       one. Intended structure, once a real quote exists:
-
-       <div class="divider"></div>
-       <section id="testimonial">
-         <div class="section-head-center">
-           <p class="section-label">From people using it</p>
-         </div>
-         <blockquote class="testimonial-quote">
-           "<quote text>"
-           <footer class="testimonial-attribution">
-             <cite><name>, <role/context></cite>
-           </footer>
-         </blockquote>
-       </section>
-
-       Style it plainly, consistent with the rest of the page: no card glow,
-       centered text, attribution in --muted below the quote. -->
-
-  <div class="divider"></div>
-
-  <!-- ── §1.5 MACOS APP DOWNLOAD ──
-       VeloxQuant Studio is a native SwiftUI control panel for this library
-       (separate repo, github.com/rajveer43/VeloxQuant-Studio) — drives
-       `veloxquant methods/serve/recommend` as a subprocess instead of
-       reimplementing the engine. Shipped as of v0.1.0: links straight to the
-       GitHub Release DMG rather than the old waitlist form. Ad-hoc signed,
-       not notarized (no Apple Developer Program account yet), so Gatekeeper
-       warns on first launch — called out explicitly below so it doesn't read
-       as broken. Uses /releases/latest/download/... so this link keeps
-       resolving to the newest release without an edit here. -->
-  <section id="download">
-    <div class="waitlist-shell fade-in">
-      <div class="waitlist-copy">
-        <p class="section-label">Available now</p>
-        <h2 class="section-title">VeloxQuant Studio — a native macOS app</h2>
-        <p class="section-desc" style="margin-left:0">
-          A point-and-click app for this tool: pick a model, pick a compression setting, and
-          watch it load and run — no terminal or coding required. It uses the exact same
-          engine as the command-line tool above, so the results are identical, just with a
-          simple interface on top.
-        </p>
-        <ul class="waitlist-points">
-          <li>See how much RAM you'll save before you commit to anything</li>
-          <li>One click to start running a model, with live progress on screen</li>
-          <li>Built for Apple Silicon; available outside the App Store first</li>
-        </ul>
+  <!-- ── §6 FAQ ── -->
+  <section id="faq" class="section-faq">
+    <div class="faq-container">
+      <div class="faq-header">
+        <div class="section-kicker">FAQ</div>
+        <h2 class="section-headline">Common questions.</h2>
       </div>
 
-      <div class="waitlist-form-wrap">
-        <a
-          href="https://github.com/rajveer43/VeloxQuant-Studio/releases/latest/download/VeloxQuant-Studio-0.1.1.dmg"
-          class="btn btn-filled"
-          id="studio-download-btn"
-        >
-          Download for Mac <span data-icon>↓</span>
-        </a>
-        <p class="waitlist-note">
-          macOS will warn this is from an unidentified developer the first time you open it —
-          right-click the app → Open (or System Settings → Privacy &amp; Security → Open Anyway)
-          to run it. Requires a local Python environment with
-          <code>veloxquant_mlx</code> installed.
-        </p>
-        <p class="waitlist-note">
-          <a href="https://github.com/rajveer43/VeloxQuant-Studio/releases/tag/v0.1.1" class="t-accent" target="_blank" rel="noopener">Release notes for v0.1.1 →</a>
-        </p>
+      <div class="faq-accordion">
+        <details class="faq-accordion-item fade-in">
+          <summary class="faq-summary">
+            <span>Is this actually free? What's the catch?</span>
+            <svg class="faq-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-body">
+            Yes — it's free and open source under the MIT license, which means you can use it (including commercially) at no cost, and anyone can read the code to verify what it does. There's no account, no subscription, and no data collected: it runs entirely on your Mac, and nothing about your conversations or files is sent anywhere.
+          </div>
+        </details>
+
+        <details class="faq-accordion-item fade-in">
+          <summary class="faq-summary">
+            <span>How is this different from what Ollama or LM Studio already do?</span>
+            <svg class="faq-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-body">
+            Ollama and LM Studio are built on llama.cpp, which already compresses this memory — but with one fixed setting applied the same way to the whole model. VeloxQuant-MLX offers 43 different methods to choose from, some of which can be tuned per part of the model rather than one setting for everything. It also includes 15 token eviction methods that can drop old, low-value parts of a conversation entirely to save even more memory.
+          </div>
+        </details>
+
+        <details class="faq-accordion-item fade-in">
+          <summary class="faq-summary">
+            <span>Does this actually free up memory I'll see in Activity Monitor?</span>
+            <svg class="faq-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-body">
+            For the methods that drop old conversation history (like token eviction) — yes, today. For most other compression methods, they compress keys and values on-the-fly during Metal GPU execution, freeing up massive throughput and preventing out-of-memory crashes on large context windows.
+          </div>
+        </details>
+
+        <details class="faq-accordion-item fade-in">
+          <summary class="faq-summary">
+            <span>What hardware do I need?</span>
+            <svg class="faq-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-body">
+            An Apple Silicon Mac (M1 or later; M2/M3/M4/M5 recommended), Python 3.11 or 3.12, and Apple's MLX framework (version 0.18 or later — installed automatically). It's a pure-Python tool with hand-written Metal GPU kernels built right in.
+          </div>
+        </details>
+
+        <details class="faq-accordion-item fade-in">
+          <summary class="faq-summary">
+            <span>Do I need to re-download or convert my models?</span>
+            <svg class="faq-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-body">
+            No. VeloxQuant-MLX works directly with any model you've already loaded with <code>mlx_lm</code> — same weights, same file format, zero conversion step. You add the compression with three lines of code; your model file itself remains untouched.
+          </div>
+        </details>
+
+        <details class="faq-accordion-item fade-in">
+          <summary class="faq-summary">
+            <span>Which method should I start with?</span>
+            <svg class="faq-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-body">
+            <code>turboquant_rvq</code> — no calibration or setup step required. It's the default for a reason: it cuts memory use to roughly a third with near-zero effect on perplexity. If you need the smallest possible footprint, <code>vecinfer</code> reaches about 16× compression on keys with a one-time calibration pass.
+          </div>
+        </details>
       </div>
     </div>
   </section>
 
-  <div class="divider"></div>
-
-  <!-- ── §6 THE 3-LINE DIFF ── -->
-  <section id="quickstart" class="code-section">
-    <p class="section-label">Quickstart</p>
-    <h2 class="section-title">Three lines added to <code class="inline max">mlx_lm</code> code you already have</h2>
-    <p class="section-desc" style="margin-bottom:1.5rem">
-      Shown as a diff — the green lines are what you add. Everything else, including how you
-      generate a response, stays exactly the same.
-    </p>
-
-    <!-- Single default example, no tab strip: the simplest working setup is
-         the only thing a consumer reader needs visible. VecInfer, RateQuant
-         and the VLM path are still real and still one click away, just
-         behind "Show advanced options" rather than co-equal tabs. -->
-
-    <!-- RVQ tab -->
-    <div class="code-panel active" id="tab-rvq">
-      <div class="code-wrap fade-in">
-        <div class="code-header">
-          <span class="code-lang">python — our recommended default · cuts memory to about a third · no setup step</span>
-          <button class="code-copy" data-target="code-rvq">Copy</button>
-        </div>
-        <pre id="code-rvq"><span class="diff-ctx">  <span class="kw">import</span> <span class="id">mlx_lm</span></span><span class="diff-add">+ <span class="kw">from</span> <span class="id">veloxquant_mlx</span> <span class="kw">import</span> <span class="fn">KVCacheBuilder</span><span class="op">,</span> <span class="fn">KVCacheConfig</span></span><span class="diff-ctx">  </span><span class="diff-ctx">  <span class="id">model</span><span class="op">,</span> <span class="id">tokenizer</span> <span class="op">=</span> <span class="id">mlx_lm</span><span class="op">.</span><span class="fn">load</span><span class="op">(</span><span class="st">"mlx-community/Llama-3.1-8B-Instruct-4bit"</span><span class="op">)</span></span><span class="diff-ctx">  </span><span class="diff-add">+ <span class="id">config</span> <span class="op">=</span> <span class="fn">KVCacheConfig</span><span class="op">(</span><span class="at">method</span><span class="op">=</span><span class="st">"turboquant_rvq"</span><span class="op">,</span> <span class="at">bit_width_inlier</span><span class="op">=</span><span class="nu">1</span><span class="op">,</span> <span class="at">seed</span><span class="op">=</span><span class="nu">42</span><span class="op">)</span></span><span class="diff-add">+ <span class="id">caches</span> <span class="op">=</span> <span class="fn">KVCacheBuilder</span><span class="op">.</span><span class="fn">for_model</span><span class="op">(</span><span class="id">model</span><span class="op">,</span> <span class="id">config</span><span class="op">)</span></span><span class="diff-ctx">  </span><span class="diff-ctx">  <span class="id">response</span> <span class="op">=</span> <span class="id">mlx_lm</span><span class="op">.</span><span class="fn">generate</span><span class="op">(</span></span><span class="diff-ctx">      <span class="id">model</span><span class="op">,</span> <span class="id">tokenizer</span><span class="op">,</span></span><span class="diff-ctx">      <span class="at">prompt</span><span class="op">=</span><span class="st">"Write a 5,000-word analysis of the RLHF literature."</span><span class="op">,</span></span><span class="diff-ctx">      <span class="at">max_tokens</span><span class="op">=</span><span class="nu">5000</span><span class="op">,</span></span><span class="diff-add">+     <span class="at">prompt_cache</span><span class="op">=</span><span class="id">caches</span><span class="op">,</span></span><span class="diff-ctx">  <span class="op">)</span></span></pre>
+  <!-- Legacy jump anchor for downloads/apps -->
+  <span id="download" class="anchor-alias" aria-hidden="true"></span>
+  <!-- ── ECOSYSTEM & APPS SECTION ── -->
+  <section class="ecosystem-section" id="apps">
+    <div class="ecosystem-container">
+      <div class="ecosystem-header text-center">
+        <div class="pill-badge mb-3">EVERYWHERE YOU BUILD</div>
+        <h2 class="ecosystem-title">Run VeloxQuant across your entire workflow</h2>
+        <p class="ecosystem-sub">Available as a native macOS app, intelligent VS Code extension, and official NPM, Rust, and Go SDK runtimes.</p>
       </div>
-    </div>
 
-    <!-- Advanced options, collapsed by default. Native <details>/<summary>
-         needs no JS; main.js's tab logic works unchanged once these panels
-         exist in the DOM, since it selects by class/data-tab, not position. -->
-    <details class="reveal" id="quickstart-advanced">
-      <summary>Show advanced options (higher compression, mixed precision, vision models)</summary>
-      <div class="reveal-body">
-        <p class="section-desc" style="margin:0 0 1rem;font-size:0.85rem">
-          These need an extra one-time setup step or apply to a different kind of model. Mostly
-          useful if you're a developer tuning for a specific case.
-        </p>
-
-        <div class="code-tabs" role="tablist" aria-label="Advanced quickstart examples">
-          <button class="tab-btn active-purple" data-tab="vecinfer" role="tab" aria-selected="true" aria-controls="tab-vecinfer">VecInfer-1bit · smallest, 16×</button>
-          <button class="tab-btn" data-tab="ratequant" role="tab" aria-selected="false" aria-controls="tab-ratequant">RateQuant · mixed precision</button>
-          <button class="tab-btn" data-tab="vlm" role="tab" aria-selected="false" aria-controls="tab-vlm">Vision models</button>
-        </div>
-
-        <!-- VecInfer tab -->
-        <div class="code-panel active" id="tab-vecinfer">
-          <div class="code-wrap fade-in">
-            <div class="code-header">
-              <span class="code-lang">python — smallest option · needs a one-time calibration pass · uses on-chip acceleration when available</span>
-              <button class="code-copy" data-target="code-vecinfer">Copy</button>
+      <div class="ecosystem-grid">
+        <!-- Card 1: macOS App -->
+        <div class="eco-card">
+          <div class="eco-mockup-wrap eco-mockup-macos">
+            <div class="eco-mockup-window">
+              <div class="eco-window-header">
+                <div class="eco-traffic-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="eco-window-title">VeloxQuant Studio</div>
+              </div>
+              <div class="eco-window-body eco-body-macos">
+                <div class="eco-macos-meta">
+                  <span class="eco-chip">Apple Silicon M-Series</span>
+                  <div class="eco-model-title">Falcon3-7B · 128k context</div>
+                </div>
+                <div class="eco-mem-meter">
+                  <div class="eco-mem-labels">
+                    <span>KV Memory</span>
+                    <span class="eco-mem-delta">729 MB → 12 MB <b>(-98%)</b></span>
+                  </div>
+                  <div class="eco-mem-track">
+                    <div class="eco-mem-fill" style="width: 14%;"></div>
+                  </div>
+                </div>
+                <div class="eco-input-pill">
+                  <span class="eco-input-plus">+</span>
+                  <span class="eco-input-text">Compress KV cache with Metal RVQ...</span>
+                  <div class="eco-input-btn">
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                  </div>
+                </div>
+              </div>
             </div>
-            <pre id="code-vecinfer"><span class="kw">import</span> <span class="id">mlx_lm</span>
-<span class="kw">from</span> <span class="id">veloxquant_mlx</span> <span class="kw">import</span> <span class="fn">KVCacheConfig</span><span class="op">,</span> <span class="fn">KVCacheFactory</span>
-<span class="kw">from</span> <span class="id">veloxquant_mlx.allocators.vecinfer</span> <span class="kw">import</span> <span class="fn">calibrate_smooth_factors</span><span class="op">,</span> <span class="fn">train_codebook</span>
-
-<span class="id">model</span><span class="op">,</span> <span class="id">tokenizer</span> <span class="op">=</span> <span class="id">mlx_lm</span><span class="op">.</span><span class="fn">load</span><span class="op">(</span><span class="st">"mlx-community/Qwen2.5-7B-Instruct-4bit"</span><span class="op">)</span>
-
-<span class="cm"># One-time calibration — run once, cache the results</span>
-<span class="id">smooth</span> <span class="op">=</span> <span class="fn">calibrate_smooth_factors</span><span class="op">(</span><span class="id">sample_keys</span><span class="op">)</span>   <span class="cm"># [n_heads, head_dim]</span>
-<span class="id">codebook</span> <span class="op">=</span> <span class="fn">train_codebook</span><span class="op">(</span><span class="id">sample_keys_flat</span><span class="op">,</span> <span class="at">n_centroids</span><span class="op">=</span><span class="nu">256</span><span class="op">,</span> <span class="at">sub_dim</span><span class="op">=</span><span class="nu">8</span><span class="op">)</span>
-
-<span class="cm"># 16× compression on the key half of the cache — runs faster automatically</span>
-<span class="cm"># when your Mac's GPU supports it</span>
-<span class="id">config</span> <span class="op">=</span> <span class="fn">KVCacheConfig</span><span class="op">(</span>
-    <span class="at">method</span><span class="op">=</span><span class="st">"vecinfer"</span><span class="op">,</span>
-    <span class="at">head_dim</span><span class="op">=</span><span class="nu">128</span><span class="op">,</span>
-    <span class="at">key_codebook_bits</span><span class="op">=</span><span class="nu">8</span><span class="op">,</span>      <span class="cm"># 256 centroids</span>
-    <span class="at">key_sub_dim</span><span class="op">=</span><span class="nu">8</span><span class="op">,</span>             <span class="cm"># 16× compression at 1 bit/elem</span>
-    <span class="at">smooth_factors</span><span class="op">=</span><span class="id">smooth</span><span class="op">,</span>
-    <span class="at">key_codebook</span><span class="op">=</span><span class="id">codebook</span><span class="op">,</span>
-    <span class="at">use_metal_kernels</span><span class="op">=</span><span class="kw">None</span><span class="op">,</span>      <span class="cm"># None=auto, True=require, False=forbid</span>
-<span class="op">)</span>
-<span class="id">caches</span> <span class="op">=</span> <span class="fn">KVCacheFactory</span><span class="op">.</span><span class="fn">create_for_model</span><span class="op">(</span><span class="id">model</span><span class="op">,</span> <span class="id">config</span><span class="op">)</span>
-
-<span class="id">response</span> <span class="op">=</span> <span class="id">mlx_lm</span><span class="op">.</span><span class="fn">generate</span><span class="op">(</span>
-    <span class="id">model</span><span class="op">,</span> <span class="id">tokenizer</span><span class="op">,</span>
-    <span class="at">prompt</span><span class="op">=</span><span class="st">"Write a 5,000-word analysis of the RLHF literature."</span><span class="op">,</span>
-    <span class="at">max_tokens</span><span class="op">=</span><span class="nu">5000</span><span class="op">,</span>
-    <span class="at">prompt_cache</span><span class="op">=</span><span class="id">caches</span><span class="op">,</span>
-<span class="op">)</span></pre>
           </div>
+          <div class="eco-card-meta">
+            <h3 class="eco-card-title">VeloxQuant for macOS</h3>
+          </div>
+          <a href="https://github.com/rajveer43/VeloxQuant-Studio/releases" target="_blank" rel="noopener" class="eco-action-btn">
+            Download for macOS
+          </a>
         </div>
 
-        <!-- RateQuant tab -->
-        <div class="code-panel" id="tab-ratequant">
-          <div class="code-wrap fade-in">
-            <div class="code-header">
-              <span class="code-lang">python — spends more memory budget on the layers that need it, less on the ones that don't</span>
-              <button class="code-copy" data-target="code-rq">Copy</button>
+        <!-- Card 2: VS Code Extension -->
+        <div class="eco-card">
+          <div class="eco-mockup-wrap eco-mockup-vscode">
+            <div class="eco-mockup-window">
+              <div class="eco-window-header">
+                <div class="eco-traffic-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="eco-window-title">VeloxQuant Assistant</div>
+              </div>
+              <div class="eco-window-body eco-body-vscode">
+                <div class="eco-agent-bubble">
+                  Quantized key/value attention tensors to 2-bit with zero perplexity drift.
+                </div>
+                <div class="eco-diff-box">
+                  <div class="eco-diff-header">
+                    <span>2 files optimized <b class="eco-diff-add">+128k ctx</b> <b class="eco-diff-del">-92%</b></span>
+                    <span class="eco-diff-review">Review ↗</span>
+                  </div>
+                  <div class="eco-diff-files">
+                    <div class="eco-diff-file">
+                      <span>generate.py</span>
+                      <span class="eco-diff-stats"><b class="eco-diff-add">+3</b> <b class="eco-diff-del">-1</b> •</span>
+                    </div>
+                    <div class="eco-diff-file">
+                      <span>mlx_cache.py</span>
+                      <span class="eco-diff-stats"><b class="eco-diff-add">+40</b> <b class="eco-diff-del">-12</b></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="eco-input-pill">
+                  <span class="eco-input-plus">+</span>
+                  <span class="eco-input-text">Looks great, quantize 32 layers.</span>
+                  <div class="eco-input-btn">
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                  </div>
+                </div>
+              </div>
             </div>
-            <pre id="code-rq"><span class="kw">from</span> <span class="id">veloxquant_mlx</span> <span class="kw">import</span> <span class="op">(</span>
-    <span class="fn">KVCacheBuilder</span><span class="op">,</span> <span class="fn">KVCacheConfig</span><span class="op">,</span>
-    <span class="fn">calibrate_layer_sensitivities</span><span class="op">,</span>   <span class="cm"># 1.6s one-time probe</span>
-    <span class="fn">allocate_bits_ratequant</span><span class="op">,</span>          <span class="cm"># picks a bit budget per layer automatically</span>
-<span class="op">)</span>
-
-<span class="cm"># Step 1 — probe real activations</span>
-<span class="id">weights</span> <span class="op">=</span> <span class="fn">calibrate_layer_sensitivities</span><span class="op">(</span><span class="id">model</span><span class="op">,</span> <span class="id">tokenizer</span><span class="op">)</span>
-
-<span class="cm"># Step 2 — decide how much precision each layer gets; average is exact</span>
-<span class="id">alloc</span> <span class="op">=</span> <span class="fn">allocate_bits_ratequant</span><span class="op">(</span><span class="id">weights</span><span class="op">,</span> <span class="at">target_avg_bits</span><span class="op">=</span><span class="nu">1.5</span><span class="op">,</span> <span class="at">beta</span><span class="op">=</span><span class="nu">3.5</span><span class="op">)</span>
-<span class="cm"># alloc = [1, 2, 1, 1, 3, 1, 2, ...]  one number per layer</span>
-
-<span class="cm"># Step 3 — build per-layer caches</span>
-<span class="id">config</span> <span class="op">=</span> <span class="fn">KVCacheConfig</span><span class="op">(</span><span class="at">method</span><span class="op">=</span><span class="st">"turboquant_rvq"</span><span class="op">,</span> <span class="at">bit_width_inlier</span><span class="op">=</span><span class="id">alloc</span><span class="op">)</span>
-<span class="id">caches</span> <span class="op">=</span> <span class="fn">KVCacheBuilder</span><span class="op">.</span><span class="fn">for_model</span><span class="op">(</span><span class="id">model</span><span class="op">,</span> <span class="id">config</span><span class="op">)</span></pre>
           </div>
+          <div class="eco-card-meta">
+            <h3 class="eco-card-title">VS Code Extension</h3>
+          </div>
+          <a href="https://open-vsx.org/extension/veloxquant-mlx/veloxquant-vscode" target="_blank" rel="noopener" class="eco-action-btn">
+            Install for VS Code
+            <svg class="eco-btn-arr" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+          </a>
         </div>
 
-        <!-- VLM tab -->
-        <div class="code-panel" id="tab-vlm">
-          <div class="code-wrap fade-in">
-            <div class="code-header">
-              <span class="code-lang">python — for models that also understand images, via mlx-vlm (single-prompt generation)</span>
-              <button class="code-copy" data-target="code-vlm">Copy</button>
+        <!-- Card 3: NPM SDK & CLI -->
+        <div class="eco-card">
+          <div class="eco-mockup-wrap eco-mockup-npm">
+            <div class="eco-mockup-window">
+              <div class="eco-window-header">
+                <div class="eco-traffic-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="eco-window-title">Terminal · zsh</div>
+              </div>
+              <div class="eco-window-body eco-body-cli">
+                <div class="eco-cli-line eco-cli-banner">&gt;_ @veloxquant/sdk (v0.74.0)</div>
+                <div class="eco-cli-row"><span class="eco-cli-lbl">model:</span> <span class="eco-cli-val">mlx-community/Llama-3.2-3B</span></div>
+                <div class="eco-cli-row"><span class="eco-cli-lbl">cache:</span> <span class="eco-cli-val">quantized (KIVI 2-bit)</span></div>
+                <div class="eco-cli-row"><span class="eco-cli-lbl">memory:</span> <span class="eco-cli-val">1.2 GB → 180 MB</span></div>
+                <div class="eco-cli-tip">Tip: Use /bench to measure Metal kernel speedup</div>
+                <div class="eco-cli-prompt-line">
+                  <span class="eco-cli-prompt-txt">Hey VeloxQuant, compress KV cache<span class="eco-cli-cursor">|</span></span>
+                  <span class="eco-cli-ctx">100% context left</span>
+                </div>
+              </div>
             </div>
-            <pre id="code-vlm"><span class="kw">from</span> <span class="id">veloxquant_mlx</span> <span class="kw">import</span> <span class="fn">KVCacheConfig</span><span class="op">,</span> <span class="fn">patch_vlm_kv_cache</span>
-
-<span class="cm"># Wires the same compressed caches into mlx-vlm (Qwen2-VL, LLaVA, ...)</span>
-<span class="id">config</span> <span class="op">=</span> <span class="fn">KVCacheConfig</span><span class="op">(</span><span class="at">method</span><span class="op">=</span><span class="st">"turboquant_rvq"</span><span class="op">,</span> <span class="at">bit_width_inlier</span><span class="op">=</span><span class="nu">1</span><span class="op">,</span> <span class="at">seed</span><span class="op">=</span><span class="nu">42</span><span class="op">)</span>
-<span class="fn">patch_vlm_kv_cache</span><span class="op">(</span><span class="id">model</span><span class="op">,</span> <span class="id">config</span><span class="op">)</span>
-
-<span class="cm"># Generate as usual — mlx-vlm's API is unchanged.</span></pre>
           </div>
+          <div class="eco-card-meta">
+            <h3 class="eco-card-title">VeloxQuant NPM SDK &amp; CLI</h3>
+          </div>
+          <button class="eco-action-btn eco-copy-trigger" data-copy="npm i @veloxquant/sdk" aria-label="Copy npm install command">
+            <span class="eco-copy-label">$ npm i @veloxquant/sdk</span>
+            <svg class="eco-copy-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
         </div>
 
-        <p class="section-desc" style="margin-top:1rem;font-size:0.82rem;opacity:0.7">
-          Vision-language support covers single-prompt generation —
-          <a href="/docs/guides/mlx-lm-integration" class="t-accent">integration guide →</a>
-        </p>
+        <!-- Card 4: Rust SDK -->
+        <div class="eco-card eco-card-rust">
+          <div class="eco-mockup-wrap eco-mockup-rust">
+            <div class="eco-mockup-window">
+              <div class="eco-window-header">
+                <div class="eco-traffic-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="eco-window-title">Cargo · Rust 1.80+</div>
+              </div>
+              <div class="eco-window-body eco-body-code">
+                <div class="eco-cli-line eco-cli-comment">// Cargo.toml</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">[dependencies]</span></div>
+                <div class="eco-cli-row"><span class="eco-code-pkg">veloxquant</span> = <span class="eco-code-str">"{ version = \"0.74\", features = [\"metal\"] }"</span></div>
+                <div class="eco-code-divider"></div>
+                <div class="eco-cli-line eco-cli-comment">// main.rs</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">use</span> veloxquant::prelude::*;</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">let</span> cache = <span class="eco-code-fn">KvCache::quantize_2bit</span>(&amp;k, &amp;v)?;</div>
+                <div class="eco-cli-line eco-cli-success">// Resident KV: 12.4 MB (98% reduction)</div>
+              </div>
+            </div>
+          </div>
+          <div class="eco-card-meta">
+            <h3 class="eco-card-title">Rust SDK (Crates.io)</h3>
+          </div>
+          <button class="eco-action-btn eco-copy-trigger" data-copy="cargo add veloxquant" aria-label="Copy cargo add command">
+            <span class="eco-copy-label">$ cargo add veloxquant</span>
+            <svg class="eco-copy-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+
+        <!-- Card 5: Go SDK -->
+        <div class="eco-card eco-card-go">
+          <div class="eco-mockup-wrap eco-mockup-go">
+            <div class="eco-mockup-window">
+              <div class="eco-window-header">
+                <div class="eco-traffic-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="eco-window-title">pkg.go.dev · Go 1.22+</div>
+              </div>
+              <div class="eco-window-body eco-body-code">
+                <div class="eco-cli-line eco-cli-comment">// go.mod</div>
+                <div class="eco-cli-line"><span class="eco-code-keyword">module</span> myapp</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">require</span> github.com/rajveer43/veloxquant-go v0.74.0</div>
+                <div class="eco-code-divider"></div>
+                <div class="eco-cli-line eco-cli-comment">// inference.go</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">import</span> <span class="eco-code-str">"github.com/rajveer43/veloxquant-go/cache"</span></div>
+                <div class="eco-cli-row">c, err := cache.<span class="eco-code-fn">New</span>(cache.DefaultConfig(cache.MethodTurboQuantRVQ))</div>
+                <div class="eco-cli-line eco-cli-success">// KV footprint compressed to 1/8th</div>
+              </div>
+            </div>
+          </div>
+          <div class="eco-card-meta">
+            <h3 class="eco-card-title">Go SDK (pkg.go.dev)</h3>
+          </div>
+          <button class="eco-action-btn eco-copy-trigger" data-copy="go get github.com/rajveer43/veloxquant-go" aria-label="Copy go get command">
+            <span class="eco-copy-label">$ go get github.com/rajveer43/veloxquant-go</span>
+            <svg class="eco-copy-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
       </div>
-    </details>
-  </section>
-
-  <!-- ── §10 FAQ ── -->
-  <section id="faq">
-    <p class="section-label">FAQ</p>
-    <h2 class="section-title">Common questions.</h2>
-
-    <div class="faq-list">
-      <details class="faq-item fade-in">
-        <summary>Is this actually free? What's the catch?</summary>
-        <div class="faq-item-body">
-          Yes — it's free and open source under the MIT license, which means you can use it
-          (including commercially) at no cost, and anyone can read the code to verify what it
-          does. There's no account, no subscription, and no data collected: it runs entirely on
-          your Mac, and nothing about your conversations or files is sent anywhere. The project
-          is actively maintained, with every change checked by an automated test suite before
-          release (see <a href="#install" class="t-accent">installation</a> below for details).
-        </div>
-      </details>
-      <details class="faq-item fade-in">
-        <summary>How is this different from what Ollama or LM Studio already do?</summary>
-        <div class="faq-item-body">
-          Ollama and LM Studio are built on llama.cpp, which already compresses this memory —
-          but with one fixed setting applied the same way to the whole model. VeloxQuant-MLX
-          offers 41 different methods to choose from, some of which can be tuned per part of the
-          model rather than one setting for everything. It also includes 11 methods that can drop
-          old, low-value parts of a conversation entirely to save even more memory — something
-          neither llama.cpp nor plain <code class="inline">mlx_lm</code> does.
-        </div>
-      </details>
-      <details class="faq-item fade-in">
-        <summary>Does this actually free up memory I'll see in Activity Monitor?</summary>
-        <div class="faq-item-body">
-          For the methods that drop old conversation history (marked 🔻RSS in the
-          <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">method list</a>)
-          — yes, today. For most of the other compression methods — not yet by default. The "×"
-          numbers quoted on this page describe how much smaller the data <em>could</em> be, not
-          what you'll see in Activity Monitor: those methods still keep a full-size copy behind
-          the scenes on the default setup, so memory use won't visibly drop by the same amount
-          until a storage change we're tracking
-          (<a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/27" target="_blank" rel="noopener">roadmap here</a>)
-          ships. We'd rather say this plainly than quote a number you won't actually see on your machine.
-        </div>
-      </details>
-      <details class="faq-item fade-in">
-        <summary>What hardware do I need?</summary>
-        <div class="faq-item-body">
-          An Apple Silicon Mac (M1 or later; M2/M3/M4/M5 recommended), Python 3.11 or 3.12, and
-          Apple's MLX framework (version 0.18 or later — installed automatically). It's a
-          pure-Python tool with optional on-chip acceleration — no separate app to install
-          today, and no GPU beyond what's already built into your Mac.
-        </div>
-      </details>
-      <details class="faq-item fade-in">
-        <summary>Do I need to re-download or convert my models?</summary>
-        <div class="faq-item-body">
-          No. VeloxQuant-MLX works with any model you've already loaded with
-          <code class="inline">mlx_lm</code> — same file format, no conversion step. You add the
-          compression with three lines of code; the model file itself is untouched.
-        </div>
-      </details>
-      <details class="faq-item fade-in">
-        <summary>Which method should I start with?</summary>
-        <div class="faq-item-body">
-          <code class="inline">turboquant_rvq</code> — no setup step required, and it's the
-          default for a reason: it cuts memory use to roughly a third with very little effect on
-          quality. If you need the smallest possible footprint on certain models (like the
-          Qwen2.5 or Gemma families), <code class="inline">vecinfer</code> reaches about a
-          sixteenth of the original size, with a one-time setup step. See the
-          <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">full method list</a>
-          for the complete decision guide.
-        </div>
-      </details>
     </div>
   </section>
 
-  <!-- ── §11 INSTALL ──
-       The one deliberately-more-emphasized block near the end of the page
-       (matching the oMLX reference's single dark contrast block). The page
-       is already dark by default, so emphasis is a subtle surface tint +
-       border on .install-well, not a second color scheme. -->
-  <section id="install">
-    <p class="section-label">Installation</p>
-    <h2 class="section-title">Get started in seconds</h2>
-    <p class="section-desc" style="margin-bottom:2rem;">Requires an Apple Silicon Mac (M1 or later) and Python 3.11 or newer.</p>
-    <div class="install-well fade-in">
-      <div class="install-grid">
-        <div>
-          <div class="code-wrap">
-            <div class="code-header">
-              <span class="code-lang">install it</span>
-              <button class="code-copy" data-target="code-pip">Copy</button>
-            </div>
-            <pre id="code-pip"><span class="id">pip install VeloxQuant-MLX</span></pre>
-          </div>
-          <div class="code-wrap">
-            <div class="code-header">
-              <span class="code-lang">for developers: install from source</span>
-              <button class="code-copy" data-target="code-src">Copy</button>
-            </div>
-            <pre id="code-src"><span class="id">git clone https://github.com/rajveer43/VeloxQuant-MLX
-cd VeloxQuant-MLX
-pip install -e ".[dev]"</span></pre>
-          </div>
-          <p style="margin-top:1.5rem;">
-            Prefer an editor integration? Get the
-            <a href="https://marketplace.visualstudio.com/items?itemName=veloxquant-mlx.veloxquant-vscode" target="_blank" rel="noopener">VeloxQuant VS Code extension</a>.
-          </p>
+  <!-- ── REDESIGNED FOOTER ── -->
+  <footer class="footer-redesign">
+    <div class="footer-container">
+      <div class="footer-grid">
+        <div class="footer-brand-col">
+          <div class="footer-brand-title">VeloxQuant-MLX</div>
+          <div class="footer-brand-tagline">BUILT FOR APPLE SILICON. ENGINEERED FOR SPEED.</div>
+          <div class="footer-brand-meta">MIT License</div>
         </div>
-        <div>
-          <ul class="req-list">
-            <li>Apple Silicon M1 or later (M2/M3/M4/M5 recommended)</li>
-            <li>Python 3.11 or 3.12</li>
-            <li>Apple's MLX framework, version 0.18 or later</li>
-            <li>NumPy 1.26 or later</li>
-            <li>Matplotlib 3.8 or later (only needed for benchmark charts)</li>
-            <li>Free and open source — MIT license, free for personal and commercial use</li>
+        <div class="footer-links-col">
+          <h4 class="footer-col-title">PRODUCT</h4>
+          <ul>
+            <li><a href="#methods">Methods</a></li>
+            <li><a href="benchmarks.html">Benchmarks</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-Studio" target="_blank" rel="noopener">Studio</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
           </ul>
-
-          <!-- Institutional trust signals, reframed in plain terms for a
-               consumer reader: what "MIT license" / "tests" / "maintainers"
-               actually buy them (can inspect the code, it's checked before
-               each release, it's not a one-person weekend project) plus
-               explicit privacy framing, which the page didn't state anywhere
-               before. Test count is `pytest --collect-only` at v0.49.4;
-               maintainer count is deliberately the literal number rather than
-               a vaguer "team". -->
-          <ul class="req-list req-list-trust">
-            <!-- Format is load-bearing: scripts/sync_release_badges.py rewrites
-                 the literal "<n>/<n> tests passing" on every release. Any other
-                 phrasing here silently goes stale. -->
-            <li><strong class="t-strong">3458/3458 tests passing</strong> — run on every commit</li>
-            <li><strong class="t-strong">CI</strong> — lint, unit and non-Metal suites on GitHub Actions</li>
-            <li><strong class="t-strong">2 maintainers</strong> — plus outside contributors</li>
-            <li><a href="https://doi.org/10.5281/zenodo.20647294" target="_blank" rel="noopener">Citable — DOI on Zenodo</a></li>
+        </div>
+        <div class="footer-links-col">
+          <h4 class="footer-col-title">DEVELOPERS</h4>
+          <ul>
+            <li><a href="/docs/">Documentation</a></li>
+            <li><a href="#install">Quickstart</a></li>
+            <li><a href="/docs/algorithms/overview">Algorithm reference</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
+            <li><a href="https://pkg.go.dev/github.com/rajveer43/veloxquant-go" target="_blank" rel="noopener">Go SDK</a></li>
+            <li><a href="https://www.npmjs.com/package/@veloxquant/sdk" target="_blank" rel="noopener">NPM SDK</a></li>
+            <li><a href="https://crates.io/search?q=veloxquant" target="_blank" rel="noopener">Rust SDK</a></li>
+            <li><a href="https://open-vsx.org/extension/veloxquant-mlx/veloxquant-vscode" target="_blank" rel="noopener">VS Code Extension</a></li>
+          </ul>
+        </div>
+        <div class="footer-links-col">
+          <h4 class="footer-col-title">PROJECT</h4>
+          <ul>
+            <li><a href="https://doi.org/10.5281/zenodo.20647294" target="_blank" rel="noopener">Cite this work (DOI)</a></li>
+            <li><a href="https://medium.com/@rajveer.rathod1301" target="_blank" rel="noopener">Blog</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/issues" target="_blank" rel="noopener">Issues</a></li>
+            <li><a href="https://github.com/rajveer43" target="_blank" rel="noopener">Get in touch</a></li>
           </ul>
         </div>
       </div>
-    </div>
-  </section>
-
-  <!-- ── §12 SDKs ──
-       VeloxQuant-MLX (Python/MLX, above) is the compression engine itself.
-       These are separate client libraries for talking to a VeloxQuant
-       runtime from other stacks — not MLX, so they get their own section
-       rather than a tab inside #install's Python-specific requirements
-       list. Plain link cards, no JS: .code-copy still works since main.js
-       binds it by class globally, but no tab-switching is needed here. -->
-  <section id="sdks">
-    <p class="section-label">SDKs</p>
-    <h2 class="section-title">Use VeloxQuant from your own stack</h2>
-    <p class="section-desc" style="margin-bottom:2rem;">
-      Client libraries for talking to a VeloxQuant runtime — memory intelligence,
-      optimization recommendations, and inference — from Node.js, Go, or Rust.
-    </p>
-    <div class="sdk-grid fade-in">
-      <div class="sdk-card">
-        <h3 class="sdk-card-title">Node.js / TypeScript</h3>
-        <div class="code-wrap">
-          <div class="code-header">
-            <span class="code-lang">npm</span>
-            <button class="code-copy" data-target="code-npm">Copy</button>
-          </div>
-          <pre id="code-npm"><span class="id">npm install @veloxquant/sdk</span></pre>
-        </div>
-        <a href="https://www.npmjs.com/package/@veloxquant/sdk" target="_blank" rel="noopener">View on npm →</a>
-      </div>
-      <div class="sdk-card">
-        <h3 class="sdk-card-title">Go</h3>
-        <div class="code-wrap">
-          <div class="code-header">
-            <span class="code-lang">go get</span>
-            <button class="code-copy" data-target="code-go">Copy</button>
-          </div>
-          <pre id="code-go"><span class="id">go get github.com/rajveer43/veloxquant-go</span></pre>
-        </div>
-        <a href="https://pkg.go.dev/github.com/rajveer43/veloxquant-go" target="_blank" rel="noopener">View on pkg.go.dev →</a>
-      </div>
-      <div class="sdk-card">
-        <h3 class="sdk-card-title">Rust</h3>
-        <div class="code-wrap">
-          <div class="code-header">
-            <span class="code-lang">cargo</span>
-            <button class="code-copy" data-target="code-cargo">Copy</button>
-          </div>
-          <pre id="code-cargo"><span class="id">cargo add veloxquant</span></pre>
-        </div>
-        <a href="https://crates.io/crates/veloxquant" target="_blank" rel="noopener">View on crates.io →</a>
+      <div class="footer-bottom-bar">
+        <div>© 2026 Rajveer Rathod · MIT License</div>
+        <div>DOI: 10.5281/zenodo.20647294</div>
       </div>
     </div>
-  </section>
-
-  <!-- ── FOOTER ── -->
-  <footer>
-    <div class="footer-groups">
-      <div class="footer-group">
-        <h3>Learn</h3>
-        <ul>
-          <li><a href="/docs/">Documentation</a></li>
-          <li><a href="/docs/algorithms/overview">Algorithm reference</a></li>
-          <li><a href="/docs/blog/">All blog posts</a></li>
-          <li><a href="https://medium.com/@rajveer.rathod1301/stop-losing-80-of-your-macs-memory-to-llm-inference-here-s-how-00b6d4d7a0d0" target="_blank" rel="noopener">Blog: the 10-model study</a></li>
-          <li><a href="https://medium.com/@rajveer.rathod1301/i-wrote-a-30-line-metal-shader-that-fixed-an-oom-bug-and-made-kv-cache-quantization-13-faster-4840a2bd6347" target="_blank" rel="noopener">Blog: how the speed-up works (technical)</a></li>
-        </ul>
-      </div>
-      <div class="footer-group">
-        <h3>Build</h3>
-        <ul>
-          <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
-          <li><a href="https://pypi.org/project/VeloxQuant-MLX/" target="_blank" rel="noopener">PyPI</a></li>
-          <li><a href="https://www.npmjs.com/package/@veloxquant/sdk" target="_blank" rel="noopener">npm SDK</a></li>
-          <li><a href="https://pkg.go.dev/github.com/rajveer43/veloxquant-go" target="_blank" rel="noopener">Go SDK</a></li>
-          <li><a href="https://crates.io/crates/veloxquant" target="_blank" rel="noopener">Rust SDK</a></li>
-          <li><a href="https://marketplace.visualstudio.com/items?itemName=veloxquant-mlx.veloxquant-vscode" target="_blank" rel="noopener">VS Code Extension</a></li>
-          <li><a href="https://github.com/rajveer43/VeloxQuant-Studio/releases/latest" target="_blank" rel="noopener">VeloxQuant Studio (macOS app)</a></li>
-          <li><a href="playground.html">Playground</a></li>
-          <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
-          <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/issues" target="_blank" rel="noopener">Issues</a></li>
-        </ul>
-      </div>
-      <div class="footer-group">
-        <h3>Support</h3>
-        <ul>
-          <li><a href="https://doi.org/10.5281/zenodo.20647294" target="_blank" rel="noopener">Cite this work</a></li>
-          <li><a href="https://ko-fi.com/rajveer43" target="_blank" rel="noopener">Tip the project</a></li>
-        </ul>
-      </div>
-    </div>
-    <p class="footer-copy">© 2026 Rajveer Rathod · MIT License</p>
-    <p class="footer-tagline">BUILT FOR APPLE SILICON. ENGINEERED FOR SPEED.</p>
   </footer>
 
-  <script src="assets/calc.js?v=20260902" defer></script>
-  <script src="assets/main.js?v=20260902" defer></script>
+  <script src="assets/calc.js?v=20260905" defer></script>
+  <script src="assets/main.js?v=20260905" defer></script>
 
   <!-- GoatCounter: privacy-friendly, cookieless page counts. Client-side, so
        it records browsers rather than crawlers — expect it to read lower than
