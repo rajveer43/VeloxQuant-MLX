@@ -381,6 +381,257 @@ case `fused_sdpa`'s docstring already names as its own remaining
 rationale) — this is the reference point to revisit, not a closed
 question in principle.
 
+## Addendum: cross-layer batched decode-attend dispatch (issue #307, part 1)
+
+This closes the one lever Recommendation #2 (below) named as unblocked and
+not yet attempted at the time this document was first written: **dispatch
+more threadgroups per call by batching the independent per-layer
+`scalar_fused_decode_attend` calls a real decode step already makes (one
+per transformer layer, typically 28-80 layers) into a single kernel
+launch**, rather than trying to make a single `(B=1, H=8, S_q=1)` dispatch
+stream memory faster with no more independent work to give it.
+
+**Mechanism.** `scalar_fused_decode_attend_batched`
+(`veloxquant_mlx/metal/_scalar_attend.py`,
+`veloxquant_mlx/metal/src/scalar_affine_attend_batched.metal`) adds a new
+outermost `NL` (num_layers) grid axis on top of the existing
+`(sq_idx, hkv_idx, b_idx)` derivation, so threadgroup count becomes
+`NL * B * H_kv * S_q` instead of `B * H_kv * S_q`. The caller pre-stacks
+each layer's tensors along a new leading axis (`mx.stack`); the kernel
+does not gather scattered per-layer arrays itself. This changes nothing
+about the math, the memory layout, or the per-(layer, batch, kv-head,
+query-position) work one threadgroup does — same total bytes moved, same
+total FLOPs, summed over layers either way. Verified bit-identical (not
+just within tolerance) against calling the single-layer kernel `NL` times
+in a loop and stacking the outputs, for `NL ∈ {1, 4, 32}`
+(`test_scalar_attend_batched_parity_vs_single_layer_loop`), plus numpy
+reference parity across four `(H_q, H_kv)` ratios and an adversarial
+`NL=3, B=2` combined-indexing test to rule out a swapped layer/batch
+stride order.
+
+**Result: a consistent, positive speedup across every shape tested — the
+occupancy hypothesis holds.** Measured on the same M4 hardware, `D=128`,
+`nsg=2`, `group_size=32`:
+
+| H_kv | H_q/H_kv | S_kv | NL | sequential ms | batched ms | speedup |
+|------|----------|------|----|---------------:|-----------:|--------:|
+| 2 | 1 | 128 | 32 | 0.62 | 0.30 | **2.06x** |
+| 2 | 1 | 128 | 80 | 1.01 | 0.44 | **2.28x** |
+| 2 | 1 | 2048 | 32 | 2.69 | 2.11 | **1.27x** |
+| 2 | 1 | 2048 | 80 | 6.12 | 3.28 | **1.87x** |
+| 2 | 1 | 16384 | 32 | 53.88 | 15.66 | **3.44x** |
+| 2 | 1 | 16384 | 80 | 107.75 | 23.89 | **4.51x** |
+| 2 | 8 | 128 | 32 | 1.24 | 0.97 | **1.28x** |
+| 2 | 8 | 2048 | 32 | 11.80 | 11.28 | **1.05x** |
+| 2 | 8 | 16384 | 32 | 174.67 | 88.36 | **1.98x** |
+| 2 | 8 | 16384 | 80 | 349.41 | 218.67 | **1.60x** |
+| 8 | 1 | 128 | 32 | 0.98 | 0.55 | **1.79x** |
+| 8 | 1 | 2048 | 32 | 7.27 | 4.76 | **1.53x** |
+| 8 | 1 | 16384 | 32 | 115.57 | 35.79 | **3.23x** |
+| 8 | 1 | 16384 | 80 | 289.66 | 83.91 | **3.45x** |
+| 8 | 8 | 128 | 32 | 3.37 | 2.82 | **1.20x** |
+| 8 | 8 | 2048 | 80 | 95.91 | 93.25 | **1.03x** |
+| 8 | 8 | 16384 | 32 | 501.15 | 229.55 | **2.18x** |
+| 8 | 8 | 16384 | 80 | 1247.28 | 322.54 | **3.87x** |
+
+Every cell tested is a win — no null or negative result was found,
+unlike part 2 (GQA head-packing) and the two-pass spike above. The win
+grows with `S_kv` (largest at `S_kv=16384`, up to 4.5x) and shrinks
+towards ~1.0-1.3x at small `S_kv` combined with a high `H_q/H_kv` ratio
+(e.g. `H_kv=2, ratio=8, S_kv=2048`), where the sequential path's own
+threadgroup count (`H_kv * heads_per_kv`-scaled work per layer, before
+batching) is already large enough that batching adds proportionally less
+headroom, and fixed per-dispatch overhead is a larger share of both
+numbers' latency. Achieved bandwidth in the batched case reached up to
+~40% of the calibrated peak at the best shapes tested — still well short
+of memory-bound, consistent with occupancy (not bandwidth) remaining the
+governing constraint even after batching, just a less severe one.
+
+**The stacking cost is real and must be netted against the win.**
+`mx.stack`-ing `NL` independent per-layer arrays into the batched layout
+is not free — measured standalone (not folded into the batched kernel's
+own timing above), at `H_kv=4, ratio=8`:
+
+| S_kv | NL | mx.stack ms |
+|------|----|--------------:|
+| 128 | 32 | 1.19 |
+| 128 | 80 | 1.01 |
+| 2048 | 32 | 25.38 |
+| 2048 | 80 | 5.34 |
+| 16384 | 32 | 14.91 |
+| 16384 | 80 | 36.41 |
+
+This cost is noisy and does not cleanly scale with `NL * S_kv` the way
+the kernel's own bytes-moved does (compare `S_kv=2048, NL=32` at 25.4ms
+against `S_kv=2048, NL=80` at 5.3ms) — consistent with `mx.stack`'s cost
+being dominated by MLX's own graph-construction/dispatch overhead for a
+list of `NL` separate concatenation inputs rather than by the bytes
+actually copied, and warrants a dedicated investigation if this technique
+is pursued further. At the shapes where it is large (tens of ms), it can
+erode or exceed the kernel-level win shown above once netted in — e.g. at
+`S_kv=2048, NL=32`, a ~0.6ms kernel-level saving (2.69ms → 2.11ms in the
+first table, same shape family) is dwarfed by a 25ms stacking cost, were
+that stacking paid on every decode step.
+
+**Whether that stacking cost is paid once or every step depends entirely
+on the KV-cache implementation, and here the news is unfavorable for an
+easy end-to-end win.** Verified by reading `mlx_lm.models.cache` directly
+rather than assumed: `mlx_lm`'s stock `KVCache` is instantiated **one
+independent object per layer**, held in a plain Python list (e.g.
+`[KVCache() for _ in range(len(self.model.layers))]`, `cache.py`'s own
+default `make_prompt_cache`), each with its own independently-growing
+`.keys`/`.values` buffer. There is no shared, layer-stacked backing
+buffer anywhere in the stock cache — so a real integration built on it
+would need to `mx.stack()` every layer's state **fresh on every decode
+step**, not once at cache-construction time. That makes the stacking cost
+above a **per-step tax**, not a one-time layout change, which is the same
+"amortization" failure mode the SIMD-shuffle addendum's real-model section
+already found for the sibling `fused_sdpa` kernel — just arriving via a
+different mechanism (stacking overhead here, vs. redundant dequant there).
+
+**Disposition: the kernel-level technique is a real, verified win in
+isolation and is shipped as tested, documented code — but it is NOT
+claimed to speed up real `mlx_lm` generation today.** Closing the gap
+would require either (a) a custom layer-stacked cache implementation that
+keeps per-layer K/V contiguously stacked as it grows (avoiding the
+per-step `mx.stack`, at the cost of a bespoke cache class diverging from
+`mlx_lm`'s stock `KVCache`), or (b) amortizing the one-time stack cost
+across enough decode steps between cache reallocations that the per-step
+tax becomes negligible relative to the per-step kernel win — neither is
+attempted here; both are scoped future work, exactly as this document's
+prior addenda flagged real end-to-end integration as a separate,
+larger effort rather than assumed. Reproduction:
+`python benchmark_scripts/benchmark_crosslayer_decode_batch.py` (full
+`H_kv × ratio × S_kv × NL` grid spanning current open-weight model
+depths — the run captured in the tables above used a representative
+subset for tractable turnaround, not the full grid, on a single session);
+correctness: `pytest veloxquant_mlx/tests/metal/test_scalar_attend.py -v
+-k batched`.
+
+**No claim, here or anywhere else in this repo, is made that
+`scalar_fused_decode_attend_batched` "outperforms" MLX's own SDPA, any
+other library's kernel, or any other kernel in this repo.** The only
+valid claim is the one measured above: a same-total-work, before/after
+threadgroup-count comparison against this repo's own existing
+single-layer dispatch shape, which is exactly what the tables report.
+
+## Addendum: cross-layer batching cannot reach real single-request decode, but the underlying (single-layer) kernel measurably speeds up real multi-request decode
+
+The addendum above measured `scalar_fused_decode_attend_batched` (the new
+`NL`-axis kernel) in isolation and flagged real `mlx_lm` end-to-end
+integration as unresolved. Attempting that integration surfaced a hard
+**structural** blocker, not an engineering gap: reading `mlx_lm`'s own
+model code (`TransformerBlock.__call__`, every `models/*.py`) shows layer
+`L+1`'s attention input is `q_proj(norm(layer_L_output))`, where
+`layer_L_output` is layer `L`'s **full** block output — attention,
+residual, MLP, residual — not just its attention output. There is no
+reordering of a standard pre-norm decoder transformer that lets multiple
+layers' attention be grouped into one dispatch while still computing the
+same model; doing so would require changing what the model computes, which
+fails this repo's correctness bar. **Cross-layer batched decode-attend
+therefore cannot speed up real single-request decode latency on any
+standard transformer — this is true regardless of kernel quality,
+occupancy tuning, or any future optimization of the batching mechanism
+itself.** This is a stronger and more useful conclusion than "not yet
+integrated": it closes the cross-layer half of Recommendation #2 below as
+a dead end for single-request serving, not a pending follow-up.
+
+**The other half of Recommendation #2 — batching across concurrent
+*requests* rather than layers — has no such blocker, and was verified for
+real on a real model.** Concurrent requests are independent by
+construction (no residual-stream dependency between them), and the
+*existing, already-shipped* `scalar_fused_decode_attend` (not the new
+batched kernel — the original single-layer one) already carries a `B`
+axis in its dispatch grid (`n_tg = B * H_kv * S_q`). No cache in this repo
+previously routed real `mlx_lm` generation through this kernel
+(`KIVIKVCache` uses `kivi_group_quant_dequant` + standard SDPA instead;
+`fused_sdpa`'s dispatcher for the sibling VecInfer kernel is a documented
+no-op for the amortization reason given in the SIMD-shuffle addendum
+above). A minimal purpose-built cache (`_ScalarAttendKIVICache` in
+`benchmark_scripts/benchmark_real_model_scalar_attend.py`) was built to
+test this directly: it stores KIVI-quantized (2-bit, group_size=32) K/V
+codes incrementally (quantizing only newly-aged `group_size`-aligned
+blocks each step, not re-quantizing the full history — an earlier version
+of this script did the latter and added ~25ms/step of pure quantization
+overhead across 36 layers, which would have silently contaminated the
+result with a test-harness artifact rather than measuring the kernel; the
+fix mirrors `KIVIKVCache._quantization_boundary()`'s existing incremental-
+flush discipline). `mlx_lm.models.base.scaled_dot_product_attention` was
+monkeypatched — at both its canonical definition and the loaded model's
+own module, since `from .base import scaled_dot_product_attention` binds
+a plain name at each model module's import time, not a live reference
+(patching only `mlx_lm.models.base` after `load()` has no effect,
+confirmed empirically: 0 routed calls until both bindings were patched) —
+so that decode-shape (`S_q == 1`) attention over this cache dispatches to
+either (a) dequantize-to-fp16 then standard MLX SDPA (the baseline — what
+a real KIVI-style cache does today) or (b) `scalar_fused_decode_attend`
+directly against the quantized codes (fused), with **both arms verified
+to produce bit-identical greedy-decoded token sequences** before any
+timing was trusted.
+
+Measured on `mlx-community/Qwen3-4B-4bit` (36 layers, `H_q=32, H_kv=8`,
+real M4 hardware, `prompt_len=256`, 30 decode steps, real end-to-end
+tokens/sec including embeddings/MLPs/o_proj/sampling/per-step
+quantization — not an isolated kernel call):
+
+| B (concurrent requests) | TTFT baseline | decode tok/s baseline | TTFT fused | decode tok/s fused | speedup |
+|---|---|---|---|---|---|
+| 1  | 0.79s | 17.1  | 0.75s | 25.5  | **1.50x** |
+| 4  | 3.01s | 25.3  | 3.08s | 48.1  | **1.90x** |
+| 16 | 12.20s | 34.3 | 12.31s | 108.1 | **3.16x** |
+| 32 | 25.36s | 39.1 | 27.86s | 149.9 | **3.83x** |
+
+**This is a real, positive, end-to-end result on a real model** — not a
+synthetic microbenchmark — and the speedup growing with `B` (1.50x → 3.83x)
+is exactly the occupancy signature this document's synthetic `B`-sweep
+predicted (more concurrent requests → more threadgroups dispatched → more
+of the fused kernel's headroom realized), now confirmed through a real
+forward pass rather than isolated kernel calls. TTFT is essentially
+unaffected in both arms, as expected — prefill uses `S_q > 1` and never
+routes through this decode-only kernel; the small TTFT increase at `B=32`
+(25.36s → 27.86s) is run-to-run variance from sharing the machine across
+back-to-back large-batch prefills, not a fused-kernel effect (prefill
+computation is identical between arms).
+
+**Caveats, stated plainly rather than glossed over:**
+- `_ScalarAttendKIVICache` is a minimal benchmark harness, not a
+  shippable cache: it has no fp16 residual window (real KIVI keeps recent
+  tokens exact via `residual_length`; this quantizes as soon as
+  `group_size` tokens are available), so its *output quality* is not
+  representative of production KIVI — greedy decode degenerates
+  (observed repeating tokens after enough steps) faster than the real
+  `KIVIKVCache` would. This is irrelevant to the *timing* comparison,
+  since both arms decode from the identical (lossy) quantized state and
+  were verified to produce identical tokens — but the numbers above
+  should not be read as "KIVI is 1.5-3.8x faster in production," only as
+  "the fused kernel is 1.5-3.8x faster than dequant+SDPA for the *same*
+  quantized state, on a real model."
+- Only one model, one machine, one shape family (`prompt_len=256`,
+  `group_size=32`, `bits=2`) was tested. The isolated per-layer
+  comparison at this shape (`S_kv≈64, B=4`) showed the fused kernel at
+  only ~1.15x over a **plain fp16 KVCache with no quantization at all**
+  (vs. 2.57x over the KIVI-dequant baseline) — meaning most of this
+  result's headroom comes from avoiding the dequant materialization cost
+  specifically, not from the attend computation itself being dramatically
+  faster in absolute terms. A model/shape where dequant cost is smaller
+  relative to attend cost (larger `D`, different `bits`) could show a
+  smaller margin.
+- This does not resolve whether a *production* multi-request serving
+  integration (proper request scheduling, padding/masking for
+  variable-length sequences within a batch, KV-cache eviction under
+  concurrent load) would preserve this win — this benchmark uses
+  identical-length prompts and no eviction, real serving traffic differs
+  on both counts.
+
+**Disposition:** the multi-request half of Recommendation #2 is
+confirmed as a real, positive lever on a real model, using only the
+already-shipped (non-batched) `scalar_fused_decode_attend` kernel — no
+new kernel work was needed, only the cache/dispatch wiring this repo
+had not yet built for this kernel family. Building a production-grade
+version (a real cache with a residual window, wired through
+`KVCacheBuilder`, tested against variable-length concurrent requests) is
+scoped future work, not attempted here.
+
 ## Recommendation
 
 1. **Kernels already at or near the bandwidth roofline** (`kivi_group_quant_dequant`
@@ -392,12 +643,28 @@ question in principle.
    bandwidth or FLOPs** — the fix is architectural, not a kernel-internals
    tune. The obvious lever from the occupancy sweep: dispatch more
    threadgroups per call by processing multiple layers or multiple
-   requests in one kernel launch (batching across what's currently
-   separate per-layer Python-level calls), rather than trying to make a
-   single (B=1, H=8, S_q=1) dispatch stream memory faster — there simply
-   isn't enough independent work in that shape to fill the GPU, at any
-   bandwidth. This is a concrete, scoped follow-up for a future issue, not
-   attempted here (this issue is investigation-only, per its own framing).
+   requests in one kernel launch, rather than trying to make a single
+   (B=1, H=8, S_q=1) dispatch stream memory faster — there simply isn't
+   enough independent work in that shape to fill the GPU, at any
+   bandwidth. **Both halves of this lever are now resolved, with opposite
+   outcomes.** The cross-layer half was implemented, measured as a real
+   kernel-level win (1.0-4.5x, "Addendum: cross-layer batched
+   decode-attend dispatch"), and then shown to be a **structural dead
+   end for real single-request serving** — a standard transformer's
+   residual stream makes layer L+1's attention depend on layer L's full
+   block output, so real layers' attention can never be grouped into one
+   dispatch without changing the model's output (see the addendum
+   immediately above). The multi-*request* half has no such blocker and
+   was **confirmed as a real, positive win on a real model**: routing
+   `mlx_lm` decode-step attention through the existing (non-batched)
+   `scalar_fused_decode_attend` on Qwen3-4B-4bit measured **1.50x-3.83x**
+   real end-to-end decode tokens/sec, growing with concurrent request
+   count `B ∈ {1,4,16,32}` — see the same addendum for the full table,
+   caveats, and the apples-to-apples methodology (both arms verified to
+   produce bit-identical tokens before timing was trusted). A
+   production-grade integration (real residual-window cache, wired
+   through `KVCacheBuilder`, variable-length concurrent requests) remains
+   future work.
 3. **`turboquant_scalar_quantize` didn't clearly cross the memory-bound
    threshold even at 16M elements** (52–55%, vs. 61–102% for the other
    two bandwidth-confirmed kernels) — worth a follow-up at larger N to see
@@ -432,7 +699,17 @@ question in principle.
 
 ```
 python scripts/kv_kernel_roofline_bench.py
+python benchmark_scripts/benchmark_crosslayer_decode_batch.py       # cross-layer batching addendum
+python -m benchmark_scripts.benchmark_real_model_scalar_attend      # real-model multi-request addendum
 ```
+
+The real-model script must be run as a module (`python -m
+benchmark_scripts...`, not `python benchmark_scripts/....py`) — running it
+by path inserts the script's own directory at `sys.path[0]` ahead of the
+repo root, which can resolve `veloxquant_mlx` to a stale installed copy
+instead of the repo source if one exists in the active environment's
+`site-packages` (encountered directly while building this addendum; see
+that script's own import guard).
 
 Deterministic inputs (fixed `np.random.default_rng` seeds); re-run 2-3x
 and compare, per the prefill roofline's own observed run-to-run variance

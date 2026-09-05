@@ -77,8 +77,31 @@ arithmetic, without touching threadgroup count on the attend dispatch.
 Whether that round-trip is cheaper than redundant on-the-fly decode is
 exactly the open, unverified question this spike measures.
 
+Cross-layer batched dispatch (issue #307 part 1)
+--------------------------------------------------
+A real decode step calls :func:`scalar_fused_decode_attend` once per
+transformer layer (typically 28-80 layers), each call independently
+dispatching only ``B*H_kv*S_q`` threadgroups — 8-32 in the shapes
+``docs/KV_KERNEL_ROOFLINE_FINDINGS.md``'s occupancy sweep measured, far
+too few to fill a 10-core GPU. Those per-layer calls are mutually
+independent at the Metal-dispatch level (each layer's own K/V cache and
+post-attention Q projection are already materialized before any of these
+calls run), so nothing about attention's data dependencies forces them
+to be separate launches. :func:`scalar_fused_decode_attend_batched` adds
+a new outermost ``NL`` (num_layers) grid axis so one dispatch covers
+every layer of one decode step, multiplying threadgroup count by layer
+count "for free" — same total bytes moved, same total FLOPs, just more
+independently-schedulable units handed to the GPU scheduler at once. The
+caller must pre-stack each layer's tensors along a new leading axis
+(this kernel does not itself gather scattered per-layer arrays); v1
+requires uniform ``S_kv`` across the batched layers. See that document's
+third addendum for the measured result — this is reported with the same
+rigor as the GQA head-packing (#307 pt. 2) and SIMD-shuffle (#308)
+addenda, including if the outcome is null or negative.
+
 Public API:
   - :func:`scalar_fused_decode_attend`
+  - :func:`scalar_fused_decode_attend_batched`
   - :func:`scalar_decode_once`
   - :func:`scalar_predecoded_attend`
 """
@@ -127,6 +150,7 @@ _cache: dict = {}
 # the original non-GQA code path.
 
 _SCALAR_AFFINE_ATTEND_SRC = _read_kernel_source("scalar_affine_attend.metal")
+_SCALAR_AFFINE_ATTEND_BATCHED_SRC = _read_kernel_source("scalar_affine_attend_batched.metal")
 _SCALAR_AFFINE_DECODE_ONCE_SRC = _read_kernel_source("scalar_affine_decode_once.metal")
 _SCALAR_PREDECODED_ATTEND_SRC = _read_kernel_source("scalar_predecoded_attend.metal")
 
@@ -155,6 +179,30 @@ def _scalar_affine_attend_kernel(D: int, nsg: int, heads_per_kv: int):
             output_names=["out"],
             header=f"#define NSG_C {nsg}\n#define HEADS_PER_KV_C {heads_per_kv}\n",
             source=_SCALAR_AFFINE_ATTEND_SRC,
+            ensure_row_contiguous=True,
+        )
+    return _cache[key]
+
+
+def _scalar_affine_attend_batched_kernel(D: int, nsg: int, heads_per_kv: int):
+    key = ("scalar_affine_attend_batched", D, nsg, heads_per_kv)
+    if key not in _cache:
+        _cache[key] = mx.fast.metal_kernel(
+            name=f"scalar_affine_attend_batched_d{D}_nsg{nsg}_hpk{heads_per_kv}",
+            input_names=[
+                "q",
+                "k_codes",
+                "k_scale",
+                "k_zero",
+                "v_codes",
+                "v_scale",
+                "v_zero",
+                "gsize",
+                "scale_arr",
+            ],
+            output_names=["out"],
+            header=f"#define NSG_C {nsg}\n#define HEADS_PER_KV_C {heads_per_kv}\n",
+            source=_SCALAR_AFFINE_ATTEND_BATCHED_SRC,
             ensure_row_contiguous=True,
         )
     return _cache[key]
@@ -317,6 +365,146 @@ def scalar_fused_decode_attend(
     return outputs[0]
 
 
+def scalar_fused_decode_attend_batched(
+    q: mx.array,
+    k_codes: mx.array,
+    k_scale: mx.array,
+    k_zero: mx.array,
+    v_codes: mx.array,
+    v_scale: mx.array,
+    v_zero: mx.array,
+    group_size: int,
+    scale: float,
+    nsg: int = 4,
+) -> mx.array:
+    """Cross-layer batched fused group-affine decode + SDP attention (#307 pt. 1).
+
+    Identical per-(layer, batch, kv-head, query-position) math to
+    :func:`scalar_fused_decode_attend` — this adds a new leading ``NL``
+    (num_layers) axis to every input so ONE kernel launch covers every
+    layer of a decode step, instead of one launch per layer. Threadgroup
+    count becomes ``NL * B * H_kv * S_q``, raising occupancy "for free"
+    (same total bytes moved and FLOPs done, summed over layers either
+    way) at the realistic decode shapes
+    ``docs/KV_KERNEL_ROOFLINE_FINDINGS.md``'s occupancy sweep found
+    under-dispatched (8-32 threadgroups for a single layer).
+
+    The caller is responsible for stacking each layer's per-layer arrays
+    along a new leading axis (e.g. via ``mx.stack``) before calling this
+    function — this kernel does not itself gather scattered per-layer
+    Python objects into one buffer, and that stacking has a real cost
+    that must be measured separately (see
+    ``benchmark_scripts/benchmark_crosslayer_decode_batch.py``). v1
+    requires uniform ``S_kv`` across all batched layers; a ragged
+    per-layer ``S_kv`` is not supported (pad to a common ``S_kv`` at the
+    call site if needed).
+
+    Args:
+        q:        ``[NL, B, H_q, S_q, D]`` fp16/fp32 queries (pre-rotated).
+        k_codes:  ``[NL, B, H_kv, S_kv, D]`` uint8 key codes.
+        k_scale:  ``[NL, B, H_kv, GK, D]``   fp32, GK = ceil(S_kv/group_size).
+        k_zero:   ``[NL, B, H_kv, GK, D]``   fp32.
+        v_codes:  ``[NL, B, H_kv, S_kv, D]`` uint8 value codes.
+        v_scale:  ``[NL, B, H_kv, S_kv, GV]`` fp32, GV = ceil(D/group_size).
+        v_zero:   ``[NL, B, H_kv, S_kv, GV]`` fp32.
+        group_size: quantization group size g.
+        scale:    attention scale applied to the raw dot (e.g. 1/sqrt(D)).
+        nsg:      SIMD-groups per threadgroup splitting the kv axis.
+
+    Returns:
+        ``[NL, B, H_q, S_q, D]`` fp16 attention output.
+    """
+    if q.ndim != 5:
+        raise ValueError(
+            f"scalar_fused_decode_attend_batched: q must be 5D [NL,B,H,S_q,D], got {q.shape}"
+        )
+    if k_codes.ndim != 5 or v_codes.ndim != 5:
+        raise ValueError(
+            "scalar_fused_decode_attend_batched: k_codes and v_codes must be 5D, "
+            f"got k_codes={k_codes.shape}, v_codes={v_codes.shape}"
+        )
+    NL, B, H, S_q, D = q.shape
+    if NL < 1:
+        raise ValueError(f"scalar_fused_decode_attend_batched: NL={NL} must be >= 1")
+    if D > 256:
+        raise ValueError(f"scalar_fused_decode_attend_batched: D={D} must be <= 256")
+    if not (1 <= nsg <= 32):
+        raise ValueError(f"scalar_fused_decode_attend_batched: nsg={nsg} must be in 1..32")
+
+    NLk, Bk, H_kv, S_kv, Dk = k_codes.shape
+    if NLk != NL:
+        raise ValueError(
+            f"scalar_fused_decode_attend_batched: NL mismatch: q NL={NL} vs k_codes NL={NLk}"
+        )
+    if Bk != B:
+        raise ValueError(
+            f"scalar_fused_decode_attend_batched: batch mismatch: q B={B} vs k_codes B={Bk}"
+        )
+    if Dk != D:
+        raise ValueError(
+            f"scalar_fused_decode_attend_batched: head_dim mismatch: q D={D} vs k_codes D={Dk}"
+        )
+    if v_codes.shape != k_codes.shape:
+        raise ValueError(
+            f"scalar_fused_decode_attend_batched: k_codes shape={k_codes.shape} vs "
+            f"v_codes shape={v_codes.shape} mismatch"
+        )
+    for name, arr in (("k_scale", k_scale), ("k_zero", k_zero), ("v_scale", v_scale), ("v_zero", v_zero)):
+        if arr.ndim != 5 or arr.shape[0] != NL or arr.shape[1] != B or arr.shape[2] != H_kv:
+            raise ValueError(
+                f"scalar_fused_decode_attend_batched: {name} shape={arr.shape} must be "
+                f"5D with leading [NL={NL}, B={B}, H_kv={H_kv}, ...]"
+            )
+    if H % H_kv != 0:
+        raise ValueError(
+            f"scalar_fused_decode_attend_batched: H_q={H} must be a multiple of "
+            f"H_kv={H_kv} (k_codes.shape[2]) for GQA head-packing"
+        )
+    heads_per_kv = H // H_kv
+    if heads_per_kv > _MAX_HEADS_PER_KV:
+        raise ValueError(
+            f"scalar_fused_decode_attend_batched: heads_per_kv={heads_per_kv} exceeds "
+            f"the supported maximum of {_MAX_HEADS_PER_KV}"
+        )
+    # Threadgroup-memory footprint is per-SIMD-group/per-packed-head, sized
+    # identically to the single-layer kernel — the NL axis lives on the grid,
+    # not inside one threadgroup's state, so the same budget check applies
+    # unchanged (see scalar_fused_decode_attend's identical check).
+    n_slots = nsg * heads_per_kv
+    tg_mem_bytes = (n_slots * 8 * 32 + n_slots + n_slots) * 4
+    if tg_mem_bytes > _TG_MEM_BUDGET_BYTES:
+        raise ValueError(
+            f"scalar_fused_decode_attend_batched: nsg={nsg} * heads_per_kv={heads_per_kv} "
+            f"exceeds the {_TG_MEM_BUDGET_BYTES}B threadgroup-memory budget for "
+            f"the softmax merge buffers ({tg_mem_bytes}B); reduce nsg or use a "
+            f"smaller H_q/H_kv ratio"
+        )
+
+    n_tg = NL * B * H_kv * S_q
+    gsize = mx.array([group_size], dtype=mx.uint32)
+    scale_arr = mx.array([scale], dtype=mx.float32)
+
+    outputs = _scalar_affine_attend_batched_kernel(D, nsg, heads_per_kv)(
+        inputs=[
+            q.astype(mx.float16),
+            k_codes.astype(mx.uint8),
+            k_scale.astype(mx.float32),
+            k_zero.astype(mx.float32),
+            v_codes.astype(mx.uint8),
+            v_scale.astype(mx.float32),
+            v_zero.astype(mx.float32),
+            gsize,
+            scale_arr,
+        ],
+        # MLX grid = total threads; NSG_C SIMD-groups of 32 lanes each
+        grid=(n_tg * 32, nsg, 1),
+        threadgroup=(32, nsg, 1),
+        output_shapes=[(NL, B, H, S_q, D)],
+        output_dtypes=[mx.float16],
+    )
+    return outputs[0]
+
+
 def scalar_decode_once(
     codes: mx.array,
     scale: mx.array,
@@ -445,6 +633,7 @@ def scalar_predecoded_attend(
 
 __all__ = [
     "scalar_fused_decode_attend",
+    "scalar_fused_decode_attend_batched",
     "scalar_decode_once",
     "scalar_predecoded_attend",
 ]

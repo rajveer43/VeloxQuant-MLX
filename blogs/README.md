@@ -23,3 +23,4 @@ When you edit a post here, mirror the change to the corresponding file in `docs-
 | `weight-reservoir.md` | `docs-site/blog/2026-08-26-weight-reservoir.md` | `/docs/blog/weight-reservoir` |
 | _(docs-site only)_ | `docs-site/blog/2026-08-28-rvq-fused-quantize-pack-kernel.md` | `/docs/blog/rvq-fused-quantize-pack-kernel` |
 | `prefill-roofline.md` | `docs-site/blog/2026-08-30-prefill-roofline.md` | `/docs/blog/prefill-roofline` |
+| `crosslayer-decode-batching.md` | `docs-site/blog/2026-09-05-crosslayer-decode-batching.md` | `/docs/blog/crosslayer-decode-batching` |
