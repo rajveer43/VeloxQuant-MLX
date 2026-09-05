@@ -743,6 +743,225 @@ function initHeroAurora() {
   }
 }
 
+// ── MACOS STUDIO APP WINDOW INTERACTION ──
+function initStudioWindow() {
+  const windowEl = document.getElementById('studio-window');
+  if (!windowEl) return;
+
+  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // 1. Tab Switching
+  const navBtns = windowEl.querySelectorAll('.studio-nav-btn');
+  const tabPanels = windowEl.querySelectorAll('.studio-tab-panel');
+
+  navBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tabName = btn.dataset.tab;
+      if (!tabName) return;
+
+      navBtns.forEach(b => b.classList.remove('active'));
+      tabPanels.forEach(p => p.classList.remove('active'));
+
+      btn.classList.add('active');
+      const targetPanel = document.getElementById('tab-' + tabName);
+      if (targetPanel) {
+        targetPanel.classList.add('active');
+      }
+    });
+  });
+
+  // 2. Preset Configurations & Selection
+  const presets = {
+    'Balanced (RVQ-1bit)': {
+      code: 'turboquant_rvq',
+      tag: '2-bit Quantized',
+      desc: 'Residual vector quantization with bit-exact attention preservation.',
+      memVal: 3.8,
+      pctSaved: -86.6,
+      fillWidth: 13.4,
+      legendActive: '3.8 GB Active',
+      legendReclaimed: '24.6 GB Headroom Reclaimed',
+      speedup: '14.7×',
+      signAcc: '100%',
+      throughput: 68.2,
+      perplexity: '< 0.8 pt'
+    },
+    'KIVI-2bit': {
+      code: 'kivi',
+      tag: '2-bit Per-Channel',
+      desc: 'Per-channel key-value quantization with negligible perplexity drift.',
+      memVal: 6.2,
+      pctSaved: -78.2,
+      fillWidth: 21.8,
+      legendActive: '6.2 GB Active',
+      legendReclaimed: '22.2 GB Headroom Reclaimed',
+      speedup: '11.2×',
+      signAcc: '99.4%',
+      throughput: 54.6,
+      perplexity: '< 0.4 pt'
+    },
+    'Max (VecInfer)': {
+      code: 'vecinfer',
+      tag: '1-bit Ultra-Compressed',
+      desc: 'Extreme 1-bit vector quantization maximizing token context on Apple Silicon.',
+      memVal: 1.9,
+      pctSaved: -93.3,
+      fillWidth: 6.7,
+      legendActive: '1.9 GB Active',
+      legendReclaimed: '26.5 GB Headroom Reclaimed',
+      speedup: '18.5×',
+      signAcc: '97.8%',
+      throughput: 82.4,
+      perplexity: '< 1.4 pt'
+    }
+  };
+
+  let activePresetKey = 'Balanced (RVQ-1bit)';
+  const presetPills = windowEl.querySelectorAll('.studio-preset-pill');
+  const codeNameEl = windowEl.querySelector('.method-code-name');
+  const statusTagEl = windowEl.querySelector('.method-status-tag');
+  const methodDescEl = windowEl.querySelector('.method-box-desc');
+  const memValEl = document.getElementById('studio-mem-val');
+  const memPctEl = document.getElementById('studio-mem-pct');
+  const barFillEl = document.getElementById('studio-bar-fill');
+  const legendEls = windowEl.querySelectorAll('.telemetry-bar-legend span');
+  const miniCards = windowEl.querySelectorAll('.telemetry-mini-card .mini-val');
+
+  function applyPreset(key, animate = true) {
+    const p = presets[key];
+    if (!p) return;
+    activePresetKey = key;
+
+    presetPills.forEach(pill => {
+      pill.classList.toggle('active', pill.textContent.trim() === key);
+    });
+
+    if (codeNameEl) codeNameEl.textContent = p.code;
+    if (statusTagEl) statusTagEl.textContent = p.tag;
+    if (methodDescEl) methodDescEl.textContent = p.desc;
+
+    if (memValEl) memValEl.textContent = p.memVal.toFixed(1) + ' GB';
+    if (memPctEl) memPctEl.textContent = p.pctSaved.toFixed(1) + '% RAM';
+    if (barFillEl) barFillEl.style.width = p.fillWidth + '%';
+
+    if (legendEls.length >= 2) {
+      legendEls[0].textContent = p.legendActive;
+      legendEls[1].textContent = p.legendReclaimed;
+    }
+
+    if (miniCards.length >= 4) {
+      miniCards[0].textContent = p.speedup;
+      miniCards[1].textContent = p.signAcc;
+      miniCards[2].textContent = p.throughput.toFixed(1) + ' tok/s';
+      miniCards[3].textContent = p.perplexity;
+    }
+  }
+
+  presetPills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      const key = pill.textContent.trim();
+      applyPreset(key);
+    });
+  });
+
+  // 3. Real-Time Metal Compression Simulation
+  const simBtn = document.getElementById('studio-simulate-btn');
+  const btnLabel = document.getElementById('studio-btn-label');
+  const spinner = document.getElementById('studio-spinner');
+  let isSimulating = false;
+
+  if (simBtn) {
+    simBtn.addEventListener('click', () => {
+      if (isSimulating) return;
+      isSimulating = true;
+
+      const p = presets[activePresetKey] || presets['Balanced (RVQ-1bit)'];
+      const uncompressedMem = 28.4;
+      const targetMem = p.memVal;
+
+      if (spinner) spinner.style.display = 'inline-block';
+      if (btnLabel) btnLabel.textContent = '⚡ Metal GPU Compressing...';
+      simBtn.style.pointerEvents = 'none';
+
+      // Jump to uncompressed start
+      if (memValEl) memValEl.textContent = uncompressedMem.toFixed(1) + ' GB';
+      if (memPctEl) memPctEl.textContent = '0.0% RAM';
+      if (barFillEl) barFillEl.style.width = '100%';
+
+      const startTime = performance.now();
+      const duration = prefersReduced ? 100 : 1500;
+
+      function step(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        // Ease-out cubic
+        const ease = 1 - Math.pow(1 - progress, 3);
+
+        const currentMem = uncompressedMem - (uncompressedMem - targetMem) * ease;
+        const currentPct = -((uncompressedMem - currentMem) / uncompressedMem * 100);
+        const currentWidth = 100 - (100 - p.fillWidth) * ease;
+
+        if (memValEl) memValEl.textContent = currentMem.toFixed(1) + ' GB';
+        if (memPctEl) memPctEl.textContent = currentPct.toFixed(1) + '% RAM';
+        if (barFillEl) barFillEl.style.width = currentWidth.toFixed(1) + '%';
+
+        if (progress < 1) {
+          requestAnimationFrame(step);
+        } else {
+          // Finished
+          if (spinner) spinner.style.display = 'none';
+          const reclaimed = (uncompressedMem - targetMem).toFixed(1);
+          if (btnLabel) btnLabel.textContent = `✓ Done (${reclaimed} GB Reclaimed)`;
+
+          setTimeout(() => {
+            if (btnLabel) btnLabel.textContent = '⚡ Run Real-Time Compression';
+            simBtn.style.pointerEvents = '';
+            isSimulating = false;
+          }, 3200);
+        }
+      }
+
+      requestAnimationFrame(step);
+    });
+  }
+
+  // 4. Subtle 3D Perspective Tilt on Mousemove (OpenAI macOS card effect)
+  if (!prefersReduced) {
+    const wrap = windowEl.parentElement;
+    if (wrap) {
+      wrap.style.perspective = '1400px';
+
+      wrap.addEventListener('mousemove', (e) => {
+        const rect = wrap.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+
+        const rotateX = ((y - centerY) / centerY) * -3.5; // Max -3.5 to +3.5 deg
+        const rotateY = ((x - centerX) / centerX) * 4.0;  // Max -4 to +4 deg
+
+        windowEl.style.transform = `rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg) translateY(-2px)`;
+      });
+
+      wrap.addEventListener('mouseleave', () => {
+        windowEl.style.transform = 'rotateX(0deg) rotateY(0deg) translateY(0)';
+      });
+    }
+  }
+
+  // 5. Ambient Telemetry Pulse (subtle live fluctuations)
+  if (!prefersReduced && miniCards.length >= 4) {
+    setInterval(() => {
+      if (isSimulating) return;
+      const baseThroughput = presets[activePresetKey]?.throughput || 68.2;
+      const jitter = (Math.random() * 0.8 - 0.4);
+      miniCards[2].textContent = (baseThroughput + jitter).toFixed(1) + ' tok/s';
+    }, 2800);
+  }
+}
+
 // ── INIT ──
 document.addEventListener('DOMContentLoaded', () => {
   initCopyButtons();
@@ -758,6 +977,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initAnnouncementBanner();
   initBenchmarkFilters();
   initHeroAurora();
+  initStudioWindow();
 });
+
 
 

@@ -29,7 +29,7 @@
   <!-- Fonts are self-hosted in styles.css (assets/fonts/*.woff2) — no
        third-party hop, no render-blocking preconnect. -->
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="assets/styles.css?v=20260905" />
+  <link rel="stylesheet" href="assets/styles.css?v=20260906" />
 
   <script type="application/ld+json">
   {
@@ -135,6 +135,7 @@
         <!-- Sticky / Segmented Section Quick Navigation -->
         <nav class="bench-nav" aria-label="Benchmark categories">
           <a href="#metal" class="bench-nav-pill active">⚡ Metal GPU Speedup</a>
+          <a href="#kernel-roofline" class="bench-nav-pill">🧩 Decode Occupancy</a>
           <a href="#kivi-matrix" class="bench-nav-pill">🧠 12-Model Safety Matrix</a>
           <a href="#qfilters-scorer" class="bench-nav-pill">🎯 Attention Correlation</a>
           <a href="#quality-gap" class="bench-nav-pill">📉 Perplexity &amp; Rings</a>
@@ -284,10 +285,196 @@
         </div>
       </section>
 
-      <!-- ── SECTION 2: 12-MODEL SAFETY MATRIX ── -->
+      <!-- ── SECTION 2: KV-CACHE KERNEL ROOFLINE (OCCUPANCY VS. BANDWIDTH) ── -->
+      <section id="kernel-roofline" class="bench-section">
+        <div class="bench-section-header">
+          <span class="bench-section-tag">02 · Occupancy vs. Bandwidth</span>
+          <h2 class="bench-section-title">KV-Cache Kernel Roofline: What Actually Limits Decode</h2>
+          <p class="bench-section-subtitle">
+            A self-calibrated bandwidth roofline (not spec-sheet numbers) across all four KV-cache quantize/dequantize/fused-attend Metal kernels — two are already within a few percent of this hardware's measured bandwidth ceiling, and one never becomes bandwidth-bound at all for a different, more interesting reason.
+          </p>
+        </div>
+
+        <div class="bench-takeaway">
+          <div class="bench-takeaway-badge">COUNTER-INTUITIVE RESULT</div>
+          <p>
+            <strong>The fused decode+attend kernel's bottleneck isn't memory bandwidth — it's GPU occupancy.</strong>
+            At a realistic single-token decode shape it tops out at just <strong>6.1% of peak bandwidth</strong>, even at 16,384 cached tokens, because too few threadgroups are dispatched to fill a 10-core GPU. Routing <strong>multiple concurrent requests</strong> through that same kernel — verified end-to-end on a real model — measured a real <strong>1.50×–3.83× decode speedup</strong> that grows with batch size.
+          </p>
+        </div>
+
+        <!-- Bandwidth roofline: % of calibrated peak across all four kernels -->
+        <div class="bench-card">
+          <div class="bench-card-head">
+            <span class="bench-card-title">% of Calibrated Bandwidth Peak, Largest Tested Size (Higher = Closer to Memory-Bound)</span>
+            <span class="bench-badge-chip">Apple M4 · self-calibrated ~97–99 GB/s ceiling</span>
+          </div>
+
+          <div class="metal-bars-wrap">
+            <div class="roofline-row">
+              <div class="roofline-kernel">
+                <span class="roofline-kernel-name">kivi_group_quant_dequant</span>
+                <span class="roofline-kernel-shape">32×4096×128, group_size=32</span>
+              </div>
+              <div class="roofline-bar-track"><div class="roofline-bar-fill bound" style="width: 100%;"></div></div>
+              <span class="roofline-bar-pct">102.2%</span>
+            </div>
+
+            <div class="roofline-row">
+              <div class="roofline-kernel">
+                <span class="roofline-kernel-name">turboquant_scalar_dequantize</span>
+                <span class="roofline-kernel-shape">N=16,000,000, b=2 (pure gather)</span>
+              </div>
+              <div class="roofline-bar-track"><div class="roofline-bar-fill bound" style="width: 61.8%;"></div></div>
+              <span class="roofline-bar-pct">61.8%</span>
+            </div>
+
+            <div class="roofline-row">
+              <div class="roofline-kernel">
+                <span class="roofline-kernel-name">turboquant_scalar_quantize</span>
+                <span class="roofline-kernel-shape">N=16,000,000, b=4 (argmin, 16 centroids)</span>
+              </div>
+              <div class="roofline-bar-track"><div class="roofline-bar-fill trending" style="width: 54.9%;"></div></div>
+              <span class="roofline-bar-pct">54.9%</span>
+            </div>
+
+            <div class="roofline-row">
+              <div class="roofline-kernel">
+                <span class="roofline-kernel-name">scalar_fused_decode_attend</span>
+                <span class="roofline-kernel-shape">S_kv=16,384, B=1 H=8 S_q=1 (realistic decode)</span>
+              </div>
+              <div class="roofline-bar-track"><div class="roofline-bar-fill occupancy" style="width: 6.1%;"></div></div>
+              <span class="roofline-bar-pct">6.1%</span>
+            </div>
+          </div>
+
+          <div class="roofline-legend">
+            <span class="roofline-legend-item"><span class="roofline-legend-dot" style="background:#22c55e;"></span>Memory-bound (≥60% of peak)</span>
+            <span class="roofline-legend-item"><span class="roofline-legend-dot" style="background:#f59e0b;"></span>Occupancy-limited, trending toward memory-bound</span>
+            <span class="roofline-legend-item"><span class="roofline-legend-dot" style="background:#ef4444;"></span>Occupancy/dispatch-bound — not a bandwidth problem</span>
+          </div>
+        </div>
+
+        <!-- Occupancy sweep: the direct evidence that threadgroup count, not bytes moved, is the limiter -->
+        <div class="bench-card" style="margin-top: 1.5rem;">
+          <div class="bench-card-head">
+            <span class="bench-card-title">Occupancy Sweep — Same Kernel, Same S_kv, Only Threadgroup Count Changes</span>
+            <span class="bench-badge-chip">scalar_fused_decode_attend, S_kv=16,384, D=128</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Dispatch shape</th>
+                  <th>Threadgroups</th>
+                  <th>% of peak bandwidth</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>B=1, H=8, S_q=1 <span class="td-muted">(realistic single request)</span></td>
+                  <td>8</td>
+                  <td class="td-caution">6.1%</td>
+                </tr>
+                <tr>
+                  <td>B=1, H=32, S_q=1</td>
+                  <td>32</td>
+                  <td class="td-caution">21.8%</td>
+                </tr>
+                <tr>
+                  <td>B=4, H=32, S_q=1</td>
+                  <td>128</td>
+                  <td class="td-winner">36.7%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="gap-footnote">Bandwidth utilization scales with threadgroup count, not with S_kv or bytes moved per threadgroup — direct evidence this kernel is occupancy/dispatch-bound, not memory- or compute-bound, at the shapes that matter for real single-token decode.</p>
+        </div>
+
+        <!-- Real-model result: the headline number -->
+        <div class="bench-card" style="margin-top: 1.5rem;">
+          <div class="bench-card-head">
+            <span class="bench-card-title">The Fix That Worked: Batch Concurrent Requests, Not Layers</span>
+            <span class="bench-badge-chip">mlx-community/Qwen3-4B-4bit · 36 layers · real end-to-end decode</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Concurrent requests (B)</th>
+                  <th>Baseline decode tok/s</th>
+                  <th>Fused-kernel decode tok/s</th>
+                  <th>Speedup</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>1</td><td class="td-muted">17.1</td><td class="td-winner">25.5</td><td class="td-winner">1.50×</td></tr>
+                <tr><td>4</td><td class="td-muted">25.3</td><td class="td-winner">48.1</td><td class="td-winner">1.90×</td></tr>
+                <tr><td>16</td><td class="td-muted">34.3</td><td class="td-winner">108.1</td><td class="td-winner">3.16×</td></tr>
+                <tr><td>32</td><td class="td-muted">39.1</td><td class="td-winner">149.9</td><td class="td-winner">3.83×</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="gap-footnote">
+            Real forward passes on real hardware (Apple M4, prompt_len=256, 30 decode steps) — not an isolated kernel call. Both arms decode from the identical quantized KV state and were verified to produce bit-identical tokens before timing was trusted, so this measures the fused kernel's speedup over dequantize+MLX-SDPA on the <em>same</em> compressed state — not a general "KIVI is faster in production" claim. The test harness behind this table also has no fp16 residual window (unlike shipping KIVI), so its generation quality isn't production-representative; only the timing comparison is.
+          </p>
+        </div>
+
+        <!-- What was tried and not shipped -->
+        <div class="bench-card" style="margin-top: 1.5rem;">
+          <div class="bench-card-head">
+            <span class="bench-card-title">Also Measured, Not Adopted as the Default</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Approach</th>
+                  <th>Result</th>
+                  <th>Disposition</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>GQA head-packing (share K/V decode across query heads)</td>
+                  <td class="td-hot">2.7×–4.7× slower</td>
+                  <td class="td-muted">Reduces threadgroup count, which is the actual bottleneck — kept as tested code, not the default.</td>
+                </tr>
+                <tr>
+                  <td>Two-pass "decode-once" (separate decode + attend kernels)</td>
+                  <td><span class="td-winner">1.1×–3.2× faster</span> at S_kv≤2048, <span class="td-hot">0.80×–0.85× (slower)</span> at S_kv≥3072</td>
+                  <td class="td-muted">Real crossover, but this project's realistic decode targets sit past it — not adopted as the default.</td>
+                </tr>
+                <tr>
+                  <td>Cross-layer batched dispatch</td>
+                  <td class="td-winner">1.0×–4.5× faster in isolation</td>
+                  <td class="td-muted">Structural dead end for real single-request serving — a standard transformer's residual stream makes layer L+1's attention depend on layer L's full output, so layers can't be batched together without changing the model.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Reproduce command terminal box -->
+        <div class="bench-cli-box">
+          <div class="bench-cli-head">
+            <span>Reproduce the roofline measurements</span>
+            <span class="bench-cli-chip">CLI</span>
+          </div>
+          <pre><code>python scripts/kv_kernel_roofline_bench.py</code></pre>
+        </div>
+
+        <p class="gap-footnote">
+          Full methodology, self-calibration approach, and all four follow-up experiments (including the ones summarized above) →
+          <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/KV_KERNEL_ROOFLINE_FINDINGS.md" target="_blank" rel="noopener">KV_KERNEL_ROOFLINE_FINDINGS.md on GitHub</a>.
+        </p>
+      </section>
+
+      <!-- ── SECTION 3: 12-MODEL SAFETY MATRIX ── -->
       <section id="kivi-matrix" class="bench-section">
         <div class="bench-section-header">
-          <span class="bench-section-tag">02 · Multi-Model Safety</span>
+          <span class="bench-section-tag">03 · Multi-Model Safety</span>
           <h2 class="bench-section-title">12-Model Quality Matrix (KIVI 4-Bit vs. 2-Bit)</h2>
           <p class="bench-section-subtitle">
             Long-context causal generation (~430–500 tokens, well beyond the 128-token residual cache window) tested across 12 models spanning 135M to 8B parameters.
@@ -524,10 +711,10 @@
         </details>
       </section>
 
-      <!-- ── SECTION 3: ATTENTION SCORER (Q-FILTERS) ── -->
+      <!-- ── SECTION 4: ATTENTION SCORER (Q-FILTERS) ── -->
       <section id="qfilters-scorer" class="bench-section">
         <div class="bench-section-header">
-          <span class="bench-section-tag">03 · Token Eviction Accuracy</span>
+          <span class="bench-section-tag">04 · Token Eviction Accuracy</span>
           <h2 class="bench-section-title">Attention Scorer Correlation (Q-Filters)</h2>
           <p class="bench-section-subtitle">
             Spearman rank-order correlation with genuine model attention weights. Tests whether the scorer correctly identifies which tokens are critical to retain.
@@ -593,10 +780,10 @@
         </div>
       </section>
 
-      <!-- ── SECTION 4: PERPLEXITY & GAP CLOSED ── -->
+      <!-- ── SECTION 5: PERPLEXITY & GAP CLOSED ── -->
       <section id="quality-gap" class="bench-section">
         <div class="bench-section-header">
-          <span class="bench-section-tag">04 · Quality Preservation</span>
+          <span class="bench-section-tag">05 · Quality Preservation</span>
           <h2 class="bench-section-title">Generation Perplexity &amp; Quality Gap Closed</h2>
           <p class="bench-section-subtitle">
             Percentage of the fp16 degradation gap closed by Q-Filters calibration relative to naive eviction at varying memory compression budgets.
@@ -645,10 +832,10 @@
         </div>
       </section>
 
-      <!-- ── SECTION 5: KV CACHE MEMORY SCALING ── -->
+      <!-- ── SECTION 6: KV CACHE MEMORY SCALING ── -->
       <section id="memory-scaling" class="bench-section">
         <div class="bench-section-header">
-          <span class="bench-section-tag">05 · Memory Footprint</span>
+          <span class="bench-section-tag">06 · Memory Footprint</span>
           <h2 class="bench-section-title">Real KV Cache Memory Scaling (RaBitQ on Falcon3-7B)</h2>
           <p class="bench-section-subtitle">
             Measured RAM footprint of the KV cache across context lengths from 256 to 4,096 tokens.
