@@ -3940,15 +3940,15 @@ span.anchor-alias {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1.5rem;
+  gap: 1.25rem;
   background: rgba(14, 14, 18, 0.85);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 9999px;
-  padding: 0.45rem 0.6rem 0.45rem 1.4rem;
-  max-width: 820px;
-  width: 100%;
+  padding: 0.35rem 0.5rem 0.35rem 1.25rem;
+  max-width: 960px;
+  width: fit-content;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
@@ -3967,6 +3967,7 @@ span.anchor-alias {
   letter-spacing: -0.02em;
   text-decoration: none;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .pill-nav-logo-mark {
@@ -3979,7 +3980,7 @@ span.anchor-alias {
 .pill-nav-links {
   display: flex;
   align-items: center;
-  gap: 1.75rem;
+  gap: 1.35rem;
   list-style: none;
 }
 
@@ -3989,6 +3990,7 @@ span.anchor-alias {
   font-size: 0.86rem;
   font-weight: 500;
   transition: color 0.15s;
+  white-space: nowrap;
 }
 
 .pill-nav-links a:hover,
@@ -3999,7 +4001,9 @@ span.anchor-alias {
 .pill-nav-actions {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.55rem;
+  padding-right: 0.15rem;
+  flex-shrink: 0;
 }
 
 .pill-nav .theme-toggle {
@@ -4014,6 +4018,7 @@ span.anchor-alias {
   background: rgba(255, 255, 255, 0.04);
   color: #e4e4e7;
   cursor: pointer;
+  flex-shrink: 0;
   transition: border-color 0.2s, background 0.2s, color 0.2s;
 }
 
@@ -4025,16 +4030,18 @@ span.anchor-alias {
 .pill-nav-github {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.4rem;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 9999px;
-  padding: 0.4rem 0.95rem;
-  font-size: 0.76rem;
+  padding: 0.36rem 0.85rem;
+  font-size: 0.74rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   color: #ffffff;
   text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: background 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s;
 }
 
@@ -4055,6 +4062,9 @@ span.anchor-alias {
 
 /* ── HERO REDESIGN & DYNAMIC FLUID AURORA ── */
 #hero.hero-redesign {
+  width: 100%;
+  max-width: 100% !important;
+  margin: 0 !important;
   min-height: 92vh;
   display: flex;
   align-items: center;
@@ -4064,29 +4074,33 @@ span.anchor-alias {
   position: relative;
   overflow: hidden;
   background: #05060a;
+  box-sizing: border-box;
 }
 
 .hero-aurora-wrap {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   pointer-events: none;
   z-index: 1;
 }
 
-/* Ambient multi-layer gradient bloom (smooth CSS fallback & depth accent) */
+/* Ambient multi-layer gradient bloom (smooth CSS fallback & depth accent spanning edge-to-edge) */
 .hero-aurora-glow {
   position: absolute;
-  top: -25%;
-  left: 5%;
-  width: 90%;
-  height: 130%;
+  top: -30%;
+  left: -15%;
+  width: 130%;
+  height: 160%;
   background:
-    radial-gradient(circle at 35% 38%, rgba(56, 189, 248, 0.32) 0%, transparent 52%),
-    radial-gradient(circle at 65% 35%, rgba(124, 58, 237, 0.38) 0%, transparent 50%),
-    radial-gradient(circle at 50% 55%, rgba(99, 102, 241, 0.28) 0%, transparent 60%);
-  filter: blur(85px);
-  opacity: 0.85;
+    radial-gradient(circle at 25% 38%, rgba(56, 189, 248, 0.38) 0%, transparent 55%),
+    radial-gradient(circle at 75% 35%, rgba(124, 58, 237, 0.44) 0%, transparent 55%),
+    radial-gradient(circle at 50% 55%, rgba(99, 102, 241, 0.32) 0%, transparent 60%);
+  filter: blur(100px);
+  opacity: 0.9;
   animation: heroAuroraBreath 16s ease-in-out infinite alternate;
   transform: translateZ(0);
 }
@@ -4094,21 +4108,22 @@ span.anchor-alias {
 @keyframes heroAuroraBreath {
   0% {
     transform: scale(0.96) rotate(0deg);
-    opacity: 0.75;
+    opacity: 0.8;
   }
   50% {
     transform: scale(1.08) rotate(3deg) translateY(-2%);
-    opacity: 0.95;
+    opacity: 1;
   }
   100% {
     transform: scale(1.02) rotate(-2deg) translateY(2%);
-    opacity: 0.82;
+    opacity: 0.85;
   }
 }
 
 .hero-aurora-canvas {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   display: block;
@@ -4119,8 +4134,11 @@ span.anchor-alias {
 /* Soft vignette so headline and buttons maintain maximum contrast */
 .hero-aurora-vignette {
   position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse 95% 75% at 50% 40%, rgba(5, 6, 10, 0.1) 0%, rgba(5, 6, 10, 0.55) 60%, #05060a 100%);
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(ellipse 95% 75% at 50% 40%, rgba(5, 6, 10, 0) 0%, rgba(5, 6, 10, 0.35) 65%, #05060a 100%);
   z-index: 3;
   pointer-events: none;
 }

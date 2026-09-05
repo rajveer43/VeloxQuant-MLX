@@ -560,52 +560,65 @@ function initHeroAurora() {
   }
   window.addEventListener('mousemove', onMouseMove, { passive: true });
 
-  // Handle high-DPI crisp rendering
+  // Handle high-DPI crisp rendering across 100% full-bleed screen width
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
-    width = hero.clientWidth;
-    height = hero.clientHeight;
+    width = hero.getBoundingClientRect().width || window.innerWidth;
+    height = hero.getBoundingClientRect().height || window.innerHeight;
     canvas.width = Math.floor(width * dpr);
     canvas.height = Math.floor(height * dpr);
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   window.addEventListener('resize', resize, { passive: true });
   resize();
 
-  // 4 Organic Fluid Blobs (Electric Cyan, Apple Silicon Violet, Indigo, Ice Mint)
+  // 5 Organic Fluid Blobs spanning the entire edge-to-edge width (left, center, right)
   const blobs = [
     {
-      baseX: 0.40, baseY: 0.36, radius: 0.48,
+      // Left flank: Electric Cyan
+      baseX: 0.20, baseY: 0.40, radius: 0.62,
       speedX: 0.00065, speedY: 0.00085,
-      colorDark: [56, 189, 248, 0.44],
-      colorLight: [56, 189, 248, 0.22]
+      colorDark: [56, 189, 248, 0.45],
+      colorLight: [56, 189, 248, 0.24]
     },
     {
-      baseX: 0.65, baseY: 0.38, radius: 0.52,
+      // Right flank: Deep Apple Silicon Violet
+      baseX: 0.80, baseY: 0.42, radius: 0.65,
       speedX: 0.00055, speedY: 0.00072,
       colorDark: [124, 58, 237, 0.48],
-      colorLight: [147, 51, 234, 0.20]
+      colorLight: [147, 51, 234, 0.22]
     },
     {
-      baseX: 0.50, baseY: 0.56, radius: 0.55,
+      // Center: Royal Indigo / Sapphire depth
+      baseX: 0.50, baseY: 0.35, radius: 0.70,
       speedX: 0.00045, speedY: 0.00062,
-      colorDark: [79, 70, 229, 0.36],
-      colorLight: [99, 102, 241, 0.16]
+      colorDark: [79, 70, 229, 0.40],
+      colorLight: [99, 102, 241, 0.18]
     },
     {
-      baseX: 0.32, baseY: 0.48, radius: 0.32,
+      // Lower Left-Center: Ice Mint energy spark
+      baseX: 0.34, baseY: 0.58, radius: 0.45,
       speedX: 0.00095, speedY: 0.00110,
-      colorDark: [45, 212, 191, 0.28],
-      colorLight: [20, 184, 166, 0.14]
+      colorDark: [45, 212, 191, 0.30],
+      colorLight: [20, 184, 166, 0.15]
+    },
+    {
+      // Upper Right-Center: Luminous Lavender
+      baseX: 0.66, baseY: 0.26, radius: 0.50,
+      speedX: 0.00075, speedY: 0.00090,
+      colorDark: [168, 85, 247, 0.38],
+      colorLight: [192, 132, 252, 0.20]
     }
   ];
 
-  // 42 Floating Quantized Memory Tokens (Product vision particle flux)
-  const particleCount = 42;
+  // 65 Floating Quantized Memory Tokens (Product vision particle flux across full screen)
+  const particleCount = 65;
   const particles = [];
   for (let i = 0; i < particleCount; i++) {
     particles.push({
-      x: Math.random() * (width || 1000),
+      x: Math.random() * (width || window.innerWidth || 1400),
       y: Math.random() * (height || 800),
       radius: Math.random() * 1.5 + 0.8,
       vy: -(Math.random() * 0.35 + 0.15),

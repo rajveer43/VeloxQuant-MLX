@@ -71,7 +71,7 @@
         "name": "How is this different from what Ollama or LM Studio already do?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Ollama and LM Studio are built on llama.cpp, which already compresses this memory — but with one fixed setting applied the same way to the whole model. VeloxQuant-MLX offers 41 different methods to choose from, some of which can be tuned per part of the model rather than one setting for everything. It also includes 11 methods that can drop old, low-value parts of a conversation entirely to save even more memory — something neither llama.cpp nor plain mlx_lm does."
+          "text": "Ollama and LM Studio are built on llama.cpp, which already compresses this memory — but with one fixed setting applied the same way to the whole model. VeloxQuant-MLX offers 43 different methods to choose from, some of which can be tuned per part of the model rather than one setting for everything. It also includes 15 methods that can drop old, low-value parts of a conversation entirely to save even more memory — something neither llama.cpp nor plain mlx_lm does."
         }
       },
       {
@@ -213,7 +213,7 @@
       <h1 class="hero-headline">The memory<br>bottleneck for on-<br>device AI. Solved.</h1>
 
       <p class="hero-subheadline">
-        VeloxQuant-MLX compresses the KV cache your Mac builds during LLM inference — up to 98% less peak memory across 33 methods, accelerated with hand-written Metal kernels, integrated in three lines of code.
+        VeloxQuant-MLX compresses the KV cache your Mac builds during LLM inference — up to 98% less peak memory across 43 methods, accelerated with hand-written Metal kernels, integrated in three lines of code.
       </p>
 
       <div class="hero-cta-group">
@@ -451,7 +451,7 @@
 
       <div class="install-bottom-link">
         <a href="https://github.com/rajveer43/VeloxQuant-MLX#method-library" target="_blank" rel="noopener">
-          <span>BROWSE ALL 33 METHODS ON GITHUB</span>
+          <span>BROWSE ALL 43 METHODS ON GITHUB</span>
           <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
         </a>
       </div>
@@ -522,7 +522,7 @@
             <svg class="faq-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
           </summary>
           <div class="faq-body">
-            Ollama and LM Studio are built on llama.cpp, which already compresses this memory — but with one fixed setting applied the same way to the whole model. VeloxQuant-MLX offers 33+ different methods to choose from, some of which can be tuned per part of the model rather than one setting for everything. It also includes 11 token eviction methods that can drop old, low-value parts of a conversation entirely to save even more memory.
+            Ollama and LM Studio are built on llama.cpp, which already compresses this memory — but with one fixed setting applied the same way to the whole model. VeloxQuant-MLX offers 43 different methods to choose from, some of which can be tuned per part of the model rather than one setting for everything. It also includes 15 token eviction methods that can drop old, low-value parts of a conversation entirely to save even more memory.
           </div>
         </details>
 
@@ -776,7 +776,7 @@
         <div class="footer-brand-col">
           <div class="footer-brand-title">VeloxQuant-MLX</div>
           <div class="footer-brand-tagline">BUILT FOR APPLE SILICON. ENGINEERED FOR SPEED.</div>
-          <div class="footer-brand-meta">MIT License · v0.74.0</div>
+          <div class="footer-brand-meta">MIT License</div>
         </div>
         <div class="footer-links-col">
           <h4 class="footer-col-title">PRODUCT</h4>

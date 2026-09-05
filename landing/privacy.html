@@ -15,9 +15,15 @@
   <meta property="og:title" content="Privacy Policy — VeloxQuant Studio &amp; VeloxQuant-MLX" />
   <meta property="og:description" content="What VeloxQuant-MLX and the VeloxQuant Studio macOS app collect, store, and send — in plain language." />
   <meta property="og:url" content="https://veloxquant-mlx.netlify.app/privacy.html" />
-  <meta name="twitter:card" content="summary" />
+  <meta property="og:image" content="https://veloxquant-mlx.netlify.app/assets/metal_summary.png" />
+  <meta property="og:image:width" content="1937" />
+  <meta property="og:image:height" content="835" />
+  <meta property="og:image:alt" content="VeloxQuant-MLX Metal kernel benchmark summary: compression ratio and speedup charts" />
+  <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Privacy Policy — VeloxQuant Studio &amp; VeloxQuant-MLX" />
   <meta name="twitter:description" content="What VeloxQuant-MLX and the VeloxQuant Studio macOS app collect, store, and send — in plain language." />
+  <meta name="twitter:image" content="https://veloxquant-mlx.netlify.app/assets/metal_summary.png" />
+  <meta name="twitter:image:alt" content="VeloxQuant-MLX Metal kernel benchmark summary: compression ratio and speedup charts" />
 
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="assets/styles.css?v=20260902" />
@@ -53,7 +59,7 @@
 
   <style>
     .privacy-doc { max-width: 760px; margin: 0 auto; padding-top: 7rem; }
-    .privacy-doc h2.section-title { margin-bottom: 0.25rem; }
+    .privacy-doc h1.section-title { margin-bottom: 0.25rem; }
     .privacy-updated { font-size: 0.85rem; opacity: 0.65; margin-bottom: 2.5rem; }
     .privacy-doc h3 { font-size: 1.15rem; margin: 2.25rem 0 0.75rem; }
     .privacy-doc p, .privacy-doc li { font-size: 0.95rem; line-height: 1.7; opacity: 0.9; }
@@ -103,7 +109,7 @@
   <main>
     <section id="privacy" class="fade-in privacy-doc">
       <p class="section-label">Legal</p>
-      <h2 class="section-title">Privacy Policy</h2>
+      <h1 class="section-title">Privacy Policy</h1>
       <p class="privacy-updated">Last updated September 3, 2026 · Covers this website, the VeloxQuant-MLX library, and the VeloxQuant Studio macOS app.</p>
 
       <p>
@@ -217,16 +223,52 @@
   </main>
 
   <!-- ── FOOTER ── -->
-  <footer>
-    <ul class="footer-links">
-      <li><a href="index.html">Home</a></li>
-      <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
-      <li><a href="https://github.com/rajveer43/VeloxQuant-Studio" target="_blank" rel="noopener">VeloxQuant Studio</a></li>
-      <li><a href="/docs/" rel="noopener">Docs</a></li>
-      <li><a href="privacy.html" aria-current="page">Privacy Policy</a></li>
-    </ul>
-    <p class="footer-copy">© 2026 Rajveer Rathod · MIT License</p>
-    <p class="footer-tagline">BUILT FOR APPLE SILICON. ENGINEERED FOR SPEED.</p>
+  <footer class="footer-redesign">
+    <div class="footer-container">
+      <div class="footer-grid">
+        <div class="footer-brand-col">
+          <div class="footer-brand-title">VeloxQuant-MLX</div>
+          <div class="footer-brand-tagline">BUILT FOR APPLE SILICON. ENGINEERED FOR SPEED.</div>
+          <div class="footer-brand-meta">MIT License</div>
+        </div>
+        <div class="footer-links-col">
+          <h4 class="footer-col-title">PRODUCT</h4>
+          <ul>
+            <li><a href="index.html#methods">Methods</a></li>
+            <li><a href="benchmarks.html">Benchmarks</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-Studio" target="_blank" rel="noopener">Studio</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-links-col">
+          <h4 class="footer-col-title">DEVELOPERS</h4>
+          <ul>
+            <li><a href="/docs/">Documentation</a></li>
+            <li><a href="index.html#install">Quickstart</a></li>
+            <li><a href="/docs/algorithms/overview">Algorithm reference</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
+            <li><a href="https://pkg.go.dev/github.com/rajveer43/veloxquant-go" target="_blank" rel="noopener">Go SDK</a></li>
+            <li><a href="https://www.npmjs.com/package/@veloxquant/sdk" target="_blank" rel="noopener">NPM SDK</a></li>
+            <li><a href="https://crates.io/search?q=veloxquant" target="_blank" rel="noopener">Rust SDK</a></li>
+            <li><a href="https://open-vsx.org/extension/veloxquant-mlx/veloxquant-vscode" target="_blank" rel="noopener">VS Code Extension</a></li>
+          </ul>
+        </div>
+        <div class="footer-links-col">
+          <h4 class="footer-col-title">PROJECT</h4>
+          <ul>
+            <li><a href="https://doi.org/10.5281/zenodo.20647294" target="_blank" rel="noopener">Cite this work (DOI)</a></li>
+            <li><a href="https://medium.com/@rajveer.rathod1301" target="_blank" rel="noopener">Blog</a></li>
+            <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/issues" target="_blank" rel="noopener">Issues</a></li>
+            <li><a href="privacy.html" class="active" aria-current="page">Privacy Policy</a></li>
+            <li><a href="https://github.com/rajveer43" target="_blank" rel="noopener">Get in touch</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom-bar">
+        <div>© 2026 Rajveer Rathod · MIT License</div>
+        <div>DOI: 10.5281/zenodo.20647294</div>
+      </div>
+    </div>
   </footer>
 
   <script src="assets/main.js?v=20260902" defer></script>
