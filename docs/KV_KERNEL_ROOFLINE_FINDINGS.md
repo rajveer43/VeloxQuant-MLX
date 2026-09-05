@@ -632,6 +632,108 @@ version (a real cache with a residual window, wired through
 `KVCacheBuilder`, tested against variable-length concurrent requests) is
 scoped future work, not attempted here.
 
+## Addendum: intra-threadgroup width (`nsg`) was the untuned occupancy lever
+
+> **Full benchmark report:**
+> [`docs/NSG_AUTOTUNE_BENCHMARK_REPORT.md`](NSG_AUTOTUNE_BENCHMARK_REPORT.md)
+> — complete `nsg` sweep (every legal value per shape), the real-model
+> throughput tables, memory figures, correctness evidence, reproduction
+> commands, and limitations. This addendum is the condensed version.
+
+Every experiment above varied threadgroup **count** — head-packing traded it
+away, cross-layer and multi-request batching added more. All of them held
+`nsg` (SIMD-groups per threadgroup) at its shipped default of 4. That default
+turns out to be the single largest miss in this kernel, and unlike head-packing
+it costs no threadgroup count at all: `nsg` adds concurrency *inside* each
+threadgroup, so it composes with — rather than competes against — the dispatch
+lever this document already identified.
+
+Total GPU concurrency is roughly `n_tg * nsg`. At a real single-request decode
+step `n_tg = B*H_kv*S_q` is 4-8 threadgroups on a 10-core GPU, so the machine
+stays idle no matter how efficiently one threadgroup streams. Widening the
+threadgroup is the only way to add work without giving anything up.
+
+**Two changes were needed before `nsg` could actually be raised**, because the
+threadgroup-memory budget — not diminishing returns — was the binding limit:
+
+1. **`DSLOTS_C` specialization.** `my_out` and `sh_o` were sized to `8` slots,
+   the worst case for `D <= 256`, even though the kernel is already compiled
+   per-`D` (the factory keys its cache on `D`). Injecting `DSLOTS_C = ceil(D/32)`
+   as a `#define` halves both the per-lane register array and the threadgroup
+   merge buffer at the near-universal `D=128`.
+2. **`sh_o` stored as `half`.** Those partials are rescaled, summed, divided by
+   the global denominator and emitted as `half` regardless, so fp32 bought no
+   precision that survived to the output. Each partial is now divided by its own
+   `running_d` before the store (a convex combination of decoded V, bounded by
+   `max|V|` rather than growing with S_kv, so `half`'s ~65504 ceiling is not a
+   long-context hazard) and the merge re-applies `d_s` explicitly — algebraically
+   identical, measured max deviation 2.4e-4, well inside the suite's 2e-3 bar.
+   `sh_m`/`sh_d` stay fp32 deliberately: they feed `exp()` rescaling.
+
+Together these cut the merge buffer 4x at `D=128`, raising the admissible `nsg`
+from 8 to 16 at `heads_per_kv=4` and from 4 to 8 at `heads_per_kv=8`.
+
+**Measured `nsg` sweep** (M4, `D=128`, `group_size=32`, vs. the shipped `nsg=4`):
+
+| shape | `hpk` | `n_tg` | S_kv | best `nsg` | speedup vs `nsg=4` |
+|---|---|---|---|---|---|
+| B=1 H_q=8 H_kv=8 | 1 | 8 | 16384 | 32 | **4.19x** |
+| B=1 H_q=8 H_kv=8 | 1 | 8 | 4096 | 32 | **3.15x** |
+| B=1 H_q=32 H_kv=8 | 4 | 8 | 16384 | 16 | **2.97x** |
+| B=1 H_q=32 H_kv=8 | 4 | 8 | 4096 | 16 | **2.59x** |
+| B=1 H_q=28 H_kv=4 | 7 | 4 | 16384 | 16 | **2.64x** |
+| B=1 H_q=32 H_kv=4 | 8 | 4 | 16384 | 8 | **1.84x** |
+| B=4 H_q=32 H_kv=8 | 4 | 32 | 16384 | 8 | 1.04x |
+| B=8 H_q=32 H_kv=8 | 4 | 64 | 16384 | 8 | 1.19x |
+
+The pattern is exactly the occupancy signature: the win is largest where
+`n_tg` is smallest, and collapses to ~1.0-1.2x once dispatch alone
+saturates the GPU (`n_tg >= 32`) — the same crossover the multi-request
+addendum found from the other direction.
+
+**`_auto_nsg` now picks this from the dispatch shape** (`nsg=None` is the new
+default; an explicit int still pins it). The policy is derived from the table
+above, not hand-tuned: take the largest `nsg` the budget admits when
+under-dispatched, back off to 8 once `n_tg >= 32`.
+
+**Real-model end-to-end, and the caveat that matters.** Run through the same
+`benchmark_real_model_scalar_attend.py` harness the multi-request addendum used
+(Qwen3-4B-4bit, 36 layers, `H_q=32, H_kv=8`, B=1, real tokens/sec including
+MLPs/projections/sampling), sweeping `prompt_len` because the harness's stock
+`prompt_len=256` holds `S_kv` at ~288 — the *shortest* point in the sweep and
+the one with the least headroom:
+
+| prompt_len | dequant tok/s | fused `nsg=4` | fused auto | auto vs `nsg=4` | auto vs dequant |
+|---|---|---|---|---|---|
+| 256 | 17.4 | 24.0 | 25.7 | 1.07x | 1.48x |
+| 1024 | 8.1 | 16.7 | 22.8 | **1.37x** | **2.82x** |
+| 2048 | 4.8 | 12.4 | 18.7 | **1.51x** | **3.93x** |
+| 4096 | 2.6 | 7.4 | 13.6 | **1.85x** | **5.31x** |
+
+At `prompt_len=256` the autotune is worth only 1.07x end-to-end — measured
+first, and reported here rather than dropped, because it is the number the
+existing harness produces by default and would mislead anyone re-running it.
+The win is real but **context-dependent**, reaching 1.85x over the previously
+shipped default (and 5.31x over the dequant-then-SDPA baseline) at
+`prompt_len=4096`, which is the long-context regime this kernel family exists
+to serve.
+
+Correctness: 194/194 tests in `test_scalar_attend.py` pass, including 40
+newly-admissible GQA parity cases at `nsg=8`, restored bit-identical
+single-layer/batched parity, and three new invariant tests asserting
+`_auto_nsg` never exceeds the budget, always widens when under-dispatched, and
+is bit-identical to pinning the value it selects. Full suite: 3352 passed.
+
+Reproduction: `pytest veloxquant_mlx/tests/metal/test_scalar_attend.py -v`;
+`python scripts/kv_kernel_roofline_bench.py`.
+
+**Limitations.** One machine (10-core M4) — the `n_tg >= 32` saturation
+threshold is core-count-dependent and would shift on a larger GPU. One model
+family for the end-to-end numbers. `_auto_nsg`'s policy is a static heuristic
+fit to the table above, not a runtime search; shapes far outside it (very large
+`D`, `heads_per_kv > 8`) fall back to conservative values that were not
+separately optimized.
+
 ## Recommendation
 
 1. **Kernels already at or near the bandwidth roofline** (`kivi_group_quant_dequant`

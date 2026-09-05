@@ -202,15 +202,15 @@ def scalar_fused_decode_attend(
     v_zero: mx.array,   # [B, H, S_kv, GV] fp32
     group_size: int,
     scale: float,
-    nsg: int = 4,
+    nsg: int | None = None,   # None -> autotuned from the dispatch shape
 ) -> mx.array
 ```
 
 Single-dispatch SDP attention directly over an asymmetric group-min/max ("affine") quantized cache — the KIVI / SKVQ / Kitty / group-quant family. Reconstructs `k_hat = k_codes*k_scale + k_zero` (per-channel groups) and `v_hat = v_codes*v_scale + v_zero` (per-token groups) in-register inside a FlashAttention-style online softmax; no fp16 `K_hat`/`V_hat` is written to DRAM.
 
-The kv axis is split across `nsg` SIMD-groups flash-decoding style so single-query decode shapes still fill the GPU (`nsg=8` is tuned on M4). One compiled kernel serves any `(S_kv, D, g)`.
+The kv axis is split across `nsg` SIMD-groups flash-decoding style so single-query decode shapes still fill the GPU. **`nsg` defaults to `None`, which autotunes it from the dispatch shape** — total GPU concurrency is roughly `n_tg * nsg` (where `n_tg = B * H_kv * S_q`), so under-dispatched decode shapes get a wider threadgroup and already-saturated ones back off. Measured **1.2–4.2× faster** than the previous fixed default of `nsg=4`. Pass an explicit int to pin it.
 
-Constraints: `q` must be 4-D, `D ≤ 256`, `1 ≤ nsg ≤ 32`.
+Constraints: `q` must be 4-D, `D ≤ 256`, `1 ≤ nsg ≤ 32`. The threadgroup-memory budget bounds `nsg * heads_per_kv * ceil(D/32)`; at `D=128` that admits `nsg` up to 32 (MHA), 16 (`heads_per_kv=4`), or 8 (`heads_per_kv=8`).
 
 Measured on Apple M4 (B=1, H=32, D=128, b=2, g=32, S_q=1) vs. dequantize → MLX SDPA: **6.4× at S_kv=512, rising to 12.2× at S_kv=65536**. Softmax accumulates in fp32, so parity error (`1.2e-4` max abs) is better than the fp16 baseline.
 

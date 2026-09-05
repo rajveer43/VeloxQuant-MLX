@@ -34,13 +34,22 @@
     uint bh_kv = b_idx * H_kv + hkv_idx;    // indexes k/v arrays (H_kv-wide)
 
     // ----- per-lane online-softmax state for this SIMD-group, per packed head -----
+    // DSLOTS_C is ceil(D/32) baked in at compile time by the kernel factory
+    // (which already keys its cache on D). Sizing my_out/sh_o to the ACTUAL
+    // head dim rather than the D<=256 worst case of 8 halves both per-lane
+    // register footprint and threadgroup-memory footprint at the near-universal
+    // D=128 — register pressure and the 32KB threadgroup budget are the two
+    // limiters on how many SIMD-groups (nsg) can be packed per threadgroup,
+    // and nsg is the only occupancy lever that does not cost threadgroup count
+    // (see docs/KV_KERNEL_ROOFLINE_FINDINGS.md on why head-packing does).
+    constexpr uint kDSlots = DSLOTS_C;
     float running_m[HEADS_PER_KV_C];
     float running_d[HEADS_PER_KV_C];
-    float my_out[HEADS_PER_KV_C][8];        // D/32 <= 256/32 = 8
+    float my_out[HEADS_PER_KV_C][kDSlots];
     for (uint hp = 0; hp < HPK; ++hp) {
         running_m[hp] = -INFINITY;
         running_d[hp] = 0.0f;
-        for (int i = 0; i < 8; ++i) my_out[hp][i] = 0.0f;
+        for (uint i = 0; i < kDSlots; ++i) my_out[hp][i] = 0.0f;
     }
     uint n_owned = (D + 31u) / 32u;
 
@@ -97,15 +106,37 @@
     }
 
     // ----- merge the NSG partial softmaxes through threadgroup memory -----
-    // sh_o layout: [NSG_C][HEADS_PER_KV_C][8][32]  (SIMD-group, packed head, owned-slot, lane).
+    // sh_o layout: [NSG_C][HEADS_PER_KV_C][DSLOTS_C][32]  (SIMD-group, packed
+    // head, owned-slot, lane).
+    //
+    // sh_o is `half`, not float: these are partial weighted V-sums that are
+    // about to be rescaled, summed across SIMD-groups, divided by the global
+    // denominator and written out as `half` anyway, so fp32 here buys no
+    // precision that survives to the output. Halving this buffer is what lets
+    // nsg reach 16 on GQA shapes within the 32KB threadgroup budget — and nsg
+    // is the dominant occupancy lever at decode shapes (measured 1.4-4.2x).
+    //
+    // sh_m (running max) and sh_d (softmax denominator) stay fp32 deliberately:
+    // they feed exp() rescaling where fp16's ~3-decimal-digit mantissa and
+    // narrow exponent range would degrade the online-softmax correction.
     threadgroup float sh_m[NSG_C * HEADS_PER_KV_C];
     threadgroup float sh_d[NSG_C * HEADS_PER_KV_C];
-    threadgroup float sh_o[NSG_C * HEADS_PER_KV_C * 8 * 32];
+    threadgroup half  sh_o[NSG_C * HEADS_PER_KV_C * DSLOTS_C * 32];
 
-    // stash this SIMD-group's per-lane partials, per packed head
+    // Stash this SIMD-group's per-lane partials, per packed head.
+    //
+    // Each partial is divided by its OWN running_d before the half store, so
+    // what lands in sh_o is a convex combination of decoded V values — bounded
+    // by max|V| regardless of S_kv, instead of an unnormalized sum that grows
+    // with the number of kv slots this SIMD-group visited and could overflow
+    // half's ~65504 ceiling at long context. The merge below re-applies each
+    // group's weight (sh_d * exp(sh_m - gm)) explicitly, so this is an exact
+    // rebalancing of the same arithmetic, not an approximation.
     for (uint hp = 0; hp < HPK; ++hp) {
+        float inv_local = running_d[hp] > 0.0f ? 1.0f / running_d[hp] : 0.0f;
         for (uint i = 0; i < n_owned; ++i) {
-            sh_o[((sg * HPK + hp) * 8u + i) * 32u + lane] = my_out[hp][i];
+            sh_o[((sg * HPK + hp) * kDSlots + i) * 32u + lane] =
+                half(my_out[hp][i] * inv_local);
         }
         if (lane == 0) {
             sh_m[sg * HPK + hp] = running_m[hp];
@@ -126,7 +157,12 @@
             for (uint i = 0; i < n_owned; ++i) {
                 float acc = 0.0f;
                 for (uint s = 0; s < NSG; ++s) {
-                    acc += sh_o[((s * HPK + hp) * 8 + i) * 32 + lane]
+                    // sh_o holds out_s / d_s, so the full weight for group s is
+                    // d_s * exp(m_s - gm) — the same factor accumulated into gd
+                    // above, keeping acc/gd algebraically identical to the
+                    // previous unnormalized formulation.
+                    acc += float(sh_o[((s * HPK + hp) * kDSlots + i) * 32 + lane])
+                         * sh_d[s * HPK + hp]
                          * metal::exp(sh_m[s * HPK + hp] - gm);
                 }
                 uint d = lane + i * 32u;

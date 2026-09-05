@@ -99,6 +99,31 @@ third addendum for the measured result — this is reported with the same
 rigor as the GQA head-packing (#307 pt. 2) and SIMD-shuffle (#308)
 addenda, including if the outcome is null or negative.
 
+Intra-threadgroup width (``nsg``) autotuning
+---------------------------------------------
+The experiments above all varied threadgroup *count* while holding ``nsg``
+(SIMD-groups per threadgroup) at a fixed default of 4. That default was
+substantially wrong: total concurrency is roughly ``n_tg * nsg``, and at a
+real single-request decode step ``n_tg = B*H_kv*S_q`` is only 4-8
+threadgroups on a 10-core GPU. Unlike head-packing, raising ``nsg`` costs no
+threadgroup count — it adds width *inside* each threadgroup — so it composes
+with the dispatch lever instead of competing with it.
+
+Raising it required two footprint fixes first, since the 32KB threadgroup
+budget (not diminishing returns) was the binding limit: ``DSLOTS_C =
+ceil(D/32)`` is now baked in per-``D`` instead of assuming the ``D<=256``
+worst case of 8 slots, and ``sh_o`` is stored as ``half`` (partials are
+pre-divided by their own ``running_d`` so they stay bounded, and the merge
+re-applies it — algebraically identical). Together these cut the merge
+buffer 4x at ``D=128``.
+
+:func:`scalar_fused_decode_attend` now defaults to ``nsg=None``, which calls
+:func:`_auto_nsg` to pick from the dispatch shape. Measured 1.2-4.2x faster
+than the old fixed default at under-dispatched decode shapes, and 1.07-1.85x
+real end-to-end on Qwen3-4B-4bit depending on context length (the win grows
+with ``S_kv``). See ``docs/KV_KERNEL_ROOFLINE_FINDINGS.md``'s ``nsg`` addendum
+for the full sweep, the end-to-end table, and limitations.
+
 Public API:
   - :func:`scalar_fused_decode_attend`
   - :func:`scalar_fused_decode_attend_batched`
@@ -160,6 +185,18 @@ _SCALAR_PREDECODED_ATTEND_SRC = _read_kernel_source("scalar_predecoded_attend.me
 # ---------------------------------------------------------------------------
 
 
+def _d_slots(D: int) -> int:
+    """ceil(D/32) — the number of output dims each lane owns.
+
+    Baked into the kernel as ``DSLOTS_C`` so ``my_out``/``sh_o`` are sized to
+    the actual head dim instead of the ``D <= 256`` worst case of 8. At the
+    near-universal D=128 that halves both per-lane registers and threadgroup
+    memory, which is what lets ``nsg`` (the only occupancy lever that doesn't
+    cost threadgroup count) go higher on GQA shapes.
+    """
+    return (D + 31) // 32
+
+
 def _scalar_affine_attend_kernel(D: int, nsg: int, heads_per_kv: int):
     key = ("scalar_affine_attend", D, nsg, heads_per_kv)
     if key not in _cache:
@@ -177,7 +214,11 @@ def _scalar_affine_attend_kernel(D: int, nsg: int, heads_per_kv: int):
                 "scale_arr",
             ],
             output_names=["out"],
-            header=f"#define NSG_C {nsg}\n#define HEADS_PER_KV_C {heads_per_kv}\n",
+            header=(
+                f"#define NSG_C {nsg}\n"
+                f"#define HEADS_PER_KV_C {heads_per_kv}\n"
+                f"#define DSLOTS_C {_d_slots(D)}\n"
+            ),
             source=_SCALAR_AFFINE_ATTEND_SRC,
             ensure_row_contiguous=True,
         )
@@ -201,7 +242,11 @@ def _scalar_affine_attend_batched_kernel(D: int, nsg: int, heads_per_kv: int):
                 "scale_arr",
             ],
             output_names=["out"],
-            header=f"#define NSG_C {nsg}\n#define HEADS_PER_KV_C {heads_per_kv}\n",
+            header=(
+                f"#define NSG_C {nsg}\n"
+                f"#define HEADS_PER_KV_C {heads_per_kv}\n"
+                f"#define DSLOTS_C {_d_slots(D)}\n"
+            ),
             source=_SCALAR_AFFINE_ATTEND_BATCHED_SRC,
             ensure_row_contiguous=True,
         )
@@ -246,6 +291,42 @@ _TG_MEM_BUDGET_BYTES = 32768
 # register-array sizes (running_m/running_d/my_out) against pathological inputs.
 _MAX_HEADS_PER_KV = 16
 
+# Threadgroup count at or above which the GPU is already well fed by dispatch
+# alone, so widening threadgroups further stops paying. Derived from the nsg
+# sweep in docs/KV_KERNEL_ROOFLINE_FINDINGS.md ("nsg autotuning" addendum):
+# at B*H_kv*S_q >= 32 the best-nsg advantage over the old nsg=4 default
+# collapses to 1.00-1.19x, while below it the same sweep measures 1.2-4.2x.
+# Tuned on a 10-core M4; a larger GPU would saturate at a higher count.
+_TG_SATURATION = 32
+
+
+def _auto_nsg(D: int, heads_per_kv: int, n_tg: int) -> int:
+    """Pick SIMD-groups-per-threadgroup from the dispatch shape.
+
+    Total GPU concurrency is roughly ``n_tg * nsg``. When ``n_tg`` alone is
+    small — the single-request decode case this kernel exists for, where
+    ``B*H_kv*S_q`` is often just 4-8 threadgroups on a 10-core GPU — the only
+    way to add concurrency without giving up threadgroup count (which
+    docs/KV_KERNEL_ROOFLINE_FINDINGS.md measured as the dominant lever, and
+    which GQA head-packing lost 2.7-4.7x by trading away) is to widen each
+    threadgroup. So: take the largest nsg the threadgroup-memory budget
+    admits when under-dispatched, and back off to a modest value once
+    dispatch alone already saturates the machine.
+    """
+    saturated = n_tg >= _TG_SATURATION
+    best = 4
+    for nsg in (1, 2, 4, 8, 16, 32):
+        n_slots = nsg * heads_per_kv
+        tg_mem = n_slots * _d_slots(D) * 32 * 2 + n_slots * 4 * 2
+        if tg_mem > _TG_MEM_BUDGET_BYTES:
+            break
+        # Past saturation the sweep shows a flat-to-slightly-better optimum at
+        # 8; below it, more width is monotonically better up to the budget.
+        if saturated and nsg > 8:
+            break
+        best = nsg
+    return best
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -262,7 +343,7 @@ def scalar_fused_decode_attend(
     v_zero: mx.array,
     group_size: int,
     scale: float,
-    nsg: int = 4,
+    nsg: int | None = None,
 ) -> mx.array:
     """Fused group-affine (KIVI-style) key/value decode + SDP attention.
 
@@ -287,7 +368,12 @@ def scalar_fused_decode_attend(
         v_zero:   ``[B, H_kv, S_kv, GV]`` fp32.
         group_size: quantization group size g.
         scale:    attention scale applied to the raw dot (e.g. 1/sqrt(D)).
-        nsg:      SIMD-groups per threadgroup splitting the kv axis.
+        nsg:      SIMD-groups per threadgroup splitting the kv axis. ``None``
+            (default) autotunes it from the dispatch shape via
+            :func:`_auto_nsg` — measured 1.2-4.2x faster than the previous
+            fixed default of 4 at under-dispatched decode shapes. Pass an
+            explicit int to pin it (benchmarking, or a shape the heuristic
+            does not suit).
 
     Returns:
         ``[B, H_q, S_q, D]`` fp16 attention output.
@@ -302,7 +388,7 @@ def scalar_fused_decode_attend(
     B, H, S_q, D = q.shape
     if D > 256:
         raise ValueError(f"scalar_fused_decode_attend: D={D} must be <= 256")
-    if not (1 <= nsg <= 32):
+    if nsg is not None and not (1 <= nsg <= 32):
         raise ValueError(f"scalar_fused_decode_attend: nsg={nsg} must be in 1..32")
 
     Bk, H_kv, _, Dk = k_codes.shape
@@ -328,19 +414,27 @@ def scalar_fused_decode_attend(
             f"scalar_fused_decode_attend: heads_per_kv={heads_per_kv} exceeds "
             f"the supported maximum of {_MAX_HEADS_PER_KV}"
         )
-    # sh_o[NSG_C*HEADS_PER_KV_C*8*32] + sh_m[NSG_C*HEADS_PER_KV_C] + sh_d[NSG_C*HEADS_PER_KV_C],
-    # all float32 — must match scalar_affine_attend.metal's threadgroup array declarations.
+    n_tg = B * H_kv * S_q
+    if nsg is None:
+        nsg = _auto_nsg(D, heads_per_kv, n_tg)
+
+    # Must match scalar_affine_attend.metal's threadgroup array declarations:
+    #   sh_o[NSG_C*HEADS_PER_KV_C*DSLOTS_C*32]  half   (2B)
+    #   sh_m[NSG_C*HEADS_PER_KV_C]              float  (4B)
+    #   sh_d[NSG_C*HEADS_PER_KV_C]              float  (4B)
+    # DSLOTS_C = ceil(D/32) rather than a hardcoded 8, and sh_o is half rather
+    # than float — together these cut the merge buffer 4x at D=128, which is
+    # what admits the higher nsg values that dominate decode performance.
     n_slots = nsg * heads_per_kv
-    tg_mem_bytes = (n_slots * 8 * 32 + n_slots + n_slots) * 4
+    tg_mem_bytes = n_slots * _d_slots(D) * 32 * 2 + n_slots * 4 * 2
     if tg_mem_bytes > _TG_MEM_BUDGET_BYTES:
         raise ValueError(
             f"scalar_fused_decode_attend: nsg={nsg} * heads_per_kv={heads_per_kv} "
-            f"exceeds the {_TG_MEM_BUDGET_BYTES}B threadgroup-memory budget for "
-            f"the softmax merge buffers ({tg_mem_bytes}B); reduce nsg or use a "
-            f"smaller H_q/H_kv ratio"
+            f"at D={D} exceeds the {_TG_MEM_BUDGET_BYTES}B threadgroup-memory "
+            f"budget for the softmax merge buffers ({tg_mem_bytes}B); reduce nsg "
+            f"or use a smaller H_q/H_kv ratio"
         )
 
-    n_tg = B * H_kv * S_q
     gsize = mx.array([group_size], dtype=mx.uint32)
     scale_arr = mx.array([scale], dtype=mx.float32)
 
@@ -476,7 +570,7 @@ def scalar_fused_decode_attend_batched(
     # not inside one threadgroup's state, so the same budget check applies
     # unchanged (see scalar_fused_decode_attend's identical check).
     n_slots = nsg * heads_per_kv
-    tg_mem_bytes = (n_slots * 8 * 32 + n_slots + n_slots) * 4
+    tg_mem_bytes = n_slots * _d_slots(D) * 32 * 2 + n_slots * 4 * 2
     if tg_mem_bytes > _TG_MEM_BUDGET_BYTES:
         raise ValueError(
             f"scalar_fused_decode_attend_batched: nsg={nsg} * heads_per_kv={heads_per_kv} "

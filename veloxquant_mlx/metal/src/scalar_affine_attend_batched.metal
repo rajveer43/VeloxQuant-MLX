@@ -47,11 +47,14 @@
     // ----- per-lane online-softmax state for this SIMD-group, per packed head -----
     float running_m[HEADS_PER_KV_C];
     float running_d[HEADS_PER_KV_C];
-    float my_out[HEADS_PER_KV_C][8];        // D/32 <= 256/32 = 8
+    // DSLOTS_C = ceil(D/32), baked in by the kernel factory — see the
+    // single-layer scalar_affine_attend.metal for the full rationale.
+    constexpr uint kDSlots = DSLOTS_C;
+    float my_out[HEADS_PER_KV_C][kDSlots];
     for (uint hp = 0; hp < HPK; ++hp) {
         running_m[hp] = -INFINITY;
         running_d[hp] = 0.0f;
-        for (int i = 0; i < 8; ++i) my_out[hp][i] = 0.0f;
+        for (uint i = 0; i < kDSlots; ++i) my_out[hp][i] = 0.0f;
     }
     uint n_owned = (D + 31u) / 32u;
 
@@ -108,15 +111,21 @@
     }
 
     // ----- merge the NSG partial softmaxes through threadgroup memory -----
-    // sh_o layout: [NSG_C][HEADS_PER_KV_C][8][32]  (SIMD-group, packed head, owned-slot, lane).
+    // sh_o layout: [NSG_C][HEADS_PER_KV_C][DSLOTS_C][32]  (SIMD-group, packed
+    // head, owned-slot, lane). `half` for the same reason as the single-layer
+    // kernel: these partials are rescaled and emitted as half regardless, and
+    // the 2x saving raises the admissible nsg. sh_m/sh_d stay fp32 (exp()
+    // rescaling needs the range/mantissa).
     threadgroup float sh_m[NSG_C * HEADS_PER_KV_C];
     threadgroup float sh_d[NSG_C * HEADS_PER_KV_C];
-    threadgroup float sh_o[NSG_C * HEADS_PER_KV_C * 8 * 32];
+    threadgroup half  sh_o[NSG_C * HEADS_PER_KV_C * DSLOTS_C * 32];
 
     // stash this SIMD-group's per-lane partials, per packed head
     for (uint hp = 0; hp < HPK; ++hp) {
+        float inv_local = running_d[hp] > 0.0f ? 1.0f / running_d[hp] : 0.0f;
         for (uint i = 0; i < n_owned; ++i) {
-            sh_o[((sg * HPK + hp) * 8u + i) * 32u + lane] = my_out[hp][i];
+            sh_o[((sg * HPK + hp) * kDSlots + i) * 32u + lane] =
+                half(my_out[hp][i] * inv_local);
         }
         if (lane == 0) {
             sh_m[sg * HPK + hp] = running_m[hp];
@@ -137,7 +146,10 @@
             for (uint i = 0; i < n_owned; ++i) {
                 float acc = 0.0f;
                 for (uint s = 0; s < NSG; ++s) {
-                    acc += sh_o[((s * HPK + hp) * 8 + i) * 32 + lane]
+                    // sh_o holds out_s / d_s — re-apply d_s so acc/gd is
+                    // algebraically identical to the unnormalized form.
+                    acc += float(sh_o[((s * HPK + hp) * kDSlots + i) * 32 + lane])
+                         * sh_d[s * HPK + hp]
                          * metal::exp(sh_m[s * HPK + hp] - gm);
                 }
                 uint d = lane + i * 32u;
