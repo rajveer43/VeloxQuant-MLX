@@ -8023,33 +8023,22 @@ details.faq-accordion-item[open] .faq-chevron {
   max-width: 600px;
 }
 
-/* 6-Column Responsive Ecosystem Grid (3 on Row 1, 2 on Row 2) */
+/* 6-Column Responsive Ecosystem Grid (3 on Row 1, 3 on Row 2) */
 .ecosystem-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
   gap: 1.5rem;
 }
 
-.eco-card:nth-child(1),
-.eco-card:nth-child(2),
-.eco-card:nth-child(3) {
+.eco-card {
   grid-column: span 2;
-}
-
-.eco-card:nth-child(4),
-.eco-card:nth-child(5) {
-  grid-column: span 3;
 }
 
 @media (max-width: 1024px) {
   .ecosystem-grid {
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   }
-  .eco-card:nth-child(1),
-  .eco-card:nth-child(2),
-  .eco-card:nth-child(3),
-  .eco-card:nth-child(4),
-  .eco-card:nth-child(5) {
+  .eco-card {
     grid-column: auto;
   }
 }
@@ -8112,6 +8101,15 @@ details.faq-accordion-item[open] .faq-chevron {
 
 .eco-mockup-go {
   background: radial-gradient(130% 120% at 50% 25%, rgba(6, 182, 212, 0.42) 0%, rgba(14, 116, 144, 0.65) 45%, #081318 100%);
+}
+
+.eco-mockup-kotlin {
+  background: radial-gradient(130% 120% at 50% 25%, rgba(127, 82, 255, 0.45) 0%, rgba(226, 68, 98, 0.62) 48%, #17091d 100%);
+}
+
+.eco-card-kotlin:hover {
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), 0 0 24px rgba(127, 82, 255, 0.24);
+  border-color: rgba(127, 82, 255, 0.4);
 }
 
 /* Floating Window Frame inside Mockup */

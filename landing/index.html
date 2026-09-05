@@ -33,7 +33,7 @@
   <meta name="twitter:image:alt" content="VeloxQuant-MLX Metal kernel benchmark summary: compression ratio and speedup charts" />
 
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="assets/styles.css?v=20260905c" />
+  <link rel="stylesheet" href="assets/styles.css?v=20260906c" />
 
   <script type="application/ld+json">
   {
@@ -944,7 +944,7 @@
       <div class="ecosystem-header text-center">
         <div class="pill-badge mb-3">EVERYWHERE YOU BUILD</div>
         <h2 class="ecosystem-title">Run VeloxQuant across your entire workflow</h2>
-        <p class="ecosystem-sub">Official NPM, Rust, and Go SDK runtimes and a VS Code extension available today — with a native macOS app in private beta.</p>
+        <p class="ecosystem-sub">Official NPM, Rust, and Go SDK runtimes and a VS Code extension available today — with native macOS app and Kotlin package coming soon.</p>
       </div>
 
       <div class="ecosystem-grid">
@@ -1134,6 +1134,36 @@
             <svg class="eco-copy-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           </button>
         </div>
+
+        <!-- Card 6: Kotlin Package -->
+        <div class="eco-card eco-card-kotlin">
+          <div class="eco-mockup-wrap eco-mockup-kotlin">
+            <div class="eco-mockup-window">
+              <div class="eco-window-header">
+                <div class="eco-traffic-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="eco-window-title">build.gradle.kts · Kotlin 2.0+</div>
+              </div>
+              <div class="eco-window-body eco-body-code">
+                <div class="eco-cli-line eco-cli-comment">// build.gradle.kts (Multiplatform)</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">dependencies</span> {</div>
+                <div class="eco-cli-row">&nbsp;&nbsp;<span class="eco-code-fn">implementation</span>(<span class="eco-code-str">"com.veloxquant:mlx-kotlin:0.74.0"</span>)</div>
+                <div class="eco-cli-row">}</div>
+                <div class="eco-code-divider"></div>
+                <div class="eco-cli-line eco-cli-comment">// Apple Silicon Metal Native</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">val</span> kv = VeloxQuant.<span class="eco-code-fn">compress</span>(tensors, TurboQuantRVQ)</div>
+                <div class="eco-cli-line eco-cli-success">// KV footprint compressed to 1/8th</div>
+              </div>
+            </div>
+          </div>
+          <div class="eco-card-meta">
+            <h3 class="eco-card-title">Kotlin Package <span class="eco-soon-tag">Coming soon</span></h3>
+          </div>
+          <a href="https://github.com/rajveer43/VeloxQuant-MLX/issues/new?title=Kotlin%20Package%20Beta%20Access%20Request&body=Platform%20(Kotlin%20Multiplatform%20%2F%20JVM%20%2F%20macOS%20Native)%3A%0AUse%20case%20%2F%20Target%20models%3A%0A" target="_blank" rel="noopener" class="eco-action-btn eco-action-btn-soon">
+            Join the beta
+          </a>
+        </div>
       </div>
     </div>
   </section>
@@ -1167,6 +1197,7 @@
             <li><a href="https://www.npmjs.com/package/@veloxquant/sdk" target="_blank" rel="noopener">NPM SDK</a></li>
             <li><a href="https://crates.io/search?q=veloxquant" target="_blank" rel="noopener">Rust SDK</a></li>
             <li><a href="https://open-vsx.org/extension/veloxquant-mlx/veloxquant-vscode" target="_blank" rel="noopener">VS Code Extension</a></li>
+            <li><a href="#apps">Kotlin Package (Coming soon)</a></li>
           </ul>
         </div>
         <div class="footer-links-col">
