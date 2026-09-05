@@ -117,7 +117,9 @@ So I built a minimal cache that keeps KIVI-quantized codes live and exposes them
 def _patched_sdpa(queries, keys, values, cache, scale, mask, sinks=None):
     if S_q == 1 and isinstance(cache, _ScalarAttendKIVICache) and cache._k_codes is not None:
         if use_fused:
-            return scalar_fused_decode_attend(queries, *cache.quantized_state(), GROUP_SIZE, scale, nsg=nsg)
+            return scalar_fused_decode_attend(
+                queries, *cache.quantized_state(), GROUP_SIZE, scale, nsg=nsg
+            )
         else:
             k_hat, v_hat = cache.dequantized_kv(heads_per_kv)  # what KIVI does today
             return _original_sdpa(queries, k_hat, v_hat, cache=None, scale=scale, mask=None)

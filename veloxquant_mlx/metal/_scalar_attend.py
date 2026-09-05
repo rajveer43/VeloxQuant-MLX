@@ -449,7 +449,12 @@ def scalar_fused_decode_attend_batched(
             f"scalar_fused_decode_attend_batched: k_codes shape={k_codes.shape} vs "
             f"v_codes shape={v_codes.shape} mismatch"
         )
-    for name, arr in (("k_scale", k_scale), ("k_zero", k_zero), ("v_scale", v_scale), ("v_zero", v_zero)):
+    for name, arr in (
+        ("k_scale", k_scale),
+        ("k_zero", k_zero),
+        ("v_scale", v_scale),
+        ("v_zero", v_zero),
+    ):
         if arr.ndim != 5 or arr.shape[0] != NL or arr.shape[1] != B or arr.shape[2] != H_kv:
             raise ValueError(
                 f"scalar_fused_decode_attend_batched: {name} shape={arr.shape} must be "

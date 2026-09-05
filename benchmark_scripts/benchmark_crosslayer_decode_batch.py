@@ -67,7 +67,7 @@ def _calibrate_bandwidth_peak() -> float:
     for n in (100_000_000, 200_000_000, 300_000_000):
         a = mx.random.normal((n,)).astype(mx.float16)
         mx.eval(a)
-        t = _bench(lambda: a * 2.0, n_warmup=3, n_iter=8)
+        t = _bench(lambda a=a: a * 2.0, n_warmup=3, n_iter=8)
         bytes_moved = n * 2 * 2  # fp16 read + fp16 write
         best = max(best, bytes_moved / t / 1e9)
     return best
@@ -118,11 +118,11 @@ def bench_primary_comparison(peak_gbs: float) -> None:
                 )
                 for NL in (28, 32, 48, 80):
                     layers = [
-                        _make_layer(B, H_q, H_kv, S_kv, D, group, seed=1000 * NL + l)
-                        for l in range(NL)
+                        _make_layer(B, H_q, H_kv, S_kv, D, group, seed=1000 * NL + layer_idx)
+                        for layer_idx in range(NL)
                     ]
 
-                    def _sequential():
+                    def _sequential(layers=layers):
                         outs = [
                             scalar_fused_decode_attend(*layer, group, scale, nsg=2)
                             for layer in layers
@@ -138,7 +138,9 @@ def bench_primary_comparison(peak_gbs: float) -> None:
                     vz_b = mx.stack([layer[6] for layer in layers], axis=0)
                     mx.eval(q_b, kc_b, ks_b, kz_b, vc_b, vs_b, vz_b)
 
-                    def _batched():
+                    def _batched(
+                        q_b=q_b, kc_b=kc_b, ks_b=ks_b, kz_b=kz_b, vc_b=vc_b, vs_b=vs_b, vz_b=vz_b
+                    ):
                         return scalar_fused_decode_attend_batched(
                             q_b, kc_b, ks_b, kz_b, vc_b, vs_b, vz_b, group, scale, nsg=2
                         )
@@ -173,10 +175,11 @@ def bench_stacking_cost() -> None:
     for S_kv in (128, 2048, 16384):
         for NL in (28, 32, 48, 80):
             layers = [
-                _make_layer(B, H_q, H_kv, S_kv, D, group, seed=2000 * NL + l) for l in range(NL)
+                _make_layer(B, H_q, H_kv, S_kv, D, group, seed=2000 * NL + layer_idx)
+                for layer_idx in range(NL)
             ]
 
-            def _stack_all():
+            def _stack_all(layers=layers):
                 q_b = mx.stack([layer[0] for layer in layers], axis=0)
                 kc_b = mx.stack([layer[1] for layer in layers], axis=0)
                 ks_b = mx.stack([layer[2] for layer in layers], axis=0)

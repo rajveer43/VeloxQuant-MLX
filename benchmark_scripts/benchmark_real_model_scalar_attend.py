@@ -45,7 +45,6 @@ Usage: python benchmark_scripts/benchmark_real_model_scalar_attend.py
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
 
 import mlx.core as mx
 import mlx_lm.models.base as _mlx_base
@@ -88,12 +87,12 @@ class _ScalarAttendKIVICache(_MLXKVCache):
 
     def __init__(self) -> None:
         super().__init__()
-        self._k_codes: Optional[mx.array] = None
-        self._k_scale: Optional[mx.array] = None
-        self._k_zero: Optional[mx.array] = None
-        self._v_codes: Optional[mx.array] = None
-        self._v_scale: Optional[mx.array] = None
-        self._v_zero: Optional[mx.array] = None
+        self._k_codes: mx.array | None = None
+        self._k_scale: mx.array | None = None
+        self._k_zero: mx.array | None = None
+        self._v_codes: mx.array | None = None
+        self._v_scale: mx.array | None = None
+        self._v_zero: mx.array | None = None
         self._n_quantized: int = 0
 
     def _quant_keys(self, k: mx.array) -> tuple[mx.array, mx.array, mx.array]:
@@ -110,9 +109,11 @@ class _ScalarAttendKIVICache(_MLXKVCache):
         scale = mx.maximum((gmax - gmin) / LEVELS, EPS)
         codes = mx.clip(mx.round((xg - gmin) / scale), 0, LEVELS)
         codes = codes.reshape(B, H, GK * g, D)[:, :, :S, :].astype(mx.uint8)
-        return codes, scale.reshape(B, H, GK, D).astype(mx.float32), gmin.reshape(
-            B, H, GK, D
-        ).astype(mx.float32)
+        return (
+            codes,
+            scale.reshape(B, H, GK, D).astype(mx.float32),
+            gmin.reshape(B, H, GK, D).astype(mx.float32),
+        )
 
     def _quant_values(self, v: mx.array) -> tuple[mx.array, mx.array, mx.array]:
         B, H, S, D = v.shape
@@ -128,9 +129,11 @@ class _ScalarAttendKIVICache(_MLXKVCache):
         scale = mx.maximum((gmax - gmin) / LEVELS, EPS)
         codes = mx.clip(mx.round((xg - gmin) / scale), 0, LEVELS)
         codes = codes.reshape(B, H, S, GV * g)[:, :, :, :D].astype(mx.uint8)
-        return codes, scale.reshape(B, H, S, GV).astype(mx.float32), gmin.reshape(
-            B, H, S, GV
-        ).astype(mx.float32)
+        return (
+            codes,
+            scale.reshape(B, H, S, GV).astype(mx.float32),
+            gmin.reshape(B, H, S, GV).astype(mx.float32),
+        )
 
     def update_and_fetch(self, keys, values):
         k_all, v_all = super().update_and_fetch(keys, values)
@@ -232,8 +235,16 @@ def _patched_sdpa_factory(nsg: int, use_fused: bool):
                 k_codes, k_scale, k_zero, v_codes, v_scale, v_zero = cache.quantized_state()
                 _route_count["decode_fused"] += 1
                 return scalar_fused_decode_attend(
-                    queries, k_codes, k_scale, k_zero, v_codes, v_scale, v_zero,
-                    GROUP_SIZE, scale, nsg=nsg,
+                    queries,
+                    k_codes,
+                    k_scale,
+                    k_zero,
+                    v_codes,
+                    v_scale,
+                    v_zero,
+                    GROUP_SIZE,
+                    scale,
+                    nsg=nsg,
                 )
             else:
                 H_q = queries.shape[1]
@@ -245,7 +256,9 @@ def _patched_sdpa_factory(nsg: int, use_fused: bool):
                     queries, k_hat, v_hat, cache=None, scale=scale, mask=None, sinks=sinks
                 )
         _route_count["fallback"] += 1
-        return _original_sdpa(queries, keys, values, cache=cache, scale=scale, mask=mask, sinks=sinks)
+        return _original_sdpa(
+            queries, keys, values, cache=cache, scale=scale, mask=mask, sinks=sinks
+        )
 
     return _patched_sdpa
 
@@ -362,8 +375,10 @@ def main() -> None:
     print("does today) | fused = scalar_fused_decode_attend on-the-fly, no dequant materialized")
     print(f"Qwen3-4B-4bit, prompt_len={prompt_len}, n_decode={n_decode}")
     print("=" * 100)
-    print(f"{'B':>3} {'TTFT base (s)':>14} {'decode tok/s base':>18} | "
-          f"{'TTFT fused (s)':>15} {'decode tok/s fused':>19} {'speedup':>8}")
+    print(
+        f"{'B':>3} {'TTFT base (s)':>14} {'decode tok/s base':>18} | "
+        f"{'TTFT fused (s)':>15} {'decode tok/s fused':>19} {'speedup':>8}"
+    )
 
     for B in (1, 4, 16, 32):
         _route_count["decode_dequant_baseline"] = 0
