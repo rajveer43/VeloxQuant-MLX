@@ -432,6 +432,27 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.76.0 (2026-09-05)
+
+### Code Style
+
+- Fix lint (E741, B023, UP045, F401) and apply ruff format
+  ([#315](https://github.com/rajveer43/VeloxQuant-MLX/pull/315),
+  [`afda2ea`](https://github.com/rajveer43/VeloxQuant-MLX/commit/afda2eace5d05809969e014e8afa268d64d54f5a))
+
+### Documentation
+
+- **blog**: Add linked results-focused companion post for cross-layer batching
+  ([#315](https://github.com/rajveer43/VeloxQuant-MLX/pull/315),
+  [`afda2ea`](https://github.com/rajveer43/VeloxQuant-MLX/commit/afda2eace5d05809969e014e8afa268d64d54f5a))
+
+### Features
+
+- **metal**: Cross-layer batched decode-attend kernel + real-model validation (#307 pt.1)
+  ([#315](https://github.com/rajveer43/VeloxQuant-MLX/pull/315),
+  [`afda2ea`](https://github.com/rajveer43/VeloxQuant-MLX/commit/afda2eace5d05809969e014e8afa268d64d54f5a))
+
+
 ## v0.75.1 (2026-09-04)
 
 ### Performance Improvements
