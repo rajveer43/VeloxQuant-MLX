@@ -27,10 +27,30 @@ function initCopyButtons() {
     });
   }
 
-  document.querySelectorAll('.code-copy').forEach(btn => {
+  document.querySelectorAll('.code-copy, .code-copy-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const pre = document.getElementById(btn.dataset.target);
-      copyText(pre.innerText, btn);
+      if (pre) copyText(pre.innerText, btn);
+    });
+  });
+}
+
+function initSdkTabs() {
+  const sdkButtons = document.querySelectorAll('.sdk-tab-btn');
+  const copyBtn = document.getElementById('install-copy-btn');
+  sdkButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sdk = btn.dataset.sdk;
+      sdkButtons.forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-selected', 'false');
+      });
+      btn.classList.add('active');
+      btn.setAttribute('aria-selected', 'true');
+      document.querySelectorAll('.sdk-panel').forEach(p => p.classList.remove('active'));
+      const targetPanel = document.getElementById('sdk-panel-' + sdk);
+      if (targetPanel) targetPanel.classList.add('active');
+      if (copyBtn) copyBtn.dataset.target = 'code-install-' + sdk;
     });
   });
 }
@@ -460,6 +480,7 @@ function showToast({ title, desc, duration = 6000 }) {
 document.addEventListener('DOMContentLoaded', () => {
   initCopyButtons();
   initCodeTabs();
+  initSdkTabs();
   initBadgeTyping();
   initMagneticButtons();
   initCodeBootAnimation();
