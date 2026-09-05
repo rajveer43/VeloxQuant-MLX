@@ -179,11 +179,31 @@ out = scalar_fused_decode_attend(
     v_zero,  # [B, H, S_kv, GV]  fp32
     group_size=32,
     scale=1.0 / (D**0.5),
-    nsg=8,  # SIMD-groups splitting the kv axis; 8 is tuned for M4
+    # nsg omitted -> autotuned from the dispatch shape (recommended)
 )  # -> [B, H, S_q, D] fp16
 ```
 
 One compiled kernel serves any `(S_kv, D, g)` — the group counts are read from the passed shapes. `D` must be ≤ 256 and `nsg` in `1..32`.
+
+### Tuning `nsg` (autotuned by default)
+
+`nsg` sets how many SIMD-groups split the kv axis *inside* each threadgroup. It matters more than it looks: at a real single-token decode step the kernel dispatches only `n_tg = B * H_kv * S_q` threadgroups — often just 4–8 on a 10-core GPU — and total concurrency is roughly `n_tg * nsg`. When `n_tg` alone can't fill the machine, widening each threadgroup is the only way to add work **without giving up threadgroup count** (which is why this beats GQA head-packing, measured 2.7–4.7× *slower* for trading count away).
+
+Leaving `nsg` unset picks the value from the dispatch shape: the largest the threadgroup-memory budget admits when under-dispatched, backing off once `n_tg ≥ 32`. That is **1.2–4.2× faster** than the previous fixed default of 4:
+
+| shape | `n_tg` | `S_kv` | chosen `nsg` | vs `nsg=4` |
+|---|---:|---:|---:|---:|
+| `H_q=8 H_kv=8` (MHA) | 8 | 16 384 | 32 | **4.19×** |
+| `H_q=32 H_kv=8` (GQA 4) | 8 | 16 384 | 16 | **2.97×** |
+| `H_q=28 H_kv=4` (GQA 7) | 4 | 16 384 | 16 | **2.64×** |
+| `H_q=32 H_kv=4` (GQA 8) | 4 | 16 384 | 8 | **1.84×** |
+| `H_q=32 H_kv=8`, B=8 | 64 | 16 384 | 8 | 1.19× |
+
+The win is largest where `n_tg` is smallest and grows with `S_kv` — the signature of an occupancy-limited kernel. Once dispatch alone saturates the GPU (`n_tg ≥ 32`, e.g. batched serving) it flattens to ~1.0–1.2×.
+
+The budget bounds `nsg * heads_per_kv * ceil(D/32)`; at `D=128` that means up to `nsg=32` for MHA, 16 at `heads_per_kv=4`, and 8 at `heads_per_kv=8`. Pass an explicit `nsg` to pin it for benchmarking or an unusual shape.
+
+Full sweep, real-model throughput, and limitations: [`docs/NSG_AUTOTUNE_BENCHMARK_REPORT.md`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/NSG_AUTOTUNE_BENCHMARK_REPORT.md).
 
 Measured on Apple M4 (10-core GPU), `B=1 H=32 D=128 b=2 g=32 S_q=1`, versus dequantize → MLX SDPA:
 

@@ -23,6 +23,9 @@ import pytest
 
 from veloxquant_mlx.metal import metal_available
 from veloxquant_mlx.metal._scalar_attend import (
+    _TG_MEM_BUDGET_BYTES,
+    _auto_nsg,
+    _d_slots,
     scalar_decode_once,
     scalar_predecoded_attend,
 )
@@ -184,18 +187,21 @@ def test_scalar_attend_bitwidths(b):
 # ---------------------------------------------------------------------------
 
 
-def _tg_mem_bytes(nsg, heads_per_kv):
-    # Mirrors _scalar_attend.py's own budget check: sh_o + sh_m + sh_d, all fp32.
+def _tg_mem_bytes(nsg, heads_per_kv, D=128):
+    # Mirrors _scalar_attend.py's own budget check: sh_o (half) + sh_m, sh_d
+    # (both fp32). sh_o is sized by DSLOTS_C = ceil(D/32), not a fixed 8 — so
+    # the admissible nsg depends on the head dim.
     n_slots = nsg * heads_per_kv
-    return (n_slots * 8 * 32 + n_slots + n_slots) * 4
+    d_slots = (D + 31) // 32
+    return n_slots * d_slots * 32 * 2 + n_slots * 4 * 2
 
 
 _GQA_CASES = [
     (H_q, H_kv, S_kv, nsg)
     for H_q, H_kv in [(8, 2), (32, 4), (32, 8)]
     for S_kv in [64, 512, 2048]
-    for nsg in [1, 2, 4]
-    if _tg_mem_bytes(nsg, H_q // H_kv) <= 32768
+    for nsg in [1, 2, 4, 8]
+    if _tg_mem_bytes(nsg, H_q // H_kv, 128) <= 32768
 ]
 
 
@@ -302,20 +308,22 @@ def test_scalar_attend_validation():
             0.1,
             nsg=1,
         )
-    # threadgroup-memory budget overflow (nsg * heads_per_kv within the
-    # heads_per_kv cap but still too large for the softmax merge buffers)
-    with pytest.raises(ValueError):
+    # threadgroup-memory budget overflow. The budget scales with
+    # DSLOTS_C = ceil(D/32) and sh_o is half, so overflow now requires a
+    # genuinely large combination: D=256 (8 slots) x heads_per_kv=8 x nsg=8
+    # -> 33280B. At D=128 these same nsg/heads_per_kv legitimately fit.
+    with pytest.raises(ValueError, match="threadgroup-memory budget"):
         scalar_fused_decode_attend(
-            mx.zeros((1, 32, 1, 128), dtype=mx.float16),  # H_q=32
-            mx.zeros((1, 4, 8, 128), dtype=mx.uint8),  # H_kv=4 -> heads_per_kv=8
-            mx.zeros((1, 4, 1, 128), dtype=mx.float32),
-            mx.zeros((1, 4, 1, 128), dtype=mx.float32),
-            mx.zeros((1, 4, 8, 128), dtype=mx.uint8),
-            mx.zeros((1, 4, 8, 4), dtype=mx.float32),
-            mx.zeros((1, 4, 8, 4), dtype=mx.float32),
+            mx.zeros((1, 32, 1, 256), dtype=mx.float16),  # H_q=32, D=256
+            mx.zeros((1, 4, 8, 256), dtype=mx.uint8),  # H_kv=4 -> heads_per_kv=8
+            mx.zeros((1, 4, 1, 256), dtype=mx.float32),
+            mx.zeros((1, 4, 1, 256), dtype=mx.float32),
+            mx.zeros((1, 4, 8, 256), dtype=mx.uint8),
+            mx.zeros((1, 4, 8, 8), dtype=mx.float32),
+            mx.zeros((1, 4, 8, 8), dtype=mx.float32),
             32,
             0.1,
-            nsg=4,  # nsg=4 * heads_per_kv=8 -> 33024B > 32768B budget
+            nsg=8,  # nsg=8 * hpk=8 * 8 slots -> 33280B > 32768B budget
         )
 
 
@@ -857,6 +865,60 @@ def test_scalar_attend_batched_distinct_content_not_broadcast_layer0():
     assert np.abs(ref0 - ref1).max() > 1e-2
 
 
+@pytest.mark.parametrize("D", [64, 128, 256])
+@pytest.mark.parametrize("heads_per_kv", [1, 2, 4, 7, 8, 16])
+@pytest.mark.parametrize("n_tg", [1, 4, 8, 31, 32, 128])
+def test_auto_nsg_always_within_budget(D, heads_per_kv, n_tg):
+    """Whatever _auto_nsg picks must fit the threadgroup-memory budget.
+
+    This is the invariant that keeps the autotuned default from turning a
+    working call into a ValueError on some shape nobody benchmarked.
+    """
+    nsg = _auto_nsg(D, heads_per_kv, n_tg)
+    assert 1 <= nsg <= 32
+    n_slots = nsg * heads_per_kv
+    tg_mem = n_slots * _d_slots(D) * 32 * 2 + n_slots * 4 * 2
+    assert tg_mem <= _TG_MEM_BUDGET_BYTES, (
+        f"D={D} hpk={heads_per_kv} n_tg={n_tg}: _auto_nsg picked {nsg} "
+        f"needing {tg_mem}B > {_TG_MEM_BUDGET_BYTES}B"
+    )
+
+
+def test_auto_nsg_widens_when_under_dispatched():
+    """Under-dispatched shapes must get a wider threadgroup than saturated ones.
+
+    Encodes the measured policy: when B*H_kv*S_q is small the GPU can only be
+    filled by adding SIMD-groups within each threadgroup, so _auto_nsg should
+    pick strictly more than the saturated case for the same head geometry.
+    """
+    for D, hpk in ((128, 1), (128, 4)):
+        under = _auto_nsg(D, hpk, n_tg=8)
+        saturated = _auto_nsg(D, hpk, n_tg=128)
+        assert under > saturated, (
+            f"D={D} hpk={hpk}: expected wider nsg when under-dispatched, "
+            f"got under={under} saturated={saturated}"
+        )
+
+
+def test_auto_nsg_default_matches_explicit_nsg_output():
+    """nsg=None must produce the same numbers as pinning the value it picks.
+
+    Guards against the autotuner silently changing results rather than only
+    changing how the same math is scheduled.
+    """
+    B, H_q, H_kv, S_kv, D, b, g = 1, 32, 8, 512, 128, 2, 32
+    scale = 1.0 / math.sqrt(D)
+    q, kc, ks, kz, vc, vs, vz = _make_inputs(B, H_q, S_kv, D, b, g, H_kv=H_kv)
+    args = [mx.array(x) for x in (q, kc, ks, kz, vc, vs, vz)]
+
+    chosen = _auto_nsg(D, H_q // H_kv, B * H_kv * 1)
+    auto = np.array(scalar_fused_decode_attend(*args, g, scale, nsg=None))
+    pinned = np.array(scalar_fused_decode_attend(*args, g, scale, nsg=chosen))
+    assert np.array_equal(auto, pinned), (
+        f"nsg=None must be bit-identical to nsg={chosen}"
+    )
+
+
 def test_scalar_attend_batched_threadgroup_memory_budget_unaffected_by_nl():
     """The threadgroup-memory budget check must scale with nsg*heads_per_kv
     only, not with NL — batching lives on the grid axis, not inside one
@@ -864,7 +926,8 @@ def test_scalar_attend_batched_threadgroup_memory_budget_unaffected_by_nl():
     B, H_q, H_kv, S_kv, D, b, g = 1, 32, 4, 64, 128, 2, 32  # heads_per_kv=8
     scale = 1.0 / math.sqrt(D)
 
-    # nsg=4 * heads_per_kv=8 -> 33024B > 32768B budget: must fail regardless of NL.
+    # nsg=16 * heads_per_kv=8 at D=128 (4 slots, half sh_o) -> 33792B >
+    # 32768B budget: must fail regardless of NL.
     for NL in (1, 16):
         q, kc, ks, kz, vc, vs, vz = _make_layer_stack(
             NL, B, H_q, S_kv, D, b, g, seed=300, H_kv=H_kv
@@ -880,7 +943,7 @@ def test_scalar_attend_batched_threadgroup_memory_budget_unaffected_by_nl():
                 mx.array(vz),
                 g,
                 scale,
-                nsg=4,
+                nsg=16,
             )
 
     # nsg=2 * heads_per_kv=8 fits the budget: must pass for both a small and
