@@ -30,6 +30,9 @@
        disables that sync. -->
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.77.0-64748b?style=flat-square" alt="Changelog"/></a>
   <a href="SECURITY.md"><img src="https://img.shields.io/badge/security-policy-1f6feb?style=flat-square" alt="Security policy"/></a>
+  <!-- Hit counter keyed on page_id; the count belongs to that key, so renaming
+       it restarts from zero. -->
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=rajveer43.VeloxQuant-MLX&style=flat-square&color=64748b" alt="Visitors"/>
 </p>
 
 <!-- Text links rather than a third badge row. Governance, Security and Support
