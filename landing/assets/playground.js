@@ -270,6 +270,346 @@ function markActivePreset() {
   });
 }
 
+/* ---------- Model search (Hugging Face) ----------
+   Lets a visitor find any real model by name instead of only the preset
+   chips above. Two public, CORS-open Hub endpoints, no token, no proxy:
+     search:  https://huggingface.co/api/models?search=<q>&limit=<n>
+     shape:   https://huggingface.co/<id>/raw/main/config.json
+   Never guesses silently: a model is only auto-applied when its shape is
+   fully resolved ("supported"); anything else ("partial") fills what it
+   can and says so, so nothing lands in the recommender the user hasn't
+   seen. Search failure never breaks the page — presets/custom stay live. */
+
+const HF_SEARCH_DEBOUNCE_MS = 350;
+const HF_SEARCH_LIMIT = 15;
+const HF_FETCH_TIMEOUT_MS = 6000;
+
+// hidden_size/d_model/... family name -> normalized key. Kept small and
+// explicit rather than a generic "try every key" scan.
+const HF_FIELD_ALIASES = {
+  hiddenSize: ["hidden_size", "d_model", "n_embd", "dim"],
+  numHiddenLayers: ["num_hidden_layers", "n_layer", "num_layers"],
+  numAttentionHeads: ["num_attention_heads", "n_head", "num_heads"],
+  numKeyValueHeads: ["num_key_value_heads", "n_kv_heads", "num_kv_heads"],
+  headDim: ["head_dim", "d_head"],
+};
+
+function firstDefined(obj, keys) {
+  for (const k of keys) {
+    if (obj[k] !== undefined && obj[k] !== null) return obj[k];
+  }
+  return undefined;
+}
+
+// Nearest existing 4-bit weight-size bucket (calc.js's MODEL_WEIGHT_GB_4BIT)
+// for a model we don't have an authoritative param count for. Estimated from
+// hidden_size x layers, which tracks total parameter count closely enough to
+// pick the right bucket for the weight-footprint estimate (not for anything
+// exact) — layers x hidden_size^2 is the dominant term in a transformer's
+// parameter count.
+function estimateModelClass(hiddenSize, numLayers) {
+  const scale = hiddenSize * hiddenSize * numLayers;
+  const buckets = [
+    { cls: "1B", scale: 2048 * 2048 * 22 },
+    { cls: "3B", scale: 3072 * 3072 * 28 },
+    { cls: "7B", scale: 4096 * 4096 * 32 },
+    { cls: "14B", scale: 5120 * 5120 * 40 },
+    { cls: "32B", scale: 5120 * 5120 * 64 },
+  ];
+  let best = buckets[0];
+  let bestDist = Infinity;
+  buckets.forEach((b) => {
+    const dist = Math.abs(Math.log(scale) - Math.log(b.scale));
+    if (dist < bestDist) { bestDist = dist; best = b; }
+  });
+  return best.cls;
+}
+
+// Normalize a raw HF config.json into the three shape fields calc.js needs,
+// plus a support status. Never invents a KV-head count for an architecture
+// it can't reason about — marks the model "partial" instead so the existing
+// manual fields stay the point of truth.
+function normalizeHfConfig(config) {
+  const hiddenSize = firstDefined(config, HF_FIELD_ALIASES.hiddenSize);
+  const numLayers = firstDefined(config, HF_FIELD_ALIASES.numHiddenLayers);
+  const numAttnHeads = firstDefined(config, HF_FIELD_ALIASES.numAttentionHeads);
+  let numKvHeads = firstDefined(config, HF_FIELD_ALIASES.numKeyValueHeads);
+  let headDim = firstDefined(config, HF_FIELD_ALIASES.headDim);
+
+  const missing = [];
+  if (!Number.isFinite(numLayers)) missing.push("layers");
+
+  // KV heads: use the explicit value; only fall back to num_attention_heads
+  // (plain multi-head attention, no GQA) when we're sure there's no separate
+  // KV-head field on this config at all, rather than assuming every unlisted
+  // architecture is MHA.
+  let kvHeadsIsAssumed = false;
+  if (!Number.isFinite(numKvHeads)) {
+    if (Number.isFinite(numAttnHeads)) {
+      numKvHeads = numAttnHeads;
+      kvHeadsIsAssumed = true;
+    } else {
+      missing.push("KV heads");
+    }
+  }
+
+  // head_dim: prefer the explicit field; else derive from hidden_size /
+  // num_attention_heads, but only if that's an exact integer — a fractional
+  // result means the architecture doesn't shape heads that way and guessing
+  // would silently corrupt the estimate.
+  let headDimIsDerived = false;
+  if (!Number.isFinite(headDim)) {
+    if (Number.isFinite(hiddenSize) && Number.isFinite(numAttnHeads) && numAttnHeads > 0) {
+      const derived = hiddenSize / numAttnHeads;
+      if (Number.isInteger(derived)) {
+        headDim = derived;
+        headDimIsDerived = true;
+      }
+    }
+    if (!Number.isFinite(headDim)) missing.push("head dimension");
+  }
+
+  const status = missing.length ? "partial" : (kvHeadsIsAssumed || headDimIsDerived ? "partial" : "supported");
+
+  return {
+    n_layers: Number.isFinite(numLayers) ? numLayers : undefined,
+    n_kv_heads: Number.isFinite(numKvHeads) ? numKvHeads : undefined,
+    head_dim: Number.isFinite(headDim) ? headDim : undefined,
+    hidden_size: Number.isFinite(hiddenSize) ? hiddenSize : undefined,
+    model_class: Number.isFinite(hiddenSize) && Number.isFinite(numLayers)
+      ? estimateModelClass(hiddenSize, numLayers)
+      : undefined,
+    status,
+    missing,
+    kvHeadsIsAssumed,
+    headDimIsDerived,
+  };
+}
+
+// id -> resolved metadata (or null while pending / on failure), so re-picking
+// a model in the same session never refetches config.json.
+const hfMetadataCache = new Map();
+
+let hfSearchAbort = null;
+let hfConfigAbort = null;
+let hfSearchDebounceTimer = null;
+let hfActiveResultIndex = -1;
+let hfLastResults = [];
+
+function fetchWithTimeout(url, signal, timeoutMs) {
+  const timeoutCtl = new AbortController();
+  const timer = setTimeout(() => timeoutCtl.abort(), timeoutMs);
+  const combined = new AbortController();
+  const onAbort = () => combined.abort();
+  signal.addEventListener("abort", onAbort);
+  timeoutCtl.signal.addEventListener("abort", onAbort);
+  return fetch(url, { signal: combined.signal }).finally(() => {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", onAbort);
+  });
+}
+
+async function searchHfModels(query) {
+  if (hfSearchAbort) hfSearchAbort.abort();
+  hfSearchAbort = new AbortController();
+  const url = `https://huggingface.co/api/models?search=${encodeURIComponent(query)}&limit=${HF_SEARCH_LIMIT}&full=false&sort=downloads&direction=-1`;
+  const res = await fetchWithTimeout(url, hfSearchAbort.signal, HF_FETCH_TIMEOUT_MS);
+  if (!res.ok) throw new Error(`HF search failed: ${res.status}`);
+  return res.json();
+}
+
+async function fetchHfConfig(modelId) {
+  if (hfMetadataCache.has(modelId)) return hfMetadataCache.get(modelId);
+  if (hfConfigAbort) hfConfigAbort.abort();
+  hfConfigAbort = new AbortController();
+  const url = `https://huggingface.co/${modelId}/raw/main/config.json`;
+  const res = await fetchWithTimeout(url, hfConfigAbort.signal, HF_FETCH_TIMEOUT_MS);
+  if (!res.ok) throw new Error(`config.json unavailable: ${res.status}`);
+  const config = await res.json();
+  const normalized = normalizeHfConfig(config);
+  hfMetadataCache.set(modelId, normalized);
+  return normalized;
+}
+
+function renderSearchListbox(items) {
+  const box = $("pg-search-listbox");
+  if (!box) return;
+  hfLastResults = items;
+  hfActiveResultIndex = -1;
+  if (!items.length) {
+    box.innerHTML = `<li class="pg-search-empty">No models found. Try another search, or use a preset / custom architecture below.</li>`;
+    box.hidden = false;
+    $("pg-model-query").setAttribute("aria-expanded", "true");
+    return;
+  }
+  box.innerHTML = items
+    .map(
+      (m, i) => `<li class="pg-search-item" role="option" id="pg-search-opt-${i}" data-idx="${i}">
+        <span class="pg-search-item-name">${esc(m.id)}</span>
+        <span class="pg-search-item-meta">${m.pipeline_tag ? esc(m.pipeline_tag) + " · " : ""}${m.downloads ? m.downloads.toLocaleString() + " downloads" : "Hugging Face model"}</span>
+      </li>`
+    )
+    .join("");
+  box.hidden = false;
+  $("pg-model-query").setAttribute("aria-expanded", "true");
+  box.querySelectorAll(".pg-search-item").forEach((el) => {
+    el.addEventListener("click", () => selectHfModel(items[parseInt(el.dataset.idx, 10)].id));
+  });
+}
+
+function closeSearchListbox() {
+  const box = $("pg-search-listbox");
+  if (box) box.hidden = true;
+  $("pg-model-query")?.setAttribute("aria-expanded", "false");
+  hfActiveResultIndex = -1;
+}
+
+function moveSearchActive(dir) {
+  const box = $("pg-search-listbox");
+  if (!box || box.hidden || !hfLastResults.length) return;
+  const items = box.querySelectorAll(".pg-search-item");
+  if (!items.length) return;
+  hfActiveResultIndex = (hfActiveResultIndex + dir + items.length) % items.length;
+  items.forEach((el, i) => el.classList.toggle("active", i === hfActiveResultIndex));
+  $("pg-model-query").setAttribute("aria-activedescendant", `pg-search-opt-${hfActiveResultIndex}`);
+  items[hfActiveResultIndex].scrollIntoView({ block: "nearest" });
+}
+
+function confirmSearchActive() {
+  if (hfActiveResultIndex < 0 || !hfLastResults[hfActiveResultIndex]) return false;
+  selectHfModel(hfLastResults[hfActiveResultIndex].id);
+  return true;
+}
+
+// The "Popular" list shown before the user types anything — just today's
+// presets, no network call.
+function renderPopularList() {
+  renderSearchListbox(
+    MODEL_PRESETS.map((p) => ({ id: p.name, downloads: null, pipeline_tag: null, _presetId: p.id }))
+  );
+  const box = $("pg-search-listbox");
+  if (!box) return;
+  box.querySelectorAll(".pg-search-item").forEach((el, i) => {
+    el.querySelector(".pg-search-item-meta").textContent = "Preset · matches a benchmarked checkpoint";
+    el.addEventListener("click", () => applyPreset(MODEL_PRESETS[i].id), { once: true });
+  });
+}
+
+async function onModelSearchInput() {
+  const q = $("pg-model-query").value.trim();
+  clearTimeout(hfSearchDebounceTimer);
+  if (!q) {
+    renderPopularList();
+    return;
+  }
+  hfSearchDebounceTimer = setTimeout(async () => {
+    const box = $("pg-search-listbox");
+    box.innerHTML = `<li class="pg-search-loading">Searching Hugging Face…</li>`;
+    box.hidden = false;
+    try {
+      const results = await searchHfModels(q);
+      renderSearchListbox(results);
+    } catch (e) {
+      if (e.name === "AbortError") return; // superseded by a newer keystroke
+      box.innerHTML = `<li class="pg-search-note is-error">Model search temporarily unavailable. Presets and Custom Architecture below still work.</li>`;
+      box.hidden = false;
+    }
+  }, HF_SEARCH_DEBOUNCE_MS);
+}
+
+function renderDetected(name, meta) {
+  const el = $("pg-model-detected");
+  if (!el) return;
+  if (!meta || meta.status === "unsupported" || (!Number.isFinite(meta.n_layers) && !Number.isFinite(meta.n_kv_heads) && !Number.isFinite(meta.head_dim))) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  const shapeParts = [];
+  if (Number.isFinite(meta.n_layers)) shapeParts.push(`${meta.n_layers} layers`);
+  if (Number.isFinite(meta.n_kv_heads)) shapeParts.push(`${meta.n_kv_heads} KV heads${meta.kvHeadsIsAssumed ? " (assumed)" : ""}`);
+  if (Number.isFinite(meta.head_dim)) shapeParts.push(`head dim ${meta.head_dim}${meta.headDimIsDerived ? " (derived)" : ""}`);
+
+  const statusHtml = meta.status === "supported"
+    ? `<span class="pg-model-detected-status is-supported">✓ Architecture detected automatically</span>`
+    : `<span class="pg-model-detected-status is-partial">⚠ Some architecture values need confirmation — review Custom Architecture below${meta.missing.length ? ` (missing: ${esc(meta.missing.join(", "))})` : ""}</span>`;
+
+  el.innerHTML = `<span class="pg-model-detected-name">${esc(name)}</span>
+    <span class="pg-model-detected-shape">${esc(shapeParts.join(" · "))}</span>
+    ${statusHtml}`;
+  el.hidden = false;
+}
+
+// Fill the shared shape fields from resolved HF metadata and recompute,
+// exactly like a preset chip does — this must go through the same pipeline
+// so the rest of the page (recommender, lab, URL state) never diverges
+// based on how the shape was set.
+function applyHfMetadata(name, meta) {
+  if (meta.model_class) $("pg-model").value = meta.model_class;
+  if (Number.isFinite(meta.n_layers)) $("pg-layers").value = meta.n_layers;
+  if (Number.isFinite(meta.n_kv_heads)) $("pg-heads").value = meta.n_kv_heads;
+  if (Number.isFinite(meta.head_dim)) $("pg-headdim").value = meta.head_dim;
+  renderDetected(name, meta);
+  markActivePreset();
+  if (typeof updateAdvancedHint === "function") updateAdvancedHint();
+  runRecommender();
+  syncAutoBudget();
+  runCompressionLab();
+  const advanced = $("pg-advanced");
+  if (advanced && meta.status === "partial") advanced.open = true;
+}
+
+async function selectHfModel(modelId) {
+  $("pg-model-query").value = modelId;
+  closeSearchListbox();
+  const el = $("pg-model-detected");
+  if (el) {
+    el.hidden = false;
+    el.innerHTML = `<span class="pg-model-detected-shape">Looking up ${esc(modelId)}'s architecture…</span>`;
+  }
+  try {
+    const meta = await fetchHfConfig(modelId);
+    if (meta.status === "unsupported" || (!Number.isFinite(meta.n_layers) && !Number.isFinite(meta.n_kv_heads) && !Number.isFinite(meta.head_dim))) {
+      if (el) {
+        el.innerHTML = `<span class="pg-model-detected-shape">Couldn't determine ${esc(modelId)}'s architecture — try Custom Architecture below.</span>`;
+      }
+      return;
+    }
+    applyHfMetadata(modelId, meta);
+  } catch (e) {
+    if (el) {
+      el.innerHTML = `<span class="pg-model-detected-shape">Couldn't load ${esc(modelId)}'s architecture (${e.name === "AbortError" ? "timed out" : "network error"}) — try Custom Architecture below.</span>`;
+    }
+  }
+}
+
+function initModelSearch() {
+  const input = $("pg-model-query");
+  if (!input) return;
+  input.addEventListener("input", onModelSearchInput);
+  input.addEventListener("focus", () => {
+    if (!input.value.trim()) renderPopularList();
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); moveSearchActive(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); moveSearchActive(-1); }
+    else if (e.key === "Enter") { if (confirmSearchActive()) e.preventDefault(); }
+    else if (e.key === "Escape") { closeSearchListbox(); }
+  });
+  // Closing on blur (not just outside-click) prevents the dropdown from
+  // sitting open over the preset chips/advanced fields below it whenever
+  // focus moves away for any reason other than a direct outside click —
+  // e.g. Tab, or a click that a listbox item itself intercepts mid-close.
+  input.addEventListener("blur", () => {
+    setTimeout(() => {
+      if (!$("pg-model-search").contains(document.activeElement)) closeSearchListbox();
+    }, 150);
+  });
+  document.addEventListener("click", (e) => {
+    if (!$("pg-model-search").contains(e.target)) closeSearchListbox();
+  });
+}
+
 /* ---------- Method catalogue for the compression lab ---------- */
 // ratio    = compression factor used for the "fits in RAM" estimate.
 // resident = whether that ratio reflects real resident-RAM savings (full-KV
@@ -1394,6 +1734,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   renderPresets();
   renderMethodCards();
+  initModelSearch();
 
   // Restore any shared setup, then seed a sensible default only if the URL
   // didn't already pin the shape (so a shared link is never overwritten).
