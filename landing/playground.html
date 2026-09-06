@@ -193,6 +193,23 @@
             <div class="pg-sidebar-group">
               <span class="pg-group-num">02</span>
               <span class="pg-group-title">Target Model</span>
+
+              <!-- Model search: looks up real Hugging Face models and fills the
+                   shape fields automatically. Falls back to presets/custom below
+                   if search is unavailable or a model's architecture can't be
+                   determined reliably. -->
+              <div class="pg-model-search" id="pg-model-search">
+                <div class="pg-search-box">
+                  <svg class="pg-search-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                  <input type="text" id="pg-model-query" class="pg-search-input"
+                         role="combobox" aria-expanded="false" aria-controls="pg-search-listbox"
+                         aria-autocomplete="list" autocomplete="off"
+                         placeholder="Search Qwen, Llama, Gemma…" />
+                </div>
+                <ul class="pg-search-listbox" id="pg-search-listbox" role="listbox" hidden></ul>
+                <div class="pg-model-detected" id="pg-model-detected" hidden aria-live="polite"></div>
+              </div>
+
               <div class="pg-presets" role="group" aria-label="Pick the model you want to run">
                 <div class="pg-preset-row" id="pg-preset-row">
                   <!-- chips injected by playground.js -->
