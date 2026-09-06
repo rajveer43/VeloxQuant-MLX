@@ -289,8 +289,8 @@ body {
   .announcement-banner-link { font-size: 0.8rem; }
 }
 
-/* ===== NAV ===== */
-nav {
+/* ===== LEGACY NAV (scoped to prevent bleeding into .studio-nav / .bench-nav) ===== */
+nav.legacy-nav {
   position: sticky;
   top: 0;
   z-index: 100;
@@ -2357,7 +2357,7 @@ footer {
    unwrapped, overflowing nav row — widened so every phone in the test
    matrix, including 375/414px, gets the hamburger menu). ---- */
 @media (max-width: 640px) {
-  nav { padding: 0 1rem; }
+  nav.legacy-nav { padding: 0 1rem; }
   .nav-toggle { display: flex; }
   .nav-links {
     display: none;
@@ -4262,6 +4262,29 @@ span.anchor-alias {
   color: #ffffff;
 }
 
+/* Product Hunt badge. Two <img> variants (Product Hunt has no
+   theme-auto asset); only one is ever visible, toggled by the same
+   [data-theme] rule the rest of the page uses for light/dark — see the
+   light override below. Dark is the fallback (unset data-theme, or OS
+   dark) to match the hero's default dark background. */
+.hero-ph-badge {
+  display: inline-block;
+  margin: 0 0 1.1rem;
+  line-height: 0;
+}
+
+.hero-ph-badge-light { display: none; }
+.hero-ph-badge-dark { display: inline-block; }
+
+/* First-time visitor, no saved choice yet: data-theme is unset and only
+   the OS preference applies (see the pre-paint script in index.html),
+   so the attribute selector below won't fire — this media query is the
+   only thing that will. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .hero-ph-badge-light { display: inline-block; }
+  :root:not([data-theme="dark"]) .hero-ph-badge-dark { display: none; }
+}
+
 /* Studio "coming soon" line. Sits between the CTAs and the license meta,
    deliberately quieter than a button so it reads as status, not an action —
    the app has no download until beta validation completes. */
@@ -4439,6 +4462,16 @@ span.anchor-alias {
 }
 
 .studio-nav {
+  position: static;
+  top: auto;
+  z-index: auto;
+  height: auto;
+  min-height: 0;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  padding: 0 !important;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -5827,6 +5860,8 @@ details.faq-accordion-item[open] .faq-chevron {
   color: #475569;
   text-shadow: none;
 }
+:root[data-theme="light"] .hero-ph-badge-light { display: inline-block; }
+:root[data-theme="light"] .hero-ph-badge-dark { display: none; }
 :root[data-theme="light"] .hero-studio-badge {
   border-color: rgba(0, 0, 0, 0.16);
   background: rgba(0, 0, 0, 0.05);
@@ -8090,23 +8125,144 @@ details.faq-accordion-item[open] .faq-chevron {
   max-width: 600px;
 }
 
-/* 6-Column Responsive Ecosystem Grid (3 on Row 1, 3 on Row 2) */
+/* Responsive Ecosystem Grid (3 columns on desktop) */
 .ecosystem-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 1.5rem;
 }
 
 .eco-card {
-  grid-column: span 2;
+  grid-column: auto;
+}
+
+/* Featured Top Banner: macOS App spans entire single top row */
+.eco-card-featured {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 2.25rem;
+  align-items: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #0c0d15 0%, #12121e 100%);
+  border: 1px solid rgba(99, 102, 241, 0.28);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6), 0 0 32px rgba(99, 102, 241, 0.12);
+}
+
+.eco-card-featured:hover {
+  transform: translateY(-4px);
+  border-color: rgba(99, 102, 241, 0.5);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.7), 0 0 44px rgba(99, 102, 241, 0.22);
+}
+
+.eco-card-featured .eco-mockup-wrap {
+  height: 310px;
+}
+
+.eco-featured-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 6px 14px 6px 4px;
+}
+
+.eco-featured-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.eco-chip-purple {
+  color: #c084fc;
+  background: rgba(192, 132, 252, 0.12);
+  border: 1px solid rgba(192, 132, 252, 0.28);
+}
+
+.eco-featured-title {
+  font-family: var(--font-sans);
+  font-size: clamp(1.4rem, 2.2vw, 1.85rem);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.eco-featured-desc {
+  font-size: 0.92rem;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.eco-featured-perks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 0 4px;
+}
+
+.eco-perk-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.eco-macos-stats-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 7px 12px;
+  margin: 4px 0 2px;
+}
+
+.eco-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.eco-stat-lbl {
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.eco-stat-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+.eco-featured-btn {
+  width: fit-content;
+  padding: 0 24px;
+  margin-top: 2px;
+}
+
+@media (max-width: 960px) {
+  .eco-card-featured {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    padding: 16px;
+  }
+  .eco-featured-btn {
+    width: 100%;
+  }
 }
 
 @media (max-width: 1024px) {
   .ecosystem-grid {
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  }
-  .eco-card {
-    grid-column: auto;
   }
 }
 
@@ -8156,6 +8312,15 @@ details.faq-accordion-item[open] .faq-chevron {
 
 .eco-mockup-vscode {
   background: radial-gradient(130% 120% at 50% 25%, rgba(139, 92, 246, 0.42) 0%, rgba(76, 29, 149, 0.65) 45%, #110e1c 100%);
+}
+
+.eco-mockup-swift {
+  background: radial-gradient(130% 120% at 50% 25%, rgba(240, 81, 56, 0.45) 0%, rgba(255, 107, 43, 0.35) 48%, #18090a 100%);
+}
+
+.eco-card-swift:hover {
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), 0 0 24px rgba(240, 81, 56, 0.25);
+  border-color: rgba(240, 81, 56, 0.4);
 }
 
 .eco-mockup-npm {
@@ -8634,6 +8799,29 @@ details.faq-accordion-item[open] .faq-chevron {
 :root[data-theme="light"] .eco-card:hover {
   border-color: rgba(0, 0, 0, 0.16);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] .eco-card-featured {
+  background: linear-gradient(135deg, #ffffff 0%, #f8faff 100%);
+  border-color: rgba(99, 102, 241, 0.25);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="light"] .eco-featured-title {
+  color: #09090b;
+}
+
+:root[data-theme="light"] .eco-featured-desc {
+  color: #475569;
+}
+
+:root[data-theme="light"] .eco-perk-item {
+  color: #1e293b;
+}
+
+:root[data-theme="light"] .eco-macos-stats-row {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.08);
 }
 
 :root[data-theme="light"] .eco-card-title {

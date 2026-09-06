@@ -33,7 +33,7 @@
   <meta name="twitter:image:alt" content="VeloxQuant-MLX Metal kernel benchmark summary: compression ratio and speedup charts" />
 
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="assets/styles.css?v=20260906e" />
+  <link rel="stylesheet" href="assets/styles.css?v=20260906h" />
 
   <script type="application/ld+json">
   {
@@ -235,6 +235,22 @@
           <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
         </a>
       </div>
+
+      <!-- Product Hunt badge: the same post_id URL serves a static
+           "find us on" image pre-launch and swaps itself to the live
+           vote-count badge on launch day, so this needs no edit at
+           launch. Two <img>s (light/dark) toggled by CSS on
+           [data-theme], matching the .theme-icon-sun/-moon pattern
+           in styles.css, since PH has no single theme-auto asset. -->
+      <a href="https://www.producthunt.com/products/veloxquant-mlx?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-veloxquant-mlx"
+         target="_blank" rel="noopener noreferrer" class="hero-ph-badge">
+        <img class="hero-ph-badge-light" width="250" height="54"
+             src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1242023&amp;theme=light&amp;t=1788692878618"
+             alt="VeloxQuant-MLX - Run bigger local LLMs in less memory, on Mac | Product Hunt" />
+        <img class="hero-ph-badge-dark" width="250" height="54"
+             src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1242023&amp;theme=dark&amp;t=1788692878618"
+             alt="VeloxQuant-MLX - Run bigger local LLMs in less memory, on Mac | Product Hunt" />
+      </a>
 
       <p class="hero-studio-status">
         <span class="hero-studio-badge">Coming soon</span>
@@ -948,23 +964,23 @@
       <div class="ecosystem-header text-center">
         <div class="pill-badge mb-3">EVERYWHERE YOU BUILD</div>
         <h2 class="ecosystem-title">Run VeloxQuant across your entire workflow</h2>
-        <p class="ecosystem-sub">Official NPM, Rust, and Go SDK runtimes and a VS Code extension available today — with native macOS app and Kotlin package coming soon.</p>
+        <p class="ecosystem-sub">Official Swift, NPM, Rust, and Go SDK runtimes and a VS Code extension available today — with native macOS app and Kotlin package coming soon.</p>
       </div>
 
       <div class="ecosystem-grid">
-        <!-- Card 1: macOS App -->
-        <div class="eco-card">
+        <!-- Row 1: Flagship macOS App Banner (Spans Full Width) -->
+        <div class="eco-card eco-card-featured eco-card-macos">
           <div class="eco-mockup-wrap eco-mockup-macos">
             <div class="eco-mockup-window">
               <div class="eco-window-header">
                 <div class="eco-traffic-dots">
                   <span></span><span></span><span></span>
                 </div>
-                <div class="eco-window-title">VeloxQuant Studio</div>
+                <div class="eco-window-title">VeloxQuant Studio · Apple Silicon Menu Bar &amp; Desktop App</div>
               </div>
               <div class="eco-window-body eco-body-macos">
                 <div class="eco-macos-meta">
-                  <span class="eco-chip">Apple Silicon M-Series</span>
+                  <span class="eco-chip">Apple Silicon M-Series · Metal 3</span>
                   <div class="eco-model-title">Falcon3-7B · 128k context</div>
                 </div>
                 <div class="eco-mem-meter">
@@ -974,6 +990,20 @@
                   </div>
                   <div class="eco-mem-track">
                     <div class="eco-mem-fill" style="width: 14%;"></div>
+                  </div>
+                </div>
+                <div class="eco-macos-stats-row">
+                  <div class="eco-stat-item">
+                    <span class="eco-stat-lbl">Context Headroom</span>
+                    <span class="eco-stat-val">+128k ctx</span>
+                  </div>
+                  <div class="eco-stat-item">
+                    <span class="eco-stat-lbl">Metal Speedup</span>
+                    <span class="eco-stat-val">14.7×</span>
+                  </div>
+                  <div class="eco-stat-item">
+                    <span class="eco-stat-lbl">Attention Quality</span>
+                    <span class="eco-stat-val">Bit-Exact</span>
                   </div>
                 </div>
                 <div class="eco-input-pill">
@@ -986,17 +1016,33 @@
               </div>
             </div>
           </div>
-          <div class="eco-card-meta">
-            <h3 class="eco-card-title">VeloxQuant for macOS <span class="eco-soon-tag">Coming soon</span></h3>
+          <div class="eco-featured-content">
+            <div class="eco-featured-badge-row">
+              <span class="eco-chip eco-chip-purple">Native Mac Application</span>
+              <span class="eco-soon-tag">Private beta</span>
+            </div>
+            <h3 class="eco-featured-title">VeloxQuant Studio for macOS</h3>
+            <p class="eco-featured-desc">
+              The flagship visual workspace engineered exclusively for macOS and Apple Silicon. Monitor local model memory in real-time, benchmark hand-written Metal kernels, and reclaim up to 98% of KV-cache footprint in a single click — without touching a terminal.
+            </p>
+            <div class="eco-featured-perks">
+              <div class="eco-perk-item">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#38bdf8" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                <span>Zero-latency Metal RVQ &amp; KIVI kernels</span>
+              </div>
+              <div class="eco-perk-item">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#34d399" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <span>100% on-device inference with zero telemetry</span>
+              </div>
+            </div>
+            <a href="https://github.com/rajveer43/VeloxQuant-Studio/issues/new?title=Beta%20access%20request%3A%20VeloxQuant%20Studio&body=Mac%20model%20%2F%20chip%3A%0AmacOS%20version%3A%0AModels%20you%20run%20locally%3A%0A" target="_blank" rel="noopener" class="eco-action-btn eco-featured-btn">
+              Join the Private Beta
+              <svg class="eco-btn-arr" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+            </a>
           </div>
-          <!-- Not a download: the app is gated on beta validation, so this
-               routes to tester signup instead of a release asset. -->
-          <a href="https://github.com/rajveer43/VeloxQuant-Studio/issues/new?title=Beta%20access%20request%3A%20VeloxQuant%20Studio&body=Mac%20model%20%2F%20chip%3A%0AmacOS%20version%3A%0AModels%20you%20run%20locally%3A%0A" target="_blank" rel="noopener" class="eco-action-btn eco-action-btn-soon">
-            Join the beta
-          </a>
         </div>
 
-        <!-- Card 2: VS Code Extension -->
+        <!-- Row 2 (Item 1): VS Code Extension -->
         <div class="eco-card">
           <div class="eco-mockup-wrap eco-mockup-vscode">
             <div class="eco-mockup-window">
@@ -1045,7 +1091,38 @@
           </a>
         </div>
 
-        <!-- Card 3: NPM SDK & CLI -->
+        <!-- Row 2 (Item 2): Swift Package -->
+        <div class="eco-card eco-card-swift">
+          <div class="eco-mockup-wrap eco-mockup-swift">
+            <div class="eco-mockup-window">
+              <div class="eco-window-header">
+                <div class="eco-traffic-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="eco-window-title">Package.swift · SwiftPM</div>
+              </div>
+              <div class="eco-window-body eco-body-code">
+                <div class="eco-cli-line eco-cli-comment">// Package.swift</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">dependencies</span>: [</div>
+                <div class="eco-cli-row">&nbsp;&nbsp;.<span class="eco-code-fn">package</span>(url: <span class="eco-code-str">"https://github.com/rajveer43/veloxquant-swift"</span>, exact: <span class="eco-code-str">"0.1.0-alpha"</span>)</div>
+                <div class="eco-cli-row">]</div>
+                <div class="eco-code-divider"></div>
+                <div class="eco-cli-line eco-cli-comment">// iOS 16+, macOS 13+, visionOS</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">import</span> <span class="eco-code-fn">VeloxQuantCore</span></div>
+                <div class="eco-cli-line eco-cli-success">// Native Swift KV-cache compression</div>
+              </div>
+            </div>
+          </div>
+          <div class="eco-card-meta">
+            <h3 class="eco-card-title">Swift Package (SPM)</h3>
+          </div>
+          <a href="https://github.com/rajveer43/veloxquant-swift" target="_blank" rel="noopener" class="eco-action-btn">
+            View on GitHub
+            <svg class="eco-btn-arr" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+          </a>
+        </div>
+
+        <!-- Row 2 (Item 3): NPM SDK & CLI -->
         <div class="eco-card">
           <div class="eco-mockup-wrap eco-mockup-npm">
             <div class="eco-mockup-window">
@@ -1077,7 +1154,7 @@
           </button>
         </div>
 
-        <!-- Card 4: Rust SDK -->
+        <!-- Row 3 (Item 1): Rust SDK -->
         <div class="eco-card eco-card-rust">
           <div class="eco-mockup-wrap eco-mockup-rust">
             <div class="eco-mockup-window">
@@ -1108,7 +1185,7 @@
           </button>
         </div>
 
-        <!-- Card 5: Go SDK -->
+        <!-- Row 3 (Item 2): Go SDK -->
         <div class="eco-card eco-card-go">
           <div class="eco-mockup-wrap eco-mockup-go">
             <div class="eco-mockup-window">
@@ -1139,7 +1216,7 @@
           </button>
         </div>
 
-        <!-- Card 6: Kotlin Package -->
+        <!-- Row 3 (Item 3): Kotlin Package -->
         <div class="eco-card eco-card-kotlin">
           <div class="eco-mockup-wrap eco-mockup-kotlin">
             <div class="eco-mockup-window">
@@ -1197,6 +1274,7 @@
             <li><a href="#install">Quickstart</a></li>
             <li><a href="/docs/algorithms/overview">Algorithm reference</a></li>
             <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
+            <li><a href="https://github.com/rajveer43/veloxquant-swift" target="_blank" rel="noopener">Swift Package</a></li>
             <li><a href="https://pkg.go.dev/github.com/rajveer43/veloxquant-go" target="_blank" rel="noopener">Go SDK</a></li>
             <li><a href="https://www.npmjs.com/package/@veloxquant/sdk" target="_blank" rel="noopener">NPM SDK</a></li>
             <li><a href="https://crates.io/search?q=veloxquant" target="_blank" rel="noopener">Rust SDK</a></li>
