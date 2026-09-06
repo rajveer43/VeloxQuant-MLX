@@ -10,6 +10,7 @@
 </p>
 
 <p>
+  <a href="https://veloxquant-mlx.netlify.app/"><img src="https://img.shields.io/badge/website-veloxquant--mlx.netlify.app-0078d4?style=flat-square&logo=readthedocs&logoColor=white" alt="Website"/></a>
   <a href="https://pypi.org/project/VeloxQuant-MLX/"><img src="https://img.shields.io/pypi/v/VeloxQuant-MLX?style=flat-square&logo=pypi&logoColor=white&color=0078d4" alt="PyPI"/></a>
   <a href="https://pypi.org/project/VeloxQuant-MLX/"><img src="https://img.shields.io/pypi/dm/VeloxQuant-MLX?style=flat-square&logo=pypi&logoColor=white&color=0078d4" alt="PyPI downloads"/></a>
   <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/release.yml?branch=master&style=flat-square&label=build&logo=github" alt="Release build status"/></a>
@@ -28,7 +29,9 @@
 <!-- Text links rather than a third badge row. Governance, Security and Support
      are one section away (see Table of contents) so they aren't repeated here. -->
 <p>
-  <a href="https://veloxquant-mlx.netlify.app/">Docs</a> ·
+  <b><a href="https://veloxquant-mlx.netlify.app/">veloxquant-mlx.netlify.app</a></b> —
+  <a href="https://veloxquant-mlx.netlify.app/docs/getting-started/quickstart">Quickstart</a> ·
+  <a href="https://veloxquant-mlx.netlify.app/docs/algorithms/overview">All 43 methods</a> ·
   <a href="https://veloxquant-mlx.netlify.app/playground.html">Playground</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
