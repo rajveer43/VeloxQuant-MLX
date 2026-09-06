@@ -949,6 +949,7 @@ class KVCacheBuilder:
             a plain fp16 KVCache so the list length always matches the layers.
             """
             return _native[i] if i < len(_native) else _PlainKVCache()
+
         # VLM wrappers (Qwen2-VL) have model.args.text_config only;
         # real attention config lives in model.language_model.args
         args = getattr(model, "args", None)

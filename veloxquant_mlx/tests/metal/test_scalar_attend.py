@@ -914,9 +914,7 @@ def test_auto_nsg_default_matches_explicit_nsg_output():
     chosen = _auto_nsg(D, H_q // H_kv, B * H_kv * 1)
     auto = np.array(scalar_fused_decode_attend(*args, g, scale, nsg=None))
     pinned = np.array(scalar_fused_decode_attend(*args, g, scale, nsg=chosen))
-    assert np.array_equal(auto, pinned), (
-        f"nsg=None must be bit-identical to nsg={chosen}"
-    )
+    assert np.array_equal(auto, pinned), f"nsg=None must be bit-identical to nsg={chosen}"
 
 
 def test_scalar_attend_batched_threadgroup_memory_budget_unaffected_by_nl():
