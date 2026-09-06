@@ -75,6 +75,7 @@ methodology: [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md).
 [CLI](#cli) ·
 [Development](#development) ·
 [Governance](#project--governance) ·
+[Ecosystem](#ecosystem) ·
 [Docs](#documentation--blog-posts) ·
 [Support](#support)
 
@@ -303,6 +304,32 @@ Deep-dive writeups live in [`blogs/`](blogs/) and are published on the docs site
 [Metal kernels](https://veloxquant-mlx.netlify.app/docs/blog/metal-kernels) ·
 [results](https://veloxquant-mlx.netlify.app/docs/blog/results) ·
 [TensorOps research](https://veloxquant-mlx.netlify.app/docs/blog/tensorops-research)
+
+---
+
+## Ecosystem
+
+This repo is the Python engine. Client SDKs in other languages talk to a running
+`veloxquant serve` instance (hardware detection, KV-cache estimation, and
+OpenAI-compatible local inference), so you can drive it from whatever stack you
+already have.
+
+| Language | Package | Install | Source |
+|---|---|---|---|
+| **TypeScript / JS** | [`@veloxquant/sdk`](https://www.npmjs.com/package/@veloxquant/sdk) | `npm i @veloxquant/sdk` | [veloxquant-sdk](https://github.com/rajveer43/veloxquant-sdk) |
+| **Rust** | [`veloxquant`](https://crates.io/crates/veloxquant) | `cargo add veloxquant` | [veloxquant-rs](https://github.com/rajveer43/veloxquant-rs) |
+| **Go** | [`veloxquant-go`](https://pkg.go.dev/github.com/rajveer43/veloxquant-go) | `go get github.com/rajveer43/veloxquant-go` | [veloxquant-go](https://github.com/rajveer43/veloxquant-go) |
+| **Kotlin / JVM** | [JitPack](https://jitpack.io/#rajveer43/veloxquant-kotlin) | `com.github.rajveer43:veloxquant-kotlin` | [veloxquant-kotlin](https://github.com/rajveer43/veloxquant-kotlin) |
+| **Swift** | [SPM](https://github.com/rajveer43/veloxquant-swift) | `.package(url: "...veloxquant-swift", from: "0.1.0-alpha")` | [veloxquant-swift](https://github.com/rajveer43/veloxquant-swift) |
+
+Also in the ecosystem:
+
+- **[VS Code extension](https://marketplace.visualstudio.com/items?itemName=veloxquant-mlx.veloxquant-vscode)** — compression-setting recommendations and the compression lab, without leaving the editor. [Source](https://github.com/rajveer43/veloxquant-vscode)
+- **VeloxQuant Studio** — native macOS control app, currently in private beta. [Request access](https://github.com/rajveer43/VeloxQuant-MLX/issues/new?title=Beta%20access%20request%3A%20VeloxQuant%20Studio&body=Mac%20model%20%2F%20chip%3A%0AmacOS%20version%3A%0AModels%20you%20run%20locally%3A%0A) (the Studio repo is private during the beta).
+
+> The Rust crate ships as `veloxquant` plus focused sub-crates (`veloxquant-core`,
+> `-memory`, `-system`, `-runtime`, `-openai`, `-monitor`) if you want a narrower
+> dependency. Kotlin and Swift are at `0.1.0-alpha`.
 
 ---
 
