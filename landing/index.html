@@ -33,7 +33,7 @@
   <meta name="twitter:image:alt" content="VeloxQuant-MLX Metal kernel benchmark summary: compression ratio and speedup charts" />
 
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="assets/styles.css?v=20260906e" />
+  <link rel="stylesheet" href="assets/styles.css?v=20260906g" />
 
   <script type="application/ld+json">
   {
@@ -964,7 +964,7 @@
       <div class="ecosystem-header text-center">
         <div class="pill-badge mb-3">EVERYWHERE YOU BUILD</div>
         <h2 class="ecosystem-title">Run VeloxQuant across your entire workflow</h2>
-        <p class="ecosystem-sub">Official NPM, Rust, and Go SDK runtimes and a VS Code extension available today — with native macOS app and Kotlin package coming soon.</p>
+        <p class="ecosystem-sub">Official Swift, NPM, Rust, and Go SDK runtimes and a VS Code extension available today — with native macOS app and Kotlin package coming soon.</p>
       </div>
 
       <div class="ecosystem-grid">
@@ -1061,7 +1061,38 @@
           </a>
         </div>
 
-        <!-- Card 3: NPM SDK & CLI -->
+        <!-- Card 3: Swift Package -->
+        <div class="eco-card eco-card-swift">
+          <div class="eco-mockup-wrap eco-mockup-swift">
+            <div class="eco-mockup-window">
+              <div class="eco-window-header">
+                <div class="eco-traffic-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="eco-window-title">Package.swift · SwiftPM</div>
+              </div>
+              <div class="eco-window-body eco-body-code">
+                <div class="eco-cli-line eco-cli-comment">// Package.swift</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">dependencies</span>: [</div>
+                <div class="eco-cli-row">&nbsp;&nbsp;.<span class="eco-code-fn">package</span>(url: <span class="eco-code-str">"https://github.com/rajveer43/veloxquant-swift"</span>, exact: <span class="eco-code-str">"0.1.0-alpha"</span>)</div>
+                <div class="eco-cli-row">]</div>
+                <div class="eco-code-divider"></div>
+                <div class="eco-cli-line eco-cli-comment">// iOS 16+, macOS 13+, visionOS</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">import</span> <span class="eco-code-fn">VeloxQuantCore</span></div>
+                <div class="eco-cli-line eco-cli-success">// Native Swift KV-cache compression</div>
+              </div>
+            </div>
+          </div>
+          <div class="eco-card-meta">
+            <h3 class="eco-card-title">Swift Package (SPM)</h3>
+          </div>
+          <a href="https://github.com/rajveer43/veloxquant-swift" target="_blank" rel="noopener" class="eco-action-btn">
+            View on GitHub
+            <svg class="eco-btn-arr" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+          </a>
+        </div>
+
+        <!-- Card 4: NPM SDK & CLI -->
         <div class="eco-card">
           <div class="eco-mockup-wrap eco-mockup-npm">
             <div class="eco-mockup-window">
@@ -1093,7 +1124,7 @@
           </button>
         </div>
 
-        <!-- Card 4: Rust SDK -->
+        <!-- Card 5: Rust SDK -->
         <div class="eco-card eco-card-rust">
           <div class="eco-mockup-wrap eco-mockup-rust">
             <div class="eco-mockup-window">
@@ -1124,7 +1155,7 @@
           </button>
         </div>
 
-        <!-- Card 5: Go SDK -->
+        <!-- Card 6: Go SDK -->
         <div class="eco-card eco-card-go">
           <div class="eco-mockup-wrap eco-mockup-go">
             <div class="eco-mockup-window">
@@ -1155,7 +1186,7 @@
           </button>
         </div>
 
-        <!-- Card 6: Kotlin Package -->
+        <!-- Card 7: Kotlin Package -->
         <div class="eco-card eco-card-kotlin">
           <div class="eco-mockup-wrap eco-mockup-kotlin">
             <div class="eco-mockup-window">
@@ -1213,6 +1244,7 @@
             <li><a href="#install">Quickstart</a></li>
             <li><a href="/docs/algorithms/overview">Algorithm reference</a></li>
             <li><a href="https://github.com/rajveer43/VeloxQuant-MLX" target="_blank" rel="noopener">GitHub</a></li>
+            <li><a href="https://github.com/rajveer43/veloxquant-swift" target="_blank" rel="noopener">Swift Package</a></li>
             <li><a href="https://pkg.go.dev/github.com/rajveer43/veloxquant-go" target="_blank" rel="noopener">Go SDK</a></li>
             <li><a href="https://www.npmjs.com/package/@veloxquant/sdk" target="_blank" rel="noopener">NPM SDK</a></li>
             <li><a href="https://crates.io/search?q=veloxquant" target="_blank" rel="noopener">Rust SDK</a></li>

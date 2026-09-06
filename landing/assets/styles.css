@@ -289,8 +289,8 @@ body {
   .announcement-banner-link { font-size: 0.8rem; }
 }
 
-/* ===== NAV ===== */
-nav {
+/* ===== LEGACY NAV (scoped to prevent bleeding into .studio-nav / .bench-nav) ===== */
+nav.legacy-nav {
   position: sticky;
   top: 0;
   z-index: 100;
@@ -2357,7 +2357,7 @@ footer {
    unwrapped, overflowing nav row — widened so every phone in the test
    matrix, including 375/414px, gets the hamburger menu). ---- */
 @media (max-width: 640px) {
-  nav { padding: 0 1rem; }
+  nav.legacy-nav { padding: 0 1rem; }
   .nav-toggle { display: flex; }
   .nav-links {
     display: none;
@@ -4462,6 +4462,16 @@ span.anchor-alias {
 }
 
 .studio-nav {
+  position: static;
+  top: auto;
+  z-index: auto;
+  height: auto;
+  min-height: 0;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  padding: 0 !important;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -8115,23 +8125,20 @@ details.faq-accordion-item[open] .faq-chevron {
   max-width: 600px;
 }
 
-/* 6-Column Responsive Ecosystem Grid (3 on Row 1, 3 on Row 2) */
+/* Responsive Ecosystem Grid (3 columns on desktop) */
 .ecosystem-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 1.5rem;
 }
 
 .eco-card {
-  grid-column: span 2;
+  grid-column: auto;
 }
 
 @media (max-width: 1024px) {
   .ecosystem-grid {
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  }
-  .eco-card {
-    grid-column: auto;
   }
 }
 
@@ -8181,6 +8188,15 @@ details.faq-accordion-item[open] .faq-chevron {
 
 .eco-mockup-vscode {
   background: radial-gradient(130% 120% at 50% 25%, rgba(139, 92, 246, 0.42) 0%, rgba(76, 29, 149, 0.65) 45%, #110e1c 100%);
+}
+
+.eco-mockup-swift {
+  background: radial-gradient(130% 120% at 50% 25%, rgba(240, 81, 56, 0.45) 0%, rgba(255, 107, 43, 0.35) 48%, #18090a 100%);
+}
+
+.eco-card-swift:hover {
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), 0 0 24px rgba(240, 81, 56, 0.25);
+  border-color: rgba(240, 81, 56, 0.4);
 }
 
 .eco-mockup-npm {
