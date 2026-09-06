@@ -236,6 +236,22 @@
         </a>
       </div>
 
+      <!-- Product Hunt badge: the same post_id URL serves a static
+           "find us on" image pre-launch and swaps itself to the live
+           vote-count badge on launch day, so this needs no edit at
+           launch. Two <img>s (light/dark) toggled by CSS on
+           [data-theme], matching the .theme-icon-sun/-moon pattern
+           in styles.css, since PH has no single theme-auto asset. -->
+      <a href="https://www.producthunt.com/products/veloxquant-mlx?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-veloxquant-mlx"
+         target="_blank" rel="noopener noreferrer" class="hero-ph-badge">
+        <img class="hero-ph-badge-light" width="250" height="54"
+             src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1242023&amp;theme=light&amp;t=1788692878618"
+             alt="VeloxQuant-MLX - Run bigger local LLMs in less memory, on Mac | Product Hunt" />
+        <img class="hero-ph-badge-dark" width="250" height="54"
+             src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1242023&amp;theme=dark&amp;t=1788692878618"
+             alt="VeloxQuant-MLX - Run bigger local LLMs in less memory, on Mac | Product Hunt" />
+      </a>
+
       <p class="hero-studio-status">
         <span class="hero-studio-badge">Coming soon</span>
         <span>VeloxQuant&nbsp;Studio, the native Mac app, is in private beta.</span>

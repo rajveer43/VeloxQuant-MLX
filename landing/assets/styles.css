@@ -4262,6 +4262,29 @@ span.anchor-alias {
   color: #ffffff;
 }
 
+/* Product Hunt badge. Two <img> variants (Product Hunt has no
+   theme-auto asset); only one is ever visible, toggled by the same
+   [data-theme] rule the rest of the page uses for light/dark — see the
+   light override below. Dark is the fallback (unset data-theme, or OS
+   dark) to match the hero's default dark background. */
+.hero-ph-badge {
+  display: inline-block;
+  margin: 0 0 1.1rem;
+  line-height: 0;
+}
+
+.hero-ph-badge-light { display: none; }
+.hero-ph-badge-dark { display: inline-block; }
+
+/* First-time visitor, no saved choice yet: data-theme is unset and only
+   the OS preference applies (see the pre-paint script in index.html),
+   so the attribute selector below won't fire — this media query is the
+   only thing that will. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .hero-ph-badge-light { display: inline-block; }
+  :root:not([data-theme="dark"]) .hero-ph-badge-dark { display: none; }
+}
+
 /* Studio "coming soon" line. Sits between the CTAs and the license meta,
    deliberately quieter than a button so it reads as status, not an action —
    the app has no download until beta validation completes. */
@@ -5827,6 +5850,8 @@ details.faq-accordion-item[open] .faq-chevron {
   color: #475569;
   text-shadow: none;
 }
+:root[data-theme="light"] .hero-ph-badge-light { display: inline-block; }
+:root[data-theme="light"] .hero-ph-badge-dark { display: none; }
 :root[data-theme="light"] .hero-studio-badge {
   border-color: rgba(0, 0, 0, 0.16);
   background: rgba(0, 0, 0, 0.05);
