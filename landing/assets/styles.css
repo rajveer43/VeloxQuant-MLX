@@ -8136,6 +8136,130 @@ details.faq-accordion-item[open] .faq-chevron {
   grid-column: auto;
 }
 
+/* Featured Top Banner: macOS App spans entire single top row */
+.eco-card-featured {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 2.25rem;
+  align-items: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #0c0d15 0%, #12121e 100%);
+  border: 1px solid rgba(99, 102, 241, 0.28);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6), 0 0 32px rgba(99, 102, 241, 0.12);
+}
+
+.eco-card-featured:hover {
+  transform: translateY(-4px);
+  border-color: rgba(99, 102, 241, 0.5);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.7), 0 0 44px rgba(99, 102, 241, 0.22);
+}
+
+.eco-card-featured .eco-mockup-wrap {
+  height: 310px;
+}
+
+.eco-featured-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 6px 14px 6px 4px;
+}
+
+.eco-featured-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.eco-chip-purple {
+  color: #c084fc;
+  background: rgba(192, 132, 252, 0.12);
+  border: 1px solid rgba(192, 132, 252, 0.28);
+}
+
+.eco-featured-title {
+  font-family: var(--font-sans);
+  font-size: clamp(1.4rem, 2.2vw, 1.85rem);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.eco-featured-desc {
+  font-size: 0.92rem;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.eco-featured-perks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 0 4px;
+}
+
+.eco-perk-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.eco-macos-stats-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 7px 12px;
+  margin: 4px 0 2px;
+}
+
+.eco-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.eco-stat-lbl {
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.eco-stat-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+.eco-featured-btn {
+  width: fit-content;
+  padding: 0 24px;
+  margin-top: 2px;
+}
+
+@media (max-width: 960px) {
+  .eco-card-featured {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    padding: 16px;
+  }
+  .eco-featured-btn {
+    width: 100%;
+  }
+}
+
 @media (max-width: 1024px) {
   .ecosystem-grid {
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -8675,6 +8799,29 @@ details.faq-accordion-item[open] .faq-chevron {
 :root[data-theme="light"] .eco-card:hover {
   border-color: rgba(0, 0, 0, 0.16);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] .eco-card-featured {
+  background: linear-gradient(135deg, #ffffff 0%, #f8faff 100%);
+  border-color: rgba(99, 102, 241, 0.25);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="light"] .eco-featured-title {
+  color: #09090b;
+}
+
+:root[data-theme="light"] .eco-featured-desc {
+  color: #475569;
+}
+
+:root[data-theme="light"] .eco-perk-item {
+  color: #1e293b;
+}
+
+:root[data-theme="light"] .eco-macos-stats-row {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.08);
 }
 
 :root[data-theme="light"] .eco-card-title {

@@ -33,7 +33,7 @@
   <meta name="twitter:image:alt" content="VeloxQuant-MLX Metal kernel benchmark summary: compression ratio and speedup charts" />
 
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="assets/styles.css?v=20260906g" />
+  <link rel="stylesheet" href="assets/styles.css?v=20260906h" />
 
   <script type="application/ld+json">
   {
@@ -968,19 +968,19 @@
       </div>
 
       <div class="ecosystem-grid">
-        <!-- Card 1: macOS App -->
-        <div class="eco-card">
+        <!-- Row 1: Flagship macOS App Banner (Spans Full Width) -->
+        <div class="eco-card eco-card-featured eco-card-macos">
           <div class="eco-mockup-wrap eco-mockup-macos">
             <div class="eco-mockup-window">
               <div class="eco-window-header">
                 <div class="eco-traffic-dots">
                   <span></span><span></span><span></span>
                 </div>
-                <div class="eco-window-title">VeloxQuant Studio</div>
+                <div class="eco-window-title">VeloxQuant Studio · Apple Silicon Menu Bar &amp; Desktop App</div>
               </div>
               <div class="eco-window-body eco-body-macos">
                 <div class="eco-macos-meta">
-                  <span class="eco-chip">Apple Silicon M-Series</span>
+                  <span class="eco-chip">Apple Silicon M-Series · Metal 3</span>
                   <div class="eco-model-title">Falcon3-7B · 128k context</div>
                 </div>
                 <div class="eco-mem-meter">
@@ -990,6 +990,20 @@
                   </div>
                   <div class="eco-mem-track">
                     <div class="eco-mem-fill" style="width: 14%;"></div>
+                  </div>
+                </div>
+                <div class="eco-macos-stats-row">
+                  <div class="eco-stat-item">
+                    <span class="eco-stat-lbl">Context Headroom</span>
+                    <span class="eco-stat-val">+128k ctx</span>
+                  </div>
+                  <div class="eco-stat-item">
+                    <span class="eco-stat-lbl">Metal Speedup</span>
+                    <span class="eco-stat-val">14.7×</span>
+                  </div>
+                  <div class="eco-stat-item">
+                    <span class="eco-stat-lbl">Attention Quality</span>
+                    <span class="eco-stat-val">Bit-Exact</span>
                   </div>
                 </div>
                 <div class="eco-input-pill">
@@ -1002,17 +1016,33 @@
               </div>
             </div>
           </div>
-          <div class="eco-card-meta">
-            <h3 class="eco-card-title">VeloxQuant for macOS <span class="eco-soon-tag">Coming soon</span></h3>
+          <div class="eco-featured-content">
+            <div class="eco-featured-badge-row">
+              <span class="eco-chip eco-chip-purple">Native Mac Application</span>
+              <span class="eco-soon-tag">Private beta</span>
+            </div>
+            <h3 class="eco-featured-title">VeloxQuant Studio for macOS</h3>
+            <p class="eco-featured-desc">
+              The flagship visual workspace engineered exclusively for macOS and Apple Silicon. Monitor local model memory in real-time, benchmark hand-written Metal kernels, and reclaim up to 98% of KV-cache footprint in a single click — without touching a terminal.
+            </p>
+            <div class="eco-featured-perks">
+              <div class="eco-perk-item">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#38bdf8" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                <span>Zero-latency Metal RVQ &amp; KIVI kernels</span>
+              </div>
+              <div class="eco-perk-item">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#34d399" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <span>100% on-device inference with zero telemetry</span>
+              </div>
+            </div>
+            <a href="https://github.com/rajveer43/VeloxQuant-Studio/issues/new?title=Beta%20access%20request%3A%20VeloxQuant%20Studio&body=Mac%20model%20%2F%20chip%3A%0AmacOS%20version%3A%0AModels%20you%20run%20locally%3A%0A" target="_blank" rel="noopener" class="eco-action-btn eco-featured-btn">
+              Join the Private Beta
+              <svg class="eco-btn-arr" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+            </a>
           </div>
-          <!-- Not a download: the app is gated on beta validation, so this
-               routes to tester signup instead of a release asset. -->
-          <a href="https://github.com/rajveer43/VeloxQuant-Studio/issues/new?title=Beta%20access%20request%3A%20VeloxQuant%20Studio&body=Mac%20model%20%2F%20chip%3A%0AmacOS%20version%3A%0AModels%20you%20run%20locally%3A%0A" target="_blank" rel="noopener" class="eco-action-btn eco-action-btn-soon">
-            Join the beta
-          </a>
         </div>
 
-        <!-- Card 2: VS Code Extension -->
+        <!-- Row 2 (Item 1): VS Code Extension -->
         <div class="eco-card">
           <div class="eco-mockup-wrap eco-mockup-vscode">
             <div class="eco-mockup-window">
@@ -1061,7 +1091,7 @@
           </a>
         </div>
 
-        <!-- Card 3: Swift Package -->
+        <!-- Row 2 (Item 2): Swift Package -->
         <div class="eco-card eco-card-swift">
           <div class="eco-mockup-wrap eco-mockup-swift">
             <div class="eco-mockup-window">
@@ -1092,7 +1122,7 @@
           </a>
         </div>
 
-        <!-- Card 4: NPM SDK & CLI -->
+        <!-- Row 2 (Item 3): NPM SDK & CLI -->
         <div class="eco-card">
           <div class="eco-mockup-wrap eco-mockup-npm">
             <div class="eco-mockup-window">
@@ -1124,7 +1154,7 @@
           </button>
         </div>
 
-        <!-- Card 5: Rust SDK -->
+        <!-- Row 3 (Item 1): Rust SDK -->
         <div class="eco-card eco-card-rust">
           <div class="eco-mockup-wrap eco-mockup-rust">
             <div class="eco-mockup-window">
@@ -1155,7 +1185,7 @@
           </button>
         </div>
 
-        <!-- Card 6: Go SDK -->
+        <!-- Row 3 (Item 2): Go SDK -->
         <div class="eco-card eco-card-go">
           <div class="eco-mockup-wrap eco-mockup-go">
             <div class="eco-mockup-window">
@@ -1186,7 +1216,7 @@
           </button>
         </div>
 
-        <!-- Card 7: Kotlin Package -->
+        <!-- Row 3 (Item 3): Kotlin Package -->
         <div class="eco-card eco-card-kotlin">
           <div class="eco-mockup-wrap eco-mockup-kotlin">
             <div class="eco-mockup-window">
