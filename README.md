@@ -322,10 +322,9 @@ already have.
 | **Kotlin / JVM** | [JitPack](https://jitpack.io/#rajveer43/veloxquant-kotlin) | `com.github.rajveer43:veloxquant-kotlin` | [veloxquant-kotlin](https://github.com/rajveer43/veloxquant-kotlin) |
 | **Swift** | [SPM](https://github.com/rajveer43/veloxquant-swift) | `.package(url: "...veloxquant-swift", from: "0.1.0-alpha")` | [veloxquant-swift](https://github.com/rajveer43/veloxquant-swift) |
 
-Also in the ecosystem:
-
-- **[VS Code extension](https://marketplace.visualstudio.com/items?itemName=veloxquant-mlx.veloxquant-vscode)** — compression-setting recommendations and the compression lab, without leaving the editor. [Source](https://github.com/rajveer43/veloxquant-vscode)
-- **VeloxQuant Studio** — native macOS control app, currently in private beta. [Request access](https://github.com/rajveer43/VeloxQuant-MLX/issues/new?title=Beta%20access%20request%3A%20VeloxQuant%20Studio&body=Mac%20model%20%2F%20chip%3A%0AmacOS%20version%3A%0AModels%20you%20run%20locally%3A%0A) (the Studio repo is private during the beta).
+There's also a **[VS Code extension](https://marketplace.visualstudio.com/items?itemName=veloxquant-mlx.veloxquant-vscode)**
+([source](https://github.com/rajveer43/veloxquant-vscode)) that recommends compression
+settings and opens the compression lab without leaving the editor.
 
 > The Rust crate ships as `veloxquant` plus focused sub-crates (`veloxquant-core`,
 > `-memory`, `-system`, `-runtime`, `-openai`, `-monitor`) if you want a narrower
