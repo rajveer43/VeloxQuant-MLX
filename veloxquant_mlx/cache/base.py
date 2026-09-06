@@ -916,8 +916,39 @@ class KVCacheBuilder:
 
         from mlx_lm.models.cache import KVCache as _FallbackCache
 
+        _PlainKVCache = _FallbackCache
+
         # Qwen2-VL exposes model.layers directly; text models expose model.model.layers
         layers = getattr(model, "layers", None) or model.model.layers
+
+        # Hybrid-attention models (Qwen3.6 / qwen3_5, qwen3_next, Mamba hybrids)
+        # interleave real attention layers with linear/recurrent ones, and the
+        # non-attention slots need the model's OWN cache type -- qwen3_5's
+        # GatedDeltaNet does `cache[0] = ...`, which a plain mlx_lm KVCache does
+        # not support (no __setitem__), and its TextModel calls make_mask() on
+        # the slot at ssm_idx, which a KVCache answers with the wrong signature.
+        # Both raise TypeError deep inside generation rather than here. Ask the
+        # model what it wants for each slot and reuse that for anything we do
+        # not quantize; fall back to a plain KVCache only when the model offers
+        # no usable make_cache.
+        _native: list = []
+        _native_fn = getattr(model, "make_cache", None)
+        if callable(_native_fn):
+            try:
+                built = _native_fn()
+                if isinstance(built, list) and len(built) == len(layers):
+                    _native = built
+            except Exception:  # pragma: no cover - model-specific constructors
+                _native = []
+
+        def _fallback_for(i: int):
+            """Cache for a layer VeloxQuant does not quantize.
+
+            Returns the model's native cache object for slot ``i`` when one is
+            available (preserving recurrent/linear-attention state types), else
+            a plain fp16 KVCache so the list length always matches the layers.
+            """
+            return _native[i] if i < len(_native) else _PlainKVCache()
         # VLM wrappers (Qwen2-VL) have model.args.text_config only;
         # real attention config lives in model.language_model.args
         args = getattr(model, "args", None)
@@ -979,7 +1010,7 @@ class KVCacheBuilder:
         for i, layer in enumerate(layers):
             attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
             if attn is None:
-                caches.append(_FallbackCache())
+                caches.append(_fallback_for(i))
                 continue
             hd = getattr(attn, "head_dim", None)
             if hd is None:
@@ -988,7 +1019,7 @@ class KVCacheBuilder:
                         args.hidden_size // args.num_attention_heads
                     )
             if hd is None:
-                caches.append(_FallbackCache())
+                caches.append(_fallback_for(i))
                 continue
             layer_b = b_spec[attn_idx] if is_per_layer else b_spec
             # Preserve every method-specific field (svdq_*, kitty_*, kvquant_*,
