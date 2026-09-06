@@ -432,6 +432,21 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.77.1 (2026-09-06)
+
+### Bug Fixes
+
+- **cache**: Preserve native cache types on hybrid-attention models
+  ([#319](https://github.com/rajveer43/VeloxQuant-MLX/pull/319),
+  [`cb1ec3c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cb1ec3c2437c6bec49236b700e7d9e40a2a2b769))
+
+### Documentation
+
+- **readme**: Add visitor counter badge
+  ([#319](https://github.com/rajveer43/VeloxQuant-MLX/pull/319),
+  [`cb1ec3c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cb1ec3c2437c6bec49236b700e7d9e40a2a2b769))
+
+
 ## v0.77.0 (2026-09-05)
 
 ### Bug Fixes
