@@ -5651,6 +5651,59 @@ details.faq-accordion-item[open] .faq-chevron {
   font-family: var(--font-mono, monospace);
 }
 
+.footer-social-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+
+.footer-social-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #a1a1aa;
+  text-decoration: none;
+  transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+
+.footer-social-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
+}
+
+.footer-social-btn.footer-social-x:hover {
+  color: #ffffff;
+  border-color: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
+}
+
+.footer-social-btn.footer-social-linkedin:hover {
+  color: #70b5f9;
+  border-color: #0a66c2;
+  box-shadow: 0 0 12px rgba(10, 102, 194, 0.35);
+}
+
+.footer-social-btn.footer-social-discord:hover {
+  color: #cdd4fc;
+  border-color: #5865f2;
+  box-shadow: 0 0 12px rgba(88, 101, 242, 0.35);
+}
+
+.footer-social-btn.footer-social-github:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.3);
+}
+
 .footer-col-title {
   font-size: 0.74rem;
   font-weight: 700;
@@ -5822,6 +5875,16 @@ details.faq-accordion-item[open] .faq-chevron {
   background: rgba(0, 0, 0, 0.04);
   border-color: rgba(0, 0, 0, 0.12);
   color: #09090b;
+}
+:root[data-theme="light"] .footer-social-btn {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #52525b;
+}
+:root[data-theme="light"] .footer-social-btn:hover {
+  color: #09090b;
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.2);
 }
 :root[data-theme="light"] #hero.hero-redesign {
   background: #f8fafc;

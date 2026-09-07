@@ -153,6 +153,18 @@ const config: Config = {
               href: 'https://github.com/rajveer43/veloxquant-mlx',
             },
             {
+              label: 'X (Twitter)',
+              href: 'https://x.com/Rajveer13Rathod',
+            },
+            {
+              label: 'LinkedIn',
+              href: 'https://www.linkedin.com/company/veloxquant',
+            },
+            {
+              label: 'Discord',
+              href: 'https://discord.gg/KDGQ9j6C7',
+            },
+            {
               label: 'Issues',
               href: 'https://github.com/rajveer43/veloxquant-mlx/issues',
             },
