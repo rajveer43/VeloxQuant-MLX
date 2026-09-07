@@ -432,6 +432,75 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.78.0 (2026-09-07)
+
+### Bug Fixes
+
+- **landing**: Bump asset cache-busting versions for the model search release
+  ([#324](https://github.com/rajveer43/VeloxQuant-MLX/pull/324),
+  [`94b2e5c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/94b2e5ccbd344ed87f91ba6b21a96afec1b3f0bd))
+
+### Chores
+
+- **landing**: Add intent-search keywords and WebSite schema, additive only
+  ([#326](https://github.com/rajveer43/VeloxQuant-MLX/pull/326),
+  [`73c7461`](https://github.com/rajveer43/VeloxQuant-MLX/commit/73c746196dfb7a2d93094fb0c775ec496f4338c5))
+
+- **seo**: Add PyPI keywords/classifiers and docs-site page metadata, additive only
+  ([#327](https://github.com/rajveer43/VeloxQuant-MLX/pull/327),
+  [`d60f532`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d60f532eea5fad4669ebc26df1e84919b8ef32f9))
+
+### Code Style
+
+- Apply ruff format to base.py and test_scalar_attend.py
+  ([#321](https://github.com/rajveer43/VeloxQuant-MLX/pull/321),
+  [`2ae0f95`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2ae0f9551f87f0980c23ddfb54db8f8cea6b8190))
+
+### Documentation
+
+- **readme**: Add Ecosystem section linking the sibling SDKs
+  ([#320](https://github.com/rajveer43/VeloxQuant-MLX/pull/320),
+  [`e27408c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e27408c151d20a63aa27a3d049c2ab69c5df5b52))
+
+- **readme**: Drop VeloxQuant Studio from the Ecosystem section
+  ([#320](https://github.com/rajveer43/VeloxQuant-MLX/pull/320),
+  [`e27408c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e27408c151d20a63aa27a3d049c2ab69c5df5b52))
+
+- **readme**: Simplify — 557 -> 364 lines
+  ([#320](https://github.com/rajveer43/VeloxQuant-MLX/pull/320),
+  [`e27408c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e27408c151d20a63aa27a3d049c2ab69c5df5b52))
+
+- **readme**: Surface the website with a badge and a named link row
+  ([#320](https://github.com/rajveer43/VeloxQuant-MLX/pull/320),
+  [`e27408c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e27408c151d20a63aa27a3d049c2ab69c5df5b52))
+
+### Features
+
+- **landing**: Add Product Hunt badge to the hero
+  ([#322](https://github.com/rajveer43/VeloxQuant-MLX/pull/322),
+  [`8e23343`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8e23343fe525d8c36ba9327d4cbe5a729cc2b39b))
+
+- **landing**: Add Swift SDK ecosystem card, fix nav CSS scoping
+  ([#322](https://github.com/rajveer43/VeloxQuant-MLX/pull/322),
+  [`8e23343`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8e23343fe525d8c36ba9327d4cbe5a729cc2b39b))
+
+- **landing**: Promote Kotlin package to a live JitPack link, redesign ecosystem banner
+  ([#326](https://github.com/rajveer43/VeloxQuant-MLX/pull/326),
+  [`73c7461`](https://github.com/rajveer43/VeloxQuant-MLX/commit/73c746196dfb7a2d93094fb0c775ec496f4338c5))
+
+- **landing**: Promote Kotlin package to a live JitPack link, redesign ecosystem banner
+  ([#325](https://github.com/rajveer43/VeloxQuant-MLX/pull/325),
+  [`c73604d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c73604d40dff54c541e5372a8bc9af820a90a37d))
+
+- **landing**: Promote macOS app to a full-width featured banner
+  ([#322](https://github.com/rajveer43/VeloxQuant-MLX/pull/322),
+  [`8e23343`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8e23343fe525d8c36ba9327d4cbe5a729cc2b39b))
+
+- **playground**: Search real Hugging Face models for the memory calculator
+  ([#323](https://github.com/rajveer43/VeloxQuant-MLX/pull/323),
+  [`f82f47c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f82f47c7f4e9dd056213632c8832c58842ef0d91))
+
+
 ## v0.77.1 (2026-09-06)
 
 ### Bug Fixes
