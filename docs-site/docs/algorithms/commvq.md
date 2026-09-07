@@ -3,6 +3,8 @@ id: commvq
 title: CommVQ
 sidebar_label: CommVQ
 slug: /algorithms/commvq
+description: CommVQ is a RoPE-commutative residual vector quantizer that encodes rotated keys so rotary position embeddings can be applied to quantized codes at decode time without dequantizing first, via a fused Metal kernel.
+keywords: [commvq, rope-commutative quantization, residual vq, rotary position embeddings, metal kernel, quantizer-level api]
 ---
 
 # CommVQ

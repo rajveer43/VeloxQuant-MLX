@@ -3,6 +3,8 @@ id: allocators
 title: Allocators API
 sidebar_label: Allocators
 slug: /api/allocators
+description: Python API reference for veloxquant_mlx.allocators, covering RateQuant's calibrate_layer_sensitivities/fit_distortion_curve/allocate_bits_ratequant functions and VecInfer's calibrate_smooth_factors/train_codebook and related utility functions for bit-allocation calibration.
+keywords: [allocators, RateQuant, VecInfer, "API reference", "python api", bit allocation, calibration, codebook]
 ---
 
 # Allocators API

@@ -3,6 +3,8 @@ id: mixed-precision
 title: Mixed-Precision Guide
 sidebar_label: Mixed Precision
 slug: /guides/mixed-precision
+description: Explains how to assign different bit-widths per transformer layer using RateQuant automatic allocation or manual bit_width_inlier lists, plus outlier handling and the adaptive codebook variant.
+keywords: [mixed precision, ratequant, bit_width_inlier, per-layer quantization, kvcachebuilder, keynormobserver]
 ---
 
 # Mixed-Precision Guide

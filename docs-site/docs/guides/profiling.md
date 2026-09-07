@@ -3,6 +3,8 @@ id: profiling
 title: KV-Cache Profiling
 sidebar_label: Profiling
 slug: /guides/profiling
+description: Shows how to use KVCacheProfiler and MLXCacheProfiler to measure per-layer quantize/dequantize latency and memory, both for standalone caches and for real mlx_lm.generate() runs via the veloxquant profile CLI.
+keywords: [profiling, kvcacheprofiler, mlxcacheprofiler, per-layer latency, veloxquant profile cli]
 ---
 
 # KV-Cache Profiling

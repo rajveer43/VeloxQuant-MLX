@@ -3,6 +3,8 @@ id: observers
 title: Observers
 sidebar_label: Observers
 slug: /guides/observers
+description: Documents the four QuantizationObserver classes — DistortionObserver, LatencyObserver, MemoryObserver, and KeyNormObserver — and how to feed them QuantizationEvent objects to collect runtime metrics.
+keywords: [observers, quantizationobserver, distortionobserver, latencyobserver, memoryobserver, keynormobserver]
 ---
 
 # Observers

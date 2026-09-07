@@ -3,6 +3,8 @@ id: observers-api
 title: Observers API
 sidebar_label: Observers
 slug: /api/observers-api
+description: Python API reference for veloxquant_mlx.observers, covering the QuantizationEvent dataclass and the DistortionObserver, LatencyObserver, MemoryObserver, and KeyNormObserver classes for tracking quantization distortion, timing, memory, and key-norm statistics.
+keywords: [observers, DistortionObserver, QuantizationEvent, "API reference", "python api", LatencyObserver, MemoryObserver, KeyNormObserver]
 ---
 
 # Observers API

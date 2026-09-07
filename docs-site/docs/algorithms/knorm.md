@@ -1,3 +1,10 @@
+---
+id: knorm
+title: "L2Norm — Intrinsic Key-Norm Eviction"
+description: Evicts KV cache tokens by ranking the intrinsic L2 norm of each key (keeping lowest-norm ones per the EMNLP 2024 finding), needing no per-token attention scoring and measured 100-800x faster than H2O-adapted eviction while landing between Q-Filters' calibrated and fallback arms on real-model perplexity.
+keywords: [knorm, l2norm, kv cache, token eviction, key norm, calibration-free]
+---
+
 # L2Norm — Intrinsic Key-Norm Eviction
 
 **Method id:** `knorm` · **New in 0.29.0** · *Inspired by* ["A Simple and

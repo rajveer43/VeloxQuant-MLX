@@ -1,3 +1,10 @@
+---
+id: tova
+title: TOVA — Current-Step Attention-Weight Eviction (Memoryless)
+description: TOVA-adapted evicts, at every step, the non-sink token with the lowest current-step (memoryless) key-as-query attention weight, keeping the cache bounded to tova_budget — measured compression equals seq_len / budget exactly (e.g. 2048 tokens at budget 64 -> 32x).
+keywords: [tova, kv cache, token eviction, attention, memoryless scoring]
+---
+
 # TOVA — Current-Step Attention-Weight Eviction (Memoryless)
 
 **Method id:** `tova` · **New in 0.22.0** · *Inspired by* [TOVA / "Transformers are Multi-State RNNs" (arXiv:2401.06104)](https://arxiv.org/abs/2401.06104)

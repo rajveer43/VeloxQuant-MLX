@@ -3,6 +3,8 @@ id: qjl
 title: QJL
 sidebar_label: QJL
 slug: /algorithms/qjl
+description: QJL uses a random Johnson-Lindenstrauss projection to reduce each key to a 1-bit sign sketch, requiring no calibration or codebook while giving a theoretical bound on inner product error.
+keywords: [qjl, johnson-lindenstrauss, 1-bit quantization, random projection, sign sketch, kv cache]
 ---
 
 # QJL

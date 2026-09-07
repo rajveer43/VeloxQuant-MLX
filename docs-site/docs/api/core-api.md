@@ -3,6 +3,8 @@ id: core-api
 title: Core Abstractions API
 sidebar_label: Core
 slug: /api/core-api
+description: Python API reference for veloxquant_mlx.core, covering the Quantizer, KVCache, Preconditioner, and Codebook abstract base classes, the EncodedVector/QuantizationContext/TransformResult context types, the QuantizerRegistry, and the precompute/benchmark CLI commands.
+keywords: [core abstractions, Quantizer, KVCache, "API reference", "python api", QuantizerRegistry, EncodedVector, CLI]
 ---
 
 # Core Abstractions API

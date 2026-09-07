@@ -3,6 +3,8 @@ id: changelog
 title: Changelog
 sidebar_label: Changelog
 slug: /changelog
+description: Version history and release notes for VeloxQuant-MLX, documenting new quantization/eviction methods, Metal kernel additions, bug fixes, and honest-scope caveats for each release.
+keywords: [changelog, release notes, version history, veloxquant-mlx]
 ---
 
 # Changelog

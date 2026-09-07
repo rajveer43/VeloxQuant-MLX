@@ -3,6 +3,8 @@ id: rabitq
 title: RaBitQ
 sidebar_label: RaBitQ
 slug: /algorithms/rabitq
+description: RaBitQ compresses keys to 1 bit via a randomised Hadamard transform, IVF clustering, and binary sign packing, scoring attention with Metal-accelerated Hamming distance for roughly 6x total KV compression.
+keywords: [rabitq, 1-bit quantization, hadamard transform, ivf clustering, hamming distance, binary quantization]
 ---
 
 # RaBitQ

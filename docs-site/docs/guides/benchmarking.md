@@ -3,6 +3,8 @@ id: benchmarking
 title: Benchmarking Guide
 sidebar_label: Benchmarking
 slug: /guides/benchmarking
+description: Documents the veloxquant_mlx benchmark CLI and walks through worked, reproducible examples for VecInfer, KIVI, and KVSink protection, including how to interpret compression ratio and throughput results.
+keywords: [benchmarking, vecinfer, kivi, kvsink, compression ratio, throughput]
 ---
 
 # Benchmarking Guide

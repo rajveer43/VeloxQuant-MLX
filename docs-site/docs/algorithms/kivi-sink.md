@@ -1,3 +1,10 @@
+---
+id: kivi-sink
+title: KVSink-Adapted Sink Protection
+description: Layers dynamic top-k key-L2-norm sink detection on top of KIVI group quantization, keeping high-norm sink tokens in fp16 and excluding them from group min/max calibration so they don't inflate quantization scale for neighboring tokens.
+keywords: [kivi_sink, kv cache, quantization, attention sinks, key norm, kivi]
+---
+
 # KVSink-Adapted Sink Protection
 
 **Method id:** `kivi_sink` · **New in 0.9.0** · *Inspired by* [KVSink (Su & Yuan,

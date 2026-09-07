@@ -1,3 +1,10 @@
+---
+id: minicache
+title: "MiniCache — Cross-Layer Depth-Dimension Merging"
+description: Merges adjacent middle-to-deep layer pairs by SLERP-interpolating their KV directions into one shared unit vector while each layer keeps its own per-token magnitude, retaining high-divergence token pairs unmerged (measured 0.0002 MSE at 0.9995 layer-direction cosine, 0% retention).
+keywords: [minicache, kv cache, cross-layer compression, slerp, direction merging, token retention]
+---
+
 # MiniCache — Cross-Layer Depth-Dimension Merging
 
 **Method id:** `minicache` · **New in 0.16.0** · *Inspired by* [MiniCache (arXiv:2405.14366,

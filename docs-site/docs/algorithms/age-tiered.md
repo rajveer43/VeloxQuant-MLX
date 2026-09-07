@@ -3,6 +3,8 @@ id: age-tiered
 title: AgeTieredKV
 sidebar_label: AgeTieredKV
 slug: /algorithms/age-tiered
+description: AgeTieredKV assigns tokens to 8/4/2-bit precision tiers purely by age, and this page's own measured benchmark finds the default split loses badly to a uniform INT4 baseline due to a steep 2-bit error cliff.
+keywords: [age-tiered kv cache, position-based quantization, multi-tier precision, perplexity benchmark, uniform int4 comparison, kivi]
 ---
 
 # AgeTieredKV

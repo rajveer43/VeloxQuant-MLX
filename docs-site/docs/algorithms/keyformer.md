@@ -1,3 +1,10 @@
+---
+id: keyformer
+title: Keyformer — Gumbel-Regularized Heavy-Hitter Eviction
+description: Adds a frozen, annealed Gumbel-noise regularizer to H2O-style cumulative attention-mass eviction so borderline "late riser" tokens survive, measured to rescue survival rate from 0.00 to ~0.75 in synthetic late-riser geometry and giving a ~2-3x end-to-end Metal-kernel speedup.
+keywords: [keyformer, kv cache, token eviction, gumbel noise, h2o, rope remap]
+---
+
 # Keyformer — Gumbel-Regularized Heavy-Hitter Eviction
 
 **Method id:** `keyformer` · **New in 0.32.0**, annealing/RoPE-remap/Metal

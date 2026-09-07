@@ -1,3 +1,10 @@
+---
+id: svdq
+title: SVDq — Sub-2-bit Key Cache via Offline SVD
+description: Projects keys into a low-rank latent space via per-sequence truncated SVD, then applies the paper's fixed 8-group mixed-precision bit schedule to reach an effective key bit-width of about 1.0-1.25 bits/element while leaving values at fp16.
+keywords: [svdq, kv cache, quantization, low-rank projection, svd, mixed precision]
+---
+
 # SVDq — Sub-2-bit Key Cache via Offline SVD
 
 **Method id:** `svdq` · **New in 0.10.0** · *Inspired by* [SVDq (arXiv:2502.15304,

@@ -3,6 +3,8 @@ id: quickstart
 title: 5-Minute Quickstart
 sidebar_label: Quickstart
 slug: /getting-started/quickstart
+description: Walks through loading a model with mlx_lm, attaching a TurboQuant RVQ compressed KV cache via patch_model_kv_cache, generating text, and inspecting memory savings with MemoryObserver.
+keywords: [quickstart, mlx_lm, turboquant_rvq, patch_model_kv_cache, memoryobserver, kvcacheconfig]
 ---
 
 # 5-Minute Quickstart

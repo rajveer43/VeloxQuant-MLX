@@ -3,6 +3,8 @@ id: mac-recommender
 title: Mac Method Recommender
 sidebar_label: Mac Recommender
 slug: /guides/mac-recommender
+description: Explains the veloxquant recommend CLI, which picks a compression method based on your Mac's chip, unified RAM, model size class, and goal, and clarifies key accounting versus resident memory savings.
+keywords: [mac recommender, veloxquant recommend, chip ram heuristics, model size class, key accounting]
 ---
 
 # Mac chip + RAM method recommender

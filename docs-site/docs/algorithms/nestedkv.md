@@ -3,6 +3,8 @@ id: nestedkv
 title: NestedKV-adapted
 sidebar_label: NestedKV-adapted
 slug: /algorithms/nestedkv
+description: NestedKV-adapted evicts prefill tokens using three parallel key-only memory scales (stable, episodic, current) combined via a head-adaptive blend and surprise-gated route, with an unbounded decode-phase cache and no verified peer-reviewed venue.
+keywords: [nestedkv, prefill eviction, multi-scale ensembling, head-adaptive blend, surprise gate, unpublished preprint]
 ---
 
 # NestedKV-adapted — Multi-Scale Ensembled Prefill Eviction

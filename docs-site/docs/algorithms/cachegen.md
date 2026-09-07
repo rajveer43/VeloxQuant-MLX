@@ -1,3 +1,10 @@
+---
+id: cachegen
+title: CacheGen — Entropy-Coded KV Cache Storage
+description: CacheGen encodes the reversible per-token delta of group-quantized KV codes and models its Shannon entropy (per channel, capped at fixed-width size) to estimate a lossless storage-size reduction of roughly 17% on token-correlated 3-bit data and 0% on iid data, without changing the reconstructed fp16 values.
+keywords: [cachegen, kv cache, entropy coding, storage compression, quantization, token delta]
+---
+
 # CacheGen — Entropy-Coded KV Cache Storage
 
 **Method id:** `cachegen` · **New in 0.16.0**

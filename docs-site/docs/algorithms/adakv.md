@@ -3,6 +3,8 @@ id: adakv
 title: AdaKV-proxy — Per-Head Adaptive Bit Allocation
 sidebar_label: AdaKV-proxy
 slug: /algorithms/adakv
+description: AdaKV-proxy is a calibration-free per-head adaptive bit allocator layered on KIVI-style key quantization, ranking heads by norm-variance or attention-entropy importance to hit a target average bit-width while keeping values at fp16.
+keywords: [adakv, per-head adaptive bits, kivi, norm variance, attention entropy, key-only quantization]
 ---
 
 # AdaKV-proxy — Per-Head Adaptive Bit Allocation

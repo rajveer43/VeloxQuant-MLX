@@ -1,3 +1,10 @@
+---
+id: cam
+title: CaM — Cache Merging (Merge Evicted Tokens Instead of Dropping)
+description: Extends H2O-style eviction with a Bernoulli-gated cosine-similarity blend that merges each evicted loser into its most similar surviving token instead of discarding it, cutting output-perturbation cosine distance from 0.955 to 0.708 at 16x compression on the synthetic benchmark.
+keywords: [cam, kv cache, token eviction, cache merging, h2o, cosine similarity]
+---
+
 # CaM — Cache Merging (Merge Evicted Tokens Instead of Dropping)
 
 **Method id:** `cam` · **New in 0.26.0**

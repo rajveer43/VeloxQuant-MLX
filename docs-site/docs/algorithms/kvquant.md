@@ -3,6 +3,8 @@ id: kvquant
 title: KVQuant-NUQ — Non-Uniform Quantization + Outlier Isolation
 sidebar_label: KVQuant-NUQ
 slug: /algorithms/kvquant
+description: KVQuant-NUQ fits non-uniform Lloyd-Max quantization levels to the actual key/value distribution, isolates magnitude outliers to an fp16 side-channel, and keeps attention-sink tokens exact, reaching about 3.5 effective bits at long context.
+keywords: [kvquant, non-uniform quantization, lloyd-max, outlier isolation, attention sink, dense-and-sparse]
 ---
 
 # KVQuant-NUQ — Non-Uniform Quantization + Outlier Isolation

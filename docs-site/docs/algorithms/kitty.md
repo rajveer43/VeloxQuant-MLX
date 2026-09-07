@@ -3,6 +3,8 @@ id: kitty
 title: Kitty — Dynamic Channel-wise Mixed-Precision
 sidebar_label: Kitty
 slug: /algorithms/kitty
+description: Kitty ranks key channels by online variance each step and routes the top fraction to 4-bit while the rest get 2-bit, reaching an average of 2.5 bits per element for a 6.4x key bandwidth reduction with no calibration.
+keywords: [kitty, channel-wise mixed precision, dynamic bit allocation, variance ranking, online calibration, kv cache keys]
 ---
 
 # Kitty — Dynamic Channel-wise Mixed-Precision Keys

@@ -3,6 +3,8 @@ id: profiling-api
 title: Profiling API
 sidebar_label: Profiling
 slug: /api/profiling-api
+description: Python API reference for veloxquant_mlx.profiling, covering KVCacheProfiler and MLXCacheProfiler wrapper classes, the LayerProfile and ProfileReport dataclasses, and the profile_layers/format_profile_table helper functions for kernel-level timing and memory profiling.
+keywords: [profiling, KVCacheProfiler, MLXCacheProfiler, "API reference", "python api", LayerProfile, ProfileReport, benchmarking]
 ---
 
 # Profiling API

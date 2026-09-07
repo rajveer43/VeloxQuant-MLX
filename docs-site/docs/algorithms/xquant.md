@@ -3,6 +3,8 @@ id: xquant
 title: XQuant — Cross-Layer KV Cache Reuse
 sidebar_label: XQuant
 slug: /algorithms/xquant
+description: XQuant is VeloxQuant-MLX's first cross-layer method, pairing transformer layers into anchor/reuse groups so reuse layers share the anchor's quantized codes and store only their own scale/zero, reaching roughly 1.0-1.4 effective key bits.
+keywords: [xquant, cross-layer kv cache reuse, anchor reuse groups, layer coordinator, effective bit-width, sub-2-bit keys]
 ---
 
 # XQuant — Cross-Layer KV Cache Reuse

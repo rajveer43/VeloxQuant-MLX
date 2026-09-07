@@ -3,6 +3,8 @@ id: gear
 title: GEAR
 sidebar_label: GEAR
 slug: /algorithms/gear
+description: GEAR is an add-on that recovers accuracy lost to ultra-low-bit KV cache quantization by decomposing the quantization error into a low-rank correction plus a sparse outlier term, winning big at prefill but losing to fp16 at single-token decode.
+keywords: [gear, kv cache compression, low-rank residual, sparse outliers, error feedback, kcvt]
 ---
 
 # GEAR

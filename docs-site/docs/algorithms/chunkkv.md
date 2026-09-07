@@ -1,3 +1,10 @@
+---
+id: chunkkv
+title: "ChunkKV — Chunk-Level (Semantic-Block) Eviction"
+description: Evicts KV cache in contiguous chunks of chunk_size tokens (mean-pooled attention-mass or key-norm score) instead of single tokens, keeping semantic spans intact, and supports layer-wise index reuse that cut eviction pass time ~12.7x (5.9s to 0.46s) at chunk_size=16 in the offline harness.
+keywords: [chunkkv, kv cache, token eviction, chunk eviction, attention, index reuse]
+---
+
 # ChunkKV — Chunk-Level (Semantic-Block) Eviction
 
 **Method id:** `chunkkv` · **New in 0.25.0** (index reuse in a later release) · *Inspired by* [ChunkKV (arXiv:2502.00299)](https://arxiv.org/abs/2502.00299)

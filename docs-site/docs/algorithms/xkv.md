@@ -1,3 +1,10 @@
+---
+id: xkv
+title: xKV — Cross-Layer Shared-Subspace Compression
+description: xKV jointly factorizes a fixed-size contiguous group of layers' key matrices into one shared low-rank SVD basis via a fan-in/fan-out coordinator, landing within ~1% of independent per-layer SVD's reconstruction MSE while cutting bytes 8-20% (0.80-0.92x) depending on group size.
+keywords: [xkv, kv cache, cross-layer compression, low-rank svd, shared subspace, quantization]
+---
+
 # xKV — Cross-Layer Shared-Subspace Compression
 
 **Method id:** `xkv` · **New in 0.27.0** · *Inspired by* [xKV (arXiv:2503.18893,
