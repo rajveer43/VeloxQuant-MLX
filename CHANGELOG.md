@@ -432,6 +432,21 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.79.0 (2026-09-07)
+
+### Bug Fixes
+
+- **landing**: Bump styles.css cache-busting version for social-link styles
+  ([#328](https://github.com/rajveer43/VeloxQuant-MLX/pull/328),
+  [`756446d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/756446dc0f56e168aa665938b1f3c827782c7899))
+
+### Features
+
+- **landing**: Add X, LinkedIn, and Discord social links to footer
+  ([#328](https://github.com/rajveer43/VeloxQuant-MLX/pull/328),
+  [`756446d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/756446dc0f56e168aa665938b1f3c827782c7899))
+
+
 ## v0.78.0 (2026-09-07)
 
 ### Bug Fixes
