@@ -3,6 +3,8 @@ id: mlx-lm-integration
 title: mlx_lm Integration
 sidebar_label: mlx_lm Integration
 slug: /guides/mlx-lm-integration
+description: Covers the integration patterns for wiring VeloxQuant-MLX into mlx_lm and mlx-vlm — KVCacheBuilder, the monkey-patch, fused SDPA, and PrefixCache for multi-call prefix reuse across turns.
+keywords: [mlx_lm integration, kvcachebuilder, patch_model_kv_cache, fused sdpa, prefixcache, mlx-vlm]
 ---
 
 # mlx_lm Integration

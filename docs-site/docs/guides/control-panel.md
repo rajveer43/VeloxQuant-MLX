@@ -3,6 +3,8 @@ id: control-panel
 title: Control Panel
 sidebar_label: Control Panel
 slug: /guides/control-panel
+description: Explains how to run VeloxQuant's local Gradio-style control panel and OpenAI-compatible server to pick a model and compression method and chat with it, with no Python code required.
+keywords: [control panel, veloxquant panel, openai-compatible server, veloxquant serve, local web ui]
 ---
 
 # Control Panel

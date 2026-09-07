@@ -3,6 +3,8 @@ id: cacheroute-api
 title: CacheRoute API
 sidebar_label: CacheRoute
 slug: /api/cacheroute-api
+description: Python API reference for veloxquant_mlx.routing, covering the SessionRate and RoutingTable dataclasses plus the CacheRoutePlanner and RateEstimator classes for rate-aware session admission and shard placement over a shared KV block pool.
+keywords: [cacheroute, routing, CacheRoutePlanner, "API reference", "python api", RoutingTable, RateEstimator, shard placement]
 ---
 
 # CacheRoute API

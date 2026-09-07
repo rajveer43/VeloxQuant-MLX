@@ -1,3 +1,10 @@
+---
+id: skvq
+title: SKVQ — Sliding-Window Reorder + Clip Quantization
+description: SKVQ reorders head-dim channels by dynamic range and applies a per-group grid-searched clip factor before low-bit group quantization, behind an fp16 sliding window and sink filter, cutting key MSE a further 16.9% via reordering plus 14.0% via clip search on heterogeneous-channel data (versus a measured -0.3%, i.e. no effect, on homogeneous channels).
+keywords: [skvq, kv cache, quantization, channel reordering, clipped quantization, sliding window]
+---
+
 # SKVQ — Sliding-Window Reorder + Clip Quantization
 
 **Method id:** `skvq` · **New in 0.30.0** · *Inspired by* ["SKVQ:

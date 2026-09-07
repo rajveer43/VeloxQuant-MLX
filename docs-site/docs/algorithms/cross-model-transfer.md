@@ -3,6 +3,8 @@ id: cross-model-transfer
 title: Cross-Model KV Transfer
 sidebar_label: Cross-Model KV Transfer
 slug: /algorithms/cross-model-transfer
+description: Cross-Model KV Transfer fits an offline per-head ridge regression to map a source model's prefilled KV cache to a target model's, letting model swaps reuse prefill compute instead of shrinking cache bytes, with a fused Metal RoPE-recode kernel.
+keywords: [cross-model kv transfer, ridge regression mapping, prefill reuse, rope recode, model cascading, not a compression method]
 ---
 
 # Cross-Model KV Transfer — Reuse One Model's Prefill in Another

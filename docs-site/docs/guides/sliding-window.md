@@ -3,6 +3,8 @@ id: sliding-window
 title: Sliding Window Cache
 sidebar_label: Sliding Window
 slug: /guides/sliding-window
+description: Documents SlidingWindowKVCache, a FIFO token-eviction wrapper that bounds memory for long generations by rebuilding the inner compressed cache once the window fills.
+keywords: [sliding window, fifo eviction, slidingwindowkvcache, bounded memory, per-token cache]
 ---
 
 # Sliding Window Cache

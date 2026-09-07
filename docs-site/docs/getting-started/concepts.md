@@ -3,6 +3,8 @@ id: concepts
 title: Core Concepts
 sidebar_label: Core Concepts
 slug: /getting-started/concepts
+description: Introduces the foundational ideas behind VeloxQuant-MLX, including what a KV cache is, why and how it is compressed, vector and residual quantization, calibration, and Metal GPU kernels.
+keywords: [kv cache, vector quantization, residual vq, rate-distortion, calibration, metal kernels]
 ---
 
 # Core Concepts

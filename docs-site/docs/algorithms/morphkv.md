@@ -1,3 +1,10 @@
+---
+id: morphkv
+title: MorphKV — Recent-Window Correlation Retention
+description: MorphKV evicts the token with lowest mean proxy-attention correlation to a sliding morphkv_window of recent keys rather than cumulative history, recovering axis-B relevance at ~0.39-0.74 with window 8/32 versus ~0.15-0.37 at window=1 (which collapses bit-for-bit onto TOVA) in a synthetic topic-shift benchmark where H2O-style cumulative scoring retains ~0%.
+keywords: [morphkv, kv cache, token eviction, sliding window, attention proxy, early-token bias]
+---
+
 # MorphKV — Recent-Window Correlation Retention
 
 **Method id:** `morphkv` · **New in 0.33.0** · *Inspired by* ["Dialogue Without

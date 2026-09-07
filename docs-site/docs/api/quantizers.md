@@ -3,6 +3,8 @@ id: quantizers
 title: Quantizers API
 sidebar_label: Quantizers
 slug: /api/quantizers
+description: Python API reference for veloxquant_mlx.quantizers, covering the QuantizerFactory and quantizer implementations including TurboQuantRVQ, TurboQuantMSE, TurboQuantProd, RaBitQQuantizer, CommVQQuantizer, PolarQuantizer, QJLQuantizer, and CompositeQuantizer.
+keywords: [quantizers, TurboQuantRVQ, QuantizerFactory, "API reference", "python api", RaBitQ, CommVQ, PolarQuant, QJL]
 ---
 
 # Quantizers API

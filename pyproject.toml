@@ -22,6 +22,10 @@ keywords = [
     "turboquant", "ratequant", "rvq", "polarquant", "qjl",
     "rabitq", "commvq", "spectralquant", "vecinfer",
     "inference", "compression", "mixed-precision",
+    "kv cache compression", "llm memory reduction", "apple silicon llm",
+    "long context inference", "attention cache quantization",
+    "metal kernels", "on-device llm", "local llm inference",
+    "context length extension", "mlx-lm", "token eviction",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -37,6 +41,8 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: System :: Hardware",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Libraries",
+    "Natural Language :: English",
 ]
 dependencies = [
     "mlx>=0.18",

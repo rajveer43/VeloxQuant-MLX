@@ -1,3 +1,10 @@
+---
+id: squeeze
+title: "SqueezeAttention — 2D Layer×Token Data-Driven Budget Eviction"
+description: Reallocates a fixed total KV cache budget across layers using each layer's measured key-set cosine-similarity concentration (broad layers get more, concentrated layers get less), reducing to plain uniform H2O eviction exactly when squeeze_strength=0.
+keywords: [squeeze, squeezeattention, kv cache, token eviction, per-layer budget, attention concentration]
+---
+
 # SqueezeAttention — 2D Layer×Token Data-Driven Budget Eviction
 
 **Method id:** `squeeze` · **New in 0.24.0** · *Inspired by* [SqueezeAttention (arXiv:2404.04793)](https://arxiv.org/abs/2404.04793)

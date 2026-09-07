@@ -1,3 +1,10 @@
+---
+id: streaming_llm
+title: "StreamingLLM — Sink + Recency-Window Token Eviction"
+description: Keeps only the first stream_n_sink attention-sink tokens plus a sliding FIFO window of stream_window_size recent tokens, giving constant decode-phase memory (stream_n_sink + window_size) with no scoring or calibration.
+keywords: [streaming_llm, kv cache, attention sinks, sliding window, constant memory, positional eviction]
+---
+
 # StreamingLLM — Sink + Recency-Window Token Eviction
 
 **Method id:** `streaming_llm` · **New in 0.20.0** · *Inspired by* [StreamingLLM (arXiv:2309.17453)](https://arxiv.org/abs/2309.17453)

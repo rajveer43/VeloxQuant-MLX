@@ -1,3 +1,10 @@
+---
+id: pyramidkv
+title: PyramidKV — Layer-Adaptive Budget Attention-Mass Eviction
+description: Reuses H2O's cumulative attention-mass eviction but replaces its uniform per-layer budget with a linear pyramid schedule (large budget in early layers, small in deep layers) that keeps the same mean budget as a uniform baseline, collapsing to exact H2O when beta=1.0.
+keywords: [pyramidkv, kv cache, token eviction, per-layer budget, h2o, attention mass]
+---
+
 # PyramidKV — Layer-Adaptive Budget Attention-Mass Eviction
 
 **Method id:** `pyramidkv` · **New in 0.23.0** · *Inspired by* [PyramidKV (arXiv:2406.02069)](https://arxiv.org/abs/2406.02069)

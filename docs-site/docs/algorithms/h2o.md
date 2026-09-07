@@ -1,3 +1,10 @@
+---
+id: h2o
+title: H2O — Cumulative Attention-Mass Heavy-Hitter Oracle Eviction
+description: H2O-adapted evicts the lowest running-sum-of-attention-mass token at every step once over h2o_budget, using h2o_grace (default 16) and h2o_decay (default 0.98) fixes so the kept window advances past the prompt (e.g. tracking [297..415] instead of freezing at [4..74] after 400 decode steps) while a deeper eviction-quality gap at tight budgets remains open.
+keywords: [h2o, kv cache, token eviction, cumulative attention, heavy hitters, decay]
+---
+
 # H2O — Cumulative Attention-Mass Heavy-Hitter Oracle Eviction
 
 **Method id:** `h2o` · **New in 0.21.0** · *Inspired by* [H2O (arXiv:2306.14048)](https://arxiv.org/abs/2306.14048)

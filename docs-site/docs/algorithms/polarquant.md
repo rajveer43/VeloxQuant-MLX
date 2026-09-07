@@ -3,6 +3,8 @@ id: polarquant
 title: PolarQuant
 sidebar_label: PolarQuant
 slug: /algorithms/polarquant
+description: PolarQuant rotates key vectors and recursively decomposes them into quantized angles rather than Cartesian coordinates, making it best suited to models whose keys form spherical or normalized geometric clusters.
+keywords: [polarquant, polar coordinate decomposition, spherical key geometry, angle quantization, recursive codebook, normalized attention]
 ---
 
 # PolarQuant

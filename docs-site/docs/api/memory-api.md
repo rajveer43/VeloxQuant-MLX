@@ -3,6 +3,8 @@ id: memory-api
 title: Memory (Block Pool) API
 sidebar_label: Memory / Block Pool
 slug: /api/memory-api
+description: Python API reference for veloxquant_mlx.memory, covering PoolConfig, BlockPoolAllocator, Block, AllocationStats, MLXBlockStorage, PooledKVCache, and PoolBackedKVCache for fixed-size block allocation and reuse in KV-cache storage.
+keywords: [memory, block pool, BlockPoolAllocator, "API reference", "python api", PooledKVCache, PoolBackedKVCache, PoolConfig]
 ---
 
 # Memory (Block Pool) API

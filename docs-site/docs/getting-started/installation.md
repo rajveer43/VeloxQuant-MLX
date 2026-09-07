@@ -3,6 +3,8 @@ id: installation
 title: Installation
 sidebar_label: Installation
 slug: /getting-started/installation
+description: Covers installing VeloxQuant-MLX from PyPI or source on Apple Silicon, verifying Metal GPU availability, installing mlx_lm, and troubleshooting common setup errors.
+keywords: [installation, pip install, apple silicon, metal gpu, troubleshooting, mlx_lm]
 ---
 
 # Installation

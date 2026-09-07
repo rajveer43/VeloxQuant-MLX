@@ -3,6 +3,8 @@ id: amc
 title: AMC-adapted
 sidebar_label: AMC-adapted
 slug: /algorithms/amc
+description: AMC-adapted scores every token by activation saliency and routes it into a High/Mid/Low tier that jointly sets rank and bit-width, never evicting tokens, and its own benchmark shows an 8x MSE win on sparse-outlier data but 100x worse on uniform-magnitude data.
+keywords: [amc, saliency-driven quantization, tiered rank precision, activation magnitude scoring, zero-eviction, calibration required]
 ---
 
 # AMC-adapted — Saliency-Driven Tiered Rank + Precision

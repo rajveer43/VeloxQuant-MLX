@@ -3,6 +3,8 @@ id: ratequant
 title: RateQuant
 sidebar_label: RateQuant
 slug: /algorithms/ratequant
+description: RateQuant is a per-layer bit allocator, not a cache method itself, that probes layer sensitivity and applies reverse-waterfilling to produce a per-layer bit-width list fed into TurboQuant RVQ or another underlying quantizer.
+keywords: [ratequant, mixed-precision allocation, reverse-waterfilling, layer sensitivity calibration, bit allocation, per-layer quantization]
 ---
 
 # RateQuant

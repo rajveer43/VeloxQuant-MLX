@@ -3,6 +3,8 @@ id: cache
 title: Cache API
 sidebar_label: Cache
 slug: /api/cache
+description: Python API reference for veloxquant_mlx.cache, covering the KVCacheConfig dataclass, the KVCacheFactory and KVCacheBuilder classes, and the concrete cache implementations TurboQuantRVQKVCache, VecInferKVCache, SpectralQuantKVCache, PolarQuantKVCache, QJLKVCache, and SlidingWindowKVCache.
+keywords: [cache, KVCacheConfig, KVCacheBuilder, "API reference", "python api", KVCacheFactory, KV cache]
 ---
 
 # Cache API

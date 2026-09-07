@@ -1,3 +1,10 @@
+---
+id: palu
+title: "PALU — True Low-Rank Latent Storage for Keys *and* Values"
+description: Stores both keys and values as group-head low-rank latent codes ([S, r]) with mixed-bit quantization (top-25% channels at 4-bit, rest at 2-bit), reaching roughly 0.6 effective bits/element versus SVDq's keys-only compression.
+keywords: [palu, kv cache, low-rank, svd, quantization, group-head decomposition]
+---
+
 # PALU — True Low-Rank Latent Storage for Keys *and* Values
 
 **Method id:** `palu` · **New in 0.15.0** · *Inspired by* [PALU (arXiv:2407.21118,

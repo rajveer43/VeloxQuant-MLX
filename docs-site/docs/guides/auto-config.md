@@ -3,6 +3,8 @@ id: auto-config
 title: Hardware-Aware Auto Configuration
 sidebar_label: Auto Config
 slug: /guides/auto-config
+description: Explains select_kv_cache_config(), which automatically picks a compression method, bit-width, and group size from a WorkloadSpec and detected hardware memory pressure, with a matching CLI.
+keywords: [auto config, select_kv_cache_config, workloadspec, hardware detection, veloxquant auto-config]
 ---
 
 # Hardware-aware auto configuration

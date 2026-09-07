@@ -3,6 +3,8 @@ id: overview
 title: Algorithm Overview
 sidebar_label: Overview
 slug: /algorithms/overview
+description: An index and decision guide comparing all 43 KV cache compression algorithms in VeloxQuant-MLX by bit-width, calibration cost, compression ratio, and best-fit workload.
+keywords: [algorithm overview, kv cache compression, comparison table, decision guide, method selection]
 ---
 
 # Algorithm Overview

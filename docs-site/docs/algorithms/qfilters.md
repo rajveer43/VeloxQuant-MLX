@@ -1,3 +1,10 @@
+---
+id: qfilters
+title: Q-Filters — Query-Agnostic Projection Eviction
+description: Q-Filters ranks cached keys by their projection onto a frozen per-head direction (calibrated from query-SVD, or a key-SVD fallback) with no per-step attention computation, closing 52%/37%/20% of the fp16 perplexity gap at budgets 256/128/64 on Llama-3.2-1B when calibrated, versus a sign-ambiguous fallback that performs near chance.
+keywords: [qfilters, kv cache, token eviction, projection scorer, query-svd, calibration]
+---
+
 # Q-Filters — Query-Agnostic Projection Eviction
 
 **Method id:** `qfilters` · **New in 0.31.0** · *Inspired by* ["Q-Filters:

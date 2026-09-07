@@ -3,6 +3,8 @@ id: exceptions-api
 title: Exceptions API
 sidebar_label: Exceptions
 slug: /api/exceptions-api
+description: Python API reference for veloxquant_mlx.core.exceptions, covering the VeloxQuantError base class and its subclasses such as ArtifactNotFoundError, CodebookDimensionMismatch, QuantizerConfigError, MetalUnavailableError, BlockPoolExhaustedError, and OwnerAlreadyActiveError.
+keywords: [exceptions, VeloxQuantError, "API reference", "python api", error handling, BlockPoolExhaustedError]
 ---
 
 # Exceptions API

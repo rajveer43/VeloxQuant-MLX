@@ -1,3 +1,10 @@
+---
+id: kvzip
+title: KVzip — Context-Reconstruction Reliance Retention
+description: Ranks stored tokens by query-agnostic reconstruction reliance (max proxy-attention received from a reconstruction probe over the live keep set, recomputed each step) rather than a query, retaining reconstruction-critical tokens at ~0.609 vs ~0.017 for cumulative H2O scoring on the synthetic reconstruction-shift benchmark.
+keywords: [kvzip, kv cache, token eviction, query-agnostic, reconstruction probe, h2o]
+---
+
 # KVzip — Context-Reconstruction Reliance Retention
 
 **Method id:** `kvzip` · **New in 0.34.0** · *Inspired by* ["KVzip:

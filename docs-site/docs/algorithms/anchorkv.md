@@ -3,6 +3,8 @@ id: anchorkv
 title: AnchorKV-adapted
 sidebar_label: AnchorKV-adapted
 slug: /algorithms/anchorkv
+description: AnchorKV-adapted compresses without eviction by representing most tokens as a nearest-anchor index plus one coefficient, spending a theta-controlled residual byte budget on the highest attention-impact tokens, with no verified peer-reviewed venue.
+keywords: [anchorkv, anchor-residual compression, no eviction, anchorkv_theta, residual budget, unpublished preprint]
 ---
 
 # AnchorKV-adapted — Anchor-Residual Compression, No Eviction

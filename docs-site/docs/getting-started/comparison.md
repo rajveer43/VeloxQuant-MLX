@@ -3,6 +3,8 @@ id: comparison
 title: VeloxQuant-MLX vs. llama.cpp vs. plain mlx_lm
 sidebar_label: vs. llama.cpp / mlx_lm
 slug: /getting-started/comparison
+description: Compares VeloxQuant-MLX's 42 selectable KV cache compression methods against llama.cpp's fixed q4_0/q8_0 quantization and plain mlx_lm's uncompressed fp16 cache, with measured compression and speedup numbers.
+keywords: [llama.cpp comparison, mlx_lm, kv cache quantization, gguf, q4_0, compression benchmarks]
 ---
 
 # VeloxQuant-MLX vs. llama.cpp vs. plain mlx_lm

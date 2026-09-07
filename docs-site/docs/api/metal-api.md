@@ -3,6 +3,8 @@ id: metal-api
 title: Metal Kernels API
 sidebar_label: Metal Kernels
 slug: /api/metal-api
+description: Python API reference for veloxquant_mlx.metal, covering low-level Apple Silicon Metal kernels for VecInfer, RaBitQ, KIVI-style group-affine attention, CommVQ, cross-model RoPE recoding, scalar quantization, RVQ fusion, prefill attention, KV-cache eviction, fused SDPA, bit packing, and QJL.
+keywords: [metal kernels, Metal, "API reference", "python api", Apple Silicon, fused SDPA, GPU kernels]
 ---
 
 # Metal Kernels API

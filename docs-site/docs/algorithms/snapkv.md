@@ -1,3 +1,10 @@
+---
+id: snapkv
+title: SnapKV — Prefill Observation-Window Token Eviction
+description: SnapKV-adapted scores prefix tokens once at the end of prefill using the trailing snap_obs_window key rows as proxy queries, then permanently keeps only the top snap_budget positions (plus sinks) in fp16 while decode tokens are always appended, never evicted.
+keywords: [snapkv, kv cache, token eviction, prefill compression, attention proxy]
+---
+
 # SnapKV — Prefill Observation-Window Token Eviction
 
 **Method id:** `snapkv` · **New in 0.19.0** · *Inspired by* [SnapKV (arXiv:2404.14469)](https://arxiv.org/abs/2404.14469)

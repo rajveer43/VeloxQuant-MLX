@@ -3,6 +3,8 @@ id: vecinfer
 title: VecInfer
 sidebar_label: VecInfer
 slug: /algorithms/vecinfer
+description: VecInfer is VeloxQuant-MLX's highest-compression algorithm, combining smooth-scaled product vector quantization with a Walsh-Hadamard transform and Metal GPU kernels for nearest-centroid lookup.
+keywords: [vecinfer, product quantization, vector quantization, walsh-hadamard transform, metal kernels, smooth scaling]
 ---
 
 # VecInfer

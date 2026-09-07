@@ -3,6 +3,8 @@ id: cacheroute
 title: CacheRoute — Rate-Aware Session Admission and Placement
 sidebar_label: CacheRoute
 slug: /guides/cacheroute
+description: Explains CacheRoute, a rate-aware session admission and shard placement planner adapted from the CacheRoute paper for multi-tenant KV block pool serving in a single VeloxQuant-MLX process.
+keywords: [cacheroute, multi-tenant serving, session admission, shard placement, block pool allocator, routing table]
 ---
 
 # CacheRoute: rate-aware session admission and shard placement

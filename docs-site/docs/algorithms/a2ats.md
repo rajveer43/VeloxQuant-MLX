@@ -3,6 +3,8 @@ id: a2ats
 title: A2ATS-adapted
 sidebar_label: A2ATS-adapted
 slug: /algorithms/a2ats
+description: A2ATS-adapted quantizes every token via a calibrated codebook while applying windowed RoPE — exact positions for recent tokens, an approximate stand-in for older ones — trading accuracy on distant tokens (up to 8x worse) for a smaller theoretical footprint.
+keywords: [a2ats, windowed rope, query-aware vector quantization, codebook calibration, retrieval-based compression, acl 2025]
 ---
 
 # A2ATS-adapted

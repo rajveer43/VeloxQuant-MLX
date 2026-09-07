@@ -3,6 +3,8 @@ id: auto-config-api
 title: Auto Config API
 sidebar_label: Auto Config
 slug: /api/auto-config-api
+description: Python API reference for veloxquant_mlx.config, covering WorkloadSpec, HardwareInfo, detect_hardware_info, AutoConfigResult, and the select_kv_cache_config function that hardware-aware picks a KV-cache method, bit-width, and group size.
+keywords: [auto config, select_kv_cache_config, WorkloadSpec, "API reference", "python api", HardwareInfo, hardware-aware configuration]
 ---
 
 # Auto Config API

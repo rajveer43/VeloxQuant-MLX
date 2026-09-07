@@ -3,6 +3,8 @@ id: rvq
 title: TurboQuant RVQ
 sidebar_label: TurboQuant RVQ
 slug: /algorithms/rvq
+description: TurboQuant RVQ is VeloxQuant-MLX's default calibration-free method, using Hadamard rotation plus Gaussian and Laplacian residual codebooks to reach 7.5x key compression with measured 12.8% lower peak memory than fp16.
+keywords: [turboquant rvq, residual vector quantization, hadamard rotation, gaussian codebook, laplacian residual, kv cache compression]
 ---
 
 # TurboQuant RVQ

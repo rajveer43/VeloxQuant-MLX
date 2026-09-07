@@ -3,6 +3,8 @@ id: validation-report
 title: Validation Report
 sidebar_label: Validation Report
 slug: /guides/validation-report
+description: Defines the KV cache and quantization formulas precisely, and shows how to reproduce compression and throughput numbers honestly with scripts/validate_kv_memory.py on measured Apple Silicon results.
+keywords: [validation report, kv memory formula, compression claim, accounting bytes, validate_kv_memory]
 ---
 
 # Validation Report: KV Cache Quantization on Apple Silicon

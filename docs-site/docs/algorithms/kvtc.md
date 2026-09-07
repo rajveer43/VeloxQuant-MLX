@@ -3,6 +3,8 @@ id: kvtc
 title: KVTC-adapted
 sidebar_label: KVTC-adapted
 slug: /algorithms/kvtc
+description: KVTC-adapted compresses the KV cache using local PCA, a dynamic-programming-optimal per-component bit allocation that can zero out low-variance components, and a real order-0 Huffman entropy-coding stage on top of the quantized codes.
+keywords: [kvtc, dynamic programming, bit allocation, pca, entropy coding, huffman coding]
 ---
 
 # KVTC-adapted — Local PCA + DP-Optimal Bit Allocation + Entropy Coding

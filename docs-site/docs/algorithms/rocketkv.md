@@ -3,6 +3,8 @@ id: rocketkv
 title: RocketKV-adapted
 sidebar_label: RocketKV-adapted
 slug: /algorithms/rocketkv
+description: RocketKV-adapted runs a two-stage compression pipeline — coarse SnapKV prefill eviction followed by per-step Hybrid Sparse Attention combining paged sequence-dimension and head-dimension top-k selection — to close the accuracy gap eviction-only methods hit at low token budgets.
+keywords: [rocketkv, two-stage compression, hybrid sparse attention, snapkv eviction, dynamic top-k selection, icml 2025]
 ---
 
 # RocketKV-adapted — Two-Stage Compression (SnapKV Eviction + Hybrid Sparse Attention)

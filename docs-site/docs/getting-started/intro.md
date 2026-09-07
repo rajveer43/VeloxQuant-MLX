@@ -3,6 +3,8 @@ id: intro
 title: What is VeloxQuant-MLX?
 sidebar_label: Introduction
 slug: /getting-started/intro
+description: Introduces VeloxQuant-MLX, a KV cache compression library for Apple Silicon with 43 quantization, eviction, and cross-layer merging methods, and summarizes its key performance metrics.
+keywords: [veloxquant-mlx, apple silicon, kv cache compression, mlx, unified memory, llm inference]
 ---
 
 # What is VeloxQuant-MLX?

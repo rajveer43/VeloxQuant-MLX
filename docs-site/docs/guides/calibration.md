@@ -3,6 +3,8 @@ id: calibration
 title: Calibration Guide
 sidebar_label: Calibration
 slug: /guides/calibration
+description: Details which VeloxQuant-MLX algorithms require calibration and how to collect, save, and reload calibration artifacts for VecInfer, RateQuant, and SpectralQuant using each method's real functions.
+keywords: [calibration, vecinfer, ratequant, spectralquant, artifact store, precompute cli]
 ---
 
 # Calibration Guide

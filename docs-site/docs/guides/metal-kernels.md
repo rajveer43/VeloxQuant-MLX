@@ -3,6 +3,8 @@ id: metal-kernels
 title: Metal GPU Kernels
 sidebar_label: Metal Kernels
 slug: /guides/metal-kernels
+description: Catalogs VeloxQuant-MLX's runtime-compiled Metal GPU kernels for quantization, fused attention, KV-cache eviction, and cross-model transfer, with performance numbers and fallback behavior.
+keywords: [metal kernels, metal_kernel, fused sdpa, rabitq, kivi, gpu quantization]
 ---
 
 # Metal GPU Kernels

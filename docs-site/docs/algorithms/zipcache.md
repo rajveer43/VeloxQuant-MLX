@@ -1,3 +1,10 @@
+---
+id: zipcache
+title: ZipCache — Saliency-Adaptive Per-Token Mixed Precision
+description: Uses per-token key L2-norm as a saliency proxy to route the top hi_fraction of tokens to a finer hi_bits quantization and the rest to a coarser lo_bits quantization, keeping both tiers quantized (never fp16) for a tunable average bit-width.
+keywords: [zipcache, kv cache, quantization, mixed precision, key norm, saliency]
+---
+
 # ZipCache — Saliency-Adaptive Per-Token Mixed Precision
 
 **Method id:** `zipcache` · **New in 0.18.0** · *Inspired by* [ZipCache (arXiv:2405.14256)](https://arxiv.org/abs/2405.14256)

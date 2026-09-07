@@ -3,6 +3,8 @@ id: spectral
 title: SpectralQuant
 sidebar_label: SpectralQuant
 slug: /algorithms/spectral
+description: SpectralQuant rotates keys and values into an SVD-derived PCA basis to split high-variance signal dimensions from low-variance noise before quantizing, targeting high fidelity at long (8k+) context lengths.
+keywords: [spectralquant, svd rotation, participation ratio, qjl sign-sketch, water-filling bit allocation, long context]
 ---
 
 # SpectralQuant

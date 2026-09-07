@@ -16,7 +16,15 @@ const config: Config = {
       attributes: {
         name: 'keywords',
         content:
-          'KV cache compression, KV cache quantization, LLM memory optimization, Apple Silicon, MLX framework, mlx_lm, local LLM inference, on-device AI, long context inference, key-value cache, Metal kernels, token eviction, KIVI, GEAR, KVQuant, RaBitQ, VecInfer, TurboQuant RVQ, H2O, SnapKV, StreamingLLM, SpectralQuant, CommVQ, RateQuant, CacheRoute, low-bit quantization, Llama, Mistral, Qwen, Gemma',
+          'KV cache compression, KV cache quantization, LLM memory optimization, Apple Silicon, MLX framework, mlx_lm, local LLM inference, on-device AI, long context inference, key-value cache, Metal kernels, token eviction, KIVI, GEAR, KVQuant, RaBitQ, VecInfer, TurboQuant RVQ, H2O, SnapKV, StreamingLLM, SpectralQuant, CommVQ, RateQuant, CacheRoute, low-bit quantization, Llama, Mistral, Qwen, Gemma, run larger LLMs on Mac, reduce LLM memory usage Mac, fit bigger model in Mac RAM, Apple Silicon LLM inference, context length extension, attention cache quantization',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'description',
+        content:
+          'Documentation for VeloxQuant-MLX: 43 KV-cache compression methods for MLX on Apple Silicon, up to 16x smaller cache with near-lossless quality, in three lines of code.',
       },
     },
   ],

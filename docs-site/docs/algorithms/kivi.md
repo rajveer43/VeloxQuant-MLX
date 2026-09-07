@@ -3,6 +3,8 @@ id: kivi
 title: KIVI
 sidebar_label: KIVI
 slug: /algorithms/kivi
+description: KIVI is VeloxQuant-MLX's calibration-free, deterministic reference baseline that asymmetrically quantizes keys per-channel and values per-token with a group-aligned fp16 residual window, reaching about 5.46x key compression on Apple M4.
+keywords: [kivi, kv cache quantization, asymmetric quantization, 2-bit quantization, residual window, baseline]
 ---
 
 # KIVI

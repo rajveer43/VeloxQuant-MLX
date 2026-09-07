@@ -3,6 +3,8 @@ id: spectral-api
 title: SpectralQuant API
 sidebar_label: SpectralQuant
 slug: /api/spectral-api
+description: Python API reference for veloxquant_mlx.spectral, covering the SpectralQuantizer eigenvector-rotated quantizer, calibration functions for computing per-layer PCA rotations, and water-filling bit allocation helpers.
+keywords: [spectral, spectralquant, SpectralQuantizer, "API reference", "python api", water-filling, PCA rotation]
 ---
 
 # SpectralQuant API

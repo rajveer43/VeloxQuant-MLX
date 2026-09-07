@@ -3,6 +3,8 @@ id: curdkv
 title: CurDKV-adapted
 sidebar_label: CurDKV-adapted
 slug: /algorithms/curdkv
+description: CurDKV-adapted evicts KV cache tokens using a value-aware leverage score computed via SVD over the joint key-and-value block, so two tokens with identical keys but divergent values get different retention scores.
+keywords: [curdkv, kv cache eviction, leverage score, value-aware, cur decomposition, h2o]
 ---
 
 # CurDKV-adapted — Value-Aware Leverage-Score Eviction

@@ -1,3 +1,10 @@
+---
+id: nsnquant
+title: "NSNQuant — Calibration-Free Universal-Codebook VQ"
+description: Reshapes K/V token vectors toward a standard normal distribution via a Normalize-Shift-Normalize transform plus Hadamard rotation, then quantizes with a fixed offline Gaussian-trained codebook at 1-2 bits/element, reconstructing at 0.96-0.98 mean cosine at 2-bit versus KIVI-2bit's 0.66-0.88 on the same synthetic sweep.
+keywords: [nsnquant, kv cache, vector quantization, hadamard transform, calibration-free, codebook]
+---
+
 # NSNQuant — Calibration-Free Universal-Codebook VQ
 
 **Method id:** `nsnquant` · **New in 0.28.0** · *Inspired by* [NSNQuant
