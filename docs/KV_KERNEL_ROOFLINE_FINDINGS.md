@@ -381,6 +381,136 @@ case `fused_sdpa`'s docstring already names as its own remaining
 rationale) — this is the reference point to revisit, not a closed
 question in principle.
 
+## Addendum: re-measured after nsg autotune (issue #317) — packing verdict is now situational
+
+**The two addenda directly above (#307 pt.2 and #308) were measured with a
+fixed `nsg=2` on both sides of the comparison, before issue #317 added
+`_auto_nsg` and shrank the packed kernel's softmax-merge buffer (`DSLOTS_C`
+sized to `D` instead of a fixed 8 slots, `sh_o` stored as `half` instead of
+`float`).** That change raised the admissible `nsg` for `scalar_fused_decode_
+attend` from 8 to 16 at `heads_per_kv=4`, `D=128` — the same kernel the
+packed/unpacked comparison above times. Re-running the packed-vs-unpacked and
+two-pass-vs-unpacked benchmarks with each variant at its own **production
+`nsg` (`nsg=None`, i.e. whatever `_auto_nsg` actually picks for that shape)**
+instead of a fixed `nsg=2` for everything gives a materially different, and
+more nuanced, picture than either the original addenda or a naive re-run
+using `nsg=2` on both arms would suggest.
+
+**Do not compare this table's numbers to the `nsg=2` tables above directly —
+different nsg on each arm is the entire point of measuring "what production
+actually does," not a discrepancy to be reconciled line-by-line.**
+
+GQA head-packing (packed = one threadgroup per kv-head, `heads_per_kv` query
+heads sharing it; unpacked = one threadgroup per query head, the redundant-
+redecode baseline), Apple M4, `D=128, b=2, g=32`, `nsg` per `_auto_nsg`:
+
+| `(H_q,H_kv)` | `heads_per_kv` | S_kv | nsg (packed) | nsg (unpacked) | packed vs. unpacked |
+|---|---|---|---|---|---|
+| (32,4) | 8 | 512   | 8  | 8  | 0.71-0.90x (slower) |
+| (32,4) | 8 | 2048  | 8  | 8  | 0.79-0.85x (slower) |
+| (32,4) | 8 | 8192  | 8  | 8  | **1.11-1.16x faster** |
+| (32,4) | 8 | 16384 | 8  | 8  | **1.14-1.15x faster** |
+| (32,8) | 4 | 512   | 16 | 8  | 0.36-0.44x (slower) |
+| (32,8) | 4 | 2048  | 16 | 8  | 0.40-0.46x (slower) |
+| (32,8) | 4 | 8192  | 16 | 8  | 0.53-0.57x (slower) |
+| (32,8) | 4 | 16384 | 16 | 8  | 0.51-0.53x (slower) |
+| (8,2)  | 4 | 512   | 16 | 32 | 0.86-0.91x (slower) |
+| (8,2)  | 4 | 2048  | 16 | 32 | **1.09-1.22x faster** |
+| (8,2)  | 4 | 8192  | 16 | 32 | **1.48-1.50x faster** |
+| (8,2)  | 4 | 16384 | 16 | 32 | **1.68-1.70x faster** |
+
+Each row is a range across 3 repeated runs of the same shape (independent
+process each time, not just repeated calls within one run) — single-run
+point estimates on this kernel are noisy enough near the 1.0x crossover to
+flip sign row-to-row (e.g. a single run put (32,4)@512 at "1.17x faster";
+three runs show it's actually consistently 0.7-0.9x, i.e. slower). Report
+a range or re-run before trusting any single measurement close to 1.0x.
+
+**Revised conclusion: head-packing is no longer a uniform rejection — it is
+shape-dependent, and the shape that matters is `heads_per_kv` together with
+S_kv, not `H_q` or `S_kv` alone.** At `heads_per_kv=8` ((32,4)) or
+`heads_per_kv=4` with few kv-heads ((8,2)), packing now wins past a
+per-ratio S_kv crossover (~4000-8000 for (32,4), ~2048 for (8,2)) once the
+merge-buffer shrink lets those shapes reach a wide `nsg` — but still loses
+at short context, where the reduced threadgroup count isn't yet offset by
+the byte-traffic savings. At `heads_per_kv=4` with more kv-heads ((32,8),
+which still dispatches only `H_kv=4` threadgroups when packed vs. `H_q=32`
+unpacked — the largest relative threadgroup-count loss of the three ratios
+tested), packing is a clear loss at every S_kv tested, consistent with this
+document's original occupancy diagnosis. **This is not evidence the original
+occupancy analysis was wrong — occupancy is still the dominant lever, and
+(32,8) still proves it. It is evidence that "does packing help" depends on
+exactly how few threadgroups packing leaves you with, which #317 changed
+for some ratios (by admitting a wider `nsg`) without changing it for others
+in the same direction.**
+
+Two-pass decode-once vs. unpacked-redundant, same shapes, `nsg` per
+`_auto_nsg` for the unpacked arm (capped at 16 for `scalar_predecoded_attend`
+— see caveat below):
+
+| `(H_q,H_kv)` | S_kv | two-pass vs. unpacked |
+|---|---|---|
+| (32,4) | 256   | **2.20-2.43x faster** |
+| (32,4) | 1024  | **1.62-1.65x faster** |
+| (32,4) | 2048  | **1.37-1.41x faster** |
+| (32,4) | 3072  | **1.11-1.24x faster** |
+| (32,4) | 4096  | **1.05-1.15x faster** |
+| (32,4) | 8192  | 0.97-1.00x (roughly even) |
+| (32,4) | 16384 | 1.00-1.06x (roughly even) |
+| (32,8) | 256   | **2.09-2.21x faster** |
+| (32,8) | 1024  | **1.28-1.44x faster** |
+| (32,8) | 2048  | **1.08-1.12x faster** |
+| (32,8) | 3072  | 0.96-0.99x (roughly even, trending slower) |
+| (32,8) | 4096  | 0.90-0.94x (slower) |
+| (32,8) | 8192  | 0.86-0.90x (slower) |
+| (32,8) | 16384 | 0.84x (slower) |
+| (8,2)  | 256   | 0.90-1.38x (noisy, near crossover) |
+| (8,2)  | 1024  | **1.14-1.24x faster** |
+| (8,2)  | 2048  | 0.99-1.01x (even) |
+| (8,2)  | 3072  | 0.75-0.86x (slower) |
+| (8,2)  | 4096  | 0.68-0.71x (slower) |
+| (8,2)  | 8192  | 0.63-0.65x (slower) |
+| (8,2)  | 16384 | 0.58-0.59x (slower) |
+
+**Revised conclusion: the short-context-wins / long-context-loses crossover
+described in the #308 addendum still holds directionally, but the crossover
+point is per-ratio, not a single "~S_kv 2048-3072" figure** — it sits around
+S_kv≈4000-8000 for `(32,4)`, S_kv≈2500-3000 for `(32,8)`, and S_kv≈1500-2000
+for `(8,2)`. The disposition (not adopted; realistic decode targets sit past
+the crossover for the ratios this repo actually serves) is unchanged. The
+`(8,2)@256` row's wide 0.90-1.38x range (rather than a tight band like every
+other row) is a genuine measurement caveat, not a typo — it sits close
+enough to a 1.0x crossover for the smallest S_kv tested at this ratio that
+run-to-run scheduling noise flips which side of "faster" it lands on; a
+larger `iters` count or more repeats would be needed to pin it down, and it
+doesn't change the disposition either way since this ratio's realistic
+targets are far past its crossover anyway.
+
+**A separate bug found while re-measuring, not a benchmark-methodology
+issue:** `scalar_predecoded_attend` never received the `DSLOTS_C`/half-buffer
+shrink #317 applied to the packed kernel — its `sh_o` merge buffer is a fixed
+`NSG * 8 * 32` `float` array
+(`veloxquant_mlx/metal/src/scalar_predecoded_attend.metal:73`) regardless of
+`D`, and unlike `scalar_fused_decode_attend` it performs **no
+threadgroup-memory budget check before dispatch**
+(`veloxquant_mlx/metal/_scalar_attend.py:659-729`). Calling it with `nsg=32`
+does not raise a clean `ValueError` the way the packed kernel does for an
+oversized request — it crashes at the Metal-compiler level
+(`RuntimeError: Threadgroup memory size (33024) exceeds the maximum
+threadgroup memory allowed (32768)`). The two-pass table above caps
+`nsg` at 16 for this kernel to work around it; 31 is the actual ceiling
+its current buffer layout allows. Filed as a follow-up (not fixed as part of
+this re-measurement) — this document keeps to the original scope of "what
+limits these kernels," and a missing input-validation check is a distinct,
+smaller class of issue from the occupancy findings above.
+
+Reproduction: `python scripts/kv_kernel_gqa_packing_recheck.py` reproduces
+the tables above (see that script's docstring for the exact `nsg=None`
+methodology); the original #307pt.2/#308 addenda's `nsg=2`-fixed tables
+remain reproducible via the commands cited in those sections and are kept
+in this document as a record of what was measured at the time, not
+retracted.
+
 ## Addendum: cross-layer batched decode-attend dispatch (issue #307, part 1)
 
 This closes the one lever Recommendation #2 (below) named as unblocked and
