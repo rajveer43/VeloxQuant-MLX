@@ -232,6 +232,28 @@ code, pre, .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace
 
 .hint { font-size: 0.76rem; color: var(--muted); margin-top: 0.15rem; }
 
+/* ── Model dropdown ────────────────────────────────────── */
+.model-field { position: relative; }
+.model-dropdown {
+  position: absolute; top: calc(100% + 0.3rem); left: 0; right: 0; z-index: 20;
+  max-height: 280px; overflow-y: auto; margin: 0; padding: 0.3rem;
+  list-style: none; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: var(--shadow);
+}
+.model-dropdown-group {
+  padding: 0.3rem 0.5rem 0.15rem; font-size: 0.68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+}
+.model-dropdown-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.45rem 0.5rem; border-radius: 6px; cursor: pointer;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;
+}
+.model-dropdown-item:hover, .model-dropdown-item.is-active { background: var(--bg); }
+.model-dropdown-item .repo-id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-dropdown-item .repo-meta { flex: 0 0 auto; font-size: 0.7rem; color: var(--muted); }
+.model-dropdown-empty { padding: 0.5rem; font-size: 0.78rem; color: var(--muted); }
+
 /* ── Method info ───────────────────────────────────────── */
 .method-info { margin-top: 0.85rem; font-size: 0.82rem; color: var(--muted); }
 .method-info .blurb { margin-bottom: 0.5rem; }

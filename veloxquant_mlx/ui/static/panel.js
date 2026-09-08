@@ -334,17 +334,84 @@ document.querySelectorAll('#family-chips .chip').forEach((chip) => {
 });
 
 /* ── Models ────────────────────────────────────────────── */
+let LOCAL_MODELS = [];
+let hubSearchTimer = null;
+let hubSearchSeq = 0;
+
 async function loadModels() {
   let data;
   try { data = await api('/api/models'); } catch (e) { return; }
-  const list = $('model-suggestions');
-  list.innerHTML = data.models.map(
-    (m) => `<option value="${escapeHtml(m.repo_id)}">${escapeHtml(m.size_label)}</option>`
-  ).join('');
-  if (data.models.length) {
+  LOCAL_MODELS = data.models;
+  if (LOCAL_MODELS.length) {
     $('model-hint').textContent =
-      `Required. ${data.models.length} model(s) found in your local cache — start typing to pick one.`;
+      `Required. ${LOCAL_MODELS.length} model(s) found in your local cache — start typing to pick one, or keep typing to search Hugging Face.`;
   }
+}
+
+function renderModelDropdown(sections) {
+  const box = $('model-dropdown');
+  const nonEmpty = sections.filter((s) => s.items.length);
+  if (!nonEmpty.length) {
+    box.innerHTML = '<li class="model-dropdown-empty">No matches.</li>';
+    box.hidden = false;
+    return;
+  }
+  box.innerHTML = nonEmpty.map((s) => `
+    <li class="model-dropdown-group">${escapeHtml(s.label)}</li>
+    ${s.items.map((m) => `
+      <li class="model-dropdown-item" data-repo="${escapeHtml(m.repo_id)}">
+        <span class="repo-id">${escapeHtml(m.repo_id)}</span>
+        <span class="repo-meta">${escapeHtml(m.meta || '')}</span>
+      </li>`).join('')}
+  `).join('');
+  box.querySelectorAll('.model-dropdown-item').forEach((li) => {
+    // mousedown fires before the input's blur, so the click still lands.
+    li.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      $('f-model').value = li.dataset.repo;
+      hideModelDropdown();
+      refreshPrimary();
+    });
+  });
+  box.hidden = false;
+}
+
+function hideModelDropdown() {
+  $('model-dropdown').hidden = true;
+}
+
+function matchingLocalModels(query) {
+  const q = query.toLowerCase();
+  return LOCAL_MODELS
+    .filter((m) => m.repo_id.toLowerCase().includes(q))
+    .map((m) => ({ repo_id: m.repo_id, meta: m.size_label }));
+}
+
+async function onModelInput() {
+  const query = $('f-model').value.trim();
+  refreshPrimary();
+
+  if (!query) { hideModelDropdown(); return; }
+
+  const local = matchingLocalModels(query);
+  renderModelDropdown([{ label: 'On this Mac', items: local }, { label: 'Hugging Face', items: [] }]);
+
+  clearTimeout(hubSearchTimer);
+  hubSearchTimer = setTimeout(async () => {
+    const seq = ++hubSearchSeq;
+    let data;
+    try { data = await api(`/api/models/search?q=${encodeURIComponent(query)}`); }
+    catch (e) { return; }
+    if (seq !== hubSearchSeq || $('f-model').value.trim() !== query) return; // stale response
+
+    const hub = data.models
+      .filter((m) => !local.some((l) => l.repo_id === m.repo_id))
+      .map((m) => ({
+        repo_id: m.repo_id,
+        meta: m.downloads != null ? `${m.downloads.toLocaleString()} downloads` : '',
+      }));
+    renderModelDropdown([{ label: 'On this Mac', items: local }, { label: 'Hugging Face', items: hub }]);
+  }, 300);
 }
 
 /* ── Memory ────────────────────────────────────────────── */
@@ -577,7 +644,9 @@ $('primary-btn').addEventListener('click', async () => {
 // Wrapped, not passed directly: the listener receives an Event, which
 // renderKnobs would treat as a values object.
 $('f-method').addEventListener('change', () => onMethodChange());
-$('f-model').addEventListener('input', refreshPrimary);
+$('f-model').addEventListener('input', onModelInput);
+$('f-model').addEventListener('focus', () => { if ($('f-model').value.trim()) onModelInput(); });
+$('f-model').addEventListener('blur', () => setTimeout(hideModelDropdown, 120));
 $('f-host').addEventListener('change', onHostChange);
 
 function onHostChange() {
