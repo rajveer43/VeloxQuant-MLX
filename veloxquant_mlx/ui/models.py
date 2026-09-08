@@ -1,8 +1,9 @@
-"""Enumerate already-downloaded models for the panel's model picker.
+"""Model discovery for the panel's model picker: local cache + Hub search.
 
-Surfaces what is already on disk — it never downloads. #33 lists a download
-manager as an explicit non-goal, and this stays on the right side of that line:
-it is autocomplete for the free-text field, not a hub.
+Both `local_models` (already on disk) and `search_hub_models` (Hugging Face
+Hub lookup) only ever surface information — neither downloads anything. #33
+lists a download manager as an explicit non-goal, and this stays on the right
+side of that line: it is autocomplete for the free-text field, not a hub.
 """
 
 from __future__ import annotations
@@ -76,3 +77,49 @@ def _human_size(num_bytes: float) -> str:
             return f"{num_bytes:.0f} {unit}" if unit == "B" else f"{num_bytes:.1f} {unit}"
         num_bytes /= 1024
     return f"{num_bytes:.1f} PB"
+
+
+def search_hub_models(query: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """Search the Hugging Face Hub for text-generation models matching ``query``.
+
+    This is discovery only, same as :func:`local_models` — it never downloads
+    anything. Selecting a result just fills the free-text model field; the
+    existing start-server path handles fetching the weights if needed.
+
+    Returns ``[]`` on any failure (offline, rate-limited, huggingface_hub
+    missing, or an empty/whitespace query) so a flaky network never breaks the
+    panel.
+    """
+    query = query.strip()
+    if not query:
+        return []
+
+    try:
+        from huggingface_hub import HfApi
+    except ImportError:
+        return []
+
+    try:
+        api = HfApi()
+        results = api.list_models(
+            search=query,
+            filter="text-generation",
+            sort="downloads",
+            limit=limit,
+        )
+
+        models: List[Dict[str, Any]] = []
+        for repo in results:
+            repo_id = repo.id
+            if not _looks_servable(repo_id):
+                continue
+            models.append(
+                {
+                    "repo_id": repo_id,
+                    "downloads": getattr(repo, "downloads", None),
+                    "is_mlx": "mlx-community/" in repo_id.lower(),
+                }
+            )
+        return models
+    except Exception:
+        return []

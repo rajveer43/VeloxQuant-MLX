@@ -124,6 +124,16 @@ class PanelHandler(BaseHTTPRequestHandler):
             self._send_json({"models": local_models()})
             return
 
+        if route == "/api/models/search":
+            from urllib.parse import parse_qs, urlparse
+
+            from veloxquant_mlx.ui.models import search_hub_models
+
+            qs = parse_qs(urlparse(self.path).query)
+            query = (qs.get("q", [""])[0]).strip()
+            self._send_json({"models": search_hub_models(query) if query else []})
+            return
+
         if route == "/api/memory":
             from veloxquant_mlx.ui.memory import memory_report
 
