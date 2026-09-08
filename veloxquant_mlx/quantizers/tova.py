@@ -106,7 +106,7 @@ def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
     return mx.softmax(logits, axis=-1)
 
 
-def tova_update(
+def _tova_update_reference(
     state: TovaState,
     new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
@@ -180,6 +180,132 @@ def tova_update(
         )
 
     return state
+
+
+_EVAL_FLUSH_INTERVAL = 32
+_BACKENDS = ("auto", "mlx", "metal", "reference")
+
+
+def _resolve_backend(backend, *, n_tokens=1):
+    if backend not in _BACKENDS:
+        raise ValueError(f"tova: backend must be one of {_BACKENDS}")
+    # Multi-token graphs consistently benefit from the two-dispatch path on
+    # the measured M4. Synchronized single-token gains are smaller/noisy.
+    if backend == "auto":
+        if n_tokens > 1 and mx.default_device() == mx.gpu:
+            from veloxquant_mlx.metal import metal_available
+
+            if metal_available():
+                return "metal"
+        return "mlx"
+    if backend == "metal":
+        from veloxquant_mlx.metal import metal_available
+
+        if mx.default_device() != mx.gpu or not metal_available():
+            raise ValueError("tova: forced Metal requires an available default GPU device")
+    return backend
+
+
+def _evict_mlx(keys, values, weights, n_sink):
+    """GPU-only argmin and fixed-size ordered gather on [BH,N,D]."""
+    n = keys.shape[1]
+    protected = mx.where(mx.arange(n)[None] < n_sink, float("inf"), weights)
+    evicted = mx.argmin(protected, axis=-1, keepdims=True)
+    rows = mx.arange(n - 1)[None]
+    source = (rows + (rows >= evicted))[..., None]
+    return (
+        mx.take_along_axis(keys, source, axis=1),
+        mx.take_along_axis(values, source, axis=1),
+    )
+
+
+def _tova_update_batched(keys, values, new_keys, new_values, n_sink, budget, *, backend="auto"):
+    """Internal [BH,S,D] update; token steps remain sequential after fill.
+
+    The incoming proxy keeps its original precision, matching direct quantizer
+    callers. K/V storage is FP16. No device-derived Python control flow occurs.
+    """
+    if new_keys.ndim != 3 or new_keys.shape != new_values.shape:
+        raise ValueError("tova: new K/V must have matching [BH,S,D] shapes")
+    bh, s, d = new_keys.shape
+    backend = _resolve_backend(backend, n_tokens=s)
+    if bh < 1 or d < 1:
+        raise ValueError("tova: batch-head count and head dimension must be positive")
+    if keys is not None and (keys.shape != values.shape or keys.shape[::2] != (bh, d)):
+        raise ValueError("tova: stored K/V shape does not match incoming batch/heads/dim")
+    if s == 0:
+        return keys, values
+    # Retain the original zero/negative-budget bootstrap behavior and support
+    # explicitly overfull states without inventing a new eviction policy.
+    if backend == "reference" or budget <= 0 or n_sink < 0:
+        states = [
+            _tova_update_reference(
+                TovaState(
+                    None if keys is None else keys[h],
+                    None if values is None else values[h],
+                    n_sink,
+                    budget,
+                ),
+                new_keys[h],
+                new_values[h],
+            )
+            for h in range(bh)
+        ]
+        return mx.stack([st.keys for st in states]), mx.stack([st.values for st in states])
+    if n_sink >= budget:
+        raise ValueError("tova: sinks must leave at least one evictable position")
+    n = 0 if keys is None else keys.shape[1]
+    prefix = min(s, max(0, budget - n))
+    if prefix:
+        k = new_keys[:, :prefix].astype(mx.float16)
+        v = new_values[:, :prefix].astype(mx.float16)
+        keys = k if keys is None else mx.concatenate([keys, k], axis=1)
+        values = v if values is None else mx.concatenate([values, v], axis=1)
+    for i in range(prefix, s):
+        keys = mx.concatenate([keys, new_keys[:, i : i + 1].astype(mx.float16)], axis=1)
+        values = mx.concatenate([values, new_values[:, i : i + 1].astype(mx.float16)], axis=1)
+        proxy = new_keys[:, i].astype(mx.float32)
+        logits = (keys.astype(mx.float32) @ proxy[..., None])[..., 0] * (1.0 / math.sqrt(float(d)))
+        weights = mx.softmax(logits, axis=-1)
+        if backend == "metal":
+            from veloxquant_mlx.metal import tova_fused_evict
+
+            keys, values = tova_fused_evict(keys, values, weights, n_sink)
+        else:
+            keys, values = _evict_mlx(keys, values, weights, n_sink)
+        if (i - prefix + 1) % _EVAL_FLUSH_INTERVAL == 0:
+            mx.eval(keys, values)
+    return keys, values
+
+
+def tova_update(
+    state: TovaState,
+    new_keys: mx.array,
+    new_values: mx.array,
+    *,
+    backend: str = "auto",
+) -> TovaState:
+    """Absorb [S,D] K/V using auto, GPU-only mlx, metal, or reference eviction.
+
+    Surviving rows retain their original positions and FP16 values. The
+    reference backend retains the original Python-driven algorithm for parity
+    and benchmarking. Auto uses the measured default (see TOVA_METAL_FINDINGS).
+    """
+    if new_keys.ndim != 2 or new_keys.shape != new_values.shape:
+        raise ValueError("tova: new K/V must have matching [S,D] shapes")
+    _resolve_backend(backend)
+    if new_keys.shape[0] == 0:
+        return state
+    keys, values = _tova_update_batched(
+        None if state.keys is None else state.keys[None],
+        None if state.values is None else state.values[None],
+        new_keys[None],
+        new_values[None],
+        state.n_sink,
+        state.budget,
+        backend=backend,
+    )
+    return TovaState(keys[0], values[0], state.n_sink, state.budget)
 
 
 def tova_get_kv(state: TovaState) -> tuple[mx.array, mx.array]:

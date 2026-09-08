@@ -89,6 +89,7 @@ from veloxquant_mlx.metal._scalar_quant import (
     turboquant_scalar_dequantize,
     turboquant_scalar_quantize,
 )
+from veloxquant_mlx.metal._tova_evict import tova_fused_evict
 from veloxquant_mlx.metal._vecinfer import (
     vecinfer_dequant_metal,
     vecinfer_encode_decode_metal,
@@ -97,6 +98,7 @@ from veloxquant_mlx.metal._vecinfer import (
 )
 
 __all__ = [
+    "tova_fused_evict",
     "crosskv_rope_recode",
     "vecinfer_dequant_metal",
     "vecinfer_quantize_metal",
