@@ -17,13 +17,18 @@ addenda's headline tables used. See the "re-measured after nsg autotune
 
 Usage: python scripts/kv_kernel_gqa_packing_recheck.py
 """
+
 import math
 import time
 
 import mlx.core as mx
 import numpy as np
 
-from veloxquant_mlx.metal._scalar_attend import _auto_nsg, scalar_decode_once, scalar_predecoded_attend
+from veloxquant_mlx.metal._scalar_attend import (
+    _auto_nsg,
+    scalar_decode_once,
+    scalar_predecoded_attend,
+)
 from veloxquant_mlx.metal.kernels import scalar_fused_decode_attend
 
 
@@ -88,7 +93,9 @@ scale = 1.0 / math.sqrt(D)
 
 print(f"MLX {mx.__version__}\n")
 print("## GQA head-packing: packed (nsg=None, auto) vs. unpacked-redundant (nsg=None, auto)\n")
-print("| H_q,H_kv | heads_per_kv | S_kv | nsg(packed) | nsg(unpacked) | packed ms | unpacked ms | packed vs unpacked |")
+print(
+    "| H_q,H_kv | heads_per_kv | S_kv | nsg(packed) | nsg(unpacked) | packed ms | unpacked ms | packed vs unpacked |"
+)
 print("|---|---|---|---|---|---|---|---|")
 
 for H_q, H_kv in [(32, 4), (32, 8), (8, 2)]:
@@ -111,18 +118,29 @@ for H_q, H_kv in [(32, 4), (32, 8), (8, 2)]:
                     hq = hkv * heads_per_kv + hp
                     outs.append(
                         scalar_fused_decode_attend(
-                            aq[:, hq : hq + 1], akc[:, hkv : hkv + 1], aks[:, hkv : hkv + 1],
-                            akz[:, hkv : hkv + 1], avc[:, hkv : hkv + 1], avs[:, hkv : hkv + 1],
-                            avz[:, hkv : hkv + 1], g, scale, nsg=None,
+                            aq[:, hq : hq + 1],
+                            akc[:, hkv : hkv + 1],
+                            aks[:, hkv : hkv + 1],
+                            akz[:, hkv : hkv + 1],
+                            avc[:, hkv : hkv + 1],
+                            avs[:, hkv : hkv + 1],
+                            avz[:, hkv : hkv + 1],
+                            g,
+                            scale,
+                            nsg=None,
                         )
                     )
             return mx.concatenate(outs, axis=1)
 
         tp = _timeit(_packed)
         tu = _timeit(_unpacked)
-        print(f"| ({H_q},{H_kv}) | {heads_per_kv} | {S_kv} | {nsg_packed} | {nsg_unpacked} | {tp:.3f} | {tu:.3f} | {tp/tu:.2f}x |")
+        print(
+            f"| ({H_q},{H_kv}) | {heads_per_kv} | {S_kv} | {nsg_packed} | {nsg_unpacked} | {tp:.3f} | {tu:.3f} | {tp / tu:.2f}x |"
+        )
 
-print("\n## Two-pass decode-once vs. unpacked-redundant (nsg=None, auto for unpacked; decode/attend also nsg=None)\n")
+print(
+    "\n## Two-pass decode-once vs. unpacked-redundant (nsg=None, auto for unpacked; decode/attend also nsg=None)\n"
+)
 print("| H_q,H_kv | S_kv | unpacked ms | two-pass ms | two-pass vs unpacked |")
 print("|---|---|---|---|---|")
 
@@ -140,9 +158,16 @@ for H_q, H_kv in [(32, 4), (32, 8), (8, 2)]:
                     hq = hkv * heads_per_kv + hp
                     outs.append(
                         scalar_fused_decode_attend(
-                            aq[:, hq : hq + 1], akc[:, hkv : hkv + 1], aks[:, hkv : hkv + 1],
-                            akz[:, hkv : hkv + 1], avc[:, hkv : hkv + 1], avs[:, hkv : hkv + 1],
-                            avz[:, hkv : hkv + 1], g, scale, nsg=None,
+                            aq[:, hq : hq + 1],
+                            akc[:, hkv : hkv + 1],
+                            aks[:, hkv : hkv + 1],
+                            akz[:, hkv : hkv + 1],
+                            avc[:, hkv : hkv + 1],
+                            avs[:, hkv : hkv + 1],
+                            avz[:, hkv : hkv + 1],
+                            g,
+                            scale,
+                            nsg=None,
                         )
                     )
             return mx.concatenate(outs, axis=1)
@@ -162,4 +187,4 @@ for H_q, H_kv in [(32, 4), (32, 8), (8, 2)]:
 
         tu = _timeit(_unpacked)
         tt = _timeit(_two_pass)
-        print(f"| ({H_q},{H_kv}) | {S_kv} | {tu:.3f} | {tt:.3f} | {tu/tt:.2f}x |")
+        print(f"| ({H_q},{H_kv}) | {S_kv} | {tu:.3f} | {tt:.3f} | {tu / tt:.2f}x |")
