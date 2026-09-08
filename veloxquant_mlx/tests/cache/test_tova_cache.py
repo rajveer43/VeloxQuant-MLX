@@ -269,3 +269,90 @@ def test_offset_survives_prefill_then_decode_mix() -> None:
         cache.update_and_fetch(kd, vd)
         assert cache.offset == S + t + 1
     assert cache.tokens_kept <= budget
+
+
+@pytest.mark.parametrize("backend", ["mlx", "metal", "reference"])
+def test_batched_cache_state_and_accounting(backend):
+    cache = _make(tova_backend=backend)
+    reference = _make(tova_backend="reference")
+    rng = np.random.default_rng(61)
+    total = 0
+    for s in [3, 11, 1, 17]:
+        k, v = [mx.array(rng.normal(size=(2, 3, s, 33)).astype(np.float16)) for _ in range(2)]
+        actual = cache.update_and_fetch(k, v)
+        expected = reference.update_and_fetch(k, v)
+        for a, e in zip(actual, expected, strict=True):
+            np.testing.assert_array_equal(np.array(a), np.array(e))
+        total += s
+        assert cache.offset == total
+        assert cache.size() == min(total, 8)
+        assert cache.state[0].shape == actual[0].shape
+        assert cache.tokens_seen == 6 * total
+        assert cache.tova_kept_bytes == 6 * min(total, 8) * 33 * 4
+        assert cache.nbytes == cache.tova_kept_bytes
+        assert not cache.is_trimmable()
+
+
+def test_restore_rebuilds_compatibility_states():
+    cache = _make(tova_backend="mlx")
+    k, v = _rand_kv(S=4)
+    cache.state = (k, v)
+    cache.update_and_fetch(*_rand_kv(S=1))
+    assert cache.offset == 5
+    assert cache.tokens_kept == 5
+    assert cache.state[0].shape[2] == 5
+
+
+def test_empty_update_is_noop_and_default_mask_contract():
+    cache = _make()
+    empty = mx.zeros((1, 2, 0, 32))
+    assert cache.update_and_fetch(empty, empty)[0].shape == empty.shape
+    assert cache.offset == cache.size() == cache.tokens_seen == 0
+    assert cache.make_mask(1, return_array=False, window_size=None) is None
+    assert cache.make_mask(4, return_array=False, window_size=None) == "causal"
+    k, v = cache.update_and_fetch(*_rand_kv(S=12))
+    a, b = cache.update_and_fetch(empty, empty)
+    assert a is k and b is v
+    assert cache.offset == 12
+
+
+def test_shape_change_rejected_without_mutating_state():
+    cache = _make()
+    cache.update_and_fetch(*_rand_kv(S=2))
+    before = cache.state
+    with pytest.raises(ValueError, match="cannot change"):
+        cache.update_and_fetch(*_rand_kv(S=1, H=3))
+    assert cache.state == before
+    assert cache.offset == 2
+
+
+def test_real_mlx_lm_llama_gqa_forward_parity():
+    """Actual mlx-lm model code with tiny random weights, not a quality test."""
+    from mlx_lm.models.llama import Model, ModelArgs
+
+    mx.random.seed(72)
+    model = Model(
+        ModelArgs(
+            model_type="llama",
+            hidden_size=64,
+            num_hidden_layers=2,
+            intermediate_size=96,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            rms_norm_eps=1e-5,
+            vocab_size=64,
+        )
+    )
+    model.set_dtype(mx.float16)
+    mx.eval(model.parameters())
+    paths = [
+        [_make(tova_backend=b, tova_budget=8) for _ in range(2)]
+        for b in ["reference", "mlx", "metal"]
+    ]
+    for step in range(129):
+        tokens = mx.array([[1, 2, 3, 4]]) if step == 0 else mx.array([[step % 64]])
+        outputs = [model(tokens, cache=caches) for caches in paths]
+        mx.eval(*outputs)
+        for out in outputs[1:]:
+            np.testing.assert_array_equal(np.array(out), np.array(outputs[0]))
+    assert all(c.offset == 132 and c.size() == 8 for caches in paths for c in caches)

@@ -108,6 +108,37 @@ faithful port.
 
 ## Evidence
 
+### MLX and Metal backends
+
+`KVCacheConfig(tova_backend="auto")` batches cache updates across KV heads.
+Multi-token updates use a Metal argmin/compaction pair when available; single-token
+updates use GPU-only MLX argmin/gather. Both avoid copying eviction decisions to
+Python and preserve the original softmax scorer and absolute RoPE offsets.
+Use `"mlx"` or `"metal"` to force a backend, or `"reference"` for the original
+Python-driven algorithm. The Metal pair accelerates selection and copying;
+scoring and append remain MLX operations.
+
+The cache stores retained rows directly, without rebuilding the base class's
+padded append buffer. On the measured Apple M4, 64 sequential evictions with
+eight KV heads, D=128 and budget 512 took 10.10 ms with Metal versus 13.85 ms with
+GPU-only MLX. This is a synthetic full-update measurement, not model-generation
+throughput. See `docs/TOVA_METAL_FINDINGS.md` and
+`scripts/tova_kernel_bench.py` in the repository for raw results and reproduction.
+
+For overflowing multi-token updates with at least four KV groups, the optimized
+path now carries an integer lineage map alongside compacted keys and gathers
+values once at the end of the update. Smaller group counts use a virtual value
+row so they avoid the extra lineage traffic. This preserves exact retained values
+while removing repeated value writes from the dependent eviction chain. In a
+follow-up M4 sweep, eight KV groups and budget 512 measured 6.95 ms for a
+64-token chain with Metal; one-group updates retain the lower-overhead path.
+
+An actual mlx-lm Llama GQA forward test with tiny random weights produced identical
+logits across all backends for prefill followed by 128 decode steps. No
+pretrained-model quality or generation-throughput gain is claimed.
+
+### Original algorithm tests
+
 All claims trace to passing tests in
 `veloxquant_mlx/tests/cache/test_tova_cache.py` (18 tests) and
 `veloxquant_mlx/tests/quantizers/test_tova.py` (19 tests):
@@ -144,9 +175,8 @@ climbing — the same defect fixed for Q-Filters (#171) and L2Norm (#174).
 `tova_update` drops exactly the evicted row and keeps the rest in temporal
 order (never renumbers survivors), so the same `_true_offset` counter that
 sufficed for those caches applies directly here — no `offset` property
-split like [H2O's](../algorithms/h2o) was needed, because every
-`update_and_fetch` call fully resets the base class's buffers regardless of
-prefill or decode.
+split like [H2O's](../algorithms/h2o) was needed. The accelerated implementation
+now stores retained K/V directly while keeping this absolute-offset counter.
 
 Note: H2O was audited in the same pass and does **not** share this defect —
 it already tracks the true absolute step count directly (`self.offset =

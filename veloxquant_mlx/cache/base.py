@@ -215,6 +215,7 @@ class KVCacheConfig:
     # --- TOVA-adapted configuration (current-step attention-weight eviction, memoryless) ---
     tova_budget: int = 512  # max tokens kept at any time (sinks + non-sinks)
     tova_n_sink: int = 4  # initial positions protected from eviction (attention sinks)
+    tova_backend: str = "auto"  # auto | mlx | metal | reference (parity/benchmarking)
     # --- PyramidKV-adapted configuration (layer-adaptive budget attention-mass eviction) ---
     pyramid_budget: int = 512  # AVERAGE per-layer budget (uniform-H2O baseline)
     pyramid_n_sink: int = 4  # initial positions protected from eviction (attention sinks)

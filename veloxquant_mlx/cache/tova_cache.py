@@ -54,11 +54,9 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.tova import (
     TovaState,
-    full_tova_fp16_bytes,
+    _resolve_backend,
+    _tova_update_batched,
     init_tova_state,
-    tova_fp16_bytes,
-    tova_get_kv,
-    tova_update,
 )
 
 
@@ -69,6 +67,7 @@ class TOVAKVCache(_MLXKVCache):
         config: :class:`KVCacheConfig`. Fields consumed:
             ``tova_budget`` (int, default 512) — maximum tokens retained at any time,
             ``tova_n_sink`` (int, default 4)   — leading positions never evicted.
+            ``tova_backend`` (str, default "auto") — auto, mlx, metal, or reference.
 
     Notes:
         No ``.bits`` attribute — stores and returns fp16 K/V directly.
@@ -90,6 +89,8 @@ class TOVAKVCache(_MLXKVCache):
         super().__init__()
         self._budget = int(getattr(config, "tova_budget", 512))
         self._n_sink = int(getattr(config, "tova_n_sink", 4))
+        self._backend = getattr(config, "tova_backend", "auto")
+        _resolve_backend(self._backend)
 
         self._head_dim: int = 0
         self._states: list[TovaState] = []
@@ -129,76 +130,66 @@ class TOVAKVCache(_MLXKVCache):
             ``(K_out, V_out)`` both ``[B, H, n_kept, D]`` fp16, where
             ``n_kept <= tova_budget`` for all heads.
         """
+        if keys.ndim != 4 or keys.shape != values.shape:
+            raise ValueError("tova cache: K/V must have matching [B,H,S,D] shapes")
         B, H, S, D = keys.shape
+        if min(B, H, D) < 1:
+            raise ValueError("tova cache: batch/head/dimension must be positive")
+        if self._states and (B, H, D) != (self._B, self._H, self._head_dim):
+            raise ValueError("tova cache: batch/head/dimension cannot change after initialization")
         self._ensure_states(B, H, D)
 
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
-        k_out_b, v_out_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                idx = self._head_idx(b, h)
-                st = self._states[idx]
-                st = tova_update(
-                    st,
-                    keys[b, h].astype(mx.float16),
-                    values[b, h].astype(mx.float16),
-                )
-                self._states[idx] = st
-                k_h, v_h = tova_get_kv(st)
-                k_out_h.append(k_h)  # [n_kept, D]
-                v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))  # [H, n_kept, D]
-            v_out_b.append(mx.stack(v_out_h, axis=0))
-
-        K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_kept, D]
-        V_out = mx.stack(v_out_b, axis=0)
-
-        # Byte accounting: sum across all head states
-        self._tova_kept_bytes = sum(tova_fp16_bytes(st) for st in self._states)
-
-        # K_out/V_out is the full retained state every call, not a delta —
-        # reset so the base class's append-only buffer starts fresh instead
-        # of stacking on top of the previous call's rows. Without this,
-        # self.keys/self.values/self.offset stay at __init__ defaults
-        # forever, and mlx_lm's generate() crashes on `cache.state` during
-        # chunked prefill (see #83).
-        self.keys = None
-        self.values = None
-        self.offset = 0
-        out = super().update_and_fetch(K_out, V_out)
-
-        # RoPE position correctness (see #171, #175).
-        #
-        # mlx_lm rotates BOTH the query and the incoming key at
-        # ``offset=cache.offset`` *before* calling update_and_fetch. The base
-        # class above just set ``self.offset`` to the number of RETAINED rows
-        # (reset to 0 then advanced by n_kept), so once eviction starts
-        # (n_kept pinned at budget) the offset stops advancing and every
-        # subsequent token is rotated at ~budget while its true position
-        # keeps climbing — a drift that grows without bound and scrambles
-        # attention.
-        #
-        # TOVA PRESERVES the original position of every surviving token
-        # (tova_update drops exactly the evicted row and keeps the rest in
-        # temporal order — it never renumbers), so all stored keys already
-        # carry rotations for their true absolute positions. RoPE is
-        # relative — <rope(q,i), rope(k,j)> depends only on i-j — so
-        # reporting the true position here puts queries, new keys, and
-        # survivors back on one consistent absolute axis, and no
-        # re-rotation of survivors is needed. This mirrors L2NormKVCache's
-        # and QFiltersKVCache's fix, and is safe here for the same reason:
-        # every update_and_fetch call above fully resets
-        # self.keys/self.values/self.offset before delegating to the base
-        # class, so nothing later reads self.offset as a row-count cursor
-        # the way SnapKV's incremental decode path does. (H2O needs more
-        # than this: it renumbers positions on eviction and re-rotates
-        # survivors directly — see h2o_cache.py.)
+        if S == 0:
+            if self.keys is None:
+                return keys.astype(mx.float16), values.astype(mx.float16)
+            return self.keys, self.values
+        previous_k = None if self.keys is None else self.keys.reshape(B * H, -1, D)
+        previous_v = None if self.values is None else self.values.reshape(B * H, -1, D)
+        k, v = _tova_update_batched(
+            previous_k,
+            previous_v,
+            keys.astype(mx.float16).reshape(B * H, S, D),
+            values.astype(mx.float16).reshape(B * H, S, D),
+            self._n_sink,
+            self._budget,
+            backend=self._backend,
+        )
+        self._states = [TovaState(k[h], v[h], self._n_sink, self._budget) for h in range(B * H)]
+        self._tova_kept_bytes = k.size * 4
+        # Store the complete retained state directly, avoiding the base class's
+        # padded append buffer and a redundant full-cache copy on every decode.
+        self.keys = k.reshape(B, H, -1, D)
+        self.values = v.reshape(B, H, -1, D)
         self._true_offset += S
         self.offset = self._true_offset
-        return out
+        return self.keys, self.values
+
+    def size(self) -> int:
+        """Stored rows; offset separately tracks the absolute RoPE position."""
+        return 0 if self.keys is None else self.keys.shape[2]
+
+    @property
+    def state(self):
+        return self.keys, self.values
+
+    @state.setter
+    def state(self, value):
+        # K/V alone do not encode evicted positions. Preserve the base class's
+        # row-count estimate on restore; exact mid-history restoration is not
+        # supported without separate absolute-position metadata.
+        self.keys, self.values = value
+        self._states = []
+        self._true_offset = self.size()
+        self.offset = self._true_offset
+        if self.keys is not None:
+            b, h, n, d = self.keys.shape
+            self._ensure_states(b, h, d)
+            k, v = self.keys.reshape(b * h, n, d), self.values.reshape(b * h, n, d)
+            self._states = [TovaState(k[i], v[i], self._n_sink, self._budget) for i in range(b * h)]
+        self._tova_kept_bytes = 0 if self.keys is None else self.keys.size * 4
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:

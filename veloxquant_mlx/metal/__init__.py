@@ -40,6 +40,14 @@ USE_METAL: bool = metal_available()
 
 # Lazy re-export so importing the package doesn't compile the kernel.
 def __getattr__(name: str):
+    if name in {
+        "tova_fused_evict",
+        "tova_fused_evict_virtual_values",
+        "tova_fused_evict_indices",
+    }:
+        from . import _tova_evict
+
+        return getattr(_tova_evict, name)
     if name == "vecinfer_dequant_metal":
         from .kernels import vecinfer_dequant_metal as _fn
 
@@ -104,6 +112,9 @@ __all__ = [
     "comm_vq_decode_metal",
     "rabitq_hamming_score",
     "h2o_fused_evict",
+    "tova_fused_evict",
+    "tova_fused_evict_virtual_values",
+    "tova_fused_evict_indices",
     "keyformer_fused_evict",
     "qfilters_fused_evict",
     "qfilters_score",
