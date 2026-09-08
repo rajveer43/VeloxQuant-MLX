@@ -432,6 +432,45 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.80.1 (2026-09-08)
+
+### Chores
+
+- Remove cache bookkeeping audit report from repo
+  ([#334](https://github.com/rajveer43/VeloxQuant-MLX/pull/334),
+  [`3c15238`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3c15238d9db8525f6832cfda4c4f6e082741752d))
+
+### Code Style
+
+- Fix ruff format on kv_kernel_gqa_packing_recheck.py
+  ([#332](https://github.com/rajveer43/VeloxQuant-MLX/pull/332),
+  [`3d2661d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3d2661d054bdb1bfd20184810076e939b7b2fea4))
+
+### Documentation
+
+- **kernels**: Correct stale GQA head-packing finding, add eviction/quant benchmarks
+  ([#332](https://github.com/rajveer43/VeloxQuant-MLX/pull/332),
+  [`3d2661d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3d2661d054bdb1bfd20184810076e939b7b2fea4))
+
+- **kernels**: Correct stale GQA head-packing finding, add eviction/quant benchmarks to landing
+  ([#332](https://github.com/rajveer43/VeloxQuant-MLX/pull/332),
+  [`3d2661d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3d2661d054bdb1bfd20184810076e939b7b2fea4))
+
+### Performance Improvements
+
+- **cache**: Add fused Metal kernels for TOVA eviction
+  ([#333](https://github.com/rajveer43/VeloxQuant-MLX/pull/333),
+  [`279a0ec`](https://github.com/rajveer43/VeloxQuant-MLX/commit/279a0ec9886613c2ef10c3260a7b3b2e9d861b68))
+
+- **cache**: Batch H2O eviction across heads, fix TOVA offset test, correct KIVI memory docs
+  ([#334](https://github.com/rajveer43/VeloxQuant-MLX/pull/334),
+  [`3c15238`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3c15238d9db8525f6832cfda4c4f6e082741752d))
+
+- **cache**: Deferred-lineage and virtual-V routes for TOVA multi-token eviction
+  ([#333](https://github.com/rajveer43/VeloxQuant-MLX/pull/333),
+  [`279a0ec`](https://github.com/rajveer43/VeloxQuant-MLX/commit/279a0ec9886613c2ef10c3260a7b3b2e9d861b68))
+
+
 ## v0.80.0 (2026-09-08)
 
 ### Features
