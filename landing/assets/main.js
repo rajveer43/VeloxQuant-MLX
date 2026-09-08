@@ -433,11 +433,8 @@ function initAnnouncementBanner() {
   const closeBtn = document.getElementById('announcement-banner-close');
   if (!banner || !closeBtn) return;
 
-  // Bumped when the banner's message changes: the v0.1.0 key was for the
-  // "download the app" announcement, and someone who dismissed that has not
-  // seen this beta-recruitment message. Must stay in sync with the pre-paint
-  // visibility check in index.html's <head>.
-  const dismissKey = 'vq-announcement-dismissed-studio-beta';
+  // Bumped when the banner's message changes.
+  const dismissKey = 'vq-announcement-dismissed-studio-waitlist';
   closeBtn.addEventListener('click', () => {
     document.documentElement.removeAttribute('data-show-announcement');
     try { localStorage.setItem(dismissKey, '1'); } catch (e) { /* storage unavailable */ }
@@ -966,6 +963,138 @@ function initStudioWindow() {
   }
 }
 
+// ── MACOS APP WAITLIST MODAL ──
+function initStudioWaitlist() {
+  const modal = document.getElementById('waitlist-modal');
+  if (!modal) return;
+
+  const closeBtn = document.getElementById('waitlist-close-btn');
+  const form = document.getElementById('waitlist-form');
+  const successState = document.getElementById('waitlist-success');
+  const confirmedEmailEl = document.getElementById('waitlist-confirmed-email');
+  const doneBtn = document.getElementById('waitlist-done-btn');
+  const emailInput = document.getElementById('waitlist-email');
+  const submitBtn = document.getElementById('waitlist-submit-btn');
+
+  function openWaitlist() {
+    let savedEmail = null;
+    try {
+      savedEmail = localStorage.getItem('vq-studio-waitlist-joined');
+    } catch (e) {}
+
+    if (savedEmail) {
+      if (confirmedEmailEl) confirmedEmailEl.textContent = savedEmail;
+      if (form) form.style.display = 'none';
+      if (successState) successState.style.display = 'flex';
+    } else {
+      if (form) form.style.display = 'flex';
+      if (successState) successState.style.display = 'none';
+    }
+
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+
+    setTimeout(() => {
+      if (!savedEmail && emailInput) {
+        emailInput.focus();
+      } else if (doneBtn && savedEmail) {
+        doneBtn.focus();
+      }
+    }, 100);
+  }
+
+  function closeWaitlist() {
+    modal.classList.remove('is-open');
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }
+
+  // Open triggers across the page (links or buttons with .open-waitlist-trigger)
+  document.querySelectorAll('.open-waitlist-trigger').forEach((trigger) => {
+    trigger.addEventListener('click', (e) => {
+      e.preventDefault();
+      openWaitlist();
+    });
+  });
+
+  // Check URL hash on page load
+  if (window.location.hash === '#waitlist' || window.location.hash === '#waitlist-modal') {
+    openWaitlist();
+  }
+
+  // Close triggers
+  if (closeBtn) closeBtn.addEventListener('click', closeWaitlist);
+  if (doneBtn) doneBtn.addEventListener('click', closeWaitlist);
+
+  // Click outside card to close
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      closeWaitlist();
+    }
+  });
+
+  // ESC key to close
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal.classList.contains('is-open')) {
+      closeWaitlist();
+    }
+  });
+
+  // Form submission handling
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = emailInput ? emailInput.value.trim() : '';
+      if (!email) return;
+
+      const btnText = submitBtn ? submitBtn.querySelector('.waitlist-btn-text') : null;
+      const btnArrow = submitBtn ? submitBtn.querySelector('.waitlist-btn-arrow') : null;
+      const spinner = submitBtn ? submitBtn.querySelector('.waitlist-spinner') : null;
+
+      if (submitBtn) submitBtn.disabled = true;
+      if (btnText) btnText.textContent = 'Submitting...';
+      if (btnArrow) btnArrow.style.display = 'none';
+      if (spinner) spinner.style.display = 'inline-block';
+
+      try {
+        const formData = new FormData(form);
+        if (!formData.get('form-name')) {
+          formData.set('form-name', 'studio-waitlist');
+        }
+        await fetch('/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams(formData).toString()
+        });
+      } catch (err) {
+        // Continue even if offline / static preview
+      }
+
+      // Persist signup state
+      try {
+        localStorage.setItem('vq-studio-waitlist-joined', email);
+      } catch (err) {}
+
+      if (confirmedEmailEl) confirmedEmailEl.textContent = email;
+      form.style.display = 'none';
+      if (successState) successState.style.display = 'flex';
+
+      if (submitBtn) submitBtn.disabled = false;
+      if (btnText) btnText.textContent = 'Request Early Access & Updates';
+      if (btnArrow) btnArrow.style.display = '';
+      if (spinner) spinner.style.display = 'none';
+
+      if (typeof showToast === 'function') {
+        showToast({
+          title: 'Waitlist confirmed',
+          desc: `You’re in! We will notify ${email} when macOS builds are ready.`
+        });
+      }
+    });
+  }
+}
+
 // ── INIT ──
 document.addEventListener('DOMContentLoaded', () => {
   initCopyButtons();
@@ -982,6 +1111,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initBenchmarkFilters();
   initHeroAurora();
   initStudioWindow();
+  initStudioWaitlist();
 });
 
 

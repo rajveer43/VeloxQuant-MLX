@@ -29,7 +29,7 @@
   <!-- Fonts are self-hosted in styles.css (assets/fonts/*.woff2) — no
        third-party hop, no render-blocking preconnect. -->
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="assets/styles.css?v=20260907c" />
+  <link rel="stylesheet" href="assets/styles.css?v=20260907d" />
 
   <script type="application/ld+json">
   {
@@ -414,7 +414,7 @@
           <ul>
             <li><a href="index.html#methods">Methods</a></li>
             <li><a href="benchmarks.html">Benchmarks</a></li>
-            <li><a href="https://github.com/rajveer43/VeloxQuant-Studio" target="_blank" rel="noopener">Studio</a></li>
+            <li><a href="#waitlist-modal" class="open-waitlist-trigger">Studio (Waitlist)</a></li>
             <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
           </ul>
         </div>
@@ -439,8 +439,6 @@
             <li><a href="https://doi.org/10.5281/zenodo.20647294" target="_blank" rel="noopener">Cite this work (DOI)</a></li>
             <li><a href="https://medium.com/@rajveer.rathod1301" target="_blank" rel="noopener">Blog</a></li>
             <li><a href="https://discord.gg/KDGQ9j6C7" target="_blank" rel="noopener">Discord Community</a></li>
-            <li><a href="https://x.com/Rajveer13Rathod" target="_blank" rel="noopener">X (@Rajveer13Rathod)</a></li>
-            <li><a href="https://www.linkedin.com/company/veloxquant" target="_blank" rel="noopener">LinkedIn (VeloxQuant)</a></li>
             <li><a href="https://github.com/rajveer43/VeloxQuant-MLX/issues" target="_blank" rel="noopener">Issues</a></li>
             <li><a href="https://github.com/rajveer43" target="_blank" rel="noopener">Get in touch</a></li>
           </ul>
@@ -454,13 +452,101 @@
   </footer>
 
   <script src="assets/calc.js?v=20260905" defer></script>
-  <script src="assets/main.js?v=20260905" defer></script>
+  <script src="assets/main.js?v=20260908" defer></script>
   <script src="assets/playground.js?v=20260906" defer></script>
 
   <!-- GoatCounter: privacy-friendly, cookieless page counts. Client-side, so
        it records browsers rather than crawlers — expect it to read lower than
        server-side request counts. -->
-  <script data-goatcounter="https://veloxquant.goatcounter.com/count"
-          async src="//gc.zgo.at/count.js"></script>
+  <!-- ── TOAST CONTAINER ── -->
+  <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+
+  <!-- ── MACOS APP WAITLIST MODAL ── -->
+  <div id="waitlist-modal" class="waitlist-modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="waitlist-modal-title">
+    <div class="waitlist-modal-card">
+      <button type="button" class="waitlist-close-btn" id="waitlist-close-btn" aria-label="Close waitlist modal">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+
+      <div class="waitlist-modal-header">
+        <div class="waitlist-app-icon-wrap">
+          <div class="waitlist-app-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          </div>
+          <span class="waitlist-status-badge">● IN DEVELOPMENT</span>
+        </div>
+        <h2 id="waitlist-modal-title" class="waitlist-modal-title">VeloxQuant Studio for macOS</h2>
+        <p class="waitlist-modal-subtitle">
+          The native desktop interface for Apple Silicon KV cache compression and inference acceleration. Currently under active development. Join the waitlist for private builds, release notes, and early access.
+        </p>
+      </div>
+
+      <!-- State 1: Signup Form -->
+      <form id="waitlist-form" name="studio-waitlist" method="POST" action="/" netlify data-netlify="true" netlify-honeypot="bot-field" data-netlify-honeypot="bot-field" class="waitlist-form">
+        <input type="hidden" name="form-name" value="studio-waitlist" />
+        <p class="waitlist-hidden-field" style="display:none;">
+          <label>Don't fill this out: <input name="bot-field" /></label>
+        </p>
+
+        <div class="waitlist-field">
+          <label for="waitlist-email" class="waitlist-label">Email Address <span class="waitlist-req">*</span></label>
+          <div class="waitlist-input-wrap">
+            <svg class="waitlist-field-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            <input type="email" id="waitlist-email" name="email" class="waitlist-input" placeholder="you@company.com or developer@mac.local" required autocomplete="email" />
+          </div>
+        </div>
+
+        <div class="waitlist-row-2col">
+          <div class="waitlist-field">
+            <label for="waitlist-chip" class="waitlist-label">Mac Hardware</label>
+            <div class="waitlist-input-wrap">
+              <svg class="waitlist-field-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+              <select id="waitlist-chip" name="chip" class="waitlist-select">
+                <option value="Apple M5 / M5 Pro / M5 Max">Apple M5 / Pro / Max</option>
+                <option value="Apple M4 / M4 Pro / M4 Max">Apple M4 / Pro / Max</option>
+                <option value="Apple M3 / M3 Pro / M3 Max">Apple M3 / Pro / Max</option>
+                <option value="Apple M2 / M2 Pro / M2 Max / Ultra">Apple M2 / Pro / Max / Ultra</option>
+                <option value="Apple M1 / M1 Pro / M1 Max / Ultra">Apple M1 / Pro / Max / Ultra</option>
+                <option value="Other / Multiple Macs">Other Mac</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="waitlist-field">
+            <label for="waitlist-usecase" class="waitlist-label">Target Models <span class="waitlist-opt">(optional)</span></label>
+            <div class="waitlist-input-wrap">
+              <svg class="waitlist-field-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              <input type="text" id="waitlist-usecase" name="usecase" class="waitlist-input" placeholder="e.g. DeepSeek-R1, Llama 3, Coding" />
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" id="waitlist-submit-btn" class="waitlist-submit-btn">
+          <span class="waitlist-btn-text">Request Early Access &amp; Updates</span>
+          <svg class="waitlist-btn-arrow" viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          <span class="waitlist-spinner" style="display:none;"></span>
+        </button>
+
+        <p class="waitlist-footer-note">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          No spam. 100% confidential. You'll receive macOS DMG test builds and release milestones.
+        </p>
+      </form>
+
+      <!-- State 2: Success Message -->
+      <div id="waitlist-success" class="waitlist-success" style="display: none;">
+        <div class="waitlist-success-icon">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+        </div>
+        <h3 class="waitlist-success-title">You're on the priority waitlist!</h3>
+        <p class="waitlist-success-desc">
+          We've reserved your spot for <span id="waitlist-confirmed-email" class="waitlist-highlight-email"></span>. As soon as the first macOS DMG candidate is ready for testing, you'll receive your download link directly.
+        </p>
+        <div class="waitlist-success-actions">
+          <button type="button" class="waitlist-done-btn" id="waitlist-done-btn">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
