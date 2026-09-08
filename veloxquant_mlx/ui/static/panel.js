@@ -15,6 +15,7 @@ const FIELDS = {
 };
 
 let METHODS = [];
+let methodDiscoveryError = null;
 let state = 'stopped';
 let logCount = 0;
 let selectedMethod = null;
@@ -91,6 +92,7 @@ function readForm() {
 
 function applyConfig(cfg) {
   for (const [key, id] of Object.entries(FIELDS)) {
+    if (key === 'method' && !METHODS.some((m) => m.name === cfg[key] && m.is_servable)) continue;
     if (cfg[key] !== undefined && cfg[key] !== null) $(id).value = cfg[key];
   }
   onHostChange();
@@ -146,8 +148,18 @@ function readKnobs() {
 }
 
 /* ── Methods (server view dropdown) ────────────────────── */
+function availabilityLabel(m) {
+  if (m.is_servable) return m.serve_tier_label || 'available';
+  if (/ModuleNotFoundError|ImportError/.test(m.unsupported_reason || '')) return 'dependency error';
+  if (/cache construction failed|probe failed/.test(m.unsupported_reason || '')) return 'runtime check failed';
+  return 'unsupported for serving';
+}
+
 async function loadMethods() {
   const data = await api('/api/methods');
+  if (!Array.isArray(data.methods) || data.methods.some((m) => !m || typeof m.name !== 'string' || typeof m.is_servable !== 'boolean')) {
+    throw new Error('Invalid method-discovery response; check the backend package version.');
+  }
   METHODS = data.methods;
 
   const select = $('f-method');
@@ -163,17 +175,27 @@ async function loadMethods() {
       opt.value = m.name;
       // Unsupported methods stay visible but unselectable — hiding five of
       // forty would misrepresent the catalog.
-      opt.textContent = m.is_servable ? m.name : `${m.name} — not available yet`;
+      opt.textContent = m.is_servable ? m.name : `${m.name} — ${availabilityLabel(m)}`;
+      opt.title = m.unsupported_reason || '';
       opt.disabled = !m.is_servable;
       group.appendChild(opt);
     }
     select.appendChild(group);
   }
-  select.value = data.default_serve_method;
+  select.value = METHODS.find((m) => m.name === data.default_serve_method && m.is_servable)?.name
+    || METHODS.find((m) => m.is_servable)?.name || '';
 
   const servable = METHODS.filter((m) => m.is_servable).length;
   $('methods-summary').textContent =
-    `${METHODS.length} methods · ${servable} ready to use · ${METHODS.length - servable} coming soon`;
+    `${METHODS.length} methods · ${servable} ready to use · ${METHODS.length - servable} unavailable`;
+
+  if (!servable) {
+    const reasons = [...new Set(METHODS.map((m) => m.unsupported_reason).filter(Boolean))];
+    methodDiscoveryError = `No serving methods are available. ${reasons.join('; ')} Check dependencies in the Python environment running this panel, then restart the panel to repeat its cached runtime checks.`;
+  } else {
+    methodDiscoveryError = null;
+  }
+  showError(methodDiscoveryError);
 
   onMethodChange();
   renderMethodTable();
@@ -186,13 +208,13 @@ function onMethodChange(knobValues) {
 
   const tierBadge = info.is_servable
     ? '<span class="badge badge-accounting">available</span>'
-    : '<span class="badge badge-unsupported">not available yet</span>';
+    : `<span class="badge badge-unsupported">${escapeHtml(availabilityLabel(info))}</span>`;
 
   let html = `<div class="blurb"><span class="badge badge-family">${info.family}</span>${tierBadge}</div>`
     + `<div class="blurb">${escapeHtml(info.blurb)}</div>`;
 
   if (info.unsupported_reason) {
-    html += `<div class="deviation"><strong>Can't use this one yet.</strong> ${escapeHtml(info.unsupported_reason)}</div>`;
+    html += `<div class="deviation"><strong>Unavailable.</strong> ${escapeHtml(info.unsupported_reason)}</div>`;
   }
   if (info.paper_deviation) {
     html += `<div class="deviation"><strong>Good to know:</strong> ${escapeHtml(info.paper_deviation)}</div>`;
@@ -229,7 +251,7 @@ function renderMethodTable() {
         class="${m.is_servable ? '' : 'is-unsupported'} ${m.name === selectedMethod ? 'is-selected' : ''}">
       <td><span class="method-name">${escapeHtml(m.name)}</span>${m.is_adapted ? ' <span class="badge badge-family">modified</span>' : ''}</td>
       <td>${escapeHtml(m.family)}</td>
-      <td class="${m.is_servable ? 'tier tier-ok' : 'tier tier-no'}">${escapeHtml(m.serve_tier_label)}</td>
+      <td class="${m.is_servable ? 'tier tier-ok' : 'tier tier-no'}">${escapeHtml(availabilityLabel(m))}</td>
       <td class="cov ${m.coverage === 'none' ? 'cov-none' : ''}">${escapeHtml(m.coverage_label)}</td>
     </tr>`).join('');
 
@@ -247,12 +269,12 @@ function selectMethodDetail(name) {
   let html = `<h3>${escapeHtml(m.name)}</h3>
     <div class="detail-row">
       <span class="badge badge-family">${escapeHtml(m.family)}</span>
-      <span class="badge ${m.is_servable ? 'badge-accounting' : 'badge-unsupported'}">${escapeHtml(m.serve_tier_label)}</span>
+      <span class="badge ${m.is_servable ? 'badge-accounting' : 'badge-unsupported'}">${escapeHtml(availabilityLabel(m))}</span>
     </div>
     <p class="detail-blurb">${escapeHtml(m.blurb)}</p>`;
 
   if (m.unsupported_reason) {
-    html += `<div class="deviation"><strong>Not available yet.</strong> ${escapeHtml(m.unsupported_reason)}</div>`;
+    html += `<div class="deviation"><strong>Unavailable.</strong> ${escapeHtml(m.unsupported_reason)}</div>`;
   }
   if (m.paper_deviation) {
     html += `<div class="deviation"><strong>Good to know:</strong> ${escapeHtml(m.paper_deviation)}</div>`;
@@ -385,6 +407,7 @@ function refreshPrimary() {
 }
 
 function showError(message) {
+  message = message || methodDiscoveryError;
   const banner = $('error-banner');
   if (!message) { banner.hidden = true; return; }
   banner.hidden = false;

@@ -48,6 +48,7 @@ dependencies = [
     "mlx>=0.18",
     "mlx-lm>=0.31.3",
     "numpy>=1.26",
+    "scipy>=1.11",
 ]
 
 [project.optional-dependencies]
@@ -57,7 +58,6 @@ plots = [
 dev = [
     "pytest>=8.0",
     "pytest-xdist",
-    "scipy>=1.11",
     "psutil>=5.9",
     "build>=1.2",
     "twine>=5.0",
