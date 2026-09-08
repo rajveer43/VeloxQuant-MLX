@@ -432,6 +432,19 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.80.0 (2026-09-08)
+
+### Features
+
+- **landing**: Add VeloxQuant Studio waitlist modal
+  ([#330](https://github.com/rajveer43/VeloxQuant-MLX/pull/330),
+  [`6cab917`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6cab917a456dbe9e1a494c01acfae824580abbfd))
+
+- **panel**: Add Hugging Face Hub search to model picker
+  ([#331](https://github.com/rajveer43/VeloxQuant-MLX/pull/331),
+  [`387de25`](https://github.com/rajveer43/VeloxQuant-MLX/commit/387de25c0dd5cd6980de4cba3e511a74333e1012))
+
+
 ## v0.79.1 (2026-09-08)
 
 ### Bug Fixes
