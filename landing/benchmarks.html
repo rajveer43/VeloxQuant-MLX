@@ -139,6 +139,7 @@
         <!-- Sticky / Segmented Section Quick Navigation -->
         <nav class="bench-nav" aria-label="Benchmark categories">
           <a href="#metal" class="bench-nav-pill active">⚡ Metal GPU Speedup</a>
+          <a href="#eviction-quant-kernels" class="bench-nav-pill">🗜️ Eviction &amp; Quant Kernels</a>
           <a href="#kernel-roofline" class="bench-nav-pill">🧩 Decode Occupancy</a>
           <a href="#kivi-matrix" class="bench-nav-pill">🧠 12-Model Safety Matrix</a>
           <a href="#qfilters-scorer" class="bench-nav-pill">🎯 Attention Correlation</a>
@@ -286,6 +287,102 @@
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      <!-- ── SECTION: EVICTION & QUANTIZATION KERNELS ── -->
+      <section id="eviction-quant-kernels" class="bench-section">
+        <div class="bench-section-header">
+          <span class="bench-section-tag">01.5 · Fused Metal Kernels</span>
+          <h2 class="bench-section-title">Eviction &amp; Quantization Kernels vs. Pure MLX</h2>
+          <p class="bench-section-subtitle">
+            Fused Metal kernels for the H2O / Keyformer eviction scoring loop and the KIVI / RVQ quantize+pack path, measured against the equivalent pure-MLX implementation on the same Apple M4. Each speedup is a range across repeated runs (median of interleaved samples per run) rather than a single reading — these are small, fast kernels where run-to-run scheduling noise is visible at larger sizes.
+          </p>
+        </div>
+
+        <div class="bench-card">
+          <div class="bench-card-head">
+            <span class="bench-card-title">Eviction Scoring: Python Loop vs. Fused Metal Kernel</span>
+            <span class="bench-badge-chip">n_kept=512, D=128 · Apple M4</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Kernel</th>
+                  <th>Python loop</th>
+                  <th>Fused Metal</th>
+                  <th>Speedup</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>H2O fused eviction</td>
+                  <td class="td-muted">~0.60–0.69 ms/call</td>
+                  <td class="td-winner">~0.28–0.42 ms/call</td>
+                  <td class="td-winner">1.65×–2.42×</td>
+                </tr>
+                <tr>
+                  <td>Keyformer fused eviction</td>
+                  <td class="td-muted">~0.72–0.89 ms/call</td>
+                  <td class="td-winner">~0.28–0.33 ms/call</td>
+                  <td class="td-winner">2.45×–2.69×</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="gap-footnote">Reproduce: <code>pytest veloxquant_mlx/tests/metal/test_h2o_evict.py veloxquant_mlx/tests/metal/test_keyformer_evict.py -k benchmark -s</code>. Both eviction paths replace a per-token Python score-and-compact loop with a single fused dispatch.</p>
+        </div>
+
+        <div class="bench-card" style="margin-top: 1.5rem;">
+          <div class="bench-card-head">
+            <span class="bench-card-title">KIVI Group-Affine Quantization: MLX vs. Fused Metal</span>
+            <span class="bench-badge-chip">B=1 H=8 D=128 b=2 g=32 · Apple M4</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>S</th>
+                  <th>Scheme</th>
+                  <th>Speedup</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>32</td><td class="td-muted">keys (per-channel)</td><td class="td-winner">1.30×–1.35×</td></tr>
+                <tr><td>32</td><td class="td-muted">values (per-token)</td><td class="td-winner">1.47×–1.50×</td></tr>
+                <tr><td>512</td><td class="td-muted">keys (per-channel)</td><td class="td-winner">2.05×–2.12×</td></tr>
+                <tr><td>512</td><td class="td-muted">values (per-token)</td><td class="td-winner">1.65×–1.71×</td></tr>
+                <tr><td>2048</td><td class="td-muted">keys (per-channel)</td><td class="td-winner">4.30×–4.34× typical, up to 6.4× in one noisy run</td></tr>
+                <tr><td>2048</td><td class="td-muted">values (per-token)</td><td class="td-winner">2.85×–3.66× typical, up to 4.9× in one noisy run</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="gap-footnote">Medians of interleaved samples over a rotating input pool. The win grows with block size — these kernels replace several full-size MLX intermediates with one pass, so they scale with bytes moved. Prefill (one large group-aligned flush) is where this matters; decode flushes only <code>group_size</code> tokens at a time. Reproduce: <code>pytest veloxquant_mlx/tests/metal/test_kivi_quant.py -k benchmark -s</code>.</p>
+        </div>
+
+        <div class="bench-card" style="margin-top: 1.5rem;">
+          <div class="bench-card-head">
+            <span class="bench-card-title">RVQ Quantize+Pack: MLX vs. Fused Metal</span>
+            <span class="bench-badge-chip">D=128, bits=2 · Apple M4</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>N</th>
+                  <th>Speedup</th>
+                  <th>Fused GB/s (nominal)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>64</td><td class="td-winner">1.34×–1.80×</td><td class="td-muted">0.09–0.14 GB/s</td></tr>
+                <tr><td>1,024</td><td class="td-winner">1.46×–1.81×</td><td class="td-muted">1.14–2.26 GB/s</td></tr>
+                <tr><td>8,192</td><td class="td-winner">2.38×–2.40× typical, one 1.31× low outlier</td><td class="td-muted">2.65–7.18 GB/s</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="gap-footnote">GB/s is nominal traffic (input read once + packed streams written), not a hardware counter; the MLX baseline additionally charges the two full-size uint8 index intermediates the fused kernel never materializes. Reproduce: <code>pytest veloxquant_mlx/tests/metal/test_rvq_quant_pack.py -k benchmark -s</code>.</p>
         </div>
       </section>
 
@@ -442,12 +539,12 @@
               <tbody>
                 <tr>
                   <td>GQA head-packing (share K/V decode across query heads)</td>
-                  <td class="td-hot">2.7×–4.7× slower</td>
-                  <td class="td-muted">Reduces threadgroup count, which is the actual bottleneck — kept as tested code, not the default.</td>
+                  <td>Depends on <code>heads_per_kv</code> and S_kv — re-measured after a later occupancy fix changed the picture. <span class="td-hot">0.4×–0.9× (slower)</span> at <code>heads_per_kv=4-8</code> and short context, but <span class="td-winner">1.1×–1.7× faster</span> at <code>heads_per_kv=4</code> with few kv-heads or long context.</td>
+                  <td class="td-muted">No longer a uniform rejection, but still situational and not adopted as the default — see the doc for the full per-ratio breakdown.</td>
                 </tr>
                 <tr>
                   <td>Two-pass "decode-once" (separate decode + attend kernels)</td>
-                  <td><span class="td-winner">1.1×–3.2× faster</span> at S_kv≤2048, <span class="td-hot">0.80×–0.85× (slower)</span> at S_kv≥3072</td>
+                  <td><span class="td-winner">1.1×–2.4× faster</span> at short context, <span class="td-hot">0.6×–0.9× (slower)</span> at long context — exact crossover point shifts per head ratio (S_kv≈1.5k–8k)</td>
                   <td class="td-muted">Real crossover, but this project's realistic decode targets sit past it — not adopted as the default.</td>
                 </tr>
                 <tr>
@@ -458,6 +555,10 @@
               </tbody>
             </table>
           </div>
+          <p class="gap-footnote">
+            The head-packing numbers above were revised after this table's original measurement (before issue #317's occupancy fix changed the packed kernel's threadgroup-memory footprint) turned out to be superseded, not simply wrong — full re-measurement and methodology →
+            <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/KV_KERNEL_ROOFLINE_FINDINGS.md#addendum-re-measured-after-nsg-autotune-issue-317--packing-verdict-is-now-situational" target="_blank" rel="noopener">re-measured after nsg autotune addendum</a>.
+          </p>
         </div>
 
         <!-- Reproduce command terminal box -->
