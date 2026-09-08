@@ -78,8 +78,12 @@ ALL_METHODS = list(_CONFIGS)
 # times. H2O and CurDKV are the documented exceptions: offset tracks the TRUE
 # absolute step count instead, so mlx_lm's rope(x, offset=cache.offset) call
 # on the query/next key rotates correctly even after eviction has made
-# shape[2] < true step count — see module docstring above.
-_TRUE_STEP_COUNT_OFFSET_METHODS = ["h2o", "curdkv"]
+# shape[2] < true step count — see module docstring above. TOVA joined this
+# group when TOVAKVCache adopted the same true-offset fix (`self._true_offset`,
+# see cache/tova_cache.py) — TOVA does not renumber positions after eviction,
+# so survivors keep their true absolute position and offset must track true
+# elapsed steps, not stored-row count, for the same RoPE-correctness reason.
+_TRUE_STEP_COUNT_OFFSET_METHODS = ["h2o", "curdkv", "tova"]
 _OFFSET_EQUALS_SHAPE_METHODS = [m for m in ALL_METHODS if m not in _TRUE_STEP_COUNT_OFFSET_METHODS]
 
 

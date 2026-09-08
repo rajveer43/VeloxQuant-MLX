@@ -659,6 +659,219 @@ def h2o_update(
     return state
 
 
+def _attention_scores_batched(query_proxy: mx.array, keys: mx.array) -> mx.array:
+    """Softmax attention weights, batched over a leading ``[BH]`` axis.
+
+    Args:
+        query_proxy: ``[BH, D]``.
+        keys:        ``[BH, n, D]``.
+
+    Returns:
+        ``[BH, n]`` softmax weights, each row summing to ~1.
+    """
+    scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
+    logits = (keys @ query_proxy[..., None])[..., 0] * scale  # [BH, n]
+    return mx.softmax(logits, axis=-1)
+
+
+def _evict_via_mlx_batched(
+    keys_cat: mx.array,
+    values_cat: mx.array,
+    scores_cat: mx.array,
+    positions_cat: mx.array,
+    n_sink: int,
+    rope_base: float,
+    grace: int = 0,
+) -> tuple[mx.array, mx.array, mx.array, mx.array]:
+    """Batched-``[BH,·]`` equivalent of :func:`_evict_via_mlx`.
+
+    Each ``bh`` row's argmin/evict/re-rotate is independent of every other
+    row (same per-row-independence structure as TOVA's batched eviction
+    kernels) — this is a like-for-like vectorization of
+    :func:`_evict_via_mlx`'s per-head-loop math over a leading ``BH`` axis,
+    not a new eviction policy. Verified bit-for-bit equivalent to calling
+    :func:`_evict_via_mlx` once per row (see
+    ``veloxquant_mlx/tests/quantizers/test_h2o.py``).
+    """
+    bh, n_total = scores_cat.shape
+    n_sink_eff = min(n_sink, n_total)
+    n_grace_eff = min(grace, n_total)
+    protected = scores_cat
+    if n_sink_eff > 0:
+        sink_inf = mx.full((bh, n_sink_eff), float("inf"), dtype=mx.float32)
+        protected = mx.concatenate([sink_inf, protected[:, n_sink_eff:]], axis=1)
+    if n_grace_eff > 0:
+        grace_inf = mx.full((bh, n_grace_eff), float("inf"), dtype=mx.float32)
+        protected = mx.concatenate([protected[:, : n_total - n_grace_eff], grace_inf], axis=1)
+
+    evict_idx = mx.argmin(protected, axis=-1, keepdims=True)  # [BH, 1]
+    rows = mx.arange(n_total - 1)[None]  # [1, n_total-1]
+    source = rows + (rows >= evict_idx)  # [BH, n_total-1]
+
+    keys_kept = mx.take_along_axis(keys_cat, source[..., None], axis=1)
+    values_kept = mx.take_along_axis(values_cat, source[..., None], axis=1)
+    scores_kept = mx.take_along_axis(scores_cat, source, axis=1)
+    old_positions_kept = mx.take_along_axis(positions_cat, source, axis=1)
+    evicted_pos = mx.take_along_axis(positions_cat, evict_idx, axis=1)  # [BH, 1]
+
+    shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
+    new_positions = old_positions_kept + shift
+    keys_kept = _rope_remap_positions_batched(
+        keys_kept, old_positions_kept, new_positions, base=rope_base
+    )
+    return keys_kept, values_kept, scores_kept, new_positions
+
+
+def _rope_remap_positions_batched(
+    x: mx.array, old_positions: mx.array, new_positions: mx.array, base: float
+) -> mx.array:
+    """Batched-``[BH,n,D]`` equivalent of ``a2ats_rope.rope_remap_positions``.
+
+    Reimplemented (not delegated) because ``a2ats_rope._rope_cos_sin``/
+    ``_rotate`` assume 2D ``[N]``/``[N,D]`` input (``positions[:, None]``,
+    ``x[:, half:]``) and do not broadcast over a leading ``BH`` axis. Same
+    rotation formula, one extra leading axis throughout — de-rotate by
+    ``-old_position`` then re-rotate by ``new_position`` via a single
+    ``delta = new_position - old_position`` rotation, NeoX-style
+    (first/second-half split), matching MLX's default ``traditional=False``
+    convention (same caveat as the 2D original: not valid for
+    ``traditional=True`` models).
+    """
+    if x.shape[1] == 0:
+        return x.astype(mx.float16)
+    D = x.shape[-1]
+    half = D // 2
+    delta = (new_positions.astype(mx.float32) - old_positions.astype(mx.float32))[
+        ..., None
+    ]  # [BH,n,1]
+    inv_freq = 1.0 / (base ** (mx.arange(0, half, dtype=mx.float32) / half))  # [half]
+    angles = delta * inv_freq[None, None, :]  # [BH, n, half]
+    cos = mx.cos(angles).astype(mx.float16)
+    sin = mx.sin(angles).astype(mx.float16)
+    xh = x.astype(mx.float16)
+    x1, x2 = xh[..., :half], xh[..., half:]
+    return mx.concatenate([x1 * cos - x2 * sin, x1 * sin + x2 * cos], axis=-1)
+
+
+def _metal_evict_batched(
+    keys_cat: mx.array,
+    values_cat: mx.array,
+    scores_cat: mx.array,
+    positions_cat: mx.array,
+    n_sink: int,
+    rope_base: float,
+    grace: int = 0,
+) -> tuple[mx.array, mx.array, mx.array, mx.array]:
+    """Batched-``[BH,·]`` fused Metal eviction — a direct pass-through to
+    :func:`veloxquant_mlx.metal.h2o_fused_evict`, which already accepts a
+    ``BH`` leading dimension (see ``metal/_h2o_evict.py``); no new kernel is
+    needed here, only batching the caller.
+    """
+    from veloxquant_mlx.metal import h2o_fused_evict
+
+    return h2o_fused_evict(
+        keys_cat,
+        values_cat,
+        scores_cat,
+        positions_cat,
+        n_sink=n_sink,
+        rope_base=rope_base,
+        grace=grace,
+    )
+
+
+def h2o_update_batched(
+    keys: mx.array | None,  # [BH, n, D] fp16 or None
+    values: mx.array | None,  # [BH, n, D] fp16 or None
+    scores: mx.array | None,  # [BH, n] fp32 or None
+    positions: mx.array | None,  # [BH, n] int32 or None
+    new_keys: mx.array,  # [BH, S, D]
+    new_values: mx.array,  # [BH, S, D]
+    n_sink: int,
+    budget: int,
+    rope_base: float,
+    next_pos: int,
+    grace: int = 0,
+    decay: float = 1.0,
+) -> tuple[mx.array, mx.array, mx.array, mx.array, int]:
+    """Vectorized-over-``BH`` equivalent of calling :func:`h2o_update` once
+    per ``(batch, head)`` pair with identical per-row state.
+
+    All ``BH`` rows share ``n_sink``/``budget``/``grace``/``decay``/``next_pos``
+    (true for every real caller: :class:`H2OKVCache` applies one uniform
+    config to every head), so the per-token score/decay/eviction/RoPE-remap
+    math — otherwise identical for every row — can run as one batched MLX
+    call per step instead of ``BH`` separate Python-level calls into
+    :func:`h2o_update`. This removes the measured ``O(B*H)`` Python dispatch
+    loop in :class:`H2OKVCache.update_and_fetch` (see
+    ``VELOXQUANT_CACHE_BOOKKEEPING_AUDIT.md``, P1 finding #1: unbatched
+    per-head loop cost 40% real-model decode throughput), mirroring
+    :func:`veloxquant_mlx.quantizers.tova._tova_update_batched`'s existing
+    ``[BH,S,D]`` design for the same reason.
+
+    Numerically identical to the per-head loop it replaces: every op below
+    is the same formula as :func:`h2o_update`'s bootstrap/score-update/evict
+    branches, applied over a leading ``BH`` axis instead of a Python loop —
+    verified bit-for-bit (fp32-rounding-only) equivalent in
+    ``veloxquant_mlx/tests/quantizers/test_h2o.py``.
+
+    Returns:
+        ``(keys, values, scores, positions, next_pos)`` — the first four
+        ``[BH, n_kept, D]``/``[BH, n_kept]``, ``next_pos`` the updated
+        absolute step count (shared across all rows).
+    """
+    bh, s, d = new_keys.shape
+    if s == 0:
+        return keys, values, scores, positions, next_pos
+    if n_sink >= budget:
+        raise ValueError("h2o: sinks must leave at least one evictable position")
+
+    use_metal = _metal_evict_available()
+
+    for i in range(s):
+        k_i = new_keys[:, i].astype(mx.float32)  # [BH, D]
+        v_i = new_values[:, i].astype(mx.float16)  # [BH, D]
+        cur_pos = next_pos
+
+        if keys is None:
+            keys = new_keys[:, i : i + 1].astype(mx.float16)  # [BH, 1, D]
+            values = v_i[:, None, :]
+            scores = mx.ones((bh, 1), dtype=mx.float32)
+            positions = mx.full((bh, 1), cur_pos, dtype=mx.int32)
+            next_pos = cur_pos + 1
+            continue
+
+        attn = _attention_scores_batched(k_i, keys.astype(mx.float32))  # [BH, n]
+        decayed_scores = scores * decay if decay != 1.0 else scores
+        updated_scores = decayed_scores + attn
+
+        keys_cat = mx.concatenate([keys, new_keys[:, i : i + 1].astype(mx.float16)], axis=1)
+        values_cat = mx.concatenate([values, v_i[:, None, :]], axis=1)
+        scores_cat = mx.concatenate([updated_scores, mx.zeros((bh, 1), dtype=mx.float32)], axis=1)
+        positions_cat = mx.concatenate(
+            [positions, mx.full((bh, 1), cur_pos, dtype=mx.int32)], axis=1
+        )
+
+        n_total = keys_cat.shape[1]
+        if n_total > budget:
+            if use_metal:
+                keys_cat, values_cat, scores_cat, positions_cat = _metal_evict_batched(
+                    keys_cat, values_cat, scores_cat, positions_cat, n_sink, rope_base, grace
+                )
+            else:
+                keys_cat, values_cat, scores_cat, positions_cat = _evict_via_mlx_batched(
+                    keys_cat, values_cat, scores_cat, positions_cat, n_sink, rope_base, grace
+                )
+
+        keys, values, scores, positions = keys_cat, values_cat, scores_cat, positions_cat
+        next_pos = cur_pos + 1
+
+        if (i + 1) % _EVAL_FLUSH_INTERVAL == 0:
+            mx.eval(keys, values, scores, positions)
+
+    return keys, values, scores, positions, next_pos
+
+
 def h2o_get_kv(state: H2OState) -> tuple[mx.array, mx.array]:
     """Return ``(keys, values)`` arrays from state.
 
@@ -687,6 +900,7 @@ __all__ = [
     "H2OState",
     "init_h2o_state",
     "h2o_update",
+    "h2o_update_batched",
     "h2o_get_kv",
     "h2o_fp16_bytes",
     "full_h2o_fp16_bytes",

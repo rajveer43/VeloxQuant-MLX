@@ -130,15 +130,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
-from veloxquant_mlx.quantizers.a2ats_rope import rope_remap_positions
-from veloxquant_mlx.quantizers.h2o import (
-    H2OState,
-    full_h2o_fp16_bytes,
-    h2o_fp16_bytes,
-    h2o_get_kv,
-    h2o_update,
-    init_h2o_state,
-)
+from veloxquant_mlx.quantizers.h2o import h2o_update_batched
 
 
 class H2OKVCache(_MLXKVCache):
@@ -200,9 +192,21 @@ class H2OKVCache(_MLXKVCache):
         self._decay = float(getattr(config, "h2o_decay", 0.98))
 
         self._head_dim: int = 0
-        self._states: list[H2OState] = []
         self._B: int = 0
         self._H: int = 0
+        self._initialised: bool = False
+        self._next_pos: int = 0
+
+        # Flat [BH, n, D] / [BH, n] state — replaces the old per-(b,h)
+        # H2OState list. Batching every head into one call (instead of a
+        # Python loop calling h2o_update once per (b,h) pair) removed the
+        # measured O(B*H) Python-dispatch bottleneck; see
+        # VELOXQUANT_CACHE_BOOKKEEPING_AUDIT.md P1 finding #1 (56.8 vs 95.2
+        # tok/s, a 40% real-model decode regression, traced to this loop).
+        self._bh_keys: mx.array | None = None
+        self._bh_values: mx.array | None = None
+        self._bh_scores: mx.array | None = None
+        self._bh_positions: mx.array | None = None
 
         self._h2o_kept_bytes: int = 0
         self._full_seq_bytes: int = 0
@@ -210,25 +214,29 @@ class H2OKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
-        """Lazily initialise per-head H2OState list on first call."""
-        if not self._states:
+        """Lazily record shape and validate config on first call (shape is
+        only known once B/H/D are known — mirrors the guards
+        ``init_h2o_state`` used to raise per-head, now checked once here
+        instead of B*H times).
+        """
+        if not self._initialised:
+            if self._n_sink > 0 and self._n_sink >= self._budget:
+                raise ValueError(
+                    f"h2o: n_sink ({self._n_sink}) must be < budget ({self._budget}) — no "
+                    "evictable positions remain, so sinks would be evicted once the cache fills"
+                )
+            if (self._n_sink > 0 or self._grace > 0) and self._n_sink + self._grace >= self._budget:
+                raise ValueError(
+                    f"h2o: n_sink ({self._n_sink}) + grace ({self._grace}) must be < budget "
+                    f"({self._budget}) — every row would be protected, leaving nothing "
+                    "evictable once the cache fills"
+                )
+            if not (0.0 < self._decay <= 1.0):
+                raise ValueError(f"h2o: decay ({self._decay}) must be in (0, 1]")
             self._B = B
             self._H = H
             self._head_dim = D
-            self._states = [
-                init_h2o_state(
-                    self._n_sink,
-                    self._budget,
-                    D,
-                    rope_base=self._rope_base,
-                    grace=self._grace,
-                    decay=self._decay,
-                )
-                for _ in range(B * H)
-            ]
-
-    def _head_idx(self, b: int, h: int) -> int:
-        return b * self._H + h
+            self._initialised = True
 
     def _fix_incoming_rope(self, keys: mx.array, offset_before: int, next_pos: int) -> mx.array:
         """Re-rotate incoming keys if the model rotated them at the wrong
@@ -246,16 +254,13 @@ class H2OKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         old_positions = mx.arange(offset_before, offset_before + S, dtype=mx.int32)
         new_positions = mx.arange(next_pos, next_pos + S, dtype=mx.int32)
-        out_b = []
-        for b in range(B):
-            out_h = []
-            for h in range(H):
-                base = self._states[self._head_idx(b, h)].rope_base
-                out_h.append(
-                    rope_remap_positions(keys[b, h], old_positions, new_positions, base=base)
-                )
-            out_b.append(mx.stack(out_h, axis=0))
-        return mx.stack(out_b, axis=0)
+        flat = keys.reshape(B * H, S, D)
+        old_b = mx.broadcast_to(old_positions[None], (B * H, S))
+        new_b = mx.broadcast_to(new_positions[None], (B * H, S))
+        from veloxquant_mlx.quantizers.h2o import _rope_remap_positions_batched
+
+        remapped = _rope_remap_positions_batched(flat, old_b, new_b, base=self._rope_base)
+        return remapped.reshape(B, H, S, D)
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
@@ -282,36 +287,43 @@ class H2OKVCache(_MLXKVCache):
         self._ensure_states(B, H, D)
 
         offset_before = self.offset
-        next_pos = self._states[0].next_pos  # identical across heads (see class docstring)
+        next_pos = self._next_pos if self._bh_keys is not None else offset_before
 
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
         keys_fixed = self._fix_incoming_rope(keys.astype(mx.float16), offset_before, next_pos)
 
-        k_out_b, v_out_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                idx = self._head_idx(b, h)
-                st = self._states[idx]
-                st = h2o_update(
-                    st,
-                    keys_fixed[b, h],
-                    values[b, h].astype(mx.float16),
-                )
-                self._states[idx] = st
-                k_h, v_h = h2o_get_kv(st)
-                k_out_h.append(k_h)  # [n_kept, D]
-                v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))  # [H, n_kept, D]
-            v_out_b.append(mx.stack(v_out_h, axis=0))
+        new_keys_flat = keys_fixed.reshape(B * H, S, D)
+        new_values_flat = values.astype(mx.float16).reshape(B * H, S, D)
 
-        K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_kept, D]
-        V_out = mx.stack(v_out_b, axis=0)
+        (
+            self._bh_keys,
+            self._bh_values,
+            self._bh_scores,
+            self._bh_positions,
+            self._next_pos,
+        ) = h2o_update_batched(
+            self._bh_keys,
+            self._bh_values,
+            self._bh_scores,
+            self._bh_positions,
+            new_keys_flat,
+            new_values_flat,
+            self._n_sink,
+            self._budget,
+            self._rope_base,
+            next_pos,
+            grace=self._grace,
+            decay=self._decay,
+        )
 
-        # Byte accounting: sum across all head states
-        self._h2o_kept_bytes = sum(h2o_fp16_bytes(st) for st in self._states)
+        n_kept = self._bh_keys.shape[1]
+        K_out = self._bh_keys.reshape(B, H, n_kept, D)
+        V_out = self._bh_values.reshape(B, H, n_kept, D)
+
+        # Byte accounting: bytes currently retained across all (b,h) rows.
+        self._h2o_kept_bytes = B * H * n_kept * D * 2 * 2
 
         # Store exactly the n_kept retained rows — NOT delegated to the base
         # class's update_and_fetch, whose growing-buffer bookkeeping assumes
@@ -321,7 +333,7 @@ class H2OKVCache(_MLXKVCache):
         # physically stored.
         self.keys = K_out
         self.values = V_out
-        self.offset = self._states[0].next_pos
+        self.offset = self._next_pos
         return K_out, V_out
 
     # ------------------------------------------------------------------
@@ -355,14 +367,31 @@ class H2OKVCache(_MLXKVCache):
 
     @state.setter
     def state(self, v):
-        """Restoring from a saved state cannot recover the true step count
-        that produced it (H2O's own eviction history is not persisted), so
-        ``self.offset`` is set to the stored row count as the least-wrong
-        available estimate. Loading a saved H2O cache mid-eviction-history is
-        not a supported/tested path.
+        """Restoring from a saved state cannot recover the true step count,
+        cumulative scores, or absolute positions that produced it (H2O's own
+        eviction history is not persisted), so ``self.offset`` is set to the
+        stored row count as the least-wrong available estimate, and the flat
+        ``[BH,·]`` bookkeeping is reset accordingly (scores restart at 0,
+        positions restart contiguous from 0) — restored rows become
+        immediately eviction-eligible with no grace/accumulated-mass
+        history, same limitation as before this class's internals were
+        batched. Loading a saved H2O cache mid-eviction-history is not a
+        supported/tested path.
         """
         self.keys, self.values = v
         self.offset = 0 if self.keys is None else self.keys.shape[2]
+        if self.keys is None:
+            self._bh_keys = self._bh_values = self._bh_scores = self._bh_positions = None
+            self._next_pos = 0
+            self._initialised = False
+        else:
+            B, H, n, D = self.keys.shape
+            self._ensure_states(B, H, D)
+            self._bh_keys = self.keys.reshape(B * H, n, D)
+            self._bh_values = self.values.reshape(B * H, n, D)
+            self._bh_scores = mx.zeros((B * H, n), dtype=mx.float32)
+            self._bh_positions = mx.broadcast_to(mx.arange(n, dtype=mx.int32)[None], (B * H, n))
+            self._next_pos = n
 
     # ------------------------------------------------------------------
     @property
@@ -390,9 +419,9 @@ class H2OKVCache(_MLXKVCache):
     @property
     def tokens_kept(self) -> int:
         """Tokens currently in the (B=0, H=0) head's cache (diagnostic)."""
-        if not self._states or self._states[0].keys is None:
+        if self._bh_keys is None:
             return 0
-        return int(self._states[0].keys.shape[0])
+        return int(self._bh_keys.shape[1])
 
 
 __all__ = ["H2OKVCache"]

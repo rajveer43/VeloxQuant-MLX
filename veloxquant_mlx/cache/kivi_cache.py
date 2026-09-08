@@ -18,9 +18,43 @@ KIVI's asymmetry:
 
 Like every method in this repo, the quantize→dequantize round-trip happens
 inside ``update_and_fetch`` so the downstream SDPA call sees standard fp16
-tensors.  **The paper's throughput gains come from a CUDA kernel that does
-not port to Metal** — on Apple Silicon the win is *memory*, and we expect a
-throughput cost vs fp16, which the benchmarks measure honestly.
+tensors. **The paper's throughput gains come from a CUDA kernel that does
+not port to Metal.** On this hardware, the Metal group-quant/dequant kernel
+measurably speeds up the round-trip itself (1.3-4.9x vs the MLX path in the
+existing benchmark suite), but that is a *compute* win, not a *memory* one.
+
+**Memory-savings caveat (read before citing ``compressed_*_bytes`` /
+``effective_compression_ratio`` as a live-memory reduction):** ``self.keys``
+/ ``self.values`` are quantized *then immediately dequantized back to fp16
+in place* every flush (``_quant_dequant_along``, used in
+``update_and_fetch`` below) — the live GPU-resident tensor is fp16 **at all
+times**, because ``mlx_lm``'s SDPA call requires a standard fp16 tensor and
+this cache does not (yet) expose a fused-attention path that consumes
+packed codes directly. ``compressed_key_bytes`` / ``compressed_value_bytes``
+/ ``effective_compression_ratio`` are a separate byte-accounting estimate —
+"what this data would cost if stored packed" — computed alongside the
+round-trip; they do **not** correspond to any tensor actually resident in
+memory. Measured directly: a live ``KIVIKVCache.keys`` tensor after 200
+decode steps occupied 131,072 bytes (actual fp16 GPU-resident bytes) while
+``compressed_key_bytes`` reported 15,360 bytes for the same region — an
+8.5x gap between the reported estimate and the real footprint (see
+``VELOXQUANT_CACHE_BOOKKEEPING_AUDIT.md``, P1 finding #3, and
+``scripts/kv_bookkeeping_memory_check.py``). Treat these properties as
+"hypothetical packed-storage byte accounting," not a memory-savings claim.
+
+**Quality-vs-decode-length caveat (default ``bit_width_inlier=2``):**
+quantization error compounds under autoregressive decode. Measured on a
+real small model (Llama-3.2-1B-Instruct, 4-bit weights): logit cosine
+similarity vs. an fp16 baseline was 0.95 after prefill alone, dropped to
+0.82 after 3 decode steps, and reached -0.18 (effectively uncorrelated,
+0% token agreement) after 64 decode steps at the documented default
+``b=2``. This recovers monotonically at higher bit widths in the same
+setup (0.996 at ``b=4``, 0.99999 at ``b=8``), confirming this is expected
+compounding quantization error, not a bookkeeping bug — but it means the
+2-bit default is **unsafe for unattended long-generation use on small
+models** without explicitly raising ``bit_width_inlier`` (see
+``VELOXQUANT_CACHE_BOOKKEEPING_AUDIT.md``, P1 finding #4, and
+``scripts/kv_bookkeeping_e2e_bench.py``).
 
 KIVI is fully deterministic (min/max group quantization, no codebook
 training, no RNG), so it introduces no run-to-run parity variance.
@@ -29,7 +63,8 @@ Per-token storage at bit-width ``b`` and group size ``g`` (keys, per
 channel): ``D * b / 8`` bits of codes + ``2 * (D / g_eff) * 2`` bytes of
 fp16 (scale, zero) amortized per group.  Byte accounting below reflects the
 realized quantized-region cost; the fp16 residual window is reported
-separately so the compression ratio is not inflated.
+separately so the compression ratio is not inflated — but see the
+memory-savings caveat above: none of it is a claim about live memory.
 """
 
 from __future__ import annotations
@@ -253,6 +288,13 @@ class KIVIKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def compressed_key_bytes(self) -> int:
+        """Hypothetical packed-storage byte cost of quantized key codes +
+        per-group (scale, zero) — a byte-accounting estimate, NOT the size
+        of any tensor actually resident in memory. ``self.keys`` itself
+        stays fp16 at all times (see the class/module docstring's
+        "Memory-savings caveat"); this property does not shrink live
+        memory usage.
+        """
         return self._key_bytes_compressed
 
     @property
@@ -261,6 +303,12 @@ class KIVIKVCache(_MLXKVCache):
 
     @property
     def compressed_value_bytes(self) -> int:
+        """Hypothetical packed-storage byte cost of quantized value codes +
+        per-group (scale, zero) — a byte-accounting estimate, NOT the size
+        of any tensor actually resident in memory. See
+        ``compressed_key_bytes`` and the class/module docstring's
+        "Memory-savings caveat".
+        """
         return self._value_bytes_compressed
 
     @property
@@ -288,12 +336,20 @@ class KIVIKVCache(_MLXKVCache):
 
     @property
     def effective_compression_ratio(self) -> float:
-        """End-to-end KV byte ratio vs fp16, residual window included.
+        """End-to-end KV byte ratio vs fp16, residual window included — a
+        hypothetical packed-storage estimate, not a live-memory reduction.
 
-        This is the honest number: quantized codes + per-group (scale, zero)
-        + the still-fp16 residual tail, against the fp16 cost of every token
-        seen.  Reporting ``compressed_*`` alone overstates the win because
-        it silently omits the fp16 residual (#162).
+        This is the honest ratio *among the accounting estimates*: quantized
+        codes + per-group (scale, zero) + the still-fp16 residual tail,
+        against the fp16 cost of every token seen — reporting
+        ``compressed_*`` alone overstates the win because it silently omits
+        the fp16 residual (#162). It does NOT mean live GPU-resident memory
+        actually shrunk by this ratio: ``self.keys``/``self.values`` are
+        always fp16 (see the class/module docstring's "Memory-savings
+        caveat" and ``VELOXQUANT_CACHE_BOOKKEEPING_AUDIT.md`` P1 finding
+        #3). This property is only meaningful today as a measure of how
+        much *smaller* a future packed-storage format could make the cache,
+        not as a report of memory already saved.
         """
         total_fp16 = self._key_bytes_fp16 + self._value_bytes_fp16
         if total_fp16 == 0:
