@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.79.1 (2026-09-08)
+
+### Bug Fixes
+
+- **panel**: Surface method-discovery failures and validate serve options
+  ([#329](https://github.com/rajveer43/VeloxQuant-MLX/pull/329),
+  [`98b544e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/98b544e89d69c4aedba99608c616e5d9146093bf))
+
+
 ## v0.79.0 (2026-09-07)
 
 ### Bug Fixes
