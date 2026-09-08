@@ -4,7 +4,11 @@ import mlx.core as mx
 import numpy as np
 import pytest
 
-from veloxquant_mlx.metal import metal_available, tova_fused_evict
+from veloxquant_mlx.metal import (
+    metal_available,
+    tova_fused_evict,
+    tova_fused_evict_indices,
+)
 from veloxquant_mlx.quantizers.tova import _evict_mlx
 
 pytestmark = pytest.mark.skipif(not metal_available(), reason="Metal unavailable")
@@ -33,6 +37,24 @@ def test_selection_and_exact_copy(bh, n, d, sink, nsg):
         mx.eval(*outputs)
         for out, ref in zip(outputs, expected, strict=True):
             np.testing.assert_array_equal(np.array(out), ref)
+
+
+def test_lineage_compaction_matches_reference():
+    rng = np.random.default_rng(77)
+    bh, n, d, sink = 3, 37, 33, 4
+    k = mx.array(rng.normal(size=(bh, n, d)).astype(np.float16))
+    lineage = mx.arange(n, dtype=mx.int32)[None]
+    lineage = mx.broadcast_to(lineage, (bh, n))
+    w_np = rng.normal(size=(bh, n)).astype(np.float32)
+    w_np[:, sink + 5] = -10.0
+    w = mx.array(w_np)
+    ko, lo = tova_fused_evict_indices(k, lineage, w, sink)
+    mx.eval(ko, lo)
+    for h in range(bh):
+        evicted = np.where(np.arange(n) < sink, np.inf, w_np[h]).argmin()
+        expected = np.delete(np.arange(n), evicted)
+        np.testing.assert_array_equal(np.array(lo)[h], expected)
+        np.testing.assert_array_equal(np.array(ko)[h], np.array(k)[h, expected])
 
 
 def test_noncontiguous_and_nondefault_stream():

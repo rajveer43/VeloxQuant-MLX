@@ -219,6 +219,35 @@ def _evict_mlx(keys, values, weights, n_sink):
     )
 
 
+def _evict_mlx_virtual_values(keys, values_old, values_new, weights, n_sink):
+    """GPU-only selection with V read from retained/new virtual sources."""
+    n = keys.shape[1]
+    protected = mx.where(mx.arange(n)[None] < n_sink, float("inf"), weights)
+    evicted = mx.argmin(protected, axis=-1, keepdims=True)
+    rows = mx.arange(n - 1)[None]
+    source = rows + (rows >= evicted)
+    source_k = source[..., None]
+    keys_out = mx.take_along_axis(keys, source_k, axis=1)
+    old_n = n - 1
+    old_source = mx.minimum(source, old_n - 1)
+    old_v = mx.take_along_axis(values_old, old_source[..., None], axis=1)
+    new_v = values_new[:, None, :]
+    return keys_out, mx.where((source == old_n)[..., None], new_v, old_v)
+
+
+def _evict_mlx_indices(keys, lineage, weights, n_sink):
+    """GPU-only K and lineage compaction for deferred V."""
+    n = keys.shape[1]
+    protected = mx.where(mx.arange(n)[None] < n_sink, float("inf"), weights)
+    evicted = mx.argmin(protected, axis=-1, keepdims=True)
+    rows = mx.arange(n - 1)[None]
+    source = rows + (rows >= evicted)
+    return (
+        mx.take_along_axis(keys, source[..., None], axis=1),
+        mx.take_along_axis(lineage, source, axis=1),
+    )
+
+
 def _tova_update_batched(keys, values, new_keys, new_values, n_sink, budget, *, backend="auto"):
     """Internal [BH,S,D] update; token steps remain sequential after fill.
 
@@ -256,25 +285,57 @@ def _tova_update_batched(keys, values, new_keys, new_values, n_sink, budget, *, 
         raise ValueError("tova: sinks must leave at least one evictable position")
     n = 0 if keys is None else keys.shape[1]
     prefix = min(s, max(0, budget - n))
+    # Deferred lineage pays one final V gather and is beneficial once enough
+    # independent KV groups amortize that work. Keep the virtual-V path for
+    # small G, where the extra map traffic is measurable overhead.
+    deferred = backend in ("mlx", "metal") and prefix < s and bh >= 4
+    source_values = None
+    lineage = None
+    if deferred:
+        source_values = new_values if keys is None else mx.concatenate([values, new_values], axis=1)
+        lineage = mx.broadcast_to(mx.arange(n, dtype=mx.int32)[None], (bh, n))
     if prefix:
         k = new_keys[:, :prefix].astype(mx.float16)
         v = new_values[:, :prefix].astype(mx.float16)
         keys = k if keys is None else mx.concatenate([keys, k], axis=1)
         values = v if values is None else mx.concatenate([values, v], axis=1)
+        if deferred:
+            prefix_ids = mx.broadcast_to(
+                mx.arange(n, n + prefix, dtype=mx.int32)[None], (bh, prefix)
+            )
+            lineage = mx.concatenate([lineage, prefix_ids], axis=1)
+    if deferred:
+        # Values are not touched during the dependent eviction chain. The
+        # immutable source buffer is gathered exactly once after all decisions.
+        values = None
     for i in range(prefix, s):
         keys = mx.concatenate([keys, new_keys[:, i : i + 1].astype(mx.float16)], axis=1)
-        values = mx.concatenate([values, new_values[:, i : i + 1].astype(mx.float16)], axis=1)
         proxy = new_keys[:, i].astype(mx.float32)
         logits = (keys.astype(mx.float32) @ proxy[..., None])[..., 0] * (1.0 / math.sqrt(float(d)))
         weights = mx.softmax(logits, axis=-1)
-        if backend == "metal":
-            from veloxquant_mlx.metal import tova_fused_evict
+        if deferred:
+            incoming_id = mx.full((bh, 1), n + i, dtype=mx.int32)
+            lineage = mx.concatenate([lineage, incoming_id], axis=1)
+            if backend == "metal":
+                from veloxquant_mlx.metal import tova_fused_evict_indices
 
-            keys, values = tova_fused_evict(keys, values, weights, n_sink)
+                keys, lineage = tova_fused_evict_indices(keys, lineage, weights, n_sink)
+            else:
+                keys, lineage = _evict_mlx_indices(keys, lineage, weights, n_sink)
         else:
-            keys, values = _evict_mlx(keys, values, weights, n_sink)
+            incoming_v = new_values[:, i].astype(mx.float16)
+            if backend == "metal":
+                from veloxquant_mlx.metal import tova_fused_evict_virtual_values
+
+                keys, values = tova_fused_evict_virtual_values(
+                    keys, values, incoming_v, weights, n_sink
+                )
+            else:
+                keys, values = _evict_mlx_virtual_values(keys, values, incoming_v, weights, n_sink)
         if (i - prefix + 1) % _EVAL_FLUSH_INTERVAL == 0:
-            mx.eval(keys, values)
+            mx.eval(keys, lineage if deferred else values)
+    if deferred:
+        values = mx.take_along_axis(source_values, lineage[..., None], axis=1)
     return keys, values
 
 

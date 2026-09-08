@@ -48,6 +48,22 @@ def test_batched_steps_match_original(backend, bh, d, budget, sink, kind):
         start += count
 
 
+@pytest.mark.parametrize("backend", ["mlx", "metal"])
+def test_deferred_values_preserve_independent_fingerprints(backend):
+    rng = np.random.default_rng(123)
+    bh, d, budget = 4, 33, 11
+    k = mx.array(rng.normal(size=(bh, 137, d)).astype(np.float16))
+    v = mx.zeros((bh, 137, d), mx.float16)
+    # Value fingerprints are independent of K and uniquely identify source rows.
+    v[:, :, 0] = mx.arange(137, dtype=mx.float16)[None]
+    actual_k, actual_v = _tova_update_batched(None, None, k, v, 3, budget, backend=backend)
+    reference = [init_tova_state(3, budget, d) for _ in range(bh)]
+    for h in range(bh):
+        reference[h] = tova_update(reference[h], k[h], v[h], backend="reference")
+        np.testing.assert_array_equal(np.array(actual_k[h]), np.array(reference[h].keys))
+        np.testing.assert_array_equal(np.array(actual_v[h]), np.array(reference[h].values))
+
+
 @pytest.mark.parametrize("backend", ["mlx", "metal", "auto"])
 def test_zero_budget_legacy_behavior_and_empty_update(backend):
     st = init_tova_state(0, 0, 3)
@@ -120,13 +136,13 @@ def test_cache_batches_all_heads_in_one_selection(monkeypatch):
     from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
     calls = []
-    original = metal.tova_fused_evict
+    original = metal.tova_fused_evict_indices
 
-    def track(k, v, w, sink):
+    def track(k, lineage, w, sink):
         calls.append(k.shape)
-        return original(k, v, w, sink)
+        return original(k, lineage, w, sink)
 
-    monkeypatch.setattr(metal, "tova_fused_evict", track)
+    monkeypatch.setattr(metal, "tova_fused_evict_indices", track)
     cache = KVCacheFactory.create(
         KVCacheConfig(method="tova", tova_budget=4, tova_n_sink=1, tova_backend="metal")
     )

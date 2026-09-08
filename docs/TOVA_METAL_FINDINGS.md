@@ -8,10 +8,10 @@ adaptation.
 ## What changed
 
 TOVA now has an MLX argmin/gather path that keeps the eviction decision on the
-device, plus two Metal dispatches for sink-protected argmin and copy-only K/V
-compaction. Scoring still uses MLX FP32 matmul and softmax; the Metal pair does
-not include scoring or append. There is no RoPE remapping, cumulative score
-history, or new position buffer.
+device, plus Metal reduce/apply dispatches for sink-protected argmin and
+copy-only compaction. Scoring still uses MLX FP32 matmul and softmax; the Metal
+pair does not include scoring or append. There is no RoPE remapping, cumulative
+score history, or new position buffer.
 
 The cache batches all batch/KV-head groups together. It absorbs the below-budget
 prefix in bulk, then processes tokens sequentially, materializing every 32
@@ -34,6 +34,14 @@ Zero/negative-budget and negative-sink legacy cases retain the reference path;
 they are outside the accelerated domain. This preserves the existing zero-budget
 bootstrap inconsistency rather than silently fixing it inside a performance patch.
 Unexpected compilation failures are not swallowed by an automatic retry.
+
+For an overflowing multi-token update with at least four KV groups, the default
+path uses deferred value lineage. It compacts K and an int32 source map on every
+step, then gathers V once from the immutable old-plus-incoming source buffer at
+the end of the call. Smaller group counts use virtual V append: K is compacted
+with V read from the old buffer or the one incoming row, avoiding a V concatenate
+but retaining per-step V output. The route is shape-based and forceable through
+the `mlx`/`metal` backends; it does not alter the public state or byte contract.
 
 ## Measurements
 
@@ -74,6 +82,15 @@ conservative single-token MLX default. Samples are in
 [`tova_m4_d64.json`](benchmarks/tova_m4_d64.json) and
 [`tova_m4_d256.json`](benchmarks/tova_m4_d256.json).
 
+The deferred-lineage sweep used D=128, 20 samples and eight warmups. For eight
+KV groups and 512 retained rows, the 64-step chain measured 6.95 ms with Metal
+and 8.94 ms with MLX. At 2048 retained rows it measured 35.20 ms and 35.28 ms,
+respectively. One-group cases retain the virtual-V route and measured 2.51 ms
+(Metal) at budget 512 and 4.57 ms at budget 2048. Raw samples are in
+[`tova_m4_deferred_v.json`](benchmarks/tova_m4_deferred_v.json). These are
+complete synthetic update chains, not model decode steps; the crossover is
+specific to this Apple M4 and must be remeasured on other devices.
+
 The script reports synchronized Python/MLX wall time. First-call timing is not
 isolated shader compilation time, and the tests do not collect GPU hardware
 occupancy counters. Thermal/power state is uncontrolled. Treat absolute numbers
@@ -94,9 +111,10 @@ decode steps. This validates model plumbing, not pretrained-model quality or
 throughput. No local MLX-format pretrained weights were found in the inspected
 standard model/cache locations; no model was downloaded.
 
-The public Metal primitive requires matching FP16 `[BH,N,D]` K/V, FP32 `[BH,N]`
-weights, and at least one eligible non-sink. Output is `[BH,N-1,D]`. It supports
-odd D and bounded uint32 indexing. Available SIMD-group counts are 1, 2, 4, 8.
+The public Metal primitives require matching FP16 `[BH,N,D]` K/V (or FP16 K and
+int32 lineage for deferred V), FP32 `[BH,N]` weights, and at least one eligible
+non-sink. Output is `[BH,N-1,D]` plus optional lineage. They support odd D and
+bounded uint32 indexing. Available SIMD-group counts are 1, 2, 4, 8.
 All-infinite eligible scores select the first eligible row. NaNs are ignored;
 all-NaN eligible scores also select the first eligible row, preventing invalid
 index propagation. Nonfinite scoring is outside the finite-score parity claim;
@@ -128,7 +146,7 @@ Repository-wide Ruff formatting passes. TOVA implementation/test files pass Ruff
 lint. `cache/base.py` retains the same 50 pre-existing lint findings as HEAD;
 the only change there is the backend configuration field.
 
-Validation completed: 149 tests passed across the TOVA suites, related
+Validation completed: 151 tests passed across the TOVA suites, related
 KVzip/MorphKV parity suites, sliding-window/prefix-cache regressions, and an
 installed-wheel GPU smoke test. The wheel was built, installed into a temporary
 target, and its TOVA sources checked byte-for-byte against the final checkout.
