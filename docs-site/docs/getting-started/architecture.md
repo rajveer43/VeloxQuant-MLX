@@ -29,7 +29,7 @@ Think of the JavaScript SDK as a remote control for the Python/MLX engine. It do
 | Connect a model to `mlx_lm` | [MLX-LM integration](../guides/mlx-lm-integration) |
 | Use the browser control panel | [Control panel guide](../guides/control-panel) |
 | Inspect or write Metal kernels | [Metal kernel guide](../guides/metal-kernels) |
-| Use VeloxQuant from Node.js | [JavaScript SDK](https://github.com/rajveer43/veloxquant-sdk) |
+| Use VeloxQuant from Node.js | [npm package](https://www.npmjs.com/package/@veloxquant/sdk) |
 | Compare methods and results | [Algorithm overview](../algorithms/overview) |
 
 ## A simple mental model
