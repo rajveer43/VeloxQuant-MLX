@@ -109,7 +109,7 @@
           Measured on Apple Silicon.<br>Verified across 12 models.
         </h1>
         <p class="hero-subheadline bench-hero-desc">
-          Real causal-LM generation throughput, attention correlation accuracy, and perplexity measurements on Apple Silicon hardware (M1 through M4). Zero synthetic projections — all logs committed under <code>figures/</code>.
+          Real causal-LM generation throughput, attention correlation accuracy, and perplexity measurements on Apple Silicon hardware (M1 through M4). Zero synthetic projections — every result below is measured and reproducible, not estimated.
         </p>
 
         <!-- Executive Metrics Grid -->
@@ -1006,7 +1006,8 @@
             <span>Reproduce these benchmarks on your Mac</span>
             <span class="bench-cli-chip">CLI</span>
           </div>
-          <pre><code>python -m veloxquant_mlx benchmark --all</code></pre>
+          <pre><code>pip install veloxquant-mlx
+veloxquant benchmark --all</code></pre>
         </div>
       </section>
 
