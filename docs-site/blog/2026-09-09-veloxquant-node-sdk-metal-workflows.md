@@ -1,12 +1,13 @@
 ---
 slug: veloxquant-node-sdk-metal-workflows
-title: Build Apple Silicon AI Workflows with the VeloxQuant Node.js SDK
-authors: [rajveer]
+title: Build Local AI Apps with the VeloxQuant Node.js SDK
+date: 2026-09-09
+authors: rajveer
 tags: [javascript, typescript, nodejs, apple-silicon, mlx, metal, llm]
 description: The VeloxQuant Node.js SDK now makes hardware-aware local AI and accelerated tensor workflows easier to use from JavaScript and TypeScript.
 ---
 
-Running local AI on Apple Silicon should feel simple: install a package, choose a model, and start building. Today we are making that experience easier for JavaScript and TypeScript developers with new capabilities in the VeloxQuant SDK.
+Local AI development should feel familiar to web developers: install a package, choose a model, and start building. The VeloxQuant Node.js SDK makes it easier to create private, hardware-aware AI applications with JavaScript and TypeScript on Apple Silicon.
 
 {/* truncate */}
 
@@ -22,9 +23,9 @@ You can find the package, release history, and usage information here:
 
 [View `@veloxquant/sdk` on npm](https://www.npmjs.com/package/@veloxquant/sdk)
 
-VeloxQuant is designed for Apple Silicon Macs and works with local MLX models supported by [VeloxQuant-MLX](https://github.com/rajveer43/VeloxQuant-MLX).
+The SDK is designed for Apple Silicon Macs and works with local models supported by [VeloxQuant-MLX](https://github.com/rajveer43/VeloxQuant-MLX).
 
-## What you can build
+## What you can build today
 
 The SDK brings hardware-aware local inference and KV-cache optimization into familiar JavaScript APIs.
 
