@@ -175,7 +175,7 @@ Node consumes output.npy
 
 The file transport is deliberately explicit and debuggable. It avoids inventing a native tensor ABI before performance measurements justify zero-copy memory. Future transport options include memory-mapped files and shared memory.
 
-See the [npm worker architecture decision](https://github.com/rajveer43/veloxquant-sdk/blob/master/docs/metal-node-architecture.md) and the [npm worker implementation](https://github.com/rajveer43/veloxquant-sdk/blob/master/src/python/worker.ts).
+See the [npm worker architecture decision](https://github.com/rajveer43/veloxquant-sdk/pull/33) and the [npm worker implementation](https://github.com/rajveer43/veloxquant-sdk/pull/33/files).
 
 ## JavaScript SDK boundary
 
@@ -238,8 +238,8 @@ Correctness is checked at multiple boundaries:
 
 Relevant resources:
 
-- [Metal tests](https://github.com/rajveer43/VeloxQuant-MLX/tree/master/veloxquant_mlx/tests/metal)
-- [Worker parity tests](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/veloxquant_mlx/tests/metal/test_worker_kernel_parity.py)
+- [Metal tests](https://github.com/rajveer43/VeloxQuant-MLX/tree/codex/metal-worker-protocol/veloxquant_mlx/tests/metal)
+- [Worker parity tests](https://github.com/rajveer43/VeloxQuant-MLX/blob/codex/metal-worker-protocol/veloxquant_mlx/tests/metal/test_worker_kernel_parity.py)
 - [Benchmarking guide](../guides/benchmarking)
 - [Validation report](../guides/validation-report)
 - [Metal kernel research notes](../blog/turboquant-metal-kernels)
