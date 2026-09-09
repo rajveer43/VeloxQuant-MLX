@@ -11,6 +11,39 @@ keywords: [architecture, MLX, Metal, Python worker, TypeScript SDK, KV cache]
 
 VeloxQuant-MLX is a Python/MLX runtime for compressing transformer KV caches on Apple Silicon. The JavaScript SDK is an orchestration layer around that runtime. This page explains how the pieces fit together, where tensors live, how Metal kernels are dispatched, and which boundaries are intentionally kept stable.
 
+## The short version
+
+VeloxQuant has two public faces:
+
+- **Python** is where the model, KV cache, MLX tensors, and Metal GPU kernels run.
+- **JavaScript/TypeScript** is a convenient client for starting the Python runtime and requesting approved operations.
+
+Think of the JavaScript SDK as a remote control for the Python/MLX engine. It does not replace the engine.
+
+## Choose your path
+
+| If you want to... | Start here |
+|---|---|
+| Run a model directly in Python | [Quickstart](./quickstart) |
+| Understand KV-cache compression | [Core concepts](./concepts) |
+| Connect a model to `mlx_lm` | [MLX-LM integration](../guides/mlx-lm-integration) |
+| Use the browser control panel | [Control panel guide](../guides/control-panel) |
+| Inspect or write Metal kernels | [Metal kernel guide](../guides/metal-kernels) |
+| Use VeloxQuant from Node.js | [JavaScript SDK](https://github.com/rajveer43/veloxquant-sdk) |
+| Compare methods and results | [Algorithm overview](../algorithms/overview) |
+
+## A simple mental model
+
+When a model generates text, the flow is:
+
+1. The model creates key/value tensors for new tokens.
+2. VeloxQuant stores those tensors in a compressed or reduced KV cache.
+3. MLX sends the hot tensor operations to the Apple GPU.
+4. Metal kernels perform specialized work such as quantization, packing, attention, or eviction.
+5. The model reads the resulting cache for the next token.
+
+If JavaScript is involved, it sits outside this loop and sends typed requests to a persistent Python worker.
+
 ## System overview
 
 ```text
@@ -33,9 +66,9 @@ Application
 
 The Python package remains the source of truth for tensor execution, cache semantics, model compatibility, and Metal dispatch. The npm package does not reimplement MLX or compile arbitrary Metal source.
 
-## Runtime layers
+## Runtime layers, from the user down to the GPU
 
-### 1. User and framework layer
+### 1. User and framework layer — what you call
 
 Users can call the Python API directly, use the command line, launch the control panel, or use the npm SDK from Node.js.
 
@@ -47,7 +80,7 @@ Relevant entry points:
 - [Control panel guide](../guides/control-panel)
 - [JavaScript SDK](https://github.com/rajveer43/veloxquant-sdk)
 
-### 2. Model integration layer
+### 2. Model integration layer — where the model connects
 
 The model integration layer connects VeloxQuant caches to `mlx_lm` model generation. `KVCacheBuilder` creates per-layer cache instances from a `KVCacheConfig`. The cache contract is designed to match the `mlx_lm` cache interface so model generation can continue to own tokenization, sampling, and scheduling.
 
@@ -58,7 +91,7 @@ Read more:
 - [Core API](../api/core-api)
 - [Concepts](./concepts)
 
-### 3. Cache and algorithm layer
+### 3. Cache and algorithm layer — what gets compressed
 
 Every method is selected through a common configuration and registry path:
 
@@ -80,13 +113,13 @@ The methods fall into three broad families:
 
 See the [algorithm overview](../algorithms/overview) and [method API reference](../api/quantizers).
 
-### 4. MLX tensor layer
+### 4. MLX tensor layer — how arrays are managed
 
 MLX owns the device arrays, lazy evaluation graph, dtype conversion, shape propagation, and synchronization. Kernel wrappers pass MLX arrays into custom operations and call `mx.eval()` at explicit synchronization points when results must be materialized.
 
 A `.metal` file by itself is not a complete VeloxQuant operation. The Python wrapper supplies input names, output names, templates, grids, threadgroups, output shapes, output dtypes, and MLX graph integration.
 
-### 5. Metal kernel layer
+### 5. Metal kernel layer — where GPU work happens
 
 Custom kernels are compiled lazily through `mx.fast.metal_kernel`. Sources live under:
 
@@ -118,7 +151,7 @@ The [Metal API reference](../api/metal-api) lists the supported kernel families.
 
 Not every kernel is exposed through the npm worker. The Python API remains broader than the Node.js transport surface.
 
-## Python worker architecture
+## When JavaScript is used: the Python worker
 
 The worker is an optional long-lived process started with:
 
@@ -157,6 +190,20 @@ The worker currently exposes a reviewed operation set:
 
 Unknown operations and invalid arguments return structured errors. Arbitrary Metal source is never accepted from the client.
 
+### What happens during one request?
+
+```text
+1. TypeScript creates a request with an ID.
+2. Python reads the JSON request.
+3. The worker validates paths, shapes, dtypes, and options.
+4. MLX creates or receives device arrays.
+5. Metal executes the approved kernel.
+6. Python writes the result and returns metadata.
+7. TypeScript resolves the matching request by ID.
+```
+
+The request ID matters because several operations can be in flight at the same time. The protocol version matters because the worker and SDK may be upgraded independently.
+
 ## Tensor transport
 
 Small control values may be sent directly in JSON. Large tensors use `.npy` files:
@@ -175,7 +222,7 @@ Node consumes output.npy
 
 The file transport is deliberately explicit and debuggable. It avoids inventing a native tensor ABI before performance measurements justify zero-copy memory. Future transport options include memory-mapped files and shared memory.
 
-See the [npm worker architecture decision](https://github.com/rajveer43/veloxquant-sdk/pull/33) and the [npm worker implementation](https://github.com/rajveer43/veloxquant-sdk/pull/33/files).
+See the [npm worker architecture decision](https://github.com/rajveer43/veloxquant-sdk/blob/master/docs/metal-node-architecture.md) and the [npm worker implementation](https://github.com/rajveer43/veloxquant-sdk/blob/master/src/python/worker.ts).
 
 ## JavaScript SDK boundary
 
@@ -208,7 +255,7 @@ The Python package is responsible for:
 - Metal synchronization
 - Numerical correctness
 
-## Capability and fallback model
+## Hardware support and fallback behavior
 
 Applications should call `capabilities()` before using a Metal operation. A valid result identifies the backend and device. The SDK must not label a result as Metal if it used a fallback.
 
@@ -225,7 +272,9 @@ The fallback hierarchy is:
 3. NumPy/reference implementation, where correctness and performance are acceptable.
 4. Explicit unsupported-operation error.
 
-## Testing architecture
+The important rule is honesty: a result must identify whether it came from Metal, MLX, or a reference fallback. The SDK must never report a CPU or reference result as a Metal result.
+
+## How correctness is protected
 
 Correctness is checked at multiple boundaries:
 
@@ -238,11 +287,22 @@ Correctness is checked at multiple boundaries:
 
 Relevant resources:
 
-- [Metal tests](https://github.com/rajveer43/VeloxQuant-MLX/tree/codex/metal-worker-protocol/veloxquant_mlx/tests/metal)
-- [Worker parity tests](https://github.com/rajveer43/VeloxQuant-MLX/blob/codex/metal-worker-protocol/veloxquant_mlx/tests/metal/test_worker_kernel_parity.py)
+- [Metal tests](https://github.com/rajveer43/VeloxQuant-MLX/tree/master/veloxquant_mlx/tests/metal)
+- [Worker parity tests](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/veloxquant_mlx/tests/metal/test_worker_kernel_parity.py)
 - [Benchmarking guide](../guides/benchmarking)
 - [Validation report](../guides/validation-report)
 - [Metal kernel research notes](../blog/turboquant-metal-kernels)
+
+## A small glossary
+
+- **KV cache:** Key/value tensors saved from earlier tokens so the model does not recompute them.
+- **MLX:** Apple's array and machine-learning framework used by VeloxQuant.
+- **Metal:** Apple's GPU programming and execution API.
+- **Kernel:** A small GPU program that operates on arrays in parallel.
+- **JIT compilation:** Compiling a kernel when it is first used instead of shipping one fixed binary.
+- **Worker:** A long-lived Python process that receives requests from the JavaScript SDK.
+- **`.npy` transport:** A simple NumPy file format used to move larger arrays between processes.
+- **Parity test:** A comparison proving that a Metal result matches a trusted Python/MLX reference.
 
 ## Packaging and release boundaries
 
@@ -276,4 +336,3 @@ A native Node-API or Swift bridge is a future research option, not the current e
 - [Profiling](../guides/profiling)
 - [Benchmarking](../guides/benchmarking)
 - [Installation](./installation)
-
