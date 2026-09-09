@@ -12,6 +12,7 @@ const sidebars: SidebarsConfig = {
         'getting-started/quickstart',
         'getting-started/comparison',
         'getting-started/concepts',
+        'getting-started/architecture',
       ],
     },
   ],
