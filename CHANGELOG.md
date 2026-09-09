@@ -432,6 +432,35 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.81.0 (2026-09-09)
+
+### Documentation
+
+- Add end-to-end architecture guide ([#336](https://github.com/rajveer43/VeloxQuant-MLX/pull/336),
+  [`fac5e7e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fac5e7e57c17ff0024cc7e84c2932b0b99ef6a4d))
+
+- Fix architecture preview links ([#336](https://github.com/rajveer43/VeloxQuant-MLX/pull/336),
+  [`fac5e7e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fac5e7e57c17ff0024cc7e84c2932b0b99ef6a4d))
+
+- Link architecture guide in sidebar ([#336](https://github.com/rajveer43/VeloxQuant-MLX/pull/336),
+  [`fac5e7e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fac5e7e57c17ff0024cc7e84c2932b0b99ef6a4d))
+
+### Features
+
+- Add MLX Metal worker protocol ([#336](https://github.com/rajveer43/VeloxQuant-MLX/pull/336),
+  [`fac5e7e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fac5e7e57c17ff0024cc7e84c2932b0b99ef6a4d))
+
+- Add veloxquant_mlx/cli/worker.py ([#336](https://github.com/rajveer43/VeloxQuant-MLX/pull/336),
+  [`fac5e7e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fac5e7e57c17ff0024cc7e84c2932b0b99ef6a4d))
+
+- Add veloxquant_mlx/tests/metal/test_worker_kernel_parity.py
+  ([#336](https://github.com/rajveer43/VeloxQuant-MLX/pull/336),
+  [`fac5e7e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fac5e7e57c17ff0024cc7e84c2932b0b99ef6a4d))
+
+- Expose worker command ([#336](https://github.com/rajveer43/VeloxQuant-MLX/pull/336),
+  [`fac5e7e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fac5e7e57c17ff0024cc7e84c2932b0b99ef6a4d))
+
+
 ## v0.80.1 (2026-09-08)
 
 ### Chores
