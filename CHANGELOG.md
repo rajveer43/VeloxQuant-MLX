@@ -432,6 +432,41 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.81.1 (2026-09-09)
+
+### Bug Fixes
+
+- **landing**: Remove internal repo paths from visitor-facing copy
+  ([#340](https://github.com/rajveer43/VeloxQuant-MLX/pull/340),
+  [`0a13417`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0a13417db9c90f27d661904c5146570672116ee7))
+
+### Build System
+
+- **deps**: Bump @swc/html from 1.15.40 to 1.16.2 in /docs-site
+  ([#335](https://github.com/rajveer43/VeloxQuant-MLX/pull/335),
+  [`0e1cf35`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0e1cf35fd1f5de49341a88a3b6e45d8aaf05363f))
+
+- **deps**: Bump colord from 2.9.3 to 2.10.0 in /docs-site
+  ([#339](https://github.com/rajveer43/VeloxQuant-MLX/pull/339),
+  [`ab1e696`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ab1e6963d424e6bbc306343a3e014d3383108493))
+
+- **deps**: Bump js-yaml from 3.15.1 to 3.15.2 in /docs-site
+  ([#338](https://github.com/rajveer43/VeloxQuant-MLX/pull/338),
+  [`d1cbc59`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d1cbc593718f85835e12454f9dc866a424de437f))
+
+- **deps**: Bump svgo from 3.3.4 to 3.3.5 in /docs-site
+  ([#337](https://github.com/rajveer43/VeloxQuant-MLX/pull/337),
+  [`988081f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/988081feaaa0430e5d3e6bcc1dfcc407b0e24f45))
+
+### Documentation
+
+- Link npm package for Node.js users
+  ([`5f6fd60`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5f6fd60bb3912a5e7455ee903012f79a1cac7ea6))
+
+- Make architecture guide reader friendly
+  ([`780314a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/780314a24fd770add8dfbc2c3ae1617b20fecda9))
+
+
 ## v0.81.0 (2026-09-09)
 
 ### Documentation
