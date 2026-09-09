@@ -9,7 +9,7 @@ def main() -> None:
     if len(sys.argv) < 2:
         print(
             "Usage: veloxquant "
-            "{precompute|benchmark|recommend|auto-config|methods|serve|profile|panel}"
+            "{precompute|benchmark|recommend|auto-config|methods|serve|profile|panel|worker}"
         )
         sys.exit(1)
 
@@ -49,10 +49,14 @@ def main() -> None:
         from veloxquant_mlx.cli.panel import main as _main
 
         _main()
+    elif command == "worker":
+        from veloxquant_mlx.cli.worker import main as _main
+
+        _main()
     else:
         print(
             f"Unknown command: {command!r}. "
-            "Choices: precompute, benchmark, recommend, auto-config, methods, serve, profile, panel"
+            "Choices: precompute, benchmark, recommend, auto-config, methods, serve, profile, panel, worker"
         )
         sys.exit(1)
 
