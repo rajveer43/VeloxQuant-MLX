@@ -10,7 +10,7 @@
 </p>
 
 <p>
-  <a href="https://veloxquant-mlx.netlify.app/"><img src="https://img.shields.io/badge/website-veloxquant--mlx.netlify.app-0078d4?style=flat-square&logo=readthedocs&logoColor=white" alt="Website"/></a>
+  <a href="https://veloxquant.dev/"><img src="https://img.shields.io/badge/website-veloxquant.dev-0078d4?style=flat-square&logo=readthedocs&logoColor=white" alt="Website"/></a>
   <a href="https://pypi.org/project/VeloxQuant-MLX/"><img src="https://img.shields.io/pypi/v/VeloxQuant-MLX?style=flat-square&logo=pypi&logoColor=white&color=0078d4" alt="PyPI"/></a>
   <a href="https://pypi.org/project/VeloxQuant-MLX/"><img src="https://img.shields.io/pypi/dm/VeloxQuant-MLX?style=flat-square&logo=pypi&logoColor=white&color=0078d4" alt="PyPI downloads"/></a>
   <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/release.yml?branch=master&style=flat-square&label=build&logo=github" alt="Release build status"/></a>
@@ -33,10 +33,10 @@
 <!-- Text links rather than a third badge row. Governance, Security and Support
      are one section away (see Table of contents) so they aren't repeated here. -->
 <p>
-  <b><a href="https://veloxquant-mlx.netlify.app/">veloxquant-mlx.netlify.app</a></b> —
-  <a href="https://veloxquant-mlx.netlify.app/docs/getting-started/quickstart">Quickstart</a> ·
-  <a href="https://veloxquant-mlx.netlify.app/docs/algorithms/overview">All 43 methods</a> ·
-  <a href="https://veloxquant-mlx.netlify.app/playground.html">Playground</a> ·
+  <b><a href="https://veloxquant.dev/">veloxquant.dev</a></b> —
+  <a href="https://veloxquant.dev/docs/getting-started/quickstart">Quickstart</a> ·
+  <a href="https://veloxquant.dev/docs/algorithms/overview">All 43 methods</a> ·
+  <a href="https://veloxquant.dev/playground.html">Playground</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
@@ -94,7 +94,7 @@ pip install VeloxQuant-MLX
 Requirements: Apple Silicon M1+, Python ≥ 3.11, MLX ≥ 0.18, NumPy ≥ 1.26.
 
 Source install, conda/miniforge, Metal troubleshooting, and verifying the install
-are covered in the [installation guide](https://veloxquant-mlx.netlify.app/docs/getting-started/installation).
+are covered in the [installation guide](https://veloxquant.dev/docs/getting-started/installation).
 
 ---
 
@@ -125,16 +125,16 @@ Pick a model and a method, press **Start Server**, and point any OpenAI-compatib
 client (Claude Code, Cursor, the OpenAI SDK) at the URL it gives you. It drives
 `veloxquant serve`, usable directly too — see [docs/control-panel.md](docs/control-panel.md).
 
-Next: the [5-minute quickstart](https://veloxquant-mlx.netlify.app/docs/getting-started/quickstart) ·
-[mixed-precision guide](https://veloxquant-mlx.netlify.app/docs/guides/mixed-precision) ·
-[mlx_lm integration](https://veloxquant-mlx.netlify.app/docs/guides/mlx-lm-integration)
+Next: the [5-minute quickstart](https://veloxquant.dev/docs/getting-started/quickstart) ·
+[mixed-precision guide](https://veloxquant.dev/docs/guides/mixed-precision) ·
+[mlx_lm integration](https://veloxquant.dev/docs/guides/mlx-lm-integration)
 
 ---
 
 ## Method library
 
 Every one of the 43 methods drops in the same way: set `method="<id>"` in
-`KVCacheConfig`. The [algorithm overview](https://veloxquant-mlx.netlify.app/docs/algorithms/overview)
+`KVCacheConfig`. The [algorithm overview](https://veloxquant.dev/docs/algorithms/overview)
 has the full comparison table, a decision tree, per-model recommendations, and
 for each method its mechanism, config, evidence, and limitations.
 
@@ -154,7 +154,7 @@ The 43 methods fall into three families:
 - **Token eviction & merging** (15, 🔻RSS) — drop or merge low-value tokens; these reduce **resident** memory today. SnapKV, StreamingLLM, H2O, TOVA, PyramidKV, SqueezeAttention, ChunkKV, Keyformer, KVzip, and more.
 
 Every method links to its own page, with mechanism, config, evidence, and limitations, on the
-[algorithm overview](https://veloxquant-mlx.netlify.app/docs/algorithms/overview).
+[algorithm overview](https://veloxquant.dev/docs/algorithms/overview).
 
 > Every "-adapted" method is an adaptation, not a 1:1 port: the cache sees only per-layer K/V, never the model's real attention maps, so attention-based signals use a key-as-query proxy.
 
@@ -184,7 +184,7 @@ keys scored via XOR+popcount, 4-bit codebook values, fused into one dispatch
 > realistic context lengths.
 
 How they were built: [blogs/metal-kernels.md](blogs/metal-kernels.md) ·
-Usage and debugging: [docs — Metal GPU kernels](https://veloxquant-mlx.netlify.app/docs/guides/metal-kernels)
+Usage and debugging: [docs — Metal GPU kernels](https://veloxquant.dev/docs/guides/metal-kernels)
 
 ---
 
@@ -221,7 +221,7 @@ All 10 models, compression ratios, historical snapshots, and methodology:
 
 Every method runs the same three-step pipeline: rotate the K/V tensors into a friendlier basis, quantize them (optionally with a residual pass for extra precision), then pack the bits. That is why swapping `method="..."` just works. Every quantizer plugs into the same `KVCacheConfig` → `KVCacheBuilder` → `mlx_lm`-compatible cache path regardless of what it does internally.
 
-The wiring underneath is conventional object-oriented plumbing, plus some custom data structures for the bit-packing. Pipeline diagrams (TurboQuantRVQ, VecInfer) and the design-pattern breakdown are in [docs — Core concepts](https://veloxquant-mlx.netlify.app/docs/getting-started/concepts).
+The wiring underneath is conventional object-oriented plumbing, plus some custom data structures for the bit-packing. Pipeline diagrams (TurboQuantRVQ, VecInfer) and the design-pattern breakdown are in [docs — Core concepts](https://veloxquant.dev/docs/getting-started/concepts).
 
 ---
 
@@ -249,10 +249,10 @@ python -m veloxquant_mlx precompute \
 when resident RAM savings are unlikely, rather than quoting a ratio that won't show
 up in RSS. Goals: `everyday`, `max_key_accounting`, `max_context`, `best_quality`,
 `constant_memory`. Add `--json` for machine-readable output. Also in the browser via
-the [Compression Lab](https://veloxquant-mlx.netlify.app/playground.html).
+the [Compression Lab](https://veloxquant.dev/playground.html).
 
 Full CLI reference, including loading precomputed artifacts to skip runtime
-computation: [docs — CLI](https://veloxquant-mlx.netlify.app/docs/api/core-api).
+computation: [docs — CLI](https://veloxquant.dev/docs/api/core-api).
 
 ---
 
@@ -298,16 +298,16 @@ Metal parity tests that need Apple Silicon, gates each release.
 
 ## Documentation & blog posts
 
-Full docs, including per-method pages, guides, and API reference: **https://veloxquant-mlx.netlify.app/**
+Full docs, including per-method pages, guides, and API reference: **https://veloxquant.dev/**
 
 Deep-dive writeups live in [`blogs/`](blogs/) and are published on the docs site:
-[overview](https://veloxquant-mlx.netlify.app/docs/blog/overview) ·
-[10-model study](https://veloxquant-mlx.netlify.app/docs/blog/10-model-study) ·
-[hands-on tutorial](https://veloxquant-mlx.netlify.app/docs/blog/hands-on) ·
-[KIVI](https://veloxquant-mlx.netlify.app/docs/blog/kivi) ·
-[Metal kernels](https://veloxquant-mlx.netlify.app/docs/blog/metal-kernels) ·
-[results](https://veloxquant-mlx.netlify.app/docs/blog/results) ·
-[TensorOps research](https://veloxquant-mlx.netlify.app/docs/blog/tensorops-research)
+[overview](https://veloxquant.dev/docs/blog/overview) ·
+[10-model study](https://veloxquant.dev/docs/blog/10-model-study) ·
+[hands-on tutorial](https://veloxquant.dev/docs/blog/hands-on) ·
+[KIVI](https://veloxquant.dev/docs/blog/kivi) ·
+[Metal kernels](https://veloxquant.dev/docs/blog/metal-kernels) ·
+[results](https://veloxquant.dev/docs/blog/results) ·
+[TensorOps research](https://veloxquant.dev/docs/blog/tensorops-research)
 
 ---
 
@@ -339,7 +339,7 @@ settings and opens the compression lab without leaving the editor.
 ## Beyond compression: cross-model KV transfer
 
 One capability in this repo is **not** a compression method and is deliberately
-not counted in the 43: [**cross-model KV cache transfer**](https://veloxquant-mlx.netlify.app/docs/algorithms/cross-model-transfer)
+not counted in the 43: [**cross-model KV cache transfer**](https://veloxquant.dev/docs/algorithms/cross-model-transfer)
 (`veloxquant_mlx.transfer`). Instead of shrinking one model's cache, it maps a
 *source* model's already-prefilled KV into a *target* model's format, so the
 receiver can skip prefill when you swap between two models in the same family.
@@ -351,7 +351,7 @@ single-model cache contract can express. Adapted from
 [Cross-Model KV Cache Transfer (NVIDIA, arXiv:2608.03893)](https://arxiv.org/abs/2608.03893).
 The paper's retention and speedup figures are its own, measured on
 datacenter-scale pairs, and are not reproduced here. Read the
-[docs page](https://veloxquant-mlx.netlify.app/docs/algorithms/cross-model-transfer)
+[docs page](https://veloxquant.dev/docs/algorithms/cross-model-transfer)
 for the caveats before relying on it.
 
 ---
@@ -389,7 +389,7 @@ MIT — see [LICENSE](LICENSE).
   <sub>Apple Silicon M1+ · Python 3.11+ · 43 methods · MIT License</sub>
   <br/>
   <sub>
-    <a href="https://veloxquant-mlx.netlify.app/">Docs</a> ·
+    <a href="https://veloxquant.dev/">Docs</a> ·
     <a href="https://github.com/rajveer43/VeloxQuant-MLX/issues">Issues</a> ·
     <a href="CONTRIBUTING.md">Contributing</a>
   </sub>
