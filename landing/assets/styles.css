@@ -2684,9 +2684,6 @@ footer {
   background: rgba(var(--accent-rgb), 0.1);
   font-weight: 600;
 }
-.pg-preset-custom { font-style: italic; }
-.pg-preset-custom.active { font-style: normal; }
-
 /* Conversation length — promoted out of Advanced, so it sits in the main bar
    with a plain-language hint underneath translating tokens into pages. */
 .pg-field-seq { margin-top: 0.9rem; }
@@ -6140,34 +6137,25 @@ details.faq-accordion-item[open] .faq-chevron {
   flex-direction: column;
 }
 
-/* ── Studio Header Toolbar ── */
+/* ── Studio Header: compact tool introduction ── */
 .pg-studio-header {
   display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 2rem;
-  margin: 0 0 0.55rem;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0 0 0.6rem;
   padding: 0 0.2rem;
   flex-shrink: 0;
   text-align: left;
 }
 
-@media (max-width: 768px) {
-  .pg-studio-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
-}
-
-.pg-studio-header-left {
+.pg-studio-header-intro {
   display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  max-width: 640px;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-width: 720px;
 }
 
-.pg-studio-header-left .section-kicker {
+.pg-studio-header-intro .section-kicker {
   font-size: 0.68rem;
   margin-bottom: 0;
   letter-spacing: 0.08em;
@@ -6175,32 +6163,96 @@ details.faq-accordion-item[open] .faq-chevron {
 }
 
 .pg-studio-title {
-  font-size: 1.15rem;
+  font-size: 1.7rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   color: #ffffff;
   margin: 0;
   line-height: 1.2;
+  text-wrap: balance;
 }
 
-.pg-studio-header-right {
+.pg-studio-subtitle {
+  max-width: 700px;
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Row 2: current-setup summary + "How this works" on the left,
+   the live result metric on the right. */
+.pg-studio-header-row {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  margin-left: auto;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
 }
 
-/* Primer Accordion */
-.pg-primer {
-  position: relative;
-  margin: 0;
-  background: #0d0d12;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+.pg-studio-header-row-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+/* Current setup summary — compact chips reflecting the sidebar controls. */
+.pg-current-setup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.3rem;
+  background: #101015;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
 }
 
+.pg-setup-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: #d4d4d8;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+}
+
+.pg-setup-chip-hardware {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: #a1a1aa;
+}
+
+.pg-setup-chip-model,
+.pg-setup-chip-goal {
+  color: #e4e4e7;
+  background: rgba(0, 212, 255, 0.05);
+  border-color: rgba(0, 212, 255, 0.16);
+}
+
+/* Primer Accordion — secondary outlined control, not a CTA */
+.pg-primer {
+  position: relative;
+  margin: 0;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+
+.pg-primer:hover {
+  border-color: rgba(0, 212, 255, 0.35);
+}
+
 .pg-primer summary {
-  padding: 0.25rem 0.65rem;
+  padding: 0.5rem 0.75rem;
+  min-height: 44px;
+  box-sizing: border-box;
   font-size: 0.76rem;
   font-weight: 600;
   color: #a1a1aa;
@@ -6231,8 +6283,8 @@ details.faq-accordion-item[open] .faq-chevron {
 .pg-primer-content {
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
-  width: 330px;
+  left: 0;
+  width: min(330px, 88vw);
   z-index: 50;
   background: #121218;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -6246,6 +6298,79 @@ details.faq-accordion-item[open] .faq-chevron {
 
 .pg-primer-content p + p {
   margin-top: 0.5rem;
+}
+
+/* Live result badge — compact, cyan reserved for the number only. */
+.pg-header-metric {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 0.4rem;
+  row-gap: 0.05rem;
+  padding: 0.4rem 0.85rem;
+  background: rgba(0, 212, 255, 0.05);
+  border: 1px solid rgba(0, 212, 255, 0.18);
+  border-radius: 8px;
+  max-width: 100%;
+}
+
+.pg-header-metric:empty {
+  display: none;
+}
+
+.pg-header-metric-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.pg-header-metric-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #e4e4e7;
+}
+
+.pg-header-metric-detail {
+  flex-basis: 100%;
+  font-size: 0.7rem;
+  color: #a1a1aa;
+}
+
+@media (max-width: 768px) {
+  .pg-studio-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pg-header-metric {
+    width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+@media (max-width: 480px) {
+  .pg-studio-title {
+    font-size: 1.4rem;
+  }
+
+  .pg-studio-subtitle {
+    font-size: 0.92rem;
+  }
+
+  .pg-current-setup {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .pg-primer {
+    width: 100%;
+  }
+
+  .pg-primer summary {
+    justify-content: center;
+  }
 }
 
 /* ── 2-Column Studio Workbench Grid ── */
@@ -6622,12 +6747,6 @@ details.faq-accordion-item[open] .faq-chevron {
   color: var(--accent);
   font-weight: 600;
   box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.22);
-}
-
-.pg-preset-custom {
-  grid-column: span 2;
-  font-style: italic;
-  border-style: dashed;
 }
 
 /* Advanced Architecture Accordion in Sidebar */
@@ -7826,6 +7945,46 @@ details.faq-accordion-item[open] .faq-chevron {
 :root[data-theme="light"] .pg-primer-content {
   color: #475569;
   border-top-color: rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="light"] .pg-studio-subtitle {
+  color: #52525b;
+}
+
+:root[data-theme="light"] .pg-current-setup {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.05);
+}
+
+:root[data-theme="light"] .pg-setup-chip {
+  color: #334155;
+  background: #f1f5f9;
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="light"] .pg-setup-chip-hardware {
+  color: #52525b;
+}
+
+:root[data-theme="light"] .pg-setup-chip-model,
+:root[data-theme="light"] .pg-setup-chip-goal {
+  color: #0c4a6e;
+  background: rgba(0, 176, 216, 0.08);
+  border-color: rgba(0, 176, 216, 0.22);
+}
+
+:root[data-theme="light"] .pg-header-metric {
+  background: rgba(0, 176, 216, 0.06);
+  border-color: rgba(0, 176, 216, 0.22);
+}
+
+:root[data-theme="light"] .pg-header-metric-label {
+  color: #27272a;
+}
+
+:root[data-theme="light"] .pg-header-metric-detail {
+  color: #71717a;
 }
 
 :root[data-theme="light"] .pg-stepper {

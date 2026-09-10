@@ -211,26 +211,20 @@ const PRESET_FIELDS = [
   ["pg-headdim", "head_dim"],
 ];
 
-// Render the preset chip row (+ a Custom chip that reflects hand-edited shapes).
+// Render the preset chip row.
 function renderPresets() {
   const row = $("pg-preset-row");
   if (!row) return;
-  row.innerHTML =
-    MODEL_PRESETS.map(
-      (p) =>
-        `<button type="button" class="pg-preset-chip" data-preset="${p.id}"
-           title="Sets the exact shape for ${p.name}: ${p.n_layers} layers, ${p.n_kv_heads} KV heads, head dimension ${p.head_dim}">
-           ${p.name}
-         </button>`
-    ).join("") +
-    `<button type="button" class="pg-preset-chip pg-preset-custom" data-preset="custom"
-       title="Something else — set it up under Advanced">Something else</button>`;
+  row.innerHTML = MODEL_PRESETS.map(
+    (p) =>
+      `<button type="button" class="pg-preset-chip" data-preset="${p.id}"
+         title="Sets the exact shape for ${p.name}: ${p.n_layers} layers, ${p.n_kv_heads} KV heads, head dimension ${p.head_dim}">
+         ${p.name}
+       </button>`
+  ).join("");
 
   row.querySelectorAll("[data-preset]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (btn.dataset.preset === "custom") return; // Custom is display-only
-      applyPreset(btn.dataset.preset);
-    });
+    btn.addEventListener("click", () => applyPreset(btn.dataset.preset));
   });
 }
 
@@ -268,6 +262,19 @@ function markActivePreset() {
     c.classList.toggle("active", isActive);
     c.setAttribute("aria-pressed", isActive ? "true" : "false");
   });
+  return match ? match.name : null;
+}
+
+// Friendly model name for the current shape, for display outside the
+// sidebar (e.g. the header's current-setup summary). Reuses the same
+// preset-match logic markActivePreset() already computes rather than
+// tracking a second copy of "which model is selected".
+function getSelectedModelDisplayName() {
+  const presetName = markActivePreset();
+  if (presetName) return presetName;
+  const query = $("pg-model-query")?.value.trim();
+  if (query) return query;
+  return "Custom architecture";
 }
 
 /* ---------- Model search (Hugging Face) ----------
@@ -951,6 +958,46 @@ function buildCliCommand(req) {
   ].join(" ");
 }
 
+// The goal <select>'s option text is "Balanced — Best overall default";
+// the chip only needs the short name before the em-dash.
+function formatGoalLabel(optionText) {
+  return optionText.split("—")[0].trim();
+}
+
+// Compact "chip · RAM / model / goal" summary shown in the header, kept in
+// sync with the sidebar controls (source of truth) rather than its own state.
+function renderCurrentSetupSummary() {
+  const el = $("pg-current-setup");
+  if (!el) return;
+  const chip = $("pg-chip")?.value || "";
+  const ram = $("pg-ram")?.value || "";
+  const goalSelect = $("pg-goal");
+  const goalText = goalSelect?.options[goalSelect.selectedIndex]?.textContent || "";
+  const model = getSelectedModelDisplayName();
+
+  el.innerHTML = `
+    <span class="pg-setup-chip pg-setup-chip-hardware">${esc(chip)} · ${esc(ram)} GB RAM</span>
+    <span class="pg-setup-chip pg-setup-chip-model">${esc(model)}</span>
+    <span class="pg-setup-chip pg-setup-chip-goal">${esc(formatGoalLabel(goalText))}</span>
+  `;
+}
+
+// Header result badge — "N% smaller KV cache". Reuses runRecommender()'s
+// already-computed savedPct; never recalculates it independently.
+function renderHeaderMetric(savedPct) {
+  const el = $("pg-header-metric");
+  if (!el) return;
+  if (!Number.isFinite(savedPct)) {
+    el.innerHTML = `<span class="pg-header-metric-label">Set up your Mac and model to see savings</span>`;
+    return;
+  }
+  el.innerHTML = `
+    <span class="pg-header-metric-value">${savedPct}%</span>
+    <span class="pg-header-metric-label">smaller KV cache</span>
+    <span class="pg-header-metric-detail">for this conversation length</span>
+  `;
+}
+
 function runRecommender() {
   const shape = readSharedShape();
   const req = {
@@ -961,12 +1008,15 @@ function runRecommender() {
     ...shape,
   };
 
+  renderCurrentSetupSummary();
+
   let res;
   try {
     assertValidShape(shape);
     res = recommend(req);
   } catch (e) {
     $("rec-output").innerHTML = `<p class="pg-error">${esc(e.message)}</p>`;
+    renderHeaderMetric(NaN);
     return;
   }
 
@@ -982,6 +1032,7 @@ function runRecommender() {
     : "";
 
   const savedPct = Math.round((1 - res.kv_compressed_mb_estimate / res.kv_fp16_mb) * 100);
+  renderHeaderMetric(savedPct);
   const resident = res.resident_savings_likely;
   const cli = buildCliCommand(req);
   // The raw ratio still ships — demoted out of the hero into "Why this one".

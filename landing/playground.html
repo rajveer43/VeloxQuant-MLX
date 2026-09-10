@@ -103,23 +103,33 @@
   <main id="playground" class="pg-studio-page">
     <div class="pg-studio-container">
       
-      <!-- Studio Header: Compact Developer Toolbar -->
+      <!-- Studio Header: Compact Tool Introduction -->
       <header class="pg-studio-header">
-          <div class="pg-studio-header-left">
+        <div class="pg-studio-header-intro">
           <div class="section-kicker">INTERACTIVE WORKBENCH</div>
           <h1 class="pg-studio-title">Find the right KV-cache setup for your Mac</h1>
-          <p class="pg-studio-subtitle">Choose your Mac and model. We’ll recommend a configuration, estimate memory use, and show how much context fits.</p>
+          <p class="pg-studio-subtitle">Choose your Mac, model, and goal. We’ll recommend the best KV-cache method, estimate memory use, and show how much conversation fits.</p>
         </div>
-        <div class="pg-studio-header-right">
-          <details class="pg-primer">
-            <summary>What this does</summary>
-            <div class="pg-primer-content">
-              <p>
-                As an LLM generates tokens, it stores key-value pairs (the <strong>KV cache</strong>) in unified RAM.
-                <strong>VeloxQuant-MLX</strong> compresses these cache entries up to 8× with specialized Apple Silicon Metal kernels.
-              </p>
+
+        <div class="pg-studio-header-row">
+          <div class="pg-studio-header-row-left">
+            <div class="pg-current-setup" id="pg-current-setup" aria-label="Current setup">
+              <!-- chips injected by playground.js -->
             </div>
-          </details>
+            <details class="pg-primer">
+              <summary>How this works</summary>
+              <div class="pg-primer-content">
+                <p>
+                  As an LLM generates tokens, it stores key-value pairs in unified RAM so it can remember earlier context.
+                  <strong>VeloxQuant-MLX</strong> compresses this KV cache with Apple Silicon Metal kernels, helping the same Mac handle longer conversations or larger models.
+                </p>
+              </div>
+            </details>
+          </div>
+
+          <div class="pg-header-metric" id="pg-header-metric" aria-live="polite">
+            <!-- metric injected by playground.js -->
+          </div>
         </div>
       </header>
 
