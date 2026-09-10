@@ -8511,6 +8511,116 @@ details.faq-accordion-item[open] .faq-chevron {
 }
 
 /* ============================================================
+   PLAYGROUND METAL BENCHMARKS THEME OVERRIDES
+   The Benchmark Suite segmented control (.pg-seg / .pg-seg button) was
+   built as a fixed dark "terminal" surface (#14141b + white text) that
+   never switched with the theme, so it stayed a near-black bar in light
+   mode. Dark mode is untouched below; this only adds a light variant.
+   ============================================================ */
+
+:root[data-theme="light"] #playground .pg-seg {
+  background: #eef3f8;
+  border-color: #d4dee8;
+}
+
+:root[data-theme="light"] #playground .pg-seg button {
+  color: #405069;
+}
+
+:root[data-theme="light"] #playground .pg-seg button:hover {
+  background: rgba(var(--accent-rgb), 0.08);
+  color: #146b9a;
+}
+
+:root[data-theme="light"] #playground .pg-seg button.active {
+  background: #ffffff;
+  border-color: rgba(var(--accent-rgb), 0.55);
+  color: #172033;
+  box-shadow: 0 2px 8px rgba(30, 55, 85, 0.1);
+}
+
+:root[data-theme="light"] #playground .pg-seg button:focus-visible {
+  outline: 3px solid rgba(var(--accent-rgb), 0.35);
+  outline-offset: 2px;
+}
+
+/* Benchmark error / unavailable states — compact cards, not a full-height
+   blank panel, sized to their content. */
+.pg-bench-error,
+.pg-bench-unavailable {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  max-width: 620px;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.pg-bench-error .pg-ic,
+.pg-bench-unavailable .pg-ic {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 0.1rem;
+}
+
+.pg-bench-retry {
+  display: block;
+  margin-top: 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pg-bench-error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+}
+
+.pg-bench-error .pg-bench-retry {
+  background: transparent;
+  border: 1px solid rgba(252, 165, 165, 0.5);
+  color: #fca5a5;
+}
+
+.pg-bench-error .pg-bench-retry:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.pg-bench-unavailable {
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  color: #fde68a;
+}
+
+:root[data-theme="light"] #playground .pg-bench-error {
+  background: #fff0f0;
+  border-color: #e8a2a2;
+  color: #a12b2b;
+}
+
+:root[data-theme="light"] #playground .pg-bench-error .pg-bench-retry {
+  border-color: rgba(161, 43, 43, 0.4);
+  color: #a12b2b;
+}
+
+:root[data-theme="light"] #playground .pg-bench-error .pg-bench-retry:hover {
+  background: rgba(161, 43, 43, 0.08);
+}
+
+:root[data-theme="light"] #playground .pg-bench-unavailable {
+  background: var(--pg-warning-bg, #fff8e8);
+  border-color: var(--pg-warning-border, #f1c66d);
+  color: var(--pg-warn, #936000);
+}
+
+/* ============================================================
    BENCHMARKS REDESIGN (REAL-WORLD HARDWARE BENCHMARKS)
    ============================================================ */
 

@@ -1436,10 +1436,65 @@ function highlightSnippet(code) {
 /* ---------- Tab 3: Benchmark viewer ---------- */
 let BENCH = null;
 
+// Typed failure so the caller can show a message that matches what
+// actually went wrong, instead of one generic "try refreshing" string.
+class BenchLoadError extends Error {
+  constructor(kind, message) {
+    super(message);
+    this.kind = kind; // "offline" | "http" | "json" | "shape"
+  }
+}
+
+function isFiniteRow(row, keys) {
+  return row && typeof row === "object" && keys.every((k) => Number.isFinite(row[k]));
+}
+
+// Sanity-check the shape the renderer relies on before any chart is drawn,
+// so a truncated or hand-edited JSON file fails loudly here instead of
+// producing NaN/blank bars downstream.
+function validateBenchData(data) {
+  if (!data || typeof data !== "object") {
+    throw new BenchLoadError("shape", "Benchmark data is not a valid object.");
+  }
+  if (!Array.isArray(data.metal_quantize) || !data.metal_quantize.every((r) => isFiniteRow(r, ["S", "speedup"]))) {
+    throw new BenchLoadError("shape", "Metal benchmark rows are missing or malformed.");
+  }
+  if (!Array.isArray(data.rabitq_falcon_memory) || !data.rabitq_falcon_memory.every((r) => isFiniteRow(r, ["seq_len", "fp16_mb", "rabitq_mse4v_mb"]))) {
+    throw new BenchLoadError("shape", "RaBitQ benchmark rows are missing or malformed.");
+  }
+  if (!data.kivi_models || typeof data.kivi_models !== "object") {
+    throw new BenchLoadError("shape", "KIVI benchmark data is missing.");
+  }
+  return data;
+}
+
 async function loadBench() {
   if (BENCH) return BENCH;
-  const res = await fetch("assets/data/benchmarks.json");
-  BENCH = await res.json();
+  if (location.protocol === "file:") {
+    throw new BenchLoadError(
+      "offline",
+      "This page was opened directly as a file, so the browser won't load the benchmark data. Serve the site over http(s) (for example `python3 -m http.server`) and open it from there."
+    );
+  }
+  let res;
+  try {
+    res = await fetch("assets/data/benchmarks.json");
+  } catch (e) {
+    throw new BenchLoadError("offline", "Benchmark data could not be loaded. Check your connection and try again.");
+  }
+  if (!res.ok) {
+    throw new BenchLoadError(
+      "http",
+      `Benchmark data could not be loaded (server responded ${res.status}). Check that the benchmark data file is available at assets/data/benchmarks.json.`
+    );
+  }
+  let data;
+  try {
+    data = await res.json();
+  } catch (e) {
+    throw new BenchLoadError("json", "Benchmark data could not be loaded because the file is not valid JSON.");
+  }
+  BENCH = validateBenchData(data);
   return BENCH;
 }
 
@@ -1529,6 +1584,24 @@ function growBars(container) {
   });
 }
 
+function renderBenchError(message) {
+  const out = $("bench-output");
+  out.innerHTML = `<div class="pg-bench-error" role="alert">
+    <svg class="pg-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="13"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+    <span>${esc(message)}</span>
+    <button type="button" class="pg-bench-retry" id="pg-bench-retry">Retry</button>
+  </div>`;
+  $("pg-bench-retry")?.addEventListener("click", () => runBenchViewer());
+}
+
+function renderBenchUnavailable(message) {
+  const out = $("bench-output");
+  out.innerHTML = `<div class="pg-bench-unavailable" role="status">
+    <svg class="pg-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"></path></svg>
+    <span>${esc(message)}</span>
+  </div>`;
+}
+
 async function runBenchViewer() {
   const out = $("bench-output");
   // Skeleton shimmer while the JSON loads (only visible on the first fetch).
@@ -1536,14 +1609,18 @@ async function runBenchViewer() {
     out.innerHTML = `<div class="pg-skeleton" aria-hidden="true">
       <div class="pg-skel-legend"><span></span><span></span></div>
       <div class="pg-skel-chart"></div>
-    </div><p class="pg-caption pg-muted">Loading the measured results…</p>`;
+    </div><p class="pg-caption pg-muted">Loading measured benchmark results…</p>`;
   }
 
   let data;
   try {
     data = await loadBench();
   } catch (e) {
-    out.innerHTML = `<p class="pg-error">Couldn't load the benchmark results. Try refreshing the page.</p>`;
+    if (e instanceof BenchLoadError) {
+      renderBenchError(e.message);
+    } else {
+      renderBenchError("Benchmark data could not be loaded. Please verify the benchmark data file or try again.");
+    }
     return;
   }
 
@@ -1551,9 +1628,14 @@ async function runBenchViewer() {
   let caption = "";
   let source = "";
   let chart = "";
+  let srSummary = "";
 
   if (which === "metal") {
     const rows = data.metal_quantize;
+    if (!rows.length) {
+      renderBenchUnavailable("No measured result is available for the Metal kernel benchmark. Try another suite.");
+      return;
+    }
     chart = svgBarChart({
       groups: rows.map((r) => ({ label: "S=" + r.S, values: { speedup: r.speedup } })),
       series: [{ key: "speedup", label: "Metal speedup ×" }],
@@ -1561,10 +1643,17 @@ async function runBenchViewer() {
       valFmt: (v) => v.toFixed(1) + "×",
     });
     caption = "How much faster our hand-written Apple GPU code compresses the cache, compared " +
-      "with doing the same work in plain MLX. Higher is better; S is the conversation length.";
+      "with doing the same work in plain MLX. Higher is better; S is the conversation length. " +
+      "Measured Metal kernel result; end-to-end model performance may vary by workload.";
     source = "figures/metal/results.json";
+    const last = rows[rows.length - 1];
+    srSummary = `Metal kernel benchmark. Measured speedup at sequence length ${last.S}: ${last.speedup.toFixed(1)}×.`;
   } else if (which === "rabitq") {
     const rows = data.rabitq_falcon_memory;
+    if (!rows.length) {
+      renderBenchUnavailable("No measured result is available for the RaBitQ benchmark. Try another suite.");
+      return;
+    }
     chart = svgBarChart({
       groups: rows.map((r) => ({
         label: "S=" + r.seq_len,
@@ -1580,10 +1669,19 @@ async function runBenchViewer() {
     caption = "Actual memory used by the notes on a Falcon3-7B model, with and without " +
       "RaBitQ — about 5.95× smaller. Shorter bars are better.";
     source = "figures/RaBitQ/falcon/results.json";
+    const last = rows[rows.length - 1];
+    srSummary = `RaBitQ benchmark on Falcon3-7B. Measured KV cache size at sequence length ${last.seq_len}: ` +
+      `${last.fp16_mb.toFixed(0)} MB at fp16, ${last.rabitq_mse4v_mb.toFixed(0)} MB with RaBitQ, ratio ${last.ratio.toFixed(2)}×.`;
   } else {
     // KIVI per-model throughput retention
     const model = $("pg-bench-model").value;
     const m = data.kivi_models[model];
+    if (!m || !Array.isArray(m.rows) || !m.rows.length) {
+      renderBenchUnavailable(
+        `No measured result is available for KIVI on ${model}. Try another target model.`
+      );
+      return;
+    }
     chart = svgBarChart({
       groups: m.rows.map((r) => ({
         label: r.config.replace("KIVI-", "").replace("fp16-baseline", "fp16"),
@@ -1599,13 +1697,17 @@ async function runBenchViewer() {
     caption = `KIVI running ${model} on an ${m.chip} with ${m.ram_gb} GB. Blue shows how much ` +
       "of the original speed is kept; purple shows how much smaller the cache got.";
     source = "figures/kivi/results_summary.json";
+    const kivi2 = m.rows.find((r) => r.config === "KIVI-2bit") || m.rows[m.rows.length - 1];
+    srSummary = `KIVI benchmark for ${model} on ${m.chip}. Measured throughput at ${kivi2.config}: ` +
+      `${kivi2.tok_s_pct}% of fp16 baseline, key cache compression ${kivi2.key_compression.toFixed(2)}×.`;
   }
 
   out.innerHTML = `${renderBand("Measured results", "chart", chart)}
     <p class="pg-provenance"><span class="pg-prov-dot" aria-hidden="true"></span>
       Measured on a real Mac, not estimated · you can check the raw numbers in
       <code>${source}</code></p>
-    <p class="pg-caption">${caption}</p>`;
+    <p class="pg-caption">${caption}</p>
+    <p class="visually-hidden">${esc(srSummary)}</p>`;
 
   growBars(out);
 }
