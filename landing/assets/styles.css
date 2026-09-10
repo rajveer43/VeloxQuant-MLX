@@ -8062,17 +8062,6 @@ details.faq-accordion-item[open] .faq-chevron {
   color: #09090b;
 }
 
-/* .pg-split stays a dark card in light mode (matches the code/terminal
-   blocks below it), so its stat text must stay light, not the default
-   light-mode black used by .pg-stat elsewhere. */
-:root[data-theme="light"] .pg-split .pg-stat-lbl {
-  color: #a1a1aa;
-}
-
-:root[data-theme="light"] .pg-split .pg-stat-num {
-  color: #ffffff;
-}
-
 :root[data-theme="light"] .pg-rationale {
   color: #334155;
 }
@@ -8089,28 +8078,12 @@ details.faq-accordion-item[open] .faq-chevron {
   color: #18181b;
 }
 
-/* .pg-hero-result stays a dark card in light mode too (same "terminal
-   block" convention as .pg-split above) — its nested memory bar and
-   "frees actual RAM" line need to stay light-on-dark, not the global
-   light-mode darkening above. */
-:root[data-theme="light"] .pg-hero-result-right .pg-membar-label {
-  color: #a1a1aa;
-}
-
-:root[data-theme="light"] .pg-hero-result-right .pg-membar-val {
-  color: #f4f4f5;
-}
-
 :root[data-theme="light"] .pg-hero-resident.is-muted {
-  color: #a1a1aa;
+  color: #71717a;
 }
 
 :root[data-theme="light"] .pg-saved {
   color: #52525b;
-}
-
-:root[data-theme="light"] .pg-hero-result-right .pg-saved {
-  color: #a1a1aa;
 }
 
 :root[data-theme="light"] .pg-stat-unit {
@@ -8139,6 +8112,283 @@ details.faq-accordion-item[open] .faq-chevron {
   background: #ffffff;
   color: #09090b;
   border-color: rgba(0, 0, 0, 0.15);
+}
+
+/* ============================================================
+   PLAYGROUND LIGHT THEME OVERRIDES
+   Several Recommended-Setting surfaces were built as fixed dark
+   "terminal cards" (hardcoded #0d0d12/#111117/#121219/#14141b etc.)
+   that never picked up the light theme at all. This block gives them
+   real light-theme backgrounds/borders/text instead of stat-by-stat
+   text patches on a dark card, reusing #playground's existing --pg-*
+   tokens and the same light neutrals already used elsewhere in this
+   file (#ffffff / #f8fafc / #f1f5f9 / rgba(0,0,0,*) borders).
+   ============================================================ */
+
+:root[data-theme="light"] #playground {
+  /* Scoped light versions of the fixed dark-mode --pg-good/warn/err
+     constants defined at #playground above — those stay one value for
+     both themes today, which is exactly the "black on pale amber"
+     contrast bug. Text/icon colors below use these; the *-bg/-border
+     pairs are used directly since nothing outside this block needs them. */
+  --pg-good: #146b3a;
+  --pg-good-rgb: 20, 107, 58;
+  --pg-warn: #936000;
+  --pg-err: #a12b2b;
+  --pg-success-bg: #ecfaf1;
+  --pg-success-border: #9ce2b4;
+  --pg-warning-bg: #fff8e8;
+  --pg-warning-border: #f1c66d;
+  --pg-danger-bg: #fff0f0;
+  --pg-danger-border: #e8a2a2;
+}
+
+/* ── Custom Architecture disclosure ── */
+:root[data-theme="light"] #playground .pg-advanced {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] #playground .pg-advanced summary {
+  color: #52525b;
+}
+
+:root[data-theme="light"] #playground .pg-advanced summary:hover {
+  background: #f1f5f9;
+}
+
+:root[data-theme="light"] #playground .pg-adv-label {
+  color: #09090b;
+}
+
+:root[data-theme="light"] #playground .pg-adv-label::after {
+  color: #71717a;
+}
+
+:root[data-theme="light"] #playground .pg-adv-hint,
+:root[data-theme="light"] #playground .pg-adv-note {
+  color: #71717a;
+}
+
+:root[data-theme="light"] #playground .pg-adv-content {
+  border-top-color: rgba(0, 0, 0, 0.06);
+}
+
+/* ── "Run this yourself": command + settings rows ── */
+:root[data-theme="light"] #playground .pg-row {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] #playground .pg-row-lbl {
+  color: #405069;
+}
+
+:root[data-theme="light"] #playground .pg-row-val {
+  color: #146b9a;
+}
+
+:root[data-theme="light"] #playground .pg-row-copy {
+  background: #f1f5f9;
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #52525b;
+}
+
+:root[data-theme="light"] #playground .pg-row-copy:hover {
+  background: rgba(var(--accent-rgb), 0.1);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+:root[data-theme="light"] #playground .pg-row-copy.copied {
+  border-color: var(--pg-good);
+  color: var(--pg-good);
+  background: var(--pg-success-bg);
+}
+
+:root[data-theme="light"] #playground .pg-row-copy-labeled {
+  border-color: rgba(var(--accent-rgb), 0.35);
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+:root[data-theme="light"] #playground .pg-row-copy-labeled:hover {
+  background: rgba(var(--accent-rgb), 0.16);
+}
+
+:root[data-theme="light"] #playground .pg-install-link {
+  color: var(--accent);
+}
+
+/* ── Memory comparison panel (hero result + "why this one" / "things to
+   know" split cards) — the main light/dark-card mismatch this fix targets. ── */
+:root[data-theme="light"] #playground .pg-hero-result,
+:root[data-theme="light"] #playground .pg-split {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] #playground .pg-hero-result-left {
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(var(--accent-rgb), 0.08), transparent 60%),
+    transparent;
+  border-right-color: rgba(0, 0, 0, 0.08);
+}
+
+@media (max-width: 760px) {
+  :root[data-theme="light"] #playground .pg-hero-result-left {
+    border-bottom-color: rgba(0, 0, 0, 0.08);
+  }
+}
+
+:root[data-theme="light"] #playground .pg-hero-result-lbl {
+  color: #52525b;
+}
+
+:root[data-theme="light"] #playground .pg-hero-result-num {
+  color: #0369a1; /* fallback if background-clip:text fails to render */
+  background: linear-gradient(135deg, #0369a1 0%, #6d28d9 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+:root[data-theme="light"] #playground .pg-hero-result-sub {
+  color: #5b6270;
+}
+
+:root[data-theme="light"] #playground .pg-hero-result-sub strong {
+  color: #172033;
+}
+
+:root[data-theme="light"] #playground .pg-hero-resident {
+  border-top-color: rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] #playground .pg-split-cell:first-child {
+  border-right-color: rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="light"] #playground .pg-stat {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+}
+
+:root[data-theme="light"] #playground .pg-stat:hover {
+  border-color: rgba(0, 0, 0, 0.14);
+}
+
+:root[data-theme="light"] #playground .pg-membar-track {
+  background: #eef3f8;
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="light"] #playground .pg-membar-fill.fp16 {
+  background: #94a3b8;
+}
+
+/* ── Section bands ("WHY THIS ONE" / "THINGS TO KNOW" / "RUN THIS
+   YOURSELF") and their icons/knob chips ── */
+:root[data-theme="light"] #playground .pg-band {
+  background: #f1f5f9;
+  border-color: rgba(0, 0, 0, 0.06);
+  color: #52525b;
+}
+
+:root[data-theme="light"] #playground .pg-band-title {
+  color: #334155;
+}
+
+:root[data-theme="light"] #playground .pg-knob-chip {
+  background: #eef3f8;
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #146b9a;
+}
+
+:root[data-theme="light"] #playground .pg-hero-badge-k {
+  color: #71717a;
+}
+
+:root[data-theme="light"] #playground .pg-pill {
+  background: #f1f5f9;
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #334155;
+}
+
+:root[data-theme="light"] #playground .pg-pill-muted {
+  color: #52525b;
+}
+
+:root[data-theme="light"] #playground .pg-tip {
+  background: rgba(0, 0, 0, 0.12);
+  color: #ffffff;
+}
+
+/* ── Success / warning states (callouts + fit-status banner) ── */
+:root[data-theme="light"] #playground .pg-callout-warn,
+:root[data-theme="light"] #playground .pg-callout-list-warn {
+  background: var(--pg-warning-bg);
+  border-color: var(--pg-warning-border);
+  color: var(--pg-warn);
+}
+
+:root[data-theme="light"] #playground .pg-callout-list > li + li {
+  border-top-color: var(--pg-warning-border);
+}
+
+:root[data-theme="light"] #playground .pg-callout-ok {
+  background: var(--pg-success-bg);
+  border-color: var(--pg-success-border);
+  color: var(--pg-good);
+}
+
+:root[data-theme="light"] #playground .pg-fit-success {
+  background: var(--pg-success-bg);
+  border-color: var(--pg-success-border);
+}
+
+:root[data-theme="light"] #playground .pg-fit-warning {
+  background: var(--pg-warning-bg);
+  border-color: var(--pg-warning-border);
+}
+
+:root[data-theme="light"] #playground .pg-fit-danger {
+  background: var(--pg-danger-bg);
+  border-color: var(--pg-danger-border);
+}
+
+/* ── Bottom CTAs on the recommendation card ── */
+:root[data-theme="light"] #playground .pg-cta-row {
+  border-top-color: rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] #playground .pg-cta-primary {
+  background: #09090b;
+  color: #ffffff;
+  border-color: #09090b;
+}
+
+:root[data-theme="light"] #playground .pg-cta-primary:hover {
+  background: #27272a;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+:root[data-theme="light"] #playground .pg-cta-ghost {
+  background: #f1f5f9;
+  color: #334155;
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+:root[data-theme="light"] #playground .pg-cta-ghost:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.06);
+}
+
+/* ── Focus-visible: light mode's page is brighter, so the dark-mode
+   ring needs more contrast against white/pale-gray surfaces. ── */
+:root[data-theme="light"] #playground button:focus-visible,
+:root[data-theme="light"] #playground summary:focus-visible {
+  outline: 3px solid rgba(var(--accent-rgb), 0.35);
+  outline-offset: 2px;
 }
 
 /* ============================================================
