@@ -664,6 +664,18 @@ const METHODS = {
 /* Order the method cards are shown in the lab (selection order). */
 const METHOD_ORDER = ["turboquant_rvq", "vecinfer", "rabitq", "spectral", "kivi"];
 
+/* Plain-language gloss for a recommender method name, shown beside the
+   technical badge (e.g. "turboquant_rvq") so it isn't opaque on first
+   read. Covers every value recommend() can return, including
+   streaming_llm, which has no entry in METHODS above. */
+const METHOD_PLAIN_NAME = {
+  turboquant_rvq: "everyday default",
+  vecinfer: "max compression",
+  rabitq: "full-cache compression",
+  spectral: "best quality",
+  streaming_llm: "fixed memory cap",
+};
+
 /* A recommended method → which benchmark chart best backs it up.
    streaming_llm has no dedicated chart; fall back to the Metal speedup view. */
 const METHOD_TO_BENCH = {
@@ -886,14 +898,18 @@ function renderStatRow(cardsHtml) {
 // A copyable value row: label · mono value pill · copy icon-button.
 // `copyValue` is what lands on the clipboard (defaults to the shown value).
 // Copy buttons are wired after injection by wireCopyRows().
-function renderCopyRow(label, value, ariaLabel, copyValue) {
+function renderCopyRow(label, value, ariaLabel, copyValue, opts = {}) {
   const toCopy = copyValue !== undefined ? copyValue : value;
+  const labeled = opts.labeled
+    ? `<span class="pg-row-copy-txt">Copy</span>`
+    : "";
+  const copyClass = opts.labeled ? "pg-row-copy pg-row-copy-labeled" : "pg-row-copy";
   return `<div class="pg-row">
     <span class="pg-row-lbl">${esc(label)}</span>
     <span class="pg-row-right">
       <code class="pg-row-val">${esc(value)}</code>
-      <button type="button" class="pg-row-copy" aria-label="${esc(ariaLabel)}"
-        data-copy="${esc(toCopy)}">${PG_ICONS.copy}${PG_ICONS.check}</button>
+      <button type="button" class="${copyClass}" aria-label="${esc(ariaLabel)}"
+        data-copy="${esc(toCopy)}">${PG_ICONS.copy}${PG_ICONS.check}${labeled}</button>
     </span>
   </div>`;
 }
@@ -903,10 +919,16 @@ function renderCopyRow(label, value, ariaLabel, copyValue) {
 // through the surrounding aria-live="polite" region.
 function wireCopyRows(root) {
   root.querySelectorAll(".pg-row-copy").forEach((btn) => {
+    const txt = btn.querySelector(".pg-row-copy-txt");
+    const label = txt ? txt.textContent : "";
     btn.addEventListener("click", () => {
       navigator.clipboard?.writeText(btn.dataset.copy).then(() => {
         btn.classList.add("copied");
-        setTimeout(() => btn.classList.remove("copied"), 1400);
+        if (txt) txt.textContent = "Copied";
+        setTimeout(() => {
+          btn.classList.remove("copied");
+          if (txt) txt.textContent = label;
+        }, 1400);
       });
     });
   });
@@ -945,7 +967,6 @@ function runRecommender() {
     res = recommend(req);
   } catch (e) {
     $("rec-output").innerHTML = `<p class="pg-error">${esc(e.message)}</p>`;
-    updateHeadline(null);
     return;
   }
 
@@ -967,57 +988,39 @@ function runRecommender() {
   const r = res.key_accounting_ratio;
   const ratioStr = Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1);
 
+  // Keep the decision visible before the technical detail. This uses the same
+  // model-weight and OS-reserve constants as the recommender's headroom check.
+  const headroomGb = req.ram_gb - MODEL_WEIGHT_GB_4BIT[req.model_class] - 4.0;
+  const fitStatus = headroomGb < 0
+    ? { tone: "danger", label: "Does not fit", detail: "The model weights exceed the practical memory available on this Mac." }
+    : headroomGb < 3
+      ? { tone: "warning", label: "Near the memory limit", detail: `About ${headroomGb.toFixed(1)} GB remains for the cache and other apps.` }
+      : { tone: "success", label: "Fits comfortably", detail: `About ${headroomGb.toFixed(1)} GB remains after the model and macOS.` };
+
+  // Consolidated into ONE bordered group (not N stacked callouts) so
+  // multiple warnings don't stack repeated amber walls on top of each other.
   const warnHtml = res.warnings.length
-    ? `<div class="pg-callouts">${res.warnings
-        .map(
-          (w) => `<div class="pg-callout pg-callout-warn">
-            <span class="pg-callout-ic" aria-hidden="true">▲</span>
-            <span>${esc(w)}</span></div>`
-        )
-        .join("")}</div>`
-    : `<div class="pg-callouts"><div class="pg-callout pg-callout-ok">
+    ? `<ul class="pg-callout-list pg-callout-list-warn">${res.warnings
+        .map((w) => `<li><span class="pg-callout-ic" aria-hidden="true">▲</span><span>${esc(w)}</span></li>`)
+        .join("")}</ul>`
+    : `<div class="pg-callout pg-callout-ok">
         <span class="pg-callout-ic" aria-hidden="true">✓</span>
-        <span>Nothing to watch out for — this setup is a comfortable fit.</span></div></div>`;
+        <span>Nothing to watch out for — this setup is a comfortable fit.</span></div>`;
 
-  // Pattern 1 — headline stat-card row. Leads with the percentage because it
-  // is true for every method (see updateHeadline); the raw key-accounting
-  // ratio is demoted into the "How this works" band below, where the
-  // technical detail belongs.
-  const statRow = renderStatRow(
-    renderStatCard({
-      label: "Smaller by",
-      value: "0%",
-      hi: true,
-      id: "pg-hero-saved",
-      to: savedPct,
-    }) +
-    renderStatCard({
-      label: "Notes take up",
-      value: `${fmtMb(res.kv_fp16_mb)} → ${fmtMb(res.kv_compressed_mb_estimate)}`,
-    }) +
-    renderStatStatus({
-      label: "Frees actual RAM?",
-      text: resident ? "Yes" : "Not on short chats",
-      sub: resident ? "shrinks live memory too" : "but the size drop is real",
-      ok: resident,
-    })
-  );
-
-  // Pattern 3 — split-metric MODEL SHAPE readout above the memory bar.
-  const splitCard = `<div class="pg-split">
-    <div class="pg-split-cell">
-      <span class="pg-stat-lbl">Without VeloxQuant</span>
-      <span class="pg-stat-num">${esc(fmtMb(res.kv_fp16_mb))}</span>
-    </div>
-    <div class="pg-split-cell">
-      <span class="pg-stat-lbl">With VeloxQuant</span>
-      <span class="pg-stat-num">${esc(fmtMb(res.kv_compressed_mb_estimate))}</span>
-    </div>
+  // The "frees actual RAM" state folds into the hero-result band itself
+  // instead of living in a separate same-weight stat card.
+  const residentRow = `<div class="pg-hero-resident ${resident ? "is-ok" : "is-muted"}">
+    <span class="pg-stat-dot" aria-hidden="true"></span>
+    <span>${resident
+      ? "Frees actual RAM too — not just a smaller number on paper."
+      : "Size drop is real, but short chats may not free much live RAM."}</span>
   </div>`;
 
-  // Pattern 4 — copyable rows: reproduce-in-terminal CLI + knobs.
+  // Pattern 4 — copyable rows: reproduce-in-terminal CLI + knobs. The
+  // primary CLI row gets a labeled copy button (not just an icon) since
+  // it's the one action most people came to this band to take.
   const reproRows =
-    renderCopyRow("Check this on your own Mac", cli, "Copy the command") +
+    renderCopyRow("Check this on your own Mac", cli, "Copy the command", undefined, { labeled: true }) +
     (knobsInline ? renderCopyRow("Settings used", knobsInline, "Copy the settings") : "");
 
   $("rec-output").innerHTML = `
@@ -1026,6 +1029,7 @@ function runRecommender() {
         <div class="pg-hero-badge">
           <span class="pg-hero-badge-k">Use this</span>
           <span class="pg-badge-method">${esc(res.method)}</span>
+          ${METHOD_PLAIN_NAME[res.method] ? `<span class="pg-badge-plain">${esc(METHOD_PLAIN_NAME[res.method])}</span>` : ""}
         </div>
         <span class="pg-pill ${resident ? "pg-pill-ok" : "pg-pill-muted"}">
           ${resident ? "gives memory back" : "smaller, but not always freed"}
@@ -1037,19 +1041,43 @@ function runRecommender() {
         </span>
       </div>
 
-      ${statRow}
+      <div class="pg-fit-status pg-fit-${fitStatus.tone}" role="status" aria-live="polite">
+        <span class="pg-fit-icon" aria-hidden="true">${fitStatus.tone === "success" ? "✓" : fitStatus.tone === "warning" ? "!" : "×"}</span>
+        <span><strong>${fitStatus.label}</strong><small>${fitStatus.detail}</small></span>
+      </div>
 
-      ${renderBand("Why this one", "cpu",
-        `<p class="pg-rationale">${esc(res.rationale)}</p>
-         <p class="pg-rationale-tech">Shrinks the key half of the cache about
-           <strong>${ratioStr}×</strong>.</p>${knobsHtml}`)}
+      <!-- Hero result: the number the user came for, full-width and
+           undiluted — the single visual anchor of the panel. -->
+      <div class="pg-hero-result">
+        <div class="pg-hero-result-left">
+          <span class="pg-hero-result-lbl">Its memory of your conversation<br>(the KV cache) is</span>
+          <span class="pg-hero-result-num" id="pg-hero-saved" data-to="${savedPct}">0%</span>
+          <span class="pg-hero-result-sub">smaller — <strong>${esc(fmtMb(res.kv_fp16_mb))} → ${esc(fmtMb(res.kv_compressed_mb_estimate))}</strong> for the same conversation</span>
+        </div>
+        <div class="pg-hero-result-right">
+          ${renderMemoryBar(res.kv_fp16_mb, res.kv_compressed_mb_estimate, savedPct, "rec")}
+          ${residentRow}
+        </div>
+      </div>
 
-      ${renderBand("How much space this saves", "memory",
-        splitCard + renderMemoryBar(res.kv_fp16_mb, res.kv_compressed_mb_estimate, savedPct, "rec"))}
+      <div class="pg-detail-grid">
+        <div class="pg-hero-col">
+          ${renderBand("Why this one", "cpu",
+            `<p class="pg-rationale">${esc(res.rationale)}</p>
+             <p class="pg-rationale-tech">Shrinks the key half of the cache about
+               <strong>${ratioStr}×</strong>.</p>${knobsHtml}`)}
+        </div>
 
-      ${renderBand("Run this yourself", "terminal", `<div class="pg-rows">${reproRows}</div>`)}
+        <div class="pg-hero-col">
+          ${renderBand("Things to know", "warning", warnHtml)}
+        </div>
+      </div>
 
-      ${renderBand("Things to know", "warning", warnHtml)}
+      ${renderBand("Run this yourself", "terminal",
+        `<div class="pg-rows">${reproRows}</div>
+         <a class="pg-install-link" href="index.html#install">
+           Don't have VeloxQuant-MLX installed yet? Install it →
+         </a>`)}
 
       <div class="pg-cta-row">
         <button type="button" class="pg-cta pg-cta-primary" id="pg-cta-lab"
@@ -1080,8 +1108,6 @@ function runRecommender() {
     selectBench(e.currentTarget.dataset.bench);
     switchTab("bench");
   });
-
-  updateHeadline(res);
 }
 
 /* Horizontal fp16-vs-compressed memory bar (pure divs, theme-aware).
@@ -1128,20 +1154,6 @@ function animateMemoryBar(scope, savedPct) {
     requestAnimationFrame(() => (fill.style.width = target));
   }
   countUp(savedEl, savedPct, (v) => Math.round(v) + "%");
-}
-
-/* Animated headline metric — "Your chatbot's notes get N% smaller."
-   Deliberately states the *size reduction*, not a context multiplier: the
-   percentage is unconditionally true for every method, whereas "N× more
-   context" is only true when resident_savings_likely, so the old headline
-   made a claim the accounting-only caveat further down had to walk back. */
-function updateHeadline(res) {
-  const el = $("pg-headline");
-  if (!el) return;
-  if (!res) { el.textContent = ""; return; }
-  const savedPct = Math.round((1 - res.kv_compressed_mb_estimate / res.kv_fp16_mb) * 100);
-  el.innerHTML =
-    `Your chatbot's notes get <strong>${savedPct}% smaller</strong>.`;
 }
 
 /* ---------- Tab 2: Compression lab ---------- */
@@ -1314,24 +1326,30 @@ function runCompressionLab() {
 
     ${statRow}
 
-    ${renderBand("How long a conversation fits", "chart",
-      `<p class="pg-book">≈ <strong>${book.pages.toLocaleString()} pages</strong> — about ${book.tangible}
-        <span class="pg-approx">rough estimate · counting ~${TOKENS_PER_PAGE} words a page</span></p>
-       <p class="pg-saved">That's ${ratio}× longer than you'd fit without it, in the same memory.</p>
-       ${residentCaveat}
-       ${budgetFloorCaveat}`)}
+    <div class="pg-hero-grid">
+      <div class="pg-hero-col">
+        ${renderBand("How long a conversation fits", "chart",
+          `<p class="pg-book">≈ <strong>${book.pages.toLocaleString()} pages</strong> — about ${book.tangible}
+            <span class="pg-approx">rough estimate · counting ~${TOKENS_PER_PAGE} words a page</span></p>
+           <p class="pg-saved">That's ${ratio}× longer than you'd fit without it, in the same memory.</p>
+           ${residentCaveat}
+           ${budgetFloorCaveat}`)}
 
-    ${renderBand("Space used", "memory",
-      renderMemoryBar(round2(fp16Mb), round2(compMb), savedPct, "lab"))}
+        ${renderBand("Space used", "memory",
+          renderMemoryBar(round2(fp16Mb), round2(compMb), savedPct, "lab"))}
+      </div>
 
-    ${renderBand("Add this to your code", "code",
-      `<div class="pg-snippet">
-        <div class="pg-snippet-head">
-          <span class="pg-snippet-note">Three lines. Works with any <code>mlx_lm</code> model.</span>
-          <button class="pg-copy" data-snippet>Copy</button>
-        </div>
-        <pre><code class="pg-code">${highlightSnippet(snippetFor(methodKey))}</code></pre>
-      </div>`)}
+      <div class="pg-hero-col">
+        ${renderBand("Add this to your code", "code",
+          `<div class="pg-snippet">
+            <div class="pg-snippet-head">
+              <span class="pg-snippet-note">Three lines. Works with any <code>mlx_lm</code> model.</span>
+              <button class="pg-copy" data-snippet>Copy</button>
+            </div>
+            <pre><code class="pg-code">${highlightSnippet(snippetFor(methodKey))}</code></pre>
+          </div>`)}
+      </div>
+    </div>
   `;
 
   animateMemoryBar("lab", savedPct);
@@ -1555,6 +1573,11 @@ function switchTab(tab) {
     b.tabIndex = on ? 0 : -1;
   });
   panels.forEach((p) => p.classList.toggle("active", p.id === "pg-panel-" + tab));
+  // .pg-output owns scrolling for the active panel — reset it on every
+  // switch so a scrolled-down previous panel doesn't leave the newly
+  // shown one's content starting mid-scroll.
+  const activeOutput = document.querySelector(".pg-panel.active .pg-output");
+  if (activeOutput) activeOutput.scrollTop = 0;
   if (tab === "bench") runBenchViewer();
 }
 

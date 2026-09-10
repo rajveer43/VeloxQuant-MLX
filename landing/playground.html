@@ -103,31 +103,24 @@
   <main id="playground" class="pg-studio-page">
     <div class="pg-studio-container">
       
-      <!-- Studio Header: Clean, modern developer headline -->
-      <header class="pg-header pg-studio-header">
-        <div class="section-kicker">INTERACTIVE MEMORY WORKBENCH</div>
-        <h1 class="hero-headline pg-studio-title">
-          Run bigger models on the<br>Mac you already have.
-        </h1>
-        <p class="hero-subheadline pg-studio-desc">
-          Live Apple Silicon KV-cache quantization studio. Configure your hardware and target model on the left to see the optimal quantization strategy, live memory compression, and Metal kernel speedup.
-        </p>
-        <p class="pg-headline" id="pg-headline" aria-live="polite">
-          <!-- animated headline metric injected by playground.js -->
-        </p>
-
-        <!-- Collapsible Primer Box -->
-        <details class="pg-primer">
-          <summary>New here? What this actually does</summary>
-          <div class="pg-primer-content">
-            <p>
-              As an LLM generates tokens, it stores key-value pairs (the <strong>KV cache</strong>) in unified RAM so it doesn't recompute previous context. The longer the conversation, the more memory the KV cache consumes — quickly exceeding unified RAM.
-            </p>
-            <p>
-              <strong>VeloxQuant-MLX</strong> compresses these cache entries up to 8× with specialized Apple Silicon Metal kernels. This studio calculates the best algorithm, memory headroom, and context limits for your exact hardware setup.
-            </p>
-          </div>
-        </details>
+      <!-- Studio Header: Compact Developer Toolbar -->
+      <header class="pg-studio-header">
+          <div class="pg-studio-header-left">
+          <div class="section-kicker">INTERACTIVE WORKBENCH</div>
+          <h1 class="pg-studio-title">Find the right KV-cache setup for your Mac</h1>
+          <p class="pg-studio-subtitle">Choose your Mac and model. We’ll recommend a configuration, estimate memory use, and show how much context fits.</p>
+        </div>
+        <div class="pg-studio-header-right">
+          <details class="pg-primer">
+            <summary>What this does</summary>
+            <div class="pg-primer-content">
+              <p>
+                As an LLM generates tokens, it stores key-value pairs (the <strong>KV cache</strong>) in unified RAM.
+                <strong>VeloxQuant-MLX</strong> compresses these cache entries up to 8× with specialized Apple Silicon Metal kernels.
+              </p>
+            </div>
+          </details>
+        </div>
       </header>
 
       <!-- 2-Column Studio Workbench Grid -->
@@ -143,7 +136,7 @@
                   <path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/>
                   <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
                 </svg>
-                <span>SETUP CONFIG</span>
+                <span>YOUR SETUP</span>
               </div>
               <button type="button" class="pg-share-btn" id="pg-share-btn"
                       title="Copy a link that brings you back to exactly this setup">
@@ -158,7 +151,7 @@
             <!-- Group 1: Hardware -->
             <div class="pg-sidebar-group">
               <span class="pg-group-num">01</span>
-              <span class="pg-group-title">Hardware Target</span>
+              <span class="pg-group-title">Your Mac</span>
               <div class="pg-hw-row">
                 <div class="pg-field pg-field-chip">
                   <label for="pg-chip">Apple Silicon Chip</label>
@@ -193,7 +186,7 @@
             <!-- Group 2: Target Model -->
             <div class="pg-sidebar-group">
               <span class="pg-group-num">02</span>
-              <span class="pg-group-title">Target Model</span>
+              <span class="pg-group-title">Your Model</span>
 
               <!-- Model search: looks up real Hugging Face models and fills the
                    shape fields automatically. Falls back to presets/custom below
@@ -258,7 +251,7 @@
             <!-- Group 3: Context Window -->
             <div class="pg-sidebar-group">
               <span class="pg-group-num">03</span>
-              <span class="pg-group-title">Context Window</span>
+              <span class="pg-group-title">Conversation length</span>
               <div class="pg-field pg-field-seq">
                 <label for="pg-seqlen">Sequence Length (Tokens / Words)</label>
                 <div class="pg-seq-control">
@@ -273,9 +266,9 @@
             <!-- Group 4: Optimization Priority -->
             <div class="pg-sidebar-group">
               <span class="pg-group-num">04</span>
-              <span class="pg-group-title">Optimization Goal</span>
+              <span class="pg-group-title">What should we prioritize?</span>
               <div class="pg-field pg-field-goal">
-                <label for="pg-goal">Priority</label>
+                <label for="pg-goal">Choose a goal</label>
                 <div class="pg-select-wrap">
                   <select id="pg-goal">
                     <option value="everyday" selected>Balanced — Best overall default</option>
@@ -378,10 +371,13 @@
             <div class="pg-output" id="bench-output" aria-live="polite"></div>
           </section>
 
-          <!-- Disclaimer & Trust Footer -->
-          <p class="pg-disclaimer">
-            <strong>Where these numbers come from:</strong> Sizing formulas and recommendations run the exact same logic as the <code>veloxquant recommend</code> CLI tool, so what you see here matches what you'd get locally. Benchmark curves in Step 3 are real, measured Metal kernel results, not projections. To run native profiling on your own machine, install VeloxQuant-MLX and run <code>veloxquant benchmark</code>.
-          </p>
+          <!-- Disclaimer & Trust Footer (Collapsible) -->
+          <details class="pg-disclaimer-wrap">
+            <summary class="pg-disclaimer-summary">Where these numbers come from (Sizing formulas & benchmarks)</summary>
+            <p class="pg-disclaimer">
+              Sizing formulas and recommendations run the exact same logic as the <code>veloxquant recommend</code> CLI tool. Benchmark curves in Step 3 are real, measured Metal kernel results. To run native profiling on your own machine, install VeloxQuant-MLX and run <code>veloxquant benchmark</code>.
+            </p>
+          </details>
         </section>
       </div>
     </div>
