@@ -5923,6 +5923,9 @@ details.faq-accordion-item[open] .faq-chevron {
   color: #334155;
   text-shadow: none;
 }
+:root[data-theme="light"] .section-subheadline {
+  color: #475569;
+}
 :root[data-theme="light"] .hero-license-meta {
   color: #64748b;
   text-shadow: none;
@@ -5977,7 +5980,16 @@ details.faq-accordion-item[open] .faq-chevron {
 :root[data-theme="light"] .metric-label {
   color: #18181b;
 }
+:root[data-theme="light"] .matters-desc {
+  color: #475569;
+}
 :root[data-theme="light"] .matters-link {
+  color: #09090b;
+}
+:root[data-theme="light"] .install-bottom-link a {
+  color: #52525b;
+}
+:root[data-theme="light"] .install-bottom-link a:hover {
   color: #09090b;
 }
 :root[data-theme="light"] .install-code-box,
@@ -6002,6 +6014,15 @@ details.faq-accordion-item[open] .faq-chevron {
 :root[data-theme="light"] .footer-redesign {
   background: #f4f4f5;
   border-top-color: rgba(0, 0, 0, 0.08);
+}
+:root[data-theme="light"] .footer-col-title {
+  color: #52525b;
+}
+:root[data-theme="light"] .footer-links-col a {
+  color: #52525b;
+}
+:root[data-theme="light"] .footer-links-col a:hover {
+  color: #09090b;
 }
 
 /* ============================================================
