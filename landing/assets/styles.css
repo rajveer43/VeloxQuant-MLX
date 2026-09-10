@@ -7442,12 +7442,29 @@ details.faq-accordion-item[open] .faq-chevron {
   color: #09090b;
 }
 
+:root[data-theme="light"] .pg-group-title {
+  color: #334155;
+}
+
 :root[data-theme="light"] .pg-setup,
 :root[data-theme="light"] .pg-output,
 :root[data-theme="light"] .pg-primer {
   background: #ffffff;
   border-color: rgba(0, 0, 0, 0.08);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.05);
+}
+
+:root[data-theme="light"] .pg-primer summary {
+  color: #334155;
+}
+
+:root[data-theme="light"] .pg-primer summary::after {
+  color: #71717a;
+}
+
+:root[data-theme="light"] .pg-primer-content {
+  color: #475569;
+  border-top-color: rgba(0, 0, 0, 0.06);
 }
 
 :root[data-theme="light"] .pg-stepper {
@@ -7515,6 +7532,53 @@ details.faq-accordion-item[open] .faq-chevron {
 :root[data-theme="light"] .pg-stat {
   background: #f8fafc;
   border-color: rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="light"] .pg-stat-lbl {
+  color: #71717a;
+}
+
+:root[data-theme="light"] .pg-stat-num {
+  color: #09090b;
+}
+
+/* .pg-split stays a dark card in light mode (matches the code/terminal
+   blocks below it), so its stat text must stay light, not the default
+   light-mode black used by .pg-stat elsewhere. */
+:root[data-theme="light"] .pg-split .pg-stat-lbl {
+  color: #a1a1aa;
+}
+
+:root[data-theme="light"] .pg-split .pg-stat-num {
+  color: #ffffff;
+}
+
+:root[data-theme="light"] .pg-rationale {
+  color: #334155;
+}
+
+:root[data-theme="light"] .pg-rationale-tech {
+  color: #64748b;
+}
+
+:root[data-theme="light"] .pg-membar-label {
+  color: #52525b;
+}
+
+:root[data-theme="light"] .pg-membar-val {
+  color: #18181b;
+}
+
+:root[data-theme="light"] .pg-saved {
+  color: #52525b;
+}
+
+:root[data-theme="light"] .pg-stat-unit {
+  color: #52525b;
+}
+
+:root[data-theme="light"] .pg-stat-status.is-muted {
+  color: #52525b;
 }
 
 :root[data-theme="light"] .pg-rec-num {
