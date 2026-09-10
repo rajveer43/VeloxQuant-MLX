@@ -78,6 +78,12 @@ class SnapKVKVCache(_MLXKVCache):
     _row_offset: int = 0
     _true_offset: int = 0
 
+    @property
+    def _storage_dtype(self) -> mx.Dtype | None:
+        if self._storage_dtype_name is None:
+            return None
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
+
     def __init__(self, config: Any) -> None:
         super().__init__()
         self._backend = getattr(config, "snap_backend", "auto")
@@ -86,7 +92,11 @@ class SnapKVKVCache(_MLXKVCache):
         self._dtype_policy = getattr(config, "snap_dtype", "auto")
         if self._dtype_policy not in ("auto", "float16"):
             raise ValueError(f"Unsupported SnapKV dtype policy: {self._dtype_policy}")
-        self._storage_dtype = None
+        # Stored as a name, not the mlx.core.Dtype itself: mlx_lm.server
+        # deepcopies cache entries per request, and mx.core.Dtype objects
+        # (mx.float16, mx.bfloat16, ...) raise TypeError from copy.deepcopy
+        # ("cannot pickle 'mlx.core.Dtype' object").
+        self._storage_dtype_name: str | None = None
         self._batched_scoring = getattr(config, "snap_batched_scoring", False)
         self._budget = int(getattr(config, "snap_budget", 512))
         self._obs_window = int(getattr(config, "snap_obs_window", 32))
@@ -251,11 +261,11 @@ class SnapKVKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
-        if self._storage_dtype is None:
-            self._storage_dtype = (
-                mx.bfloat16
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = (
+                "bfloat16"
                 if self._dtype_policy == "auto" and keys.dtype == values.dtype == mx.bfloat16
-                else mx.float16
+                else "float16"
             )
         is_prefill = keys.shape[2] > 1
         if is_prefill:
