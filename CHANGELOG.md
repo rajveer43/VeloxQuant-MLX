@@ -432,6 +432,22 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.81.2 (2026-09-10)
+
+### Bug Fixes
+
+- **snapkv**: Store storage dtype as name to fix deepcopy crash
+  ([`0f1c9ad`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0f1c9ada549396874d66d0880aab0b5db662cad6))
+
+### Documentation
+
+- Add Node.js SDK developer blog
+  ([`10c40fb`](https://github.com/rajveer43/VeloxQuant-MLX/commit/10c40fb1e0c94588c22f44b5baeed30f59949893))
+
+- **blog**: Polish Node.js SDK blog title and copy
+  ([`cfa9c49`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cfa9c49198d5e263feb9a20e684c4199d80411e8))
+
+
 ## v0.81.1 (2026-09-09)
 
 ### Bug Fixes
