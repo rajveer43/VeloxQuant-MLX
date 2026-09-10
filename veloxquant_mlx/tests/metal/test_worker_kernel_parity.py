@@ -20,7 +20,9 @@ def test_worker_bit_pack_file_matches_exact_reference(tmp_path):
     result = _bit_pack_file({"inputPath": str(source), "outputPath": str(target), "bits": 2})
 
     assert result["backend"] == "metal"
-    np.testing.assert_array_equal(np.load(target, allow_pickle=False), np.array([228, 228], dtype=np.uint8))
+    np.testing.assert_array_equal(
+        np.load(target, allow_pickle=False), np.array([228, 228], dtype=np.uint8)
+    )
 
 
 @pytest.mark.parametrize("dtype", [np.float16, np.float32])
@@ -33,10 +35,15 @@ def test_worker_rope_file_matches_reference(tmp_path, dtype):
     np.save(source, keys, allow_pickle=False)
     np.save(positions_path, positions, allow_pickle=False)
 
-    result = _rope_recode_file({
-        "inputPath": str(source), "positionsPath": str(positions_path),
-        "outputPath": str(target), "sourceBase": 10000.0, "targetBase": 100000.0,
-    })
+    result = _rope_recode_file(
+        {
+            "inputPath": str(source),
+            "positionsPath": str(positions_path),
+            "outputPath": str(target),
+            "sourceBase": 10000.0,
+            "targetBase": 100000.0,
+        }
+    )
 
     actual = mx.array(np.load(target, allow_pickle=False))
     expected = recode_rope(mx.array(keys), mx.array(positions), 10000.0, 100000.0, use_metal=False)

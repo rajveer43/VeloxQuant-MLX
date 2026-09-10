@@ -43,7 +43,9 @@ def kivi_dtype_check():
     """Inspect the actual dtype/shape of self.keys/self.values inside a live
     KIVIKVCache after quantization has run, to check if it stores compressed
     bytes or fp16 round-tripped values."""
-    cfg = KVCacheConfig(method="kivi", head_dim=64, bit_width_inlier=2, kivi_group_size=32, residual_length=32)
+    cfg = KVCacheConfig(
+        method="kivi", head_dim=64, bit_width_inlier=2, kivi_group_size=32, residual_length=32
+    )
     cache = KVCacheFactory.create(cfg)
     B, H, D = 1, 4, 64
     rng = np.random.default_rng(0)
@@ -77,7 +79,9 @@ def long_loop_plateau_check(method, n_ops, budget, B=1, H=4, D=64):
     if method == "tova":
         cfg_kwargs.update(method="tova", tova_budget=budget, tova_n_sink=4, tova_backend="mlx")
     elif method == "h2o":
-        cfg_kwargs.update(method="h2o", h2o_budget=budget, h2o_n_sink=4, h2o_grace=16, h2o_decay=0.98)
+        cfg_kwargs.update(
+            method="h2o", h2o_budget=budget, h2o_n_sink=4, h2o_grace=16, h2o_decay=0.98
+        )
     cfg = KVCacheConfig(**cfg_kwargs)
     cache = KVCacheFactory.create(cfg)
     rng = np.random.default_rng(1)

@@ -43,9 +43,8 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.snapkv import (
-    full_fp16_bytes,
+    _snapkv_compress_batched,
     snapkv_compress,
-    snapkv_fp16_bytes,
 )
 
 
@@ -81,6 +80,14 @@ class SnapKVKVCache(_MLXKVCache):
 
     def __init__(self, config: Any) -> None:
         super().__init__()
+        self._backend = getattr(config, "snap_backend", "auto")
+        if self._backend not in ("auto", "mlx", "metal", "reference"):
+            raise ValueError(f"Unsupported SnapKV backend: {self._backend}")
+        self._dtype_policy = getattr(config, "snap_dtype", "auto")
+        if self._dtype_policy not in ("auto", "float16"):
+            raise ValueError(f"Unsupported SnapKV dtype policy: {self._dtype_policy}")
+        self._storage_dtype = None
+        self._batched_scoring = getattr(config, "snap_batched_scoring", False)
         self._budget = int(getattr(config, "snap_budget", 512))
         self._obs_window = int(getattr(config, "snap_obs_window", 32))
         self._n_sink = int(getattr(config, "snap_n_sink", 4))
@@ -152,29 +159,31 @@ class SnapKVKVCache(_MLXKVCache):
             budget=self._budget,
             obs_window=self._obs_window,
             n_sink=self._n_sink,
+            backend=self._backend,
         )
         return state.kept_keys, state.kept_values, state.n_kept
 
     def _process_prefill(self, keys: mx.array, values: mx.array):
         """Evict ``[B, H, S, D]`` prefill K/V per head; accumulate byte accounting."""
         B, H, S, D = keys.shape
-        k_out_b, v_out_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                k_h, v_h, n_kept = self._evict_head(keys[b, h], values[b, h])
-                k_out_h.append(k_h)
-                v_out_h.append(v_h)
-                # byte accounting: kept fp16 K and V rows
-                self._evicted_key_bytes += n_kept * D * 2
-                self._evicted_value_bytes += n_kept * D * 2
-                self._full_key_bytes += S * D * 2
-                self._full_value_bytes += S * D * 2
-                self._tokens_kept += n_kept
-                self._tokens_total += S
-            k_out_b.append(mx.stack(k_out_h, axis=0))
-            v_out_b.append(mx.stack(v_out_h, axis=0))
-        return mx.stack(k_out_b, axis=0), mx.stack(v_out_b, axis=0)
+        k, v = _snapkv_compress_batched(
+            keys,
+            values,
+            self._budget,
+            self._obs_window,
+            self._n_sink,
+            backend=self._backend,
+            output_dtype=self._storage_dtype,
+            batched_scoring=self._batched_scoring,
+        )
+        kept = k.shape[2]
+        self._evicted_key_bytes += B * H * kept * D * 2
+        self._evicted_value_bytes += B * H * kept * D * 2
+        self._full_key_bytes += B * H * S * D * 2
+        self._full_value_bytes += B * H * S * D * 2
+        self._tokens_kept += B * H * kept
+        self._tokens_total += B * H * S
+        return k, v
 
     def _process_decode(self, keys: mx.array, values: mx.array):
         """Pass through decode tokens (S == 1) — never evicted."""
@@ -186,7 +195,7 @@ class SnapKVKVCache(_MLXKVCache):
         self._full_value_bytes += fp16_cost
         self._tokens_kept += B * H * S
         self._tokens_total += B * H * S
-        return keys.astype(mx.float16), values.astype(mx.float16)
+        return keys.astype(self._storage_dtype), values.astype(self._storage_dtype)
 
     def _process_prefill_chunk(self, keys: mx.array, values: mx.array):
         """Re-enforce the budget for a later chunk of the same prefill.
@@ -210,26 +219,22 @@ class SnapKVKVCache(_MLXKVCache):
         # count as soon as eviction drops anything. Not self.keys.shape[2]
         # either: that is the base class's over-allocated buffer size.
         prev_kept = self._row_offset
-        prev_kept_bytes = prev_kept * D * 2  # per (b, h), K or V alone
-        k_out_b, v_out_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                prior_k = self.keys[b, h, :prev_kept, :]
-                prior_v = self.values[b, h, :prev_kept, :]
-                cat_k = mx.concatenate([prior_k, keys[b, h]], axis=0)
-                cat_v = mx.concatenate([prior_v, values[b, h]], axis=0)
-                k_h, v_h, n_kept = self._evict_head(cat_k, cat_v)
-                k_out_h.append(k_h)
-                v_out_h.append(v_h)
-                kept_bytes = n_kept * D * 2
-                self._evicted_key_bytes += kept_bytes - prev_kept_bytes
-                self._evicted_value_bytes += kept_bytes - prev_kept_bytes
-                self._tokens_kept += n_kept - prev_kept
-            k_out_b.append(mx.stack(k_out_h, axis=0))
-            v_out_b.append(mx.stack(v_out_h, axis=0))
-        k_out = mx.stack(k_out_b, axis=0)
-        v_out = mx.stack(v_out_b, axis=0)
+        cat_k = mx.concatenate([self.keys[:, :, :prev_kept], keys], axis=2)
+        cat_v = mx.concatenate([self.values[:, :, :prev_kept], values], axis=2)
+        k_out, v_out = _snapkv_compress_batched(
+            cat_k,
+            cat_v,
+            self._budget,
+            self._obs_window,
+            self._n_sink,
+            backend=self._backend,
+            output_dtype=self._storage_dtype,
+            batched_scoring=self._batched_scoring,
+        )
+        delta = B * H * (k_out.shape[2] - prev_kept)
+        self._evicted_key_bytes += delta * D * 2
+        self._evicted_value_bytes += delta * D * 2
+        self._tokens_kept += delta
 
         self._full_key_bytes += B * H * S * D * 2
         self._full_value_bytes += B * H * S * D * 2
@@ -246,6 +251,12 @@ class SnapKVKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        if self._storage_dtype is None:
+            self._storage_dtype = (
+                mx.bfloat16
+                if self._dtype_policy == "auto" and keys.dtype == values.dtype == mx.bfloat16
+                else mx.float16
+            )
         is_prefill = keys.shape[2] > 1
         if is_prefill:
             if not self._prefill_done:

@@ -26,7 +26,7 @@ Adaptation decisions (documented, never hidden):
      wrapping the kept subset.
   4. **Uniform budget across heads.** All heads use ``snap_budget`` tokens.
 
-The eviction happens **once at prefill** (``S > 1``). Decode tokens
+The eviction happens **at every multi-token prefill chunk** (``S > 1``). Decode tokens
 (``S == 1``) are always appended to the kept set — they are never evicted.
 
 This module holds the pure, side-effect-free numerics: observation-window
@@ -47,7 +47,7 @@ class SnapKVState(NamedTuple):
     Attributes:
         kept_keys:    [n_kept, D] fp16 — the selected key rows.
         kept_values:  [n_kept, D] fp16 — the matching value rows.
-        kept_indices: [n_kept] int32 — original token positions.
+        kept_indices: [n_kept] int32 — indices into the supplied candidate matrix.
         n_original:   int — total prefill token count before eviction.
         n_kept:       int — number of retained tokens (≤ n_original).
     """
@@ -95,6 +95,8 @@ def snap_select_indices(
     scores: mx.array,
     budget: int,
     n_sink: int,
+    *,
+    backend: str = "auto",
 ) -> mx.array:
     """Select the top-``budget`` token indices by importance score.
 
@@ -104,7 +106,10 @@ def snap_select_indices(
     token order for sequential access).
 
     Args:
-        scores: ``[S]`` fp32 importance scores.
+        scores: ``[S]`` fp32 importance scores. NaNs rank as negative infinity.
+            Equal scores prefer the earliest candidate index.
+        backend: ``auto``/``mlx`` use device selection; ``metal`` uses experimental
+            prefix compaction; ``reference`` uses Python stable sorting.
         budget: Total number of tokens to keep (including sinks).
             Clamped to ``min(budget, S)``.
         n_sink: Number of initial positions always kept.
@@ -114,28 +119,47 @@ def snap_select_indices(
         ``[n_kept]`` int32 indices in ascending order,
         where ``n_kept = min(budget, S)``.
     """
-    S = int(scores.shape[0])
+    if scores.ndim != 1:
+        raise ValueError("scores must have shape [S]")
+    return _snap_select_batched(scores[None], budget, n_sink, backend=backend)[0]
+
+
+def _snap_select_batched(scores, budget, n_sink, *, backend="auto"):
+    """Fixed-cardinality selection. NaNs rank as negative infinity."""
+    if backend not in ("auto", "mlx", "metal", "reference"):
+        raise ValueError(f"Unsupported SnapKV backend: {backend}")
+    G, S = scores.shape
     budget = min(max(budget, 1), S)
     n_sink = min(max(n_sink, 0), budget)
+    if budget >= S or budget == n_sink:
+        return mx.broadcast_to(mx.arange(budget, dtype=mx.int32), (G, budget))
+    if backend == "reference":
+        result = []
+        for values in scores.tolist():
+            ranked = sorted(
+                range(n_sink, S),
+                key=lambda i: -math.inf if math.isnan(values[i]) else values[i],
+                reverse=True,
+            )
+            result.append(sorted(list(range(n_sink)) + ranked[: budget - n_sink]))
+        return mx.array(result, mx.int32)
+    dynamic = scores[:, n_sink:]
+    dynamic = mx.where(mx.isnan(dynamic), -float("inf"), dynamic)
+    k = budget - n_sink
+    threshold = mx.sort(dynamic, axis=-1)[:, dynamic.shape[-1] - k : dynamic.shape[-1] - k + 1]
+    if backend == "metal":
+        from veloxquant_mlx.metal._snapkv_select import select_from_threshold
 
-    if budget >= S:
-        return mx.arange(S, dtype=mx.int32)
-
-    sink_set = set(range(n_sink))
-    n_dynamic = budget - n_sink
-
-    if n_dynamic <= 0:
-        return mx.array(sorted(sink_set), dtype=mx.int32)
-
-    score_list = scores.tolist()
-    ranked = sorted(
-        [i for i in range(S) if i not in sink_set],
-        key=lambda i: score_list[i],
-        reverse=True,
+        return select_from_threshold(dynamic, threshold, n_sink, k)
+    above = dynamic > threshold
+    equal = dynamic == threshold
+    remaining = k - mx.sum(above.astype(mx.int32), axis=-1, keepdims=True)
+    selected = above | (equal & (mx.cumsum(equal.astype(mx.int32), axis=-1) <= remaining))
+    candidates = mx.arange(n_sink, S, dtype=mx.int32)
+    ordered = mx.sort(mx.where(selected, candidates, S), axis=-1)[:, :k]
+    return mx.concatenate(
+        [mx.broadcast_to(mx.arange(n_sink, dtype=mx.int32), (G, n_sink)), ordered], axis=-1
     )
-    top_dynamic = set(ranked[:n_dynamic])
-    kept = sorted(sink_set | top_dynamic)
-    return mx.array(kept, dtype=mx.int32)
 
 
 def snapkv_compress(
@@ -144,6 +168,8 @@ def snapkv_compress(
     budget: int,
     obs_window: int = 32,
     n_sink: int = 4,
+    *,
+    backend: str = "auto",
 ) -> SnapKVState:
     """Compress ``[S, D]`` K and V to a budget-token subset via obs-window scoring.
 
@@ -157,21 +183,63 @@ def snapkv_compress(
     Returns:
         :class:`SnapKVState` with the selected fp16 key/value rows and metadata.
     """
+    if keys.ndim != 2 or keys.shape != values.shape or keys.shape[-1] == 0:
+        raise ValueError("K/V must have matching [S,D] shapes with D > 0")
     S, D = keys.shape
-    scores = obs_window_attention_scores(keys, obs_window)
-    indices = snap_select_indices(scores, budget, n_sink)
-    idx_list = [int(i) for i in indices.tolist()]
-
-    kept_k = mx.stack([keys[i].astype(mx.float16) for i in idx_list], axis=0)
-    kept_v = mx.stack([values[i].astype(mx.float16) for i in idx_list], axis=0)
+    scores = obs_window_attention_scores(keys, obs_window) if S else mx.zeros((0,))
+    indices = snap_select_indices(scores, budget, n_sink, backend=backend)
+    kept_k = mx.take(keys, indices, axis=0).astype(mx.float16)
+    kept_v = mx.take(values, indices, axis=0).astype(mx.float16)
 
     return SnapKVState(
         kept_keys=kept_k,
         kept_values=kept_v,
         kept_indices=indices,
         n_original=S,
-        n_kept=len(idx_list),
+        n_kept=indices.shape[0],
     )
+
+
+def _snapkv_compress_batched(
+    keys,
+    values,
+    budget,
+    obs_window,
+    n_sink,
+    *,
+    backend="auto",
+    output_dtype=mx.float16,
+    batched_scoring=False,
+):
+    """Batch selection/gather while preserving the original per-head scorer."""
+    B, H, S, D = keys.shape
+    if values.shape != keys.shape or min(B, H, D) <= 0:
+        raise ValueError("K/V must have matching nonzero batch/head/dimension shapes")
+    flat_k = keys.reshape(B * H, S, D)
+    flat_v = values.reshape(B * H, S, D)
+    count = min(max(budget, 1), S)
+    sinks = min(max(n_sink, 0), count)
+    # Shape-only no-selection paths avoid constructing the scorer entirely.
+    if count == S or sinks == count:
+        return keys[:, :, :count].astype(output_dtype), values[:, :, :count].astype(output_dtype)
+    if batched_scoring:
+        w = min(max(obs_window, 1), S)
+        k32 = flat_k.astype(mx.float32)
+        logits = (k32[:, -w:] @ mx.swapaxes(k32, -1, -2)) / math.sqrt(D)
+        scores = mx.mean(mx.softmax(logits, axis=-1), axis=-2)
+    else:
+        scores = mx.stack(
+            [obs_window_attention_scores(flat_k[g], obs_window) for g in range(B * H)]
+        )
+    indices = _snap_select_batched(scores, budget, n_sink, backend=backend)
+    if backend == "metal":
+        from veloxquant_mlx.metal._snapkv_select import gather_kv
+
+        k, v = gather_kv(flat_k, flat_v, indices, output_dtype)
+    else:
+        k = mx.take_along_axis(flat_k, indices[..., None], axis=1).astype(output_dtype)
+        v = mx.take_along_axis(flat_v, indices[..., None], axis=1).astype(output_dtype)
+    return k.reshape(B, H, count, D), v.reshape(B, H, count, D)
 
 
 def snapkv_fp16_bytes(state: SnapKVState) -> int:

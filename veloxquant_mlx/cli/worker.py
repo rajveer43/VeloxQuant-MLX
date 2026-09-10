@@ -1,4 +1,5 @@
 """JSON-lines worker used by the JavaScript SDK."""
+
 from __future__ import annotations
 
 import json
@@ -9,13 +10,18 @@ PROTOCOL_VERSION = 1
 
 
 def _reply(request_id: str, *, result: Any = None, error: Any = None) -> None:
-    payload: dict[str, Any] = {"protocol_version": PROTOCOL_VERSION, "id": request_id, "ok": error is None}
+    payload: dict[str, Any] = {
+        "protocol_version": PROTOCOL_VERSION,
+        "id": request_id,
+        "ok": error is None,
+    }
     payload["result" if error is None else "error"] = result if error is None else error
     print(json.dumps(payload, separators=(",", ":")), flush=True)
 
 
 def main() -> None:
     from veloxquant_mlx import __version__
+
     for line in sys.stdin:
         request: Any = None
         try:
@@ -40,14 +46,29 @@ def main() -> None:
             else:
                 _reply(request_id, error=f"unknown worker operation: {op!r}")
         except Exception as exc:
-            _reply(str(request.get("id", "unknown")) if isinstance(request, dict) else "unknown", error={"code": "WORKER_ERROR", "message": str(exc)})
+            _reply(
+                str(request.get("id", "unknown")) if isinstance(request, dict) else "unknown",
+                error={"code": "WORKER_ERROR", "message": str(exc)},
+            )
 
 
 def _capabilities(version: str) -> dict[str, Any]:
     import mlx.core as mx
-    return {"veloxquantVersion": version, "mlxVersion": getattr(mx, "__version__", None),
-            "device": str(mx.default_device()), "metalAvailable": True,
-            "supportedOperations": ["ping", "capabilities", "metal_probe", "bit_pack", "bit_pack_file", "rope_recode_file"]}
+
+    return {
+        "veloxquantVersion": version,
+        "mlxVersion": getattr(mx, "__version__", None),
+        "device": str(mx.default_device()),
+        "metalAvailable": True,
+        "supportedOperations": [
+            "ping",
+            "capabilities",
+            "metal_probe",
+            "bit_pack",
+            "bit_pack_file",
+            "rope_recode_file",
+        ],
+    }
 
 
 def _bit_pack(args: dict[str, Any]) -> dict[str, Any]:
@@ -59,10 +80,16 @@ def _bit_pack(args: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("INVALID_VALUES: values must be an integer array")
     import mlx.core as mx
     from veloxquant_mlx.metal._bit_packing import turboquant_bit_pack
+
     packed = turboquant_bit_pack(mx.array(values, dtype=mx.uint8), bits)
     mx.eval(packed)
-    return {"bits": bits, "inputLength": len(values), "values": [int(value) for value in packed.tolist()],
-            "backend": "metal", "device": str(mx.default_device())}
+    return {
+        "bits": bits,
+        "inputLength": len(values),
+        "values": [int(value) for value in packed.tolist()],
+        "backend": "metal",
+        "device": str(mx.default_device()),
+    }
 
 
 def _bit_pack_file(args: dict[str, Any]) -> dict[str, Any]:
@@ -78,11 +105,19 @@ def _bit_pack_file(args: dict[str, Any]) -> dict[str, Any]:
     values = np.load(input_path, allow_pickle=False)
     if values.ndim != 1 or values.dtype.kind not in "iu":
         raise ValueError("INVALID_ARRAY: input must be a one-dimensional integer .npy array")
-    result = _bit_pack({"values": [int(value) for value in values.tolist()], "bits": args.get("bits")})
+    result = _bit_pack(
+        {"values": [int(value) for value in values.tolist()], "bits": args.get("bits")}
+    )
     np.save(output_path, np.asarray(result["values"], dtype=np.uint8), allow_pickle=False)
-    return {"outputPath": str(output_path), "shape": [len(result["values"])], "dtype": "uint8",
-            "inputLength": result["inputLength"], "bits": result["bits"], "backend": result["backend"],
-            "device": result["device"]}
+    return {
+        "outputPath": str(output_path),
+        "shape": [len(result["values"])],
+        "dtype": "uint8",
+        "inputLength": result["inputLength"],
+        "bits": result["bits"],
+        "backend": result["backend"],
+        "device": result["device"],
+    }
 
 
 def _rope_recode_file(args: dict[str, Any]) -> dict[str, Any]:
@@ -95,7 +130,9 @@ def _rope_recode_file(args: dict[str, Any]) -> dict[str, Any]:
     positions_path = Path(str(args.get("positionsPath", ""))).resolve()
     output_path = Path(str(args.get("outputPath", ""))).resolve()
     if any(path.suffix != ".npy" for path in (input_path, positions_path, output_path)):
-        raise ValueError("INVALID_PATH: inputPath, positionsPath, and outputPath must be .npy files")
+        raise ValueError(
+            "INVALID_PATH: inputPath, positionsPath, and outputPath must be .npy files"
+        )
     if not input_path.is_file() or not positions_path.is_file():
         raise FileNotFoundError("INPUT_NOT_FOUND: input or positions file does not exist")
     keys = np.load(input_path, allow_pickle=False)
@@ -109,8 +146,13 @@ def _rope_recode_file(args: dict[str, Any]) -> dict[str, Any]:
     result = crosskv_rope_recode(mx.array(keys), mx.array(positions), source_base, target_base)
     mx.eval(result)
     np.save(output_path, np.asarray(result.tolist(), dtype=keys.dtype), allow_pickle=False)
-    return {"outputPath": str(output_path), "shape": list(keys.shape), "dtype": str(keys.dtype),
-            "backend": "metal", "device": str(mx.default_device())}
+    return {
+        "outputPath": str(output_path),
+        "shape": list(keys.shape),
+        "dtype": str(keys.dtype),
+        "backend": "metal",
+        "device": str(mx.default_device()),
+    }
 
 
 def _metal_probe() -> dict[str, Any]:
@@ -138,4 +180,8 @@ def _metal_probe() -> dict[str, Any]:
     )[0]
     mx.eval(output)
     result = [float(value) for value in output.tolist()]
-    return {"device": str(mx.default_device()), "output": result, "passed": result == [2.0, 3.0, 4.0]}
+    return {
+        "device": str(mx.default_device()),
+        "output": result,
+        "passed": result == [2.0, 3.0, 4.0],
+    }
