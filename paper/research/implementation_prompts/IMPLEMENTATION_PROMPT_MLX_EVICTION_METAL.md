@@ -148,6 +148,8 @@ Likewise, a one-threadgroup score/select/copy kernel is a possible small-shape e
 
 ## 4. Phase B — SnapKV exact selection and gather
 
+Next implementation brief: [SnapKV Metal optimization — full engineering prompt](IMPLEMENTATION_PROMPT_SNAPKV_METAL_OPTIMIZATION.md), source-reviewed at `cfa9c49` on 2026-09-09. Use that focused brief for the next work item after TOVA; recheck the historical starting-point table above against the current checkout.
+
 First replace both host roundtrips with a GPU-only implementation. Preserve:
 
 - `budget = min(max(budget,1),S)` and `n_sink = min(max(n_sink,0),budget)`, including the empty-input consequences.

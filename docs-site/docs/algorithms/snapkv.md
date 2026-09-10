@@ -204,3 +204,20 @@ compression.
 **See also:** [ChunkKV-adapted](./chunkkv) evicts on the same importance idea but at
 **chunk** rather than token granularity — it keeps whole contiguous spans instead of
 the top individual positions, trading scoring resolution for local coherence.
+
+
+### Device selection backends
+
+`KVCacheConfig(snap_backend="auto")` uses device-only MLX threshold selection
+and ordered K/V gather. Equal scores retain earlier candidate rows. Selection
+is batched across the layer's batch/head groups; observation scoring retains
+its per-head computation. Multi-token prefill chunks reselect from retained
+plus incoming rows; singleton decode updates append without eviction.
+
+Use `snap_backend="reference"` for Python-selector parity checks or `"metal"`
+for experimental threshold compaction and combined K/V gathering. Metal still
+uses MLX threshold calculation. It is not automatic because measured
+complete-cache gains over MLX did not meet the promotion target. `snap_dtype="auto"`
+preserves BF16 model K/V inputs; `snap_dtype="float16"` forces the legacy
+storage format. NaN scores rank as negative infinity on all backends. These
+changes do not establish model-level TTFT or decode throughput improvements.

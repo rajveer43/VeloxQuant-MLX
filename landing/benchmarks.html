@@ -140,6 +140,7 @@
         <nav class="bench-nav" aria-label="Benchmark categories">
           <a href="#metal" class="bench-nav-pill active">⚡ Metal GPU Speedup</a>
           <a href="#eviction-quant-kernels" class="bench-nav-pill">🗜️ Eviction &amp; Quant Kernels</a>
+          <a href="#snapkv" class="bench-nav-pill">🎯 SnapKV MLX vs Metal</a>
           <a href="#kernel-roofline" class="bench-nav-pill">🧩 Decode Occupancy</a>
           <a href="#kivi-matrix" class="bench-nav-pill">🧠 12-Model Safety Matrix</a>
           <a href="#qfilters-scorer" class="bench-nav-pill">🎯 Attention Correlation</a>
@@ -383,6 +384,65 @@
             </table>
           </div>
           <p class="gap-footnote">GB/s is nominal traffic (input read once + packed streams written), not a hardware counter; the MLX baseline additionally charges the two full-size uint8 index intermediates the fused kernel never materializes. Reproduce: <code>pytest veloxquant_mlx/tests/metal/test_rvq_quant_pack.py -k benchmark -s</code>.</p>
+        </div>
+      </section>
+
+      <!-- ── SECTION: SNAPKV DEVICE SELECTION ── -->
+      <section id="snapkv" class="bench-section">
+        <div class="bench-section-header">
+          <span class="bench-section-tag">01.75 · SnapKV Device Selection</span>
+          <h2 class="bench-section-title">SnapKV: MLX vs. Metal Selection and Gather</h2>
+          <p class="bench-section-subtitle">
+            Exact sink-protected selection, temporal ordering, and K/V gathering on an Apple M4. The Metal route uses threshold/tie compaction plus a combined K/V gather; scoring and threshold calculation remain in MLX for numerical parity.
+          </p>
+        </div>
+
+        <div class="bench-takeaway">
+          <div class="bench-takeaway-badge">RESULT</div>
+          <p>
+            <strong>Metal wins the cache microbenchmark by 5–7% after fusion</strong>, while selection alone is 31–39% faster. Real-model results are mixed, so MLX remains the automatic backend. Preserving native BF16 K/V dtype removed a separate Qwen decode regression.
+          </p>
+        </div>
+
+        <div class="bench-card">
+          <div class="bench-card-head">
+            <span class="bench-card-title">Complete SnapKV Cache Update (Lower is Better)</span>
+            <span class="bench-badge-chip">B=1, H=8, D=128 · Apple M4</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Candidate N</th><th>MLX</th><th>Metal</th><th>Metal delta</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>512</td><td class="td-muted">0.442 ms</td><td class="td-winner">0.412 ms</td><td class="td-winner">6.7% faster</td></tr>
+                <tr><td>2,048</td><td class="td-muted">0.849 ms</td><td class="td-winner">0.802 ms</td><td class="td-winner">5.6% faster</td></tr>
+                <tr><td>8,192</td><td class="td-muted">2.323 ms</td><td class="td-winner">2.201 ms</td><td class="td-winner">5.3% faster</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="gap-footnote">Synchronized median timings from 20 measured repetitions after five warmups. This is a synthetic complete-cache update, not end-to-end generation throughput. Selection-only Metal medians were 0.246 / 0.249 / 0.783 ms versus MLX 0.390 / 0.410 / 1.140 ms at N=512 / 2,048 / 8,192. Raw data: <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/benchmarks/snapkv_selection_after_fused.json" target="_blank" rel="noopener">snapkv_selection_after_fused.json</a>.</p>
+        </div>
+
+        <div class="bench-card" style="margin-top: 1.5rem;">
+          <div class="bench-card-head">
+            <span class="bench-card-title">Real Open-Model Validation</span>
+            <span class="bench-badge-chip">Qwen3-8B · GLM-4-9B · 4-bit MLX</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Model</th><th>Scenario</th><th>MLX prefill</th><th>Metal prefill</th><th>Parity</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Qwen3-8B</td><td>budget 64, chunk 192</td><td>1,200 ms</td><td>1,197 ms</td><td class="td-winner">Exact</td></tr>
+                <tr><td>Qwen3-8B</td><td>budget 64, chunk 48</td><td>1,966 ms</td><td>1,816 ms</td><td class="td-winner">Exact</td></tr>
+                <tr><td>GLM-4-9B</td><td>budget 64, chunk 192</td><td>1,813 ms</td><td>1,952 ms</td><td class="td-winner">Exact</td></tr>
+                <tr><td>GLM-4-9B</td><td>budget 64, chunk 48</td><td>2,647 ms</td><td>2,586 ms</td><td class="td-winner">Exact</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="gap-footnote">One warmup plus three measured trials per route in the post-BF16-fix follow-up. “Exact” means zero measured first-prefill logit error against the SnapKV reference and identical greedy tokens. Metal is mixed at model level and remains opt-in. Full methodology and raw runs: <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/SNAPKV_8B_9B_MODEL_RESULTS.md" target="_blank" rel="noopener">SNAPKV_8B_9B_MODEL_RESULTS.md</a>.</p>
         </div>
       </section>
 
@@ -1176,4 +1236,3 @@ veloxquant benchmark --all</code></pre>
   </div>
 </body>
 </html>
-
