@@ -135,7 +135,9 @@ def main():
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(results, indent=2))
-    print("Baseline:", base["prefill_tok_s"], "prefill tok/s,", base["decode_tok_s"], "decode tok/s")
+    print(
+        "Baseline:", base["prefill_tok_s"], "prefill tok/s,", base["decode_tok_s"], "decode tok/s"
+    )
 
 
 if __name__ == "__main__":

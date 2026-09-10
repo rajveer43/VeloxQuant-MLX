@@ -284,7 +284,9 @@ def kivi_group_atomicity_check() -> dict:
 
     # The surviving rows' reconstruction should match whether or not the
     # evicted group's rows were ever present, because groups are independent.
-    err = float(mx.max(mx.abs(recon_full[group_size:].astype(mx.float32) - recon_sliced.astype(mx.float32))))
+    err = float(
+        mx.max(mx.abs(recon_full[group_size:].astype(mx.float32) - recon_sliced.astype(mx.float32)))
+    )
 
     # Now check a NON-group-aligned cut would break atomicity (proving the
     # boundary-snapping logic in the real cache is load-bearing, not just
@@ -295,7 +297,9 @@ def kivi_group_atomicity_check() -> dict:
     recon_mis = q.decode(ev3)
     # Compare against recon_full's tail at the same absolute rows.
     err_mis = float(
-        mx.max(mx.abs(recon_full[misaligned_cut:].astype(mx.float32) - recon_mis.astype(mx.float32)))
+        mx.max(
+            mx.abs(recon_full[misaligned_cut:].astype(mx.float32) - recon_mis.astype(mx.float32))
+        )
     )
 
     return dict(
