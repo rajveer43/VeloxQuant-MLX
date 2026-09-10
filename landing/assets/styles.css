@@ -8392,6 +8392,125 @@ details.faq-accordion-item[open] .faq-chevron {
 }
 
 /* ============================================================
+   PLAYGROUND COMPRESSION LAB THEME OVERRIDES
+   The method cards, budget controls, and code snippet were built as
+   fixed dark "terminal" surfaces (hardcoded #121219/#14141b/#08080c
+   etc. + white text) that never switched with the theme. This block
+   gives them real light-theme surfaces, reusing the --pg-* tokens and
+   light neutrals already established above for the rest of the
+   Recommended-Setting card.
+   ============================================================ */
+
+:root[data-theme="light"] #playground .pg-controls-label {
+  color: #52525b;
+}
+
+/* Method cards (unselected) */
+:root[data-theme="light"] #playground .pg-method-card {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 8px rgba(30, 55, 85, 0.06);
+}
+
+:root[data-theme="light"] #playground .pg-method-card:hover {
+  background: #f4f9fd;
+  border-color: rgba(var(--accent-rgb), 0.5);
+  box-shadow: 0 4px 12px rgba(30, 55, 85, 0.08);
+}
+
+/* Method cards (selected) — clearly distinguished by fill + border +
+   shadow, not color alone. */
+:root[data-theme="light"] #playground .pg-method-card.active {
+  background: rgba(var(--accent-rgb), 0.09);
+  border-color: var(--accent);
+  box-shadow: 0 5px 16px rgba(var(--accent-rgb), 0.15);
+}
+
+:root[data-theme="light"] #playground .pg-method-name {
+  color: #172033;
+}
+
+:root[data-theme="light"] #playground .pg-method-blurb {
+  color: #536277;
+}
+
+:root[data-theme="light"] #playground .pg-badge-plain {
+  color: #71717a;
+}
+
+/* Memory budget control */
+:root[data-theme="light"] #playground .pg-budget-control input[type="number"] {
+  background: #ffffff;
+  color: #172033;
+  border-color: #cbd6e2;
+}
+
+:root[data-theme="light"] #playground .pg-budget-unit {
+  color: #66758b;
+}
+
+:root[data-theme="light"] #playground .pg-budget-auto {
+  color: #536277;
+  background: #f4f6f8;
+  border-color: #cbd6e2;
+}
+
+:root[data-theme="light"] #playground .pg-budget-auto.active {
+  color: #126b9b;
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.09);
+}
+
+:root[data-theme="light"] #playground .pg-budget-src {
+  color: #66758b;
+}
+
+/* "Add this to your code" snippet — header and body now share one
+   pale surface instead of a leftover black terminal bar over a
+   pale body. */
+:root[data-theme="light"] #playground .pg-snippet {
+  background: #f5f8fb;
+  border-color: #d9e1ea;
+}
+
+:root[data-theme="light"] #playground .pg-snippet-head {
+  background: #eef3f8;
+  border-bottom-color: #d9e1ea;
+}
+
+:root[data-theme="light"] #playground .pg-snippet-note {
+  color: #536277;
+}
+
+:root[data-theme="light"] #playground .pg-code {
+  color: #17324d;
+}
+
+:root[data-theme="light"] #playground .pg-copy {
+  background: #ffffff;
+  border-color: #b9c8d8;
+  color: #146b9a;
+}
+
+:root[data-theme="light"] #playground .pg-copy:hover {
+  background: rgba(var(--accent-rgb), 0.08);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+:root[data-theme="light"] #playground .pg-copy.copied {
+  border-color: var(--pg-success-border);
+  color: var(--pg-good);
+  background: var(--pg-success-bg);
+}
+
+:root[data-theme="light"] #playground .pg-method-card:focus-visible,
+:root[data-theme="light"] #playground input:focus-visible {
+  outline: 3px solid rgba(var(--accent-rgb), 0.35);
+  outline-offset: 2px;
+}
+
+/* ============================================================
    BENCHMARKS REDESIGN (REAL-WORLD HARDWARE BENCHMARKS)
    ============================================================ */
 
