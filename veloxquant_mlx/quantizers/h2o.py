@@ -467,11 +467,14 @@ def _evict_via_mlx(
 
     evict_idx = int(mx.argmin(protected).item())
     evicted_pos = int(positions_cat[evict_idx].item())
-    keep_indices = [j for j in range(n_total) if j != evict_idx]
-    keys_kept = keys_cat[keep_indices]
-    values_kept = values_cat[keep_indices]
-    scores_kept = scores_cat[keep_indices]
-    old_positions_kept = positions_cat[keep_indices]
+
+    def _drop_row(arr: mx.array) -> mx.array:
+        return mx.concatenate([arr[:evict_idx], arr[evict_idx + 1 :]], axis=0)
+
+    keys_kept = _drop_row(keys_cat)
+    values_kept = _drop_row(values_cat)
+    scores_kept = _drop_row(scores_cat)
+    old_positions_kept = _drop_row(positions_cat)
 
     # Evicting row `evict_idx` leaves a size-1 gap at `evicted_pos`. Rows
     # that sat *before* the gap (sinks included) keep their exact original
