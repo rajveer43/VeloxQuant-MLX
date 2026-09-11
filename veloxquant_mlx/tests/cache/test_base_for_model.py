@@ -13,6 +13,7 @@ at config/patch time.
 
 from __future__ import annotations
 
+import warnings
 from types import SimpleNamespace
 
 import pytest
@@ -119,6 +120,41 @@ def test_default_method_is_serving_compatible() -> None:
 
     model = _make_fake_model()
     caches = KVCacheBuilder.for_model(model, KVCacheConfig())
+    assert len(caches) == 2
+
+
+def test_native_make_cache_failure_warns_and_falls_back() -> None:
+    """#346: make_cache() runs arbitrary model code across every mlx_lm
+    architecture, so a broad except is kept deliberately (narrowing to
+    TypeError risks turning some other model's legitimate but differently
+    -typed failure into an unhandled crash) -- but it must warn instead of
+    silently vanishing, or a genuine constructor bug looks identical to the
+    two documented hybrid-attention TypeError cases.
+    """
+
+    def _broken_make_cache():
+        raise KeyError("boom")
+
+    model = _make_fake_model()
+    model.make_cache = _broken_make_cache
+    config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)
+
+    with pytest.warns(UserWarning, match="make_cache.* raised KeyError"):
+        caches = KVCacheBuilder.for_model(model, config)
+
+    # Falls back to a plain KVCache per layer rather than failing the build.
+    assert len(caches) == 2
+
+
+def test_native_make_cache_success_does_not_warn() -> None:
+    model = _make_fake_model()
+    model.make_cache = lambda: []  # wrong length -> ignored, not an error
+    config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        caches = KVCacheBuilder.for_model(model, config)
+
     assert len(caches) == 2
 
 
