@@ -432,6 +432,57 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.82.0 (2026-09-11)
+
+### Bug Fixes
+
+- **cli**: Add missing Dict import in serve.py type hints
+  ([`b5581fe`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b5581fe2b224763402dfc573b8c2d68b6a74f3c8))
+
+- **cli**: Warn when --set targets a field irrelevant to the chosen method
+  ([#348](https://github.com/rajveer43/VeloxQuant-MLX/pull/348),
+  [`e52bc0c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e52bc0c74c935b08934a0e3853d580c083d50cd8))
+
+- **landing**: Correct algorithm count from 33 to 43
+  ([`2e65441`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2e6544184ccf81384198864c10500e973ee314ce))
+
+- **landing**: Improve light-mode text contrast in several sections
+  ([`c300a63`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c300a638aa8ddbb80ae17848b65ccf4330629f0b))
+
+- **playground**: Fix Compression Lab light theme leaking dark surfaces
+  ([`445b385`](https://github.com/rajveer43/VeloxQuant-MLX/commit/445b3853ca8f76d8bbd684ad612e8a176612e0ba))
+
+- **playground**: Fix light theme leaking dark surfaces on recommendation card
+  ([`45cce17`](https://github.com/rajveer43/VeloxQuant-MLX/commit/45cce171c94fff792da2b1f46b8b6934b26ffb8f))
+
+- **playground**: Fix Metal Benchmarks loading errors and light theme
+  ([`f44a549`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f44a549fd7b7b15eecfa854ae007578a726a540d))
+
+- **playground**: Fix remaining light-mode contrast issues
+  ([`a086797`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a0867979d7a1fd12a2072d53608286124912b5d4))
+
+### Chores
+
+- **landing**: Bump cache-busting query strings for styles.css/playground.js
+  ([`4f9d44e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4f9d44e66533ce8a35060b5eca6dfc329f47cce6))
+
+### Documentation
+
+- **readme**: Replace Netlify domain with veloxquant.dev
+  ([`a3cc578`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a3cc5781fbe60b97ec962dd8ace5e9456be8b199))
+
+### Features
+
+- **playground**: Add M5 to Apple Silicon chip selector
+  ([`fa6a77f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fa6a77f461fe8c9937911ccc3d620a7ee73a7cbc))
+
+### Performance Improvements
+
+- **h2o**: Vectorize per-eviction row drop instead of Python index list
+  ([#347](https://github.com/rajveer43/VeloxQuant-MLX/pull/347),
+  [`6cdf282`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6cdf282178dd9ab1a870fb9742f8a3629db3f05d))
+
+
 ## v0.81.2 (2026-09-10)
 
 ### Bug Fixes
