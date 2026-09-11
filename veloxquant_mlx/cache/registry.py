@@ -38,6 +38,7 @@ __all__ = [
     "get_method",
     "probe_serve_tier",
     "describe_field",
+    "field_is_relevant",
     "telemetry_coverage",
     "TelemetryCoverage",
     "DEFAULT_SERVE_METHOD",
@@ -379,6 +380,17 @@ _CONFIG_FIELDS: Dict[str, List[str]] = {
 
 _GENERIC_FIELDS = ["bit_width_inlier", "seed"]
 
+#: Methods whose config-field prefix doesn't match the method name itself
+#: (e.g. ``snapkv``'s fields are ``snap_*``, not ``snapkv_*``). Every other
+#: method's fields follow a plain ``{method}_*`` prefix — verified against
+#: every field name in ``KVCacheConfig`` — so this map only needs the
+#: exceptions, not a full method -> prefix table.
+_FIELD_PREFIX_ALIAS: Dict[str, str] = {
+    "snapkv": "snap",
+    "streaming_llm": "stream",
+    "pyramidkv": "pyramid",
+}
+
 _TIER_CACHE: Dict[str, "ServeTier"] = {}
 _UNSUPPORTED_REASON: Dict[str, str] = {}
 
@@ -440,6 +452,35 @@ def describe_field(name: str) -> Dict[str, Any]:
         "optional": optional,
         "help": _FIELD_HELP.get(name),
     }
+
+
+def field_is_relevant(method: str, name: str) -> bool:
+    """Whether ``KVCacheConfig`` field ``name`` has any effect for ``method``.
+
+    ``KVCacheConfig`` is one flat dataclass covering all methods, so nothing
+    stops constructing e.g. ``KVCacheConfig(method="h2o", kivi_group_size=64)``
+    — it succeeds and silently ignores the unrelated field. This gives callers
+    (``veloxquant serve --set``, the control panel) a way to catch that before
+    it looks like a no-op configuration change (issue #345).
+
+    A field not tied to any single method (``_GENERIC_FIELDS``, plus any name
+    with no ``_`` at all, e.g. ``capacity``) is always considered relevant.
+    Otherwise: methods listed in ``_CONFIG_FIELDS`` use that explicit list: it
+    is curated for the control panel (#35) and may be narrower than the
+    prefix (e.g. a shared field intentionally left off one method's list).
+    Methods not yet in ``_CONFIG_FIELDS`` fall back to a name-prefix check
+    (via ``_FIELD_PREFIX_ALIAS`` for the few methods whose fields don't share
+    the method's own name) rather than rejecting the field outright, since
+    most methods have not had their exact field list curated yet.
+    """
+    if name in _GENERIC_FIELDS or "_" not in name:
+        return True
+
+    if method in _CONFIG_FIELDS:
+        return name in _CONFIG_FIELDS[method]
+
+    prefix = _FIELD_PREFIX_ALIAS.get(method, method)
+    return name.startswith(prefix + "_")
 
 
 def all_method_names() -> List[str]:

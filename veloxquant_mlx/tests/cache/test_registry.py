@@ -19,6 +19,7 @@ from veloxquant_mlx.cache.registry import (
     MethodFamily,
     ServeTier,
     all_method_names,
+    field_is_relevant,
     get_method,
     list_methods,
     probe_serve_tier,
@@ -220,3 +221,51 @@ def test_methods_cli_json_contract():
     assert payload["accounting_only"] is True
     assert payload["default_serve_method"] == DEFAULT_SERVE_METHOD
     assert len(payload["methods"]) == EXPECTED_TOTAL
+
+
+class TestFieldIsRelevant:
+    """#345: KVCacheConfig has no built-in way to tell a field is irrelevant
+    to the active method (e.g. kivi_group_size while method="h2o"). These pin
+    field_is_relevant's three lookup tiers: curated _CONFIG_FIELDS entries,
+    the prefix fallback for uncurated methods, and always-relevant generics.
+    """
+
+    def test_generic_fields_always_relevant(self):
+        for method in ("h2o", "kivi", "turboquant_rvq"):
+            assert field_is_relevant(method, "bit_width_inlier")
+            assert field_is_relevant(method, "seed")
+
+    def test_field_without_underscore_is_generic(self):
+        assert field_is_relevant("h2o", "capacity")
+
+    def test_curated_method_uses_explicit_list(self):
+        assert field_is_relevant("kivi", "kivi_group_size")
+        assert not field_is_relevant("kivi", "svdq_rank")
+
+    def test_curated_method_rejects_other_methods_own_field(self):
+        assert not field_is_relevant("svdq", "kivi_group_size")
+
+    def test_uncurated_method_falls_back_to_prefix(self):
+        # h2o is not in _CONFIG_FIELDS, so this exercises the prefix branch.
+        assert field_is_relevant("h2o", "h2o_budget")
+        assert not field_is_relevant("h2o", "tova_budget")
+
+    def test_prefix_alias_methods(self):
+        """snapkv/streaming_llm/pyramidkv fields don't share the method name."""
+        assert field_is_relevant("snapkv", "snap_budget")
+        assert field_is_relevant("streaming_llm", "stream_n_sink")
+        assert field_is_relevant("pyramidkv", "pyramid_beta")
+        assert not field_is_relevant("snapkv", "stream_n_sink")
+
+    def test_every_config_fields_entry_exists_on_the_dataclass(self):
+        """Catches _CONFIG_FIELDS drifting from KVCacheConfig's real fields --
+        e.g. a field renamed in base.py but not updated in the registry."""
+        import dataclasses
+
+        from veloxquant_mlx.cache.base import KVCacheConfig
+        from veloxquant_mlx.cache.registry import _CONFIG_FIELDS
+
+        valid = {f.name for f in dataclasses.fields(KVCacheConfig)}
+        for method, fields in _CONFIG_FIELDS.items():
+            for name in fields:
+                assert name in valid, (method, name)

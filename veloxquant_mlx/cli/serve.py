@@ -141,17 +141,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_overrides(pairs: List[str]) -> Dict[str, Any]:
+def parse_overrides(pairs: List[str], method: Optional[str] = None) -> Dict[str, Any]:
     """Turn ``FIELD=VALUE`` strings into typed ``KVCacheConfig`` kwargs.
 
     Types come from the dataclass via the registry, so a value that the config
     would reject is refused here — with the field name in the message — instead
     of surfacing as an opaque failure deep in cache construction.
+
+    When ``method`` is given, a field with no effect for that method (e.g.
+    ``--set kivi_group_size=64`` while ``--method h2o``) prints a warning
+    instead of silently doing nothing (issue #345) — a warning, not a hard
+    error, since ``_CONFIG_FIELDS`` does not yet curate every method and a
+    false positive there must not block a legitimate override.
     """
     import dataclasses
 
     from veloxquant_mlx.cache.base import KVCacheConfig
-    from veloxquant_mlx.cache.registry import describe_field
+    from veloxquant_mlx.cache.registry import describe_field, field_is_relevant
 
     valid = {f.name for f in dataclasses.fields(KVCacheConfig)}
     overrides: Dict[str, Any] = {}
@@ -167,6 +173,9 @@ def parse_overrides(pairs: List[str]) -> Dict[str, Any]:
             raise SystemExit(f"error: unknown config field {name!r}")
         if name in ("method", "store", "observers", "dtype"):
             raise SystemExit(f"error: {name!r} cannot be set with --set")
+
+        if method is not None and not field_is_relevant(method, name):
+            _warn(f"{name!r} has no effect for method {method!r}; ignoring.")
 
         schema = describe_field(name)
         if raw == "" and schema["optional"]:
@@ -220,7 +229,7 @@ def _warn(message: str) -> None:
 def build_config(args: argparse.Namespace) -> Any:
     from veloxquant_mlx.cache import KVCacheConfig
 
-    overrides = parse_overrides(getattr(args, "set", []) or [])
+    overrides = parse_overrides(getattr(args, "set", []) or [], method=args.method)
     if overrides:
         rendered = ", ".join(f"{k}={v!r}" for k, v in sorted(overrides.items()))
         _warn(f"method overrides: {rendered}")
