@@ -39,10 +39,14 @@ def pyramidkv_fused_evict(keys_mid, values_mid, scores_mid, n_sink, *, nsg=4, st
     already set to zero. The returned arrays contain ``N - 1`` rows and retain
     original row order exactly. This deliberately does not renumber positions
     or apply RoPE: PyramidKV's cache state has no position-remap contract.
+    NaNs are ranked as positive infinity; ties choose the earliest eligible
+    row. This invalid-input policy is not MLX NaN-ordering equivalence.
     """
     if keys_mid.ndim != 3 or keys_mid.shape != values_mid.shape:
         raise ValueError("pyramidkv_fused_evict: K/V must have matching [BH,N,D] shapes")
     bh, n_total, d = keys_mid.shape
+    if bh < 1 or d < 1 or bh * n_total * d >= 2**32:
+        raise ValueError("pyramidkv_fused_evict: invalid dimensions or uint32 indexing overflow")
     if n_total < 2 or scores_mid.shape != (bh, n_total):
         raise ValueError("pyramidkv_fused_evict: invalid score shape")
     if keys_mid.dtype != mx.float16 or values_mid.dtype != mx.float16:
@@ -62,8 +66,8 @@ def pyramidkv_fused_evict(keys_mid, values_mid, scores_mid, n_sink, *, nsg=4, st
         stream=stream,
     )
     n_kept = n_total - 1
-    tg = min(256, n_kept)
-    size = bh * n_kept
+    tg = 256
+    size = bh * n_kept * d
     return _apply()(
         inputs=[keys_mid, values_mid, scores_mid, evict_idx],
         grid=(((size + tg - 1) // tg) * tg, 1, 1),

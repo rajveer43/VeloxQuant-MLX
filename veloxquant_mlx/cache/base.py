@@ -222,6 +222,7 @@ class KVCacheConfig:
     tova_backend: str = "auto"  # auto | mlx | metal | reference (parity/benchmarking)
     # --- PyramidKV-adapted configuration (layer-adaptive budget attention-mass eviction) ---
     pyramid_budget: int = 512  # AVERAGE per-layer budget (uniform-H2O baseline)
+    pyramid_backend: str = "reference"  # reference | mlx | metal | auto (MLX)
     pyramid_n_sink: int = 4  # initial positions protected from eviction (attention sinks)
     pyramid_beta: float = 2.0  # pyramid steepness: 1.0 = flat (== H2O), larger = steeper taper
     pyramid_resolved_budget: Optional[int] = (

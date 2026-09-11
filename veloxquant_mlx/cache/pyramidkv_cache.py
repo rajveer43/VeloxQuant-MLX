@@ -57,6 +57,7 @@ from veloxquant_mlx.quantizers.pyramidkv import (
     pyramid_fp16_bytes,
     pyramid_get_kv,
     pyramid_update,
+    pyramid_update_heads,
 )
 
 
@@ -90,6 +91,9 @@ class PyramidKVCache(_MLXKVCache):
             resolved = int(getattr(config, "pyramid_budget", 512))
         self._budget = int(resolved)
         self._n_sink = int(getattr(config, "pyramid_n_sink", 4))
+        self._backend = getattr(config, "pyramid_backend", "reference")
+        if self._backend not in ("reference", "mlx", "metal", "auto"):
+            raise ValueError("pyramidkv: invalid backend")
 
         self._head_dim: int = 0
         self._states: list[PyramidState] = []
@@ -125,21 +129,38 @@ class PyramidKVCache(_MLXKVCache):
             ``n_kept <= layer_budget`` for all heads.
         """
         B, H, S, D = keys.shape
+        if values.shape != keys.shape:
+            raise ValueError("pyramidkv: K/V shapes must match")
+        if self._states and (B, H, D) != (self._B, self._H, self._head_dim):
+            raise ValueError("pyramidkv: batch/head dimensions cannot change")
         self._ensure_states(B, H, D)
 
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
+        batched = self._backend != "reference"
+        if batched:
+            self._states = pyramid_update_heads(
+                self._states,
+                keys.reshape(B * H, S, D).astype(mx.float16),
+                values.reshape(B * H, S, D).astype(mx.float16),
+                backend=self._backend,
+            )
         k_out_b, v_out_b = [], []
         for b in range(B):
             k_out_h, v_out_h = [], []
             for h in range(H):
                 idx = self._head_idx(b, h)
                 st = self._states[idx]
-                st = pyramid_update(
-                    st,
-                    keys[b, h].astype(mx.float16),
-                    values[b, h].astype(mx.float16),
+                st = (
+                    st
+                    if batched
+                    else pyramid_update(
+                        st,
+                        keys[b, h].astype(mx.float16),
+                        values[b, h].astype(mx.float16),
+                        backend=self._backend,
+                    )
                 )
                 self._states[idx] = st
                 k_h, v_h = pyramid_get_kv(st)

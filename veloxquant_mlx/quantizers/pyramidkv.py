@@ -199,6 +199,8 @@ def pyramid_update(
     state: PyramidState,
     new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
+    *,
+    backend: str = "reference",
 ) -> PyramidState:
     """Absorb S new tokens, evicting the lowest-score non-sink token if over this layer's budget.
 
@@ -214,6 +216,10 @@ def pyramid_update(
     Returns:
         Updated PyramidState with at most ``state.budget`` tokens.
     """
+    if backend not in ("reference", "mlx", "metal", "auto"):
+        raise ValueError("pyramidkv: invalid backend")
+    if backend == "auto":
+        backend = "mlx"
     S = new_keys.shape[0]
 
     for i in range(S):
@@ -243,6 +249,22 @@ def pyramid_update(
         n_total = keys_cat.shape[0]
 
         if n_total > state.budget:
+            if backend == "metal" and n_total >= 2:
+                from veloxquant_mlx.metal._pyramidkv_evict import pyramidkv_fused_evict
+
+                ko, vo, so = pyramidkv_fused_evict(
+                    keys_cat[None], values_cat[None], scores_cat[None], state.n_sink
+                )
+                state = PyramidState(ko[0], vo[0], so[0], state.n_sink, state.budget)
+                continue
+            if backend in ("mlx", "metal"):
+                evict = mx.argmin(scores_cat[state.n_sink :]) + state.n_sink
+                rows = mx.arange(n_total - 1)
+                keep = rows + (rows >= evict)
+                state = PyramidState(
+                    keys_cat[keep], values_cat[keep], scores_cat[keep], state.n_sink, state.budget
+                )
+                continue
             # Build eviction-protected score view: sinks get +inf.
             n_sink_eff = min(state.n_sink, n_total)
             if n_sink_eff > 0:
@@ -266,6 +288,68 @@ def pyramid_update(
         )
 
     return state
+
+
+def pyramid_update_heads(states, new_keys, new_values, *, backend):
+    """Batch append and eviction across heads, preserving per-head scorer math.
+
+    Inputs are [BH,S,D]. Token steps remain sequential; scoring uses the same
+    GEMV per head as the reference to avoid changing near-tie decisions.
+    """
+    if backend == "auto":
+        backend = "mlx"
+    if backend not in ("mlx", "metal"):
+        raise ValueError("pyramidkv: batched backend must be mlx or metal")
+    bh, steps, _ = new_keys.shape
+    if len(states) != bh or new_keys.shape != new_values.shape:
+        raise ValueError("pyramidkv: invalid batched state/input shapes")
+    if not states or steps == 0:
+        return states
+    sink, budget = states[0].n_sink, states[0].budget
+    lengths = [0 if st.keys is None else st.keys.shape[0] for st in states]
+    if len(set(lengths)) != 1 or any((st.n_sink, st.budget) != (sink, budget) for st in states):
+        raise ValueError("pyramidkv: batched states must have uniform length and policy")
+    if budget <= 0:
+        return [
+            pyramid_update(st, new_keys[g], new_values[g], backend=backend)
+            for g, st in enumerate(states)
+        ]
+    if states[0].keys is None:
+        k = new_keys[:, :1].astype(mx.float16)
+        v = new_values[:, :1].astype(mx.float16)
+        scores = mx.ones((bh, 1), dtype=mx.float32)
+        start = 1
+    else:
+        k = mx.stack([st.keys for st in states])
+        v = mx.stack([st.values for st in states])
+        scores = mx.stack([st.scores for st in states])
+        start = 0
+    for step in range(start, steps):
+        attention = mx.stack(
+            [
+                _attention_scores(new_keys[g, step].astype(mx.float32), k[g].astype(mx.float32))
+                for g in range(bh)
+            ]
+        )
+        scores = mx.concatenate([scores + attention, mx.zeros((bh, 1), dtype=mx.float32)], axis=1)
+        k = mx.concatenate([k, new_keys[:, step : step + 1].astype(mx.float16)], axis=1)
+        v = mx.concatenate([v, new_values[:, step : step + 1].astype(mx.float16)], axis=1)
+        n = k.shape[1]
+        if n > budget:
+            if backend == "metal":
+                from veloxquant_mlx.metal._pyramidkv_evict import pyramidkv_fused_evict
+
+                k, v, scores = pyramidkv_fused_evict(k, v, scores, sink)
+            else:
+                loser = mx.argmin(scores[:, sink:], axis=1) + sink
+                rows = mx.arange(n - 1)[None]
+                keep = rows + (rows >= loser[:, None])
+                k = mx.take_along_axis(k, keep[:, :, None], axis=1)
+                v = mx.take_along_axis(v, keep[:, :, None], axis=1)
+                scores = mx.take_along_axis(scores, keep, axis=1)
+        if (step + 1) % 32 == 0:
+            mx.eval(k, v, scores)
+    return [PyramidState(k[g], v[g], scores[g], sink, budget) for g in range(bh)]
 
 
 def pyramid_get_kv(state: PyramidState) -> tuple[mx.array, mx.array]:

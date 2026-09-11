@@ -141,6 +141,7 @@
           <a href="#metal" class="bench-nav-pill active">⚡ Metal GPU Speedup</a>
           <a href="#eviction-quant-kernels" class="bench-nav-pill">🗜️ Eviction &amp; Quant Kernels</a>
           <a href="#snapkv" class="bench-nav-pill">🎯 SnapKV MLX vs Metal</a>
+          <a href="#pyramidkv" class="bench-nav-pill">PyramidKV MLX vs Metal</a>
           <a href="#kernel-roofline" class="bench-nav-pill">🧩 Decode Occupancy</a>
           <a href="#kivi-matrix" class="bench-nav-pill">🧠 12-Model Safety Matrix</a>
           <a href="#qfilters-scorer" class="bench-nav-pill">🎯 Attention Correlation</a>
@@ -447,6 +448,55 @@
       </section>
 
       <!-- ── SECTION 2: KV-CACHE KERNEL ROOFLINE (OCCUPANCY VS. BANDWIDTH) ── -->
+      <section id="pyramidkv" class="bench-section">
+        <div class="bench-section-header">
+          <span class="bench-section-tag">PyramidKV · Latest Batched-Head Runs</span>
+          <h2 class="bench-section-title">PyramidKV: Faster Compaction, Mixed Model Results</h2>
+          <p class="bench-section-subtitle">Apple M4 · FP16 cache K/V, FP32 scores · batched append and eviction with reference per-head scoring. Lower latency is better.</p>
+        </div>
+        <div class="bench-takeaway">
+          <div class="bench-takeaway-badge">RESULT</div>
+          <p>Contiguous element copying reverses the large-budget Metal regression. Model results remain mixed: Qwen decode improves about 3%, while GLM prefill improves about 11%. Metal remains explicitly selectable; the reference default is unchanged and <code>auto</code> uses MLX.</p>
+        </div>
+        <div class="bench-card">
+          <div class="bench-card-head">
+            <span class="bench-card-title">Eviction Primitive: Selection and K/V/Score Compaction</span>
+            <span class="bench-badge-chip">8 heads · D=128 · 4 sinks</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Retained budget</th><th>MLX median range</th><th>Metal median range</th></tr></thead>
+              <tbody>
+                <tr><td>4,096</td><td>0.819–0.828 ms</td><td class="td-winner">0.692–0.726 ms</td></tr>
+                <tr><td>8,192</td><td>1.276–1.288 ms</td><td class="td-winner">1.033–1.042 ms</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="gap-footnote">Ranges span three run medians, each with 10 warmups and 100 alternating-order trials. Synchronized host-wall timing includes dispatch and evaluates all outputs. Resident random finite scores; exact output parity passed. Scoring, append, and model execution are excluded. These ranges are not confidence intervals.</p>
+        </div>
+        <div class="bench-card" style="margin-top: 1.5rem;">
+          <div class="bench-card-head">
+            <span class="bench-card-title">Latest Warmed Model Runs</span>
+            <span class="bench-badge-chip">128 prompt tokens · chunk 64 · average budget 64</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Model</th><th>Backend</th><th>Prefill median</th><th>Decode median / step</th></tr></thead>
+              <tbody>
+                <tr><td>Qwen3-8B-4bit</td><td>Reference</td><td>8,131.4 ms</td><td>173.64 ms</td></tr>
+                <tr><td>Qwen3-8B-4bit</td><td>MLX</td><td>3,346.7 ms</td><td>88.96 ms</td></tr>
+                <tr><td>Qwen3-8B-4bit</td><td>Metal</td><td>3,382.6 ms</td><td>86.36 ms</td></tr>
+                <tr><td>GLM-4-9B-0414-4bit</td><td>Reference</td><td>3,676.2 ms</td><td>92.16 ms</td></tr>
+                <tr><td>GLM-4-9B-0414-4bit</td><td>MLX</td><td>2,697.2 ms</td><td>70.72 ms</td></tr>
+                <tr><td>GLM-4-9B-0414-4bit</td><td>Metal</td><td>2,387.6 ms</td><td>71.51 ms</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="gap-footnote">One warmup and three measured trials per backend, fresh caches, alternating backend order, and 16 greedy decode steps. Timings include Python dispatch and decode token reads. All accelerated runs matched reference final-prefill logits exactly and generated identical tokens. Metal invocation counts confirmed execution. This single repeated-prompt workload establishes backend parity, not general model quality or long-context mask correctness. Qwen Metal prefill was about 1% slower; GLM Metal decode was about 1% slower.</p>
+          <p class="gap-footnote">Reproduction, exact model revisions, validation, and limitations: <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/PYRAMIDKV_METAL_FINDINGS.md">PyramidKV findings</a>. Raw latest runs: <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/benchmarks/pyramid_qwen_warmed.json">Qwen JSON</a> · <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/benchmarks/pyramid_glm_warmed.json">GLM JSON</a>.</p>
+        </div>
+      </section>
+
       <section id="kernel-roofline" class="bench-section">
         <div class="bench-section-header">
           <span class="bench-section-tag">02 · Occupancy vs. Bandwidth</span>

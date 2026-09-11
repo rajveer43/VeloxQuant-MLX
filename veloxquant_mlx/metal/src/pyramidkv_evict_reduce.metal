@@ -12,7 +12,10 @@ uint tid = sg * 32u + lane;
 float best = INFINITY;
 uint best_idx = 0xffffffffu;
 for (uint i = tid; i < n_total; i += total_threads) {
-    float score = (i < n_sink) ? INFINITY : scores[bh * n_total + i];
+    if (i < n_sink) continue;
+    float score = scores[bh * n_total + i];
+    // NaNs sort as +infinity; ties select the earliest eligible row.
+    if (isnan(score)) score = INFINITY;
     if (score < best || (score == best && i < best_idx)) {
         best = score;
         best_idx = i;
