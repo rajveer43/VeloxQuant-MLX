@@ -143,6 +143,7 @@
           <a href="#snapkv" class="bench-nav-pill">🎯 SnapKV MLX vs Metal</a>
           <a href="#pyramidkv" class="bench-nav-pill">PyramidKV MLX vs Metal</a>
           <a href="#kernel-roofline" class="bench-nav-pill">🧩 Decode Occupancy</a>
+          <a href="#gqa-prefill" class="bench-nav-pill">🧵 GQA Prefill Packing</a>
           <a href="#kivi-matrix" class="bench-nav-pill">🧠 12-Model Safety Matrix</a>
           <a href="#qfilters-scorer" class="bench-nav-pill">🎯 Attention Correlation</a>
           <a href="#quality-gap" class="bench-nav-pill">📉 Perplexity &amp; Rings</a>
@@ -684,6 +685,68 @@
           Full methodology, self-calibration approach, and all four follow-up experiments (including the ones summarized above) →
           <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/KV_KERNEL_ROOFLINE_FINDINGS.md" target="_blank" rel="noopener">KV_KERNEL_ROOFLINE_FINDINGS.md on GitHub</a>.
         </p>
+      </section>
+
+      <!-- ── SECTION: GQA PREFILL HEAD-PACKING & TWO-PASS ── -->
+      <section id="gqa-prefill" class="bench-section">
+        <div class="bench-section-header">
+          <span class="bench-section-tag">02.5 · GQA Prefill, Not Decode</span>
+          <h2 class="bench-section-title">GQA Head-Packing at Prefill: A Different Regime from Decode</h2>
+          <p class="bench-section-subtitle">
+            Multi-query (prefill-shaped) grouped-query attention, distinct from the single-token decode kernel benchmarked above — <code>B=1, H_q=32, H_kv=4, heads_per_kv=8, D=128</code> on Apple Silicon, MLX 0.32.2. Unpacked broadcasts each shared KV head out to every query head before attention runs; packed reads each KV head once per query group; two-pass splits the computation into a decode-once pass and a predecoded-attend pass to remove redundant work packing still leaves behind.
+          </p>
+        </div>
+
+        <div class="bench-takeaway">
+          <div class="bench-takeaway-badge">RESULT — PREFILL ONLY</div>
+          <p>
+            <strong>At prefill shapes, two-pass wins outright and the margin grows with context</strong> — 10.1× over unpacked at S_kv=512, climbing to <strong>22.5× at S_kv=16,384</strong>. This is the opposite trend from the single-token decode kernel in the section above, where two-pass is situational and loses at long context for most head ratios — decode and prefill dispatch different threadgroup counts for the same S_kv, so the same technique lands on different sides of its occupancy crossover.
+          </p>
+        </div>
+
+        <div class="bench-card">
+          <div class="bench-card-head">
+            <span class="bench-card-title">GQA Head-Packing: Packed vs. Unpacked (Lower is Better)</span>
+            <span class="bench-badge-chip">H_q=32, H_kv=4, heads_per_kv=8, D=128 · b=2, g=32, nsg=2</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>S_kv</th><th>Packed</th><th>Unpacked</th><th>Speedup</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>512</td><td class="td-winner">3.792 ms</td><td class="td-muted">26.464 ms</td><td class="td-winner">6.98×</td></tr>
+                <tr><td>2,048</td><td class="td-winner">9.385 ms</td><td class="td-muted">70.351 ms</td><td class="td-winner">7.50×</td></tr>
+                <tr><td>8,192</td><td class="td-winner">35.169 ms</td><td class="td-muted">333.665 ms</td><td class="td-winner">9.49×</td></tr>
+                <tr><td>16,384</td><td class="td-winner">71.276 ms</td><td class="td-muted">646.657 ms</td><td class="td-winner">9.07×</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="gap-footnote">At this shape and ratio (<code>heads_per_kv=8</code>), packing alone already removes most of the redundant KV re-decode unpacked pays for at every S_kv tested.</p>
+        </div>
+
+        <div class="bench-card" style="margin-top: 1.5rem;">
+          <div class="bench-card-head">
+            <span class="bench-card-title">Two-Pass Decode-Once + Predecoded-Attend vs. Unpacked (issue #308)</span>
+            <span class="bench-badge-chip">H_q=32, H_kv=4, heads_per_kv=8, D=128 · b=2, g=32, nsg=2</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>S_kv</th><th>Packed</th><th>Unpacked</th><th>Two-pass</th><th>Two-pass vs. unpacked</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>512</td><td class="td-muted">4.322 ms</td><td class="td-muted">19.901 ms</td><td class="td-winner">1.966 ms</td><td class="td-winner">10.12×</td></tr>
+                <tr><td>2,048</td><td class="td-muted">9.518 ms</td><td class="td-muted">66.829 ms</td><td class="td-winner">4.135 ms</td><td class="td-winner">16.16×</td></tr>
+                <tr><td>8,192</td><td class="td-muted">34.099 ms</td><td class="td-muted">324.979 ms</td><td class="td-winner">17.582 ms</td><td class="td-winner">18.48×</td></tr>
+                <tr><td>16,384</td><td class="td-muted">68.195 ms</td><td class="td-muted">646.804 ms</td><td class="td-winner">28.753 ms</td><td class="td-winner">22.50×</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="gap-footnote">
+            The two-pass margin over unpacked widens monotonically with S_kv at this prefill shape — the reverse of the decode-shape crossover in the <a href="#kernel-roofline">Decode Occupancy</a> section, where two-pass's advantage shrinks and flips negative past a few thousand cached tokens for the same <code>heads_per_kv=8</code> ratio. The two kernels dispatch different threadgroup counts for the same S_kv (one query token vs. many), which is why the same code change lands on opposite sides of its occupancy crossover depending on whether it runs during prefill or decode. These figures characterize the prefill path only; do not read them as superseding the decode-step verdict in <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/KV_KERNEL_ROOFLINE_FINDINGS.md" target="_blank" rel="noopener">KV_KERNEL_ROOFLINE_FINDINGS.md</a>.
+          </p>
+        </div>
       </section>
 
       <!-- ── SECTION 3: 12-MODEL SAFETY MATRIX ── -->
