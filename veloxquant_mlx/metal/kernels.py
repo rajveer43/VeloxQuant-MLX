@@ -51,6 +51,9 @@ from veloxquant_mlx.metal._keyformer_evict import (
 from veloxquant_mlx.metal._kivi_quant import (
     kivi_group_quant_dequant,
 )
+from veloxquant_mlx.metal._pyramidkv_evict import (
+    pyramidkv_fused_evict,
+)
 from veloxquant_mlx.metal._qfilters_evict import (
     qfilters_fused_evict,
     qfilters_score,
@@ -131,6 +134,7 @@ __all__ = [
     "flash_prefill_attend",
     "streaming_prefill_attend",
     "h2o_fused_evict",
+    "pyramidkv_fused_evict",
     "keyformer_fused_evict",
     "qfilters_fused_evict",
     "qfilters_score",
