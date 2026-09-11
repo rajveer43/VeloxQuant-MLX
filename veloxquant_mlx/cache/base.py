@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass, field
 from dataclasses import replace as dataclasses_replace
 from typing import Any, Literal, Optional, Union
@@ -942,7 +943,23 @@ class KVCacheBuilder:
                 built = _native_fn()
                 if isinstance(built, list) and len(built) == len(layers):
                     _native = built
-            except Exception:  # pragma: no cover - model-specific constructors
+            except Exception as exc:  # pragma: no cover - model-specific constructors
+                # Kept broad rather than narrowed to TypeError (the two known
+                # hybrid-attention cases above): make_cache() runs arbitrary
+                # model code across every mlx_lm architecture, and an
+                # unanticipated model could just as plausibly raise
+                # AttributeError/KeyError/IndexError from its own config
+                # access. Swallowing unconditionally previously made a novel
+                # failure indistinguishable from the two documented ones;
+                # warn so it is visible without turning it into a hard
+                # failure (fallback path below is still correct either way).
+                warnings.warn(
+                    f"KVCacheBuilder.for_model: {type(model).__name__}.make_cache() "
+                    f"raised {type(exc).__name__}: {exc}. Falling back to a plain "
+                    f"KVCache for any unquantized layer; recurrent/linear-attention "
+                    f"layers on this model may not behave correctly.",
+                    stacklevel=2,
+                )
                 _native = []
 
         def _fallback_for(i: int):
