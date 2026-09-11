@@ -161,3 +161,42 @@ def test_not_trimmable_method_gate_used_by_serve_warning():
     exercised without a real model load."""
     assert probe_serve_tier("h2o") is ServeTier.NOT_TRIMMABLE
     assert probe_serve_tier(DEFAULT_SERVE_METHOD) is not ServeTier.NOT_TRIMMABLE
+
+
+def test_set_irrelevant_field_warns_but_still_applies(capsys):
+    """#345: KVCacheConfig accepts any field regardless of method, so
+    --set kivi_group_size=64 with --method h2o previously succeeded with no
+    indication the flag had no effect. It must now warn -- but the value
+    still applies (unused, harmless) rather than being silently dropped or
+    hard-rejected, since the relevance table does not yet cover every method."""
+    overrides = serve_cli.parse_overrides(["kivi_group_size=64"], method="h2o")
+
+    assert overrides == {"kivi_group_size": 64}
+    err = capsys.readouterr().err
+    assert "'kivi_group_size' has no effect for method 'h2o'" in err
+
+
+def test_set_relevant_field_does_not_warn(capsys):
+    overrides = serve_cli.parse_overrides(["kivi_group_size=64"], method="kivi")
+
+    assert overrides == {"kivi_group_size": 64}
+    err = capsys.readouterr().err
+    assert err == ""
+
+
+def test_set_generic_field_never_warns(capsys):
+    """bit_width_inlier/seed apply to every method, regardless of curation."""
+    overrides = serve_cli.parse_overrides(["seed=7"], method="h2o")
+
+    assert overrides == {"seed": 7}
+    err = capsys.readouterr().err
+    assert err == ""
+
+
+def test_set_without_method_skips_relevance_check(capsys):
+    """method=None (the prior default) preserves old behavior exactly."""
+    overrides = serve_cli.parse_overrides(["kivi_group_size=64"])
+
+    assert overrides == {"kivi_group_size": 64}
+    err = capsys.readouterr().err
+    assert err == ""
