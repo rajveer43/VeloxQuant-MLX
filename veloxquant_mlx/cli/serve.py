@@ -31,7 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from veloxquant_mlx.cache.registry import DEFAULT_SERVE_METHOD, get_method
 
