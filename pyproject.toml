@@ -43,6 +43,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Software Development :: Libraries",
     "Natural Language :: English",
+    "Typing :: Typed",
 ]
 dependencies = [
     "mlx>=0.18",
@@ -93,7 +94,7 @@ include = ["veloxquant_mlx*"]
 # The control panel's frontend is plain static files with no build step, so
 # they must be shipped in the wheel alongside the Python sources.
 "veloxquant_mlx.ui" = ["static/*"]
-veloxquant_mlx = ["metal/src/*.metal"]
+veloxquant_mlx = ["metal/src/*.metal", "py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["veloxquant_mlx/tests"]
