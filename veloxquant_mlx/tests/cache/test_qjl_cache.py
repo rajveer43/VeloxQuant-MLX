@@ -16,7 +16,7 @@ from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
 
 def _make(**cfg):
-    base = dict(method="qjl", head_dim=8, jl_dim=8, seed=0)
+    base = {"method": "qjl", "head_dim": 8, "jl_dim": 8, "seed": 0}
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

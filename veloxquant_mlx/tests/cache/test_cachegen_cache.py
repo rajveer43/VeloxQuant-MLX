@@ -18,7 +18,7 @@ from veloxquant_mlx.cache.cachegen_cache import CacheGenKVCache
 
 
 def _make(**cfg):
-    base = dict(method="cachegen", head_dim=64, cachegen_bits=4, cachegen_group_size=32)
+    base = {"method": "cachegen", "head_dim": 64, "cachegen_bits": 4, "cachegen_group_size": 32}
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

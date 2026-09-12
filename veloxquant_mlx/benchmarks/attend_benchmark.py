@@ -103,17 +103,17 @@ def run(
     rng = np.random.default_rng(seed)
 
     configs = {
-        "baseline": dict(vectorized=False, fused=False, outlier=False),
-        "vectorized": dict(vectorized=True, fused=False, outlier=False),
-        "fused": dict(vectorized=True, fused=True, outlier=False),
-        "all_opts": dict(vectorized=True, fused=True, outlier=True),
+        "baseline": {"vectorized": False, "fused": False, "outlier": False},
+        "vectorized": {"vectorized": True, "fused": False, "outlier": False},
+        "fused": {"vectorized": True, "fused": True, "outlier": False},
+        "all_opts": {"vectorized": True, "fused": True, "outlier": True},
     }
     # turboquant_mse doesn't have a fused path; skip 'fused'/'all_opts' for it.
     if method == "turboquant_mse":
         configs = {
-            "baseline": dict(vectorized=False, fused=False, outlier=False),
-            "vectorized": dict(vectorized=True, fused=False, outlier=False),
-            "all_opts": dict(vectorized=True, fused=False, outlier=True),
+            "baseline": {"vectorized": False, "fused": False, "outlier": False},
+            "vectorized": {"vectorized": True, "fused": False, "outlier": False},
+            "all_opts": {"vectorized": True, "fused": False, "outlier": True},
         }
 
     col_w = 14

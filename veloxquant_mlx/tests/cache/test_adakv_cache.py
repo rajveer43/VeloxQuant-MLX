@@ -46,7 +46,7 @@ from veloxquant_mlx.quantizers.adakv import (
 # Helpers
 # ---------------------------------------------------------------------------
 def _make_cfg(**kwargs) -> KVCacheConfig:
-    defaults = dict(method="adakv", head_dim=64)
+    defaults = {"method": "adakv", "head_dim": 64}
     defaults.update(kwargs)
     return KVCacheConfig(**defaults)
 

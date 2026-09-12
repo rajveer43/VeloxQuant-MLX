@@ -33,9 +33,13 @@ def _kv(B, H, S, D, seed=0):
 
 
 def _make(**cfg):
-    base = dict(
-        method="nsnquant", head_dim=128, nsn_bits=2, nsn_residual_length=16, nsn_seed=_TEST_SEED
-    )
+    base = {
+        "method": "nsnquant",
+        "head_dim": 128,
+        "nsn_bits": 2,
+        "nsn_residual_length": 16,
+        "nsn_seed": _TEST_SEED,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

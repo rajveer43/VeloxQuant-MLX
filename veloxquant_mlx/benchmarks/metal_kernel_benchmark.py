@@ -45,9 +45,21 @@ OUT_DIR = Path(__file__).parents[2] / "figures" / "metal" / "turboquant_kernels"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 STYLE = {
-    "metal": dict(color="#2196F3", linewidth=2.0, marker="o", markersize=5),
-    "numpy": dict(color="#FF5722", linewidth=2.0, marker="s", markersize=5, linestyle="--"),
-    "mlx": dict(color="#4CAF50", linewidth=2.0, marker="^", markersize=5, linestyle="--"),
+    "metal": {"color": "#2196F3", "linewidth": 2.0, "marker": "o", "markersize": 5},
+    "numpy": {
+        "color": "#FF5722",
+        "linewidth": 2.0,
+        "marker": "s",
+        "markersize": 5,
+        "linestyle": "--",
+    },
+    "mlx": {
+        "color": "#4CAF50",
+        "linewidth": 2.0,
+        "marker": "^",
+        "markersize": 5,
+        "linestyle": "--",
+    },
 }
 PALETTE = ["#2196F3", "#FF5722", "#4CAF50", "#9C27B0", "#FF9800"]
 

@@ -156,7 +156,7 @@ class AnchorKVKVCache(_MLXKVCache):
             value_assign.residual,
         )
 
-        anchor_set = set(int(a) for a in anchors.tolist())
+        anchor_set = {int(a) for a in anchors.tolist()}
         non_anchor_mask_np = [i not in anchor_set for i in range(S)]
 
         non_anchor_mask = mx.array(non_anchor_mask_np)

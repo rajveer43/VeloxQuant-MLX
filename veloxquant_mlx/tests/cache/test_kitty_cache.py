@@ -36,7 +36,7 @@ from veloxquant_mlx.quantizers.kitty import (
 # Helpers
 # ---------------------------------------------------------------------------
 def _make_cfg(**kwargs) -> KVCacheConfig:
-    defaults = dict(method="kitty", head_dim=64)
+    defaults = {"method": "kitty", "head_dim": 64}
     defaults.update(kwargs)
     return KVCacheConfig(**defaults)
 

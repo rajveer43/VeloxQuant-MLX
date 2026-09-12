@@ -245,7 +245,7 @@ def allocate_head_bits(
     Returns:
         [H] list of assigned integer bit-widths, each in ``allowed_bits``.
     """
-    allowed = sorted(set(int(b) for b in allowed_bits))
+    allowed = sorted({int(b) for b in allowed_bits})
     lo, hi = allowed[0], allowed[-1]
 
     imp = [

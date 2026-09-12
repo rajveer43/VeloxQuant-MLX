@@ -30,7 +30,7 @@ from veloxquant_mlx.quantizers.xkv import pair_layers_grouped
 
 
 def _cfg(**kwargs) -> KVCacheConfig:
-    d = dict(method="xkv", head_dim=32)
+    d = {"method": "xkv", "head_dim": 32}
     d.update(kwargs)
     return KVCacheConfig(**d)
 

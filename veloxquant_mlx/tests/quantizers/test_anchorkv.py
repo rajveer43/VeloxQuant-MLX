@@ -238,7 +238,7 @@ def test_allocate_residual_budget_picks_highest_utility() -> None:
     u = mx.array([0.1, 0.9, 0.3, 0.05, 0.7], dtype=mx.float32)
     masks = allocate_residual_budget([u], n_slots=2)
     mask = masks[0]
-    chosen = set(i for i in range(5) if bool(mask[i].item()))
+    chosen = {i for i in range(5) if bool(mask[i].item())}
     assert chosen == {1, 4}
 
 
@@ -277,7 +277,7 @@ def test_budget_slots_zero_at_theta_zero() -> None:
 
 
 def test_budget_slots_increase_with_theta() -> None:
-    kwargs = dict(seq_len=1000, head_dim=64, n_anchor=20, residual_codec_bytes=18)
+    kwargs = {"seq_len": 1000, "head_dim": 64, "n_anchor": 20, "residual_codec_bytes": 18}
     low = anchorkv_budget_slots(theta=0.05, **kwargs)
     high = anchorkv_budget_slots(theta=0.5, **kwargs)
     assert high > low

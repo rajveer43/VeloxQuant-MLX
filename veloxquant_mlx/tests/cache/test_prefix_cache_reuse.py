@@ -24,10 +24,15 @@ from mlx_lm.models.cache import LRUPromptCache
 
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
-_TRIMMABLE_CONFIG = dict(method="turboquant_rvq", head_dim=32, bit_width_inlier=1, seed=42)
-_NOT_TRIMMABLE_CONFIG = dict(
-    method="h2o", head_dim=32, h2o_budget=8, h2o_n_sink=1, h2o_grace=0, h2o_decay=1.0
-)
+_TRIMMABLE_CONFIG = {"method": "turboquant_rvq", "head_dim": 32, "bit_width_inlier": 1, "seed": 42}
+_NOT_TRIMMABLE_CONFIG = {
+    "method": "h2o",
+    "head_dim": 32,
+    "h2o_budget": 8,
+    "h2o_n_sink": 1,
+    "h2o_grace": 0,
+    "h2o_decay": 1.0,
+}
 
 
 def _make_layer_cache(method_config: dict) -> list:

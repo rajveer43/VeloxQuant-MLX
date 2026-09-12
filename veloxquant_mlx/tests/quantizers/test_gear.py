@@ -103,7 +103,7 @@ def test_sparse_selects_true_outliers() -> None:
     M = M.at[mx.array([7, 50, 91])].add(mx.array([100.0, -100.0, 100.0]))
     M = M.reshape(10, 10)
     idx, vals = sparse_outliers(M, frac=3 / 100)
-    picked = set(int(i) for i in idx.tolist())
+    picked = {int(i) for i in idx.tolist()}
     assert {7, 50, 91} <= picked
 
 

@@ -69,7 +69,7 @@ def _build_huffman_codes(freqs: dict[int, int]) -> dict[int, str]:
         heapq.heappush(heap, (f1 + f2, next(tiebreak), pairs1 + pairs2))
 
     _, _, pairs = heap[0]
-    return {sym: code for sym, code in pairs}
+    return dict(pairs)
 
 
 def entropy_encode(codes: np.ndarray) -> tuple[bytes, dict]:

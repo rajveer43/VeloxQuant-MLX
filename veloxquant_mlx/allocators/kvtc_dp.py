@@ -139,7 +139,7 @@ def dp_allocate_bits(
         raise ValueError(f"kvtc_dp: total_bit_budget must be >= 0, got {total_bit_budget!r}")
     if not bit_choices:
         raise ValueError("kvtc_dp: bit_choices must be non-empty.")
-    choices = sorted(set(int(b) for b in bit_choices))
+    choices = sorted({int(b) for b in bit_choices})
     if choices[0] < 0:
         raise ValueError("kvtc_dp: bit_choices must be non-negative.")
 

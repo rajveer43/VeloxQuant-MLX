@@ -22,16 +22,16 @@ HEAD_DIM = 64
 
 
 def _small_scenario(**overrides) -> WorkloadScenario:
-    base = dict(
-        name="tiny",
-        description="tiny test scenario",
-        prompt_lens=[4],
-        n_new_tokens=3,
-        n_streams=1,
-        repeat=1,
-        reuse_cache=False,
-        sliding_window=None,
-    )
+    base = {
+        "name": "tiny",
+        "description": "tiny test scenario",
+        "prompt_lens": [4],
+        "n_new_tokens": 3,
+        "n_streams": 1,
+        "repeat": 1,
+        "reuse_cache": False,
+        "sliding_window": None,
+    }
     base.update(overrides)
     return WorkloadScenario(**base)
 

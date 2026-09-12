@@ -45,7 +45,7 @@ from veloxquant_mlx.quantizers.kvquant import (
 # Helpers
 # ---------------------------------------------------------------------------
 def _cfg(**kwargs) -> KVCacheConfig:
-    d = dict(method="kvquant", head_dim=64, kvquant_bits=3)
+    d = {"method": "kvquant", "head_dim": 64, "kvquant_bits": 3}
     d.update(kwargs)
     return KVCacheConfig(**d)
 
@@ -346,7 +346,7 @@ def test_sink_excluded_from_level_fit():
     spiked = body.copy()
     spiked[:, :, 0, :] = 500.0  # extreme sink row
 
-    cfg = dict(head_dim=16, kvquant_bits=3, kvquant_n_sink=1, kvquant_outlier_fraction=0.0)
+    cfg = {"head_dim": 16, "kvquant_bits": 3, "kvquant_n_sink": 1, "kvquant_outlier_fraction": 0.0}
     c_spike = KVQuantKVCache(_cfg(**cfg))
     c_spike.update_and_fetch(mx.array(spiked), mx.array(spiked))
     lv_spike = np.array(c_spike.key_levels[0].tolist())

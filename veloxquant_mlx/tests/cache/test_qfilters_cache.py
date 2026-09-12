@@ -30,13 +30,13 @@ def _kv(B, H, S, D, seed=0):
 
 
 def _make(**cfg):
-    base = dict(
-        method="qfilters",
-        head_dim=64,
-        qfilters_budget=16,
-        qfilters_n_sink=2,
-        qfilters_calib_tokens=16,
-    )
+    base = {
+        "method": "qfilters",
+        "head_dim": 64,
+        "qfilters_budget": 16,
+        "qfilters_n_sink": 2,
+        "qfilters_calib_tokens": 16,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

@@ -51,7 +51,12 @@ def _kv(S, H=4, D=64, seed=0):
 
 
 def _build(n=8, **cfg):
-    base = dict(method="minicache", head_dim=64, minicache_start_frac=0.5, minicache_group_size=2)
+    base = {
+        "method": "minicache",
+        "head_dim": 64,
+        "minicache_start_frac": 0.5,
+        "minicache_group_size": 2,
+    }
     base.update(cfg)
     return KVCacheBuilder.for_model(_Model(n), KVCacheConfig(**base))
 

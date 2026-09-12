@@ -22,15 +22,15 @@ from veloxquant_mlx.cache.svdq_cache import SVDqKVCache
 
 
 def _make(**cfg):
-    base = dict(
-        method="svdq",
-        head_dim=64,
+    base = {
+        "method": "svdq",
+        "head_dim": 64,
         # rank=32 = min_safe_rank(8 groups) at MIN_SAFE_CHANNELS_PER_GROUP=4 —
         # explicit and deterministic, and clears the small-rank guard rail.
-        svdq_rank=32,
-        svdq_bit_schedule=(8, 4, 2, 1, 1, 0, 0, 0),
-        svdq_group_size=16,
-    )
+        "svdq_rank": 32,
+        "svdq_bit_schedule": (8, 4, 2, 1, 1, 0, 0, 0),
+        "svdq_group_size": 16,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

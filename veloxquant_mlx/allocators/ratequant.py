@@ -199,7 +199,7 @@ def allocate_bits_ratequant(
     if not bit_choices:
         raise ValueError("bit_choices must be non-empty.")
 
-    choices_sorted = sorted(set(int(c) for c in bit_choices))
+    choices_sorted = sorted({int(c) for c in bit_choices})
 
     N = w.size
     log_w = np.log(w)

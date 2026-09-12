@@ -39,7 +39,7 @@ from veloxquant_mlx.quantizers.xquant import (
 # Helpers
 # ---------------------------------------------------------------------------
 def _cfg(**kwargs) -> KVCacheConfig:
-    d = dict(method="xquant", head_dim=64)
+    d = {"method": "xquant", "head_dim": 64}
     d.update(kwargs)
     return KVCacheConfig(**d)
 

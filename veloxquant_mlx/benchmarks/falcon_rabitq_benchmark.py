@@ -524,7 +524,7 @@ def save_long_context_figures(lc: dict) -> None:
         "RaBitQ overhead\ndominates at short ctx",
         xy=(seqs[0], t_rbmse[0]),
         xytext=(seqs[1], t_rbmse[0] * 1.5),
-        arrowprops=dict(arrowstyle="->", color="gray"),
+        arrowprops={"arrowstyle": "->", "color": "gray"},
         fontsize=8,
         color="gray",
     )

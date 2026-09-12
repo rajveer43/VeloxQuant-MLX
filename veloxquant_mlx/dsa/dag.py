@@ -140,8 +140,8 @@ class QuantizationGraph:
         """
         order = self.topological_sort()
         order_ids = [id(h) for h in order]
-        dist: dict[int, int] = {nid: 0 for nid in order_ids}
-        prev: dict[int, int | None] = {nid: None for nid in order_ids}
+        dist: dict[int, int] = dict.fromkeys(order_ids, 0)
+        prev: dict[int, int | None] = dict.fromkeys(order_ids)
 
         for nid in order_ids:
             for neighbor_id in self._adj[nid]:
