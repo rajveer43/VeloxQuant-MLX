@@ -1,9 +1,28 @@
+"""Central KV-cache configuration, factory, and per-model builder.
+
+Defines :class:`KVCacheConfig` (one dataclass holding every method's
+hyperparameters — over 40 quantization/eviction methods share this single
+config surface, each namespacing its own fields with a method-specific
+prefix), :class:`KVCacheFactory` (dispatches ``config.method`` to the
+matching concrete cache class), and :class:`KVCacheBuilder` (a fluent
+builder plus ``for_model()``, which constructs one cache per language-model
+layer — handling per-layer bit-width schedules, hybrid-attention models, and
+methods that need a shared cross-layer coordinator such as XQuant, MiniCache,
+xKV, PyramidKV, CacheGen, SqueezeAttention, and ChunkKV layer-reuse).
+:data:`STANDALONE_METHODS` marks the methods whose cache implements
+VeloxQuant's own :class:`~veloxquant_mlx.core.abstractions.KVCache` ABC
+instead of ``mlx_lm``'s serving protocol, so ``for_model()`` can reject them
+with a clear error rather than failing deep inside generation.
+"""
+
 from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, field
 from dataclasses import replace as dataclasses_replace
-from typing import Any, Literal
+from typing import Any, Literal, cast
+
+from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.core.abstractions import ArtifactStore, KVCache, QuantizationObserver
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
@@ -30,6 +49,56 @@ STANDALONE_METHODS = frozenset(
     }
 )
 
+# Every method name KVCacheConfig.method accepts. Named so call sites that
+# build a method string dynamically (registry.py's probes, which read this
+# same set back via typing.get_type_hints/get_args on KVCacheConfig) have a
+# cast target instead of re-inlining the Literal.
+MethodName = Literal[
+    "turboquant_prod",
+    "turboquant_mse",
+    "turboquant_rvq",
+    "polar",
+    "qjl",
+    "vecinfer",
+    "spectral",
+    "kivi",
+    "kivi_sink",
+    "svdq",
+    "kitty",
+    "adakv",
+    "xquant",
+    "kvquant",
+    "palu",
+    "cachegen",
+    "minicache",
+    "gear",
+    "zipcache",
+    "snapkv",
+    "streaming_llm",
+    "h2o",
+    "tova",
+    "pyramidkv",
+    "squeeze",
+    "chunkkv",
+    "cam",
+    "xkv",
+    "nsnquant",
+    "knorm",
+    "skvq",
+    "qfilters",
+    "keyformer",
+    "morphkv",
+    "kvzip",
+    "kvtc",
+    "curdkv",
+    "nestedkv",
+    "amc",
+    "a2ats",
+    "anchorkv",
+    "rocketkv",
+    "age_tiered",
+]
+
 
 @dataclass
 class KVCacheConfig:
@@ -54,51 +123,7 @@ class KVCacheConfig:
         observers: List of QuantizationObserver instances.
     """
 
-    method: Literal[
-        "turboquant_prod",
-        "turboquant_mse",
-        "turboquant_rvq",
-        "polar",
-        "qjl",
-        "vecinfer",
-        "spectral",
-        "kivi",
-        "kivi_sink",
-        "svdq",
-        "kitty",
-        "adakv",
-        "xquant",
-        "kvquant",
-        "palu",
-        "cachegen",
-        "minicache",
-        "gear",
-        "zipcache",
-        "snapkv",
-        "streaming_llm",
-        "h2o",
-        "tova",
-        "pyramidkv",
-        "squeeze",
-        "chunkkv",
-        "cam",
-        "xkv",
-        "nsnquant",
-        "knorm",
-        "skvq",
-        "qfilters",
-        "keyformer",
-        "morphkv",
-        "kvzip",
-        "kvtc",
-        "curdkv",
-        "nestedkv",
-        "amc",
-        "a2ats",
-        "anchorkv",
-        "rocketkv",
-        "age_tiered",
-    ] = "turboquant_rvq"
+    method: MethodName = "turboquant_rvq"
     head_dim: int = 128
     bit_width_inlier: int | list = 2
     bit_width_outlier: int | None = None
@@ -441,14 +466,17 @@ class KVCacheFactory:
     """Factory for creating KVCache instances from a KVCacheConfig."""
 
     @staticmethod
-    def create(config: KVCacheConfig) -> KVCache:
+    def create(config: KVCacheConfig) -> KVCache | _MLXKVCache:
         """Instantiate a KVCache from the given configuration.
 
         Args:
             config: KVCacheConfig instance.
 
         Returns:
-            Configured KVCache.
+            Configured KVCache. The concrete type depends on config.method:
+            STANDALONE_METHODS produce VeloxQuant's own KVCache (core.
+            abstractions), every other method produces an mlx_lm.models.
+            cache.KVCache subclass — see the STANDALONE_METHODS comment above.
         """
         from veloxquant_mlx.cache.a2ats_cache import A2ATSKVCache
         from veloxquant_mlx.cache.adakv_cache import AdaKVCache
@@ -503,7 +531,7 @@ class KVCacheFactory:
             )
 
         if config.method in ("turboquant_prod", "turboquant_mse"):
-            cache: KVCache = TurboQuantKVCache(config)
+            cache: KVCache | _MLXKVCache = TurboQuantKVCache(config)
         elif config.method == "turboquant_rvq":
             cache = TurboQuantRVQKVCache(config)
         elif config.method == "polar":
@@ -691,7 +719,11 @@ class KVCacheFactory:
                     f"streaming_llm, snapkv, etc.) already implement their own "
                     f"budget/window-based eviction."
                 )
-            cache = SlidingWindowKVCache(cache, window_size=config.sliding_window)
+            # config.method in STANDALONE_METHODS (checked above) guarantees cache
+            # is core.abstractions.KVCache here, not mlx_lm's — see the
+            # STANDALONE_METHODS comment. mypy can't follow that string-keyed
+            # narrowing across the union.
+            cache = SlidingWindowKVCache(cast(KVCache, cache), window_size=config.sliding_window)
 
         return cache
 
@@ -840,7 +872,7 @@ class KVCacheBuilder:
         self._config.sliding_window = window_size
         return self
 
-    def build(self) -> KVCache:
+    def build(self) -> KVCache | _MLXKVCache:
         """Validate the configuration and construct the KVCache.
 
         Returns:
@@ -990,8 +1022,7 @@ class KVCacheBuilder:
 
         # Resolve per-layer bit-width policy
         b_spec = config.bit_width_inlier
-        is_per_layer = isinstance(b_spec, list)
-        if is_per_layer:
+        if isinstance(b_spec, list):
             # Count attention-bearing layers up-front for validation
             n_attn = sum(
                 1
@@ -1051,7 +1082,7 @@ class KVCacheBuilder:
             if hd is None:
                 caches.append(_fallback_for(i))
                 continue
-            layer_b = b_spec[attn_idx] if is_per_layer else b_spec
+            layer_b = b_spec[attn_idx] if isinstance(b_spec, list) else b_spec
             # Preserve every method-specific field (svdq_*, kitty_*, kvquant_*,
             # palu_*, …) from the user's config and override only the per-layer
             # head_dim / bit-width / seed.  Reconstructing the dataclass field by

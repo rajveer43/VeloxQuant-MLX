@@ -1,3 +1,18 @@
+"""Abstract base classes defining every extension point in the pipeline.
+
+Declares the interfaces every concrete implementation across the codebase
+satisfies: :class:`Quantizer` (encode/decode/estimate_inner_product),
+:class:`Codebook` (quantize/dequantize), :class:`KVCache`
+(append_key/append_value/attend/memory_bytes), :class:`ArtifactStore`
+(load/save rotation matrices, codebooks, JL matrices), :class:`Preconditioner`
+and :class:`Transform` (linear/invertible preconditioning), the Chain of
+Responsibility :class:`QuantizationHandler` pipeline stage, and the
+:class:`InnerProductStrategy`, :class:`CodebookStrategy`, and
+:class:`QuantizationObserver` strategy/observer hooks. New quantization
+methods, cache types, or artifact backends are added by subclassing one of
+these rather than duck-typing against a concrete class.
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

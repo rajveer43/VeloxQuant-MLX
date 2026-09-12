@@ -1,3 +1,13 @@
+"""Observer that records per-pipeline-stage latency histograms.
+
+Provides :class:`LatencyObserver`, which collects every
+``elapsed_ms`` sample emitted per stage name in
+:class:`~veloxquant_mlx.observers.base.QuantizationEvent` and reports
+mean/min/max/count summaries — useful for finding which quantization
+pipeline stage (preconditioning, encoding, codebook lookup, etc.)
+dominates wall-clock time.
+"""
+
 from __future__ import annotations
 
 from collections import defaultdict

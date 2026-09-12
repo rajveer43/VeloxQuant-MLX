@@ -1,3 +1,12 @@
+"""Effective-dimensionality estimation from a vector population's covariance.
+
+Computes the participation ratio ``d_eff = (sum(lambda_i))^2 / sum(lambda_i^2)``
+over a sample covariance's eigenvalue spectrum, a standard measure of how
+many dimensions actually carry signal versus how many are near-degenerate.
+Used to decide how aggressively spectral quantization can compress a given
+vector population.
+"""
+
 from __future__ import annotations
 
 import numpy as np

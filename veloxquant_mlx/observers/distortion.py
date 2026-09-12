@@ -1,3 +1,14 @@
+"""Observer that measures empirical quantization distortion against TurboQuant's theoretical bounds.
+
+Provides :class:`DistortionObserver`, which accumulates squared
+reconstruction error (and optional inner-product error against a fixed
+query) from ``x_original``/``x_reconstructed`` pairs carried in pipeline
+events, and :class:`DistortionReport`, the resulting summary comparing
+empirical MSE to TurboQuant's Theorem 1 upper/lower bounds
+(``√(3π)/2 · 4^(-b)`` and ``4^(-b)``). Used to validate that a quantizer
+configuration is actually hitting its theoretical error budget.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

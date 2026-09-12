@@ -1,3 +1,12 @@
+"""Water-filling bit allocation across quantization dimensions.
+
+Given a per-dimension eigenvalue/variance spectrum and a total bit budget,
+distributes bits so that higher-signal dimensions receive proportionally
+more precision, iteratively redistributing from dimensions capped at
+``max_bits`` until the allocation converges, then exactly reconciles any
+rounding remainder against the requested budget.
+"""
+
 from __future__ import annotations
 
 import numpy as np

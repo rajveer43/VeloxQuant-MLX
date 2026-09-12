@@ -1,12 +1,26 @@
+"""Factory for building :class:`ScalarCodebook` instances from a distribution name.
+
+Central entry point for codebook construction: :class:`CodebookFactory.create`
+maps a distribution string (``"gaussian"``, ``"beta"``, ``"polar_level"``,
+``"uniform"``) to the matching registered ``CodebookStrategy`` (see
+:mod:`~veloxquant_mlx.codebooks.strategies`), fits centroids for the
+requested bit-width and dimension, and wraps them in a
+:class:`~veloxquant_mlx.codebooks.scalar_codebook.ScalarCodebook`. All
+codebook instantiation in the codebase should go through this factory
+rather than constructing strategies directly.
+"""
+
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
-from veloxquant_mlx.core.abstractions import Codebook
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.core.registry import CodebookRegistry
+
+if TYPE_CHECKING:
+    from veloxquant_mlx.codebooks.scalar_codebook import ScalarCodebook
 
 
 class CodebookFactory:
@@ -25,7 +39,7 @@ class CodebookFactory:
         b: int,
         d: int,
         polar_level: int = 1,
-    ) -> Codebook:
+    ) -> ScalarCodebook:
         """Create a ScalarCodebook for the given distribution and bit-width.
 
         Args:

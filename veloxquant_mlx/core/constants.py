@@ -1,3 +1,12 @@
+"""Shared numeric constants for VeloxQuant-MLX quantizers, codebooks, and caches.
+
+Centralizes theoretical constants (QJL's sqrt(pi/2) inner-product estimator scale,
+TurboQuant's MSE upper/lower bound factors), Lloyd-Max solver defaults, and
+library-wide defaults (random seed, JL projection dimension, polar levels,
+outlier channel count, int8 clamp range) so every module derives the same
+values instead of redefining them.
+"""
+
 from __future__ import annotations
 
 import math

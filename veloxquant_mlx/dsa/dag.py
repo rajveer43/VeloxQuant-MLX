@@ -1,3 +1,12 @@
+"""Directed acyclic graph utilities for validating quantization handler pipelines.
+
+Implements ``QuantizationGraph``, a DAG over ``QuantizationHandler`` nodes
+(identified by ``id()``) supporting cycle detection and topological ordering
+via Kahn's algorithm, plus a longest-path (critical path) query. Used to
+verify that user-assembled handler chains are acyclic and to derive a valid
+execution order before running them.
+"""
+
 from __future__ import annotations
 
 from collections import defaultdict, deque

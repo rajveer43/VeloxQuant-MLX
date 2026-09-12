@@ -1,3 +1,13 @@
+"""Recursive polar-coordinate decomposition transform.
+
+Implements ``RecursivePolarTransform``, which repeatedly pairs adjacent
+coordinates and replaces each pair with an angle (via ``atan2``) and a
+radius (via ``sqrt(x^2 + y^2)``) for a configurable number of levels,
+leaving a shrinking angle set per level plus one final scalar radius. This
+is the forward/inverse machinery ``PolarQuantizer``
+(``quantizers/polarquant.py``) quantizes level-by-level.
+"""
+
 from __future__ import annotations
 
 import math

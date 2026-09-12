@@ -1,11 +1,23 @@
+"""TurboQuant MSE — MSE-optimal single-pass scalar quantizer.
+
+The single-stage member of the TurboQuant family: rotate the vector
+(random QR rotation or Metal-accelerated randomized Hadamard), then
+quantize each coordinate independently against a Lloyd-Max codebook fit to
+the post-rotation coordinate distribution (Gaussian for d >= 64, Beta
+otherwise). This minimizes mean-squared reconstruction error at a given
+bit-width, bounded by ``D_mse <= sqrt(3*pi)/2 * 4^(-b)``, but — unlike
+``TurboQuantProd`` — does not correct for the bias this introduces into
+inner-product estimates.
+"""
+
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
 from veloxquant_mlx.codebooks.base import CodebookFactory
-from veloxquant_mlx.core.abstractions import ArtifactStore, Quantizer
+from veloxquant_mlx.core.abstractions import ArtifactStore, Preconditioner, Quantizer
 from veloxquant_mlx.core.context import EncodedVector
 from veloxquant_mlx.core.registry import QuantizerRegistry
 from veloxquant_mlx.math.rotation import (
@@ -63,7 +75,7 @@ class TurboQuantMSE(Quantizer):
         if use_hadamard and is_hadamard_compatible(d):
             D_np = make_hadamard_diagonal(d, seed=seed)
             D = mx.array(D_np)
-            self._rotation = HadamardPreconditioner(D)
+            self._rotation: Preconditioner = HadamardPreconditioner(D)
         else:
             # QR rotation matrix
             if store is not None and store.exists("rotation", d=d, seed=seed):
@@ -76,7 +88,7 @@ class TurboQuantMSE(Quantizer):
             self._rotation = RotationPreconditioner(Pi)
 
         # Codebook
-        distribution = "beta" if (use_beta or d < 64) else "gaussian"
+        distribution: Literal["gaussian", "beta"] = "beta" if (use_beta or d < 64) else "gaussian"
         dist_key = distribution
         if store is not None and store.exists("codebook", distribution=dist_key, b=b, d=d):
             cb_centroids = np.array(store.load_codebook(dist_key, b=b, d=d), dtype=np.float32)

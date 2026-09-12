@@ -432,6 +432,101 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.0 (2026-09-12)
+
+### Bug Fixes
+
+- Resolve remaining ruff violations flagged under current select
+  ([`11b478a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/11b478a4ce9ad97af5885d4f3d422fe0d5961f5a))
+
+- **allocators**: Narrow Optional next/prev choice in ratequant rebalance
+  ([`009219a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/009219a960dc02cf2161119dfa79ad7717bc8810))
+
+- **cache**: Fix chunkkv/composite/sliding-window type errors
+  ([`fff9bea`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fff9beaf9923d6593eed6546806cf051af5bedb1))
+
+- **cache**: Recognize PEP 604 `X | None` as Optional in describe_field
+  ([`6768d4a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6768d4af26bf4e8e195449bab49d331f0900ae9b))
+
+- **cache**: Type KVCacheFactory.create()'s dual cache hierarchy
+  ([`932701e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/932701eab764e92d657abf4be98a5b07b998153b))
+
+- **dsa**: Make MaxHeap generic over its value type
+  ([`06fbf9d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/06fbf9d9f79f3214eaa90ff521b2876867fbc587))
+
+- **metal**: Reword comment mypy misparses as a type comment
+  ([`6144e07`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6144e07b65e1815f09df1b9c7e49daa7f51a3947))
+
+- **quantizers**: Fix rabitq.py encode() override and dead-code errors
+  ([`1925b50`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1925b5083f5b1cc774592d5848e236c367758b9e))
+
+- **quantizers**: Type CodebookFactory/PreconditionerFactory call sites
+  ([`eb328f3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/eb328f39f42fa8b540cb0a7f96a5193dd687fffb))
+
+- **spectral**: Type CodebookFactory.create() calls and EncodedVector guards
+  ([`b1050d3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b1050d3a1645f2394d341a50db3c8cb25a8102de))
+
+- **tools**: Annotate mac_recommender's knobs dict as dict[str, Any]
+  ([`d66b986`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d66b98642bae492c807de7a718ede09c586eca3e))
+
+### Build System
+
+- **deps**: Bump aiohttp from 3.14.1 to 3.14.3
+  ([#351](https://github.com/rajveer43/VeloxQuant-MLX/pull/351),
+  [`66d6a11`](https://github.com/rajveer43/VeloxQuant-MLX/commit/66d6a1110b7b6255f931ffaa330f2f134ab3bed0))
+
+- **deps**: Bump pillow from 12.2.0 to 12.3.0
+  ([#350](https://github.com/rajveer43/VeloxQuant-MLX/pull/350),
+  [`7a96dab`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7a96dabe1619e1d3ef8834852a25562bc1575131))
+
+### Chores
+
+- **deps**: Replace requirements.local.txt with a full venv freeze
+  ([`714df1a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/714df1adc27bd631ade00a70c47068f4a294c5ba))
+
+### Code Style
+
+- Apply ruff format and autofix repo-wide baseline
+  ([`42b46db`](https://github.com/rajveer43/VeloxQuant-MLX/commit/42b46db69343ff00227d54b11f3a6e18d69c1d36))
+
+- Enable ruff C4 (flake8-comprehensions) and fix its 66 violations
+  ([`e04ffe6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e04ffe6067da78bcbed32d4b117ba2af62505e3d))
+
+- Enable ruff PTH (flake8-use-pathlib) and fix its 13 violations
+  ([`a8bb166`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a8bb166cd6fb26b9bc7b994010ab1105276a9f82))
+
+- Enable ruff RET (flake8-return) and fix its 14 violations
+  ([`01f26e4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/01f26e4d3767ebfb2ec4e35e10c98432cd9b67e9))
+
+- Enable ruff SIM (flake8-simplify) and fix its 27 violations
+  ([`13abf4a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/13abf4a2941d455a54d10306b3780f85091f85d8))
+
+- Standardize `from __future__ import annotations` across the package
+  ([`70f5b2e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/70f5b2ecd05f53aa1c2076327a2ff1c94187352b))
+
+### Documentation
+
+- Add module docstrings for artifacts/cache/codebooks/core (PEP 257)
+  ([`ef03013`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ef03013134edfd2eedab7cab09fb49127e7ece72))
+
+- Add module docstrings for core/dsa/handlers (PEP 257)
+  ([`f4a69b2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f4a69b21fe9cd2b636aeb15c19cebbe1db7d48a0))
+
+- Add module docstrings for math/memory/observers/outlier/preconditioners (PEP 257)
+  ([`eb681e9`](https://github.com/rajveer43/VeloxQuant-MLX/commit/eb681e9f2bc932f563461088ffcdf82ba97490cd))
+
+- Add module docstrings for quantizers/spectral/transforms/weight (PEP 257)
+  ([`2b35733`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2b357335050c5b6692f139c0bc1df5562f9a1de7))
+
+- **lint**: Record the rejected-rule-group and E501 audit trail
+  ([`9d8e65c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9d8e65c4680b8fe620ef5c2c48c4327358771502))
+
+### Features
+
+- **packaging**: Add PEP 561 py.typed marker
+  ([`427b958`](https://github.com/rajveer43/VeloxQuant-MLX/commit/427b958761458fc8e7e602cfcb0f2f42e6867995))
+
+
 ## v0.82.2 (2026-09-12)
 
 ### Bug Fixes

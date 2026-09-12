@@ -1,3 +1,12 @@
+"""Quantizer construction entry point: ``QuantizerFactory``.
+
+Provides the single sanctioned way to instantiate a fixed-bit-width KV
+quantizer (QJL, TurboQuant MSE/Prod, PolarQuant, ...) by algorithm name,
+validating shared preconditions (power-of-two dimension, bit-width >= 1)
+before dispatching to the class registered under that name in
+``QuantizerRegistry``.
+"""
+
 from __future__ import annotations
 
 import math

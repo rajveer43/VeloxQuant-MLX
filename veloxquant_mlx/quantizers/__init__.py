@@ -1,3 +1,15 @@
+"""KV-cache quantizer and eviction-policy implementations.
+
+Groups the two families of compression strategy the rest of the package
+builds on: fixed-bit-width **quantizers** (QJL, TurboQuant MSE/Prod/RVQ,
+PolarQuant, CommVQ, RaBitQ, KIVI, ZipCache) constructed via
+``QuantizerFactory``/``CompositeQuantizer``, and stateful **eviction
+policies** (SnapKV, StreamingLLM, H2O, TOVA, PyramidKV, SqueezeAttention)
+exposed as ``init_*``/``*_update``/``*_get_kv``/``*_fp16_bytes`` function
+sets operating on a per-policy state object. See ``__all__`` for the full
+re-exported surface.
+"""
+
 from __future__ import annotations
 
 from veloxquant_mlx.quantizers.base import QuantizerFactory

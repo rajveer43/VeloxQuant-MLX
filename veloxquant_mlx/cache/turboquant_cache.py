@@ -1,3 +1,19 @@
+"""TurboQuant-backed KV cache: bit-packed key storage for TurboQuantProd/MSE.
+
+Wraps :class:`~veloxquant_mlx.quantizers.turboquant_prod.TurboQuantProd` (or
+:class:`~veloxquant_mlx.quantizers.turboquant_mse.TurboQuantMSE`) in the
+VeloxQuant :class:`~veloxquant_mlx.core.abstractions.KVCache` ABC. Keys are
+stored genuinely bit-packed (codebook indices at ``b_mse`` bits, QJL sign
+bits at 1 bit each, via :class:`~veloxquant_mlx.dsa.bit_pack.BitPackBuffer`)
+to match the paper's memory model rather than padding to a byte per
+coordinate; values use per-token int8 with an fp16 scale. Optionally splits
+off a calibrated set of outlier channels
+(:class:`~veloxquant_mlx.outlier.detector.OutlierDetector`) kept at higher
+precision alongside the quantized inlier stream. This is a "standalone"
+method (see :data:`~veloxquant_mlx.cache.base.STANDALONE_METHODS`): it does
+not implement the ``mlx_lm`` serving protocol.
+"""
+
 from __future__ import annotations
 
 import math

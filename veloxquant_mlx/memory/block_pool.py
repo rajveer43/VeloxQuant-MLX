@@ -1,3 +1,18 @@
+"""Fixed-size block allocator for KV-cache storage, in the vLLM/PagedAttention style.
+
+Provides :class:`BlockPoolAllocator`, a thread-safe bookkeeping layer that
+pre-allocates ``n_blocks`` fixed-size blocks and hands them out per
+request/stream so steady-state generation performs no per-token
+malloc/free. This module tracks only block ownership and usage stats
+(:class:`PoolConfig`, :class:`Block`, :class:`AllocationStats`); it holds
+no array data itself — pair it with a backing store such as
+:class:`~veloxquant_mlx.memory.mlx_storage.MLXBlockStorage` for actual
+``mx.array`` buffers, or with
+:class:`~veloxquant_mlx.memory.pooled_cache.PooledKVCache` /
+:class:`~veloxquant_mlx.memory.pool_backed_cache.PoolBackedKVCache` for
+cache-level integration.
+"""
+
 from __future__ import annotations
 
 import threading

@@ -111,12 +111,11 @@ class SpectralQuantizer(Quantizer):
         # --- Codebooks: Lloyd-Max Gaussian, separate for signal / noise ---
         # Post-rotation coordinates are approximately N(0, λ_i / d), but
         # we use the standard Gaussian codebook (normalised per-dim by scale).
-        dist = "gaussian"
-        self._cb_signal = CodebookFactory.create(dist, b=b_signal, d=d)
+        self._cb_signal = CodebookFactory.create("gaussian", b=b_signal, d=d)
         if b_noise == b_signal:
             self._cb_noise = self._cb_signal
         else:
-            self._cb_noise = CodebookFactory.create(dist, b=b_noise, d=d)
+            self._cb_noise = CodebookFactory.create("gaussian", b=b_noise, d=d)
 
         # --- JL sketch matrix for signal residual (only if apply_qjl) ---
         self._qjl = None
@@ -238,6 +237,12 @@ class SpectralQuantizer(Quantizer):
         """
         import mlx.core as mx
 
+        if ev.norm is None or ev.final_radius is None:
+            raise ValueError(
+                "SpectralQuantizer.decode: ev.norm/final_radius is None — "
+                "ev wasn't produced by this quantizer's encode()."
+            )
+
         sig_scale = ev.norm.astype(mx.float32)[:, None]  # (batch, 1)
         noise_scale = ev.final_radius.astype(mx.float32)[:, None]  # (batch, 1)
         indices_np = np.array(ev.indices, dtype=np.int32)  # (batch, d)
@@ -294,6 +299,12 @@ class SpectralQuantizer(Quantizer):
         q_rot = (self._R @ q_f32).reshape(-1)  # (d,)
         q_rot_s = q_rot[: self._d_s]  # signal dims of query
         q_rot_n = q_rot[self._d_s :]  # noise dims of query
+
+        if ev.norm is None or ev.final_radius is None:
+            raise ValueError(
+                "SpectralQuantizer.estimate_inner_product: ev.norm/final_radius is "
+                "None — ev wasn't produced by this quantizer's encode()."
+            )
 
         sig_scale = ev.norm.astype(mx.float32)  # (batch,)
         noise_scale = ev.final_radius.astype(mx.float32)  # (batch,)

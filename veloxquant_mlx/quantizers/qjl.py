@@ -1,3 +1,16 @@
+"""QJL — 1-bit Quantized Johnson-Lindenstrauss key-vector quantizer.
+
+Projects each key vector through a random Johnson-Lindenstrauss sketch
+matrix and stores only the sign of the projection plus the vector's L2
+norm, giving a 1-bit-per-projected-dimension representation. Inner
+products against a query are recovered via the unbiased estimator
+``ProdQJL(q, k) = sqrt(pi/2)/m * ||k|| * <S*q, sign(S*k)>`` rather than by
+reconstructing ``k`` itself — ``decode()`` exists only as a biased
+approximation for MSE testing, not the primary usage path. This is the
+JL-sketch building block that ``TurboQuantProd`` reuses for its residual
+stage.
+"""
+
 from __future__ import annotations
 
 from typing import Any

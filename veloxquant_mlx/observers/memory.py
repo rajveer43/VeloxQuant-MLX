@@ -1,3 +1,14 @@
+"""Observer that tracks per-pipeline-stage RSS memory deltas.
+
+Provides :class:`MemoryObserver`, which accumulates
+``memory_delta_bytes`` from :class:`~veloxquant_mlx.observers.base.QuantizationEvent`
+per stage name and reports both per-stage totals and the single largest
+delta observed. Relies on the pipeline emitter to have measured RSS
+before/after each stage (e.g. via ``psutil``) and populated
+``memory_delta_bytes`` accordingly — this observer itself does no
+measurement.
+"""
+
 from __future__ import annotations
 
 from veloxquant_mlx.core.abstractions import QuantizationObserver

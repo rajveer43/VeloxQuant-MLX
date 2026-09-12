@@ -1,3 +1,13 @@
+"""Handler stage applying scalar codebook quantization to the current vector.
+
+Delegates to a ``Codebook`` (e.g. a Lloyd-Max or ``VoronoiTree``-backed
+scalar codebook) to quantize ``ctx.x_current`` into ``ctx.indices`` on
+encode, and dequantize back to a reconstructed ``ctx.x_current`` on decode;
+on encode it also eagerly dequantizes so downstream handlers (such as
+``QJLResidualHandler``) can compute a residual against the MSE
+reconstruction.
+"""
+
 from __future__ import annotations
 
 from veloxquant_mlx.core.abstractions import Codebook, QuantizationHandler

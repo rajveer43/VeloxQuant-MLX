@@ -61,17 +61,6 @@ def _rotate_np(x: np.ndarray, diag: np.ndarray, use_hadamard: bool) -> np.ndarra
     return xf  # already rotated by caller
 
 
-def _rotate_mx(
-    x: mx.array, diag_mx: mx.array, use_hadamard: bool, rot_mx: mx.array | None = None
-) -> mx.array:
-    """Apply rotation in MLX (lazy)."""
-    xf = x.astype(mx.float32)
-    if use_hadamard:
-        xd = xf * diag_mx[None, :]
-        return mx.fast.hadamard_transform(xd, scale=1.0 / mx.sqrt(mx.array(float(xf.shape[-1]))))
-    return xf @ rot_mx.T
-
-
 def _pack_signs(residual: np.ndarray) -> np.ndarray:
     """Pack sign(residual) into uint8 bits. Shape [N, D] → [N, D//8]."""
     signs = (residual >= 0).astype(np.uint8)  # 1 = positive, 0 = negative
@@ -176,6 +165,17 @@ class RaBitQQuantizer(Quantizer):
         return self._trained
 
     @property
+    def _centroids(self) -> np.ndarray:
+        """Non-None centroids array, for use after a `self._trained` guard.
+
+        `_centroids_np` is None until `fit()` runs; every caller already
+        checks `self._trained` first, but that check doesn't narrow a
+        separate Optional field for mypy.
+        """
+        assert self._centroids_np is not None
+        return self._centroids_np
+
+    @property
     def compression_ratio(self) -> float:
         """Memory ratio vs fp16: (D*2 bytes) / (D//8 bytes) = 16×."""
         return float(self._d * 2) / float(self._n_bytes)
@@ -194,15 +194,6 @@ class RaBitQQuantizer(Quantizer):
             return np.array(out, dtype=np.float32)
         xd = x * self._diag_np[None, :]
         return xd @ np.array(self._rot_mx, dtype=np.float32).T
-
-    def _rotate_batch_mx(self, x: mx.array) -> mx.array:
-        """Rotate [N, D] mlx array lazily."""
-        xf = x.astype(mx.float32)
-        if self._use_hadamard:
-            xd = xf * self._diag_mx[None, :]
-            return mx.hadamard_transform(xd, scale=1.0 / float(self._d) ** 0.5)
-        xd = xf * self._diag_mx[None, :]
-        return xd @ self._rot_mx.T
 
     # ------------------------------------------------------------------
     # fit
@@ -240,11 +231,11 @@ class RaBitQQuantizer(Quantizer):
     # encode
     # ------------------------------------------------------------------
 
-    def encode(self, keys: mx.array, **kwargs) -> EncodedVector:
+    def encode(self, x: mx.array, **kwargs: Any) -> EncodedVector:
         """Encode keys into 1-bit RaBitQ representation.
 
         Args:
-            keys: [N, D] fp16/fp32 keys (pre-rotation, i.e. raw keys).
+            x: [N, D] fp16/fp32 keys (pre-rotation, i.e. raw keys).
 
         Returns:
             EncodedVector:
@@ -254,6 +245,7 @@ class RaBitQQuantizer(Quantizer):
         if not self._trained:
             raise RuntimeError("RaBitQQuantizer has not been trained — call fit() first")
 
+        keys = x
         if isinstance(keys, mx.array):
             keys_np = np.array(keys, dtype=np.float32)
         else:
@@ -265,11 +257,9 @@ class RaBitQQuantizer(Quantizer):
         xhat = self._rotate_batch_np(keys_np)  # [N, D]
 
         # 2. Assign to nearest centroid
-        dists = np.sum(
-            (xhat[:, None, :] - self._centroids_np[None, :, :]) ** 2, axis=-1
-        )  # [N, nlist]
+        dists = np.sum((xhat[:, None, :] - self._centroids[None, :, :]) ** 2, axis=-1)  # [N, nlist]
         cids = np.argmin(dists, axis=1).astype(np.int32)  # [N]
-        c = self._centroids_np[cids]  # [N, D]
+        c = self._centroids[cids]  # [N, D]
 
         # 3. Residual
         residual = xhat - c  # [N, D]
@@ -314,7 +304,7 @@ class RaBitQQuantizer(Quantizer):
 
         cids = meta_np[:, 0].astype(np.int32)
         L1 = meta_np[:, 2]  # [N]
-        c = self._centroids_np[cids]  # [N, D]
+        c = self._centroids[cids]  # [N, D]
 
         # Reconstruct approximate rotated vector
         signs = _unpack_signs(packed_np, self._d)  # [N, D] ±1
@@ -374,7 +364,7 @@ class RaBitQQuantizer(Quantizer):
         qhat = self._rotate_batch_np(q_np)[0]  # [D]
 
         # --- 2. Probe nProbe nearest centroids ---
-        c_dists = np.sum((self._centroids_np - qhat[None, :]) ** 2, axis=1)  # [nlist]
+        c_dists = np.sum((self._centroids - qhat[None, :]) ** 2, axis=1)  # [nlist]
         probe_ids = np.argsort(c_dists)[: self._nprobe]  # [nprobe] centroid ids
 
         # --- 3. Gather candidates from probed clusters ---
@@ -395,7 +385,7 @@ class RaBitQQuantizer(Quantizer):
 
         # --- 4. Quantise query per centroid (use mean over probed centroids) ---
         # For simplicity: use nearest centroid's residual for query
-        nearest_c = self._centroids_np[probe_ids[0]]  # [D]
+        nearest_c = self._centroids[probe_ids[0]]  # [D]
         q_residual = qhat - nearest_c
         L1_q = float(np.sum(np.abs(q_residual)))
         scale_val = L1_q / self._d

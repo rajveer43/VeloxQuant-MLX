@@ -1,3 +1,16 @@
+"""Sliding-window eviction decorator wrapping any standalone KVCache.
+
+:class:`SlidingWindowKVCache` composes over another
+:class:`~veloxquant_mlx.core.abstractions.KVCache` instance to cap it at the
+most recent ``window_size`` tokens. Because the wrapped caches (TurboQuant,
+PolarQuant, QJL, etc.) don't support random deletion, eviction is
+implemented by keeping raw key/value vectors in ring buffers and rebuilding
+a fresh inner cache each time the window advances — correct but O(window)
+per eviction, so it targets inference rather than training. Only compatible
+with :data:`~veloxquant_mlx.cache.base.STANDALONE_METHODS` (see
+``KVCacheFactory.create``'s ``sliding_window`` handling).
+"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -77,10 +90,14 @@ class SlidingWindowKVCache(KVCache):
 
             cap = fresh._k_indices._capacity
             fresh._k_indices = RingBuffer(cap)
-            fresh._k_signs = RingBuffer(cap)
-            fresh._k_norms = RingBuffer(cap)
-            fresh._v_cache = RingBuffer(cap)
-            fresh._v_scales = RingBuffer(cap)
+            # These four attribute names are specific to whichever concrete
+            # KVCache subclass _inner happens to be (not part of the KVCache
+            # ABC) — reached into reflectively like _k_indices above, since
+            # this class works with any wrapped cache that has this shape.
+            fresh._k_signs = RingBuffer(cap)  # type: ignore[attr-defined]
+            fresh._k_norms = RingBuffer(cap)  # type: ignore[attr-defined]
+            fresh._v_cache = RingBuffer(cap)  # type: ignore[attr-defined]
+            fresh._v_scales = RingBuffer(cap)  # type: ignore[attr-defined]
             if hasattr(fresh, "_k_residual_norms"):
                 fresh._k_residual_norms = RingBuffer(cap)
         # Re-append window tokens

@@ -24,10 +24,11 @@ Usage::
 from __future__ import annotations
 
 import copy
+import types
 import typing
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Union
+from typing import Any, Union, cast
 
 __all__ = [
     "ServeTier",
@@ -434,7 +435,10 @@ def describe_field(name: str) -> dict[str, Any]:
     annotation = hints[name]
     optional = False
     origin = typing.get_origin(annotation)
-    if origin is Union:
+    # KVCacheConfig fields use PEP 604 `int | None` syntax, which resolves to
+    # types.UnionType, not typing.Union — both must be checked, or every
+    # Optional field here (25 of them) silently falls through as "unknown".
+    if origin is Union or origin is types.UnionType:
         args = [a for a in typing.get_args(annotation) if a is not type(None)]
         optional = len(args) != len(typing.get_args(annotation))
         annotation = args[0] if args else annotation
@@ -525,11 +529,16 @@ def _run_probe(method: str) -> tuple[ServeTier, str | None]:
     from mlx_lm.models.cache import KVCache as _MLXKVCache
     from mlx_lm.models.cache import can_trim_prompt_cache
 
-    from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
+    from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory, MethodName
 
     try:
+        # method always originates from all_method_names(), which reads this
+        # same Literal back via reflection (see its docstring) — mypy can't
+        # see that connection through the reflection, but the invariant holds.
         cache = KVCacheFactory.create(
-            KVCacheConfig(method=method, head_dim=128, bit_width_inlier=2, seed=42)
+            KVCacheConfig(
+                method=cast(MethodName, method), head_dim=128, bit_width_inlier=2, seed=42
+            )
         )
     except Exception as exc:  # construction failure is itself disqualifying
         return ServeTier.CRASHES, f"cache construction failed: {type(exc).__name__}: {exc}"
@@ -604,12 +613,22 @@ def telemetry_coverage(method: str) -> TelemetryCoverage:
     coverage = TelemetryCoverage.NONE
     try:
         import mlx.core as mx
+        from mlx_lm.models.cache import KVCache as _MLXKVCache
 
-        from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
+        from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory, MethodName
 
+        # method always originates from all_method_names() — see the
+        # analogous comment in _run_probe.
         cache = KVCacheFactory.create(
-            KVCacheConfig(method=method, head_dim=128, bit_width_inlier=2, seed=42)
+            KVCacheConfig(
+                method=cast(MethodName, method), head_dim=128, bit_width_inlier=2, seed=42
+            )
         )
+        # Callers only reach here when tier.is_servable, which _run_probe
+        # already established means cache subclasses mlx_lm's KVCache (see its
+        # isinstance check) — standalone methods report CRASHES there instead.
+        if not isinstance(cache, _MLXKVCache):
+            return TelemetryCoverage.NONE
         keys = mx.random.normal((1, 8, 8, 128)).astype(mx.float16)
         cache.update_and_fetch(keys, keys)
 

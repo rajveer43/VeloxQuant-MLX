@@ -1,12 +1,25 @@
+"""TurboQuant-compressed drop-in replacement for ``mlx.nn.Linear``.
+
+Defines ``QuantizedLinear``, which compresses a weight matrix row-by-row
+by L2-normalizing each row, rotating it (Hadamard or QR), and quantizing
+the rotated coordinates against a Lloyd-Max codebook fit for unit-norm
+post-rotation vectors — the same rotate-then-quantize recipe as the
+TurboQuant KV-cache quantizers, applied here to model weights instead of
+keys/values. The forward pass dequantizes, unrotates, and rescales by the
+stored per-row norm before the matrix multiply.
+"""
+
 from __future__ import annotations
 
 import math
+from typing import Literal
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
 from veloxquant_mlx.codebooks.base import CodebookFactory
+from veloxquant_mlx.core.abstractions import Preconditioner
 from veloxquant_mlx.math.rotation import (
     is_hadamard_compatible,
     make_hadamard_diagonal,
@@ -61,13 +74,13 @@ class QuantizedLinear(nn.Module):
         use_hadamard_actual = use_hadamard and is_hadamard_compatible(in_features)
         if use_hadamard_actual:
             D_np = make_hadamard_diagonal(in_features, seed=seed)
-            self._preconditioner = HadamardPreconditioner(mx.array(D_np))
+            self._preconditioner: Preconditioner = HadamardPreconditioner(mx.array(D_np))
         else:
             Pi_np = make_rotation_matrix(in_features, seed=seed)
             self._preconditioner = RotationPreconditioner(mx.array(Pi_np.astype(np.float32)))
 
         # Lloyd-Max codebook for N(0, 1/sqrt(in)) — valid for unit-norm rotated rows
-        distribution = "gaussian" if in_features >= 64 else "beta"
+        distribution: Literal["gaussian", "beta"] = "gaussian" if in_features >= 64 else "beta"
         self._codebook = CodebookFactory.create(distribution, b=bits, d=in_features)
         self._centroids: mx.array = self._codebook.centroids_mx()  # (2^bits,) fp16
 

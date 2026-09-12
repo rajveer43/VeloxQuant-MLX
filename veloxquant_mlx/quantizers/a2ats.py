@@ -253,7 +253,7 @@ def a2ats_select_retrieval_set(
     n_retrieve = max(1, math.ceil(retrieval_fraction * n))
     n_retrieve = min(n_retrieve, n)
 
-    heap: MaxHeap = MaxHeap()
+    heap: MaxHeap[int] = MaxHeap()
     sim_list = sim.tolist()
     for i, s in enumerate(sim_list):
         heap.push(float(s), i)

@@ -140,7 +140,7 @@ def turboquant_scalar_quantize(
         )
     *leading, d = x.shape
     # Only promote to fp32 if the input isn't already a Metal-native float
-    # type: the kernel body does float(x[elem]) internally (see
+    # dtype: the kernel body does float(x[elem]) internally (see
     # _SCALAR_QUANTIZE_SRC), so fp16/fp32 input can be passed straight
     # through without an extra MLX cast dispatch beforehand.
     if x.dtype in (mx.float16, mx.float32):

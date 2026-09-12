@@ -1,3 +1,14 @@
+"""Data-carrying types shared across the quantization handler chain and quantizers.
+
+``QuantizationContext`` is the mutable payload passed between
+``QuantizationHandler`` stages (see ``veloxquant_mlx.handlers``) as it is
+encoded or decoded; ``EncodedVector`` is the typed, memory-accountable output
+of ``Quantizer.encode()``; ``TransformResult`` carries the per-level angles and
+radius produced by a recursive polar transform. These dataclasses decouple the
+handler pipeline and quantizer implementations from MLX's array type via
+lazy import.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

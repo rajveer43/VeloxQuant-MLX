@@ -1,11 +1,24 @@
+"""TurboQuant Prod — two-stage unbiased-inner-product quantizer.
+
+The flagship TurboQuant variant: stage 1 rotates and MSE-quantizes the
+vector at ``b-1`` bits (as in ``TurboQuantMSE``); stage 2 applies QJL
+(``quantizers/qjl.py``) to the leftover residual ``r = x - x_hat_mse``.
+Combining the two stages' contributions yields an inner-product estimator
+that is unbiased rather than merely low-error, at roughly one extra bit of
+storage over single-pass MSE quantization. Also defines
+``TurboQuantProdAdaptive``, a subclass that defaults
+``use_adaptive_codebook=True`` so the stage-1 codebook is refit from
+observed post-rotation data instead of using the fixed Gaussian/Beta prior.
+"""
+
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
 from veloxquant_mlx.codebooks.base import CodebookFactory
-from veloxquant_mlx.core.abstractions import ArtifactStore, Quantizer
+from veloxquant_mlx.core.abstractions import ArtifactStore, Preconditioner, Quantizer
 from veloxquant_mlx.core.constants import SQRT_PI_OVER_2
 from veloxquant_mlx.core.context import EncodedVector
 from veloxquant_mlx.core.registry import QuantizerRegistry
@@ -80,7 +93,7 @@ class TurboQuantProd(Quantizer):
         if use_hadamard and is_hadamard_compatible(d):
             D_np = make_hadamard_diagonal(d, seed=seed)
             D = mx.array(D_np)
-            self._rotation = HadamardPreconditioner(D)
+            self._rotation: Preconditioner = HadamardPreconditioner(D)
         else:
             if store is not None and store.exists("rotation", d=d, seed=seed):
                 Pi = store.load_rotation_matrix(d, seed)
@@ -92,7 +105,7 @@ class TurboQuantProd(Quantizer):
             self._rotation = RotationPreconditioner(Pi)
 
         # MSE codebook at (b-1) bits
-        distribution = "gaussian" if d >= 64 else "beta"
+        distribution: Literal["gaussian", "beta"] = "gaussian" if d >= 64 else "beta"
         dist_key = distribution
         if store is not None and store.exists(
             "codebook", distribution=dist_key, b=self._b_mse, d=d
@@ -201,6 +214,12 @@ class TurboQuantProd(Quantizer):
             Reconstructed array of shape (batch, d), fp16.
         """
         import mlx.core as mx
+
+        if ev.signs is None or ev.residual_norm is None:
+            raise ValueError(
+                "TurboQuantProd.decode: ev.signs/residual_norm is None — "
+                "ev wasn't produced by this quantizer's encode()."
+            )
 
         y_hat = self._codebook.dequantize(ev.indices)
         x_hat_mse = self._rotation.apply_inverse(y_hat)

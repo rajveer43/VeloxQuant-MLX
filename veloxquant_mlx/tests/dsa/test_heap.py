@@ -9,7 +9,7 @@ from veloxquant_mlx.dsa.heap import MaxHeap, SortedChannelIndex
 
 class TestMaxHeap:
     def test_push_pop_order(self) -> None:
-        heap = MaxHeap()
+        heap: MaxHeap[int] = MaxHeap()
         heap.push(3.0, 0)
         heap.push(1.0, 1)
         heap.push(5.0, 2)
@@ -20,26 +20,26 @@ class TestMaxHeap:
         assert p0 >= p1
 
     def test_pop_gives_max(self) -> None:
-        heap = MaxHeap()
+        heap: MaxHeap[int] = MaxHeap()
         for v in [4.0, 1.0, 9.0, 2.0, 7.0]:
             heap.push(v, int(v))
         p, _ = heap.pop()
         assert p == 9.0
 
     def test_empty_pop_raises(self) -> None:
-        heap = MaxHeap()
+        heap: MaxHeap[int] = MaxHeap()
         with pytest.raises(IndexError):
             heap.pop()
 
     def test_len(self) -> None:
-        heap = MaxHeap()
+        heap: MaxHeap[int] = MaxHeap()
         assert len(heap) == 0
         heap.push(1.0, 0)
         heap.push(2.0, 1)
         assert len(heap) == 2
 
     def test_peek(self) -> None:
-        heap = MaxHeap()
+        heap: MaxHeap[int] = MaxHeap()
         heap.push(3.0, 0)
         heap.push(7.0, 1)
         p, _ = heap.peek()
@@ -47,7 +47,7 @@ class TestMaxHeap:
         assert len(heap) == 2  # peek does not remove
 
     def test_single_element(self) -> None:
-        heap = MaxHeap()
+        heap: MaxHeap[int] = MaxHeap()
         heap.push(42.0, 0)
         p, v = heap.pop()
         assert p == 42.0

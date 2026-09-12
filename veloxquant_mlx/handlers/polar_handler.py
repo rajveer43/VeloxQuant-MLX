@@ -1,3 +1,14 @@
+"""Handler stage applying the recursive polar transform (PolarQuant-style pipeline).
+
+Wraps a ``Transform`` (typically ``RecursivePolarTransform``) as a
+``QuantizationHandler`` stage: on encode it runs ``transform.forward()``,
+storing the resulting per-level angles in ``ctx.angles`` and the terminal
+scalar radius in ``ctx.final_radius`` (with the first angle set forwarded as
+``ctx.x_current`` for downstream scalar quantization); on decode it
+reconstructs a ``TransformResult`` from ``ctx.angles``/``ctx.final_radius``
+and runs ``transform.inverse()``.
+"""
+
 from __future__ import annotations
 
 from veloxquant_mlx.core.abstractions import QuantizationHandler, Transform
