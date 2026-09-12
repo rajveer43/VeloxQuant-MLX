@@ -10,6 +10,7 @@ server's own ``--host``, which the user may set to ``0.0.0.0``.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -186,10 +187,8 @@ def serve_panel(port: int = 7860, open_browser: bool = True) -> None:
     print("[veloxquant panel] press Ctrl-C to quit")
 
     if open_browser:
-        try:
+        with contextlib.suppress(Exception):
             webbrowser.open(url)
-        except Exception:
-            pass
 
     try:
         httpd.serve_forever()

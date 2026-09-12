@@ -146,10 +146,7 @@ class PrefixCache:
         """
         from mlx_lm.generate import stream_generate
 
-        if isinstance(prompt, str):
-            token_ids = tokenizer.encode(prompt)
-        else:
-            token_ids = list(prompt)
+        token_ids = tokenizer.encode(prompt) if isinstance(prompt, str) else list(prompt)
 
         cache, rest = self.fetch(model, token_ids, model_key=model_key)
         cache_key = list(token_ids)

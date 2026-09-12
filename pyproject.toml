@@ -109,7 +109,7 @@ target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W", "UP", "B", "PTH", "RET"]
+select = ["E", "F", "I", "W", "UP", "B", "PTH", "RET", "SIM"]
 ignore = ["E501"]
 
 [tool.ruff.lint.isort]

@@ -248,9 +248,9 @@ def metal_fused_sdpa(
     _, _, _, n_sub_v = v_indices.shape
     n_centroids_v, sub_dim_v = v_codebook.shape
 
-    if D != n_sub * sub_dim:
+    if n_sub * sub_dim != D:
         raise ValueError(f"fused_sdpa: D={D} must equal n_sub*sub_dim={n_sub * sub_dim}.")
-    if D != n_sub_v * sub_dim_v:
+    if n_sub_v * sub_dim_v != D:
         raise ValueError(f"fused_sdpa: D={D} must equal n_sub_v*sub_dim_v={n_sub_v * sub_dim_v}.")
     if n_centroids != n_centroids_v:
         raise ValueError(

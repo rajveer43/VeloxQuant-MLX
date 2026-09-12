@@ -103,10 +103,7 @@ class PolarAngleSamplingStrategy(CodebookStrategy):
         Returns:
             Sorted centroid array of shape (2^b,), float64.
         """
-        if self.level == 1:
-            support = (0.0, 2 * math.pi - 1e-6)
-        else:
-            support = (1e-6, math.pi / 2 - 1e-6)
+        support = (0.0, 2 * math.pi - 1e-6) if self.level == 1 else (1e-6, math.pi / 2 - 1e-6)
 
         def pdf_fn(x):
             return polar_angle_pdf(x, self.level)

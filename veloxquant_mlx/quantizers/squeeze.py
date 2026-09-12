@@ -156,12 +156,9 @@ def squeeze_budgets(
     clamped = [min(max(c, 0.0), 1.0) for c in concentrations]
     raw = [1.0 - c for c in clamped]
     total_raw = sum(raw)
-    if total_raw <= 0.0:
-        # All layers maximally concentrated → fall back to uniform.
-        weights = [1.0] * n_layers
-    else:
-        # Normalise so the weights average 1.0 (sum == n_layers).
-        weights = [w * n_layers / total_raw for w in raw]
+    # All layers maximally concentrated -> fall back to uniform; otherwise
+    # normalise so the weights average 1.0 (sum == n_layers).
+    weights = [1.0] * n_layers if total_raw <= 0.0 else [w * n_layers / total_raw for w in raw]
 
     budgets: list[int] = []
     for w in weights:

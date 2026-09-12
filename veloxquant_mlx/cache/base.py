@@ -1044,11 +1044,10 @@ class KVCacheBuilder:
                 caches.append(_fallback_for(i))
                 continue
             hd = getattr(attn, "head_dim", None)
-            if hd is None:
-                if args is not None:
-                    hd = getattr(args, "head_dim", None) or (
-                        args.hidden_size // args.num_attention_heads
-                    )
+            if hd is None and args is not None:
+                hd = getattr(args, "head_dim", None) or (
+                    args.hidden_size // args.num_attention_heads
+                )
             if hd is None:
                 caches.append(_fallback_for(i))
                 continue

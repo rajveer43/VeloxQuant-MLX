@@ -449,9 +449,11 @@ def test_leverage_scores_does_not_hang_when_gesvd_fallback_stalls() -> None:
         raise AssertionError("should never actually finish sleeping in this test")
 
     t0 = time.time()
-    with patch("numpy.linalg.svd", side_effect=np.linalg.LinAlgError("SVD did not converge")):
-        with patch("scipy.linalg.svd", side_effect=_hang_forever):
-            scores = _leverage_scores(query, keys, values, rank_cap=8)
+    with (
+        patch("numpy.linalg.svd", side_effect=np.linalg.LinAlgError("SVD did not converge")),
+        patch("scipy.linalg.svd", side_effect=_hang_forever),
+    ):
+        scores = _leverage_scores(query, keys, values, rank_cap=8)
     elapsed = time.time() - t0
 
     assert elapsed < _GESVD_TIMEOUT_S * 2, (

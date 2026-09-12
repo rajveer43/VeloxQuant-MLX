@@ -10,6 +10,7 @@ for unit tests.
 
 from __future__ import annotations
 
+import contextlib
 import os
 from pathlib import Path
 from typing import Any
@@ -50,10 +51,8 @@ def load_cached_rotations(model_name: str) -> dict | None:
     for k in keys_in_file:
         parts = k.split("_")
         if len(parts) >= 2 and parts[0] == "layer":
-            try:
+            with contextlib.suppress(ValueError):
                 layer_ids.add(int(parts[1]))
-            except ValueError:
-                pass
     for layer_idx in layer_ids:
         key_U = data[f"layer_{layer_idx}_key_U"]
         val_U = data[f"layer_{layer_idx}_val_U"]

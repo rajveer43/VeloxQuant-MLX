@@ -29,9 +29,7 @@ def _looks_servable(repo_id: str) -> bool:
     if any(marker in lowered for marker in _EXCLUDE_MARKERS):
         return False
     # VLMs load through mlx_vlm, not the text path this server uses.
-    if "-vl-" in lowered or lowered.endswith("-vl"):
-        return False
-    return True
+    return not ("-vl-" in lowered or lowered.endswith("-vl"))
 
 
 def local_models() -> list[dict[str, Any]]:

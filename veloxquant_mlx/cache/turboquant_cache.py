@@ -29,10 +29,7 @@ class TurboQuantKVCache(KVCache):
         self._config = config
         d = config.head_dim
         b = config.bit_width_inlier
-        if config.jl_dim is not None:
-            m = config.jl_dim
-        else:
-            m = TurboQuantProd.m_default(d, b)
+        m = config.jl_dim if config.jl_dim is not None else TurboQuantProd.m_default(d, b)
         seed = config.seed
         store = config.store
         use_prod = config.method == "turboquant_prod"

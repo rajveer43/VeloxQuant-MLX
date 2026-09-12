@@ -122,11 +122,9 @@ def test_decode_accumulation_across_flushes() -> None:
     always equals total tokens pushed, and aged tokens DO get quantized."""
     r = 8
     cache = _make(nsn_residual_length=r)
-    total = 0
-    for step in range(3 * r):
+    for total, step in enumerate(range(3 * r), start=1):
         k, v = _kv(1, 2, 1, 128, seed=100 + step)
         ko, vo = cache.update_and_fetch(k, v)
-        total += 1
         assert ko.shape[2] == total
     assert cache.quantized_tokens == 3 * r  # decode tokens age into chunks
 

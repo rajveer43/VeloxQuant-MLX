@@ -191,7 +191,7 @@ class KVQuantKVCache(_MLXKVCache):
         # Otherwise the very tokens we keep exact would still skew the datatype
         # derived for every other token.
         n_sink = min(self._n_sink, S) if self._n_tokens == 0 else 0
-        fit_slice = slice(n_sink, None) if n_sink > 0 and S > n_sink else slice(None)
+        fit_slice = slice(n_sink, None) if n_sink > 0 and n_sink < S else slice(None)
         if refit_keys:
             self._capture_key_thresholds(keys[:, :, fit_slice, :])
 

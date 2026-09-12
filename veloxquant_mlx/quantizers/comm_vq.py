@@ -259,7 +259,7 @@ class CommVQQuantizer(Quantizer):
 
         data_np = data_np.reshape(-1, self._d)
         N = data_np.shape[0]
-        if N > max_samples:
+        if max_samples < N:
             rng = np.random.default_rng(self._seed)
             idx = rng.choice(N, size=max_samples, replace=False)
             data_np = data_np[idx]

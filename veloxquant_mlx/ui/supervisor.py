@@ -9,6 +9,7 @@ actually announce.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import signal
@@ -280,10 +281,8 @@ class ServerSupervisor:
         except (ValueError, OSError):
             pass  # pipe closed during shutdown
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 pipe.close()
-            except Exception:
-                pass
 
     def _on_ready(self, line: str) -> None:
         try:

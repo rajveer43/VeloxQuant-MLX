@@ -93,10 +93,7 @@ class KVMemoryTracker:
 
     def snapshot(self, model):
         total = 0
-        if hasattr(model, "model"):
-            layers = model.model.layers
-        else:
-            layers = getattr(model, "layers", [])
+        layers = model.model.layers if hasattr(model, "model") else getattr(model, "layers", [])
         for layer in layers:
             for attn_name in ("self_attn", "attention"):
                 attn = getattr(layer, attn_name, None)

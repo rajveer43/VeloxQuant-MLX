@@ -155,10 +155,7 @@ class SpectralQuantKVCache(KVCache):
         Args:
             v: Value vector, shape (d,) or (1, d), fp16.
         """
-        if v.ndim > 1:
-            v = v.reshape(1, -1)
-        else:
-            v = v[None]
+        v = v.reshape(1, -1) if v.ndim > 1 else v[None]
         ev = self._val_q.encode(v)
         if len(self._v_encoded) >= self._capacity:
             self._v_encoded.pop(0)
