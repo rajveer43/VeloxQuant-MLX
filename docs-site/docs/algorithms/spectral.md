@@ -140,7 +140,7 @@ print(per_dim_bits)  # e.g. [8, 8, 6, 4, 2, 1, 1, ...]
 | `spectral_apply_qjl` | `bool` | `True` | Apply QJL sign-sketch on key signal dimensions |
 | `spectral_model_name` | `str` | `"model"` | Identifier used for the on-disk rotation cache |
 
-Calibration is a separate, explicit step: call `cache.calibrate(rotation_entry)` after `KVCacheBuilder.build(...)` for each layer, using the tuples from `calibrate_spectral_rotation()` or `load_cached_rotations()`. Without it, the cache runs with a random orthogonal rotation instead of a data-derived one.
+Calibration is a separate, explicit step: call `cache.calibrate(rotation_entry)` after building each layer's cache with `KVCacheFactory.create(config)` (`spectral` is a standalone method — see the warning in [Inference](#inference) — so there is no `KVCacheBuilder.build(...)`/`.for_model(...)` step here), using the tuples from `calibrate_spectral_rotation()` or `load_cached_rotations()`. Without it, the cache runs with a random orthogonal rotation instead of a data-derived one.
 
 ## When to use SpectralQuant
 
