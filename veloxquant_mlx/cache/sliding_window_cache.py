@@ -77,10 +77,14 @@ class SlidingWindowKVCache(KVCache):
 
             cap = fresh._k_indices._capacity
             fresh._k_indices = RingBuffer(cap)
-            fresh._k_signs = RingBuffer(cap)
-            fresh._k_norms = RingBuffer(cap)
-            fresh._v_cache = RingBuffer(cap)
-            fresh._v_scales = RingBuffer(cap)
+            # These four attribute names are specific to whichever concrete
+            # KVCache subclass _inner happens to be (not part of the KVCache
+            # ABC) — reached into reflectively like _k_indices above, since
+            # this class works with any wrapped cache that has this shape.
+            fresh._k_signs = RingBuffer(cap)  # type: ignore[attr-defined]
+            fresh._k_norms = RingBuffer(cap)  # type: ignore[attr-defined]
+            fresh._v_cache = RingBuffer(cap)  # type: ignore[attr-defined]
+            fresh._v_scales = RingBuffer(cap)  # type: ignore[attr-defined]
             if hasattr(fresh, "_k_residual_norms"):
                 fresh._k_residual_norms = RingBuffer(cap)
         # Re-append window tokens

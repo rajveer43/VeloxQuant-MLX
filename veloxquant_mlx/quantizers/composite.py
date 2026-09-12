@@ -75,6 +75,12 @@ class CompositeQuantizer(Quantizer):
         """
         import mlx.core as mx
 
+        if ev.outlier_encoded is None or ev.inlier_encoded is None:
+            raise ValueError(
+                "CompositeQuantizer.decode: ev.outlier_encoded/inlier_encoded is "
+                "None — ev wasn't produced by this quantizer's encode()."
+            )
+
         x_out = self._outlier_q.decode(ev.outlier_encoded)  # (batch, n_out)
         x_in = self._inlier_q.decode(ev.inlier_encoded)  # (batch, n_in)
 
@@ -94,6 +100,13 @@ class CompositeQuantizer(Quantizer):
         Returns:
             Estimated inner products, shape (batch,), fp16.
         """
+        if ev.outlier_encoded is None or ev.inlier_encoded is None:
+            raise ValueError(
+                "CompositeQuantizer.estimate_inner_product: "
+                "ev.outlier_encoded/inlier_encoded is None — ev wasn't produced "
+                "by this quantizer's encode()."
+            )
+
         q_flat = q.reshape(-1)
         q_out = q_flat[self._outlier_idx]
         q_in = q_flat[self._inlier_idx]

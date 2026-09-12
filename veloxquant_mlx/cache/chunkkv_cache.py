@@ -182,12 +182,22 @@ class ChunkKVCache(_MLXKVCache):
                     if self._coordinator is not None and self._layer_id is not None:
                         self._coordinator.publish(self._layer_id, h, kept)
                 else:
-                    kept = self._coordinator.fetch(self._layer_id, h)
+                    # _is_leader is False only when coordinator/layer_id are both
+                    # non-None (see the `_is_leader =` assignment in __init__).
+                    assert self._coordinator is not None and self._layer_id is not None
+                    fetched = self._coordinator.fetch(self._layer_id, h)
+                    if fetched is None:
+                        raise RuntimeError(
+                            f"ChunkKVCache: follower layer {self._layer_id} fetched no "
+                            f"published indices for head {h} — its leader layer must be "
+                            f"updated first within the same step (see "
+                            f"ChunkKVIndexReuseCoordinator.fetch's docstring)."
+                        )
                     self._states[idx] = chunkkv_apply_reuse_indices(
                         self._states[idx],
                         keys[b, h].astype(mx.float16),
                         values[b, h].astype(mx.float16),
-                        kept,
+                        fetched,
                     )
 
         # 2) Whole-chunk retention lets heads keep slightly different token counts;

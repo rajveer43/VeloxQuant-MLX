@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Literal, overload
 
 import mlx.core as mx
 
@@ -295,6 +296,20 @@ def _lowest_scoring_chunk(scores: mx.array, n_sink_eff: int, chunk_size: int) ->
     return list(range(a, b))
 
 
+@overload
+def chunkkv_update(
+    state: ChunkKVState,
+    new_keys: mx.array,
+    new_values: mx.array,
+    record_kept_positions: Literal[False] = False,
+) -> ChunkKVState: ...
+@overload
+def chunkkv_update(
+    state: ChunkKVState,
+    new_keys: mx.array,
+    new_values: mx.array,
+    record_kept_positions: Literal[True],
+) -> tuple[ChunkKVState, list[list[int]]]: ...
 def chunkkv_update(
     state: ChunkKVState,
     new_keys: mx.array,  # [S, D] fp16
@@ -498,7 +513,8 @@ def chunkkv_trim_to(state: ChunkKVState, n: int) -> ChunkKVState:
     Returns:
         A trimmed ChunkKVState (or ``state`` unchanged if already within ``n``).
     """
-    if state.keys is None:
+    if state.keys is None or state.values is None or state.scores is None:
+        # keys/values/scores are all-or-nothing: None only before first update.
         return state
     n_total = int(state.keys.shape[0])
     if n_total <= n:
