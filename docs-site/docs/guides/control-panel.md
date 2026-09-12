@@ -146,7 +146,7 @@ Values are type-checked against the `KVCacheConfig` dataclass before the model
 loads, so a bad value (wrong type, unknown field name) is rejected with the
 field name in the error rather than failing deep inside cache construction.
 
-About 25 of `KVCacheConfig`'s fields — `svdq_rank` among them — are
+About 20 of `KVCacheConfig`'s fields — `svdq_rank` among them — are
 **optional**: they default to `None` and fall back to a computed default when
 left unset (`svdq_rank=None` means "derive the rank from
 `svdq_energy_threshold` instead of using a fixed rank"). Passing `--set
