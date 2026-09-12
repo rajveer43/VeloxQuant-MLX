@@ -1,3 +1,14 @@
+"""Filesystem-backed :class:`ArtifactStore` that persists artifacts as ``.npy`` files.
+
+The production ``ArtifactStore`` implementation: rotation matrices,
+codebooks, and JL sketch matrices are precomputed once (via ``python -m
+veloxquant_mlx precompute``) and cached under a root directory using a fixed
+naming scheme (``rotation_d{d}_seed{seed}.npy``, etc.), so subsequent cache
+construction can load them instead of recomputing. Writes go through
+:func:`_atomic_save` (temp file + atomic rename) so concurrent
+readers/writers targeting the same artifact never observe a partial file.
+"""
+
 from __future__ import annotations
 
 import os

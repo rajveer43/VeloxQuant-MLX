@@ -1,3 +1,16 @@
+"""Framework-level primitives shared across the whole quantization pipeline.
+
+Re-exports the abstract base classes every quantizer/codebook/cache/store
+implements (:class:`Quantizer`, :class:`Codebook`, :class:`KVCache`,
+:class:`ArtifactStore`, etc. from :mod:`~veloxquant_mlx.core.abstractions`),
+the data-carrying types passed between pipeline stages
+(:class:`EncodedVector`, :class:`QuantizationContext`, :class:`TransformResult`),
+the package's exception hierarchy, its registries
+(:class:`QuantizerRegistry`, :class:`CodebookRegistry`,
+:class:`PreconditionerRegistry`), and shared numeric constants — the
+common vocabulary the rest of ``veloxquant_mlx`` is built on.
+"""
+
 from __future__ import annotations
 
 from veloxquant_mlx.core.abstractions import (

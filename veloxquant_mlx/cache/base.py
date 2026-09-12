@@ -1,3 +1,20 @@
+"""Central KV-cache configuration, factory, and per-model builder.
+
+Defines :class:`KVCacheConfig` (one dataclass holding every method's
+hyperparameters — over 40 quantization/eviction methods share this single
+config surface, each namespacing its own fields with a method-specific
+prefix), :class:`KVCacheFactory` (dispatches ``config.method`` to the
+matching concrete cache class), and :class:`KVCacheBuilder` (a fluent
+builder plus ``for_model()``, which constructs one cache per language-model
+layer — handling per-layer bit-width schedules, hybrid-attention models, and
+methods that need a shared cross-layer coordinator such as XQuant, MiniCache,
+xKV, PyramidKV, CacheGen, SqueezeAttention, and ChunkKV layer-reuse).
+:data:`STANDALONE_METHODS` marks the methods whose cache implements
+VeloxQuant's own :class:`~veloxquant_mlx.core.abstractions.KVCache` ABC
+instead of ``mlx_lm``'s serving protocol, so ``for_model()`` can reject them
+with a clear error rather than failing deep inside generation.
+"""
+
 from __future__ import annotations
 
 import warnings

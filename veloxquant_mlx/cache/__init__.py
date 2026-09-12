@@ -1,3 +1,16 @@
+"""KV-cache implementations for every quantization/eviction method in VeloxQuant-MLX.
+
+Each sibling module implements one method's ``KVCache`` (TurboQuant, PolarQuant,
+QJL, KIVI-family, eviction methods like SnapKV/H2O/PyramidKV/ChunkKV, cross-layer
+methods like XQuant/MiniCache/xKV, etc.); this package re-exports the most
+commonly used cache classes plus the construction entry points —
+:class:`KVCacheConfig` (the shared configuration dataclass),
+:class:`KVCacheFactory` (builds a single cache from a config), and
+:class:`KVCacheBuilder` (fluent config builder / per-model cache-list
+construction via ``for_model``). See ``base.py`` for the full method
+registry and the standalone-vs-mlx_lm-protocol distinction.
+"""
+
 from __future__ import annotations
 
 from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig, KVCacheFactory

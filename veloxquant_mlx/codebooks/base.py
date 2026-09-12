@@ -1,3 +1,15 @@
+"""Factory for building :class:`ScalarCodebook` instances from a distribution name.
+
+Central entry point for codebook construction: :class:`CodebookFactory.create`
+maps a distribution string (``"gaussian"``, ``"beta"``, ``"polar_level"``,
+``"uniform"``) to the matching registered ``CodebookStrategy`` (see
+:mod:`~veloxquant_mlx.codebooks.strategies`), fits centroids for the
+requested bit-width and dimension, and wraps them in a
+:class:`~veloxquant_mlx.codebooks.scalar_codebook.ScalarCodebook`. All
+codebook instantiation in the codebase should go through this factory
+rather than constructing strategies directly.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal

@@ -1,3 +1,15 @@
+"""MLX-backed scalar codebook: nearest-centroid quantize/dequantize.
+
+Implements :class:`~veloxquant_mlx.core.abstractions.Codebook` over a sorted
+1-D array of ``2^b`` centroids. ``quantize()`` uses a boundary-count trick
+(count how many of the ``k-1`` Voronoi midpoints a value exceeds) instead of
+a full broadcast argmin, and ``dequantize()`` is a plain gather; a
+:class:`~veloxquant_mlx.dsa.avl_tree.VoronoiTree` gives an O(log k)
+pure-Python fallback for verification or when MLX is unavailable. Centroids
+are produced by a ``CodebookStrategy`` via
+:class:`~veloxquant_mlx.codebooks.base.CodebookFactory`.
+"""
+
 from __future__ import annotations
 
 from typing import Any

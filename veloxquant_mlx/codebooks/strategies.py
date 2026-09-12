@@ -1,3 +1,15 @@
+"""Registered ``CodebookStrategy`` implementations that fit closed-form centroids.
+
+Each strategy runs the Lloyd-Max algorithm (see
+:mod:`~veloxquant_mlx.math.lloyd_max`) against a specific analytic PDF —
+Gaussian (high-dimensional TurboQuant coordinates), exact Beta (low-dimensional
+TurboQuant), or polar angle (PolarQuant) — or, for :class:`UniformStrategy`,
+skips fitting entirely and places centroids at equal-width cell midpoints.
+Strategies self-register with :class:`~veloxquant_mlx.core.registry.CodebookRegistry`
+via the ``@CodebookRegistry.register(...)`` decorator so
+:class:`~veloxquant_mlx.codebooks.base.CodebookFactory` can look them up by name.
+"""
+
 from __future__ import annotations
 
 import math

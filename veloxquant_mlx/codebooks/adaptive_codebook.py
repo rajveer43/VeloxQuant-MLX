@@ -1,3 +1,14 @@
+"""Data-driven codebook that refits its centroids from observed key statistics.
+
+Unlike the closed-form distributions in :mod:`~veloxquant_mlx.codebooks.strategies`
+(Gaussian, Beta, uniform), :class:`AdaptiveScalarCodebook` buffers real
+post-rotation vectors during a calibration window, builds an empirical
+histogram, and runs Lloyd-Max against that histogram to fit centroids to the
+actual data distribution — proxying to a default closed-form codebook until
+enough vectors have been observed. Drop-in API-compatible with
+:class:`~veloxquant_mlx.codebooks.scalar_codebook.ScalarCodebook`.
+"""
+
 from __future__ import annotations
 
 from typing import Any

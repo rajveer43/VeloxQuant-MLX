@@ -1,3 +1,14 @@
+"""PolarQuant-backed KV cache: polar-coordinate key compression, int8 values.
+
+Wraps :class:`~veloxquant_mlx.quantizers.polarquant.PolarQuantizer` in the
+VeloxQuant :class:`~veloxquant_mlx.core.abstractions.KVCache` ABC
+(append_key/append_value/attend), storing per-token angle indices and a
+scalar radius per recursion level for keys, and per-token int8 + fp16 scale
+for values. This is a "standalone" method (see
+:data:`~veloxquant_mlx.cache.base.STANDALONE_METHODS`): it does not
+implement the ``mlx_lm`` serving protocol.
+"""
+
 from __future__ import annotations
 
 from typing import Any
