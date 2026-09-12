@@ -430,16 +430,22 @@ this request at once.
 ## Usage
 
 ```python
-from veloxquant_mlx import KVCacheBuilder, KVCacheConfig
+from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.memory import BlockPoolAllocator, PoolConfig, PooledKVCache
 
 pool = BlockPoolAllocator(PoolConfig(block_size=16, n_blocks=512))
 
-inner = KVCacheBuilder().with_method("kivi").with_head_dim(128).build()
+# PooledKVCache only wraps one of the 5 "standalone" methods (those that
+# implement append_key/append_value/attend instead of mlx_lm's
+# update_and_fetch protocol) -- construct it via KVCacheFactory.create(),
+# not KVCacheBuilder.for_model(), which rejects standalone methods.
+config = KVCacheConfig(method="turboquant_prod", head_dim=128, bit_width_inlier=2)
+inner = KVCacheFactory.create(config)
 cache = PooledKVCache(inner, pool, owner=request_id, format="int2")
 
 for token in tokens:
-    cache.append(key, value)
+    cache.append_key(key)
+    cache.append_value(value)
 
 # ... generation for this request finishes ...
 cache.release()  # blocks become available for reuse by the next request
