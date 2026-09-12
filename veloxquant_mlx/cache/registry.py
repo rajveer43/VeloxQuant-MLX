@@ -27,7 +27,7 @@ import copy
 import typing
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Union
+from typing import Any, Union, cast
 
 __all__ = [
     "ServeTier",
@@ -525,11 +525,16 @@ def _run_probe(method: str) -> tuple[ServeTier, str | None]:
     from mlx_lm.models.cache import KVCache as _MLXKVCache
     from mlx_lm.models.cache import can_trim_prompt_cache
 
-    from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
+    from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory, MethodName
 
     try:
+        # method always originates from all_method_names(), which reads this
+        # same Literal back via reflection (see its docstring) — mypy can't
+        # see that connection through the reflection, but the invariant holds.
         cache = KVCacheFactory.create(
-            KVCacheConfig(method=method, head_dim=128, bit_width_inlier=2, seed=42)
+            KVCacheConfig(
+                method=cast(MethodName, method), head_dim=128, bit_width_inlier=2, seed=42
+            )
         )
     except Exception as exc:  # construction failure is itself disqualifying
         return ServeTier.CRASHES, f"cache construction failed: {type(exc).__name__}: {exc}"
@@ -604,12 +609,22 @@ def telemetry_coverage(method: str) -> TelemetryCoverage:
     coverage = TelemetryCoverage.NONE
     try:
         import mlx.core as mx
+        from mlx_lm.models.cache import KVCache as _MLXKVCache
 
-        from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
+        from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory, MethodName
 
+        # method always originates from all_method_names() — see the
+        # analogous comment in _run_probe.
         cache = KVCacheFactory.create(
-            KVCacheConfig(method=method, head_dim=128, bit_width_inlier=2, seed=42)
+            KVCacheConfig(
+                method=cast(MethodName, method), head_dim=128, bit_width_inlier=2, seed=42
+            )
         )
+        # Callers only reach here when tier.is_servable, which _run_probe
+        # already established means cache subclasses mlx_lm's KVCache (see its
+        # isinstance check) — standalone methods report CRASHES there instead.
+        if not isinstance(cache, _MLXKVCache):
+            return TelemetryCoverage.NONE
         keys = mx.random.normal((1, 8, 8, 128)).astype(mx.float16)
         cache.update_and_fetch(keys, keys)
 
