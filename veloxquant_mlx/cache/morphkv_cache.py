@@ -52,7 +52,6 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.morphkv import (
     MorphKVState,
-    full_morphkv_fp16_bytes,
     init_morphkv_state,
     morphkv_fp16_bytes,
     morphkv_get_kv,

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
 from veloxquant_mlx.core.abstractions import ArtifactStore, Quantizer
 from veloxquant_mlx.core.constants import SQRT_PI_OVER_2
-from veloxquant_mlx.core.context import EncodedVector, QuantizationContext
+from veloxquant_mlx.core.context import EncodedVector
 from veloxquant_mlx.core.registry import QuantizerRegistry
 from veloxquant_mlx.math.rotation import make_jl_matrix
 from veloxquant_mlx.preconditioners.jl_sketch import QJLEncoder
@@ -39,7 +39,7 @@ class QJLQuantizer(Quantizer):
         m: int = 128,
         seed: int = 42,
         b: int = 1,
-        store: Optional[ArtifactStore] = None,
+        store: ArtifactStore | None = None,
         **kwargs: Any,
     ) -> None:
         self._d = d
@@ -67,7 +67,6 @@ class QJLQuantizer(Quantizer):
         Returns:
             EncodedVector with signs and norm populated.
         """
-        import mlx.core as mx
 
         if x.ndim == 1:
             x = x[None]
@@ -94,8 +93,7 @@ class QJLQuantizer(Quantizer):
         import mlx.core as mx
 
         scale = SQRT_PI_OVER_2 / self._m
-        x_hat = ev.norm[:, None] * scale * (ev.signs.astype(mx.float16) @ self._encoder._S)
-        return x_hat
+        return ev.norm[:, None] * scale * (ev.signs.astype(mx.float16) @ self._encoder._S)
 
     def estimate_inner_product(self, q: Any, ev: EncodedVector) -> Any:
         """Estimate ⟨q, k⟩ for each encoded key.

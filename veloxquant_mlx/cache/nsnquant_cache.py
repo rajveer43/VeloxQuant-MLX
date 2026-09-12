@@ -35,7 +35,6 @@ double-quantizes them; we do not).
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 import mlx.core as mx

@@ -72,6 +72,7 @@ def test_builder_validation() -> None:
 
 def test_empty_cache_attend() -> None:
     import mlx.core as mx
+
     from veloxquant_mlx.cache.base import KVCacheBuilder
 
     cache = (
@@ -145,7 +146,7 @@ def test_outlier_warmup_and_selection() -> None:
         n_calib=4,
     )
     rng = np.random.default_rng(0)
-    for t in range(3):
+    for _ in range(3):
         k = rng.standard_normal(64).astype(np.float16)
         k[5] = np.float16(8.0)
         k[17] = np.float16(-7.0)
@@ -178,7 +179,7 @@ def test_outlier_encode_decode_correctness() -> None:
 
     # Use channels 0..3 as outliers by giving them large constant magnitude.
     stored_keys = []
-    for t in range(n_calib + 2):
+    for _ in range(n_calib + 2):
         k = rng.standard_normal(64).astype(np.float16)
         for c in range(n_outliers):
             k[c] = np.float16(10.0 + c)

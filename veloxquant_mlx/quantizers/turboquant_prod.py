@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -58,9 +58,9 @@ class TurboQuantProd(Quantizer):
         self,
         d: int,
         b: int = 3,
-        m: Optional[int] = None,
+        m: int | None = None,
         seed: int = 42,
-        store: Optional[ArtifactStore] = None,
+        store: ArtifactStore | None = None,
         use_hadamard: bool = False,
         use_adaptive_codebook: bool = False,
         n_calib: int = 64,
@@ -225,7 +225,6 @@ class TurboQuantProd(Quantizer):
         Returns:
             Estimated inner products, shape (batch,), fp16.
         """
-        import mlx.core as mx
 
         q_flat = q.reshape(-1)
 

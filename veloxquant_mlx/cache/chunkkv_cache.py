@@ -56,7 +56,7 @@ Byte accounting:
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -106,8 +106,8 @@ class ChunkKVCache(_MLXKVCache):
     def __init__(
         self,
         config: Any,
-        layer_id: Optional[int] = None,
-        coordinator: Optional[ChunkKVIndexReuseCoordinator] = None,
+        layer_id: int | None = None,
+        coordinator: ChunkKVIndexReuseCoordinator | None = None,
     ) -> None:
         super().__init__()
         self._budget = int(getattr(config, "chunkkv_budget", 512))

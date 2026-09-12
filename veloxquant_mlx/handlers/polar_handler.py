@@ -33,7 +33,6 @@ class PolarTransformHandler(QuantizationHandler):
         Returns:
             Updated context.
         """
-        import mlx.core as mx
 
         if ctx.mode == "encode":
             result = self._transform.forward(ctx.x_current)

@@ -18,7 +18,6 @@ Pipeline (key cache):
 from __future__ import annotations
 
 import math
-from typing import Optional, Tuple
 
 import mlx.core as mx
 import numpy as np
@@ -293,10 +292,7 @@ def quantize_vq(x: mx.array, codebook: mx.array, sub_dim: int) -> mx.array:
             out = idx
         else:
             # Build via concat — small number of chunks expected
-            if start == 0:
-                out = idx
-            else:
-                out = mx.concatenate([out, idx], axis=0)
+            out = idx if start == 0 else mx.concatenate([out, idx], axis=0)
     return out.reshape(*leading, n_sub)
 
 

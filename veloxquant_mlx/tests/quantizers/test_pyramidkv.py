@@ -16,7 +16,6 @@ import numpy as np
 import pytest
 
 from veloxquant_mlx.quantizers.pyramidkv import (
-    PyramidState,
     full_pyramid_fp16_bytes,
     init_pyramid_state,
     pyramid_budgets,

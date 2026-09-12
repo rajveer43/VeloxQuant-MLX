@@ -196,10 +196,7 @@ def merge_pair(
         w = min(max(cos, 0.0), 1.0)  # clip negatives → 0 (no anti-merge)
 
     v_new = ((1.0 - w) * vs + w * ve).astype(mx.float16)
-    if merge_keys:
-        k_new = ((1.0 - w) * ks + w * ke).astype(mx.float16)
-    else:
-        k_new = k_survivor
+    k_new = ((1.0 - w) * ks + w * ke).astype(mx.float16) if merge_keys else k_survivor
     return k_new, v_new
 
 

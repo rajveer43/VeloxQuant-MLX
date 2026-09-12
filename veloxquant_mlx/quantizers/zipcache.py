@@ -44,7 +44,7 @@ The cache wrapper owns the per-layer prefill/decode state.
 from __future__ import annotations
 
 import math
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 import mlx.core as mx
 
@@ -258,11 +258,7 @@ def zipcache_reconstruct(state: ZipCacheState) -> mx.array:
     Dequantizes the hi and lo groups and scatters them back into their
     original token positions using the stored saliency mask.
     """
-    S = state.seq_len
-    D = state.head_dim
     gs = state.group_size
-    n_hi = int(state.hi_codes.shape[0]) if state.hi_codes.shape[0] > 0 else 0
-    n_lo = int(state.lo_codes.shape[0]) if state.lo_codes.shape[0] > 0 else 0
 
     hi_recon = channel_dequant(state.hi_codes, state.hi_scales, state.hi_zeros, gs)
     lo_recon = channel_dequant(state.lo_codes, state.lo_scales, state.lo_zeros, gs)

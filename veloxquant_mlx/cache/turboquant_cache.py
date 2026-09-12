@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -25,15 +25,11 @@ class TurboQuantKVCache(KVCache):
     """
 
     def __init__(self, config: Any) -> None:
-        import mlx.core as mx
 
         self._config = config
         d = config.head_dim
         b = config.bit_width_inlier
-        if config.jl_dim is not None:
-            m = config.jl_dim
-        else:
-            m = TurboQuantProd.m_default(d, b)
+        m = config.jl_dim if config.jl_dim is not None else TurboQuantProd.m_default(d, b)
         seed = config.seed
         store = config.store
         use_prod = config.method == "turboquant_prod"
@@ -86,10 +82,10 @@ class TurboQuantKVCache(KVCache):
             if self._enable_outlier_two_stream and self._n_outliers > 0
             else None
         )
-        self._outlier_idx: Optional[np.ndarray] = None
-        self._inlier_idx: Optional[np.ndarray] = None
-        self._outlier_cache: Optional[np.ndarray] = None
-        self._outlier_scales: Optional[np.ndarray] = None
+        self._outlier_idx: np.ndarray | None = None
+        self._inlier_idx: np.ndarray | None = None
+        self._outlier_cache: np.ndarray | None = None
+        self._outlier_scales: np.ndarray | None = None
         if self._outlier_detector is not None:
             self._outlier_cache = np.zeros((capacity, self._n_outliers), dtype=np.int8)
             self._outlier_scales = np.zeros((capacity,), dtype=np.float16)

@@ -26,11 +26,7 @@ import mlx.core as mx
 def metal_available() -> bool:
     """True iff ``mx.fast.metal_kernel`` is usable on this build."""
     try:
-        if not mx.metal.is_available():
-            return False
-        if not hasattr(mx, "fast") or not hasattr(mx.fast, "metal_kernel"):
-            return False
-        return True
+        return mx.metal.is_available() and hasattr(mx, "fast") and hasattr(mx.fast, "metal_kernel")
     except Exception:
         return False
 

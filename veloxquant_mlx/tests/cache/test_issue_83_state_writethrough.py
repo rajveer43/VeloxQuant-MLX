@@ -88,7 +88,7 @@ _OFFSET_EQUALS_SHAPE_METHODS = [m for m in ALL_METHODS if m not in _TRUE_STEP_CO
 
 
 def _make(method: str, head_dim: int = 8, **extra):
-    cfg = dict(method=method, head_dim=head_dim)
+    cfg = {"method": method, "head_dim": head_dim}
     cfg.update(_CONFIGS[method])
     cfg.update(extra)
     return KVCacheFactory.create(KVCacheConfig(**cfg))

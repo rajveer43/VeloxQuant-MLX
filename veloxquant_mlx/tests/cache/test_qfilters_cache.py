@@ -30,13 +30,13 @@ def _kv(B, H, S, D, seed=0):
 
 
 def _make(**cfg):
-    base = dict(
-        method="qfilters",
-        head_dim=64,
-        qfilters_budget=16,
-        qfilters_n_sink=2,
-        qfilters_calib_tokens=16,
-    )
+    base = {
+        "method": "qfilters",
+        "head_dim": 64,
+        "qfilters_budget": 16,
+        "qfilters_n_sink": 2,
+        "qfilters_calib_tokens": 16,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 
@@ -495,7 +495,7 @@ def _reference_evict(k, v, filters, budget, n_sink, recent, sign):
         kh, vh = [], []
         for h in range(H):
             scores = k[b, h].astype(np.float32) @ f[h] * sign
-            if S > budget:
+            if budget < S:
                 sel = scores.copy()
                 sel[: min(n_sink, S)] = np.inf
                 if recent > 0:

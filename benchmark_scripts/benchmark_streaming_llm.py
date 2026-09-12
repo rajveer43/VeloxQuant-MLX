@@ -23,8 +23,8 @@ from veloxquant_mlx.quantizers.streaming_llm import (
     full_stream_fp16_bytes,
     init_streaming_window,
     stream_fp16_bytes,
-    stream_update,
     stream_get_kv,
+    stream_update,
 )
 
 

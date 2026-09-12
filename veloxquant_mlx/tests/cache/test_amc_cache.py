@@ -10,8 +10,6 @@ opt-in paths, and for_model config propagation. All data is synthetic.
 
 from __future__ import annotations
 
-import math
-
 import mlx.core as mx
 import numpy as np
 import pytest
@@ -21,7 +19,7 @@ from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
 
 def _make(**cfg):
-    base = dict(method="amc", head_dim=32)
+    base = {"method": "amc", "head_dim": 32}
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

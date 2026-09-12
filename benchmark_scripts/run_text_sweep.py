@@ -39,7 +39,6 @@ import sys
 import time
 
 import matplotlib.pyplot as plt
-import mlx.core as mx
 import mlx_lm
 import numpy as np
 

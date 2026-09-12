@@ -90,6 +90,7 @@ def _build_caches(
     model, method: str, b: int, group_size: int, residual_length: int, n_sink: int
 ) -> list:
     from mlx_lm.models.cache import KVCache as _FallbackCache
+
     from veloxquant_mlx import KVCacheConfig, KVCacheFactory
 
     layers = getattr(model, "layers", None) or model.model.layers

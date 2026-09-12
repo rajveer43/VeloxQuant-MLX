@@ -17,12 +17,10 @@ Saves 4 figures to figures/model/ and results.json.
 
 from __future__ import annotations
 
-import gc
 import json
 import math
 import time
 from pathlib import Path
-from typing import Any
 
 import matplotlib
 
@@ -95,10 +93,7 @@ class KVMemoryTracker:
 
     def snapshot(self, model):
         total = 0
-        if hasattr(model, "model"):
-            layers = model.model.layers
-        else:
-            layers = getattr(model, "layers", [])
+        layers = model.model.layers if hasattr(model, "model") else getattr(model, "layers", [])
         for layer in layers:
             for attn_name in ("self_attn", "attention"):
                 attn = getattr(layer, attn_name, None)
@@ -119,7 +114,6 @@ class KVMemoryTracker:
 
 def compute_perplexity(model, tokenizer, text: str, max_tokens: int = 256) -> float:
     """Compute perplexity of model on text (causal LM, stride = 1)."""
-    from mlx_lm.models.cache import make_prompt_cache
 
     tokens = tokenizer.encode(text)[:max_tokens]
     if len(tokens) < 4:
@@ -382,10 +376,6 @@ def run_comm_vq(model, tokenizer) -> dict:
 
     print("\n[4/4] CommVQ b=8 n_cb=4 ...")
 
-    # Train CommVQ on WikiText tokens
-    tokens = tokenizer.encode(WIKITEXT_SAMPLE)
-    input_ids = mx.array(tokens[:128], dtype=mx.int32)[None]  # [1, 128]
-
     # Get hidden states via a single forward pass to use as key proxies
     # (We don't have direct access to per-layer keys without hooks)
     # Instead: synthesize keys from random Gaussian matching model scale
@@ -399,7 +389,7 @@ def run_comm_vq(model, tokenizer) -> dict:
     rng = np.random.default_rng(0)
     calib_keys = (rng.standard_normal((2048, head_dim)) * 0.5).astype(np.float16)
     q.fit(mx.array(calib_keys))
-    print(f"  Training done.")
+    print("  Training done.")
 
     # Measure encode→decode roundtrip MSE as a quality proxy
     N = 512
@@ -456,7 +446,6 @@ def save_figures(results: dict) -> None:
     colors = [METHODS[m]["color"] for m in methods]
 
     ppls = [results[m]["ppl"] for m in methods]
-    latencies = [results[m]["latency_ms_per_tok"] for m in methods]
     kv_mbs = [results[m]["kv_mb"] for m in methods]
     compressions = [results[m]["compression"] for m in methods]
 
@@ -489,9 +478,11 @@ def save_figures(results: dict) -> None:
     print(f"  Saved {FIGURES_DIR / 'fig2_compression.png'}")
 
     # Fig 3: Perplexity (skip NaN entries)
-    valid = [(l, p, c) for l, p, c in zip(labels, ppls, colors) if not math.isnan(p)]
+    valid = [
+        (label, p, c) for label, p, c in zip(labels, ppls, colors, strict=True) if not math.isnan(p)
+    ]
     if valid:
-        v_labels, v_ppls, v_colors = zip(*valid)
+        v_labels, v_ppls, v_colors = zip(*valid, strict=True)
         fig, ax = plt.subplots(figsize=(8, 5))
         bars = ax.bar(v_labels, v_ppls, color=v_colors, alpha=0.85, edgecolor="white")
         ax.bar_label(bars, fmt="%.2f", padding=3, fontsize=10)
@@ -585,7 +576,7 @@ if __name__ == "__main__":
 
     # Save JSON
     out_path = FIGURES_DIR / "results.json"
-    with open(out_path, "w") as f:
+    with out_path.open("w") as f:
         json.dump(results, f, indent=2, default=lambda x: None if math.isnan(x) else x)
     print(f"Results saved to {out_path}")
 

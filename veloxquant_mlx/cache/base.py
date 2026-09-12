@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import math
 import warnings
 from dataclasses import dataclass, field
 from dataclasses import replace as dataclasses_replace
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal
 
 from veloxquant_mlx.core.abstractions import ArtifactStore, KVCache, QuantizationObserver
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
@@ -101,19 +100,19 @@ class KVCacheConfig:
         "age_tiered",
     ] = "turboquant_rvq"
     head_dim: int = 128
-    bit_width_inlier: Union[int, list] = 2
-    bit_width_outlier: Optional[int] = None
-    jl_dim: Optional[int] = None
-    n_outlier_channels: Optional[int] = None
-    n_calib_tokens: Optional[int] = None
+    bit_width_inlier: int | list = 2
+    bit_width_outlier: int | None = None
+    jl_dim: int | None = None
+    n_outlier_channels: int | None = None
+    n_calib_tokens: int | None = None
     enable_vectorized_attend: bool = True
     enable_outlier_two_stream: bool = False
     enable_fused_query_dot: bool = False
     seed: int = 42
     dtype: Any = None
-    capacity: Optional[int] = None
-    sliding_window: Optional[int] = None
-    store: Optional[ArtifactStore] = None
+    capacity: int | None = None
+    sliding_window: int | None = None
+    store: ArtifactStore | None = None
     observers: list = field(default_factory=list)
     # --- VecInfer-specific configuration -------------------------------
     key_sub_dim: int = 4
@@ -124,7 +123,7 @@ class KVCacheConfig:
     # --- KIVI configuration (asymmetric group quantization) ------------
     kivi_group_size: int = 32  # min/max group size (KIVI default 32)
     # --- SVDq configuration (sub-2-bit key compression via offline SVD) --
-    svdq_rank: Optional[int] = None  # explicit rank; None → energy threshold
+    svdq_rank: int | None = None  # explicit rank; None → energy threshold
     svdq_energy_threshold: float = 0.95  # fraction of singular value energy to retain
     # 8-group per-group bit schedule (paper Eq. 6), most-significant group
     # first; 0 truncates that group entirely. Default is the paper's own
@@ -162,7 +161,7 @@ class KVCacheConfig:
     kvquant_refit_interval: int = 0  # refit levels every N decode steps (0 = freeze prefill)
     kvquant_n_sink: int = 1  # leading attention-sink tokens kept fp16 (paper §3.5; 0 = off)
     # --- PALU configuration (true-latent low-rank K *and* V) -------------
-    palu_rank: Optional[int] = None  # explicit latent rank; None → energy threshold
+    palu_rank: int | None = None  # explicit latent rank; None → energy threshold
     palu_energy_threshold: float = 0.90  # singular-value energy to retain
     palu_n_head_groups: int = 4  # group-head low-rank: heads share a projection
     palu_hi_bit: int = 4  # mixed-bit: top latent channels
@@ -176,7 +175,7 @@ class KVCacheConfig:
     cachegen_use_delta: bool = True  # token-delta transform before entropy coding
     cachegen_per_channel: bool = True  # group entropy estimate by channel (§5.1.3)
     cachegen_layer_groups: int = 3  # number of layer-depth groups for the bit schedule
-    cachegen_resolved_bits: Optional[int] = (
+    cachegen_resolved_bits: int | None = (
         None  # per-layer bit-width injected by for_model (None → uniform cachegen_bits)
     )
     # --- MiniCache configuration (cross-layer depth-dimension SLERP merge) -----
@@ -187,7 +186,7 @@ class KVCacheConfig:
     minicache_max_ctx: int = 8192  # coordinator per-group token budget
     # --- GEAR configuration (error-feedback: residual low-rank + sparse outliers) ---
     gear_bits: int = 2  # ultra-low base bit-width
-    gear_rank: Optional[int] = None  # residual low-rank; None → energy threshold
+    gear_rank: int | None = None  # residual low-rank; None → energy threshold
     gear_energy_threshold: float = 0.90  # residual singular-value energy to retain
     gear_sparse_fraction: float = 0.01  # top-|residual| fraction kept exact (0 = pure low-rank)
     gear_group_size: int = 32  # base group-quant token group size
@@ -225,7 +224,7 @@ class KVCacheConfig:
     pyramid_backend: str = "reference"  # reference | mlx | metal | auto (MLX)
     pyramid_n_sink: int = 4  # initial positions protected from eviction (attention sinks)
     pyramid_beta: float = 2.0  # pyramid steepness: 1.0 = flat (== H2O), larger = steeper taper
-    pyramid_resolved_budget: Optional[int] = (
+    pyramid_resolved_budget: int | None = (
         None  # per-layer budget injected by for_model (None → uniform)
     )
     # --- SqueezeAttention-adapted configuration (2D layer×token data-driven budget eviction) ---
@@ -234,7 +233,7 @@ class KVCacheConfig:
     squeeze_strength: float = (
         1.0  # reallocation strength: 0.0 = uniform (== H2O), 1.0 = full inverse-concentration
     )
-    squeeze_resolved_budget: Optional[int] = (
+    squeeze_resolved_budget: int | None = (
         None  # explicit per-layer budget override (None → coordinator supplies it)
     )
     # --- ChunkKV-adapted configuration (chunk-level / semantic-block eviction) ---
@@ -255,7 +254,7 @@ class KVCacheConfig:
     cam_merge_gate: bool = True  # Eq. 14 Bernoulli merge gate (False = unconditional merge, the paper's ablated config)
     # --- xKV configuration (cross-layer shared-subspace key compression) -
     xkv_group_size: int = 2  # layers per shared-subspace group (2 = pairs)
-    xkv_rank: Optional[int] = None  # explicit shared rank; None → energy threshold
+    xkv_rank: int | None = None  # explicit shared rank; None → energy threshold
     xkv_energy_threshold: float = 0.95  # fraction of singular value energy to retain
     xkv_latent_bits: int = 4  # single-bit-width latent quantization
     xkv_group_quant_size: int = 32  # token group size for latent quantization
@@ -292,7 +291,7 @@ class KVCacheConfig:
     keyformer_budget: int = 512  # max tokens kept (incl. sinks)
     keyformer_n_sink: int = 4  # leading positions never evicted
     keyformer_recent: int = 0  # trailing protected window (extension, off)
-    keyformer_tau: Optional[float] = (
+    keyformer_tau: float | None = (
         None  # constant-temperature alias; overrides tau_init/tau_end (disables annealing) if set
     )
     keyformer_tau_init: float = 1.0  # Gumbel temperature at pos=0 (paper default 1)
@@ -339,7 +338,7 @@ class KVCacheConfig:
     )
     amc_threshold_window: int = 64  # trailing window size for closed-loop variance tracking
     amc_gamma: float = 0.1  # threshold attenuation scaling factor (Eq. 4-5)
-    amc_calib_variance: Optional[float] = (
+    amc_calib_variance: float | None = (
         None  # offline calibration variance; required if amc_adaptive_thresholds=True
     )
     amc_group_size: int = 32  # token-axis group size for tier quantization
@@ -371,10 +370,8 @@ class KVCacheConfig:
     rocketkv_compression_ratio: float = (
         8.0  # overall target ratio c; drives the adaptive split (paper §3.6)
     )
-    rocketkv_page_size: Optional[int] = (
-        None  # HSA page size; None derives it from the adaptive split
-    )
-    rocketkv_head_topk1: Optional[int] = (
+    rocketkv_page_size: int | None = None  # HSA page size; None derives it from the adaptive split
+    rocketkv_head_topk1: int | None = (
         None  # HSA head-dim channels kept; None derives it from the split
     )
     rocketkv_obs_window: int = 32  # stage-1 SnapKV observation window
@@ -401,7 +398,7 @@ class KVCacheConfig:
     #   None  → auto-detect (use Metal if available, fall back silently)
     #   True  → require Metal; raise at cache-construction time if missing
     #   False → force pure-MLX path (debug / parity testing)
-    use_metal_kernels: Optional[bool] = None
+    use_metal_kernels: bool | None = None
     # --- Fused dequant+SDPA Metal kernel (Phase 2, 0.6.0+) -------------
     # When True (or auto-detected at None), the cache ALSO stashes K/V
     # codebook indices and exposes a fused_sdpa() method — but by default
@@ -412,7 +409,7 @@ class KVCacheConfig:
     #   None  → False today (opt-in; will flip to auto-detect later)
     #   True  → require, raise if Metal/shape unsupported
     #   False → run the standard dequant→SDPA path (current 0.5.x default)
-    fused_sdpa: Optional[bool] = False
+    fused_sdpa: bool | None = False
     # Pre-allocated index ring-buffer capacity (in tokens) when
     # fused_sdpa=True.  At construction time we allocate
     # [B, H_kv, fused_sdpa_max_ctx, n_sub] uint32 once and slice-write
@@ -453,52 +450,50 @@ class KVCacheFactory:
         Returns:
             Configured KVCache.
         """
-        from veloxquant_mlx.cache.adakv_cache import AdaKVCache
-        from veloxquant_mlx.cache.xquant_cache import XQuantKVCache
-        from veloxquant_mlx.cache.kvquant_cache import KVQuantKVCache
-        from veloxquant_mlx.cache.palu_cache import PALUKVCache
-        from veloxquant_mlx.cache.cachegen_cache import CacheGenKVCache
-        from veloxquant_mlx.cache.minicache_cache import MiniCacheKVCache
-        from veloxquant_mlx.cache.gear_cache import GEARKVCache
-        from veloxquant_mlx.cache.zipcache_cache import ZipCacheKVCache
-        from veloxquant_mlx.cache.snapkv_cache import SnapKVKVCache
-        from veloxquant_mlx.cache.streaming_llm_cache import StreamingLLMKVCache
-        from veloxquant_mlx.cache.h2o_cache import H2OKVCache
-        from veloxquant_mlx.cache.tova_cache import TOVAKVCache
-        from veloxquant_mlx.cache.pyramidkv_cache import PyramidKVCache
-        from veloxquant_mlx.cache.squeeze_cache import SqueezeAttentionCache
-        from veloxquant_mlx.cache.chunkkv_cache import ChunkKVCache
-        from veloxquant_mlx.cache.cam_cache import CaMKVCache
-        from veloxquant_mlx.cache.xkv_cache import XKVCache
-        from veloxquant_mlx.cache.nsnquant_cache import NSNQuantKVCache
-        from veloxquant_mlx.cache.knorm_cache import L2NormKVCache
-        from veloxquant_mlx.cache.skvq_cache import SKVQKVCache
-        from veloxquant_mlx.cache.qfilters_cache import QFiltersKVCache
-        from veloxquant_mlx.cache.keyformer_cache import KeyformerKVCache
-        from veloxquant_mlx.cache.morphkv_cache import MorphKVKVCache
-        from veloxquant_mlx.cache.kvzip_cache import KVzipKVCache
-        from veloxquant_mlx.cache.kvtc_cache import KVTCKVCache
-        from veloxquant_mlx.cache.curdkv_cache import CurDKVKVCache
-        from veloxquant_mlx.cache.nestedkv_cache import NestedKVKVCache
-        from veloxquant_mlx.cache.amc_cache import AMCKVCache
         from veloxquant_mlx.cache.a2ats_cache import A2ATSKVCache
-        from veloxquant_mlx.cache.anchorkv_cache import AnchorKVKVCache
-        from veloxquant_mlx.cache.rocketkv_cache import RocketKVKVCache
+        from veloxquant_mlx.cache.adakv_cache import AdaKVCache
         from veloxquant_mlx.cache.age_tiered_cache import AgeTieredKVCache
+        from veloxquant_mlx.cache.amc_cache import AMCKVCache
+        from veloxquant_mlx.cache.anchorkv_cache import AnchorKVKVCache
+        from veloxquant_mlx.cache.cachegen_cache import CacheGenKVCache
+        from veloxquant_mlx.cache.cam_cache import CaMKVCache
+        from veloxquant_mlx.cache.chunkkv_cache import ChunkKVCache
+        from veloxquant_mlx.cache.curdkv_cache import CurDKVKVCache
+        from veloxquant_mlx.cache.gear_cache import GEARKVCache
+        from veloxquant_mlx.cache.h2o_cache import H2OKVCache
+        from veloxquant_mlx.cache.keyformer_cache import KeyformerKVCache
         from veloxquant_mlx.cache.kitty_cache import KittyKVCache
-        from veloxquant_mlx.cache.polar_cache import PolarQuantKVCache
-        from veloxquant_mlx.cache.qjl_cache import QJLKVCache
-        from veloxquant_mlx.cache.sliding_window_cache import SlidingWindowKVCache
         from veloxquant_mlx.cache.kivi_cache import KIVIKVCache
+        from veloxquant_mlx.cache.knorm_cache import L2NormKVCache
+        from veloxquant_mlx.cache.kvquant_cache import KVQuantKVCache
+        from veloxquant_mlx.cache.kvtc_cache import KVTCKVCache
+        from veloxquant_mlx.cache.kvzip_cache import KVzipKVCache
+        from veloxquant_mlx.cache.minicache_cache import MiniCacheKVCache
+        from veloxquant_mlx.cache.morphkv_cache import MorphKVKVCache
+        from veloxquant_mlx.cache.nestedkv_cache import NestedKVKVCache
+        from veloxquant_mlx.cache.nsnquant_cache import NSNQuantKVCache
+        from veloxquant_mlx.cache.palu_cache import PALUKVCache
+        from veloxquant_mlx.cache.polar_cache import PolarQuantKVCache
+        from veloxquant_mlx.cache.pyramidkv_cache import PyramidKVCache
+        from veloxquant_mlx.cache.qfilters_cache import QFiltersKVCache
+        from veloxquant_mlx.cache.qjl_cache import QJLKVCache
+        from veloxquant_mlx.cache.rocketkv_cache import RocketKVKVCache
         from veloxquant_mlx.cache.sink_cache import SinkProtectedKVCache
+        from veloxquant_mlx.cache.skvq_cache import SKVQKVCache
+        from veloxquant_mlx.cache.sliding_window_cache import SlidingWindowKVCache
+        from veloxquant_mlx.cache.snapkv_cache import SnapKVKVCache
         from veloxquant_mlx.cache.spectral_cache import SpectralQuantKVCache
+        from veloxquant_mlx.cache.squeeze_cache import SqueezeAttentionCache
+        from veloxquant_mlx.cache.streaming_llm_cache import StreamingLLMKVCache
         from veloxquant_mlx.cache.svdq_cache import SVDqKVCache
+        from veloxquant_mlx.cache.tova_cache import TOVAKVCache
         from veloxquant_mlx.cache.turboquant_cache import TurboQuantKVCache
         from veloxquant_mlx.cache.turboquant_rvq_cache import TurboQuantRVQKVCache
         from veloxquant_mlx.cache.vecinfer_cache import VecInferKVCache
+        from veloxquant_mlx.cache.xkv_cache import XKVCache
+        from veloxquant_mlx.cache.xquant_cache import XQuantKVCache
+        from veloxquant_mlx.cache.zipcache_cache import ZipCacheKVCache
 
-        d = config.head_dim
-        seed = config.seed
         b = config.bit_width_inlier
         if isinstance(b, list) and config.method != "vecinfer":
             raise QuantizerConfigError(
@@ -506,8 +501,6 @@ class KVCacheFactory:
                 "List-form bit_width_inlier (per-layer allocation) is consumed by "
                 "KVCacheBuilder.for_model(), which dispatches to create() once per layer."
             )
-        m = config.jl_dim if config.jl_dim is not None else d
-        store = config.store
 
         if config.method in ("turboquant_prod", "turboquant_mse"):
             cache: KVCache = TurboQuantKVCache(config)
@@ -722,7 +715,7 @@ class KVCacheBuilder:
     def __init__(self) -> None:
         self._config = KVCacheConfig()
 
-    def with_method(self, method: str) -> "KVCacheBuilder":
+    def with_method(self, method: str) -> KVCacheBuilder:
         """Set the quantisation method.
 
         Args:
@@ -731,7 +724,7 @@ class KVCacheBuilder:
         self._config.method = method  # type: ignore[assignment]
         return self
 
-    def with_head_dim(self, d: int) -> "KVCacheBuilder":
+    def with_head_dim(self, d: int) -> KVCacheBuilder:
         """Set the attention head dimension.
 
         Args:
@@ -740,7 +733,7 @@ class KVCacheBuilder:
         self._config.head_dim = d
         return self
 
-    def with_bit_width(self, inlier, outlier: Optional[int] = None) -> "KVCacheBuilder":
+    def with_bit_width(self, inlier, outlier: int | None = None) -> KVCacheBuilder:
         """Set bit-width(s).
 
         Args:
@@ -755,7 +748,7 @@ class KVCacheBuilder:
         self._config.bit_width_outlier = outlier
         return self
 
-    def with_jl_dim(self, m: int) -> "KVCacheBuilder":
+    def with_jl_dim(self, m: int) -> KVCacheBuilder:
         """Set the JL projection dimension.
 
         Args:
@@ -764,7 +757,7 @@ class KVCacheBuilder:
         self._config.jl_dim = m
         return self
 
-    def with_n_outlier_channels(self, n: int) -> "KVCacheBuilder":
+    def with_n_outlier_channels(self, n: int) -> KVCacheBuilder:
         """Set the number of outlier channels to detect.
 
         Args:
@@ -773,27 +766,27 @@ class KVCacheBuilder:
         self._config.n_outlier_channels = n
         return self
 
-    def with_n_calib_tokens(self, n: int) -> "KVCacheBuilder":
+    def with_n_calib_tokens(self, n: int) -> KVCacheBuilder:
         """Set calibration token count for outlier activation."""
         self._config.n_calib_tokens = n
         return self
 
-    def with_vectorized_attend(self, enabled: bool = True) -> "KVCacheBuilder":
+    def with_vectorized_attend(self, enabled: bool = True) -> KVCacheBuilder:
         """Enable vectorized packed-key unpack in attend()."""
         self._config.enable_vectorized_attend = enabled
         return self
 
-    def with_outlier_two_stream(self, enabled: bool = True) -> "KVCacheBuilder":
+    def with_outlier_two_stream(self, enabled: bool = True) -> KVCacheBuilder:
         """Enable outlier/inlier split cache after calibration."""
         self._config.enable_outlier_two_stream = enabled
         return self
 
-    def with_fused_query_dot(self, enabled: bool = True) -> "KVCacheBuilder":
+    def with_fused_query_dot(self, enabled: bool = True) -> KVCacheBuilder:
         """Enable fused rotated-query + codebook-dot path."""
         self._config.enable_fused_query_dot = enabled
         return self
 
-    def with_seed(self, seed: int) -> "KVCacheBuilder":
+    def with_seed(self, seed: int) -> KVCacheBuilder:
         """Set the random seed.
 
         Args:
@@ -802,7 +795,7 @@ class KVCacheBuilder:
         self._config.seed = seed
         return self
 
-    def with_precision(self, dtype: Any) -> "KVCacheBuilder":
+    def with_precision(self, dtype: Any) -> KVCacheBuilder:
         """Set the compute dtype.
 
         Args:
@@ -811,7 +804,7 @@ class KVCacheBuilder:
         self._config.dtype = dtype
         return self
 
-    def with_capacity(self, max_tokens: int) -> "KVCacheBuilder":
+    def with_capacity(self, max_tokens: int) -> KVCacheBuilder:
         """Set the maximum number of tokens to store.
 
         Args:
@@ -820,7 +813,7 @@ class KVCacheBuilder:
         self._config.capacity = max_tokens
         return self
 
-    def with_artifact_store(self, store: ArtifactStore) -> "KVCacheBuilder":
+    def with_artifact_store(self, store: ArtifactStore) -> KVCacheBuilder:
         """Provide an ArtifactStore for loading precomputed artifacts.
 
         Args:
@@ -829,7 +822,7 @@ class KVCacheBuilder:
         self._config.store = store
         return self
 
-    def with_observer(self, observer: QuantizationObserver) -> "KVCacheBuilder":
+    def with_observer(self, observer: QuantizationObserver) -> KVCacheBuilder:
         """Attach a QuantizationObserver.
 
         Args:
@@ -838,7 +831,7 @@ class KVCacheBuilder:
         self._config.observers.append(observer)
         return self
 
-    def with_sliding_window(self, window_size: int) -> "KVCacheBuilder":
+    def with_sliding_window(self, window_size: int) -> KVCacheBuilder:
         """Wrap the cache with a sliding-window eviction policy.
 
         Args:
@@ -895,7 +888,7 @@ class KVCacheBuilder:
         return cache
 
     @staticmethod
-    def for_model(model, config: "KVCacheConfig") -> list:
+    def for_model(model, config: KVCacheConfig) -> list:
         """Build one KVCache per language-model layer, sized per-layer.
 
         Works for text-only and VLM models (Qwen2-VL, Qwen3-VL, Mistral, etc.).
@@ -1051,11 +1044,10 @@ class KVCacheBuilder:
                 caches.append(_fallback_for(i))
                 continue
             hd = getattr(attn, "head_dim", None)
-            if hd is None:
-                if args is not None:
-                    hd = getattr(args, "head_dim", None) or (
-                        args.hidden_size // args.num_attention_heads
-                    )
+            if hd is None and args is not None:
+                hd = getattr(args, "head_dim", None) or (
+                    args.hidden_size // args.num_attention_heads
+                )
             if hd is None:
                 caches.append(_fallback_for(i))
                 continue
@@ -1083,7 +1075,7 @@ class KVCacheBuilder:
         return caches
 
     @staticmethod
-    def _build_xquant(layers, args, config: "KVCacheConfig", fallback_cls) -> list:
+    def _build_xquant(layers, args, config: KVCacheConfig, fallback_cls) -> list:
         """Build one shared XQuantCoordinator and role-assigned caches per layer.
 
         Anchor/reuse roles are assigned over *attention-bearing* layers only, so
@@ -1150,7 +1142,7 @@ class KVCacheBuilder:
         return caches
 
     @staticmethod
-    def _build_xkv(layers, args, config: "KVCacheConfig", fallback_cls) -> list:
+    def _build_xkv(layers, args, config: KVCacheConfig, fallback_cls) -> list:
         """Build one shared XKVCoordinator and member/group-assigned caches
         per layer.
 
@@ -1213,7 +1205,7 @@ class KVCacheBuilder:
         return caches
 
     @staticmethod
-    def _build_minicache(layers, args, config: "KVCacheConfig", fallback_cls) -> list:
+    def _build_minicache(layers, args, config: KVCacheConfig, fallback_cls) -> list:
         """Build one shared MiniCacheCoordinator and role-assigned caches per layer.
 
         Primary/merge roles are assigned over *attention-bearing* layers only,
@@ -1285,7 +1277,7 @@ class KVCacheBuilder:
         return caches
 
     @staticmethod
-    def _build_pyramidkv(layers, args, config: "KVCacheConfig", fallback_cls) -> list:
+    def _build_pyramidkv(layers, args, config: KVCacheConfig, fallback_cls) -> list:
         """Build per-layer PyramidKV caches with a pyramid budget schedule.
 
         The pyramid budget is allocated over *attention-bearing* layers only
@@ -1335,7 +1327,7 @@ class KVCacheBuilder:
         return caches
 
     @staticmethod
-    def _build_cachegen(layers, args, config: "KVCacheConfig", fallback_cls) -> list:
+    def _build_cachegen(layers, args, config: KVCacheConfig, fallback_cls) -> list:
         """Build per-layer CacheGen caches with a layer-wise bit-width schedule.
 
         Implements the paper's layer-sensitivity observation (§5.1.2/§5.2):
@@ -1386,7 +1378,7 @@ class KVCacheBuilder:
         return caches
 
     @staticmethod
-    def _build_squeeze(layers, args, config: "KVCacheConfig", fallback_cls) -> list:
+    def _build_squeeze(layers, args, config: KVCacheConfig, fallback_cls) -> list:
         """Build one shared SqueezeCoordinator and per-layer SqueezeAttention caches.
 
         Every attention-bearing layer shares one coordinator. During prefill each
@@ -1434,7 +1426,7 @@ class KVCacheBuilder:
         return caches
 
     @staticmethod
-    def _build_chunkkv(layers, args, config: "KVCacheConfig", fallback_cls) -> list:
+    def _build_chunkkv(layers, args, config: KVCacheConfig, fallback_cls) -> list:
         """Build per-layer ChunkKV caches sharing a layer-wise index-reuse coordinator.
 
         Implements the paper's Algorithm 2: attention-bearing layers are grouped

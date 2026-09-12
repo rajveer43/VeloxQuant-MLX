@@ -30,7 +30,7 @@ Public API:
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 import numpy as np
@@ -45,7 +45,6 @@ from veloxquant_mlx.math.rotation import (
 )
 from veloxquant_mlx.metal._rabitq import rabitq_hamming_score
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -58,21 +57,19 @@ def _rotate_np(x: np.ndarray, diag: np.ndarray, use_hadamard: bool) -> np.ndarra
         arr = mx.array(xf)
         arr = mx.fast.hadamard_transform(arr, scale=1.0 / np.sqrt(xf.shape[-1]))
         return np.array(arr, dtype=np.float32)
-    else:
-        # diag here is actually the full rotation matrix (stored differently)
-        return xf  # already rotated by caller
+    # diag here is actually the full rotation matrix (stored differently)
+    return xf  # already rotated by caller
 
 
 def _rotate_mx(
-    x: mx.array, diag_mx: mx.array, use_hadamard: bool, rot_mx: Optional[mx.array] = None
+    x: mx.array, diag_mx: mx.array, use_hadamard: bool, rot_mx: mx.array | None = None
 ) -> mx.array:
     """Apply rotation in MLX (lazy)."""
     xf = x.astype(mx.float32)
     if use_hadamard:
         xd = xf * diag_mx[None, :]
         return mx.fast.hadamard_transform(xd, scale=1.0 / mx.sqrt(mx.array(float(xf.shape[-1]))))
-    else:
-        return xf @ rot_mx.T
+    return xf @ rot_mx.T
 
 
 def _pack_signs(residual: np.ndarray) -> np.ndarray:
@@ -160,15 +157,15 @@ class RaBitQQuantizer(Quantizer):
             self._rot_mx = mx.array(rot)
 
         # Populated by fit()
-        self._centroids_np: Optional[np.ndarray] = None  # [nlist, D] float32
-        self._centroids_mx: Optional[mx.array] = None
+        self._centroids_np: np.ndarray | None = None  # [nlist, D] float32
+        self._centroids_mx: mx.array | None = None
         self._trained: bool = False
 
         # Stored encoded index (set by fit after encoding all calibration keys)
-        self._index_bits: Optional[np.ndarray] = None  # [N_total, D//8] uint8
-        self._index_Cx: Optional[np.ndarray] = None  # [N_total] float32
-        self._index_L1: Optional[np.ndarray] = None  # [N_total] float32
-        self._index_cids: Optional[np.ndarray] = None  # [N_total] int32
+        self._index_bits: np.ndarray | None = None  # [N_total, D//8] uint8
+        self._index_Cx: np.ndarray | None = None  # [N_total] float32
+        self._index_L1: np.ndarray | None = None  # [N_total] float32
+        self._index_cids: np.ndarray | None = None  # [N_total] int32
 
     # ------------------------------------------------------------------
     # Properties
@@ -195,9 +192,8 @@ class RaBitQQuantizer(Quantizer):
             out = mx.hadamard_transform(arr, scale=1.0 / float(self._d) ** 0.5)
             mx.eval(out)
             return np.array(out, dtype=np.float32)
-        else:
-            xd = x * self._diag_np[None, :]
-            return xd @ np.array(self._rot_mx, dtype=np.float32).T
+        xd = x * self._diag_np[None, :]
+        return xd @ np.array(self._rot_mx, dtype=np.float32).T
 
     def _rotate_batch_mx(self, x: mx.array) -> mx.array:
         """Rotate [N, D] mlx array lazily."""
@@ -205,9 +201,8 @@ class RaBitQQuantizer(Quantizer):
         if self._use_hadamard:
             xd = xf * self._diag_mx[None, :]
             return mx.hadamard_transform(xd, scale=1.0 / float(self._d) ** 0.5)
-        else:
-            xd = xf * self._diag_mx[None, :]
-            return xd @ self._rot_mx.T
+        xd = xf * self._diag_mx[None, :]
+        return xd @ self._rot_mx.T
 
     # ------------------------------------------------------------------
     # fit
@@ -316,7 +311,6 @@ class RaBitQQuantizer(Quantizer):
 
         packed_np = np.array(ev.indices, dtype=np.uint8)  # [N, D//8]
         meta_np = np.array(ev.norm, dtype=np.float32)  # [N, 3]
-        N = packed_np.shape[0]
 
         cids = meta_np[:, 0].astype(np.int32)
         L1 = meta_np[:, 2]  # [N]

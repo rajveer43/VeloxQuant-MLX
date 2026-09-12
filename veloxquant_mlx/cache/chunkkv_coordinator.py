@@ -19,8 +19,6 @@ at any step once the cache is over budget. Single-threaded by construction
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 class ChunkKVIndexReuseCoordinator:
     """Shared per-model layer-wise index-reuse state for one generation.
@@ -51,7 +49,7 @@ class ChunkKVIndexReuseCoordinator:
         """Leader layer publishes one head's this-step per-token kept-index lists."""
         self._published[(layer_id, head_idx)] = kept_positions
 
-    def fetch(self, layer_id: int, head_idx: int) -> Optional[list[list[int]]]:
+    def fetch(self, layer_id: int, head_idx: int) -> list[list[int]] | None:
         """Follower layer fetches its leader's most recently published indices.
 
         Returns:

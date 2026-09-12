@@ -37,11 +37,9 @@ import numpy as np
 from veloxquant_mlx.quantizers.snapkv import (
     full_fp16_bytes,
     obs_window_attention_scores,
-    snap_select_indices,
     snapkv_compress,
     snapkv_fp16_bytes,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -155,7 +153,7 @@ def main() -> None:
     D = args.dim
 
     results = []
-    print(f"\nSnapKV-adapted offline benchmark  (NOT YET RUN on dedicated hardware)\n")
+    print("\nSnapKV-adapted offline benchmark  (NOT YET RUN on dedicated hardware)\n")
     print(
         f"{'S':>6}  {'budget':>8}  {'kept':>6}  {'ratio':>8}  "
         f"{'cov_snap':>10}  {'cov_rand':>10}  {'lift':>8}  {'ms/head':>9}"

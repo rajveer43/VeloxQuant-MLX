@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import math
-from typing import Any, List, Optional
+from typing import Any
 
 import numpy as np
 
@@ -51,7 +50,7 @@ class PolarQuantizer(Quantizer):
         m: int = 128,
         seed: int = 42,
         n_levels: int = DEFAULT_POLAR_LEVELS,
-        store: Optional[ArtifactStore] = None,
+        store: ArtifactStore | None = None,
         use_hadamard: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -113,8 +112,8 @@ class PolarQuantizer(Quantizer):
         result = self._transform.forward(y)
 
         # Quantize each level's angles
-        angle_indices: List[Any] = []
-        for ell, (angles, cb) in enumerate(zip(result.angles, self._codebooks)):
+        angle_indices: list[Any] = []
+        for angles, cb in zip(result.angles, self._codebooks, strict=True):
             idx = cb.quantize(angles)
             angle_indices.append(idx)
 
@@ -136,7 +135,9 @@ class PolarQuantizer(Quantizer):
             Reconstructed array of shape (batch, d), fp16.
         """
         # Dequantize angles
-        dequant_angles = [cb.dequantize(idx) for cb, idx in zip(self._codebooks, ev.angles)]
+        dequant_angles = [
+            cb.dequantize(idx) for cb, idx in zip(self._codebooks, ev.angles, strict=True)
+        ]
 
         result = TransformResult(
             angles=dequant_angles,

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 CONFIG_PATH = Path.home() / ".veloxquant" / "panel.json"
 
-DEFAULTS: Dict[str, Any] = {
+DEFAULTS: dict[str, Any] = {
     "model": "",
     "method": "turboquant_rvq",
     "bits": 2,
@@ -26,7 +26,7 @@ DEFAULTS: Dict[str, Any] = {
 _PERSISTED = set(DEFAULTS)
 
 
-def load_config() -> Dict[str, Any]:
+def load_config() -> dict[str, Any]:
     config = dict(DEFAULTS)
     try:
         stored = json.loads(CONFIG_PATH.read_text())
@@ -38,7 +38,7 @@ def load_config() -> Dict[str, Any]:
     return config
 
 
-def save_config(config: Dict[str, Any]) -> None:
+def save_config(config: dict[str, Any]) -> None:
     merged = load_config()
     merged.update({k: v for k, v in config.items() if k in _PERSISTED})
 

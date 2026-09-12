@@ -287,7 +287,7 @@ class MLXCacheProfiler:
 
 
 def profile_layers(
-    profilers: "list[KVCacheProfiler | MLXCacheProfiler]", elapsed_s: float = 0.0
+    profilers: list[KVCacheProfiler | MLXCacheProfiler], elapsed_s: float = 0.0
 ) -> ProfileReport:
     """Aggregate a list of KVCacheProfiler instances into one ProfileReport.
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import threading
 import time
 from pathlib import Path
@@ -55,7 +54,7 @@ class TestAtomicSave:
     def test_no_leftover_tmp_files_after_save(self, tmp_path: Path) -> None:
         store = NpyArtifactStore(tmp_path)
         store.save_rotation_matrix(np.eye(4), d=4, seed=0)
-        names = os.listdir(tmp_path)
+        names = [p.name for p in tmp_path.iterdir()]
         assert names == ["rotation_d4_seed0.npy"]
 
     def test_final_file_has_no_partial_write_window(self, tmp_path: Path, monkeypatch) -> None:
@@ -89,7 +88,7 @@ class TestAtomicSave:
             while time.time() < deadline:
                 if path.exists():
                     # Any file observable at `path` must be a complete,
-                    # loadable, correct array -- since os.replace only
+                    # loadable, correct array -- since Path.replace only
                     # exposes it once the write is fully done.
                     loaded = np.load(path)
                     assert loaded.shape == arr.shape
@@ -108,7 +107,7 @@ class TestAtomicSave:
 
         assert not errors
         assert np.array_equal(np.load(path), arr)
-        assert os.listdir(tmp_path) == ["target.npy"]
+        assert [p.name for p in tmp_path.iterdir()] == ["target.npy"]
 
     def test_concurrent_saves_to_same_path_leave_one_valid_complete_file(
         self, tmp_path: Path
@@ -142,4 +141,4 @@ class TestAtomicSave:
         # File must always be fully one array or the other, never a mix.
         final = np.load(path)
         assert np.array_equal(final, arr_a) or np.array_equal(final, arr_b)
-        assert [n for n in os.listdir(tmp_path) if n != "shared.npy"] == []
+        assert [p.name for p in tmp_path.iterdir() if p.name != "shared.npy"] == []

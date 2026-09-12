@@ -229,7 +229,7 @@ def test_deterministic():
         n_sink=0,
         rope_base=10000.0,
     )
-    for a, b in zip(out1, out2):
+    for a, b in zip(out1, out2, strict=True):
         mx.eval(a, b)
         assert float(mx.max(mx.abs(a.astype(mx.float32) - b.astype(mx.float32))).item()) == 0.0
 
@@ -417,8 +417,8 @@ def test_h2o_evict_benchmark(capsys):
     t_kernel = _timeit(_kernel_path)
     with capsys.disabled():
         print(f"\n# H2O fused eviction  |  n_kept={n_kept} D={D}  |  MLX {mx.__version__}")
-        print(f"| path | ms/call |")
-        print(f"|------|---------|")
+        print("| path | ms/call |")
+        print("|------|---------|")
         print(f"| Python loop (h2o_update) | {t_mlx:.4f} |")
         print(f"| fused Metal kernel       | {t_kernel:.4f} |")
         print(f"| speedup | {t_mlx / t_kernel:.2f}x |")

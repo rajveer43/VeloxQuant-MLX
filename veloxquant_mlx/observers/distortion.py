@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-from typing import Any, List, Optional
 
 import numpy as np
 
@@ -60,7 +58,7 @@ class DistortionObserver(QuantizationObserver):
         query: Optional fixed query vector for IP distortion tracking (numpy).
     """
 
-    def __init__(self, b: int = 2, d: int = 128, query: Optional[np.ndarray] = None) -> None:
+    def __init__(self, b: int = 2, d: int = 128, query: np.ndarray | None = None) -> None:
         self._b = b
         self._d = d
         self._query = query

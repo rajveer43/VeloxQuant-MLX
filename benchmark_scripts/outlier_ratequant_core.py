@@ -34,9 +34,7 @@ from __future__ import annotations
 
 import math
 import os
-import time
-import warnings
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
@@ -45,9 +43,7 @@ import numpy as np
 import seaborn as sns
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
-from veloxquant_mlx.quantizers.turboquant_prod import TurboQuantProd
 from veloxquant_mlx.quantizers.turboquant_rvq import TurboQuantRVQ
-
 
 # ── Palette: 4 distinct colors keyed to the four configs ──────────────────────
 
@@ -615,7 +611,7 @@ def _draw_v4_figures(
     _bar(axes[1, 1], key_kb, "Key Cache Size (KB)", "Compressed Key Cache Size", fmt=".0f")
     fig1.tight_layout()
     fig1.savefig(f"{out_dir}/fig1_benchmark_summary.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig1_benchmark_summary.png")
+    print("  Saved fig1_benchmark_summary.png")
 
     # ── Fig 2: Quality — bars per config ──────────────────────────────────────
     fig2, (ax_c, ax_s) = plt.subplots(1, 2, figsize=(14, 6))
@@ -665,7 +661,7 @@ def _draw_v4_figures(
     sns.despine(ax=ax_s)
     fig2.tight_layout()
     fig2.savefig(f"{out_dir}/fig2_quality_vs_bits.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig2_quality_vs_bits.png")
+    print("  Saved fig2_quality_vs_bits.png")
 
     # ── Fig 3: Memory at scale + outlier-fraction inset ───────────────────────
     def rvq_bytes(tokens, bits):
@@ -780,7 +776,7 @@ def _draw_v4_figures(
     sns.despine(ax=ax_r)
     fig3.tight_layout()
     fig3.savefig(f"{out_dir}/fig3_memory_at_scale.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig3_memory_at_scale.png")
+    print("  Saved fig3_memory_at_scale.png")
 
     # ── Fig 4: Attention distortion (4 panels) ────────────────────────────────
     fig4, axes4 = plt.subplots(4, 1, figsize=(14, 13), sharex=True)
@@ -822,7 +818,7 @@ def _draw_v4_figures(
     axes4[-1].set_xlabel("Key Token Index")
     fig4.tight_layout()
     fig4.savefig(f"{out_dir}/fig4_attention_distortion.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig4_attention_distortion.png")
+    print("  Saved fig4_attention_distortion.png")
 
     # ── Fig 5: Output text comparison (4 panels) ──────────────────────────────
     resp_labels = ["fp16 Baseline", "RVQ 1-bit", "RVQ 1-bit + Outlier", "RVQ + RateQuant"]
@@ -857,7 +853,7 @@ def _draw_v4_figures(
         ax.axis("off")
     fig5.tight_layout()
     fig5.savefig(f"{out_dir}/fig5_output_comparison.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig5_output_comparison.png")
+    print("  Saved fig5_output_comparison.png")
 
     # ── Fig 6: combined full report ───────────────────────────────────────────
     fig6 = plt.figure(figsize=(22, 22))
@@ -996,5 +992,5 @@ def _draw_v4_figures(
         y=1.005,
     )
     fig6.savefig(f"{out_dir}/fig6_full_report.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig6_full_report.png")
+    print("  Saved fig6_full_report.png")
     plt.close("all")

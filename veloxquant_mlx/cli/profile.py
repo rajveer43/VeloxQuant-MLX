@@ -21,7 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from typing import Any, List, Optional
+from typing import Any
 
 from veloxquant_mlx.cache.registry import DEFAULT_SERVE_METHOD, get_method
 
@@ -111,7 +111,7 @@ def _warn(message: str) -> None:
     print(f"[veloxquant profile] {message}", file=sys.stderr)
 
 
-def parse_overrides(pairs: List[str]) -> dict:
+def parse_overrides(pairs: list[str]) -> dict:
     """Same FIELD=VALUE parsing as ``serve.py``'s ``parse_overrides``."""
     import dataclasses
 
@@ -225,7 +225,7 @@ def run_profile(args: argparse.Namespace) -> dict:
     }
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     validate_method(args.method)
     payload = run_profile(args)

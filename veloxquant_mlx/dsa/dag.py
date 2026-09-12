@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
-from typing import Any, Dict, List, Set
+from typing import Any
 
 from veloxquant_mlx.core.exceptions import CyclicPipelineError
 
@@ -21,11 +21,11 @@ class QuantizationGraph:
 
     def __init__(self) -> None:
         # handler id -> handler object
-        self._nodes: Dict[int, Any] = {}
+        self._nodes: dict[int, Any] = {}
         # adjacency: src_id -> set of dst_ids
-        self._adj: Dict[int, Set[int]] = defaultdict(set)
+        self._adj: dict[int, set[int]] = defaultdict(set)
         # in-degree count for Kahn's algorithm
-        self._in_degree: Dict[int, int] = {}
+        self._in_degree: dict[int, int] = {}
 
     # ------------------------------------------------------------------
     # Graph construction
@@ -81,7 +81,7 @@ class QuantizationGraph:
         except CyclicPipelineError:
             return True
 
-    def topological_sort(self) -> List[Any]:
+    def topological_sort(self) -> list[Any]:
         """Return nodes in topological order using Kahn's algorithm.
 
         Kahn's algorithm:
@@ -105,7 +105,7 @@ class QuantizationGraph:
             if deg == 0:
                 queue.append(nid)
 
-        result: List[Any] = []
+        result: list[Any] = []
 
         while queue:
             nid = queue.popleft()
@@ -126,7 +126,7 @@ class QuantizationGraph:
     # Critical path (longest path in DAG, assuming unit edge weight)
     # ------------------------------------------------------------------
 
-    def critical_path(self) -> List[Any]:
+    def critical_path(self) -> list[Any]:
         """Return the longest path through the DAG (by number of nodes).
 
         Uses the topological order computed by Kahn's algorithm and a
@@ -140,8 +140,8 @@ class QuantizationGraph:
         """
         order = self.topological_sort()
         order_ids = [id(h) for h in order]
-        dist: Dict[int, int] = {nid: 0 for nid in order_ids}
-        prev: Dict[int, int | None] = {nid: None for nid in order_ids}
+        dist: dict[int, int] = dict.fromkeys(order_ids, 0)
+        prev: dict[int, int | None] = dict.fromkeys(order_ids)
 
         for nid in order_ids:
             for neighbor_id in self._adj[nid]:
@@ -153,7 +153,7 @@ class QuantizationGraph:
         end_id = max(order_ids, key=lambda nid: dist[nid])
 
         # Reconstruct path backward
-        path_ids: List[int] = []
+        path_ids: list[int] = []
         cur: int | None = end_id
         while cur is not None:
             path_ids.append(cur)

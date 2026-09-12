@@ -44,7 +44,7 @@ Byte accounting:
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -69,7 +69,7 @@ class _TensorLowRank:
     def __init__(
         self,
         n_head_groups: int,
-        rank: Optional[int],
+        rank: int | None,
         energy_threshold: float,
         hi_bit: int,
         lo_bit: int,
@@ -93,7 +93,7 @@ class _TensorLowRank:
         self._head_group: list[int] = []  # head -> group index
         self._r: int = 0  # rank (uniform across groups)
         # Latent buffer: list over heads, each a growing [S, r] fp16 array.
-        self._latents: Optional[list[mx.array]] = None
+        self._latents: list[mx.array] | None = None
         self._fitted = False
 
     # ------------------------------------------------------------------
@@ -256,7 +256,7 @@ class PALUKVCache(_MLXKVCache):
         # prefill and the speculative-decoding rewind path); since self.keys/
         # self.values are never populated (true latent storage), .state must
         # be overridden to serve this instead (see #83).
-        self._last_state: Optional[tuple] = None
+        self._last_state: tuple | None = None
 
         # Byte accounting
         self._compressed_key_bytes = 0

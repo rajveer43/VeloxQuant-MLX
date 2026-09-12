@@ -26,9 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import mlx.core as mx
 import numpy as np
 
-from veloxquant_mlx.quantizers.tova import TovaState, init_tova_state, tova_update
-from veloxquant_mlx.quantizers.h2o import H2OState, init_h2o_state, h2o_update
-
+from veloxquant_mlx.quantizers.h2o import h2o_update, init_h2o_state
+from veloxquant_mlx.quantizers.tova import init_tova_state, tova_update
 
 # ===========================================================================
 # Slow, obviously-correct Python reference implementations

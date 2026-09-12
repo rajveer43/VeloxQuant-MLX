@@ -54,8 +54,6 @@ Adaptation notes:
 
 from __future__ import annotations
 
-from typing import Optional
-
 import mlx.core as mx
 
 from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
@@ -84,7 +82,7 @@ def head_group_bounds(n_heads: int, n_groups: int) -> list[tuple[int, int]]:
 
 def group_head_svd(
     x_group: mx.array,
-    rank: Optional[int] = None,
+    rank: int | None = None,
     energy_threshold: float = 0.90,
 ) -> tuple[mx.array, mx.array, mx.array]:
     """Fit a shared low-rank projection for a group of heads.

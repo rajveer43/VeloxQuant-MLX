@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from veloxquant_mlx.core.abstractions import ArtifactStore, Quantizer
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
@@ -26,9 +26,9 @@ class QuantizerFactory:
         method: Literal["qjl", "turboquant_mse", "turboquant_prod", "polar"],
         d: int,
         b: int = 2,
-        m: Optional[int] = None,
+        m: int | None = None,
         seed: int = 42,
-        store: Optional[ArtifactStore] = None,
+        store: ArtifactStore | None = None,
         **kwargs: Any,
     ) -> Quantizer:
         """Instantiate a Quantizer by method name.

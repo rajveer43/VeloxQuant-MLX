@@ -13,7 +13,6 @@ import numpy as np
 import pytest
 
 from veloxquant_mlx.quantizers.chunkkv import (
-    ChunkKVState,
     chunk_partition,
     chunk_scores,
     chunkkv_apply_reuse_indices,

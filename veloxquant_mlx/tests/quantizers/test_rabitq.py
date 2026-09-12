@@ -8,7 +8,6 @@ import pytest
 
 from veloxquant_mlx.quantizers.rabitq import RaBitQQuantizer
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

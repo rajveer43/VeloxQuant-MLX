@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 
@@ -52,12 +50,12 @@ class BitPackBuffer:
 
         if self.b == 1:
             return self._pack_1bit(indices)
-        elif self.b == 2:
+        if self.b == 2:
             return self._pack_2bit(indices)
-        elif self.b == 3:
+        if self.b == 3:
             return self._pack_3bit(indices)
-        else:  # b == 4
-            return self._pack_4bit(indices)
+        # b == 4
+        return self._pack_4bit(indices)
 
     def unpack(self, packed: np.ndarray, n: int) -> np.ndarray:
         """Unpack a byte array back into n b-bit unsigned integers.
@@ -72,12 +70,12 @@ class BitPackBuffer:
         packed = np.asarray(packed, dtype=np.uint8)
         if self.b == 1:
             return self._unpack_1bit(packed, n)
-        elif self.b == 2:
+        if self.b == 2:
             return self._unpack_2bit(packed, n)
-        elif self.b == 3:
+        if self.b == 3:
             return self._unpack_3bit(packed, n)
-        else:  # b == 4
-            return self._unpack_4bit(packed, n)
+        # b == 4
+        return self._unpack_4bit(packed, n)
 
     # ------------------------------------------------------------------
     # 1-bit: 8 values per byte

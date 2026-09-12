@@ -66,7 +66,7 @@ from __future__ import annotations
 
 import math
 import warnings
-from typing import Sequence
+from collections.abc import Sequence
 
 import mlx.core as mx
 
@@ -245,7 +245,7 @@ def allocate_head_bits(
     Returns:
         [H] list of assigned integer bit-widths, each in ``allowed_bits``.
     """
-    allowed = sorted(set(int(b) for b in allowed_bits))
+    allowed = sorted({int(b) for b in allowed_bits})
     lo, hi = allowed[0], allowed[-1]
 
     imp = [

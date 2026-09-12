@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 import time
-from typing import Optional
 
 import mlx.core as mx
 
@@ -87,6 +86,7 @@ def _build_caches(
 ):
     """Return a list of caches, one per attention-bearing layer."""
     from mlx_lm.models.cache import KVCache as _FB
+
     from veloxquant_mlx import KVCacheConfig
     from veloxquant_mlx.cache.vecinfer_cache import VecInferKVCache
 
@@ -197,13 +197,14 @@ def main() -> int:
         return 1
 
     from mlx_lm import load
+
     from veloxquant_mlx.metal.fused_sdpa import (
         patch_mlx_lm_for_fused_sdpa,
         unpatch_mlx_lm,
     )
 
     print(f"Model: {args.model}")
-    print(f"Loading...")
+    print("Loading...")
     model, tokenizer = load(args.model)
 
     runs = []

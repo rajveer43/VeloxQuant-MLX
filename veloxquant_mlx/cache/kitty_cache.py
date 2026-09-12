@@ -33,7 +33,7 @@ Effective bit-width (default):
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -68,8 +68,8 @@ class KittyKVCache(_MLXKVCache):
         self._group_size: int = int(getattr(config, "kitty_group_size", 32))
 
         # Running accumulators per head — shape [H, D], initialised at prefill
-        self._key_sum: Optional[mx.array] = None  # [H, D] fp32
-        self._key_sq_sum: Optional[mx.array] = None  # [H, D] fp32
+        self._key_sum: mx.array | None = None  # [H, D] fp32
+        self._key_sq_sum: mx.array | None = None  # [H, D] fp32
         self._n_keys: int = 0  # total tokens accumulated
 
         # Byte accounting

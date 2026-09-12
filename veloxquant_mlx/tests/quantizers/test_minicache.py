@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 import mlx.core as mx
 import numpy as np
 import pytest
@@ -15,7 +13,6 @@ from veloxquant_mlx.quantizers.minicache import (
     slerp,
     to_mag_dir,
 )
-
 
 # ------------------------------------------------------------------
 # pair_layers_depth

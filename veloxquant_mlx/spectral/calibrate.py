@@ -10,6 +10,7 @@ for unit tests.
 
 from __future__ import annotations
 
+import contextlib
 import os
 from pathlib import Path
 from typing import Any
@@ -18,7 +19,6 @@ import numpy as np
 
 from veloxquant_mlx.spectral.participation_ratio import (
     compute_participation_ratio,
-    compute_spectral_gap,
 )
 
 _CACHE_ROOT = Path(os.environ.get("VELOXQUANT_CACHE_DIR", Path.home() / ".cache" / "veloxquant"))
@@ -51,10 +51,8 @@ def load_cached_rotations(model_name: str) -> dict | None:
     for k in keys_in_file:
         parts = k.split("_")
         if len(parts) >= 2 and parts[0] == "layer":
-            try:
+            with contextlib.suppress(ValueError):
                 layer_ids.add(int(parts[1]))
-            except ValueError:
-                pass
     for layer_idx in layer_ids:
         key_U = data[f"layer_{layer_idx}_key_U"]
         val_U = data[f"layer_{layer_idx}_val_U"]

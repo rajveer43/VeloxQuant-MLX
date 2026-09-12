@@ -26,14 +26,12 @@ Outputs:
 from __future__ import annotations
 
 import argparse
-import math
 import os
 import sys
 from typing import Any
 
 import matplotlib.pyplot as plt
 import mlx.core as mx
-import mlx.nn as nn
 import mlx_lm
 import numpy as np
 
@@ -293,7 +291,7 @@ def diagnose(model_id: str, n_layers_to_plot: int = 4) -> None:
             for r in rows
         ]
     )
-    print(f"\nMEANS across layers:")
+    print("\nMEANS across layers:")
     print(f"  img_norm   = {arr[:, 0].mean():.3f}   (max={arr[:, 0].max():.3f})")
     print(f"  text_norm  = {arr[:, 1].mean():.3f}   (max={arr[:, 1].max():.3f})")
     print(f"  kurt(img)  = {arr[:, 2].mean():+.3f}")

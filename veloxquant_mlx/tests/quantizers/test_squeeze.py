@@ -18,7 +18,6 @@ import numpy as np
 import pytest
 
 from veloxquant_mlx.quantizers.squeeze import (
-    SqueezeState,
     concentration_score,
     full_squeeze_fp16_bytes,
     init_squeeze_state,

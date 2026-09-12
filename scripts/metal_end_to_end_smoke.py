@@ -14,9 +14,6 @@ Run from repo root:
 from __future__ import annotations
 
 import time
-from typing import Optional
-
-import mlx.core as mx
 
 from veloxquant_mlx.metal import metal_available
 
@@ -27,6 +24,7 @@ MAX_TOKENS = 80
 
 def _build_vecinfer_caches(model, use_metal: bool):
     from mlx_lm.models.cache import KVCache as _FB
+
     from veloxquant_mlx import KVCacheConfig
     from veloxquant_mlx.cache.vecinfer_cache import VecInferKVCache
 
@@ -113,8 +111,8 @@ def main() -> int:
         # Index-level fp16 ambiguity may cause different sampling — that's
         # expected.  As long as both produce coherent text, the path works.
         print(
-            f"  (note: divergence is expected on fp16 due to nearest-tie "
-            f"resolution; both paths produce valid output)"
+            "  (note: divergence is expected on fp16 due to nearest-tie "
+            "resolution; both paths produce valid output)"
         )
     return 0
 

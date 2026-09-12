@@ -54,7 +54,6 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.kvzip import (
     KVzipState,
-    full_kvzip_fp16_bytes,
     init_kvzip_state,
     kvzip_fp16_bytes,
     kvzip_get_kv,

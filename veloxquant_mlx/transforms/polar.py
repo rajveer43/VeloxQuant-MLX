@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import math
-from typing import Any, List
+from typing import Any
 
 from veloxquant_mlx.core.abstractions import Transform
-from veloxquant_mlx.core.context import TransformResult
 from veloxquant_mlx.core.constants import DEFAULT_POLAR_LEVELS
+from veloxquant_mlx.core.context import TransformResult
 
 
 class RecursivePolarTransform(Transform):
@@ -65,7 +65,7 @@ class RecursivePolarTransform(Transform):
             )
 
         r = x.astype(mx.float32)
-        angles: List[Any] = []
+        angles: list[Any] = []
 
         for ell in range(self._n_levels):
             n_pairs = r.shape[-1] // 2
@@ -74,16 +74,12 @@ class RecursivePolarTransform(Transform):
             # Compute angle: atan2(y, x)
             a = mx.arctan2(r_pairs[:, :, 1], r_pairs[:, :, 0])  # (batch, n_pairs)
 
-            if ell == 0:
-                # Level 1: atan2's native range is (-pi, pi], but the
-                # level-1 codebook/PDF (distributions.py, strategies.py)
-                # assume [0, 2*pi) -- fold negative angles up so forward()
-                # actually produces the range the rest of the pipeline
-                # expects (#69).
-                a = a % (2 * math.pi)
-            else:
-                # For level >= 2, fold angles into [0, pi/2]
-                a = mx.abs(a % (math.pi / 2))
+            # Level 1: atan2's native range is (-pi, pi], but the level-1
+            # codebook/PDF (distributions.py, strategies.py) assume
+            # [0, 2*pi) -- fold negative angles up so forward() actually
+            # produces the range the rest of the pipeline expects (#69).
+            # For level >= 2, fold angles into [0, pi/2] instead.
+            a = a % (2 * math.pi) if ell == 0 else mx.abs(a % (math.pi / 2))
 
             angles.append(a.astype(x.dtype))
 

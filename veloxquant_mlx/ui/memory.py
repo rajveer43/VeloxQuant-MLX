@@ -12,7 +12,7 @@ Every value carries ``source: "measured"``. Anything unavailable is reported as
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 #: psutil ships in the `dev` extra, not the runtime deps, so a normal
 #: `pip install VeloxQuant-MLX` will not have it. Degrade, never fabricate.
@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover - depends on install extras
     _psutil = None
 
 
-def _mlx_memory() -> Dict[str, Any]:
+def _mlx_memory() -> dict[str, Any]:
     """MLX memory — deliberately *not* reported by the panel.
 
     ``mx.get_active_memory()`` is process-local, so calling it here measures the
@@ -41,7 +41,7 @@ def _mlx_memory() -> Dict[str, Any]:
     }
 
 
-def _process_memory(pid: Optional[int]) -> Dict[str, Any]:
+def _process_memory(pid: int | None) -> dict[str, Any]:
     """RSS of the *server* process, not the panel's own."""
     if pid is None:
         return {"rss_bytes": None, "unavailable_reason": "no server is running"}
@@ -61,7 +61,7 @@ def _process_memory(pid: Optional[int]) -> Dict[str, Any]:
         return {"rss_bytes": None, "unavailable_reason": "not available right now"}
 
 
-def memory_report(pid: Optional[int] = None) -> Dict[str, Any]:
+def memory_report(pid: int | None = None) -> dict[str, Any]:
     """Everything the panel's memory card needs.
 
     ``source`` is part of the payload rather than UI copy, so a consumer cannot

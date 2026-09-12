@@ -17,7 +17,6 @@ class QJLKVCache(KVCache):
     """
 
     def __init__(self, config: Any) -> None:
-        import mlx.core as mx
 
         d = config.head_dim
         m = config.jl_dim if config.jl_dim is not None else d

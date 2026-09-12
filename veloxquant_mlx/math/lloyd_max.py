@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import math
-from typing import Callable, Optional, Tuple
+from collections.abc import Callable
 
 import numpy as np
 
@@ -10,12 +9,12 @@ from veloxquant_mlx.core.constants import LLOYD_MAX_N_ITER, LLOYD_MAX_N_QUAD, LL
 
 def lloyd_max(
     pdf_fn: Callable[[np.ndarray], np.ndarray],
-    support: Tuple[float, float],
+    support: tuple[float, float],
     n_levels: int,
     n_iter: int = LLOYD_MAX_N_ITER,
     tol: float = LLOYD_MAX_TOL,
     n_quad_points: int = LLOYD_MAX_N_QUAD,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Solve the Lloyd-Max 1-D scalar quantisation problem.
 
     Iterates the Lloyd-Max optimality conditions until convergence:
@@ -57,7 +56,6 @@ def lloyd_max(
     # Dense quadrature grid
     x_grid = np.linspace(lo, hi, n_quad_points)
     p_grid = pdf_fn(x_grid)
-    dx = x_grid[1] - x_grid[0]
 
     # Initialise centroids uniformly
     centroids = np.linspace(lo, hi, n_levels)

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
 from veloxquant_mlx.codebooks.base import CodebookFactory
 from veloxquant_mlx.core.abstractions import ArtifactStore, Quantizer
-from veloxquant_mlx.core.context import EncodedVector, QuantizationContext
+from veloxquant_mlx.core.context import EncodedVector
 from veloxquant_mlx.core.registry import QuantizerRegistry
 from veloxquant_mlx.math.rotation import (
     is_hadamard_compatible,
@@ -49,7 +49,7 @@ class TurboQuantMSE(Quantizer):
         b: int = 2,
         seed: int = 42,
         m: int = 128,
-        store: Optional[ArtifactStore] = None,
+        store: ArtifactStore | None = None,
         use_beta: bool = False,
         use_hadamard: bool = False,
         **kwargs: Any,
@@ -137,7 +137,6 @@ class TurboQuantMSE(Quantizer):
         Returns:
             Estimated inner products, shape (batch,), fp16.
         """
-        import mlx.core as mx
 
         q_flat = q.reshape(-1)
         k_hat = self.decode(ev)  # (batch, d)

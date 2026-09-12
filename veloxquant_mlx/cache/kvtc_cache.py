@@ -71,7 +71,7 @@ guaranteed >= 1.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 import numpy as np
@@ -104,8 +104,8 @@ class _TensorKVTC:
         self.bit_choices = bit_choices
         self.beta = beta
 
-        self._raw_rows: Optional[mx.array] = None  # [S_total, D] fp32, accumulated
-        self._artifact: Optional[KVTCArtifact] = None
+        self._raw_rows: mx.array | None = None  # [S_total, D] fp32, accumulated
+        self._artifact: KVTCArtifact | None = None
         self._fitted = False
 
     def fit_prefill(self, x0: mx.array) -> mx.array:
@@ -253,7 +253,7 @@ class KVTCKVCache(_MLXKVCache):
         # prefill and the speculative-decoding rewind path); since self.keys/
         # self.values are never populated (true latent storage), .state must
         # be overridden to serve this instead (see #83).
-        self._last_state: Optional[tuple] = None
+        self._last_state: tuple | None = None
 
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int) -> None:

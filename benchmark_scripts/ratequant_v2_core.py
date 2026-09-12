@@ -52,15 +52,12 @@ Public API
 from __future__ import annotations
 
 import math
-import os
-from typing import Optional
 
 import mlx.core as mx
 import numpy as np
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.turboquant_rvq import TurboQuantRVQ
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Calibration: collect per-layer activation-norm sensitivities
