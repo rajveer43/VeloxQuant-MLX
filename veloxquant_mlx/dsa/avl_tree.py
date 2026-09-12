@@ -1,3 +1,13 @@
+"""AVL-balanced nearest-centroid search for scalar codebooks.
+
+Implements ``AVLTree``, a from-scratch self-balancing binary search tree
+(manual rotations, height-tracked balance factor) keyed on float centroid
+values, and ``VoronoiTree``, the nearest-centroid lookup used by scalar
+codebook quantize paths. ``VoronoiTree`` falls back to a linear ``numpy``
+scan below ``VORONOI_LINEAR_THRESHOLD`` centroids, since AVL's O(log k)
+lookup only pays off once k is large enough to amortize its overhead.
+"""
+
 from __future__ import annotations
 
 import numpy as np

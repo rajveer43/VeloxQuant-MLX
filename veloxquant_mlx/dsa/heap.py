@@ -1,3 +1,12 @@
+"""Manual binary max-heap and top-k channel tracking for outlier detection.
+
+Implements ``MaxHeap``, a hand-rolled (no ``heapq``) generic binary max-heap,
+and ``SortedChannelIndex``, a lazy-deletion, versioned top-k structure built
+on it that ``OutlierDetector`` uses to track the highest-magnitude channels
+seen during streaming prefill without rescanning the full channel set on
+every update.
+"""
+
 from __future__ import annotations
 
 from typing import Generic, TypeVar

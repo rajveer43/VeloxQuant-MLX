@@ -1,3 +1,14 @@
+"""Manual sub-byte bit packing for compact codebook index storage.
+
+Provides ``BitPackBuffer``, which packs arrays of 1/2/3/4-bit unsigned
+codebook indices into dense ``uint8`` byte arrays (and unpacks them back),
+using hand-rolled bit manipulation rather than a third-party bitstream
+library. This is what lets low-bit quantizers (e.g. 2-bit, 3-bit codebooks)
+actually realize their target storage footprint instead of padding every
+index out to a full byte; see ``veloxquant_mlx.handlers.bit_pack_handler``
+for the pipeline stage that drives it.
+"""
+
 from __future__ import annotations
 
 import numpy as np

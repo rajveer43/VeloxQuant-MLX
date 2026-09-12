@@ -1,3 +1,14 @@
+"""Thread-safe name-to-class registries used to decouple config from implementation.
+
+Provides ``QuantizerRegistry``, ``CodebookRegistry``, and
+``PreconditionerRegistry``, each a ``_BaseRegistry`` subclass exposing a
+``register()`` class-decorator plus ``get()``/``list_names()``/``is_registered()``
+lookups. This lets quantizers, codebooks, and preconditioners be selected by
+string key (e.g. from a config file) without importing every concrete class
+up front, and lets each registry family maintain its own independent
+namespace.
+"""
+
 from __future__ import annotations
 
 import threading

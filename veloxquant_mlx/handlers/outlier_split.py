@@ -1,3 +1,14 @@
+"""Handler stage that separates outlier and inlier channels for mixed-precision quantization.
+
+Splits ``ctx.x_current`` into a small set of outlier channels (indices
+supplied at construction, typically from ``OutlierDetector`` /
+``SortedChannelIndex``) and the remaining inlier channels on encode, storing
+both in ``ctx.metadata`` and routing the inlier portion downstream for
+lower-precision quantization; on decode it recombines both portions back
+into a full vector. Enables a ``CompositeQuantizer``-style pipeline where
+outliers get higher fidelity than the bulk of the channels.
+"""
+
 from __future__ import annotations
 
 import numpy as np

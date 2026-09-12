@@ -1,3 +1,12 @@
+"""Fixed-capacity circular buffer for streaming, FIFO-evicted token windows.
+
+Implements ``RingBuffer``, a generic O(1)-append circular buffer with
+negative indexing and oldest-first iteration, used wherever a component
+needs a bounded sliding window over recent elements (e.g. token or key/value
+history) that silently evicts the oldest entry once full rather than
+growing unbounded.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterator
