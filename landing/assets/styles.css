@@ -7906,9 +7906,12 @@ details.faq-accordion-item[open] .faq-chevron {
   border-radius: 4px;
 }
 
-/* Hide marketing footer on desktop single-screen workbench mode */
+/* Hide marketing footer on desktop single-screen workbench mode (playground
+   page only -- scoped to .pg-studio-page so it doesn't hide the footer on
+   every other page sharing this stylesheet, e.g. the main landing page) */
 @media (min-width: 1024px) {
-  .footer-redesign {
+  .pg-studio-page ~ .footer-redesign,
+  .pg-studio-page .footer-redesign {
     display: none !important;
   }
 }
