@@ -432,6 +432,14 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.82.2 (2026-09-12)
+
+### Bug Fixes
+
+- **cache**: Wire VecInfer fused_sdpa to actually reduce live memory
+  ([`a7908d5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a7908d5714cbd0c55c3234790ae16ff42f48d6dc))
+
+
 ## v0.82.1 (2026-09-11)
 
 ### Bug Fixes
