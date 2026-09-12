@@ -403,10 +403,12 @@ class KVCacheConfig:
     #   False → force pure-MLX path (debug / parity testing)
     use_metal_kernels: Optional[bool] = None
     # --- Fused dequant+SDPA Metal kernel (Phase 2, 0.6.0+) -------------
-    # When True (or auto-detected at None), the cache stores K/V as
-    # codebook indices only and exposes a fused_sdpa() method that
-    # mlx_lm's dispatcher (after patch_mlx_lm_for_fused_sdpa()) routes
-    # attention to.  Avoids materializing the fp16 K_hat tensor entirely.
+    # When True (or auto-detected at None), the cache ALSO stashes K/V
+    # codebook indices and exposes a fused_sdpa() method — but by default
+    # (fused_sdpa_memory_bound=False) update_and_fetch still materializes
+    # the standard fp16 K_hat/V_hat tensors too, so this alone does not
+    # reduce live memory. See fused_sdpa_memory_bound below for the path
+    # that actually skips fp16 materialization.
     #   None  → False today (opt-in; will flip to auto-detect later)
     #   True  → require, raise if Metal/shape unsupported
     #   False → run the standard dequant→SDPA path (current 0.5.x default)
@@ -417,6 +419,19 @@ class KVCacheConfig:
     # into it on each update_and_fetch — avoids O(S²) per-step concat.
     # If a generation exceeds this length, the cache raises RuntimeError.
     fused_sdpa_max_ctx: int = 8192
+    # When True (requires fused_sdpa=True), update_and_fetch skips fp16
+    # K_hat/V_hat materialization entirely — this is the actual memory
+    # reduction: the cache holds only uint32 codebook indices
+    # (nbytes shrinks accordingly; verified: 128-dim/8-sub/8-bit codebook
+    # gives 4x vs fp16). Trades this for per-step fused-kernel overhead
+    # that is NOT amortized the way the standard path's dequant is, so it
+    # is a genuine memory-vs-compute tradeoff, not a free win — opt in only
+    # when the fp16 K_hat/V_hat buffer itself is the bottleneck (long
+    # growing context, memory-constrained decode). REQUIRES
+    # patch_mlx_lm_for_fused_sdpa() to already be active; the cache
+    # constructor checks this and raises rather than silently returning
+    # zero-valued attention output through an unpatched dispatcher.
+    fused_sdpa_memory_bound: bool = False
 
     def __repr__(self) -> str:
         return (

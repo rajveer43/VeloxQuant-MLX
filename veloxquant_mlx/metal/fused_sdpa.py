@@ -303,62 +303,123 @@ def metal_fused_sdpa(
 # mlx_lm dispatcher patch
 # ===========================================================================
 #
-# mlx_lm.models.base.scaled_dot_product_attention is the single SDPA entry
-# point every model architecture calls.  It already dispatches on
-# hasattr(cache, "bits") for the quantized-cache path; we extend the same
-# dispatch to honor hasattr(cache, "fused_sdpa").
+# mlx_lm.models.base.scaled_dot_product_attention is the single SDPA
+# implementation every model architecture is meant to share, but every
+# model module (glm4.py, llama.py, qwen2.py, ...) does
+# `from .base import scaled_dot_product_attention` — a *value* import that
+# binds its own module-level name to the function object at import time.
+# Reassigning `mlx_lm.models.base.scaled_dot_product_attention` afterwards
+# does NOT change what an already-imported model module calls; each model
+# module keeps calling its own bound reference to the original function.
+#
+# A prior version of this patch only reassigned the `base` module's
+# attribute and asserted success by checking that attribute's identity —
+# which always looked patched but never actually intercepted a real
+# model's attention call. Verified directly: patching `base`, then
+# monkey-patching a spy onto `base.scaled_dot_product_attention` and
+# running real GLM-4 generation, the spy was called 0 times. This
+# corrected version also walks every already-imported `mlx_lm.models.*`
+# submodule and rebinds its own `scaled_dot_product_attention` name too,
+# which is what real model code actually calls.
 #
 # The patch is idempotent and reversible (call unpatch_mlx_lm to restore).
 
 _original_sdpa = None
 _patched: bool = False
+_patched_modules: list = []
+
+
+def _make_patched_sdpa(original):
+    def _patched_sdpa(queries, keys, values, cache, scale, mask, sinks=None):
+        # Route to cache.fused_sdpa() only for a cache actually running in
+        # the memory-bound configuration (VecInferKVCache with fused_sdpa=True
+        # AND fused_sdpa_memory_bound=True). In that mode update_and_fetch
+        # never materializes fp16 K_hat/V_hat — the `keys`/`values` tensors
+        # this function would otherwise receive are sentinel zeros, so
+        # falling through to `original` would silently compute zero-valued
+        # attention. Every other cache (fused_sdpa=False, or fused_sdpa=True
+        # without memory_bound — the throughput-oriented default) still
+        # returns a real, usable fp16 tensor and must keep going through the
+        # standard path: profiling on Llama-3.1-8B showed the fused kernel is
+        # slower per-call than reusing an already-materialized K_hat, since
+        # mlx_lm's persistent cache buffer amortizes the standard path's
+        # dequant cost to near zero.
+        # cache.fused_sdpa()'s kernel only understands a plain causal-or-not
+        # mask plus an optional integer sliding-window width — it cannot
+        # consume an arbitrary mlx_lm mask array (custom masks, attention
+        # sinks, etc.). Take the fused path only for the cases it actually
+        # supports and fall back to the standard (correct, general) path
+        # otherwise, rather than guessing at an unsupported mask shape.
+        is_plain_mask = mask is None or (isinstance(mask, str) and mask == "causal")
+        if (
+            getattr(cache, "_memory_bound", False)
+            and hasattr(cache, "fused_sdpa")
+            and is_plain_mask
+            and sinks is None
+        ):
+            causal = mask == "causal"
+            return cache.fused_sdpa(queries, scale=scale, causal=causal, sliding_window=0)
+        return original(queries, keys, values, cache=cache, scale=scale, mask=mask, sinks=sinks)
+
+    return _patched_sdpa
 
 
 def patch_mlx_lm_for_fused_sdpa() -> None:
-    """Monkey-patch ``mlx_lm.models.base.scaled_dot_product_attention`` so
-    that any cache exposing a ``fused_sdpa(q, scale, *, causal, sliding_window)``
-    method receives the attention call directly — bypassing the standard
-    materialize-then-attend path.
+    """Monkey-patch every already-imported ``mlx_lm.models.*`` module's own
+    ``scaled_dot_product_attention`` reference so that any cache exposing a
+    ``fused_sdpa(q, scale, *, causal, sliding_window)`` method receives the
+    attention call directly — bypassing the standard materialize-then-attend
+    path.
+
+    Must be called AFTER the target model is loaded (``mlx_lm.load(...)``),
+    since it patches the specific model module(s) already imported into
+    ``sys.modules`` — it cannot retroactively patch a module imported later.
+    Calling it before loading the model is a no-op for that model's module
+    and will silently fail to intercept its attention calls; there is no
+    reliable way to patch a module before it exists, so call load() first.
 
     Safe to call multiple times.  Call :func:`unpatch_mlx_lm` to restore.
     """
-    global _original_sdpa, _patched
+    global _original_sdpa, _patched, _patched_modules
     if _patched:
         return
+
+    import sys
 
     import mlx_lm.models.base as _base
 
     _original_sdpa = _base.scaled_dot_product_attention
+    patched_fn = _make_patched_sdpa(_original_sdpa)
 
-    def _patched_sdpa(queries, keys, values, cache, scale, mask, sinks=None):
-        # NOTE: as of 0.6.0 the dispatcher is a no-op in the live
-        # generation loop because VecInferKVCache.update_and_fetch still
-        # returns the standard fp16 K_hat/V_hat tensors, which mlx_lm's
-        # default SDPA handles efficiently.  Profiling on Llama-3.1-8B
-        # showed that the fused kernel cannot beat MLX SDPA on an already-
-        # materialized K_hat tensor because the per-step dequant cost is
-        # amortized to zero by mlx_lm's persistent cache buffer.
-        #
-        # cache.fused_sdpa(q) remains available for callers who want it
-        # explicitly (e.g. memory-bound configurations that skip the K_hat
-        # buffer entirely).  This dispatcher would route to it if mlx_lm
-        # ever stops returning a usable fp16 tensor from update_and_fetch.
-        return _original_sdpa(
-            queries, keys, values, cache=cache, scale=scale, mask=mask, sinks=sinks
-        )
+    _base.scaled_dot_product_attention = patched_fn
+    _patched_modules = [_base]
 
-    _base.scaled_dot_product_attention = _patched_sdpa
+    for name, module in list(sys.modules.items()):
+        if (
+            module is not None
+            and module is not _base
+            and (name.startswith("mlx_lm.models.") or name.startswith("mlx_vlm.models."))
+            and getattr(module, "scaled_dot_product_attention", None) is _original_sdpa
+        ):
+            module.scaled_dot_product_attention = patched_fn
+            _patched_modules.append(module)
+
     _patched = True
 
 
 def unpatch_mlx_lm() -> None:
-    """Restore the original ``mlx_lm.models.base.scaled_dot_product_attention``."""
-    global _original_sdpa, _patched
+    """Restore the original ``scaled_dot_product_attention`` on every module
+    :func:`patch_mlx_lm_for_fused_sdpa` touched (``mlx_lm.models.base`` plus
+    every already-imported model submodule that had its own bound reference
+    rebound)."""
+    global _original_sdpa, _patched, _patched_modules
     if not _patched:
         return
-    import mlx_lm.models.base as _base
 
-    _base.scaled_dot_product_attention = _original_sdpa
+    for module in _patched_modules:
+        module.scaled_dot_product_attention = _original_sdpa
+
+    _patched_modules = []
     _patched = False
 
 

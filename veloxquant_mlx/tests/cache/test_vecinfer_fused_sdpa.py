@@ -256,6 +256,167 @@ def test_fused_sdpa_long_seq() -> None:
     assert diff < 1e-2, f"long-seq fused vs ref max diff = {diff:.3e}"
 
 
+def test_fused_sdpa_multi_token_prefill() -> None:
+    """S_q > 1 (prefill), not just single-token decode — the kernel's grid
+    is parameterized by S_q, but every prior test only exercised S_q=1."""
+    c = _build_cache(fused_sdpa=True)
+    B, H_kv, S_kv, D = 1, 4, 64, 128
+    _populate_cache_with_random_kv(c, B, H_kv, S_kv, D)
+    S_q = 8
+    q = mx.array(
+        np.random.default_rng(21).standard_normal((B, 16, S_q, D)).astype(np.float32) * 0.2
+    ).astype(mx.float16)
+    _, diff = _run_and_compare(c, q, causal=True, sliding_window=0, scale=1.0 / D**0.5)
+    assert diff < 1e-2, f"multi-token prefill fused vs ref max diff = {diff:.3e}"
+
+
+# ===========================================================================
+# memory_bound wiring: update_and_fetch skip + dispatcher routing
+# ===========================================================================
+def _build_memory_bound_cache(*, head_dim: int = 128, key_sub_dim: int = 8, seed: int = 0):
+    from veloxquant_mlx.metal.fused_sdpa import patch_mlx_lm_for_fused_sdpa, unpatch_mlx_lm
+
+    unpatch_mlx_lm()  # start clean regardless of prior test state
+    patch_mlx_lm_for_fused_sdpa()
+    rng = np.random.default_rng(seed)
+    n_centroids = 256
+    cb_k = mx.array(rng.standard_normal((n_centroids, key_sub_dim)).astype(np.float32))
+    cb_v = mx.array(rng.standard_normal((n_centroids, key_sub_dim)).astype(np.float32))
+    cfg = KVCacheConfig(
+        method="vecinfer",
+        head_dim=head_dim,
+        key_sub_dim=key_sub_dim,
+        value_sub_dim=key_sub_dim,
+        key_codebook_bits=8,
+        value_codebook_bits=8,
+        seed=seed,
+        key_codebook=cb_k,
+        value_codebook=cb_v,
+        fused_sdpa=True,
+        fused_sdpa_memory_bound=True,
+    )
+    return KVCacheFactory.create(cfg)
+
+
+def test_memory_bound_requires_patch_active() -> None:
+    """Constructing with fused_sdpa_memory_bound=True before the mlx_lm
+    dispatcher is patched must fail loudly, not silently produce zeros."""
+    from veloxquant_mlx.metal.fused_sdpa import unpatch_mlx_lm
+
+    unpatch_mlx_lm()
+    cfg = KVCacheConfig(
+        method="vecinfer",
+        head_dim=128,
+        key_sub_dim=8,
+        value_sub_dim=8,
+        key_codebook_bits=8,
+        value_codebook_bits=8,
+        fused_sdpa=True,
+        fused_sdpa_memory_bound=True,
+    )
+    with pytest.raises(RuntimeError, match="patch_mlx_lm_for_fused_sdpa"):
+        KVCacheFactory.create(cfg)
+
+
+def test_memory_bound_requires_fused_sdpa_flag() -> None:
+    """fused_sdpa_memory_bound=True without fused_sdpa=True must fail loudly."""
+    cfg = KVCacheConfig(
+        method="vecinfer",
+        head_dim=128,
+        key_sub_dim=8,
+        value_sub_dim=8,
+        key_codebook_bits=8,
+        value_codebook_bits=8,
+        fused_sdpa=False,
+        fused_sdpa_memory_bound=True,
+    )
+    with pytest.raises(RuntimeError, match="requires fused_sdpa=True"):
+        KVCacheFactory.create(cfg)
+
+
+def test_memory_bound_update_and_fetch_does_not_materialize_fp16() -> None:
+    """The actual point of this fix: nbytes must reflect uint32 indices
+    only, not a full fp16 K_hat/V_hat buffer."""
+    c = _build_memory_bound_cache()
+    B, H_kv, S, D = 1, 8, 16, 128
+    keys = mx.random.normal((B, H_kv, S, D)).astype(mx.float16)
+    vals = mx.random.normal((B, H_kv, S, D)).astype(mx.float16)
+    c.update_and_fetch(keys, vals)
+
+    fp16_equivalent_bytes = B * H_kv * S * D * 2 * 2  # K + V, fp16
+    assert c.nbytes < fp16_equivalent_bytes, (
+        f"nbytes={c.nbytes} should be well under the fp16-equivalent "
+        f"{fp16_equivalent_bytes} bytes in memory_bound mode"
+    )
+
+    from veloxquant_mlx.metal.fused_sdpa import unpatch_mlx_lm
+
+    unpatch_mlx_lm()
+
+
+def test_memory_bound_end_to_end_via_patched_dispatcher() -> None:
+    """Drive attention through mlx_lm's real (patched) SDPA entry point --
+    not calling cache.fused_sdpa() directly -- and check it matches the
+    same reference used by the direct-call tests above."""
+    import mlx_lm.models.base as _base
+
+    c = _build_memory_bound_cache(seed=5)
+    B, H_kv, S, D = 1, 4, 32, 128
+    keys = mx.array(
+        np.random.default_rng(5).standard_normal((B, H_kv, S, D)).astype(np.float32) * 0.3
+    ).astype(mx.float16)
+    vals = mx.array(
+        np.random.default_rng(6).standard_normal((B, H_kv, S, D)).astype(np.float32) * 0.3
+    ).astype(mx.float16)
+    c.update_and_fetch(keys, vals)  # memory-bound path: sentinel zeros back to caller
+
+    q = mx.array(
+        np.random.default_rng(7).standard_normal((B, 16, 1, D)).astype(np.float32) * 0.2
+    ).astype(mx.float16)
+    out_dispatched = _base.scaled_dot_product_attention(
+        q, mx.zeros((B, H_kv, S, D), mx.float16), mx.zeros((B, H_kv, S, D), mx.float16),
+        cache=c, scale=1.0 / D**0.5, mask="causal",
+    )
+    out_direct = c.fused_sdpa(q, scale=1.0 / D**0.5, causal=True, sliding_window=0)
+    mx.eval(out_dispatched, out_direct)
+    diff = float(mx.max(mx.abs(out_dispatched.astype(mx.float32) - out_direct.astype(mx.float32))).item())
+    assert diff == 0.0, f"dispatched vs direct fused_sdpa call diverged: {diff:.3e}"
+
+    from veloxquant_mlx.metal.fused_sdpa import unpatch_mlx_lm
+
+    unpatch_mlx_lm()
+
+
+def test_non_memory_bound_cache_is_unaffected_by_patch() -> None:
+    """A cache NOT in memory_bound mode must still go through the standard
+    path even while the dispatcher patch is globally active -- the patch
+    must not accidentally intercept every VecInfer cache."""
+    from veloxquant_mlx.metal.fused_sdpa import patch_mlx_lm_for_fused_sdpa, unpatch_mlx_lm
+    import mlx_lm.models.base as _base
+
+    unpatch_mlx_lm()
+    patch_mlx_lm_for_fused_sdpa()
+    try:
+        c = _build_cache(fused_sdpa=True)  # fused_sdpa=True, memory_bound=False (default)
+        B, H_kv, S, D = 1, 4, 8, 128
+        keys = mx.random.normal((B, H_kv, S, D)).astype(mx.float16)
+        vals = mx.random.normal((B, H_kv, S, D)).astype(mx.float16)
+        k_out, v_out = c.update_and_fetch(keys, vals)
+        assert k_out.shape == (B, H_kv, S, D) and k_out.dtype == mx.float16
+
+        q = mx.random.normal((B, 16, 1, D)).astype(mx.float16)
+        # Must not raise/misbehave when routed through the patched dispatcher:
+        # non-memory-bound caches fall through to _original_sdpa with the
+        # real (non-sentinel) k_out/v_out tensors.
+        out = _base.scaled_dot_product_attention(
+            q, k_out, v_out, cache=c, scale=1.0 / D**0.5, mask="causal"
+        )
+        mx.eval(out)
+        assert out.shape == (B, 16, 1, D)
+    finally:
+        unpatch_mlx_lm()
+
+
 def test_dispatcher_patch_is_idempotent_and_reversible() -> None:
     """Calling patch twice is fine; unpatch restores the original."""
     from veloxquant_mlx.metal.fused_sdpa import (

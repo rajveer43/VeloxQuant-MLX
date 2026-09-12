@@ -155,6 +155,38 @@ class VecInferKVCache(_MLXKVCache):
             )
         self._fused_enabled: bool = bool(fused_req) and available and shape_ok
 
+        # Opt-in: when True (and fused_sdpa is active), update_and_fetch
+        # skips fp16 K_hat/V_hat materialization entirely and stores only
+        # uint32 codebook indices — the actual memory reduction this class
+        # was built for. Requires patch_mlx_lm_for_fused_sdpa() to be active;
+        # a normal, unpatched mlx_lm.generate() call would read the sentinel
+        # zero tensors this path returns and silently produce zero attention
+        # output, so we check for the patch at construction time and fail
+        # loudly instead of running that way by accident.
+        memory_bound_req = bool(getattr(config, "fused_sdpa_memory_bound", False))
+        if memory_bound_req and not self._fused_enabled:
+            raise RuntimeError(
+                "VecInferKVCache: fused_sdpa_memory_bound=True requires "
+                "fused_sdpa=True (and a supported shape/Metal build) — "
+                "the memory-bound path only exists as a variant of the "
+                "fused path, it cannot run standalone."
+            )
+        if memory_bound_req:
+            from veloxquant_mlx.metal.fused_sdpa import is_patched as _sdpa_is_patched
+
+            if not _sdpa_is_patched():
+                raise RuntimeError(
+                    "VecInferKVCache: fused_sdpa_memory_bound=True but "
+                    "veloxquant_mlx.metal.fused_sdpa.patch_mlx_lm_for_fused_sdpa() "
+                    "has not been called. Without that patch, mlx_lm's SDPA "
+                    "dispatcher never calls cache.fused_sdpa() and this cache's "
+                    "update_and_fetch would return sentinel zero tensors that "
+                    "get consumed as real attention input, silently producing "
+                    "zero-valued generation output. Call "
+                    "patch_mlx_lm_for_fused_sdpa() before building this cache."
+                )
+        self._memory_bound: bool = memory_bound_req
+
         # Ring-buffer storage for fused path.  Pre-allocated at first
         # update so we know B and H_kv; size = fused_sdpa_max_ctx.
         # Layout: [B, H_kv, max_ctx, n_sub] uint32.
@@ -254,15 +286,29 @@ class VecInferKVCache(_MLXKVCache):
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys, values):
-        # Always run the standard dequant path (the 0.5.1 behavior).  When
-        # fused mode is enabled we also stash indices so cache.fused_sdpa()
-        # can be called separately.  Phase 2.1 attempted an index-only
-        # path; profiling showed it's slower because mlx_lm caches the
-        # materialized K_hat across decode steps so per-step dequant cost
-        # is essentially free, while our LUT-based kernel pays a fixed
-        # per-call overhead that doesn't amortize.  Keeping the standard
-        # path is the correct decision.
+        # Three paths:
+        #   fused_sdpa=False               -> standard dequant-only path.
+        #   fused_sdpa=True, memory_bound=False (default) -> standard path
+        #       PLUS an index stash, so cache.fused_sdpa() is *available*
+        #       but nothing forces mlx_lm to call it. Kept for backward
+        #       compatibility: profiling on Llama-3.1-8B showed the fused
+        #       kernel is slower per-call than reusing an already-
+        #       materialized K_hat buffer once every step goes through
+        #       update_and_fetch anyway, so the default optimizes for
+        #       throughput and pays the full fp16 K_hat/V_hat memory cost.
+        #   fused_sdpa=True, memory_bound=True -> _update_and_fetch_fused:
+        #       never materializes K_hat/V_hat at all. This is strictly a
+        #       memory/throughput tradeoff, not a free win — it requires
+        #       patch_mlx_lm_for_fused_sdpa() to be active (mlx_lm.generate()
+        #       must be run with the patched SDPA dispatcher; see
+        #       fused_sdpa.py), and per-call fused-kernel overhead is not
+        #       amortized the way the standard path's dequant is. Opt into
+        #       this only when the live K_hat/V_hat fp16 buffer is the
+        #       actual bottleneck (long-context, memory-constrained decode),
+        #       not as a default speed optimization.
         if self._fused_enabled:
+            if self._memory_bound:
+                return self._update_and_fetch_fused(keys, values)
             return self._update_and_fetch_standard_and_stash(keys, values)
         return self._update_and_fetch_standard(keys, values)
 
