@@ -25,7 +25,7 @@ Hamming distance scoring uses `rabitq_hamming_score` — a Metal kernel with nat
 
 2. **IVF clustering (`fit`)** — Keys are organised into `nlist` Voronoi cells via k-means. Each key stores its cluster ID plus the 1-bit residual within the cell — improving inner-product approximation over flat 1-bit encoding.
 
-3. **1-bit sign packing** — The rotated residual is encoded as its sign and packed into bytes (`indices`, `[N, D//8]` uint8), giving 8× memory reduction over fp16 keys.
+3. **1-bit sign packing** — The rotated residual is encoded as its sign and packed into bytes (`indices`, `[N, D//8]` uint8), giving 16× memory reduction over fp16 keys for the packed bits alone (`RaBitQQuantizer.compression_ratio`); per-key centroid ID/Cx/L1 metadata overhead brings the total down to the ~6× figure below.
 
 4. **Hamming distance scoring** — Attention scores are approximated by XOR+popcount Hamming distance between packed query bits and each packed key, run on Metal GPU cores via `rabitq_hamming_score`.
 

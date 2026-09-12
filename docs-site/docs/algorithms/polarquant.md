@@ -29,25 +29,24 @@ PolarQuant uses **recursive polar coordinate decomposition** to represent keys a
 
 ## Quickstart
 
-```python
-import mlx_lm
-from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
+:::warning[Standalone method — not `mlx_lm.generate()`-compatible]
+`method="polar"` is one of the library's `STANDALONE_METHODS`: `PolarQuantKVCache` implements VeloxQuant's own `append_key`/`append_value`/`attend` interface, not `mlx_lm`'s `update_and_fetch` protocol. `KVCacheBuilder.for_model()` and `patch_model_kv_cache()` both reject it with `QuantizerConfigError`, so it cannot be wired into `mlx_lm.generate()`. Build it directly via `KVCacheFactory.create()` and drive it with `append_key`/`append_value`/`attend`, as shown below.
+:::
 
-model, tokenizer = mlx_lm.load("mlx-community/Phi-3-mini-4k-instruct-4bit")
+```python
+from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
 config = KVCacheConfig(
     method="polar",
+    head_dim=64,  # match your model's per-head dimension
     bit_width_inlier=2,
 )
-cache = KVCacheBuilder.build(model, config)
+cache = KVCacheFactory.create(config)
 
-response = mlx_lm.generate(
-    model,
-    tokenizer,
-    prompt="What are the main differences between Python and Go?",
-    max_tokens=400,
-    kv_cache=cache,
-)
+# Drive it directly, one key/value pair at a time (fp16 vectors, shape [head_dim])
+cache.append_key(key_vector)
+cache.append_value(value_vector)
+output = cache.attend(query_vector)
 ```
 
 ## Using the quantizer directly

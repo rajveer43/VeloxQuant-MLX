@@ -104,14 +104,14 @@ config = KVCacheConfig(
     key_codebook=mx.array(data["key_cb"]),
     value_codebook=mx.array(data["value_cb"]),
 )
-cache = KVCacheBuilder.build(model, config)
+caches = KVCacheBuilder.for_model(model, config)
 
 response = mlx_lm.generate(
     model,
     tokenizer,
     prompt="Summarise the history of calculus in 300 words.",
     max_tokens=400,
-    kv_cache=cache,
+    kv_cache=caches,
 )
 ```
 

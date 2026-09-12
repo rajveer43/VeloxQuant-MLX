@@ -36,26 +36,25 @@ QJL (Quantized Johnson-Lindenstrauss) is the **simplest algorithm** in VeloxQuan
 
 ## Quickstart
 
-```python
-import mlx_lm
-from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
+:::warning[Standalone method — not `mlx_lm.generate()`-compatible]
+`method="qjl"` is one of the library's `STANDALONE_METHODS`: `QJLKVCache` implements VeloxQuant's own `append_key`/`append_value`/`attend` interface, not `mlx_lm`'s `update_and_fetch` protocol. `KVCacheBuilder.for_model()` and `patch_model_kv_cache()` both reject it with `QuantizerConfigError`, so it cannot be wired into `mlx_lm.generate()`. Build it directly via `KVCacheFactory.create()` and drive it with `append_key`/`append_value`/`attend`, as shown below.
+:::
 
-model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
+```python
+from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
 config = KVCacheConfig(
     method="qjl",
+    head_dim=128,
     jl_dim=64,  # sketch dimension (m). Larger = better quality, more memory.
     # Defaults to head_dim if left unset.
 )
-cache = KVCacheBuilder.build(model, config)
+cache = KVCacheFactory.create(config)
 
-response = mlx_lm.generate(
-    model,
-    tokenizer,
-    prompt="List 10 interesting facts about quantum computing.",
-    max_tokens=300,
-    kv_cache=cache,
-)
+# Drive it directly, one key/value pair at a time (fp16 vectors, shape [head_dim])
+cache.append_key(key_vector)
+cache.append_value(value_vector)
+output = cache.attend(query_vector)
 ```
 
 ## Using the quantizer directly

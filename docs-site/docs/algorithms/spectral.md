@@ -78,32 +78,37 @@ print(f"Effective dimensionality: {pr:.2f} / {vectors.shape[-1]}")
 
 ## Inference
 
+:::warning[Standalone method — not `mlx_lm.generate()`-compatible]
+`method="spectral"` is one of the library's `STANDALONE_METHODS`: `SpectralQuantKVCache` implements VeloxQuant's own `append_key`/`append_value`/`attend` interface, not `mlx_lm`'s `update_and_fetch` protocol. `KVCacheBuilder.for_model()` and `patch_model_kv_cache()` both reject it with `QuantizerConfigError`, so it cannot be wired into `mlx_lm.generate()`. Build one cache per layer directly via `KVCacheFactory.create()`, calibrate each, and drive them with `append_key`/`append_value`/`attend`, as shown below.
+:::
+
 ```python
-from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
+from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.spectral.calibrate import load_cached_rotations
 
 config = KVCacheConfig(
     method="spectral",
+    head_dim=128,  # match your model's per-head dimension
     bit_width_inlier=3,
     spectral_key_d_eff=4,  # signal dimensions for keys
     spectral_val_d_eff=50,  # signal dimensions for values
     spectral_apply_qjl=True,  # apply QJL sign-sketch on signal dims
 )
-cache = KVCacheBuilder.build(model, config)
+caches = [KVCacheFactory.create(config) for _ in range(n_layers)]
 
 # Inject the real, calibrated rotation (falls back to a random orthogonal
 # rotation otherwise — correct interface, uncalibrated quality)
 rotations = load_cached_rotations("qwen2.5-7b")
 if rotations is not None:
-    cache.calibrate(rotations[0])  # per-layer; repeat per transformer layer
+    for layer_cache, rotation_entry in zip(caches, rotations):
+        layer_cache.calibrate(rotation_entry)  # per-layer
 
-response = mlx_lm.generate(
-    model,
-    tokenizer,
-    prompt="Write a comprehensive essay on the history of mathematics.",
-    max_tokens=2000,
-    kv_cache=cache,
-)
+# Drive each layer's cache directly, one key/value pair at a time
+# (fp16 vectors, shape [head_dim])
+layer_cache = caches[0]
+layer_cache.append_key(key_vector)
+layer_cache.append_value(value_vector)
+output = layer_cache.attend(query_vector)
 ```
 
 ## Water-filling bit allocation
