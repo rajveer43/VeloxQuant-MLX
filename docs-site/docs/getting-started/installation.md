@@ -41,7 +41,15 @@ cd VeloxQuant-MLX
 pip install -e ".[dev]"
 ```
 
-The `[dev]` extra installs SciPy (for codebook training) and the full test suite dependencies.
+The `[dev]` extra installs the test suite and tooling dependencies (pytest, psutil, build, twine, ruff). SciPy is a core runtime dependency (used for codebook training), so it is already installed with the base package — no extra needed.
+
+## Optional extras
+
+```bash
+pip install "veloxquant-mlx[plots]"
+```
+
+The `[plots]` extra installs Matplotlib, needed only for the benchmark-plotting utilities. It is not required for compression itself.
 
 ## Verify the installation
 

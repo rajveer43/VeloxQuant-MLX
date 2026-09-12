@@ -13,7 +13,15 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ---
 
-## v0.42.0 — Latest
+## v0.42.0
+
+:::note[This page is not current]
+The library has released many versions since v0.42.0 — the current
+published version is **0.83.0** (see `pyproject.toml`). This changelog page
+has not been kept in sync with every release; for the complete, up-to-date
+version history see the repository's
+[CHANGELOG.md](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CHANGELOG.md).
+:::
 
 ### Added
 - **Fused group-affine (KIVI-style) decode + attention Metal kernel.** `scalar_fused_decode_attend` (`veloxquant_mlx/metal/_scalar_attend.py`) runs SDP attention directly over an asymmetric group-min/max quantized cache — the KIVI / SKVQ / Kitty / group-quant family, where K/V are `uint8` codes plus a per-group `(scale, zero)`. It reconstructs `k_hat`/`v_hat` in-register inside a FlashAttention-style online softmax, so no dequantized `K_hat`/`V_hat` reaches DRAM, killing the `dequantize -> DRAM -> SDPA` round-trip the pure-MLX path pays every decode step. Measured on Apple M4 (B=1 H=32 D=128 b=2 g=32 S_q=1): **6.4x at S_kv=512 rising to 12.2x at S_kv=65536**, parity max abs 1.2e-4 (fp32 softmax accumulation — more accurate than the fp16 baseline). See [Metal kernels guide](/docs/guides/metal-kernels) and [Metal API](/docs/api/metal-api).
