@@ -12,7 +12,7 @@ import mlx.core as mx
 import numpy as np
 import pytest
 
-from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder, KVCacheFactory
+from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.minicache_cache import MiniCacheKVCache
 from veloxquant_mlx.cache.minicache_coordinator import MiniCacheCoordinator
 

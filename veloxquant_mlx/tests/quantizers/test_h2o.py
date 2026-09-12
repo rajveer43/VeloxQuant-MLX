@@ -20,7 +20,6 @@ import pytest
 
 from veloxquant_mlx.quantizers.a2ats_rope import a2ats_apply_exact_rope, rope_remap_positions
 from veloxquant_mlx.quantizers.h2o import (
-    H2OState,
     _batch_absorb_no_eviction,
     full_h2o_fp16_bytes,
     h2o_fp16_bytes,

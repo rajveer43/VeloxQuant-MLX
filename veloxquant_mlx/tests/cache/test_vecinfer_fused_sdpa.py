@@ -19,9 +19,7 @@ import pytest
 
 from veloxquant_mlx import KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.allocators.vecinfer import (
-    apply_dual_transform_queries,
     dequantize_vq,
-    walsh_hadamard_matrix,
 )
 from veloxquant_mlx.metal import metal_available
 
@@ -374,12 +372,18 @@ def test_memory_bound_end_to_end_via_patched_dispatcher() -> None:
         np.random.default_rng(7).standard_normal((B, 16, 1, D)).astype(np.float32) * 0.2
     ).astype(mx.float16)
     out_dispatched = _base.scaled_dot_product_attention(
-        q, mx.zeros((B, H_kv, S, D), mx.float16), mx.zeros((B, H_kv, S, D), mx.float16),
-        cache=c, scale=1.0 / D**0.5, mask="causal",
+        q,
+        mx.zeros((B, H_kv, S, D), mx.float16),
+        mx.zeros((B, H_kv, S, D), mx.float16),
+        cache=c,
+        scale=1.0 / D**0.5,
+        mask="causal",
     )
     out_direct = c.fused_sdpa(q, scale=1.0 / D**0.5, causal=True, sliding_window=0)
     mx.eval(out_dispatched, out_direct)
-    diff = float(mx.max(mx.abs(out_dispatched.astype(mx.float32) - out_direct.astype(mx.float32))).item())
+    diff = float(
+        mx.max(mx.abs(out_dispatched.astype(mx.float32) - out_direct.astype(mx.float32))).item()
+    )
     assert diff == 0.0, f"dispatched vs direct fused_sdpa call diverged: {diff:.3e}"
 
     from veloxquant_mlx.metal.fused_sdpa import unpatch_mlx_lm
@@ -391,8 +395,9 @@ def test_non_memory_bound_cache_is_unaffected_by_patch() -> None:
     """A cache NOT in memory_bound mode must still go through the standard
     path even while the dispatcher patch is globally active -- the patch
     must not accidentally intercept every VecInfer cache."""
-    from veloxquant_mlx.metal.fused_sdpa import patch_mlx_lm_for_fused_sdpa, unpatch_mlx_lm
     import mlx_lm.models.base as _base
+
+    from veloxquant_mlx.metal.fused_sdpa import patch_mlx_lm_for_fused_sdpa, unpatch_mlx_lm
 
     unpatch_mlx_lm()
     patch_mlx_lm_for_fused_sdpa()
@@ -419,12 +424,13 @@ def test_non_memory_bound_cache_is_unaffected_by_patch() -> None:
 
 def test_dispatcher_patch_is_idempotent_and_reversible() -> None:
     """Calling patch twice is fine; unpatch restores the original."""
+    import mlx_lm.models.base as _base
+
     from veloxquant_mlx.metal.fused_sdpa import (
+        is_patched,
         patch_mlx_lm_for_fused_sdpa,
         unpatch_mlx_lm,
-        is_patched,
     )
-    import mlx_lm.models.base as _base
 
     original = _base.scaled_dot_product_attention
 

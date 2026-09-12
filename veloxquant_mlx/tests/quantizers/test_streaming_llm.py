@@ -15,7 +15,6 @@ import numpy as np
 import pytest
 
 from veloxquant_mlx.quantizers.streaming_llm import (
-    StreamingWindow,
     full_stream_fp16_bytes,
     init_streaming_window,
     stream_fp16_bytes,

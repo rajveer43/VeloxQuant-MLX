@@ -57,7 +57,7 @@ Byte accounting:
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache

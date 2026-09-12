@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -72,7 +72,7 @@ class AdaptiveScalarCodebook:
     def b(self) -> int:
         return self._b
 
-    def get_codebook(self) -> Tuple[np.ndarray, np.ndarray]:
+    def get_codebook(self) -> tuple[np.ndarray, np.ndarray]:
         """Return (centroids, boundaries) of the current codebook.
 
         Boundaries are recomputed as midpoints between sorted centroids.

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import mlx.core as mx
 import numpy as np
-import pytest
 
 from veloxquant_mlx.quantizers.palu import (
     group_head_svd,
@@ -17,7 +16,6 @@ from veloxquant_mlx.quantizers.palu import (
     quantize_latent,
     reconstruct_from_latent,
 )
-
 
 # ------------------------------------------------------------------
 # head_group_bounds

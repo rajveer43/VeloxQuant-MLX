@@ -73,7 +73,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Tuple
 
 import mlx.core as mx
 
@@ -98,7 +97,7 @@ class AMCTierConfig:
     bits: int  # quantization bit-width
 
 
-AMC_TIERS: Tuple[AMCTierConfig, ...] = (
+AMC_TIERS: tuple[AMCTierConfig, ...] = (
     AMCTierConfig(tier=HIGH, rank=128, bits=16),
     AMCTierConfig(tier=MID, rank=43, bits=8),
     AMCTierConfig(tier=LOW, rank=8, bits=4),
@@ -186,7 +185,7 @@ def amc_assign_tiers(
     saliency: mx.array,
     k_high: float = 0.20,
     k_mid: float = 0.30,
-) -> List[int]:
+) -> list[int]:
     """Assign each token a tier id via percentile-threshold partitioning.
 
     Uses :class:`veloxquant_mlx.dsa.heap.MaxHeap` to select the top
@@ -266,7 +265,7 @@ def amc_adaptive_thresholds(
     state: AMCThresholdState,
     new_saliency_values: mx.array,
     gamma: float = 0.1,
-) -> Tuple[float, float, AMCThresholdState]:
+) -> tuple[float, float, AMCThresholdState]:
     """Sequence-adaptive closed-loop threshold adjustment (Eq. 4-5).
 
     Pushes ``new_saliency_values`` into the trailing window, computes the
@@ -363,7 +362,7 @@ def amc_quantize_tier(x: mx.array, bits: int, group_size: int = 32) -> mx.array:
 # ---------------------------------------------------------------------------
 
 
-def amc_pack_low_tier(quantized_codes: "mx.array") -> Tuple[bytes, int]:
+def amc_pack_low_tier(quantized_codes: mx.array) -> tuple[bytes, int]:
     """Densely pack Low-tier 4-bit integer codes via :class:`BitPackBuffer`.
 
     Args:

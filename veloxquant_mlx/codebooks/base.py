@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import math
 from typing import Literal
 
 import numpy as np
 
-from veloxquant_mlx.core.abstractions import Codebook, CodebookStrategy
+from veloxquant_mlx.core.abstractions import Codebook
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.core.registry import CodebookRegistry
 

@@ -22,12 +22,10 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import mlx.core as mx
 import numpy as np
-
 
 PROMPTS = [
     "Explain why the sky appears blue in just one short sentence.",
@@ -124,8 +122,8 @@ def _build_vecinfer_caches(
     """Construct one VecInferKVCache per attention layer."""
     from mlx_lm.models.cache import KVCache as _FallbackCache
 
-    from veloxquant_mlx.cache.vecinfer_cache import VecInferKVCache
     from veloxquant_mlx import KVCacheConfig
+    from veloxquant_mlx.cache.vecinfer_cache import VecInferKVCache
 
     layers = getattr(model, "layers", None) or model.model.layers
     args = getattr(model, "args", None)

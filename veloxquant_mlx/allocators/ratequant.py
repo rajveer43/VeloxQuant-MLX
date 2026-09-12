@@ -26,15 +26,11 @@ adding per-head would require a larger restructuring of the cache layout.
 
 from __future__ import annotations
 
-import math
-from typing import Optional
-
 import mlx.core as mx
 import numpy as np
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.turboquant_rvq import TurboQuantRVQ
-
 
 # ── Sensitivity calibration ─────────────────────────────────────────────────
 
@@ -79,7 +75,7 @@ _DEFAULT_CALIB_PROMPTS = (
 def calibrate_layer_sensitivities(
     model,
     tokenizer,
-    prompts: Optional[list] = None,
+    prompts: list | None = None,
     seq_len: int = 256,
     verbose: bool = False,
 ) -> list[float]:

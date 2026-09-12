@@ -36,10 +36,9 @@ Public API:
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
-import numpy as np
 
 from veloxquant_mlx.core.abstractions import ArtifactStore, Quantizer
 from veloxquant_mlx.core.context import EncodedVector
@@ -78,9 +77,9 @@ class KIVIQuantizer(Quantizer):
         b: int = 2,
         group_size: int = 32,
         axis: str = "channel",
-        m: Optional[int] = None,  # accepted for QuantizerFactory parity
+        m: int | None = None,  # accepted for QuantizerFactory parity
         seed: int = 42,
-        store: Optional[ArtifactStore] = None,
+        store: ArtifactStore | None = None,
         **kwargs: Any,
     ) -> None:
         if b < 1 or b > 8:

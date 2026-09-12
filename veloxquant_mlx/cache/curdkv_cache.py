@@ -81,7 +81,6 @@ from veloxquant_mlx.quantizers.curdkv import (
     curdkv_fp16_bytes,
     curdkv_get_kv,
     curdkv_update,
-    full_curdkv_fp16_bytes,
     init_curdkv_state,
 )
 

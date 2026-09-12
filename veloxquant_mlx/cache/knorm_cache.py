@@ -51,7 +51,6 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.knorm import (
     KnormState,
-    full_knorm_fp16_bytes,
     init_knorm_state,
     knorm_fp16_bytes,
     knorm_get_kv,

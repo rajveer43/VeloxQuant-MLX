@@ -17,7 +17,7 @@ same storage shape AMC and KIVI both use.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -97,8 +97,8 @@ class AgeTieredKVCache(_MLXKVCache):
 
         self._B: int = 0
         self._H: int = 0
-        self._keys: List[mx.array] = []  # per (b,h): [n_seen, D] fp16
-        self._values: List[mx.array] = []  # per (b,h): [n_seen, D] fp16
+        self._keys: list[mx.array] = []  # per (b,h): [n_seen, D] fp16
+        self._values: list[mx.array] = []  # per (b,h): [n_seen, D] fp16
 
         self._tokens_seen_total: int = 0
         self._current_position: int = 0
@@ -176,7 +176,7 @@ class AgeTieredKVCache(_MLXKVCache):
         self.offset = 0
         return super().update_and_fetch(K_out, V_out)
 
-    def _accumulate_tier_counts(self) -> Dict[int, int]:
+    def _accumulate_tier_counts(self) -> dict[int, int]:
         """Recompute cumulative tier counts across all (b,h) from current state.
 
         Re-derives from ``self._keys`` (whose length per head always equals
@@ -195,7 +195,7 @@ class AgeTieredKVCache(_MLXKVCache):
         n_heads = len(self._keys)
         return {k: v * n_heads for k, v in counts.items()}
 
-    def _requantize(self, x: mx.array, tiers: List[int]) -> mx.array:
+    def _requantize(self, x: mx.array, tiers: list[int]) -> mx.array:
         """Re-quantize each contiguous same-tier run of ``x`` at its tier's bit-width."""
         n = x.shape[0]
         if n == 0:

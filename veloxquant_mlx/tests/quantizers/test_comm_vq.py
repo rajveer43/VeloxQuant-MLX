@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import math
-
 import mlx.core as mx
 import numpy as np
 import pytest
 
-from veloxquant_mlx.quantizers.comm_vq import CommVQQuantizer, _apply_rope_np, _rope_cos_sin_np
-
+from veloxquant_mlx.quantizers.comm_vq import CommVQQuantizer
 
 # ---------------------------------------------------------------------------
 # Helpers

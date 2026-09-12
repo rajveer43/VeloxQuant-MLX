@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy as np
-
 from veloxquant_mlx.core.abstractions import Preconditioner
 from veloxquant_mlx.core.registry import PreconditionerRegistry
 
@@ -95,7 +93,6 @@ class RotationPreconditioner(Preconditioner):
         Returns:
             Rotated array of shape (batch, d).
         """
-        import mlx.core as mx
 
         return x @ self._Pi.T
 
@@ -108,7 +105,6 @@ class RotationPreconditioner(Preconditioner):
         Returns:
             Reconstructed array of shape (batch, d).
         """
-        import mlx.core as mx
 
         return y @ self._Pi
 

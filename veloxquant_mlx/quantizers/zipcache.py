@@ -44,7 +44,7 @@ The cache wrapper owns the per-layer prefill/decode state.
 from __future__ import annotations
 
 import math
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 import mlx.core as mx
 

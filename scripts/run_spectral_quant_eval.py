@@ -515,8 +515,8 @@ def _resolve_model_name(model_name: str) -> str:
         and not resolved.startswith("mlx-")
     ):
         print(f"\n  WARNING: '{resolved}' may not be an mlx-converted model.")
-        print(f"  Raw HuggingFace models often fail to load with mlx_lm.")
-        print(f"  Try one of these instead:")
+        print("  Raw HuggingFace models often fail to load with mlx_lm.")
+        print("  Try one of these instead:")
         for mlx_name in sorted(set(MLX_MODEL_ALIASES.values())):
             print(f"    --model {mlx_name}")
         print()
@@ -537,7 +537,7 @@ def _load_model_safe(model_name: str):
                 f"does not support this model version."
             )
             print(f"  Detail: {err[:300]}")
-            print(f"\n  Fix: use an mlx-community converted model, e.g.:")
+            print("\n  Fix: use an mlx-community converted model, e.g.:")
             for mlx_name in sorted(set(MLX_MODEL_ALIASES.values())):
                 print(f"    python scripts/run_spectral_quant_eval.py --model {mlx_name}")
             sys.exit(1)
@@ -593,8 +593,8 @@ class SpectralQuantMLXKVCache:
         apply_qjl: bool = False,
         seed: int = 42,
     ) -> None:
-        import mlx.core as mx
         from mlx_lm.models.cache import KVCache as _MLXKVCache
+
         from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
 
         self._hd = head_dim
@@ -904,8 +904,8 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
     val_data += rng.standard_normal((512, d)).astype(np.float32) * 0.05
     val_data /= np.linalg.norm(val_data, axis=1, keepdims=True) + 1e-8
 
-    from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
     from veloxquant_mlx.quantizers.turboquant_prod import TurboQuantProd
+    from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
 
     def _cosim_sq(rotation, d_s, apply_qjl):
         sq = SpectralQuantizer(
@@ -966,7 +966,7 @@ def run_model_eval(model_name: str, n_tokens: int = 512, max_gen_tokens: int = 2
     )
 
     # ── Table 1 ───────────────────────────────────────────────────────────
-    print(f"\n  === Table 1: Spectral Universality ===")
+    print("\n  === Table 1: Spectral Universality ===")
     print(f"  {'Layer':<6} {'key d_eff':>10} {'val d_eff':>10} {'key d_s/d':>10}")
     for li in layer_ids[:10]:
         e = rotations[li]
@@ -997,6 +997,7 @@ def generate_benchmark_figures(
 ) -> None:
     """Generate fig1–fig6. If bench_results is provided, uses real TPS/prefill/ratio numbers."""
     import matplotlib.gridspec as gridspec
+
     from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
 
     try:
@@ -1185,7 +1186,7 @@ def generate_benchmark_figures(
     fig1.tight_layout()
     fig1.savefig(out_dir / "fig1_benchmark_summary.png", dpi=150, bbox_inches="tight")
     plt.close(fig1)
-    print(f"  Saved fig1_benchmark_summary.png")
+    print("  Saved fig1_benchmark_summary.png")
 
     # ── Fig 2: Quality vs bits ───────────────────────────────────────────────
     fig2, (ax_l, ax_r) = plt.subplots(1, 2, figsize=(14, 6))
@@ -1254,7 +1255,7 @@ def generate_benchmark_figures(
     fig2.tight_layout()
     fig2.savefig(out_dir / "fig2_quality_vs_bits.png", dpi=150, bbox_inches="tight")
     plt.close(fig2)
-    print(f"  Saved fig2_quality_vs_bits.png")
+    print("  Saved fig2_quality_vs_bits.png")
 
     # ── Fig 3: Memory at scale ───────────────────────────────────────────────
     fig3, (ax_a, ax_b2) = plt.subplots(1, 2, figsize=(14, 6))
@@ -1315,11 +1316,11 @@ def generate_benchmark_figures(
     fig3.tight_layout()
     fig3.savefig(out_dir / "fig3_memory_at_scale.png", dpi=150, bbox_inches="tight")
     plt.close(fig3)
-    print(f"  Saved fig3_memory_at_scale.png")
+    print("  Saved fig3_memory_at_scale.png")
 
     # ── Fig 4: Attention distortion ──────────────────────────────────────────
     attn_configs = [
-        (sm_fp16, f"fp16 Baseline (reference)", PALETTE["fp16"]),
+        (sm_fp16, "fp16 Baseline (reference)", PALETTE["fp16"]),
         (sm_tq3, f"TurboQuant 3-bit  cosim≈{cs_tq3:.3f}", PALETTE["tq3"]),
         (sm_sq_nqjl, f"SpectralQuant noQJL  cosim≈{cs_sq_noqjl:.3f}", PALETTE["sq_noqjl"]),
         (sm_sq_qjl, f"SpectralQuant +QJL  cosim≈{cs_sq_qjl:.3f}", PALETTE["sq_qjl"]),
@@ -1353,7 +1354,7 @@ def generate_benchmark_figures(
     fig4.tight_layout()
     fig4.savefig(out_dir / "fig4_attention_distortion.png", dpi=150, bbox_inches="tight")
     plt.close(fig4)
-    print(f"  Saved fig4_attention_distortion.png")
+    print("  Saved fig4_attention_distortion.png")
 
     # ── Fig 5: Method description cards ─────────────────────────────────────
     def _resp_snippet(key: str) -> str:
@@ -1417,7 +1418,7 @@ def generate_benchmark_figures(
     fig5.tight_layout()
     fig5.savefig(out_dir / "fig5_output_comparison.png", dpi=150, bbox_inches="tight")
     plt.close(fig5)
-    print(f"  Saved fig5_output_comparison.png")
+    print("  Saved fig5_output_comparison.png")
 
     # ── Fig 6: Full report ───────────────────────────────────────────────────
     fig6 = plt.figure(figsize=(20, 22))
@@ -1545,7 +1546,7 @@ def generate_benchmark_figures(
     )
     fig6.savefig(out_dir / "fig6_full_report.png", dpi=150, bbox_inches="tight")
     plt.close(fig6)
-    print(f"  Saved fig6_full_report.png")
+    print("  Saved fig6_full_report.png")
 
     print(f"\n  ✓ Benchmark figures (fig1–fig6) saved to: {out_dir}/")
 

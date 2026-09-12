@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import mlx.core as mx
 import mlx.nn as nn
 

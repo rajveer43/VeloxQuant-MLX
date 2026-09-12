@@ -15,6 +15,7 @@ def base_cache():
 
 def test_sliding_window_evicts(base_cache) -> None:
     import mlx.core as mx
+
     from veloxquant_mlx.cache.sliding_window_cache import SlidingWindowKVCache
 
     sw = SlidingWindowKVCache(base_cache, window_size=5)
@@ -29,6 +30,7 @@ def test_sliding_window_evicts(base_cache) -> None:
 
 def test_sliding_window_attend(base_cache) -> None:
     import mlx.core as mx
+
     from veloxquant_mlx.cache.sliding_window_cache import SlidingWindowKVCache
 
     sw = SlidingWindowKVCache(base_cache, window_size=10)

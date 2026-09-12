@@ -33,8 +33,6 @@ Adaptation notes:
 
 from __future__ import annotations
 
-from typing import Optional
-
 import mlx.core as mx
 
 from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant

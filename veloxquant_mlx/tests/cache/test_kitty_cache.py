@@ -19,16 +19,16 @@
 
 from __future__ import annotations
 
-import pytest
 import mlx.core as mx
 import numpy as np
+import pytest
 
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.kitty_cache import KittyKVCache
 from veloxquant_mlx.quantizers.kitty import (
     compute_running_variance,
-    rank_channels_by_sensitivity,
     quantize_mixed_channels,
+    rank_channels_by_sensitivity,
 )
 
 

@@ -19,7 +19,6 @@ from veloxquant_mlx.quantizers.amc import (
     HIGH,
     LOW,
     MID,
-    AMC_TIERS,
     amc_adaptive_thresholds,
     amc_apply_rank_mask,
     amc_assign_tiers,

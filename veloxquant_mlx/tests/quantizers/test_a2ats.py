@@ -8,8 +8,6 @@ the bulk via the same query-similarity signal. All data is synthetic.
 
 from __future__ import annotations
 
-import math
-
 import mlx.core as mx
 import numpy as np
 import pytest

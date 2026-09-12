@@ -38,7 +38,6 @@ a reimplementation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Tuple
 
 import mlx.core as mx
 
@@ -55,7 +54,7 @@ class AgeTierConfig:
     bits: int
 
 
-def default_age_tiers(bits_recent: int, bits_mid: int, bits_old: int) -> Tuple[AgeTierConfig, ...]:
+def default_age_tiers(bits_recent: int, bits_mid: int, bits_old: int) -> tuple[AgeTierConfig, ...]:
     """Build the three (tier, bits) pairs from the configured bit-widths."""
     return (
         AgeTierConfig(tier=RECENT, bits=bits_recent),
@@ -65,10 +64,10 @@ def default_age_tiers(bits_recent: int, bits_mid: int, bits_old: int) -> Tuple[A
 
 
 def assign_age_tiers(
-    ages: List[int],
+    ages: list[int],
     age_recent_boundary: int,
     age_mid_boundary: int,
-) -> List[int]:
+) -> list[int]:
     """Map each token's age (in positions) to a tier id.
 
     Args:
@@ -112,7 +111,7 @@ def age_tier_quantize(x: mx.array, bits: int, group_size: int = 32) -> mx.array:
     return _group_quant_dequant(x, bits, group_size)
 
 
-def age_tiered_bytes(tier_counts: dict, tiers: Tuple[AgeTierConfig, ...], head_dim: int) -> int:
+def age_tiered_bytes(tier_counts: dict, tiers: tuple[AgeTierConfig, ...], head_dim: int) -> int:
     """Actual stored bytes given per-tier token counts (K + V combined).
 
     Args:

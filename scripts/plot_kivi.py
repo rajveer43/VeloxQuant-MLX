@@ -33,7 +33,6 @@ import matplotlib.pyplot as plt
 import mlx.core as mx
 import numpy as np
 
-
 REPO = Path(__file__).resolve().parent.parent
 KIVI_DIR = REPO / "figures" / "kivi"
 VECINFER_DIR = REPO / "figures" / "vecinfer"

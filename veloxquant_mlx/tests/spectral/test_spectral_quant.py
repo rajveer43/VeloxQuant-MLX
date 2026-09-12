@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
-import pytest
+
+if TYPE_CHECKING:
+    import mlx.core as mx
 
 D = 128
 N = 64
@@ -15,7 +19,7 @@ def _make_U(d: int = D, seed: int = SEED) -> np.ndarray:
     return U  # (d, d), columns are eigenvectors
 
 
-def _random_vectors(n: int = N, d: int = D, seed: int = 0) -> "mx.array":
+def _random_vectors(n: int = N, d: int = D, seed: int = 0) -> mx.array:
     import mlx.core as mx
 
     rng = np.random.default_rng(seed)
@@ -25,7 +29,6 @@ def _random_vectors(n: int = N, d: int = D, seed: int = 0) -> "mx.array":
 
 
 def test_encode_decode_shape():
-    import mlx.core as mx
     from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
 
     sq = SpectralQuantizer(d=D, b_signal=3, b_noise=3, d_s=4, seed=SEED)
@@ -37,6 +40,7 @@ def test_encode_decode_shape():
 
 def test_encode_decode_single_vector():
     import mlx.core as mx
+
     from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
 
     sq = SpectralQuantizer(d=D, b_signal=2, b_noise=2, d_s=4, seed=SEED)
@@ -51,6 +55,7 @@ def test_encode_decode_single_vector():
 def test_cosine_similarity_with_spectral_rotation():
     """SpectralQuant should reconstruct low-rank key-like data faithfully."""
     import mlx.core as mx
+
     from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
 
     # Generate low-rank data (rank 4) and compute real PCA rotation
@@ -84,6 +89,7 @@ def test_cosine_similarity_with_spectral_rotation():
 def test_cosine_similarity_spectral_beats_random_on_low_rank():
     """Spectral rotation should beat random rotation on low-rank data."""
     import mlx.core as mx
+
     from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
 
     rng = np.random.default_rng(2)
@@ -148,6 +154,7 @@ def test_compression_ratio_beats_turboquant_5x():
 def test_estimate_inner_product_correlates_with_true():
     """IP estimates must correlate with true inner products (r > 0.7)."""
     import mlx.core as mx
+
     from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
 
     rng = np.random.default_rng(3)
@@ -168,6 +175,7 @@ def test_estimate_inner_product_correlates_with_true():
 
 def test_spectral_cache_append_and_attend():
     import mlx.core as mx
+
     from veloxquant_mlx.cache.base import KVCacheConfig
     from veloxquant_mlx.cache.spectral_cache import SpectralQuantKVCache
 
@@ -190,6 +198,7 @@ def test_spectral_cache_append_and_attend():
 
 def test_spectral_cache_memory_below_fp16():
     import mlx.core as mx
+
     from veloxquant_mlx.cache.base import KVCacheConfig
     from veloxquant_mlx.cache.spectral_cache import SpectralQuantKVCache
 
@@ -219,6 +228,7 @@ def test_factory_creates_spectral_cache():
 def test_calibrate_inject_improves_cosine_similarity():
     """Injecting real calibration rotations should improve or maintain quality."""
     import mlx.core as mx
+
     from veloxquant_mlx.cache.base import KVCacheConfig
     from veloxquant_mlx.cache.spectral_cache import SpectralQuantKVCache
     from veloxquant_mlx.spectral.calibrate import calibrate_from_vectors

@@ -30,7 +30,7 @@ Public API:
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 import numpy as np
@@ -44,7 +44,6 @@ from veloxquant_mlx.math.rotation import (
     make_rotation_matrix,
 )
 from veloxquant_mlx.metal._rabitq import rabitq_hamming_score
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -64,7 +63,7 @@ def _rotate_np(x: np.ndarray, diag: np.ndarray, use_hadamard: bool) -> np.ndarra
 
 
 def _rotate_mx(
-    x: mx.array, diag_mx: mx.array, use_hadamard: bool, rot_mx: Optional[mx.array] = None
+    x: mx.array, diag_mx: mx.array, use_hadamard: bool, rot_mx: mx.array | None = None
 ) -> mx.array:
     """Apply rotation in MLX (lazy)."""
     xf = x.astype(mx.float32)
@@ -160,15 +159,15 @@ class RaBitQQuantizer(Quantizer):
             self._rot_mx = mx.array(rot)
 
         # Populated by fit()
-        self._centroids_np: Optional[np.ndarray] = None  # [nlist, D] float32
-        self._centroids_mx: Optional[mx.array] = None
+        self._centroids_np: np.ndarray | None = None  # [nlist, D] float32
+        self._centroids_mx: mx.array | None = None
         self._trained: bool = False
 
         # Stored encoded index (set by fit after encoding all calibration keys)
-        self._index_bits: Optional[np.ndarray] = None  # [N_total, D//8] uint8
-        self._index_Cx: Optional[np.ndarray] = None  # [N_total] float32
-        self._index_L1: Optional[np.ndarray] = None  # [N_total] float32
-        self._index_cids: Optional[np.ndarray] = None  # [N_total] int32
+        self._index_bits: np.ndarray | None = None  # [N_total, D//8] uint8
+        self._index_Cx: np.ndarray | None = None  # [N_total] float32
+        self._index_L1: np.ndarray | None = None  # [N_total] float32
+        self._index_cids: np.ndarray | None = None  # [N_total] int32
 
     # ------------------------------------------------------------------
     # Properties

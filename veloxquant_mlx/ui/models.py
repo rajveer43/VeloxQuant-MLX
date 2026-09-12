@@ -8,7 +8,7 @@ side of that line: it is autocomplete for the free-text field, not a hub.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 #: Repos that are cached but are not MLX text models we can serve. Filtering
 #: these out keeps the picker from suggesting a model that will fail at load.
@@ -34,7 +34,7 @@ def _looks_servable(repo_id: str) -> bool:
     return True
 
 
-def local_models() -> List[Dict[str, Any]]:
+def local_models() -> list[dict[str, Any]]:
     """Cached models, largest-signal first (MLX community repos, then size).
 
     Returns ``[]`` on any failure. A missing or unreadable Hugging Face cache
@@ -51,7 +51,7 @@ def local_models() -> List[Dict[str, Any]]:
     except Exception:
         return []
 
-    models: List[Dict[str, Any]] = []
+    models: list[dict[str, Any]] = []
     for repo in cache.repos:
         if getattr(repo, "repo_type", "model") != "model":
             continue
@@ -79,7 +79,7 @@ def _human_size(num_bytes: float) -> str:
     return f"{num_bytes:.1f} PB"
 
 
-def search_hub_models(query: str, limit: int = 20) -> List[Dict[str, Any]]:
+def search_hub_models(query: str, limit: int = 20) -> list[dict[str, Any]]:
     """Search the Hugging Face Hub for text-generation models matching ``query``.
 
     This is discovery only, same as :func:`local_models` — it never downloads
@@ -108,7 +108,7 @@ def search_hub_models(query: str, limit: int = 20) -> List[Dict[str, Any]]:
             limit=limit,
         )
 
-        models: List[Dict[str, Any]] = []
+        models: list[dict[str, Any]] = []
         for repo in results:
             repo_id = repo.id
             if not _looks_servable(repo_id):

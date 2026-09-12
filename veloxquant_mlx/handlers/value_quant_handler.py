@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from veloxquant_mlx.core.abstractions import QuantizationHandler
-from veloxquant_mlx.core.context import QuantizationContext
 from veloxquant_mlx.core.constants import INT8_MAX
+from veloxquant_mlx.core.context import QuantizationContext
 
 
 class ValueQuantizerHandler(QuantizationHandler):

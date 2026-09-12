@@ -89,8 +89,7 @@ invert. This mirrors the "never worse than fixed-width" guarantee
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 import mlx.core as mx
 import numpy as np

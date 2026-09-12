@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 
 from veloxquant_mlx.core.constants import DEFAULT_N_CALIB_TOKENS, DEFAULT_N_OUTLIER_CHANNELS
@@ -30,7 +28,7 @@ class OutlierDetector:
         self._n_outliers = n_outliers
         self._n_calib = n_calib
         self._index = SortedChannelIndex()
-        self._sum_abs: Optional[np.ndarray] = None
+        self._sum_abs: np.ndarray | None = None
         self._count: int = 0
 
     def observe(self, k: Any) -> None:

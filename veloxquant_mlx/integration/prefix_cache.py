@@ -37,7 +37,8 @@ Usage::
 
 from __future__ import annotations
 
-from typing import Any, Hashable, List, Optional, Tuple, Union
+from collections.abc import Hashable
+from typing import Any
 
 from mlx_lm.models.cache import LRUPromptCache
 
@@ -76,16 +77,16 @@ class PrefixCache:
         if probe_serve_tier(config.method) is ServeTier.NOT_TRIMMABLE:
             print(f"[veloxquant_mlx] NOTE: {_NOT_TRIMMABLE_NOTE.format(method=config.method)}")
 
-    def _key_for(self, model: Any, model_key: Optional[Hashable]) -> Hashable:
+    def _key_for(self, model: Any, model_key: Hashable | None) -> Hashable:
         return model_key if model_key is not None else id(model)
 
     def fetch(
         self,
         model: Any,
-        prompt: List[int],
+        prompt: list[int],
         *,
-        model_key: Optional[Hashable] = None,
-    ) -> Tuple[List[Any], List[int]]:
+        model_key: Hashable | None = None,
+    ) -> tuple[list[Any], list[int]]:
         """Look up the longest cached prefix of ``prompt``.
 
         Returns ``(cache, rest)`` where ``rest`` is what must be passed as
@@ -109,10 +110,10 @@ class PrefixCache:
     def insert(
         self,
         model: Any,
-        prompt: List[int],
-        cache: List[Any],
+        prompt: list[int],
+        cache: list[Any],
         *,
-        model_key: Optional[Hashable] = None,
+        model_key: Hashable | None = None,
         cache_type: str = "assistant",
     ) -> None:
         """Store ``cache`` under ``prompt``.
@@ -130,9 +131,9 @@ class PrefixCache:
         self,
         model: Any,
         tokenizer: Any,
-        prompt: Union[str, List[int]],
+        prompt: str | list[int],
         *,
-        model_key: Optional[Hashable] = None,
+        model_key: Hashable | None = None,
         cache_type: str = "assistant",
         **generate_kwargs: Any,
     ) -> str:
@@ -153,7 +154,7 @@ class PrefixCache:
         cache, rest = self.fetch(model, token_ids, model_key=model_key)
         cache_key = list(token_ids)
 
-        text_parts: List[str] = []
+        text_parts: list[str] = []
         for response in stream_generate(
             model=model,
             tokenizer=tokenizer,

@@ -92,7 +92,6 @@ class ScalarCodebook(Codebook):
         Returns:
             Centroid values of shape (batch, d), fp16.
         """
-        import mlx.core as mx
 
         return self._centroids_mx[idx]
 

@@ -96,7 +96,6 @@ compressed indices (16× smaller for VecInfer-1bit).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import mlx.core as mx
 
@@ -207,7 +206,7 @@ def metal_fused_sdpa(
     *,
     causal: bool = True,
     sliding_window: int = 0,
-    out_dtype: Optional[mx.Dtype] = None,
+    out_dtype: mx.Dtype | None = None,
 ) -> mx.array:
     """Compute fused SDPA from VecInfer compressed K/V indices.
 

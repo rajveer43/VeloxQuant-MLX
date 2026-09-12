@@ -226,8 +226,8 @@ def run_workload(
     Returns:
         A WorkloadResult with the standard replay metrics.
     """
-    import numpy as np
     import mlx.core as mx
+    import numpy as np
 
     from veloxquant_mlx.cache.base import KVCacheBuilder
     from veloxquant_mlx.profiling import KVCacheProfiler

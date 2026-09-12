@@ -31,7 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from veloxquant_mlx.cache.registry import DEFAULT_SERVE_METHOD, get_method
 
@@ -141,7 +141,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_overrides(pairs: List[str], method: Optional[str] = None) -> Dict[str, Any]:
+def parse_overrides(pairs: list[str], method: str | None = None) -> dict[str, Any]:
     """Turn ``FIELD=VALUE`` strings into typed ``KVCacheConfig`` kwargs.
 
     Types come from the dataclass via the registry, so a value that the config
@@ -160,7 +160,7 @@ def parse_overrides(pairs: List[str], method: Optional[str] = None) -> Dict[str,
     from veloxquant_mlx.cache.registry import describe_field, field_is_relevant
 
     valid = {f.name for f in dataclasses.fields(KVCacheConfig)}
-    overrides: Dict[str, Any] = {}
+    overrides: dict[str, Any] = {}
 
     for pair in pairs:
         if "=" not in pair:
@@ -327,7 +327,7 @@ def _capture_mlx_parser(server_module: Any) -> argparse.ArgumentParser:
     """
     import types
 
-    captured: List[argparse.ArgumentParser] = []
+    captured: list[argparse.ArgumentParser] = []
 
     class _StopParsing(Exception):
         pass
@@ -448,7 +448,7 @@ def run_server(args: argparse.Namespace) -> None:
         _warn("shutting down.")
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
 
     validate_method(args.method)

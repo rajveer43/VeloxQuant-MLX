@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import threading
-from typing import Any, Dict, Optional, Type
+from typing import Any
 
 
 class _BaseRegistry:
     """Thread-safe singleton registry backing class-decorator registration."""
 
     _lock: threading.Lock
-    _registry: Dict[str, type]
+    _registry: dict[str, type]
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)

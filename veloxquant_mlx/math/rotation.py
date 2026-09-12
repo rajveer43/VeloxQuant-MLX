@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 # mx.hadamard_transform requires d = m * 2^k where m is in this set

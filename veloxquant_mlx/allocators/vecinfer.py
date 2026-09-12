@@ -18,7 +18,6 @@ Pipeline (key cache):
 from __future__ import annotations
 
 import math
-from typing import Optional, Tuple
 
 import mlx.core as mx
 import numpy as np

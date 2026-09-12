@@ -20,7 +20,6 @@ from unittest.mock import MagicMock
 
 import mlx.core as mx
 import numpy as np
-import pytest
 from mlx_lm.models.cache import LRUPromptCache
 
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory

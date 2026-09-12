@@ -50,7 +50,7 @@ def test_fetch_hit_after_insert_returns_trimmed_rest() -> None:
     stored_tokens = list(range(1, 9))
     stored_cache, _ = pc.fetch(model, stored_tokens)
     for c in stored_cache:
-        c.update_and_fetch  # sanity: real cache objects, not stubs
+        assert hasattr(c, "update_and_fetch")  # sanity: real cache objects, not stubs
 
     import mlx.core as mx
     import numpy as np

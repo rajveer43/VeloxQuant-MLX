@@ -17,12 +17,10 @@ Saves 4 figures to figures/model/ and results.json.
 
 from __future__ import annotations
 
-import gc
 import json
 import math
 import time
 from pathlib import Path
-from typing import Any
 
 import matplotlib
 
@@ -119,7 +117,6 @@ class KVMemoryTracker:
 
 def compute_perplexity(model, tokenizer, text: str, max_tokens: int = 256) -> float:
     """Compute perplexity of model on text (causal LM, stride = 1)."""
-    from mlx_lm.models.cache import make_prompt_cache
 
     tokens = tokenizer.encode(text)[:max_tokens]
     if len(tokens) < 4:
@@ -399,7 +396,7 @@ def run_comm_vq(model, tokenizer) -> dict:
     rng = np.random.default_rng(0)
     calib_keys = (rng.standard_normal((2048, head_dim)) * 0.5).astype(np.float16)
     q.fit(mx.array(calib_keys))
-    print(f"  Training done.")
+    print("  Training done.")
 
     # Measure encode→decode roundtrip MSE as a quality proxy
     N = 512
@@ -489,7 +486,7 @@ def save_figures(results: dict) -> None:
     print(f"  Saved {FIGURES_DIR / 'fig2_compression.png'}")
 
     # Fig 3: Perplexity (skip NaN entries)
-    valid = [(l, p, c) for l, p, c in zip(labels, ppls, colors) if not math.isnan(p)]
+    valid = [(label, p, c) for label, p, c in zip(labels, ppls, colors) if not math.isnan(p)]
     if valid:
         v_labels, v_ppls, v_colors = zip(*valid)
         fig, ax = plt.subplots(figsize=(8, 5))

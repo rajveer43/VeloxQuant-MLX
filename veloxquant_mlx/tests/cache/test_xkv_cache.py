@@ -19,11 +19,11 @@ Covers:
 
 from __future__ import annotations
 
-import numpy as np
 import mlx.core as mx
+import numpy as np
 import pytest
 
-from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory, KVCacheBuilder
+from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.xkv_cache import XKVCache
 from veloxquant_mlx.cache.xkv_coordinator import XKVCoordinator
 from veloxquant_mlx.quantizers.xkv import pair_layers_grouped

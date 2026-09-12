@@ -30,7 +30,6 @@ is wrong; do not proceed to Step 2 integration.
 from __future__ import annotations
 
 import time
-from typing import Tuple
 
 import mlx.core as mx
 import numpy as np
@@ -41,7 +40,6 @@ from veloxquant_mlx.allocators.vecinfer import (
     walsh_hadamard_matrix,
 )
 from veloxquant_mlx.metal import metal_available
-
 
 # ===========================================================================
 # Metal kernel — inline until proof passes; extracted to fused_sdpa.py later.
@@ -432,7 +430,7 @@ def _max_abs_diff(a: mx.array, b: mx.array) -> float:
     return float(mx.max(mx.abs(a.astype(mx.float32) - b.astype(mx.float32))).item())
 
 
-def correctness(fixture: dict, *, causal: bool, sliding_window: int = 0) -> Tuple[bool, float]:
+def correctness(fixture: dict, *, causal: bool, sliding_window: int = 0) -> tuple[bool, float]:
     q = fixture["q"]
     k_idx = fixture["k_indices"]
     v_idx = fixture["v_indices"]

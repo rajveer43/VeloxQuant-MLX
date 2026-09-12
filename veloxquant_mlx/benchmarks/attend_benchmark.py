@@ -17,12 +17,10 @@ from __future__ import annotations
 
 import argparse
 import time
-from typing import List
 
 import numpy as np
 
-
-_SEQ_LENS: List[int] = [128, 512, 1000, 2048]
+_SEQ_LENS: list[int] = [128, 512, 1000, 2048]
 _N_ATTEND_CALLS = 20  # per measurement
 _N_OUTLIER_CHANNELS = 4
 _N_CALIB_TOKENS = 50  # short so calibration completes inside every seq_len
@@ -96,7 +94,7 @@ def run(
     bits: int,
     jl_dim: int,
     seed: int,
-    seq_lens: List[int],
+    seq_lens: list[int],
     n_calls: int,
     correctness: bool,
 ) -> None:
@@ -153,7 +151,7 @@ def run(
 
         # Memory footprint
         print(
-            f"          memory (bytes): "
+            "          memory (bytes): "
             + ", ".join(f"{n}={c.memory_bytes()}" for n, c in caches.items())
         )
         print()

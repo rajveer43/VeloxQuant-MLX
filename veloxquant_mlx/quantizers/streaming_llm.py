@@ -37,7 +37,6 @@ and byte accounting.
 
 from __future__ import annotations
 
-import math
 from typing import NamedTuple
 
 import mlx.core as mx

@@ -35,14 +35,14 @@ QJL sketch bits for the d - d_s = 124 noise dimensions.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
 from veloxquant_mlx.codebooks.base import CodebookFactory
 from veloxquant_mlx.core.abstractions import Quantizer
-from veloxquant_mlx.core.context import EncodedVector
 from veloxquant_mlx.core.constants import SQRT_PI_OVER_2
+from veloxquant_mlx.core.context import EncodedVector
 from veloxquant_mlx.math.rotation import make_jl_matrix
 
 
@@ -78,10 +78,10 @@ class SpectralQuantizer(Quantizer):
         d: int,
         b_signal: int = 3,
         b_noise: int = 3,
-        rotation: Optional[np.ndarray] = None,
+        rotation: np.ndarray | None = None,
         d_s: int = 4,
         apply_qjl: bool = False,
-        jl_dim: Optional[int] = None,
+        jl_dim: int | None = None,
         seed: int = 42,
     ) -> None:
         import mlx.core as mx

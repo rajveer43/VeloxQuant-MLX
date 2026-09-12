@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
-
 import numpy as np
 
 from veloxquant_mlx.core.constants import VORONOI_LINEAR_THRESHOLD
@@ -23,8 +21,8 @@ class AVLNode:
     def __init__(self, key: float, value: int) -> None:
         self.key: float = key
         self.value: int = value
-        self.left: Optional[AVLNode] = None
-        self.right: Optional[AVLNode] = None
+        self.left: AVLNode | None = None
+        self.right: AVLNode | None = None
         self.height: int = 1
 
     def __repr__(self) -> str:
@@ -43,17 +41,17 @@ class AVLTree:
     """
 
     def __init__(self) -> None:
-        self.root: Optional[AVLNode] = None
+        self.root: AVLNode | None = None
         self._size: int = 0
 
     # ------------------------------------------------------------------
     # Height and balance
     # ------------------------------------------------------------------
 
-    def _height(self, node: Optional[AVLNode]) -> int:
+    def _height(self, node: AVLNode | None) -> int:
         return 0 if node is None else node.height
 
-    def _balance_factor(self, node: Optional[AVLNode]) -> int:
+    def _balance_factor(self, node: AVLNode | None) -> int:
         if node is None:
             return 0
         return self._height(node.left) - self._height(node.right)
@@ -144,7 +142,7 @@ class AVLTree:
         self.root = self._insert(self.root, key, value)
         self._size += 1
 
-    def _insert(self, node: Optional[AVLNode], key: float, value: int) -> AVLNode:
+    def _insert(self, node: AVLNode | None, key: float, value: int) -> AVLNode:
         if node is None:
             return AVLNode(key, value)
         if key < node.key:
@@ -162,7 +160,7 @@ class AVLTree:
     # Nearest-centroid search
     # ------------------------------------------------------------------
 
-    def search_nearest(self, query: float) -> Tuple[float, int]:
+    def search_nearest(self, query: float) -> tuple[float, int]:
         """Find the (key, value) pair with key closest to query.
 
         Args:
@@ -193,7 +191,7 @@ class AVLTree:
     # Range query
     # ------------------------------------------------------------------
 
-    def range_query(self, lo: float, hi: float) -> List[int]:
+    def range_query(self, lo: float, hi: float) -> list[int]:
         """Return all values whose keys fall in [lo, hi].
 
         Args:
@@ -203,16 +201,16 @@ class AVLTree:
         Returns:
             List of integer values with keys in [lo, hi].
         """
-        result: List[int] = []
+        result: list[int] = []
         self._range_query(self.root, lo, hi, result)
         return result
 
     def _range_query(
         self,
-        node: Optional[AVLNode],
+        node: AVLNode | None,
         lo: float,
         hi: float,
-        result: List[int],
+        result: list[int],
     ) -> None:
         if node is None:
             return
@@ -244,7 +242,7 @@ class VoronoiTree:
 
     def __init__(self) -> None:
         self._tree: AVLTree = AVLTree()
-        self._centroids: Optional[np.ndarray] = None
+        self._centroids: np.ndarray | None = None
         self._use_linear: bool = True
 
     def build(self, centroids: np.ndarray) -> None:

@@ -27,20 +27,18 @@
 
 from __future__ import annotations
 
-import numpy as np
 import mlx.core as mx
+import numpy as np
 
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.kvquant_cache import KVQuantKVCache
+from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
 from veloxquant_mlx.quantizers.kvquant import (
     fit_nuq_levels,
-    quantize_nuq,
-    dequant_nuq,
-    split_dense_sparse,
-    nuq_quant_dequant,
     nuq_distortion,
+    nuq_quant_dequant,
+    split_dense_sparse,
 )
-from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +181,7 @@ def test_level_table_determinism():
 def test_decode_frozen_key_levels():
     cache = KVQuantKVCache(_cfg())
     cache.update_and_fetch(_laplace(1, 2, 20, 64), _laplace(1, 2, 20, 64, seed=1))
-    frozen = [np.array(l.tolist()) for l in cache.key_levels]
+    frozen = [np.array(level.tolist()) for level in cache.key_levels]
     for step in range(5):
         kd = _laplace(1, 2, 1, 64, seed=100 + step)
         vd = _laplace(1, 2, 1, 64, seed=200 + step)

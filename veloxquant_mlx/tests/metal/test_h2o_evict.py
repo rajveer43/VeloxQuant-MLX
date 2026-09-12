@@ -417,8 +417,8 @@ def test_h2o_evict_benchmark(capsys):
     t_kernel = _timeit(_kernel_path)
     with capsys.disabled():
         print(f"\n# H2O fused eviction  |  n_kept={n_kept} D={D}  |  MLX {mx.__version__}")
-        print(f"| path | ms/call |")
-        print(f"|------|---------|")
+        print("| path | ms/call |")
+        print("|------|---------|")
         print(f"| Python loop (h2o_update) | {t_mlx:.4f} |")
         print(f"| fused Metal kernel       | {t_kernel:.4f} |")
         print(f"| speedup | {t_mlx / t_kernel:.2f}x |")

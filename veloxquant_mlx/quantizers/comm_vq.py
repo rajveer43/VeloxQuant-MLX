@@ -16,7 +16,7 @@ Public API:
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 import numpy as np
@@ -24,7 +24,6 @@ import numpy as np
 from veloxquant_mlx.core.abstractions import Quantizer
 from veloxquant_mlx.core.context import EncodedVector
 from veloxquant_mlx.core.registry import QuantizerRegistry
-
 
 # ---------------------------------------------------------------------------
 # RoPE helpers (pure NumPy, used during EM training only)
@@ -206,7 +205,7 @@ class CommVQQuantizer(Quantizer):
         d: int,
         b: int = 8,
         n_codebooks: int = 4,
-        m: Optional[int] = None,  # unused, kept for QuantizerFactory compat
+        m: int | None = None,  # unused, kept for QuantizerFactory compat
         seed: int = 42,
         store: Any = None,
         rope_base: float = 10000.0,
@@ -230,8 +229,8 @@ class CommVQQuantizer(Quantizer):
         self._n_em_iters = n_em_iters
 
         # Codebooks: [n_cb, cb_size, sub_dim] float32 (trained lazily)
-        self._codebooks: Optional[np.ndarray] = None
-        self._codebooks_mx: Optional[mx.array] = None
+        self._codebooks: np.ndarray | None = None
+        self._codebooks_mx: mx.array | None = None
 
         # Calibration buffer for lazy training
         self._calib_buf: list[np.ndarray] = []
@@ -241,7 +240,7 @@ class CommVQQuantizer(Quantizer):
     # Training
     # ------------------------------------------------------------------
 
-    def fit(self, keys_pre_rope: Any, max_samples: int = 8192) -> "CommVQQuantizer":
+    def fit(self, keys_pre_rope: Any, max_samples: int = 8192) -> CommVQQuantizer:
         """Train sub-codebooks from pre-RoPE key vectors.
 
         Args:
@@ -388,7 +387,7 @@ class CommVQQuantizer(Quantizer):
     # Public Quantizer interface
     # ------------------------------------------------------------------
 
-    def encode(self, x: Any, positions: Optional[Any] = None) -> EncodedVector:
+    def encode(self, x: Any, positions: Any | None = None) -> EncodedVector:
         """Encode pre-RoPE key vectors.
 
         Args:

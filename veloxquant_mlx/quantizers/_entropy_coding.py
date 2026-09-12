@@ -35,7 +35,6 @@ table_nbytes(table)                -> int, the code table's own storage cost
 from __future__ import annotations
 
 import heapq
-import math
 from itertools import count as _count
 
 import numpy as np

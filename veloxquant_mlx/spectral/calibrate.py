@@ -18,7 +18,6 @@ import numpy as np
 
 from veloxquant_mlx.spectral.participation_ratio import (
     compute_participation_ratio,
-    compute_spectral_gap,
 )
 
 _CACHE_ROOT = Path(os.environ.get("VELOXQUANT_CACHE_DIR", Path.home() / ".cache" / "veloxquant"))

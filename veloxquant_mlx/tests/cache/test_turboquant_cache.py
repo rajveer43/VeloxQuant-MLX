@@ -72,6 +72,7 @@ def test_builder_validation() -> None:
 
 def test_empty_cache_attend() -> None:
     import mlx.core as mx
+
     from veloxquant_mlx.cache.base import KVCacheBuilder
 
     cache = (

@@ -21,28 +21,25 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
+import mlx.core as mx
 import numpy as np
 
-import mlx.core as mx
-
 from veloxquant_mlx.metal._bit_packing import turboquant_bit_pack, turboquant_bit_unpack
-from veloxquant_mlx.metal._scalar_quant import (
-    turboquant_scalar_quantize,
-    turboquant_scalar_dequantize,
-    turboquant_hadamard_quantize,
-)
 from veloxquant_mlx.metal._qjl import qjl_encode, qjl_inner_product
 from veloxquant_mlx.metal._rvq_attend import turboquant_fused_rvq_decode_attend
+from veloxquant_mlx.metal._scalar_quant import (
+    turboquant_hadamard_quantize,
+    turboquant_scalar_dequantize,
+    turboquant_scalar_quantize,
+)
 
 OUT_DIR = Path(__file__).parents[2] / "figures" / "metal" / "turboquant_kernels"
 OUT_DIR.mkdir(parents=True, exist_ok=True)

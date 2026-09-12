@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import math
-from typing import Any, List
+from typing import Any
 
 from veloxquant_mlx.core.abstractions import Transform
-from veloxquant_mlx.core.context import TransformResult
 from veloxquant_mlx.core.constants import DEFAULT_POLAR_LEVELS
+from veloxquant_mlx.core.context import TransformResult
 
 
 class RecursivePolarTransform(Transform):
@@ -65,7 +65,7 @@ class RecursivePolarTransform(Transform):
             )
 
         r = x.astype(mx.float32)
-        angles: List[Any] = []
+        angles: list[Any] = []
 
         for ell in range(self._n_levels):
             n_pairs = r.shape[-1] // 2

@@ -42,8 +42,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from veloxquant_mlx.allocators.ratequant import fit_distortion_curve
-
 # Canonical distortion decay constant, shared with ratequant.py's D(b) curve
 # instead of re-deriving a new one. fit_distortion_curve(head_dim=128) is
 # reported to land close to the paper-referenced beta ~= 3.5 for TurboQuant;

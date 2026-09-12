@@ -16,10 +16,9 @@ Usage:
 import math
 import time
 from collections import Counter
-from typing import List, Optional
 
-import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+import matplotlib.pyplot as plt
 import mlx.core as mx
 import mlx_lm.utils as _mlx_utils
 import numpy as np
@@ -192,7 +191,7 @@ n_kv_caches = sum(
     1 for c in base_caches if isinstance(c, _MLXKVCache) and not isinstance(c, RotatingKVCache)
 )
 
-print(f"\nModel architecture:")
+print("\nModel architecture:")
 print(f"  {n_layers} layers  ({n_slid} sliding + {n_full} full-attention)")
 print(f"  full-attention: head_dim={full_head_dim}, kv_heads={full_kv}")
 print(f"  sliding-window: head_dim={local_hd}, window=512")
