@@ -127,3 +127,32 @@ applied by its server — the CLI will warn if you set it. Use
 [mlx_lm Integration guide](../guides/mlx-lm-integration#pattern-4--prefixcache-multi-call-prefix-reuse)
 for the equivalent for direct `mlx_lm.generate()` callers, and for which KV-cache
 methods support partial-prefix reuse versus exact-repeat-only.
+
+### Method-specific overrides with `--set`
+
+Beyond `--bits`, method-specific `KVCacheConfig` fields (e.g. `svdq_rank` for
+`svdq`, `kivi_group_size` for `kivi`) are set with a repeatable
+`--set FIELD=VALUE`:
+
+```bash
+veloxquant serve \
+  --model mlx-community/Llama-3.2-1B-Instruct-4bit \
+  --method svdq \
+  --set svdq_rank=32
+```
+
+Run `veloxquant methods --json` to see which fields apply to a given method.
+Values are type-checked against the `KVCacheConfig` dataclass before the model
+loads, so a bad value (wrong type, unknown field name) is rejected with the
+field name in the error rather than failing deep inside cache construction.
+
+About 25 of `KVCacheConfig`'s fields — `svdq_rank` among them — are
+**optional**: they default to `None` and fall back to a computed default when
+left unset (`svdq_rank=None` means "derive the rank from
+`svdq_energy_threshold` instead of using a fixed rank"). Passing `--set
+svdq_rank=` (blank on the right of `=`) explicitly clears the field back to
+that `None`/computed-default behavior — it is not an error, and it is the only
+way to reset an optional field once you've set it to a concrete value. The
+same blank-clears-to-default behavior applies in the panel's UI: leaving one
+of these fields empty is a deliberate choice to use the computed default, not
+a validation failure.
