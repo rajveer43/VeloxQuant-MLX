@@ -24,6 +24,7 @@ Usage::
 from __future__ import annotations
 
 import copy
+import types
 import typing
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -434,7 +435,10 @@ def describe_field(name: str) -> dict[str, Any]:
     annotation = hints[name]
     optional = False
     origin = typing.get_origin(annotation)
-    if origin is Union:
+    # KVCacheConfig fields use PEP 604 `int | None` syntax, which resolves to
+    # types.UnionType, not typing.Union — both must be checked, or every
+    # Optional field here (25 of them) silently falls through as "unknown".
+    if origin is Union or origin is types.UnionType:
         args = [a for a in typing.get_args(annotation) if a is not type(None)]
         optional = len(args) != len(typing.get_args(annotation))
         annotation = args[0] if args else annotation
