@@ -14,7 +14,7 @@ keywords: [metal kernels, Metal, "API reference", "python api", Apple Silicon, f
 All Metal kernels are compiled lazily on first call via `mx.fast.metal_kernel`. These are low-level functions — most users should interact with them indirectly through quantizer and cache classes.
 
 :::warning[Apple Silicon only]
-All functions in this module require macOS on an M-series chip. On unsupported hardware they raise `MetalUnavailableError`.
+All functions in this module require macOS on an M-series chip (Metal GPU access via `mx.fast.metal_kernel`). There is no dedicated `MetalUnavailableError` class — check `metal_available()` before calling these directly, or let the higher-level quantizer/cache classes fall back to their pure-MLX implementations.
 :::
 
 ---
@@ -38,14 +38,23 @@ if not metal_available():
 
 ```python
 def vecinfer_quantize_metal(
-    keys: mx.array,
+    x: mx.array,
     codebook: mx.array,
-    smooth_factors: mx.array,
-    num_subspaces: int,
+    sub_dim: int,
 ) -> mx.array
 ```
 
-Product VQ encoding on GPU. Returns integer indices of shape `[batch, heads, seq, num_subspaces]`. **13× faster** than equivalent Python ops.
+Drop-in Metal replacement for `veloxquant_mlx.allocators.vecinfer.quantize_vq`. Computes squared distances in thread-local registers (peak memory O(N) instead of O(N · n_centroids · sub_dim)).
+
+| Parameter | Type | Description |
+|---|---|---|
+| `x` | `mx.array` | `[..., D]` input, `D` divisible by `sub_dim` |
+| `codebook` | `mx.array` | `[n_centroids, sub_dim]` |
+| `sub_dim` | `int` | Sub-vector dimension |
+
+**Returns:** `[..., D // sub_dim]` int32 codebook indices.
+
+**Raises:** `ValueError` if `D` is not divisible by `sub_dim`, or `codebook` isn't shaped `[n_centroids, sub_dim]`.
 
 ---
 
@@ -55,11 +64,21 @@ Product VQ encoding on GPU. Returns integer indices of shape `[batch, heads, seq
 def vecinfer_dequant_metal(
     indices: mx.array,
     codebook: mx.array,
-    smooth_factors: mx.array,
+    out_dtype: mx.Dtype | None = None,
 ) -> mx.array
 ```
 
-Codebook gather + smooth-factor inverse. Returns reconstructed keys of shape `[batch, heads, seq, head_dim]`.
+Drop-in Metal replacement for `veloxquant_mlx.allocators.vecinfer.dequantize_vq` — a codebook gather.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `indices` | `mx.array` | Required | `[..., n_sub]` codebook indices, promoted to uint32 |
+| `codebook` | `mx.array` | Required | `[n_centroids, sub_dim]` centroid table |
+| `out_dtype` | `mx.Dtype \| None` | `None` | Output dtype; defaults to `codebook.dtype` |
+
+**Returns:** `[..., n_sub * sub_dim]` reconstruction.
+
+**Raises:** `ValueError` if `codebook` is not 2D.
 
 ---
 
@@ -68,29 +87,32 @@ Codebook gather + smooth-factor inverse. Returns reconstructed keys of shape `[b
 ```python
 def vecinfer_encode_decode_metal(
     keys: mx.array,
-    codebook: mx.array,
-    smooth_factors: mx.array,
-    num_subspaces: int,
+    k_codebook: mx.array,
+    sub_dim: int,
+    H_mat: mx.array,
+    smooth: mx.array | None = None,
 ) -> tuple[mx.array, mx.array]
 ```
 
-Fused encode then decode in one kernel dispatch. Returns `(indices, reconstructed_keys)`.
+Fused key encode+decode in a single Metal dispatch: smooth → Walsh-Hadamard transform → VQ encode → dequant → inverse-WHT → inverse-smooth. Replaces 7 MLX graph nodes with one dispatch.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `keys` | `mx.array` | Required | `[B, H, S, D]` fp16 or fp32 |
+| `k_codebook` | `mx.array` | Required | `[n_centroids, sub_dim]` fp32 centroids |
+| `sub_dim` | `int` | Required | Sub-vector size; must divide `D` |
+| `H_mat` | `mx.array` | Required | `[D, D]` Walsh-Hadamard matrix (fp32) |
+| `smooth` | `mx.array \| None` | `None` | `[H, D]` or `[D]` smooth factors, or `None` to skip smoothing |
+
+**Returns:** `(k_hat, k_indices)` — `k_hat` is `[B, H, S, D]` fp16 (the reconstructed, smoothed+rotated-then-inverted keys); `k_indices` is `[B, H, S, n_sub]` int32.
+
+**Raises:** `ValueError` if `keys` is not 4D, `D` is not divisible by `sub_dim`, or `D > 512` (threadgroup limit).
+
+There is a similarly-named `vecinfer_encode_decode_simple_metal(values, v_codebook, ...)` for the value-side path (no smooth/Hadamard step) — see `veloxquant_mlx/metal/_vecinfer.py` for its signature.
 
 ---
 
-### `compute_query_lut`
-
-```python
-from veloxquant_mlx.allocators.vecinfer import compute_query_lut
-
-def compute_query_lut(
-    queries: mx.array,
-    codebook: mx.array,
-    smooth_factors: mx.array,
-) -> mx.array
-```
-
-Precomputes a query-codebook distance look-up table for asymmetric MIPS (Maximum Inner Product Search). Returns `[batch, heads, num_subspaces, num_centroids]`.
+Note: `compute_query_lut` (asymmetric-MIPS query-codebook LUT precompute) is a plain-Python/MLX function, not a Metal kernel — it lives in `veloxquant_mlx.allocators.vecinfer` and is documented on the [Allocators API](./allocators#compute_query_lut) page.
 
 ---
 
@@ -176,12 +198,14 @@ def rabitq_prefill_attend(
     k_const: mx.array,  # [B, H, S_kv]      fp32  — additive score bias
     v_idx: mx.array,    # [B, H, S_kv, D/2] uint8 — nibble-packed value indices
     v_cents: mx.array,  # [n_cents <= 16]   fp32  — scalar value codebook
+    *,
+    causal: bool = False,
 ) -> mx.array
 ```
 
 Prefill-shaped companion to `rabitq_fused_attend`, for large `S_q` (multi-turn VLM: a new turn attending over compressed image-token history). Both `Q·K̂ᵀ` and `W·V̂` run on 8×8 `simdgroup_matrix` tiles; K is sign-decoded and V nibble-decoded inside the tile loop, so no dequantized K/V is materialized.
 
-Scores are exact dots — `(q · signs·k_mag) * scale + k_const` — not the Hamming estimate the decode kernel uses. **Cross-attention only:** every query row attends over all `S_kv` slots with no causal mask. Values must be nibble-packed (`rabitq_pack_values` format).
+Scores are exact dots — `(q · signs·k_mag) * scale + k_const` — not the Hamming estimate the decode kernel uses. By default this is cross-attention: every query row attends over all `S_kv` slots with no mask. Pass `causal=True` for autoregressive self-attention prefill — queries then align to the tail of the KV cache (`q_abs = (S_kv - S_q) + q_pos`, matching `fused_sdpa`'s convention), and slot `j` is masked whenever `j > q_abs`. Values must be nibble-packed (`rabitq_pack_values` format). Requires `D % 8 == 0`, `D <= 128` (threadgroup memory budget).
 
 - Returns: `[B, H, S_q, D]` fp16 attention output
 
@@ -252,13 +276,27 @@ Fuses `KIVIKVCache._quant_dequant_along`'s full round-trip (moveaxis → pad →
 def comm_vq_decode_metal(
     indices: mx.array,
     codebook: mx.array,
-    cos_freqs: mx.array,
-    sin_freqs: mx.array,
     positions: mx.array,
+    inv_freq: mx.array,
+    n_cb: int,
+    sub_dim: int,
+    cb_size: int,
 ) -> mx.array
 ```
 
-Fused centroid gather + RoPE application in a single Metal pass. Returns decoded+position-embedded keys.
+Fused CommVQ centroid gather + RoPE decode in a single Metal pass.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `indices` | `mx.array` | `[N, n_cb]` uint8 sub-codebook indices |
+| `codebook` | `mx.array` | `[n_cb, cb_size, sub_dim]` fp16 centroid table |
+| `positions` | `mx.array` | `[N]` int32 token positions for RoPE |
+| `inv_freq` | `mx.array` | `[D//2]` fp32 RoPE inverse-frequency table |
+| `n_cb` | `int` | Number of sub-codebooks |
+| `sub_dim` | `int` | Sub-dimension per codebook (`D // n_cb`) |
+| `cb_size` | `int` | Codebook size (`2^b`) |
+
+**Returns:** `[N, D]` fp16 decoded keys with RoPE applied.
 
 ---
 
@@ -298,24 +336,50 @@ True when a Metal GPU is present to dispatch to.
 ### `turboquant_scalar_quantize`
 
 ```python
-def turboquant_scalar_quantize(x: mx.array, bits: int) -> mx.array
+def turboquant_scalar_quantize(x: mx.array, centroids: mx.array, b: int) -> mx.array
 ```
 
-Lloyd-Max scalar quantization on GPU.
+Nearest-centroid Lloyd-Max scalar quantization on GPU.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `x` | `mx.array` | `[..., d]` float input (any float dtype) |
+| `centroids` | `mx.array` | `[2^b]` fp32 Lloyd-Max centroids |
+| `b` | `int` | Bits per index, 1-4 |
+
+**Returns:** `[..., d]` uint8 indices.
+
+**Raises:** `ValueError` if `b` is outside `1..4`, or `centroids.size != 2**b`.
 
 ### `turboquant_scalar_dequantize`
 
 ```python
-def turboquant_scalar_dequantize(indices: mx.array, bits: int, scale: float) -> mx.array
+def turboquant_scalar_dequantize(indices: mx.array, centroids: mx.array) -> mx.array
 ```
+
+Decodes b-bit indices to fp16 via a centroid gather. `centroids` is `[2^b]` fp32; `indices` is `[..., d]` uint8. Returns `[..., d]` fp16 reconstructed values.
 
 ### `turboquant_hadamard_quantize`
 
 ```python
-def turboquant_hadamard_quantize(x: mx.array, bits: int) -> tuple[mx.array, mx.array]
+def turboquant_hadamard_quantize(
+    x: mx.array,
+    diag: mx.array,
+    centroids: mx.array,
+    b: int,
+) -> mx.array
 ```
 
-Fused WHT rotation + scalar quantization in one pass. Returns `(indices, scale_factors)`.
+Fused randomized-Hadamard preconditioner + scalar quantize in one Metal dispatch: computes `y = diag * H * x / sqrt(D)` and nearest-centroid quantizes `y`, no intermediate allocation.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `x` | `mx.array` | `[B, D]` fp16 input. `D` must be a power of 2, `<= 1024` |
+| `diag` | `mx.array` | `[D]` float ±1 diagonal signs |
+| `centroids` | `mx.array` | `[2^b]` fp32 Lloyd-Max centroids |
+| `b` | `int` | Bits per index, 1-4 |
+
+**Returns:** `[B, D]` uint8 indices (not a `(indices, scale_factors)` tuple — the scale is folded into `centroids`).
 
 ---
 
@@ -327,14 +391,33 @@ Fused WHT rotation + scalar quantization in one pass. Returns `(indices, scale_f
 
 ```python
 def turboquant_fused_rvq_decode_attend(
-    queries: mx.array,
-    encoded_keys: EncodedVector,
-    values: mx.array,
-    scale: float,
+    q: mx.array,
+    k_indices1: mx.array,
+    k_indices2: mx.array,
+    centroids1: mx.array,
+    centroids2: mx.array,
+    v_indices: mx.array,
+    v_codebook: mx.array,
+    b1: int,
+    b2: int,
+    bv: int,
 ) -> mx.array
 ```
 
-Two-stage RVQ decode + scaled dot-product attention in a single kernel. Most efficient path for TurboQuant RVQ inference.
+Fused two-stage RVQ key decode + scaled-dot-product attention: decodes keys on the fly from two-stage RVQ indices inside an online-softmax loop — no intermediate `K_hat` tensor is materialized. Does **not** take an `EncodedVector` directly — indices and centroids are passed as separate raw arrays.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `q` | `mx.array` | `[B, H, S_q, D]` fp16 queries (pre-rotated) |
+| `k_indices1` | `mx.array` | `[B, H, S_kv, D]` uint8 first-stage key indices |
+| `k_indices2` | `mx.array` | `[B, H, S_kv, D]` uint8 second-stage (residual) key indices |
+| `centroids1` | `mx.array` | `[2^b1]` fp32 Gaussian centroids (stage 1) |
+| `centroids2` | `mx.array` | `[2^b2]` fp32 Laplacian centroids (stage 2) |
+| `v_indices` | `mx.array` | `[B, H, S_kv, D // sub_dim_v]` uint8 value indices |
+| `v_codebook` | `mx.array` | `[2^bv, sub_dim_v]` fp16 value codebook |
+| `b1`, `b2`, `bv` | `int` | Bit-widths for key stage 1, key stage 2, and values |
+
+**Returns:** `[B, H, S_q, D]` fp16 attention output.
 
 ---
 
@@ -486,33 +569,54 @@ Scores every row via `qfilters_score`, picks the keep-threshold with `mx.sort` o
 from veloxquant_mlx.metal.fused_sdpa import metal_fused_sdpa
 
 def metal_fused_sdpa(
-    queries: mx.array,
-    encoded_keys: EncodedVector,
-    values: mx.array,
+    q_tilde: mx.array,       # [B, H_q, S_q, D]   fp32 — already smooth+Hadamard transformed
+    k_indices: mx.array,     # [B, H_kv, S_kv, n_sub] codebook indices for keys (transformed space)
+    k_codebook: mx.array,    # [n_centroids, sub_dim]
+    v_indices: mx.array,     # [B, H_kv, S_kv, n_sub_v] value indices
+    v_codebook: mx.array,    # [n_centroids_v, sub_dim_v]
     scale: float,
-    mask: mx.array | None = None,
+    *,
+    causal: bool = True,
+    sliding_window: int = 0,
+    out_dtype: mx.Dtype | None = None,
 ) -> mx.array
 ```
 
-Fused dequantize + scaled dot-product attention. Supports all VeloxQuant-MLX key formats.
+Fused SDPA specifically for VecInfer's compressed K/V representation (codebook indices + codebook, not a generic `EncodedVector` and not "all VeloxQuant-MLX key formats"). `q_tilde` must already be transformed via `apply_dual_transform_queries` so that `q_tilde @ K_tilde.T == q @ K_hat.T`; the result is mathematically identical to running standard SDPA on the dequantized fp16 `K_hat`, without ever materializing it.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `q_tilde` | `mx.array` | Required | `[B, H_q, S_q, D]`, already transformed; cast to fp32 internally |
+| `k_indices` | `mx.array` | Required | `[B, H_kv, S_kv, n_sub]` key codebook indices |
+| `k_codebook` | `mx.array` | Required | `[n_centroids, sub_dim]` key centroid table |
+| `v_indices` | `mx.array` | Required | `[B, H_kv, S_kv, n_sub_v]` value indices |
+| `v_codebook` | `mx.array` | Required | `[n_centroids_v, sub_dim_v]` value centroid table |
+| `scale` | `float` | Required | Attention scale, usually `1/sqrt(head_dim)` |
+| `causal` | `bool` | `True` | Apply causal mask (queries align to the tail of `S_kv`) |
+| `sliding_window` | `int` | `0` | If `> 0`, only attend to the last `sliding_window` keys before each query position |
+| `out_dtype` | `mx.Dtype \| None` | `None` | Output dtype; defaults to `q_tilde.dtype` |
+
+**Returns:** `[B, H_q, S_q, D]` attention output.
+
+**Raises:** `ValueError` if `n_sub*sub_dim != D`, key/value codebooks disagree on `n_centroids`, or `H_q` is not a multiple of `H_kv`; also if `n_centroids`/`n_sub`/`D` exceed the kernel's compile-time caps (see `supports_shape`).
 
 ### `supports_shape`
 
 ```python
-def supports_shape(batch: int, heads: int, seq_len: int, head_dim: int) -> bool
+def supports_shape(n_centroids: int, n_sub: int, head_dim: int) -> bool
 ```
 
-Returns `True` if the fused kernel supports this attention shape. Requires `head_dim` to be a multiple of 32.
+Quick check for whether a `(n_centroids, n_sub, head_dim)` configuration fits the fused kernel's compile-time caps (`MAX_N_CENTROIDS`, `MAX_N_SUB`, `MAX_HEAD_DIM` in `fused_sdpa.py`) — **not** a generic `(batch, heads, seq_len, head_dim)` shape check. `head_dim` must also be a multiple of 32 (checked separately inside `metal_fused_sdpa`/`_get_kernel`, not by this function).
 
 ### `patch_mlx_lm_for_fused_sdpa`
 
 ```python
 from veloxquant_mlx.metal.fused_sdpa import patch_mlx_lm_for_fused_sdpa
 
-def patch_mlx_lm_for_fused_sdpa(model) -> None
+def patch_mlx_lm_for_fused_sdpa() -> None
 ```
 
-Monkey-patches each attention layer to use `metal_fused_sdpa` instead of standard `mx.matmul`. Call once after model load.
+Monkey-patches `mlx_lm.models.base.scaled_dot_product_attention`, plus the same-named reference already bound into every currently-imported `mlx_lm.models.*` / `mlx_vlm.models.*` submodule (each does `from .base import scaled_dot_product_attention`, a value-import that a later reassignment of `base`'s own attribute would not otherwise reach). The patched function only routes to a cache's own `fused_sdpa(...)` method when that cache is running in the memory-bound VecInfer configuration (`fused_sdpa=True` and `fused_sdpa_memory_bound=True` in `KVCacheConfig`) with a plain causal-or-none mask and no attention sinks; otherwise it falls through to the original implementation. Takes **no `model` argument** — call it *after* `mlx_lm.load(...)` so the target model's modules are already in `sys.modules` to patch; calling it before load silently fails to intercept that model's attention calls. Idempotent (safe to call multiple times); `unpatch_mlx_lm()` reverses it, and `is_patched()` reports current state.
 
 ---
 
@@ -523,22 +627,35 @@ Monkey-patches each attention layer to use `metal_fused_sdpa` instead of standar
 ### `turboquant_bit_pack`
 
 ```python
-def turboquant_bit_pack(indices: mx.array, bits: int) -> mx.array
+def turboquant_bit_pack(indices: mx.array, b: int) -> mx.array
 ```
 
-Packs `bits`-bit indices into uint32 words. Input shape `[..., N]`, output shape `[..., ceil(N*bits/32)]`.
+Packs uint8 indices into tightly bit-packed uint8 storage (not uint32 words).
+
+| Parameter | Type | Description |
+|---|---|---|
+| `indices` | `mx.array` | `[N]` uint8 with values in `[0, 2^b)`. `N` must be divisible by `8 // b` |
+| `b` | `int` | Bits per index. Must be 1, 2, or 4 |
+
+**Returns:** `[N * b // 8]` uint8 packed buffer.
+
+**Raises:** `ValueError` if `b` is not 1, 2, or 4, or `N` is not divisible by `8 // b`.
 
 ### `turboquant_bit_unpack`
 
 ```python
-def turboquant_bit_unpack(
-    packed: mx.array,
-    bits: int,
-    original_length: int,
-) -> mx.array
+def turboquant_bit_unpack(packed: mx.array, N: int, b: int) -> mx.array
 ```
 
-Unpacks uint32 words back to int32 indices.
+Unpacks bit-packed uint8 storage back into uint8 indices (not uint32 → int32).
+
+| Parameter | Type | Description |
+|---|---|---|
+| `packed` | `mx.array` | `[N * b // 8]` uint8 packed buffer |
+| `N` | `int` | Number of original indices to recover |
+| `b` | `int` | Bits per index. Must be 1, 2, or 4 |
+
+**Returns:** `[N]` uint8 indices.
 
 ---
 
@@ -549,23 +666,39 @@ Unpacks uint32 words back to int32 indices.
 ### `qjl_encode`
 
 ```python
-def qjl_encode(keys: mx.array, projection: mx.array) -> mx.array
+def qjl_encode(x: mx.array, S: mx.array) -> tuple[mx.array, mx.array]
 ```
 
-Project + sign in one Metal pass. Returns packed uint32 bit strings.
+Computes 1-bit QJL encoding: `sign(S @ x)` bit-packed, plus `‖x‖`.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `x` | `mx.array` | `[B, d]` fp16 input vectors |
+| `S` | `mx.array` | `[m, d]` fp16 JL projection matrix; `m` must be divisible by 8 |
+
+**Returns:** `(packed_signs, norms)` — `packed_signs` is `[B, m//8]` uint8 (LSB-first bit order); `norms` is `[B]` fp16 Euclidean norms. Not a single packed-bits array — always a 2-tuple including the norms.
+
+**Raises:** `ValueError` if `x`/`S` are not 2D, dimensions disagree, or `m % 8 != 0`.
 
 ### `qjl_inner_product`
 
 ```python
 def qjl_inner_product(
-    query_bits: mx.array,
-    key_bits: mx.array,
-    head_dim: int,
-    sketch_dim: int,
+    q_proj: mx.array,
+    packed_signs: mx.array,
+    norms: mx.array,
 ) -> mx.array
 ```
 
-Approximates `⟨q, k⟩` via bit string inner product.
+Computes unbiased QJL attention scores: `√(π/2)/m · norms[s,h] · ⟨q_proj[h,:], (2·signs−1)⟩` for every (head, kv-slot) pair.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `q_proj` | `mx.array` | `[H, m]` fp16 pre-projected queries (`S @ q`) |
+| `packed_signs` | `mx.array` | `[S_kv, H, m//8]` uint8 bit-packed key signs from `qjl_encode` |
+| `norms` | `mx.array` | `[S_kv, H]` fp16 key norms |
+
+**Returns:** `[H, S_kv]` fp16 attention scores. (Not parameterized by bare `head_dim`/`sketch_dim` ints — dimensions are read from the array shapes.)
 
 ---
 
