@@ -131,14 +131,14 @@ def plot_bit_pack(Ns, pack_results, unpack_results, n_iter: int):
     fig.suptitle("Bit-pack / Bit-unpack: Metal vs NumPy", fontsize=14, fontweight="bold")
 
     for ax, (results, title) in zip(
-        axes, [(pack_results, "bit_pack"), (unpack_results, "bit_unpack")]
+        axes, [(pack_results, "bit_pack"), (unpack_results, "bit_unpack")], strict=True
     ):
         for i, b in enumerate(bits):
             metal_ms = [results[b][N][0] for N in Ns]
             np_ms = [results[b][N][1] for N in Ns]
             # throughput in GB/s: N bytes processed
-            metal_gb = [N / 1e9 / (ms * 1e-3) for N, ms in zip(Ns, metal_ms)]
-            np_gb = [N / 1e9 / (ms * 1e-3) for N, ms in zip(Ns, np_ms)]
+            metal_gb = [N / 1e9 / (ms * 1e-3) for N, ms in zip(Ns, metal_ms, strict=True)]
+            np_gb = [N / 1e9 / (ms * 1e-3) for N, ms in zip(Ns, np_ms, strict=True)]
             c = PALETTE[i]
             ax.plot(Ns, metal_gb, color=c, marker="o", linewidth=2, label=f"Metal b={b}")
             ax.plot(
@@ -235,13 +235,13 @@ def plot_scalar_quant(Ns, sq_results, sdq_results, n_iter: int):
     fig.suptitle("Scalar Quantize / Dequantize: Metal vs NumPy", fontsize=14, fontweight="bold")
 
     for ax, (results, title) in zip(
-        axes, [(sq_results, "scalar_quantize"), (sdq_results, "scalar_dequantize")]
+        axes, [(sq_results, "scalar_quantize"), (sdq_results, "scalar_dequantize")], strict=True
     ):
         for i, b in enumerate(bits):
             metal_ms = [results[b][N][0] for N in Ns]
             np_ms = [results[b][N][1] for N in Ns]
-            metal_gb = [N * 2 / 1e9 / (ms * 1e-3) for N, ms in zip(Ns, metal_ms)]
-            np_gb = [N * 2 / 1e9 / (ms * 1e-3) for N, ms in zip(Ns, np_ms)]
+            metal_gb = [N * 2 / 1e9 / (ms * 1e-3) for N, ms in zip(Ns, metal_ms, strict=True)]
+            np_gb = [N * 2 / 1e9 / (ms * 1e-3) for N, ms in zip(Ns, np_ms, strict=True)]
             c = PALETTE[i]
             ax.plot(Ns, metal_gb, color=c, marker="o", linewidth=2, label=f"Metal b={b}")
             ax.plot(
@@ -324,14 +324,14 @@ def plot_hadamard_quantize(Ds, d_results, Bs, b_results, B_fixed, D_fixed, n_ite
     ax.set_title(f"Latency vs D  [B={B_fixed}]", fontsize=12)
     ax.set_xticks(Ds)
     ax.grid(True, alpha=0.3)
-    for D, ms in zip(Ds, ms_vals):
+    for D, ms in zip(Ds, ms_vals, strict=True):
         ax.annotate(
             f"{ms:.2f}", (D, ms), textcoords="offset points", xytext=(0, 6), fontsize=8, ha="center"
         )
 
     ax = axes[1]
     ms_vals = [b_results[B] for B in Bs]
-    throughput = [B * D_fixed * 2 / 1e6 / (ms * 1e-3) for B, ms in zip(Bs, ms_vals)]
+    throughput = [B * D_fixed * 2 / 1e6 / (ms * 1e-3) for B, ms in zip(Bs, ms_vals, strict=True)]
     ax.plot(Bs, throughput, **STYLE["metal"])
     ax.set_xlabel("Batch size B", fontsize=11)
     ax.set_ylabel("Throughput (MB/s, fp16 input)", fontsize=11)
@@ -467,7 +467,7 @@ def plot_qjl_ip(S_kvs, metal_results, H, m, n_iter: int):
     ax = axes[1]
     # Throughput: H × S_kv inner products per call
     ops = [H * S * m * 2 / 1e9 for S in S_kvs]  # GFLOPs (m mults + m adds per pair)
-    gflops = [op / (ms * 1e-3) for op, ms in zip(ops, ms_vals)]
+    gflops = [op / (ms * 1e-3) for op, ms in zip(ops, ms_vals, strict=True)]
     ax.plot(S_kvs, gflops, color=PALETTE[1], marker="^", linewidth=2, markersize=5)
     ax.set_xlabel("S_kv", fontsize=11)
     ax.set_ylabel("GFLOP/s", fontsize=11)
@@ -538,14 +538,14 @@ def plot_rvq_attend(S_kvs, metal_results, B, H, D, n_iter: int):
     ax.set_ylabel("Latency (ms/iter)", fontsize=11)
     ax.set_title("Attend Latency vs S_kv", fontsize=12)
     ax.grid(True, alpha=0.3)
-    for S, ms in zip(S_kvs, ms_vals):
+    for S, ms in zip(S_kvs, ms_vals, strict=True):
         ax.annotate(
             f"{ms:.2f}", (S, ms), textcoords="offset points", xytext=(0, 6), fontsize=8, ha="center"
         )
 
     ax = axes[1]
     # ms per token
-    ms_per_token = [ms / S for ms, S in zip(ms_vals, S_kvs)]
+    ms_per_token = [ms / S for ms, S in zip(ms_vals, S_kvs, strict=True)]
     ax.plot(S_kvs, ms_per_token, color=PALETTE[2], marker="D", linewidth=2, markersize=5)
     ax.set_xlabel("S_kv", fontsize=11)
     ax.set_ylabel("ms / KV token", fontsize=11)
@@ -651,7 +651,7 @@ def plot_summary(all_speedups: dict):
     ax.set_ylabel("Speedup vs NumPy/CPU baseline", fontsize=11)
     ax.set_title("Peak Speedup (larger batch / sequence)", fontsize=12)
     ax.grid(True, alpha=0.3, axis="y")
-    for i, (bar, s) in enumerate(zip(bars, speedups)):
+    for bar, s in zip(bars, speedups, strict=True):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height() + 0.05,

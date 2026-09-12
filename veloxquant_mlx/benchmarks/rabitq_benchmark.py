@@ -127,11 +127,11 @@ def run_benchmark(n_iter: int = 20) -> dict:
         mx.eval(ev.indices, ev.norm)
 
         # --- RaBitQ search (Metal) ---
-        def _rabitq():
+        def _rabitq(query_mx=query_mx, ev=ev):
             return q.search(query_mx, ev, top_k=TOP_K)
 
         # --- fp16 exact dot (MLX) ---
-        def _fp16_exact():
+        def _fp16_exact(corpus_mx=corpus_mx, query_mx=query_mx):
             scores = corpus_mx.astype(mx.float32) @ query_mx.astype(mx.float32)
             return mx.argsort(-scores)[:TOP_K]
 
@@ -139,7 +139,7 @@ def run_benchmark(n_iter: int = 20) -> dict:
         corpus_f32 = corpus_np.astype(np.float32)
         query_f32 = query_np.astype(np.float32)
 
-        def _np_exact():
+        def _np_exact(corpus_f32=corpus_f32, query_f32=query_f32):
             return _np_exact_search(corpus_f32, query_f32, TOP_K)
 
         t_rabitq = _bench_mlx(_rabitq, n_iter=n_iter)

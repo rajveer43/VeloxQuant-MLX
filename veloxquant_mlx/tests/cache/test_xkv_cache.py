@@ -297,7 +297,7 @@ def test_shared_structure_beats_independent_svd():
     shared_basis = rng.standard_normal((D, r_true)).astype(np.float32)
 
     layer_keys = []
-    for i in range(3):
+    for _ in range(3):
         coeffs = rng.standard_normal((S, r_true)).astype(np.float32) * 2.0
         noise = rng.standard_normal((S, D)).astype(np.float32) * 0.02
         layer = (coeffs @ shared_basis.T + noise).astype(np.float16)
@@ -306,7 +306,7 @@ def test_shared_structure_beats_independent_svd():
     coord = XKVCoordinator()
     members = _group(coord, n_members=3, rank=r_true)
     shared_mse = 0.0
-    for m, k in zip(members, layer_keys):
+    for m, k in zip(members, layer_keys, strict=True):
         ko, _ = m.update_and_fetch(k, k)
         shared_mse += _mse(ko, k)
     shared_mse /= 3
@@ -342,6 +342,6 @@ def test_determinism():
 
     r1 = run()
     r2 = run()
-    for (k1, v1), (k2, v2) in zip(r1, r2):
+    for (k1, v1), (k2, v2) in zip(r1, r2, strict=True):
         np.testing.assert_array_equal(k1, k2)
         np.testing.assert_array_equal(v1, v2)

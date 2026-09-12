@@ -271,5 +271,5 @@ def test_determinism() -> None:
     out1 = [c.update_and_fetch(K, V)[0] for c in c1]
     out2 = [c.update_and_fetch(K, V)[0] for c in c2]
     mx.eval(*out1, *out2)
-    for a, b in zip(out1, out2):
+    for a, b in zip(out1, out2, strict=True):
         assert np.allclose(np.array(a), np.array(b), atol=1e-4)

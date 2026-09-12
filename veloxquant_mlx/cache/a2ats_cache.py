@@ -234,7 +234,6 @@ class A2ATSKVCache(_MLXKVCache):
                 idx_parts.append(sub_idx)
             indices = mx.stack(idx_parts, axis=1)  # [S, n_sub]
         else:
-            k_reshaped = k_bh.reshape(S, self._n_sub, self._sub_dim) if S > 0 else k_bh
             idx_parts = []
             for sub_i in range(self._n_sub):
                 sub = k_bh[:, sub_i * self._sub_dim : (sub_i + 1) * self._sub_dim]

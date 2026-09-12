@@ -494,8 +494,6 @@ class KVCacheFactory:
         from veloxquant_mlx.cache.xquant_cache import XQuantKVCache
         from veloxquant_mlx.cache.zipcache_cache import ZipCacheKVCache
 
-        d = config.head_dim
-        seed = config.seed
         b = config.bit_width_inlier
         if isinstance(b, list) and config.method != "vecinfer":
             raise QuantizerConfigError(
@@ -503,8 +501,6 @@ class KVCacheFactory:
                 "List-form bit_width_inlier (per-layer allocation) is consumed by "
                 "KVCacheBuilder.for_model(), which dispatches to create() once per layer."
             )
-        m = config.jl_dim if config.jl_dim is not None else d
-        store = config.store
 
         if config.method in ("turboquant_prod", "turboquant_mse"):
             cache: KVCache = TurboQuantKVCache(config)

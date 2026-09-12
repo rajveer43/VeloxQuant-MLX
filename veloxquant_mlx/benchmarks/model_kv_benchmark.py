@@ -379,10 +379,6 @@ def run_comm_vq(model, tokenizer) -> dict:
 
     print("\n[4/4] CommVQ b=8 n_cb=4 ...")
 
-    # Train CommVQ on WikiText tokens
-    tokens = tokenizer.encode(WIKITEXT_SAMPLE)
-    input_ids = mx.array(tokens[:128], dtype=mx.int32)[None]  # [1, 128]
-
     # Get hidden states via a single forward pass to use as key proxies
     # (We don't have direct access to per-layer keys without hooks)
     # Instead: synthesize keys from random Gaussian matching model scale
@@ -453,7 +449,6 @@ def save_figures(results: dict) -> None:
     colors = [METHODS[m]["color"] for m in methods]
 
     ppls = [results[m]["ppl"] for m in methods]
-    latencies = [results[m]["latency_ms_per_tok"] for m in methods]
     kv_mbs = [results[m]["kv_mb"] for m in methods]
     compressions = [results[m]["compression"] for m in methods]
 
@@ -486,9 +481,11 @@ def save_figures(results: dict) -> None:
     print(f"  Saved {FIGURES_DIR / 'fig2_compression.png'}")
 
     # Fig 3: Perplexity (skip NaN entries)
-    valid = [(label, p, c) for label, p, c in zip(labels, ppls, colors) if not math.isnan(p)]
+    valid = [
+        (label, p, c) for label, p, c in zip(labels, ppls, colors, strict=True) if not math.isnan(p)
+    ]
     if valid:
-        v_labels, v_ppls, v_colors = zip(*valid)
+        v_labels, v_ppls, v_colors = zip(*valid, strict=True)
         fig, ax = plt.subplots(figsize=(8, 5))
         bars = ax.bar(v_labels, v_ppls, color=v_colors, alpha=0.85, edgecolor="white")
         ax.bar_label(bars, fmt="%.2f", padding=3, fontsize=10)

@@ -33,7 +33,6 @@ from veloxquant_mlx.quantizers.amc import (
 
 
 def _mat(rows, seed=0):
-    rng = np.random.default_rng(seed)
     return mx.array(np.array(rows, dtype=np.float32)) if isinstance(rows, list) else None
 
 

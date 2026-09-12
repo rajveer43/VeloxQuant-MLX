@@ -45,7 +45,9 @@ def test_head_group_bounds_cover_all_heads() -> None:
         assert bounds[0][0] == 0
         assert bounds[-1][1] == H
         # contiguous, no gaps/overlaps
-        for (lo, hi), (nlo, _) in zip(bounds, bounds[1:]):
+        # zip(bounds, bounds[1:]) intentionally pairs consecutive elements —
+        # bounds[1:] is one element shorter by design, not a length bug.
+        for (_lo, hi), (nlo, _) in zip(bounds, bounds[1:], strict=False):
             assert hi == nlo
 
 

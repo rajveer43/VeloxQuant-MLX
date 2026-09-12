@@ -188,7 +188,7 @@ def test_decode_frozen_key_levels():
         ko, _ = cache.update_and_fetch(kd, vd)
         assert ko.shape[2] == 20 + step + 1
     # Key levels unchanged (refit_interval=0 → frozen).
-    for a, b in zip(frozen, cache.key_levels):
+    for a, b in zip(frozen, cache.key_levels, strict=True):
         np.testing.assert_array_equal(a, np.array(b.tolist()))
 
 

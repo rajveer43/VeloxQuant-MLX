@@ -200,19 +200,19 @@ def bench_throughput(n_iter: int = 20) -> dict:
         mx.eval(ev_v.indices)
 
         # --- fp16 baseline: store + retrieve (memcopy equivalent) ---
-        def _fp16():
+        def _fp16(keys_mx=keys_mx, vals_mx=vals_mx):
             k = keys_mx.astype(mx.float16)
             v = vals_mx.astype(mx.float16)
             mx.eval(k, v)
 
         # --- RaBitQ keys + fp16 values ---
-        def _rb_fp16v():
+        def _rb_fp16v(ev_k=ev_k, vals_mx=vals_mx):
             k_dec = q_key.decode(ev_k)
             v_out = vals_mx.astype(mx.float16)
             mx.eval(k_dec, v_out)
 
         # --- RaBitQ keys + MSE-b4 values ---
-        def _rb_mse4v():
+        def _rb_mse4v(ev_k=ev_k, ev_v=ev_v):
             k_dec = q_key.decode(ev_k)
             v_dec = q_val.decode(ev_v)
             mx.eval(k_dec, v_dec)
@@ -323,15 +323,15 @@ def save_figures(throughput: dict, mem_stats: list, ppl: dict) -> None:
 
     fig, ax = plt.subplots(figsize=(8, 5))
     x = np.arange(len(method_lbl))
-    b1 = ax.bar(x, key_bytes, label="Keys", color="#3498db", alpha=0.85)
-    b2 = ax.bar(x, val_bytes, bottom=key_bytes, label="Values", color="#e67e22", alpha=0.85)
+    ax.bar(x, key_bytes, label="Keys", color="#3498db", alpha=0.85)
+    ax.bar(x, val_bytes, bottom=key_bytes, label="Values", color="#e67e22", alpha=0.85)
     ax.set_xticks(x)
     ax.set_xticklabels(method_lbl)
     ax.set_ylabel("Bytes per token per layer")
     ax.set_title(f"Falcon3-7B: KV Bytes Breakdown (D={HEAD_DIM}, {N_KV_HEADS} KV heads)")
     ax.legend()
     ax.grid(True, axis="y", alpha=0.3)
-    for bar, kv, vv in zip(x, key_bytes, val_bytes):
+    for bar, kv, vv in zip(x, key_bytes, val_bytes, strict=True):
         ax.text(bar, kv + vv + 5, f"{kv + vv}B", ha="center", va="bottom", fontsize=9)
     fig.tight_layout()
     p = FIGURES_DIR / "fig4_bytes_breakdown.png"
@@ -375,7 +375,7 @@ def save_figures(throughput: dict, mem_stats: list, ppl: dict) -> None:
     tbl.auto_set_font_size(False)
     tbl.set_fontsize(10)
     tbl.scale(1, 2.2)
-    for (r, c), cell in tbl.get_celld().items():
+    for (r, _c), cell in tbl.get_celld().items():
         if r == 0:
             cell.set_facecolor("#2c3e50")
             cell.set_text_props(color="white", fontweight="bold")
@@ -446,17 +446,17 @@ def run_long_context_experiment(n_iter: int = 15) -> dict:
         ev_v = q_val.encode(vals_mx)
         mx.eval(ev_v.indices)
 
-        def _fp16():
+        def _fp16(keys_mx=keys_mx, vals_mx=vals_mx):
             k = keys_mx.astype(mx.float16)
             v = vals_mx.astype(mx.float16)
             mx.eval(k, v)
 
-        def _rb_fp16v():
+        def _rb_fp16v(ev_k=ev_k, vals_mx=vals_mx):
             k_dec = q_key.decode(ev_k)
             v_out = vals_mx.astype(mx.float16)
             mx.eval(k_dec, v_out)
 
-        def _rb_mse4v():
+        def _rb_mse4v(ev_k=ev_k, ev_v=ev_v):
             k_dec = q_key.decode(ev_k)
             v_dec = q_val.decode(ev_v)
             mx.eval(k_dec, v_dec)
@@ -544,7 +544,7 @@ def save_long_context_figures(lc: dict) -> None:
 
     # Add GB annotation at 32k
     ax.axhline(1024, color="red", linestyle=":", alpha=0.5, label="1 GB limit")
-    for mb_list, label, color in [
+    for mb_list, _label, color in [
         (fp16_mb, "fp16", "crimson"),
         (rbfp_mb, "rb+fp16v", "darkorange"),
         (rbmse_mb, "rb+mse4v", "green"),

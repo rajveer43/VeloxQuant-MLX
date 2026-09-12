@@ -315,7 +315,6 @@ class RaBitQQuantizer(Quantizer):
 
         packed_np = np.array(ev.indices, dtype=np.uint8)  # [N, D//8]
         meta_np = np.array(ev.norm, dtype=np.float32)  # [N, 3]
-        N = packed_np.shape[0]
 
         cids = meta_np[:, 0].astype(np.int32)
         L1 = meta_np[:, 2]  # [N]

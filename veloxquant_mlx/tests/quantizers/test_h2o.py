@@ -491,7 +491,6 @@ def test_new_token_almost_always_evicted_first() -> None:
     D = 16
     budget = 4
     st = init_h2o_state(n_sink=0, budget=budget, head_dim=D)
-    rng = np.random.default_rng(0)
     for i in range(20):
         k, v = _rand_kv(S=1, D=D, seed=i)
         st = h2o_update(st, k, v)

@@ -92,7 +92,7 @@ def test_joint_svd_shared_structure_helps_reconstruction() -> None:
     shared_basis = rng.standard_normal((D, r_true)).astype(np.float32)
 
     layers = []
-    for i in range(3):
+    for _ in range(3):
         coeffs = rng.standard_normal((S, r_true)).astype(np.float32) * 2.0
         noise = rng.standard_normal((S, D)).astype(np.float32) * 0.01
         layer = coeffs @ shared_basis.T + noise

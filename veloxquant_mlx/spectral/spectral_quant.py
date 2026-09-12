@@ -241,7 +241,6 @@ class SpectralQuantizer(Quantizer):
         sig_scale = ev.norm.astype(mx.float32)[:, None]  # (batch, 1)
         noise_scale = ev.final_radius.astype(mx.float32)[:, None]  # (batch, 1)
         indices_np = np.array(ev.indices, dtype=np.int32)  # (batch, d)
-        batch = ev.batch_size
 
         idx_s = mx.array(indices_np[:, : self._d_s], dtype=mx.uint8)
         idx_n = mx.array(indices_np[:, self._d_s :], dtype=mx.uint8)

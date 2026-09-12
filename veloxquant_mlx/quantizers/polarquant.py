@@ -113,7 +113,7 @@ class PolarQuantizer(Quantizer):
 
         # Quantize each level's angles
         angle_indices: list[Any] = []
-        for ell, (angles, cb) in enumerate(zip(result.angles, self._codebooks)):
+        for angles, cb in zip(result.angles, self._codebooks, strict=True):
             idx = cb.quantize(angles)
             angle_indices.append(idx)
 
@@ -135,7 +135,9 @@ class PolarQuantizer(Quantizer):
             Reconstructed array of shape (batch, d), fp16.
         """
         # Dequantize angles
-        dequant_angles = [cb.dequantize(idx) for cb, idx in zip(self._codebooks, ev.angles)]
+        dequant_angles = [
+            cb.dequantize(idx) for cb, idx in zip(self._codebooks, ev.angles, strict=True)
+        ]
 
         result = TransformResult(
             angles=dequant_angles,

@@ -99,7 +99,6 @@ def test_sparse_selects_true_outliers() -> None:
     """sparse_outliers picks the largest-magnitude entries."""
     rng = np.random.default_rng(4)
     M = mx.array((rng.standard_normal((10, 10)) * 0.01).astype(np.float32))
-    flat = list(M.reshape(-1))
     M = M.reshape(-1)
     M = M.at[mx.array([7, 50, 91])].add(mx.array([100.0, -100.0, 100.0]))
     M = M.reshape(10, 10)

@@ -114,7 +114,7 @@ def test_trimmable_generation_after_trim_matches_fresh_cache_fed_same_prefix() -
 
     reused_state = reused_cache[0].state
     fresh_state = fresh_cache[0].state
-    for reused_elem, fresh_elem in zip(reused_state, fresh_state):
+    for reused_elem, fresh_elem in zip(reused_state, fresh_state, strict=True):
         mx.eval(reused_elem, fresh_elem)
         assert mx.array_equal(reused_elem, fresh_elem)
 

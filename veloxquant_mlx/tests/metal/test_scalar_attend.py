@@ -377,10 +377,14 @@ def test_scalar_attend_benchmark(capsys):
             avs = mx.array(vs)
             avz = mx.array(vz)
             mx.eval(aq, akc, aks, akz, avc, avs, avz)
-            tb = _timeit(lambda: _baseline(aq, akc, aks, akz, avc, avs, avz))
+            tb = _timeit(
+                lambda aq=aq, akc=akc, aks=aks, akz=akz, avc=avc, avs=avs, avz=avz: _baseline(
+                    aq, akc, aks, akz, avc, avs, avz
+                )
+            )
             ta = _timeit(
-                lambda: scalar_fused_decode_attend(
-                    aq, akc, aks, akz, avc, avs, avz, g, scale, nsg=nsg
+                lambda aq=aq, akc=akc, aks=aks, akz=akz, avc=avc, avs=avs, avz=avz: (
+                    scalar_fused_decode_attend(aq, akc, aks, akz, avc, avs, avz, g, scale, nsg=nsg)
                 )
             )
             print(f"| {S_kv:5d} | {tb:15.3f} | {ta:16.3f} | {tb / ta:6.2f}x |")
@@ -430,12 +434,12 @@ def test_scalar_attend_gqa_packing_benchmark(capsys):
             avz = mx.array(vz)
             mx.eval(aq, akc, aks, akz, avc, avs, avz)
 
-            def _packed():
+            def _packed(aq=aq, akc=akc, aks=aks, akz=akz, avc=avc, avs=avs, avz=avz):
                 return scalar_fused_decode_attend(
                     aq, akc, aks, akz, avc, avs, avz, g, scale, nsg=nsg
                 )
 
-            def _unpacked():
+            def _unpacked(aq=aq, akc=akc, aks=aks, akz=akz, avc=avc, avs=avs, avz=avz):
                 outs = []
                 for hkv in range(H_kv):
                     for hp in range(heads_per_kv):
@@ -551,12 +555,12 @@ def test_scalar_attend_two_pass_benchmark(capsys):
             avc, avs, avz = mx.array(vc), mx.array(vs), mx.array(vz)
             mx.eval(aq, akc, aks, akz, avc, avs, avz)
 
-            def _packed():
+            def _packed(aq=aq, akc=akc, aks=aks, akz=akz, avc=avc, avs=avs, avz=avz):
                 return scalar_fused_decode_attend(
                     aq, akc, aks, akz, avc, avs, avz, g, scale, nsg=nsg
                 )
 
-            def _unpacked():
+            def _unpacked(aq=aq, akc=akc, aks=aks, akz=akz, avc=avc, avs=avs, avz=avz):
                 outs = []
                 for hkv in range(H_kv):
                     for hp in range(heads_per_kv):
@@ -577,7 +581,7 @@ def test_scalar_attend_two_pass_benchmark(capsys):
                         )
                 return mx.concatenate(outs, axis=1)
 
-            def _two_pass():
+            def _two_pass(aq=aq, akc=akc, aks=aks, akz=akz, avc=avc, avs=avs, avz=avz):
                 return _two_pass_attend(aq, akc, aks, akz, avc, avs, avz, g, scale, nsg=nsg)
 
             tp = _timeit(_packed)

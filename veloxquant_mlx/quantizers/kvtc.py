@@ -220,7 +220,8 @@ def _encode_survived_codes(
     entropy_total = len(entropy_payload) + table_nbytes(entropy_table)
 
     fixed_payload = b"".join(
-        _pack_fixed_width(codes, bits) for codes, bits in zip(all_codes, bits_per_component)
+        _pack_fixed_width(codes, bits)
+        for codes, bits in zip(all_codes, bits_per_component, strict=True)
     )
     fixed_total = len(fixed_payload)
 
@@ -319,7 +320,6 @@ def kvtc_decompress(artifact: KVTCArtifact) -> mx.array:
     """
     S = artifact.S
     r = int(artifact.bit_allocation.shape[0])
-    D = int(artifact.V.shape[0])
 
     n_survived = artifact.n_survived
     if artifact.is_entropy_coded:

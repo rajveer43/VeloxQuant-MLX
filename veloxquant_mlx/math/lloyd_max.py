@@ -56,7 +56,6 @@ def lloyd_max(
     # Dense quadrature grid
     x_grid = np.linspace(lo, hi, n_quad_points)
     p_grid = pdf_fn(x_grid)
-    dx = x_grid[1] - x_grid[0]
 
     # Initialise centroids uniformly
     centroids = np.linspace(lo, hi, n_levels)

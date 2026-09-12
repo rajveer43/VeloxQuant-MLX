@@ -356,7 +356,6 @@ class CommVQQuantizer(Quantizer):
     def _decode_batch(self, indices: mx.array) -> mx.array:
         """Decode [N, n_cb] uint8 → [N, D] fp16 (pre-RoPE reconstruction)."""
         self._require_trained()
-        N = indices.shape[0]
         parts = []
         cb_mx = self._codebooks_mx  # [n_cb, K, sub_dim] fp16
 

@@ -229,7 +229,7 @@ def test_deterministic():
         n_sink=0,
         rope_base=10000.0,
     )
-    for a, b in zip(out1, out2):
+    for a, b in zip(out1, out2, strict=True):
         mx.eval(a, b)
         assert float(mx.max(mx.abs(a.astype(mx.float32) - b.astype(mx.float32))).item()) == 0.0
 

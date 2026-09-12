@@ -163,8 +163,7 @@ def test_generate_convenience_wrapper_round_trips_cache_key(monkeypatch) -> None
 
     def _fake_stream_generate(*, model, tokenizer, prompt, prompt_cache, **kwargs):
         assert prompt == [1, 2, 3]  # full miss -> rest == whole prompt
-        for r in fake_responses:
-            yield r
+        yield from fake_responses
 
     import sys
 

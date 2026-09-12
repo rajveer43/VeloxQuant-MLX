@@ -220,7 +220,6 @@ def test_gumbel_rescues_late_riser():
     per-seed guarantee.
     """
     D = 16
-    rng = np.random.default_rng(0)
     planted = np.zeros(D, dtype=np.float16)
     planted[0] = 3.0  # unique axis
 

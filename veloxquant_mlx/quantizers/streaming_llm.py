@@ -103,7 +103,6 @@ def stream_update(
         Updated :class:`StreamingWindow`.
     """
     S = int(new_keys.shape[0])
-    D = int(new_keys.shape[1])
     nk = new_keys.astype(mx.float16)
     nv = new_values.astype(mx.float16)
 
@@ -120,7 +119,6 @@ def stream_update(
     new_recent_v_list = []
 
     for i in range(S):
-        token_idx = tokens_seen_before + i
         k_tok = nk[i : i + 1]  # [1, D]
         v_tok = nv[i : i + 1]
 
@@ -184,7 +182,7 @@ def stream_get_kv(window: StreamingWindow) -> tuple[mx.array, mx.array]:
     n_r = int(window.recent_keys.shape[0])
 
     if n_s == 0 and n_r == 0:
-        D = 0  # degenerate empty — should not happen in practice
+        # degenerate empty — should not happen in practice
         return mx.zeros((0, 1), dtype=mx.float16), mx.zeros((0, 1), dtype=mx.float16)
 
     if n_s == 0:
