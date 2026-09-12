@@ -1,5 +1,7 @@
 """GPU correctness and cache dispatch regressions for PyramidKV."""
 
+from __future__ import annotations
+
 import mlx.core as mx
 import pytest
 

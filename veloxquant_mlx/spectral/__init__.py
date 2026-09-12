@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from veloxquant_mlx.spectral.bit_allocator import water_fill_bits
 from veloxquant_mlx.spectral.calibrate import (
     calibrate_from_vectors,
