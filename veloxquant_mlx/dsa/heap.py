@@ -1,20 +1,27 @@
 from __future__ import annotations
 
+from typing import Generic, TypeVar
 
-class MaxHeap:
+T = TypeVar("T")
+
+
+class MaxHeap(Generic[T]):
     """Binary max-heap backed by an internal array.
 
     Nodes are (priority, value) pairs. The heap property is
     ``priority[parent] >= priority[child]`` for all nodes.
 
     All heap operations are implemented manually without the ``heapq`` module.
+    ``value`` is typically an int (a channel/token index), but
+    SortedChannelIndex uses ``(channel_idx, version)`` tuples, hence the
+    generic parameter rather than a fixed ``int``.
 
     Args:
         None. The heap starts empty.
     """
 
     def __init__(self) -> None:
-        self._data: list[tuple[float, int]] = []  # (priority, value)
+        self._data: list[tuple[float, T]] = []  # (priority, value)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -62,17 +69,17 @@ class MaxHeap:
     # Public interface
     # ------------------------------------------------------------------
 
-    def push(self, priority: float, value: int) -> None:
+    def push(self, priority: float, value: T) -> None:
         """Insert a (priority, value) pair.
 
         Args:
             priority: Comparison key (higher = higher priority).
-            value: Associated integer payload.
+            value: Associated payload.
         """
         self._data.append((priority, value))
         self._sift_up(len(self._data) - 1)
 
-    def pop(self) -> tuple[float, int]:
+    def pop(self) -> tuple[float, T]:
         """Remove and return the maximum (priority, value) pair.
 
         Returns:
@@ -90,7 +97,7 @@ class MaxHeap:
             self._sift_down(0)
         return top
 
-    def peek(self) -> tuple[float, int]:
+    def peek(self) -> tuple[float, T]:
         """Return but do not remove the maximum pair.
 
         Raises:
@@ -124,7 +131,7 @@ class SortedChannelIndex:
         # Heap entries are (magnitude, (channel_idx, version)) so that
         # re-insertions with an unchanged magnitude can still be told apart
         # from the live entry by version rather than by value equality.
-        self._heap: MaxHeap = MaxHeap()
+        self._heap: MaxHeap[tuple[int, int]] = MaxHeap()
         # channel_idx -> (latest magnitude, latest version) — used to
         # recognize which heap entry for a channel is still live (lazy
         # deletion) and to skip redundant re-inserts of unchanged values.
@@ -182,7 +189,7 @@ class SortedChannelIndex:
         seen: set[int] = set()
 
         # Copy the heap data to a temporary structure to avoid mutation
-        heap_copy = MaxHeap()
+        heap_copy: MaxHeap[tuple[int, int]] = MaxHeap()
         heap_copy._data = list(self._heap._data)
 
         while len(heap_copy) > 0 and len(result) < k:

@@ -212,7 +212,7 @@ def amc_assign_tiers(
     n_high = min(n_high, n)
     n_mid = min(n_mid, n - n_high)
 
-    heap = MaxHeap()
+    heap: MaxHeap[int] = MaxHeap()
     scores = saliency.tolist()
     for i, sc in enumerate(scores):
         heap.push(float(sc), i)
