@@ -119,8 +119,7 @@ def calibrate_layer_sensitivities(
         elif hasattr(model, "make_cache"):
             del model.make_cache
 
-    weights = [max(p.sensitivity, 1e-6) for p in probes]
-    return weights
+    return [max(p.sensitivity, 1e-6) for p in probes]
 
 
 # ── Distortion curve fitting (optional — most users can skip) ──────────────

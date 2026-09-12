@@ -93,8 +93,7 @@ class QJLQuantizer(Quantizer):
         import mlx.core as mx
 
         scale = SQRT_PI_OVER_2 / self._m
-        x_hat = ev.norm[:, None] * scale * (ev.signs.astype(mx.float16) @ self._encoder._S)
-        return x_hat
+        return ev.norm[:, None] * scale * (ev.signs.astype(mx.float16) @ self._encoder._S)
 
     def estimate_inner_product(self, q: Any, ev: EncodedVector) -> Any:
         """Estimate ⟨q, k⟩ for each encoded key.

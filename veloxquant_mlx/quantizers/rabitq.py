@@ -57,9 +57,8 @@ def _rotate_np(x: np.ndarray, diag: np.ndarray, use_hadamard: bool) -> np.ndarra
         arr = mx.array(xf)
         arr = mx.fast.hadamard_transform(arr, scale=1.0 / np.sqrt(xf.shape[-1]))
         return np.array(arr, dtype=np.float32)
-    else:
-        # diag here is actually the full rotation matrix (stored differently)
-        return xf  # already rotated by caller
+    # diag here is actually the full rotation matrix (stored differently)
+    return xf  # already rotated by caller
 
 
 def _rotate_mx(
@@ -70,8 +69,7 @@ def _rotate_mx(
     if use_hadamard:
         xd = xf * diag_mx[None, :]
         return mx.fast.hadamard_transform(xd, scale=1.0 / mx.sqrt(mx.array(float(xf.shape[-1]))))
-    else:
-        return xf @ rot_mx.T
+    return xf @ rot_mx.T
 
 
 def _pack_signs(residual: np.ndarray) -> np.ndarray:
@@ -194,9 +192,8 @@ class RaBitQQuantizer(Quantizer):
             out = mx.hadamard_transform(arr, scale=1.0 / float(self._d) ** 0.5)
             mx.eval(out)
             return np.array(out, dtype=np.float32)
-        else:
-            xd = x * self._diag_np[None, :]
-            return xd @ np.array(self._rot_mx, dtype=np.float32).T
+        xd = x * self._diag_np[None, :]
+        return xd @ np.array(self._rot_mx, dtype=np.float32).T
 
     def _rotate_batch_mx(self, x: mx.array) -> mx.array:
         """Rotate [N, D] mlx array lazily."""
@@ -204,9 +201,8 @@ class RaBitQQuantizer(Quantizer):
         if self._use_hadamard:
             xd = xf * self._diag_mx[None, :]
             return mx.hadamard_transform(xd, scale=1.0 / float(self._d) ** 0.5)
-        else:
-            xd = xf * self._diag_mx[None, :]
-            return xd @ self._rot_mx.T
+        xd = xf * self._diag_mx[None, :]
+        return xd @ self._rot_mx.T
 
     # ------------------------------------------------------------------
     # fit

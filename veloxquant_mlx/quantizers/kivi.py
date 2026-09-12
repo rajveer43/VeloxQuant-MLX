@@ -163,7 +163,7 @@ class KIVIQuantizer(Quantizer):
             codes = codes_t.T
             scale = scale_t.T  # [d_groups, n] → [n, d_groups]
             zero = zero_t.T
-        ev = EncodedVector(
+        return EncodedVector(
             quantizer_type="kivi",
             batch_size=n,
             dim=d,
@@ -171,7 +171,6 @@ class KIVIQuantizer(Quantizer):
             norm=scale,  # repurposed: per-group scale
             residual_norm=zero,  # repurposed: per-group zero-point
         )
-        return ev
 
     def decode(self, ev: EncodedVector) -> Any:
         """Reconstruct ``(batch, d)`` fp16 keys from an EncodedVector."""

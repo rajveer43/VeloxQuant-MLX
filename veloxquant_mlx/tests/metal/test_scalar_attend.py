@@ -781,8 +781,7 @@ def test_scalar_attend_batched_adversarial_nl_and_batch_indexing():
             vzs.append(vz[0])
 
     def _stack_nl_b(items):
-        arr = np.stack(items, axis=0).reshape(NL, B, *items[0].shape)
-        return arr
+        return np.stack(items, axis=0).reshape(NL, B, *items[0].shape)
 
     q_b = _stack_nl_b(qs)
     kc_b = _stack_nl_b(kcs)

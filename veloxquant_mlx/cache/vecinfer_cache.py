@@ -546,7 +546,7 @@ class VecInferKVCache(_MLXKVCache):
         # Lazy import — keeps cold-start cost off the package import path
         from veloxquant_mlx.metal.fused_sdpa import metal_fused_sdpa
 
-        out = metal_fused_sdpa(
+        return metal_fused_sdpa(
             q_tilde=q_tilde,
             k_indices=live_k,
             k_codebook=self._key_codebook,
@@ -557,7 +557,6 @@ class VecInferKVCache(_MLXKVCache):
             sliding_window=int(sliding_window or 0),
             out_dtype=q.dtype,
         )
-        return out
 
     # ------------------------------------------------------------------
     # Reporting
