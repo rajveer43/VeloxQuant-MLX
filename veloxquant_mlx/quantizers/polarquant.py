@@ -1,3 +1,13 @@
+"""PolarQuant — recursive polar-coordinate KV quantizer.
+
+Applies a random rotation followed by ``RecursivePolarTransform``'s
+recursive angle/radius decomposition (see ``transforms/polar.py``), then
+quantizes each level's angles with a dedicated per-level codebook and
+stores the final scalar radius directly. Reconstruction and inner-product
+estimation both go through explicit decode of the rotated vector, unlike
+TurboQuant's residual-correction quantizers.
+"""
+
 from __future__ import annotations
 
 from typing import Any

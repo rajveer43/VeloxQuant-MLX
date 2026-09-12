@@ -1,3 +1,15 @@
+"""TurboQuant RVQ — two-pass residual vector quantizer.
+
+A residual-vector-quantization variant of TurboQuant: stage 1 rotates and
+quantizes coordinates against an N(0,1) Lloyd-Max codebook at ``b`` bits,
+stage 2 quantizes the leftover per-coordinate residual against a
+Laplacian-fit Lloyd-Max codebook, also at ``b`` bits, and the two
+dequantized stages are summed before unrotating. This spends ``2*b`` bits
+per coordinate (versus ``b`` for plain MSE quantization or ``2*b-1`` for
+``TurboQuantProd``) in exchange for quality at low bit-widths comparable
+to single-pass quantization at roughly double the bit-width.
+"""
+
 from __future__ import annotations
 
 import math

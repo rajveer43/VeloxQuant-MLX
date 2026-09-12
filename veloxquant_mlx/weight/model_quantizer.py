@@ -1,3 +1,13 @@
+"""Model-wide Linear-layer replacement with TurboQuant weight compression.
+
+Provides ``quantize_model``, which walks an ``mlx.nn.Module`` tree and
+replaces each ``nn.Linear`` (and already affine-quantized ``mlx-lm``
+``QuantizedLinear``, which it first dequantizes) with a TurboQuant
+``QuantizedLinear`` (see ``weight/quantized_linear.py``), skipping
+embedding-like layers by name heuristic. ``compression_report`` then
+summarizes the resulting memory savings across all replaced layers.
+"""
+
 from __future__ import annotations
 
 import mlx.core as mx

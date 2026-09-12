@@ -1,3 +1,14 @@
+"""Mixed-precision quantizer that splits a vector's channels by magnitude.
+
+``CompositeQuantizer`` implements outlier-aware quantization: a small set
+of high-magnitude "outlier" channels is routed to a high-bit-width child
+quantizer while the remaining "inlier" channels go to a low-bit-width
+child, and the two child ``EncodedVector``s are nested under one composite
+encoding. This lets any two existing per-channel quantizers be combined to
+protect the few dimensions that dominate reconstruction error without
+paying full bit-width across the whole vector.
+"""
+
 from __future__ import annotations
 
 from typing import Any

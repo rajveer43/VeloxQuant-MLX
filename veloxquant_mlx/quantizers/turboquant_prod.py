@@ -1,3 +1,16 @@
+"""TurboQuant Prod — two-stage unbiased-inner-product quantizer.
+
+The flagship TurboQuant variant: stage 1 rotates and MSE-quantizes the
+vector at ``b-1`` bits (as in ``TurboQuantMSE``); stage 2 applies QJL
+(``quantizers/qjl.py``) to the leftover residual ``r = x - x_hat_mse``.
+Combining the two stages' contributions yields an inner-product estimator
+that is unbiased rather than merely low-error, at roughly one extra bit of
+storage over single-pass MSE quantization. Also defines
+``TurboQuantProdAdaptive``, a subclass that defaults
+``use_adaptive_codebook=True`` so the stage-1 codebook is refit from
+observed post-rotation data instead of using the fixed Gaussian/Beta prior.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Literal

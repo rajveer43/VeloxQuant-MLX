@@ -1,3 +1,15 @@
+"""Data-aware spectral quantization: rotation calibration and bit allocation.
+
+Groups ``SpectralQuantizer`` (rotate-then-quantize using a
+calibrated, data-fit rotation rather than a random one) with its support
+utilities: ``calibrate_spectral_rotation``/``calibrate_from_vectors`` and
+``load_cached_rotations``/``save_rotations`` for fitting and persisting
+that rotation, ``compute_participation_ratio``/``compute_spectral_gap`` for
+measuring a vector population's effective dimensionality, and
+``water_fill_bits`` for turning a per-dimension eigenvalue spectrum into a
+non-uniform bit allocation.
+"""
+
 from __future__ import annotations
 
 from veloxquant_mlx.spectral.bit_allocator import water_fill_bits

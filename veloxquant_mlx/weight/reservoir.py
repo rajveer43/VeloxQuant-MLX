@@ -1,3 +1,16 @@
+"""Flat-file serialization for TurboQuant-compressed model weights.
+
+Implements the "weight reservoir" format (magic ``VQRS``, page-aligned
+blobs behind a JSON header) for persisting and restoring a
+``quantize_model()``-processed model's ``QuantizedLinear`` layers:
+``save_reservoir``/``load_reservoir`` handle the flat-file round-trip
+(optionally persisting QR rotation matrices via ``persist_rotation``,
+otherwise re-deriving them from each layer's seed on load), and
+``graft_reservoir`` loads a reservoir and grafts its layers onto a matching
+model skeleton in place. See ``docs/WEIGHT_RESERVOIR_IDEATION.md`` for the
+format rationale and measured load-time/size tradeoffs.
+"""
+
 from __future__ import annotations
 
 import json

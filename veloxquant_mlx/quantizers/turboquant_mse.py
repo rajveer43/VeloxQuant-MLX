@@ -1,3 +1,15 @@
+"""TurboQuant MSE — MSE-optimal single-pass scalar quantizer.
+
+The single-stage member of the TurboQuant family: rotate the vector
+(random QR rotation or Metal-accelerated randomized Hadamard), then
+quantize each coordinate independently against a Lloyd-Max codebook fit to
+the post-rotation coordinate distribution (Gaussian for d >= 64, Beta
+otherwise). This minimizes mean-squared reconstruction error at a given
+bit-width, bounded by ``D_mse <= sqrt(3*pi)/2 * 4^(-b)``, but — unlike
+``TurboQuantProd`` — does not correct for the bias this introduces into
+inner-product estimates.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Literal

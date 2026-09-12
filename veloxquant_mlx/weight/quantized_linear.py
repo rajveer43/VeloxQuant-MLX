@@ -1,3 +1,14 @@
+"""TurboQuant-compressed drop-in replacement for ``mlx.nn.Linear``.
+
+Defines ``QuantizedLinear``, which compresses a weight matrix row-by-row
+by L2-normalizing each row, rotating it (Hadamard or QR), and quantizing
+the rotated coordinates against a Lloyd-Max codebook fit for unit-norm
+post-rotation vectors — the same rotate-then-quantize recipe as the
+TurboQuant KV-cache quantizers, applied here to model weights instead of
+keys/values. The forward pass dequantizes, unrotates, and rescales by the
+stored per-row norm before the matrix multiply.
+"""
+
 from __future__ import annotations
 
 import math
