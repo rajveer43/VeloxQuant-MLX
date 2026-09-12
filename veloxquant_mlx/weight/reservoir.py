@@ -74,16 +74,17 @@ def save_reservoir(model: nn.Module, path: str | Path, persist_rotation: bool = 
             None if layer._bias is None else np.array(layer._bias, copy=False, dtype=np.float16)
         )
 
-        is_hadamard = isinstance(layer._preconditioner, HadamardPreconditioner)
+        preconditioner = layer._preconditioner
+        is_hadamard = isinstance(preconditioner, HadamardPreconditioner)
         # Hadamard diagonals are (d,) -- always cheap, always persisted.
         # QR rotation matrices are (d,d) -- only persisted when the caller
         # opts in via persist_rotation, since they can dominate file size
         # (Finding 4). When not persisting, store an empty array; the
         # loader re-derives the matrix from (seed, in_features) instead.
-        if is_hadamard:
-            rotation_np = np.array(layer._preconditioner._D, copy=False, dtype=np.float32)
-        elif persist_rotation:
-            rotation_np = np.array(layer._preconditioner._Pi, copy=False, dtype=np.float32)
+        if isinstance(preconditioner, HadamardPreconditioner):
+            rotation_np = np.array(preconditioner._D, copy=False, dtype=np.float32)
+        elif persist_rotation and isinstance(preconditioner, RotationPreconditioner):
+            rotation_np = np.array(preconditioner._Pi, copy=False, dtype=np.float32)
         else:
             rotation_np = np.zeros(0, dtype=np.float32)
         centroids_np = np.array(layer._codebook.centroids_numpy(), copy=False, dtype=np.float32)

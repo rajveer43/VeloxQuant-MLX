@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 
 from veloxquant_mlx.codebooks.base import CodebookFactory
-from veloxquant_mlx.core.abstractions import ArtifactStore, Quantizer
+from veloxquant_mlx.core.abstractions import ArtifactStore, Preconditioner, Quantizer
 from veloxquant_mlx.core.constants import DEFAULT_POLAR_LEVELS
 from veloxquant_mlx.core.context import EncodedVector, TransformResult
 from veloxquant_mlx.core.registry import QuantizerRegistry
@@ -64,7 +64,7 @@ class PolarQuantizer(Quantizer):
         if use_hadamard and is_hadamard_compatible(d):
             D_np = make_hadamard_diagonal(d, seed=seed)
             D = mx.array(D_np)
-            self._rotation = HadamardPreconditioner(D)
+            self._rotation: Preconditioner = HadamardPreconditioner(D)
         else:
             if store is not None and store.exists("rotation", d=d, seed=seed):
                 Pi = store.load_rotation_matrix(d, seed)
@@ -134,6 +134,11 @@ class PolarQuantizer(Quantizer):
         Returns:
             Reconstructed array of shape (batch, d), fp16.
         """
+        if ev.angles is None:
+            raise ValueError(
+                "PolarQuantizer.decode: ev.angles is None — ev wasn't produced by encode()."
+            )
+
         # Dequantize angles
         dequant_angles = [
             cb.dequantize(idx) for cb, idx in zip(self._codebooks, ev.angles, strict=True)

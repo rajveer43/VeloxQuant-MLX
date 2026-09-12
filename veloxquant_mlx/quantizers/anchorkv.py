@@ -55,7 +55,7 @@ per-token metadata are charged first; residuals get whatever remains.
 from __future__ import annotations
 
 import math
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import numpy as np
 

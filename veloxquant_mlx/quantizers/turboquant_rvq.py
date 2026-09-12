@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
 from veloxquant_mlx.codebooks.base import CodebookFactory
 from veloxquant_mlx.codebooks.scalar_codebook import ScalarCodebook
-from veloxquant_mlx.core.abstractions import ArtifactStore, Quantizer
+from veloxquant_mlx.core.abstractions import ArtifactStore, Preconditioner, Quantizer
 from veloxquant_mlx.core.context import EncodedVector
 from veloxquant_mlx.core.registry import QuantizerRegistry
 from veloxquant_mlx.math.lloyd_max import lloyd_max
@@ -89,7 +89,7 @@ class TurboQuantRVQ(Quantizer):
         # Rotation
         if use_hadamard and is_hadamard_compatible(d):
             D_np = make_hadamard_diagonal(d, seed=seed)
-            self._rotation = HadamardPreconditioner(mx.array(D_np))
+            self._rotation: Preconditioner = HadamardPreconditioner(mx.array(D_np))
         else:
             if store is not None and store.exists("rotation", d=d, seed=seed):
                 Pi = store.load_rotation_matrix(d, seed)
@@ -101,7 +101,7 @@ class TurboQuantRVQ(Quantizer):
             self._rotation = RotationPreconditioner(Pi)
 
         # Stage 1 codebook: N(0, 1/d) Gaussian (matches TurboQuantMSE default)
-        distribution = "gaussian" if d >= 64 else "beta"
+        distribution: Literal["gaussian", "beta"] = "gaussian" if d >= 64 else "beta"
         self._codebook1 = CodebookFactory.create(distribution, b=b, d=d)
 
         # Stage 2 codebook: Laplacian on the residual.
@@ -188,6 +188,12 @@ class TurboQuantRVQ(Quantizer):
         """Reconstruct x_hat = unrotate(y_hat1 + y_hat2)."""
         import mlx.core as mx
 
+        if ev.signs is None:
+            raise ValueError(
+                "TurboQuantRVQ.decode: ev.signs is None — ev wasn't produced by this "
+                "quantizer's encode() (signs holds the second codebook's indices here)."
+            )
+
         idx1 = ev.indices
         idx2 = ev.signs.astype(mx.uint8)
         y_hat1 = self._codebook1.dequantize(idx1)
@@ -207,6 +213,13 @@ class TurboQuantRVQ(Quantizer):
             Estimated inner products, shape (batch,), fp16.
         """
         import mlx.core as mx
+
+        if ev.signs is None:
+            raise ValueError(
+                "TurboQuantRVQ.estimate_inner_product: ev.signs is None — ev wasn't "
+                "produced by this quantizer's encode() (signs holds the second "
+                "codebook's indices here)."
+            )
 
         q_flat = q.reshape(-1)
         q_rot = self._rotation.apply(q_flat.reshape(1, -1)).reshape(-1)
