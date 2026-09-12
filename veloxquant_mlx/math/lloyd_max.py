@@ -1,3 +1,12 @@
+"""Lloyd-Max algorithm for optimal (MSE-minimizing) non-uniform scalar quantization.
+
+Given a source PDF (see :mod:`veloxquant_mlx.math.distributions`) and a
+target number of levels, iteratively solves for the centroids and Voronoi
+boundaries that minimize expected squared quantization error — the
+non-uniform-codebook counterpart to uniform quantization used by
+codebook-based methods in :mod:`veloxquant_mlx.codebooks`.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable

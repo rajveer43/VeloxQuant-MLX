@@ -1,3 +1,20 @@
+"""Pool-tracked drop-in replacement for ``mlx_lm``'s stock fp16 ``KVCache``.
+
+Provides :class:`PoolBackedKVCache`, which implements ``mlx_lm``'s
+``update_and_fetch`` protocol directly (so it plugs straight into
+``mlx_lm.generate()``) while routing every buffer-growth step through a
+shared :class:`~veloxquant_mlx.memory.block_pool.BlockPoolAllocator`, so
+allocation count, reuse, and fragmentation across a server's caches become
+observable instead of hidden inside per-instance hardcoded growth chunks.
+Unlike :class:`~veloxquant_mlx.memory.pooled_cache.PooledKVCache`, this
+class keeps the plain contiguous fp16 buffer (no VeloxQuant compression)
+since RoPE/masking/attention need one contiguous tensor and
+``cache.offset`` read directly. Also provides
+:func:`build_pooled_caches`, a drop-in replacement for
+``mlx_lm.models.cache.make_prompt_cache`` that builds one such cache per
+model layer sharing a pool and owner id.
+"""
+
 from __future__ import annotations
 
 from typing import Any

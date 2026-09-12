@@ -1,3 +1,16 @@
+"""Johnson-Lindenstrauss sketch preconditioner and the 1-bit QJL key encoder.
+
+Provides two related but distinct transforms built on the same random
+projection matrix S ∈ ℝ^(m×d): :class:`JLSketchPreconditioner`, a
+dimension-reducing :class:`~veloxquant_mlx.core.abstractions.Preconditioner`
+(``y = x @ S^T``, with a biased low-rank inverse) usable wherever
+preconditioners are composed into a quantization pipeline; and
+:class:`QJLEncoder`, an unbiased 1-bit sign-sketch inner-product estimator
+(the QJL transform) that stores only ``sign(S·k)`` and ``‖k‖`` per key and
+reconstructs attention scores via ``ProdQJL``, without ever
+materializing an approximate key vector.
+"""
+
 from __future__ import annotations
 
 from typing import Any

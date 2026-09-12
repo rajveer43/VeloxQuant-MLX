@@ -1,3 +1,13 @@
+"""MLX array backing store paired with :class:`~veloxquant_mlx.memory.block_pool.BlockPoolAllocator`.
+
+Supplies :class:`MLXBlockStorage`, which allocates one ``mx.array`` buffer
+per block id (lazily, on first write) and reuses that buffer in place
+whenever the pool recycles the block id, so no new allocation happens
+during steady-state generation. The pool decides *which* block ids are
+free/owned; this module owns the actual memory those ids point to and
+tracks per-format (fp16/int8/int4/int2/int1) resident byte accounting.
+"""
+
 from __future__ import annotations
 
 from typing import Any

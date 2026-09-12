@@ -1,3 +1,14 @@
+"""Closed-form and semi-analytic PDFs used as inputs to Lloyd-Max codebook fitting.
+
+Each function models the marginal distribution of some coordinate that a
+scalar quantizer will be fit against: ``beta_pdf`` for a coordinate of a
+uniform unit-sphere sample (the post-rotation key/value distribution),
+``polar_angle_pdf`` for PolarQuant's recursive polar-angle decomposition,
+and ``gaussian_pdf`` as the high-dimensional limiting case of ``beta_pdf``.
+Callers pass these to :func:`veloxquant_mlx.math.lloyd_max.lloyd_max` as
+the ``pdf_fn`` argument to derive non-uniform quantization levels.
+"""
+
 from __future__ import annotations
 
 import math

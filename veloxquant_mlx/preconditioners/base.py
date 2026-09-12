@@ -1,3 +1,11 @@
+"""Construction dispatch for registered :class:`~veloxquant_mlx.core.abstractions.Preconditioner` implementations.
+
+Provides :class:`PreconditionerFactory`, a thin ``create()`` dispatcher
+over :class:`~veloxquant_mlx.core.registry.PreconditionerRegistry` that
+validates the required constructor kwargs (``Pi`` for rotation, ``S`` for
+JL, ``D`` for Hadamard) per preconditioner kind before instantiating it.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Literal

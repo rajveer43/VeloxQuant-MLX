@@ -1,3 +1,14 @@
+"""Streaming detector for high-magnitude outlier channels in key vectors.
+
+Provides :class:`OutlierDetector`, which observes key vectors one token at
+a time during prefill and, after a calibration window, identifies the
+channels with highest mean absolute magnitude for mixed-precision
+handling (e.g. TurboQuant's outlier-channel path in
+:mod:`veloxquant_mlx.cache.turboquant_cache`). Uses
+:class:`~veloxquant_mlx.dsa.heap.SortedChannelIndex` internally for
+efficient running top-k channel tracking as new observations arrive.
+"""
+
 from __future__ import annotations
 
 import numpy as np
