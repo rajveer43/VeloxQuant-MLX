@@ -20,10 +20,10 @@
        Keep both in badge form — converting either to a text link silently
        disables that sync. -->
   <img src="https://img.shields.io/badge/tests-3695%20passing-22c55e?style=flat-square" alt="Tests"/>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.83.0-64748b?style=flat-square" alt="Changelog"/></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.83.1-64748b?style=flat-square" alt="Changelog"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License"/></a>
   <a href="https://doi.org/10.5281/zenodo.20647294"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20647294-1f6feb?style=flat-square" alt="DOI"/></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.83.0-64748b?style=flat-square" alt="Changelog"/></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.83.1-64748b?style=flat-square" alt="Changelog"/></a>
   <a href="SECURITY.md"><img src="https://img.shields.io/badge/security-policy-1f6feb?style=flat-square" alt="Security policy"/></a>
   <!-- Hit counter keyed on page_id; the count belongs to that key, so renaming
        it restarts from zero. -->

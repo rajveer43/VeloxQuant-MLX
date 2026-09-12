@@ -432,6 +432,20 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.1 (2026-09-12)
+
+### Bug Fixes
+
+- **landing**: Use kivi 2-bit in quickstart example, not turboquant_rvq 1-bit
+  ([`ab97d36`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ab97d365ddf0c7f58e2f2e794bf27012e2b4eb97))
+
+### Build System
+
+- **deps**: Bump urllib3 from 2.6.3 to 2.7.0
+  ([#352](https://github.com/rajveer43/VeloxQuant-MLX/pull/352),
+  [`caa457a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/caa457acbf1f7ac9a905bc0b484f0e77f532178f))
+
+
 ## v0.83.0 (2026-09-12)
 
 ### Bug Fixes
