@@ -825,7 +825,7 @@
           <div class="install-code-content">
             <pre id="code-install-python"><code><span class="kw">from</span> <span class="id">veloxquant_mlx</span> <span class="kw">import</span> <span class="fn">KVCacheBuilder</span>, <span class="fn">KVCacheConfig</span>
 
-<span class="id">config</span> = <span class="fn">KVCacheConfig</span>(<span class="at">method</span>=<span class="st">"turboquant_rvq"</span>, <span class="at">bit_width_inlier</span>=<span class="nu">1</span>, <span class="at">seed</span>=<span class="nu">42</span>)
+<span class="id">config</span> = <span class="fn">KVCacheConfig</span>(<span class="at">method</span>=<span class="st">"kivi"</span>, <span class="at">bit_width_inlier</span>=<span class="nu">2</span>, <span class="at">seed</span>=<span class="nu">42</span>)
 <span class="id">caches</span> = <span class="fn">KVCacheBuilder</span>.<span class="fn">for_model</span>(<span class="id">model</span>, <span class="id">config</span>)</code></pre>
           </div>
         </div>
