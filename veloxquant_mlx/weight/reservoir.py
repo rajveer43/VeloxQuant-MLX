@@ -158,7 +158,7 @@ def save_reservoir(model: nn.Module, path: str | Path, persist_rotation: bool = 
     )
 
     path = Path(path)
-    with open(path, "wb") as f:
+    with path.open("wb") as f:
         f.write(_MAGIC)
         f.write(struct.pack("<I", _VERSION))
         f.write(struct.pack("<I", len(header_bytes)))
@@ -235,7 +235,7 @@ def load_reservoir(path: str | Path) -> dict[str, Any]:
         graft these back onto a skeleton module tree by name.
     """
     path = Path(path)
-    with open(path, "rb") as f:
+    with path.open("rb") as f:
         magic = f.read(4)
         if magic != _MAGIC:
             raise ValueError(f"Not a VeloxQuant reservoir file: {path}")

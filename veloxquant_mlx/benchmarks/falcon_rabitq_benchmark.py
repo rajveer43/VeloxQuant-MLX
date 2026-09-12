@@ -679,7 +679,7 @@ if __name__ == "__main__":
     save_long_context_figures(lc)
 
     out = FIGURES_DIR / "results.json"
-    with open(out, "w") as f:
+    with out.open("w") as f:
         json.dump(
             {
                 "throughput": {str(k): v for k, v in throughput.items()},

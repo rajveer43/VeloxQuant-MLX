@@ -236,6 +236,6 @@ if __name__ == "__main__":
     save_figures(results)
 
     out_path = FIGURES_DIR / "results.json"
-    with open(out_path, "w") as f:
+    with out_path.open("w") as f:
         json.dump(results, f, indent=2)
     print(f"\nResults saved to {out_path}")

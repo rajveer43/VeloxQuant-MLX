@@ -779,7 +779,7 @@ def main():
 
     # Save JSON
     json_path = OUT_DIR / "results.json"
-    with open(json_path, "w") as f:
+    with json_path.open("w") as f:
         json.dump(results_json, f, indent=2)
     print(f"\n  Results saved to {json_path}")
 

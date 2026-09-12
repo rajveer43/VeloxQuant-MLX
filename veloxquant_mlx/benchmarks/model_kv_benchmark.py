@@ -579,7 +579,7 @@ if __name__ == "__main__":
 
     # Save JSON
     out_path = FIGURES_DIR / "results.json"
-    with open(out_path, "w") as f:
+    with out_path.open("w") as f:
         json.dump(results, f, indent=2, default=lambda x: None if math.isnan(x) else x)
     print(f"Results saved to {out_path}")
 

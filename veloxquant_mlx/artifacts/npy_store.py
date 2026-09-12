@@ -16,14 +16,14 @@ def _atomic_save(path: Path, arr: np.ndarray) -> None:
     Prevents concurrent readers/writers targeting the same path (e.g. two
     workers lazily constructing the same quantizer config) from observing a
     partially-written ``.npy`` file: ``np.save`` writes directly to the
-    destination and is not atomic, but ``os.replace`` is atomic on POSIX and
-    Windows. The temp name is PID- and object-id-qualified so concurrent
+    destination and is not atomic, but ``Path.replace`` is atomic on POSIX
+    and Windows. The temp name is PID- and object-id-qualified so concurrent
     writers never collide with each other's temp files either.
     """
     tmp_path = path.with_name(f".{path.name}.tmp{os.getpid()}-{id(arr)}.npy")
     try:
         np.save(tmp_path, arr)
-        os.replace(tmp_path, path)
+        tmp_path.replace(path)
     finally:
         tmp_path.unlink(missing_ok=True)
 
