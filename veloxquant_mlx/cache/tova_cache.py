@@ -135,7 +135,7 @@ class TOVAKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         if min(B, H, D) < 1:
             raise ValueError("tova cache: batch/head/dimension must be positive")
-        if self._states and (B, H, D) != (self._B, self._H, self._head_dim):
+        if self._states and (self._B, self._H, self._head_dim) != (B, H, D):
             raise ValueError("tova cache: batch/head/dimension cannot change after initialization")
         self._ensure_states(B, H, D)
 

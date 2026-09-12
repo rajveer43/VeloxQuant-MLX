@@ -50,7 +50,7 @@ per-layer prefill/decode state.
 from __future__ import annotations
 
 import math
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 import mlx.core as mx
 
@@ -84,10 +84,10 @@ class GEARState(NamedTuple):
     codes: mx.array
     scale: mx.array
     zero: mx.array
-    L: Optional[mx.array]
-    R: Optional[mx.array]
-    sp_idx: Optional[mx.array]
-    sp_val: Optional[mx.array]
+    L: mx.array | None
+    R: mx.array | None
+    sp_idx: mx.array | None
+    sp_val: mx.array | None
     n_rows: int
     bits: int
     rank: int
@@ -148,9 +148,9 @@ def residual(x: mx.array, base_recon: mx.array) -> mx.array:
 
 def lowrank_error(
     E: mx.array,
-    rank: Optional[int],
+    rank: int | None,
     energy_threshold: float = 0.90,
-) -> tuple[Optional[mx.array], Optional[mx.array]]:
+) -> tuple[mx.array | None, mx.array | None]:
     """Low-rank factors ``(L, R)`` of the residual via truncated SVD.
 
     ``E ~= L @ R`` with ``L = U_r * s_r`` (``[N, r]``) and ``R = Vt_r`` (``[r, D]``).
@@ -176,7 +176,7 @@ def lowrank_error(
 def sparse_outliers(
     resid: mx.array,
     frac: float,
-) -> tuple[Optional[mx.array], Optional[mx.array]]:
+) -> tuple[mx.array | None, mx.array | None]:
     """Top-``frac`` entries of ``resid`` by magnitude → ``(flat_idx, values)``.
 
     The outlier correction GEAR applies to the residual the low-rank term could
@@ -208,7 +208,7 @@ def sparse_outliers(
 def gear_compress(
     x: mx.array,
     bits: int = 2,
-    rank: Optional[int] = None,
+    rank: int | None = None,
     sparse_frac: float = 0.01,
     group_size: int = 32,
     energy_threshold: float = 0.90,
@@ -323,7 +323,7 @@ def base_only_bytes(state: GEARState) -> int:
 def gear_quant_dequant(
     x: mx.array,
     bits: int = 2,
-    rank: Optional[int] = None,
+    rank: int | None = None,
     sparse_frac: float = 0.01,
     group_size: int = 32,
     energy_threshold: float = 0.90,

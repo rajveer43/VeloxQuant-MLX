@@ -10,11 +10,12 @@ server's own ``--host``, which the user may set to ``0.0.0.0``.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from veloxquant_mlx.ui.config import load_config, save_config
 from veloxquant_mlx.ui.supervisor import ServerSupervisor
@@ -33,7 +34,7 @@ class PanelHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:
         pass  # the panel's own access log is noise; server logs go to the UI
 
-    def _send_json(self, payload: Dict[str, Any], status: int = 200) -> None:
+    def _send_json(self, payload: dict[str, Any], status: int = 200) -> None:
         body = json.dumps(payload).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -42,7 +43,7 @@ class PanelHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _read_json(self) -> Dict[str, Any]:
+    def _read_json(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length") or 0)
         if not length:
             return {}
@@ -186,10 +187,8 @@ def serve_panel(port: int = 7860, open_browser: bool = True) -> None:
     print("[veloxquant panel] press Ctrl-C to quit")
 
     if open_browser:
-        try:
+        with contextlib.suppress(Exception):
             webbrowser.open(url)
-        except Exception:
-            pass
 
     try:
         httpd.serve_forever()

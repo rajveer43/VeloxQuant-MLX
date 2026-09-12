@@ -226,8 +226,8 @@ def run_workload(
     Returns:
         A WorkloadResult with the standard replay metrics.
     """
-    import numpy as np
     import mlx.core as mx
+    import numpy as np
 
     from veloxquant_mlx.cache.base import KVCacheBuilder
     from veloxquant_mlx.profiling import KVCacheProfiler
@@ -414,7 +414,7 @@ def main() -> None:
     if args.json_out:
         out_path = Path(args.json_out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(out_path, "w") as f:
+        with out_path.open("w") as f:
             json.dump(results_to_json(results), f, indent=2)
         print(f"\nResults saved to {out_path}")
 

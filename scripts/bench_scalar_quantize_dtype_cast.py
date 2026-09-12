@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import time
 
-import numpy as np
 import mlx.core as mx
+import numpy as np
 
 from veloxquant_mlx.metal._scalar_quant import turboquant_scalar_quantize
 

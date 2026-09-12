@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 # mx.hadamard_transform requires d = m * 2^k where m is in this set
@@ -114,5 +112,4 @@ def make_jl_matrix(d: int, m: int, seed: int = 42) -> np.ndarray:
         raise ValueError(f"make_jl_matrix: m must be >= 1, got {m}")
 
     rng = np.random.default_rng(seed + 1)
-    S = rng.standard_normal((m, d)).astype(np.float64)
-    return S
+    return rng.standard_normal((m, d)).astype(np.float64)

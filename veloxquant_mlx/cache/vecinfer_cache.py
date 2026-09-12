@@ -22,7 +22,7 @@ codebook cost of ``2**b_k * d_k * 2`` bytes shared across all tokens.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -193,8 +193,8 @@ class VecInferKVCache(_MLXKVCache):
         self._max_ctx: int = int(getattr(config, "fused_sdpa_max_ctx", 8192))
         self._n_sub_k: int = self._head_dim // self._key_sub_dim
         self._n_sub_v: int = self._head_dim // self._value_sub_dim
-        self._stored_k_indices: Optional[mx.array] = None
-        self._stored_v_indices: Optional[mx.array] = None
+        self._stored_k_indices: mx.array | None = None
+        self._stored_v_indices: mx.array | None = None
         self._stored_S_kv: int = 0
 
     # ------------------------------------------------------------------
@@ -546,7 +546,7 @@ class VecInferKVCache(_MLXKVCache):
         # Lazy import — keeps cold-start cost off the package import path
         from veloxquant_mlx.metal.fused_sdpa import metal_fused_sdpa
 
-        out = metal_fused_sdpa(
+        return metal_fused_sdpa(
             q_tilde=q_tilde,
             k_indices=live_k,
             k_codebook=self._key_codebook,
@@ -557,7 +557,6 @@ class VecInferKVCache(_MLXKVCache):
             sliding_window=int(sliding_window or 0),
             out_dtype=q.dtype,
         )
-        return out
 
     # ------------------------------------------------------------------
     # Reporting

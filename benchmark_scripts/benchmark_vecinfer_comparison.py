@@ -27,18 +27,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import sys
 import time
 import traceback
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 import matplotlib.pyplot as plt
 import mlx.core as mx
 import numpy as np
-
 
 PALETTE = {
     "fp16-baseline": "#4C72B0",
@@ -158,8 +156,9 @@ def _build_tq(model, bits: int):
 
 
 def _build_rvq(model, bits: int):
-    from veloxquant_mlx import KVCacheConfig, KVCacheFactory
     from mlx_lm.models.cache import KVCache as _FB
+
+    from veloxquant_mlx import KVCacheConfig, KVCacheFactory
 
     layers = getattr(model, "layers", None) or model.model.layers
     args = getattr(model, "args", None)
@@ -224,9 +223,10 @@ def _vecinfer_artifacts(
 
 
 def _build_vecinfer(model, key_bits, value_bits, key_sub_dim, value_sub_dim, model_stem):
+    from mlx_lm.models.cache import KVCache as _FB
+
     from veloxquant_mlx import KVCacheConfig
     from veloxquant_mlx.cache.vecinfer_cache import VecInferKVCache
-    from mlx_lm.models.cache import KVCache as _FB
 
     layers = getattr(model, "layers", None) or model.model.layers
     args = getattr(model, "args", None)
@@ -479,7 +479,7 @@ def _plot_cross_model(per_model: dict, out_path: Path):
 # --------------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------------
-def _run_model(model_id: str, max_tokens: int) -> Optional[list]:
+def _run_model(model_id: str, max_tokens: int) -> list | None:
     from mlx_lm import load
 
     model_stem = model_id.split("/")[-1]

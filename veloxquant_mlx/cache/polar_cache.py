@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any
 
 from veloxquant_mlx.core.abstractions import KVCache
 from veloxquant_mlx.core.constants import INT8_MAX
@@ -17,7 +17,6 @@ class PolarQuantKVCache(KVCache):
     """
 
     def __init__(self, config: Any) -> None:
-        import mlx.core as mx
 
         self._config = config
         d = config.head_dim

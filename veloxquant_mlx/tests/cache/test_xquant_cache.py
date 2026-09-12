@@ -21,26 +21,25 @@
 
 from __future__ import annotations
 
-import pytest
-import numpy as np
 import mlx.core as mx
+import numpy as np
+import pytest
 
-from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory, KVCacheBuilder
+from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.xquant_cache import XQuantKVCache
 from veloxquant_mlx.cache.xquant_coordinator import XQuantCoordinator
+from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
 from veloxquant_mlx.quantizers.xquant import (
     pair_layers,
     quantize_codes,
-    dequant_with_params,
 )
-from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 def _cfg(**kwargs) -> KVCacheConfig:
-    d = dict(method="xquant", head_dim=64)
+    d = {"method": "xquant", "head_dim": 64}
     d.update(kwargs)
     return KVCacheConfig(**d)
 

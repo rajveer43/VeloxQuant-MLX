@@ -100,7 +100,6 @@ def comm_vq_decode_metal(
     """
     N = indices.shape[0]
     D = n_cb * sub_dim
-    TG = min(D // 2, 128)  # threads per threadgroup (we dispatch D/2 pairs)
     n_pairs = N * (D // 2)
 
     outputs = _comm_vq_kernel(n_cb, sub_dim, cb_size, D)(

@@ -30,7 +30,7 @@ as a plain anchor — useful for unit-testing the anchor path in isolation.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -66,13 +66,13 @@ class XQuantKVCache(_MLXKVCache):
         config: Any,
         role: str = "anchor",
         group_id: int = 0,
-        coordinator: Optional[XQuantCoordinator] = None,
+        coordinator: XQuantCoordinator | None = None,
         n_readers: int = 1,
     ) -> None:
         super().__init__()
         self._role: str = role if coordinator is not None else "anchor"
         self._group_id: int = int(group_id)
-        self._coord: Optional[XQuantCoordinator] = coordinator
+        self._coord: XQuantCoordinator | None = coordinator
         self._n_readers: int = int(n_readers)
 
         self._base_bits: int = int(getattr(config, "xquant_base_bits", 2))

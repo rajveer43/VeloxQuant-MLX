@@ -12,14 +12,13 @@ from __future__ import annotations
 
 import mlx.core as mx
 import numpy as np
-import pytest
 
 from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.cachegen_cache import CacheGenKVCache
 
 
 def _make(**cfg):
-    base = dict(method="cachegen", head_dim=64, cachegen_bits=4, cachegen_group_size=32)
+    base = {"method": "cachegen", "head_dim": 64, "cachegen_bits": 4, "cachegen_group_size": 32}
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 
@@ -104,8 +103,8 @@ def test_reconstruction_matches_group_quant() -> None:
 def test_delta_lowers_entropy_on_correlated_data() -> None:
     from veloxquant_mlx.quantizers.cachegen import (
         quantize_to_codes,
-        token_delta,
         symbol_entropy_bits,
+        token_delta,
     )
 
     K, _ = _corr_kv(S=128, H=1, D=64)

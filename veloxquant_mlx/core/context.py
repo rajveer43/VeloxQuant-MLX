@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 import numpy as np
 
@@ -36,16 +36,16 @@ class QuantizationContext:
     x_original: Any  # mx.array (batch, d)
     mode: Literal["encode", "decode"]
     x_current: Any  # mx.array (batch, d)
-    norm: Optional[Any] = None  # mx.array (batch,)
-    rotated: Optional[Any] = None  # mx.array (batch, d)
-    indices: Optional[Any] = None  # mx.array (batch, d) uint8
-    signs: Optional[Any] = None  # mx.array (batch, m) int8
-    residual_norm: Optional[Any] = None  # mx.array (batch,)
-    angles: Optional[List[Any]] = None  # list of mx.array per level
-    final_radius: Optional[Any] = None  # mx.array (batch,)
-    outlier_idx: Optional[np.ndarray] = None
-    packed_bits: Optional[np.ndarray] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    norm: Any | None = None  # mx.array (batch,)
+    rotated: Any | None = None  # mx.array (batch, d)
+    indices: Any | None = None  # mx.array (batch, d) uint8
+    signs: Any | None = None  # mx.array (batch, m) int8
+    residual_norm: Any | None = None  # mx.array (batch,)
+    angles: list[Any] | None = None  # list of mx.array per level
+    final_radius: Any | None = None  # mx.array (batch,)
+    outlier_idx: np.ndarray | None = None
+    packed_bits: np.ndarray | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __repr__(self) -> str:
         shape = getattr(self.x_original, "shape", None)
@@ -81,15 +81,15 @@ class EncodedVector:
     quantizer_type: str
     batch_size: int
     dim: int
-    indices: Optional[Any] = None
-    norm: Optional[Any] = None
-    signs: Optional[Any] = None
-    residual_norm: Optional[Any] = None
-    angles: Optional[List[Any]] = None
-    final_radius: Optional[Any] = None
-    outlier_idx: Optional[np.ndarray] = None
-    outlier_encoded: Optional["EncodedVector"] = None
-    inlier_encoded: Optional["EncodedVector"] = None
+    indices: Any | None = None
+    norm: Any | None = None
+    signs: Any | None = None
+    residual_norm: Any | None = None
+    angles: list[Any] | None = None
+    final_radius: Any | None = None
+    outlier_idx: np.ndarray | None = None
+    outlier_encoded: EncodedVector | None = None
+    inlier_encoded: EncodedVector | None = None
 
     def memory_bytes(self) -> int:
         """Compute exact memory footprint of this encoded representation.
@@ -156,7 +156,7 @@ class TransformResult:
         n_levels: Number of polar recursion levels applied.
     """
 
-    angles: List[Any]  # list of mx.array
+    angles: list[Any]  # list of mx.array
     final_radius: Any  # mx.array (batch,)
     n_levels: int
 

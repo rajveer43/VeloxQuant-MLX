@@ -7,8 +7,8 @@ mx = pytest.importorskip("mlx.core")
 if not mx.metal.is_available():
     pytest.skip("Metal GPU is required", allow_module_level=True)
 
-from veloxquant_mlx.cli.worker import _bit_pack_file, _rope_recode_file
-from veloxquant_mlx.transfer.rope import recode_rope
+from veloxquant_mlx.cli.worker import _bit_pack_file, _rope_recode_file  # noqa: E402
+from veloxquant_mlx.transfer.rope import recode_rope  # noqa: E402
 
 
 def test_worker_bit_pack_file_matches_exact_reference(tmp_path):

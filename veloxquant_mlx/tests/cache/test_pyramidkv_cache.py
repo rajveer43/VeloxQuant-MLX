@@ -20,7 +20,7 @@ from veloxquant_mlx.cache.pyramidkv_cache import PyramidKVCache
 
 
 def _make(**cfg):
-    base = dict(method="pyramidkv", head_dim=32, pyramid_budget=8, pyramid_n_sink=2)
+    base = {"method": "pyramidkv", "head_dim": 32, "pyramid_budget": 8, "pyramid_n_sink": 2}
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

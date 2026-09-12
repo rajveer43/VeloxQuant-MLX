@@ -60,11 +60,11 @@ if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
 from veloxquant_mlx.quantizers.amc import (
+    _tier_config_for_dim,
     amc_apply_rank_mask,
     amc_assign_tiers,
     amc_quantize_tier,
     amc_saliency,
-    _tier_config_for_dim,
 )
 
 # ── sweep configuration ──────────────────────────────────────────────────────

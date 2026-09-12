@@ -35,7 +35,10 @@ class LloydMaxGaussianStrategy(CodebookStrategy):
         """
         sigma = 1.0 / math.sqrt(d)
         support = (-self._support_sigma_factor * sigma, self._support_sigma_factor * sigma)
-        pdf_fn = lambda x: gaussian_pdf(x, sigma=sigma)
+
+        def pdf_fn(x):
+            return gaussian_pdf(x, sigma=sigma)
+
         centroids, _ = lloyd_max(pdf_fn, support, n_levels=2**b)
         return centroids.astype(np.float64)
 
@@ -65,7 +68,10 @@ class LloydMaxBetaStrategy(CodebookStrategy):
             Sorted centroid array of shape (2^b,), float64.
         """
         support = (-1.0 + 1e-6, 1.0 - 1e-6)
-        pdf_fn = lambda x: beta_pdf(x, d)
+
+        def pdf_fn(x):
+            return beta_pdf(x, d)
+
         centroids, _ = lloyd_max(pdf_fn, support, n_levels=2**b)
         return centroids.astype(np.float64)
 
@@ -97,11 +103,11 @@ class PolarAngleSamplingStrategy(CodebookStrategy):
         Returns:
             Sorted centroid array of shape (2^b,), float64.
         """
-        if self.level == 1:
-            support = (0.0, 2 * math.pi - 1e-6)
-        else:
-            support = (1e-6, math.pi / 2 - 1e-6)
-        pdf_fn = lambda x: polar_angle_pdf(x, self.level)
+        support = (0.0, 2 * math.pi - 1e-6) if self.level == 1 else (1e-6, math.pi / 2 - 1e-6)
+
+        def pdf_fn(x):
+            return polar_angle_pdf(x, self.level)
+
         centroids, _ = lloyd_max(pdf_fn, support, n_levels=2**b)
         return centroids.astype(np.float64)
 

@@ -22,7 +22,7 @@ from veloxquant_mlx.cache.curdkv_cache import CurDKVKVCache
 
 
 def _make(**cfg):
-    base = dict(method="curdkv", head_dim=32, curdkv_budget=8, curdkv_n_sink=2)
+    base = {"method": "curdkv", "head_dim": 32, "curdkv_budget": 8, "curdkv_n_sink": 2}
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

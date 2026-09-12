@@ -19,14 +19,14 @@ from veloxquant_mlx.cache.sink_cache import SinkProtectedKVCache
 
 
 def _make(**cfg):
-    base = dict(
-        method="kivi_sink",
-        head_dim=128,
-        bit_width_inlier=2,
-        residual_length=8,
-        kivi_group_size=32,
-        n_sink_tokens=5,
-    )
+    base = {
+        "method": "kivi_sink",
+        "head_dim": 128,
+        "bit_width_inlier": 2,
+        "residual_length": 8,
+        "kivi_group_size": 32,
+        "n_sink_tokens": 5,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

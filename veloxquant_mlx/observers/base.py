@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict
-
-from veloxquant_mlx.core.abstractions import QuantizationObserver
+from typing import Any
 
 
 @dataclass
@@ -22,7 +20,7 @@ class QuantizationEvent:
     input_shape: tuple
     elapsed_ms: float = 0.0
     memory_delta_bytes: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __repr__(self) -> str:
         return (

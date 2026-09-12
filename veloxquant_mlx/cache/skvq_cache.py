@@ -47,8 +47,7 @@ permutations add ``2 * H * D * 4`` bytes per layer total, counted once in
 
 from __future__ import annotations
 
-import math
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -116,10 +115,10 @@ class SKVQKVCache(_MLXKVCache):
         # Per-head channel permutations, frozen from the first flushed
         # chunk. None until then; identity is represented by None when
         # skvq_reorder=False. Shapes [H, D] int32.
-        self._perm_k: Optional[mx.array] = None
-        self._inv_k: Optional[mx.array] = None
-        self._perm_v: Optional[mx.array] = None
-        self._inv_v: Optional[mx.array] = None
+        self._perm_k: mx.array | None = None
+        self._inv_k: mx.array | None = None
+        self._perm_v: mx.array | None = None
+        self._inv_v: mx.array | None = None
 
         # Quantized frontier: tokens [0, _q_end) have been chunk-flushed.
         # Always a multiple of _window.
@@ -291,13 +290,13 @@ class SKVQKVCache(_MLXKVCache):
         return self._tokens_seen
 
     @property
-    def key_perms(self) -> Optional[mx.array]:
+    def key_perms(self) -> mx.array | None:
         """Frozen per-head key channel permutations ``[H, D]`` (None before
         the first flush or when ``skvq_reorder=False``)."""
         return self._perm_k
 
     @property
-    def value_perms(self) -> Optional[mx.array]:
+    def value_perms(self) -> mx.array | None:
         return self._perm_v
 
     @property

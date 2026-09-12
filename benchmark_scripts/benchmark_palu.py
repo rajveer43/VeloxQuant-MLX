@@ -37,7 +37,6 @@ import matplotlib.pyplot as plt
 import mlx.core as mx
 import numpy as np
 
-
 _PASSAGE = (
     "The key-value cache stores the attention keys and values of every past "
     "token so the model need not recompute them. Its size grows linearly with "
@@ -108,7 +107,7 @@ def run_one(model, tokenizer, cache_arg, n_decode: int, label: str) -> dict:
 
 
 def build_cache(method: str, model, overrides: dict):
-    from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
+    from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig
 
     cfg = KVCacheConfig(method=method, **overrides)
     return KVCacheBuilder.for_model(model, cfg)

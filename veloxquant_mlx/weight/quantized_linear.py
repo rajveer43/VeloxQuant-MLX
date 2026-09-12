@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -76,10 +75,10 @@ class QuantizedLinear(nn.Module):
         self._w_indices: mx.array = mx.zeros((out_features, in_features), dtype=mx.uint8)
         self._w_norms: mx.array = mx.ones((out_features, 1), dtype=mx.float32)
 
-        self._bias: Optional[mx.array] = None
+        self._bias: mx.array | None = None
         self._has_bias = bias
 
-    def quantize_weights(self, weight: mx.array, bias: Optional[mx.array] = None) -> None:
+    def quantize_weights(self, weight: mx.array, bias: mx.array | None = None) -> None:
         """Compress a weight matrix into this layer.
 
         Args:

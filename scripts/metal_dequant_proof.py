@@ -20,7 +20,6 @@ Acceptance for Phase 1:
 from __future__ import annotations
 
 import time
-from typing import Tuple
 
 import mlx.core as mx
 import numpy as np
@@ -39,7 +38,7 @@ def _make_inputs(
     n_centroids: int,
     dtype: mx.Dtype,
     seed: int = 42,
-) -> Tuple[mx.array, mx.array]:
+) -> tuple[mx.array, mx.array]:
     rng = np.random.default_rng(seed)
     indices_np = rng.integers(0, n_centroids, size=(B, H, S, n_sub), dtype=np.int32)
     codebook_np = rng.standard_normal((n_centroids, sub_dim)).astype(np.float32)

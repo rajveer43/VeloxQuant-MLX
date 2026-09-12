@@ -14,18 +14,18 @@ import mlx.core as mx
 import numpy as np
 import pytest
 
-from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory, KVCacheBuilder
 from veloxquant_mlx.cache.a2ats_cache import A2ATSKVCache
+from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig, KVCacheFactory
 
 
 def _make(**cfg):
-    base = dict(
-        method="a2ats",
-        head_dim=32,
-        a2ats_sub_dim=8,
-        a2ats_codebook_bits=6,
-        a2ats_window=4,
-    )
+    base = {
+        "method": "a2ats",
+        "head_dim": 32,
+        "a2ats_sub_dim": 8,
+        "a2ats_codebook_bits": 6,
+        "a2ats_window": 4,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

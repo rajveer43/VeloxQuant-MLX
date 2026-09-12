@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import math
-from typing import Any, Tuple
+from typing import Any
 
 from veloxquant_mlx.core.abstractions import Preconditioner
 from veloxquant_mlx.core.constants import SQRT_PI_OVER_2
@@ -83,7 +82,7 @@ class QJLEncoder:
         self._S = S
         self._m = int(S.shape[0])
 
-    def encode_key(self, k: Any) -> Tuple[Any, Any]:
+    def encode_key(self, k: Any) -> tuple[Any, Any]:
         """Encode a batch of key vectors.
 
         Args:

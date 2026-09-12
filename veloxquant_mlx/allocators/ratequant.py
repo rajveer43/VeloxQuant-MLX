@@ -26,15 +26,11 @@ adding per-head would require a larger restructuring of the cache layout.
 
 from __future__ import annotations
 
-import math
-from typing import Optional
-
 import mlx.core as mx
 import numpy as np
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.turboquant_rvq import TurboQuantRVQ
-
 
 # ── Sensitivity calibration ─────────────────────────────────────────────────
 
@@ -79,7 +75,7 @@ _DEFAULT_CALIB_PROMPTS = (
 def calibrate_layer_sensitivities(
     model,
     tokenizer,
-    prompts: Optional[list] = None,
+    prompts: list | None = None,
     seq_len: int = 256,
     verbose: bool = False,
 ) -> list[float]:
@@ -123,8 +119,7 @@ def calibrate_layer_sensitivities(
         elif hasattr(model, "make_cache"):
             del model.make_cache
 
-    weights = [max(p.sensitivity, 1e-6) for p in probes]
-    return weights
+    return [max(p.sensitivity, 1e-6) for p in probes]
 
 
 # ── Distortion curve fitting (optional — most users can skip) ──────────────
@@ -204,7 +199,7 @@ def allocate_bits_ratequant(
     if not bit_choices:
         raise ValueError("bit_choices must be non-empty.")
 
-    choices_sorted = sorted(set(int(c) for c in bit_choices))
+    choices_sorted = sorted({int(c) for c in bit_choices})
 
     N = w.size
     log_w = np.log(w)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -71,9 +71,9 @@ class TurboQuantRVQ(Quantizer):
         b: int = 2,
         seed: int = 42,
         m: int = 0,  # unused, kept for factory API compatibility
-        store: Optional[ArtifactStore] = None,
+        store: ArtifactStore | None = None,
         use_hadamard: bool = False,
-        residual_scale: Optional[float] = None,
+        residual_scale: float | None = None,
         **kwargs: Any,
     ) -> None:
         self._d = d

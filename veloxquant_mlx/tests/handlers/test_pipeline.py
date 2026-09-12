@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 
 def _make_codebook(b: int = 2, d: int = 64):
@@ -14,6 +13,7 @@ def _make_codebook(b: int = 2, d: int = 64):
 
 def _make_rotation(d: int = 64):
     import mlx.core as mx
+
     from veloxquant_mlx.math.rotation import make_rotation_matrix
     from veloxquant_mlx.preconditioners.rotation import RotationPreconditioner
 
@@ -23,6 +23,7 @@ def _make_rotation(d: int = 64):
 
 def test_normalization_handler_encode() -> None:
     import mlx.core as mx
+
     from veloxquant_mlx.core.context import QuantizationContext
     from veloxquant_mlx.handlers.normalization import NormalizationHandler
 
@@ -40,6 +41,7 @@ def test_normalization_handler_encode() -> None:
 
 def test_rotation_handler_roundtrip() -> None:
     import mlx.core as mx
+
     from veloxquant_mlx.core.context import QuantizationContext
     from veloxquant_mlx.handlers.rotation_handler import RotationHandler
 
@@ -62,6 +64,7 @@ def test_rotation_handler_roundtrip() -> None:
 
 def test_scalar_quant_handler_encode_decode() -> None:
     import mlx.core as mx
+
     from veloxquant_mlx.core.context import QuantizationContext
     from veloxquant_mlx.handlers.scalar_quant_handler import ScalarQuantizerHandler
 
@@ -79,6 +82,7 @@ def test_scalar_quant_handler_encode_decode() -> None:
 def test_chained_normalization_rotation() -> None:
     """Normalization → Rotation chain should process context correctly."""
     import mlx.core as mx
+
     from veloxquant_mlx.core.context import QuantizationContext
     from veloxquant_mlx.handlers.normalization import NormalizationHandler
     from veloxquant_mlx.handlers.rotation_handler import RotationHandler
@@ -99,6 +103,7 @@ def test_chained_normalization_rotation() -> None:
 
 def test_bit_packing_handler_roundtrip() -> None:
     import mlx.core as mx
+
     from veloxquant_mlx.core.context import QuantizationContext
     from veloxquant_mlx.handlers.bit_pack_handler import BitPackingHandler
 

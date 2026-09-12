@@ -75,7 +75,7 @@ def test_tau_zero_matches_h2o_kernel():
         recent=0,
     )
     # h2o_out: (keys, values, scores, positions); kf_out adds gumbel at index 3.
-    for a, b in zip(h2o_out, (kf_out[0], kf_out[1], kf_out[2], kf_out[4])):
+    for a, b in zip(h2o_out, (kf_out[0], kf_out[1], kf_out[2], kf_out[4]), strict=True):
         mx.eval(a, b)
         assert float(mx.max(mx.abs(a.astype(mx.float32) - b.astype(mx.float32))).item()) == 0.0
 
@@ -258,7 +258,7 @@ def test_deterministic():
     )
     out1 = keyformer_fused_evict(*args, n_sink=0, rope_base=10000.0, tau=0.5)
     out2 = keyformer_fused_evict(*args, n_sink=0, rope_base=10000.0, tau=0.5)
-    for a, b in zip(out1, out2):
+    for a, b in zip(out1, out2, strict=True):
         mx.eval(a, b)
         assert float(mx.max(mx.abs(a.astype(mx.float32) - b.astype(mx.float32))).item()) == 0.0
 
@@ -377,7 +377,7 @@ def test_matches_python_reference_evict_via_mlx():
         keys, values, scores, gumbel, positions, n_sink=2, recent=3, tau=1.5, rope_base=10000.0
     )
 
-    for a, b in zip(ref, kernel):
+    for a, b in zip(ref, kernel, strict=True):
         mx.eval(a, b)
         err = float(mx.max(mx.abs(a.astype(mx.float32) - b.astype(mx.float32))).item())
         assert err < 1e-2, f"mismatch: {err}"

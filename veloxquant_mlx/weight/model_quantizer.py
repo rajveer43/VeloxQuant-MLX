@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import mlx.core as mx
 import mlx.nn as nn
 
@@ -131,10 +129,7 @@ def _set_nested_attr(root: nn.Module, dotted_name: str, value: nn.Module) -> Non
     parts = dotted_name.split(".")
     obj = root
     for part in parts[:-1]:
-        if part.isdigit():
-            obj = obj[int(part)]
-        else:
-            obj = getattr(obj, part)
+        obj = obj[int(part)] if part.isdigit() else getattr(obj, part)
     last = parts[-1]
     if last.isdigit():
         obj[int(last)] = value

@@ -118,15 +118,15 @@ def test_imbalance_reflects_hot_shard():
 
 
 def _small_run(**overrides) -> dict[str, PolicyResult]:
-    params = dict(
-        n_sessions=40,
-        n_arrivals=2000,
-        n_shards=4,
-        warm_slots_per_shard=5,
-        zipf_s=1.1,
-        replan_interval=100,
-        seed=11,
-    )
+    params = {
+        "n_sessions": 40,
+        "n_arrivals": 2000,
+        "n_shards": 4,
+        "warm_slots_per_shard": 5,
+        "zipf_s": 1.1,
+        "replan_interval": 100,
+        "seed": 11,
+    }
     params.update(overrides)
     return run_benchmark(**params)
 

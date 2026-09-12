@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 
 def _make_U(d: int = 64, seed: int = 0) -> np.ndarray:
@@ -26,6 +25,7 @@ def _make_rotation_entry(d: int = 64, seed: int = 0) -> tuple:
 def test_save_and_load_rotations(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("VELOXQUANT_CACHE_DIR", str(tmp_path))
     import importlib
+
     import veloxquant_mlx.spectral.calibrate as calib_mod
 
     importlib.reload(calib_mod)
@@ -52,6 +52,7 @@ def test_save_and_load_rotations(tmp_path: Path, monkeypatch):
 def test_load_returns_none_when_missing(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("VELOXQUANT_CACHE_DIR", str(tmp_path))
     import importlib
+
     import veloxquant_mlx.spectral.calibrate as calib_mod
 
     importlib.reload(calib_mod)
@@ -70,6 +71,7 @@ def test_rotation_matrix_is_orthonormal():
 def test_model_name_with_slash_is_safe(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("VELOXQUANT_CACHE_DIR", str(tmp_path))
     import importlib
+
     import veloxquant_mlx.spectral.calibrate as calib_mod
 
     importlib.reload(calib_mod)

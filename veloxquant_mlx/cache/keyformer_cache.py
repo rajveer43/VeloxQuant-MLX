@@ -68,7 +68,6 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.keyformer import (
     KeyformerState,
-    full_keyformer_fp16_bytes,
     init_keyformer_state,
     keyformer_fp16_bytes,
     keyformer_get_kv,

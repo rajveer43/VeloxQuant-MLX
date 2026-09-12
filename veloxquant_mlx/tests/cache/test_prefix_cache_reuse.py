@@ -20,15 +20,19 @@ from unittest.mock import MagicMock
 
 import mlx.core as mx
 import numpy as np
-import pytest
 from mlx_lm.models.cache import LRUPromptCache
 
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
-_TRIMMABLE_CONFIG = dict(method="turboquant_rvq", head_dim=32, bit_width_inlier=1, seed=42)
-_NOT_TRIMMABLE_CONFIG = dict(
-    method="h2o", head_dim=32, h2o_budget=8, h2o_n_sink=1, h2o_grace=0, h2o_decay=1.0
-)
+_TRIMMABLE_CONFIG = {"method": "turboquant_rvq", "head_dim": 32, "bit_width_inlier": 1, "seed": 42}
+_NOT_TRIMMABLE_CONFIG = {
+    "method": "h2o",
+    "head_dim": 32,
+    "h2o_budget": 8,
+    "h2o_n_sink": 1,
+    "h2o_grace": 0,
+    "h2o_decay": 1.0,
+}
 
 
 def _make_layer_cache(method_config: dict) -> list:
@@ -115,7 +119,7 @@ def test_trimmable_generation_after_trim_matches_fresh_cache_fed_same_prefix() -
 
     reused_state = reused_cache[0].state
     fresh_state = fresh_cache[0].state
-    for reused_elem, fresh_elem in zip(reused_state, fresh_state):
+    for reused_elem, fresh_elem in zip(reused_state, fresh_state, strict=True):
         mx.eval(reused_elem, fresh_elem)
         assert mx.array_equal(reused_elem, fresh_elem)
 

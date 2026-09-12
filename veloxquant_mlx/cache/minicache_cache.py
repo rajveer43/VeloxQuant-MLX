@@ -31,7 +31,7 @@ passthrough primary, useful for unit-testing.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -60,7 +60,7 @@ class MiniCacheKVCache(_MLXKVCache):
         config: Any,
         role: str = "primary",
         group_id: int = 0,
-        coordinator: Optional[MiniCacheCoordinator] = None,
+        coordinator: MiniCacheCoordinator | None = None,
         n_readers: int = 1,
     ) -> None:
         super().__init__()

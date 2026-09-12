@@ -12,7 +12,7 @@ import mlx.core as mx
 import numpy as np
 import pytest
 
-from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder, KVCacheFactory
+from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.minicache_cache import MiniCacheKVCache
 from veloxquant_mlx.cache.minicache_coordinator import MiniCacheCoordinator
 
@@ -51,7 +51,12 @@ def _kv(S, H=4, D=64, seed=0):
 
 
 def _build(n=8, **cfg):
-    base = dict(method="minicache", head_dim=64, minicache_start_frac=0.5, minicache_group_size=2)
+    base = {
+        "method": "minicache",
+        "head_dim": 64,
+        "minicache_start_frac": 0.5,
+        "minicache_group_size": 2,
+    }
     base.update(cfg)
     return KVCacheBuilder.for_model(_Model(n), KVCacheConfig(**base))
 
@@ -271,5 +276,5 @@ def test_determinism() -> None:
     out1 = [c.update_and_fetch(K, V)[0] for c in c1]
     out2 = [c.update_and_fetch(K, V)[0] for c in c2]
     mx.eval(*out1, *out2)
-    for a, b in zip(out1, out2):
+    for a, b in zip(out1, out2, strict=True):
         assert np.allclose(np.array(a), np.array(b), atol=1e-4)

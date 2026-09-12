@@ -9,9 +9,9 @@ compression_ratio > 1 at a reasonable budget on structured (low-rank) data.
 
 from __future__ import annotations
 
+import mlx.core as mx
 import numpy as np
 import pytest
-import mlx.core as mx
 
 from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.kvtc_cache import KVTCKVCache

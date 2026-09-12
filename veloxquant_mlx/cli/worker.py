@@ -79,6 +79,7 @@ def _bit_pack(args: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(values, list) or not all(isinstance(value, int) for value in values):
         raise ValueError("INVALID_VALUES: values must be an integer array")
     import mlx.core as mx
+
     from veloxquant_mlx.metal._bit_packing import turboquant_bit_pack
 
     packed = turboquant_bit_pack(mx.array(values, dtype=mx.uint8), bits)
@@ -94,6 +95,7 @@ def _bit_pack(args: dict[str, Any]) -> dict[str, Any]:
 
 def _bit_pack_file(args: dict[str, Any]) -> dict[str, Any]:
     from pathlib import Path
+
     import numpy as np
 
     input_path = Path(str(args.get("inputPath", ""))).resolve()
@@ -122,8 +124,10 @@ def _bit_pack_file(args: dict[str, Any]) -> dict[str, Any]:
 
 def _rope_recode_file(args: dict[str, Any]) -> dict[str, Any]:
     from pathlib import Path
-    import numpy as np
+
     import mlx.core as mx
+    import numpy as np
+
     from veloxquant_mlx.metal._crosskv_rope import crosskv_rope_recode
 
     input_path = Path(str(args.get("inputPath", ""))).resolve()

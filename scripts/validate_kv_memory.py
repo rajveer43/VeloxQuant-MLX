@@ -32,9 +32,10 @@ import platform
 import sys
 import time
 import traceback
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 import numpy as np
 
@@ -178,6 +179,7 @@ def _vecinfer_artifacts(
     seed: int = 42,
 ) -> dict:
     import mlx.core as mx
+
     from veloxquant_mlx.allocators.vecinfer import (
         calibrate_smooth_factors,
         train_codebook,
@@ -213,9 +215,10 @@ def _vecinfer_artifacts(
 
 
 def _build_vecinfer_1bit(model, model_stem: str):
+    from mlx_lm.models.cache import KVCache as _FB
+
     from veloxquant_mlx import KVCacheConfig
     from veloxquant_mlx.cache.vecinfer_cache import VecInferKVCache
-    from mlx_lm.models.cache import KVCache as _FB
 
     layers = getattr(model, "layers", None) or model.model.layers
     args = getattr(model, "args", None)
@@ -409,8 +412,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    from mlx_lm import load
     import mlx.core as mx
+    from mlx_lm import load
 
     model_id = args.model
     model_stem = model_id.split("/")[-1]
@@ -441,7 +444,7 @@ def main() -> int:
 
     payload = {
         "schema": "veloxquant_validation_v1",
-        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "created_at_utc": datetime.now(UTC).isoformat(),
         "model": model_id,
         "head_dim": head_dim,
         "n_kv_heads": n_kv,

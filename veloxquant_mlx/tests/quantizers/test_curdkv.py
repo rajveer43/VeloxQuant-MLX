@@ -24,14 +24,13 @@ import numpy as np
 import pytest
 
 from veloxquant_mlx.quantizers.curdkv import (
-    CurDKVState,
-    full_curdkv_fp16_bytes,
     curdkv_fp16_bytes,
     curdkv_get_kv,
     curdkv_update,
+    full_curdkv_fp16_bytes,
     init_curdkv_state,
 )
-from veloxquant_mlx.quantizers.h2o import h2o_update, init_h2o_state, h2o_get_kv
+from veloxquant_mlx.quantizers.h2o import h2o_get_kv, h2o_update, init_h2o_state
 
 
 def _rand_kv(S: int, D: int = 32, seed: int = 0):
@@ -450,9 +449,11 @@ def test_leverage_scores_does_not_hang_when_gesvd_fallback_stalls() -> None:
         raise AssertionError("should never actually finish sleeping in this test")
 
     t0 = time.time()
-    with patch("numpy.linalg.svd", side_effect=np.linalg.LinAlgError("SVD did not converge")):
-        with patch("scipy.linalg.svd", side_effect=_hang_forever):
-            scores = _leverage_scores(query, keys, values, rank_cap=8)
+    with (
+        patch("numpy.linalg.svd", side_effect=np.linalg.LinAlgError("SVD did not converge")),
+        patch("scipy.linalg.svd", side_effect=_hang_forever),
+    ):
+        scores = _leverage_scores(query, keys, values, rank_cap=8)
     elapsed = time.time() - t0
 
     assert elapsed < _GESVD_TIMEOUT_S * 2, (

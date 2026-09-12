@@ -25,7 +25,6 @@ import numpy as np
 import pytest
 
 from veloxquant_mlx.quantizers.nestedkv import (
-    NestedKVState,
     block_size_for,
     full_nestedkv_fp16_bytes,
     head_adaptive_blend,

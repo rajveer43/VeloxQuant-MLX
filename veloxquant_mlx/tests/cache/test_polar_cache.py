@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import mlx.core as mx
 import numpy as np
-import pytest
 
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
@@ -22,7 +21,7 @@ _D = 16
 
 
 def _make(**cfg):
-    base = dict(method="polar", head_dim=_D, bit_width_inlier=2, seed=0)
+    base = {"method": "polar", "head_dim": _D, "bit_width_inlier": 2, "seed": 0}
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

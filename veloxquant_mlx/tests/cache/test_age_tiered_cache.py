@@ -20,7 +20,7 @@ from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
 
 def _make(**cfg):
-    base = dict(method="age_tiered", head_dim=32)
+    base = {"method": "age_tiered", "head_dim": 32}
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

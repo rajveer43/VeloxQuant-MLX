@@ -46,12 +46,10 @@ a reproduction of the paper's numbers):
 
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 import mlx.core as mx
 
-from veloxquant_mlx.core.abstractions import ArtifactStore
-from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
 
 #: Paper's worked example schedule (Section 4.2): 8 equal-size groups over the
@@ -62,7 +60,7 @@ DEFAULT_BIT_SCHEDULE: tuple[int, ...] = (8, 4, 2, 1, 1, 0, 0, 0)
 
 def svd_compress_keys(
     keys: mx.array,
-    rank: Optional[int] = None,
+    rank: int | None = None,
     energy_threshold: float = 0.95,
 ) -> tuple[mx.array, mx.array, mx.array, mx.array]:
     """Compute truncated SVD of a key matrix and return latents + projection.

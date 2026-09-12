@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Dict, List
-
 from veloxquant_mlx.core.abstractions import QuantizationObserver
 from veloxquant_mlx.observers.base import QuantizationEvent
 
@@ -17,7 +15,7 @@ class MemoryObserver(QuantizationObserver):
     """
 
     def __init__(self) -> None:
-        self._deltas: Dict[str, List[int]] = {}
+        self._deltas: dict[str, list[int]] = {}
 
     def on_event(self, event: QuantizationEvent) -> None:
         """Record the memory delta for this stage.
@@ -34,7 +32,7 @@ class MemoryObserver(QuantizationObserver):
         all_deltas = [d for deltas in self._deltas.values() for d in deltas]
         return max(all_deltas, default=0)
 
-    def report(self) -> Dict[str, int]:
+    def report(self) -> dict[str, int]:
         """Return the sum of memory deltas per stage.
 
         Returns:
