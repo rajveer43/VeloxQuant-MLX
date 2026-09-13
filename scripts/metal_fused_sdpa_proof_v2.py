@@ -22,29 +22,24 @@ Run from repo root:
 
 from __future__ import annotations
 
+# Import the v1 reference + fixture helpers
+import sys
 import time
-from typing import Tuple
 
 import mlx.core as mx
 import numpy as np
 
 from veloxquant_mlx.allocators.vecinfer import (
     apply_dual_transform_queries,
-    dequantize_vq,
-    walsh_hadamard_matrix,
 )
 from veloxquant_mlx.metal import metal_available
 
-# Import the v1 reference + fixture helpers
-import sys
-
 sys.path.insert(0, "scripts")
 from metal_fused_sdpa_proof import (  # noqa: E402
-    reference_sdpa,
     _make_test_inputs,
     _max_abs_diff,
+    reference_sdpa,
 )
-
 
 # ===========================================================================
 # Kernel v2 — FlashAttention-style tiled across SIMD group

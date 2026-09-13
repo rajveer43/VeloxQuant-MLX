@@ -195,14 +195,14 @@ def test_dispatch_cache_does_not_grow_with_sequence_length():
 
 
 def _run_cache(method: str, use_metal: bool, seed: int = 3, S: int = 200, steps: int = 40):
-    cfg = dict(
-        method=method,
-        head_dim=128,
-        bit_width_inlier=2,
-        kivi_group_size=32,
-        residual_length=32,
-        use_metal_kernels=use_metal,
-    )
+    cfg = {
+        "method": method,
+        "head_dim": 128,
+        "bit_width_inlier": 2,
+        "kivi_group_size": 32,
+        "residual_length": 32,
+        "use_metal_kernels": use_metal,
+    }
     if method == "kivi_sink":
         cfg["n_sink_tokens"] = 5
     cache = KVCacheFactory.create(KVCacheConfig(**cfg))

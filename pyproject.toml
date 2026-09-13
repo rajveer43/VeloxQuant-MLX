@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "VeloxQuant-MLX"
-version = "0.82.1"
+version = "0.83.1"
 description = "Fast KV-cache quantization for Apple Silicon (MLX) — 43 research-adapted compression methods, from TurboQuant and KIVI to A2ATS, with Metal kernels"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -43,6 +43,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Software Development :: Libraries",
     "Natural Language :: English",
+    "Typing :: Typed",
 ]
 dependencies = [
     "mlx>=0.18",
@@ -93,7 +94,7 @@ include = ["veloxquant_mlx*"]
 # The control panel's frontend is plain static files with no build step, so
 # they must be shipped in the wheel alongside the Python sources.
 "veloxquant_mlx.ui" = ["static/*"]
-veloxquant_mlx = ["metal/src/*.metal"]
+veloxquant_mlx = ["metal/src/*.metal", "py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["veloxquant_mlx/tests"]
@@ -109,7 +110,25 @@ target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W", "UP", "B"]
+# N (pep8-naming) and ARG (unused-arguments) were evaluated and rejected,
+# not just left off by default:
+#   - N: ~2372 violations, 96% of them N806/N803 flagging single-letter
+#     tensor-dimension names (D, H, B, N, K...) that are this codebase's
+#     established convention, matching the papers it implements. Not a
+#     real naming problem.
+#   - ARG: 59 violations, most of them deliberate -- factory/protocol-
+#     conforming constructor params ("accepted for QuantizerFactory
+#     parity"), static-method overrides matching a base class signature,
+#     and mock/stub callables matching a caller's expected arity. Fixing
+#     these for real would mean breaking interface contracts across the
+#     quantizer/cache factory pattern; enabling the rule would mostly
+#     produce scoped noqas rather than genuine fixes.
+select = ["E", "F", "I", "W", "UP", "B", "PTH", "RET", "SIM", "C4"]
+# E501 (line too long) stays ignored: checked all 25 lines over 100 chars
+# in veloxquant_mlx/ as of the audit that added the rule groups above --
+# every one is an f-string/docstring/comment/help-text literal (table
+# formatting, error messages, long method-name lists) that can't wrap
+# without hurting readability, not real multi-statement code.
 ignore = ["E501"]
 
 [tool.ruff.lint.isort]

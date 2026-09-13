@@ -53,6 +53,7 @@ def _build_caches(model, use_metal: bool, key_sub_dim: int = 4):
     [chunk, 256_centroids, 4] diff allocation.
     """
     from mlx_lm.models.cache import KVCache as _FB
+
     from veloxquant_mlx import KVCacheConfig
     from veloxquant_mlx.cache.vecinfer_cache import VecInferKVCache
 

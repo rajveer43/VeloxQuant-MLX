@@ -28,25 +28,25 @@ Regression tests for issue #31 (allocator paper-fidelity fixes):
 
 from __future__ import annotations
 
-import numpy as np
 import mlx.core as mx
+import numpy as np
 
-from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.adakv_cache import AdaKVCache
+from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
+from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
 from veloxquant_mlx.quantizers.adakv import (
     allocate_head_bits,
     compute_head_attention_entropy,
     compute_head_norm_variance,
     quantize_head,
 )
-from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 def _make_cfg(**kwargs) -> KVCacheConfig:
-    defaults = dict(method="adakv", head_dim=64)
+    defaults = {"method": "adakv", "head_dim": 64}
     defaults.update(kwargs)
     return KVCacheConfig(**defaults)
 

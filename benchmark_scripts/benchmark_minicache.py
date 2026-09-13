@@ -32,7 +32,6 @@ import matplotlib.pyplot as plt
 import mlx.core as mx
 import numpy as np
 
-
 _PASSAGE = (
     "The key-value cache stores the attention keys and values of every past "
     "token so the model need not recompute them. Its size grows linearly with "
@@ -103,7 +102,7 @@ def run_one(model, tokenizer, cache_arg, n_decode: int, label: str) -> dict:
 
 
 def build_cache(method: str, model, overrides: dict):
-    from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
+    from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig
 
     cfg = KVCacheConfig(method=method, **overrides)
     return KVCacheBuilder.for_model(model, cfg)
@@ -111,7 +110,7 @@ def build_cache(method: str, model, overrides: dict):
 
 def merge_quality_offline(seed: int = 0) -> dict:
     """Offline: adjacent-layer cosine + merge MSE on similar vs dissimilar layers."""
-    from veloxquant_mlx.quantizers.minicache import merge_pair, reconstruct_layer, merge_similarity
+    from veloxquant_mlx.quantizers.minicache import merge_pair, merge_similarity, reconstruct_layer
 
     rng = np.random.default_rng(seed)
     S, D = 128, 128

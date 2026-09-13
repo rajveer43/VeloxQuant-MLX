@@ -1,7 +1,16 @@
+"""Quantizer construction entry point: ``QuantizerFactory``.
+
+Provides the single sanctioned way to instantiate a fixed-bit-width KV
+quantizer (QJL, TurboQuant MSE/Prod, PolarQuant, ...) by algorithm name,
+validating shared preconditions (power-of-two dimension, bit-width >= 1)
+before dispatching to the class registered under that name in
+``QuantizerRegistry``.
+"""
+
 from __future__ import annotations
 
 import math
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from veloxquant_mlx.core.abstractions import ArtifactStore, Quantizer
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
@@ -26,9 +35,9 @@ class QuantizerFactory:
         method: Literal["qjl", "turboquant_mse", "turboquant_prod", "polar"],
         d: int,
         b: int = 2,
-        m: Optional[int] = None,
+        m: int | None = None,
         seed: int = 42,
-        store: Optional[ArtifactStore] = None,
+        store: ArtifactStore | None = None,
         **kwargs: Any,
     ) -> Quantizer:
         """Instantiate a Quantizer by method name.

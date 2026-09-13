@@ -23,9 +23,13 @@ def _kv(B, H, S, D, seed=0):
 
 
 def _make(method_kw=None, **cfg):
-    base = dict(
-        method="kivi", head_dim=128, bit_width_inlier=2, residual_length=16, kivi_group_size=32
-    )
+    base = {
+        "method": "kivi",
+        "head_dim": 128,
+        "bit_width_inlier": 2,
+        "residual_length": 16,
+        "kivi_group_size": 32,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

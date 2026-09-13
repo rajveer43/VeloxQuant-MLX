@@ -1,3 +1,12 @@
+"""Handler stage that normalizes vectors to unit L2 norm and restores scale on decode.
+
+Typically the first stage in an encode chain: it factors each input vector
+into a stored scalar norm (``ctx.norm``) and a unit-norm direction, so that
+downstream stages (rotation, polar transform, scalar quantization) always
+operate on scale-normalized data. On decode it multiplies the reconstructed
+direction back by the stored norm.
+"""
+
 from __future__ import annotations
 
 from veloxquant_mlx.core.abstractions import QuantizationHandler

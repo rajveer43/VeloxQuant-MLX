@@ -12,10 +12,8 @@ from __future__ import annotations
 
 import mlx.core as mx
 import numpy as np
-import pytest
 
 from veloxquant_mlx.quantizers.snapkv import (
-    SnapKVState,
     full_fp16_bytes,
     obs_window_attention_scores,
     snap_select_indices,

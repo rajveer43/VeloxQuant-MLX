@@ -67,7 +67,7 @@ class TestAllocateBitsRateQuant:
             w = rng.lognormal(0, 1.0, n).tolist()
             target = float(rng.uniform(0.5, 7.0))
             pool = rng.choice(9, size=int(rng.integers(2, 6)), replace=False)
-            choices = tuple(sorted(set(int(c) for c in pool)))
+            choices = tuple(sorted({int(c) for c in pool}))
             alloc = allocate_bits_ratequant(w, target_avg_bits=target, bit_choices=choices)
             assert all(a in choices for a in alloc), (choices, alloc)
 

@@ -13,11 +13,10 @@ Usage:
 
 import math
 import time
-from typing import List, Optional
 
 import mlx.core as mx
-import numpy as np
 import mlx_lm
+import numpy as np
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.turboquant_prod import TurboQuantProd
@@ -60,9 +59,9 @@ class TurboQuantMLXKVCache(_MLXKVCache):
             TurboQuantProd(d=head_dim, b=bits, m=m, seed=seed + i) for i in range(n_kv_heads)
         ]
         # Per-head outlier channel indices (detected from first 32 tokens)
-        self._outlier_idx: Optional[List[np.ndarray]] = None
-        self._inlier_idx: Optional[List[np.ndarray]] = None
-        self._calib_buf: List[List[np.ndarray]] = [[] for _ in range(n_kv_heads)]
+        self._outlier_idx: list[np.ndarray] | None = None
+        self._inlier_idx: list[np.ndarray] | None = None
+        self._calib_buf: list[list[np.ndarray]] = [[] for _ in range(n_kv_heads)]
         self._calib_done = False
         self._n_calib = 32
 
@@ -70,7 +69,7 @@ class TurboQuantMLXKVCache(_MLXKVCache):
         self._key_bytes_compressed = 0
         self._key_bytes_fp16 = 0
 
-    def _calibrate_outliers(self, head: int, buf: List[np.ndarray]) -> None:
+    def _calibrate_outliers(self, head: int, buf: list[np.ndarray]) -> None:
         """Set outlier channel indices from calibration buffer variance."""
         stacked = np.concatenate(buf, axis=0)  # (T, D)
         var = stacked.var(axis=0)  # (D,)

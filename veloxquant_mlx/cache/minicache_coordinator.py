@@ -33,8 +33,6 @@ than a lifetime total, and a long generation no longer exhausts ``max_ctx`` (#79
 
 from __future__ import annotations
 
-from typing import Optional
-
 import mlx.core as mx
 
 
@@ -113,7 +111,7 @@ class MiniCacheCoordinator:
         )
         self._published_tokens[group_id] = published + n_tokens
 
-    def fetch_primary(self, group_id: int, token_start: int) -> Optional[_PrimaryWrite]:
+    def fetch_primary(self, group_id: int, token_start: int) -> _PrimaryWrite | None:
         """Merge layer fetches its paired primary's KV for this token range.
 
         Once every expected reader (``n_readers`` passed to ``publish_primary``)

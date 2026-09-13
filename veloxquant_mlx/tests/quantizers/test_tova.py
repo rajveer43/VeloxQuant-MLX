@@ -17,7 +17,6 @@ import numpy as np
 import pytest
 
 from veloxquant_mlx.quantizers.tova import (
-    TovaState,
     full_tova_fp16_bytes,
     init_tova_state,
     tova_fp16_bytes,

@@ -26,15 +26,11 @@ adding per-head would require a larger restructuring of the cache layout.
 
 from __future__ import annotations
 
-import math
-from typing import Optional
-
 import mlx.core as mx
 import numpy as np
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.turboquant_rvq import TurboQuantRVQ
-
 
 # ── Sensitivity calibration ─────────────────────────────────────────────────
 
@@ -79,7 +75,7 @@ _DEFAULT_CALIB_PROMPTS = (
 def calibrate_layer_sensitivities(
     model,
     tokenizer,
-    prompts: Optional[list] = None,
+    prompts: list | None = None,
     seq_len: int = 256,
     verbose: bool = False,
 ) -> list[float]:
@@ -123,8 +119,7 @@ def calibrate_layer_sensitivities(
         elif hasattr(model, "make_cache"):
             del model.make_cache
 
-    weights = [max(p.sensitivity, 1e-6) for p in probes]
-    return weights
+    return [max(p.sensitivity, 1e-6) for p in probes]
 
 
 # ── Distortion curve fitting (optional — most users can skip) ──────────────
@@ -204,7 +199,7 @@ def allocate_bits_ratequant(
     if not bit_choices:
         raise ValueError("bit_choices must be non-empty.")
 
-    choices_sorted = sorted(set(int(c) for c in bit_choices))
+    choices_sorted = sorted({int(c) for c in bit_choices})
 
     N = w.size
     log_w = np.log(w)
@@ -235,29 +230,27 @@ def allocate_bits_ratequant(
     # Greedy re-balance to hit exact integer budget, always stepping to the
     # actual next/previous member of bit_choices (never a bare +1/-1).
     while current_total < target_total:
-        candidates = [
-            (b_continuous[i] - alloc[i], i, _next_choice(alloc[i]))
+        up_candidates: list[tuple[float, int, int]] = [
+            (b_continuous[i] - alloc[i], i, nxt)
             for i in range(N)
-            if alloc[i] < b_max
+            if alloc[i] < b_max and (nxt := _next_choice(alloc[i])) is not None
         ]
-        candidates = [(score, i, nxt) for score, i, nxt in candidates if nxt is not None]
-        if not candidates:
+        if not up_candidates:
             break
-        _, i, nxt = max(candidates, key=lambda t: t[0])
-        current_total += nxt - alloc[i]
-        alloc[i] = nxt
+        _, i, nxt_val = max(up_candidates, key=lambda t: t[0])
+        current_total += nxt_val - alloc[i]
+        alloc[i] = nxt_val
 
     while current_total > target_total:
-        candidates = [
-            (alloc[i] - b_continuous[i], i, _prev_choice(alloc[i]))
+        down_candidates: list[tuple[float, int, int]] = [
+            (alloc[i] - b_continuous[i], i, prv)
             for i in range(N)
-            if alloc[i] > b_min
+            if alloc[i] > b_min and (prv := _prev_choice(alloc[i])) is not None
         ]
-        candidates = [(score, i, prv) for score, i, prv in candidates if prv is not None]
-        if not candidates:
+        if not down_candidates:
             break
-        _, i, prv = max(candidates, key=lambda t: t[0])
-        current_total += prv - alloc[i]
-        alloc[i] = prv
+        _, i, prv_val = max(down_candidates, key=lambda t: t[0])
+        current_total += prv_val - alloc[i]
+        alloc[i] = prv_val
 
     return alloc

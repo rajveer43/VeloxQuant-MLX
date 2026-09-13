@@ -1,6 +1,15 @@
-from __future__ import annotations
+"""Observer that tracks per-pipeline-stage RSS memory deltas.
 
-from typing import Dict, List
+Provides :class:`MemoryObserver`, which accumulates
+``memory_delta_bytes`` from :class:`~veloxquant_mlx.observers.base.QuantizationEvent`
+per stage name and reports both per-stage totals and the single largest
+delta observed. Relies on the pipeline emitter to have measured RSS
+before/after each stage (e.g. via ``psutil``) and populated
+``memory_delta_bytes`` accordingly — this observer itself does no
+measurement.
+"""
+
+from __future__ import annotations
 
 from veloxquant_mlx.core.abstractions import QuantizationObserver
 from veloxquant_mlx.observers.base import QuantizationEvent
@@ -17,7 +26,7 @@ class MemoryObserver(QuantizationObserver):
     """
 
     def __init__(self) -> None:
-        self._deltas: Dict[str, List[int]] = {}
+        self._deltas: dict[str, list[int]] = {}
 
     def on_event(self, event: QuantizationEvent) -> None:
         """Record the memory delta for this stage.
@@ -34,7 +43,7 @@ class MemoryObserver(QuantizationObserver):
         all_deltas = [d for deltas in self._deltas.values() for d in deltas]
         return max(all_deltas, default=0)
 
-    def report(self) -> Dict[str, int]:
+    def report(self) -> dict[str, int]:
         """Return the sum of memory deltas per stage.
 
         Returns:

@@ -21,13 +21,13 @@ from veloxquant_mlx.cache.rocketkv_cache import RocketKVKVCache
 
 
 def _make(**cfg):
-    base = dict(
-        method="rocketkv",
-        head_dim=32,
-        rocketkv_compression_ratio=4.0,
-        rocketkv_obs_window=4,
-        rocketkv_n_sink=2,
-    )
+    base = {
+        "method": "rocketkv",
+        "head_dim": 32,
+        "rocketkv_compression_ratio": 4.0,
+        "rocketkv_obs_window": 4,
+        "rocketkv_n_sink": 2,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

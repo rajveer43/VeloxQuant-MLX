@@ -37,7 +37,13 @@ def _het_scales(d, seed=3):
 
 
 def _make(**cfg):
-    base = dict(method="skvq", head_dim=64, skvq_window=16, skvq_n_sink=4, skvq_group_size=16)
+    base = {
+        "method": "skvq",
+        "head_dim": 64,
+        "skvq_window": 16,
+        "skvq_n_sink": 4,
+        "skvq_group_size": 16,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

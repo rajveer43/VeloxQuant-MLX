@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import mlx.core as mx
 import numpy as np
-import pytest
 
 from veloxquant_mlx.quantizers.palu import (
     group_head_svd,
@@ -17,7 +16,6 @@ from veloxquant_mlx.quantizers.palu import (
     quantize_latent,
     reconstruct_from_latent,
 )
-
 
 # ------------------------------------------------------------------
 # head_group_bounds
@@ -47,7 +45,9 @@ def test_head_group_bounds_cover_all_heads() -> None:
         assert bounds[0][0] == 0
         assert bounds[-1][1] == H
         # contiguous, no gaps/overlaps
-        for (lo, hi), (nlo, _) in zip(bounds, bounds[1:]):
+        # zip(bounds, bounds[1:]) intentionally pairs consecutive elements —
+        # bounds[1:] is one element shorter by design, not a length bug.
+        for (_lo, hi), (nlo, _) in zip(bounds, bounds[1:], strict=False):
             assert hi == nlo
 
 

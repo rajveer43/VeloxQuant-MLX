@@ -113,7 +113,6 @@ def run_benchmark(n_iter: int = 30) -> dict:
     q = _build_quantizer(D=D, n_cb=n_cb, b=b)
     assert q.trained
     cb_np = np.array(q._codebooks, dtype=np.float32)  # [n_cb, K, sub_dim]
-    cb_mx = q._codebooks_mx  # [n_cb, K, sub_dim] fp16
 
     results = {
         "config": {"D": D, "H": H, "n_cb": n_cb, "b": b},
@@ -139,14 +138,13 @@ def run_benchmark(n_iter: int = 30) -> dict:
         ev = q.encode(keys_mx, positions=pos_mx)
         mx.eval(ev.indices, ev.norm)
         indices_np = np.array(ev.indices)
-        indices_mx = ev.indices
 
         # --- MLX decode (Python path, no Metal kernel yet) ---
-        def _mlx_decode():
+        def _mlx_decode(ev=ev):
             return q.decode(ev)
 
         # --- NumPy decode ---
-        def _np_decode():
+        def _np_decode(indices_np=indices_np, pos_np=pos_np):
             return _numpy_comm_vq_decode(indices_np, cb_np, pos_np, D)
 
         t_mlx = _bench_mlx(_mlx_decode, n_iter=n_iter)
@@ -238,6 +236,6 @@ if __name__ == "__main__":
     save_figures(results)
 
     out_path = FIGURES_DIR / "results.json"
-    with open(out_path, "w") as f:
+    with out_path.open("w") as f:
         json.dump(results, f, indent=2)
     print(f"\nResults saved to {out_path}")

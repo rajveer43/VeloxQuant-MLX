@@ -38,7 +38,6 @@ from veloxquant_mlx.quantizers.zipcache import (
     zipcache_reconstruct,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -137,7 +136,7 @@ def main() -> None:
     D = args.dim
 
     results = []
-    print(f"\nZipCache-adapted offline benchmark  (NOT YET RUN on dedicated hardware)\n")
+    print("\nZipCache-adapted offline benchmark  (NOT YET RUN on dedicated hardware)\n")
     print(
         f"{'S':>6}  {'hi_frac':>8}  {'eff_bits':>9}  {'comp_ratio':>10}  "
         f"{'MSE_zip':>12}  {'MSE_lo':>12}  {'ms/head':>9}"

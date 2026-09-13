@@ -52,7 +52,7 @@ def test_token_key_norms_shape() -> None:
 
 def test_saliency_mask_selects_top_fraction() -> None:
     """saliency_mask marks exactly ceil(S * hi_fraction) tokens as True."""
-    S, D = 20, 32
+    S = 20
     rng = np.random.default_rng(1)
     norms = mx.array(rng.standard_normal(S).astype(np.float32) ** 2 + 0.01)
     hi_fraction = 0.25

@@ -1,3 +1,19 @@
+"""Block-pool memory accounting wrapper for any VeloxQuant-compressed KV cache.
+
+Provides :class:`PooledKVCache`, a :class:`~veloxquant_mlx.core.abstractions.KVCache`
+decorator that delegates all compression/attend logic to an inner cache
+(any of the five "standalone" methods registered with
+``KVCacheFactory``) while checking blocks in and out of a shared
+:class:`~veloxquant_mlx.memory.block_pool.BlockPoolAllocator` at
+``pool.config.block_size``-token granularity. This lets a multi-request
+server observe allocation counts, reuse, and fragmentation across every
+active compressed cache from one pool, without the inner cache's own
+storage or compression scheme having to know about pooling. Contrast with
+:class:`~veloxquant_mlx.memory.pool_backed_cache.PoolBackedKVCache`, which
+pool-tracks the plain fp16 ``mlx_lm`` cache protocol directly instead of
+wrapping a VeloxQuant cache.
+"""
+
 from __future__ import annotations
 
 from typing import Any

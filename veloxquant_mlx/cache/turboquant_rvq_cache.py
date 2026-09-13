@@ -299,8 +299,7 @@ class TurboQuantRVQKVCache(_MLXKVCache):
             signs=idx2.astype(mx.int8),
         )
         k_unit_hat = self._quantizer.decode(ev)  # (B*H*n, D) fp16
-        k_hat = (k_unit_hat.astype(kdtype) * norms.astype(kdtype)).reshape(B, H, n, self._head_dim)
-        return k_hat
+        return (k_unit_hat.astype(kdtype) * norms.astype(kdtype)).reshape(B, H, n, self._head_dim)
 
     @property
     def state(self) -> Any:

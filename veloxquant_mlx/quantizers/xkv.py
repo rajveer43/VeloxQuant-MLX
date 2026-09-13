@@ -45,8 +45,6 @@ rationale):
 
 from __future__ import annotations
 
-from typing import Optional
-
 import mlx.core as mx
 
 from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
@@ -88,7 +86,7 @@ def pair_layers_grouped(n_layers: int, group_size: int) -> list[tuple[int, int, 
 
 def joint_svd_compress(
     key_stack: list[mx.array],
-    rank: Optional[int] = None,
+    rank: int | None = None,
     energy_threshold: float = 0.95,
 ) -> tuple[mx.array, mx.array, mx.array]:
     """Jointly factorize N layers' key matrices into one shared basis.

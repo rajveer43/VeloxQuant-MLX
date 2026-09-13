@@ -17,7 +17,6 @@ import numpy as np
 from veloxquant_mlx.quantizers.turboquant_prod import TurboQuantProd
 from veloxquant_mlx.quantizers.turboquant_rvq import TurboQuantRVQ
 
-
 D = 128
 B = 2
 N = 256

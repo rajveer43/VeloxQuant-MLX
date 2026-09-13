@@ -35,6 +35,8 @@ Apple's M-series chips have a unique advantage: **unified memory**. The GPU and 
 - MLX — Apple's ML framework — provides the tensor primitives; VeloxQuant-MLX sits on top of it
 - Quantized KV cache stays in unified memory, accessed by both the attention kernel and the quantizer with zero copies
 
+VeloxQuant-MLX also ships a `py.typed` marker (PEP 561), so mypy and pyright type-check your calls into `veloxquant_mlx` directly from its inline annotations — no stub packages required.
+
 ## Key metrics
 
 | Metric | Value |
@@ -45,7 +47,7 @@ Apple's M-series chips have a unique advantage: **unified memory**. The GPU and 
 | RVQ-1bit compression | 7.5× with zero calibration |
 | RaBitQ full KV | 6× (keys + values) |
 | Validated models | 12 (Llama, Mistral, Qwen, Phi, Gemma 3/4, Falcon) |
-| Test suite | 3,321 passing tests |
+| Test suite | 3,695 passing tests |
 
 ## Algorithm overview
 

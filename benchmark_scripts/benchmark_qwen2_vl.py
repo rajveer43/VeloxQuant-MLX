@@ -34,7 +34,6 @@ import sys
 import time
 
 import matplotlib.pyplot as plt
-import mlx.core as mx
 import mlx_lm
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

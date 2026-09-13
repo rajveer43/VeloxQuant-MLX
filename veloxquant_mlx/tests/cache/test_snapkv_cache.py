@@ -19,13 +19,13 @@ from veloxquant_mlx.cache.snapkv_cache import SnapKVKVCache
 
 
 def _make(**cfg):
-    base = dict(
-        method="snapkv",
-        head_dim=128,
-        snap_budget=16,
-        snap_obs_window=8,
-        snap_n_sink=2,
-    )
+    base = {
+        "method": "snapkv",
+        "head_dim": 128,
+        "snap_budget": 16,
+        "snap_obs_window": 8,
+        "snap_n_sink": 2,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

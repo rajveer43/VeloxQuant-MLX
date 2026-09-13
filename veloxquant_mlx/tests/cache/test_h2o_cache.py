@@ -29,7 +29,14 @@ from veloxquant_mlx.cache.h2o_cache import H2OKVCache
 
 
 def _make(**cfg):
-    base = dict(method="h2o", head_dim=32, h2o_budget=8, h2o_n_sink=2, h2o_grace=0, h2o_decay=1.0)
+    base = {
+        "method": "h2o",
+        "head_dim": 32,
+        "h2o_budget": 8,
+        "h2o_n_sink": 2,
+        "h2o_grace": 0,
+        "h2o_decay": 1.0,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

@@ -33,7 +33,7 @@ group-of-1 equivalence check against SVDq's mechanism.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -72,27 +72,27 @@ class XKVCache(_MLXKVCache):
         member_idx: int = 0,
         group_id: int = 0,
         n_members: int = 1,
-        coordinator: Optional[XKVCoordinator] = None,
+        coordinator: XKVCoordinator | None = None,
     ) -> None:
         super().__init__()
         self._D = int(config.head_dim)
         self._member_idx = int(member_idx)
         self._group_id = int(group_id)
         self._n_members = max(1, int(n_members))
-        self._coord: Optional[XKVCoordinator] = coordinator if self._n_members > 1 else None
+        self._coord: XKVCoordinator | None = coordinator if self._n_members > 1 else None
 
-        self._rank: Optional[int] = getattr(config, "xkv_rank", None)
+        self._rank: int | None = getattr(config, "xkv_rank", None)
         self._energy_threshold: float = float(getattr(config, "xkv_energy_threshold", 0.95))
         self._latent_bits: int = int(getattr(config, "xkv_latent_bits", 4))
         self._group_quant_size: int = int(getattr(config, "xkv_group_quant_size", 32))
 
         # Shared-basis state — set once, on the first successful fetch/compute.
-        self._V_g: Optional[mx.array] = None  # [D, r] fp32
-        self._K_mean_g: Optional[mx.array] = None  # [D] fp32
-        self._singular_values: Optional[mx.array] = None  # [r] fp32
+        self._V_g: mx.array | None = None  # [D, r] fp32
+        self._K_mean_g: mx.array | None = None  # [D] fp32
+        self._singular_values: mx.array | None = None  # [r] fp32
         self._r: int = 0
         self._token_offset: int = 0
-        self._basis_token_start: Optional[int] = None
+        self._basis_token_start: int | None = None
 
         # Byte accounting
         self._compressed_key_bytes: int = 0

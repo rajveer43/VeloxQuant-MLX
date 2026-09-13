@@ -8,8 +8,6 @@ the bulk via the same query-similarity signal. All data is synthetic.
 
 from __future__ import annotations
 
-import math
-
 import mlx.core as mx
 import numpy as np
 import pytest
@@ -123,7 +121,6 @@ def test_retrieval_and_bulk_disjoint_and_cover_all() -> None:
 def test_retrieval_set_picks_most_similar_to_query() -> None:
     """Construct keys with a clear query-similarity ranking; confirm the
     retrieval set contains the most-similar tokens, not arbitrary ones."""
-    d = 4
     query = mx.array([1.0, 0.0, 0.0, 0.0], dtype=mx.float32)
     keys = mx.array(
         [

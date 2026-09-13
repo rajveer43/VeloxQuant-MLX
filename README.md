@@ -19,11 +19,11 @@
        "badge/tests-<n>%20passing-" and "badge/changelog-<version>-" patterns.
        Keep both in badge form — converting either to a text link silently
        disables that sync. -->
-  <img src="https://img.shields.io/badge/tests-3665%20passing-22c55e?style=flat-square" alt="Tests"/>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.82.1-64748b?style=flat-square" alt="Changelog"/></a>
+  <img src="https://img.shields.io/badge/tests-3695%20passing-22c55e?style=flat-square" alt="Tests"/>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.83.1-64748b?style=flat-square" alt="Changelog"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License"/></a>
   <a href="https://doi.org/10.5281/zenodo.20647294"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20647294-1f6feb?style=flat-square" alt="DOI"/></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.82.1-64748b?style=flat-square" alt="Changelog"/></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.83.1-64748b?style=flat-square" alt="Changelog"/></a>
   <a href="SECURITY.md"><img src="https://img.shields.io/badge/security-policy-1f6feb?style=flat-square" alt="Security policy"/></a>
   <!-- Hit counter keyed on page_id; the count belongs to that key, so renaming
        it restarts from zero. -->
@@ -49,6 +49,12 @@ VeloxQuant-MLX shrinks the KV cache of any `mlx_lm` model on Apple Silicon, up t
 Inside are 43 compression methods, each adapted from a published paper, spanning zero-calibration 1-bit quantizers, token-eviction caches, and cross-layer merging. All of them share the same 3-line API, so switching means changing `method="..."`. The hot path runs on hand-written Metal kernels (up to 14.7× faster quantize), and it's validated on 12 production models (Llama, Mistral, Qwen, Phi, Gemma 3/4, Falcon) plus vision-language models via [mlx-vlm](https://github.com/Blaizzy/mlx-vlm).
 
 > **Compression ratios are bit-width accounting, not measured RSS.** Most methods still store fp16 internally on the default serving path, so Activity Monitor won't drop by the same factor; eviction/merging methods (marked 🔻RSS below) do reduce resident memory today. Details: [#27](https://github.com/rajveer43/VeloxQuant-MLX/issues/27).
+
+<div align="center">
+
+[![Watch the demo](https://cdn.loom.com/sessions/thumbnails/b8d14f283a494682b6917a64475e0dbd-c8ae283c543f1997.gif)](https://www.loom.com/share/b8d14f283a494682b6917a64475e0dbd)
+
+</div>
 
 ---
 
@@ -376,6 +382,18 @@ it buys maintenance time.
 - Want to help fund it? [Buy me a chai ☕](https://buymeachai.in/rajveer43) or [tip on Ko-fi 💜](https://ko-fi.com/rajveer43).
 - Found a vulnerability? Do not open a public issue; follow [SECURITY.md](SECURITY.md) instead.
 - Citing this work: [DOI 10.5281/zenodo.20647294](https://doi.org/10.5281/zenodo.20647294), with per-method attributions in [CITATIONS.md](CITATIONS.md).
+
+---
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=rajveer43%2Fveloxquant-mlx&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=rajveer43/veloxquant-mlx&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=rajveer43/veloxquant-mlx&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=rajveer43/veloxquant-mlx&type=date&legend=top-left" />
+ </picture>
+</a>
 
 ---
 

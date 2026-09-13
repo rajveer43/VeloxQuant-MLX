@@ -44,10 +44,10 @@ HEAD_DIM = 32
 
 # (id, config kwargs) — every eviction cache used as a Q-Filters benchmark arm.
 ARMS = [
-    ("qfilters", dict(method="qfilters", qfilters_budget=BUDGET, qfilters_n_sink=4)),
-    ("h2o", dict(method="h2o", h2o_budget=BUDGET, h2o_n_sink=4)),
-    ("tova", dict(method="tova", tova_budget=BUDGET, tova_n_sink=4)),
-    ("knorm", dict(method="knorm", knorm_budget=BUDGET, knorm_n_sink=4)),
+    ("qfilters", {"method": "qfilters", "qfilters_budget": BUDGET, "qfilters_n_sink": 4}),
+    ("h2o", {"method": "h2o", "h2o_budget": BUDGET, "h2o_n_sink": 4}),
+    ("tova", {"method": "tova", "tova_budget": BUDGET, "tova_n_sink": 4}),
+    ("knorm", {"method": "knorm", "knorm_budget": BUDGET, "knorm_n_sink": 4}),
 ]
 
 

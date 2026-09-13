@@ -1,5 +1,7 @@
 """Exact selection, independent K/V lineage and chunk parity."""
 
+from __future__ import annotations
+
 import mlx.core as mx
 import numpy as np
 import pytest

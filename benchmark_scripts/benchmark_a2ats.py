@@ -62,7 +62,7 @@ _repo_root = Path(__file__).resolve().parent.parent
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
-from veloxquant_mlx.allocators.vecinfer import quantize_vq, dequantize_vq, train_codebook
+from veloxquant_mlx.allocators.vecinfer import dequantize_vq, quantize_vq, train_codebook
 from veloxquant_mlx.quantizers.a2ats import a2ats_query_aware_assignment, a2ats_select_retrieval_set
 from veloxquant_mlx.quantizers.a2ats_rope import (
     a2ats_apply_exact_rope,
@@ -356,7 +356,7 @@ def main() -> None:
         " long_range_dependent. The cost is"
     )
     print("      REAL and INTRINSIC, not an artifact of the pre-#29 bugs: with Eq. (12)")
-    print(f"      implemented correctly the NEAR bucket is now identical to always-exact")
+    print("      implemented correctly the NEAR bucket is now identical to always-exact")
     print(f"      (max gap {_near_gap:.2e}), so the entire penalty comes from FAR tokens —")
     print("      which are the overwhelming majority of any long sequence. Replacing each")
     print("      far token's true relative position with the single constant b is simply")

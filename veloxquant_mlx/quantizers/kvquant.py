@@ -156,8 +156,6 @@ def dequant_nuq(codes: mx.array, levels: mx.array) -> mx.array:
     Returns:
         [N, D] fp16 reconstruction.
     """
-    n, d = codes.shape
-    L = levels.shape[0]
     # Gather levels[code[n,d], d] for each (n, d). take_along_axis over axis 0.
     lev = mx.take_along_axis(levels, codes.astype(mx.int32), axis=0)  # [N, D]
     return lev.astype(mx.float16)

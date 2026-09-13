@@ -36,7 +36,6 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.streaming_llm import (
     StreamingWindow,
-    full_stream_fp16_bytes,
     init_streaming_window,
     stream_fp16_bytes,
     stream_get_kv,

@@ -1,3 +1,13 @@
+"""Handler stage that packs/unpacks codebook indices via ``BitPackBuffer``.
+
+Wraps ``veloxquant_mlx.dsa.bit_pack.BitPackBuffer`` as a
+``QuantizationHandler`` pipeline stage: on encode it bit-packs
+``ctx.indices`` down to ``b`` bits per element into ``ctx.packed_bits``; on
+decode it unpacks ``ctx.packed_bits`` back into ``ctx.indices``. Typically
+the last stage in an encode chain, after scalar quantization has produced
+codebook indices.
+"""
+
 from __future__ import annotations
 
 import numpy as np

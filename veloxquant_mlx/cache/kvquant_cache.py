@@ -42,7 +42,7 @@ What is NOT implemented (documented):
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -85,13 +85,13 @@ class KVQuantKVCache(_MLXKVCache):
 
         # Per-channel |key| outlier threshold frozen at prefill, reused at decode
         # where a single token cannot define its own per-channel top-k.
-        self._key_outlier_thresh: Optional[mx.array] = None
+        self._key_outlier_thresh: mx.array | None = None
         self._sink_kept: int = 0
 
         # Frozen levels fit at prefill: keys per-channel [H, L, D],
         # values per-token use levels [H, L, D] in transposed space.
-        self._key_levels: Optional[list] = None  # list over heads of [L, D]
-        self._value_levels: Optional[list] = None  # list over heads of [L, D] (channel-as-sample)
+        self._key_levels: list | None = None  # list over heads of [L, D]
+        self._value_levels: list | None = None  # list over heads of [L, D] (channel-as-sample)
         self._n_tokens: int = 0
         self._outlier_count: int = 0
         self._prev_outlier_count: int = 0
@@ -105,7 +105,7 @@ class KVQuantKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     # Per-head NUQ application
     # ------------------------------------------------------------------
-    def _quant_keys_head(self, k_sd: mx.array, levels: Optional[mx.array]):
+    def _quant_keys_head(self, k_sd: mx.array, levels: mx.array | None):
         """Keys: per-channel NUQ on [S, D]. Returns (recon_fp16, levels_used).
 
         At decode (S == 1) a per-channel column holds a single sample, so the
@@ -134,7 +134,7 @@ class KVQuantKVCache(_MLXKVCache):
         self._outlier_count += int(mx.sum(mask).item())
         return recon.astype(mx.float16), levels
 
-    def _quant_values_head(self, v_sd: mx.array, levels: Optional[mx.array]):
+    def _quant_values_head(self, v_sd: mx.array, levels: mx.array | None):
         """Values: per-token NUQ on [S, D] → transpose so tokens are columns.
 
         Values are unaffected by the decode degeneracy: a per-token column has
@@ -191,7 +191,7 @@ class KVQuantKVCache(_MLXKVCache):
         # Otherwise the very tokens we keep exact would still skew the datatype
         # derived for every other token.
         n_sink = min(self._n_sink, S) if self._n_tokens == 0 else 0
-        fit_slice = slice(n_sink, None) if n_sink > 0 and S > n_sink else slice(None)
+        fit_slice = slice(n_sink, None) if n_sink > 0 and n_sink < S else slice(None)
         if refit_keys:
             self._capture_key_thresholds(keys[:, :, fit_slice, :])
 

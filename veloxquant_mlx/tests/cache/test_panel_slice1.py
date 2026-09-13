@@ -61,7 +61,7 @@ def test_coverage_split_is_stable():
     pair — same accounting shape as amc, which reports NONE for the same
     reason.
     """
-    counts = {c: 0 for c in TelemetryCoverage}
+    counts = dict.fromkeys(TelemetryCoverage, 0)
     for info in list_methods(servable_only=True):
         counts[info.coverage] += 1
 

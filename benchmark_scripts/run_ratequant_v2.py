@@ -45,7 +45,6 @@ from benchmark_scripts.ratequant_v2_core import (
     calibrate_layer_sensitivities,
 )
 
-
 # ── Registry: trial set is intentionally small ────────────────────────────────
 
 MODEL_REGISTRY: dict[str, tuple[str, str]] = {

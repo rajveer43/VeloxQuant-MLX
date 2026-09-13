@@ -3,13 +3,13 @@ id: quickstart
 title: 5-Minute Quickstart
 sidebar_label: Quickstart
 slug: /getting-started/quickstart
-description: Walks through loading a model with mlx_lm, attaching a TurboQuant RVQ compressed KV cache via patch_model_kv_cache, generating text, and inspecting memory savings with MemoryObserver.
-keywords: [quickstart, mlx_lm, turboquant_rvq, patch_model_kv_cache, memoryobserver, kvcacheconfig]
+description: Walks through loading a model with mlx_lm, attaching a KIVI compressed KV cache via patch_model_kv_cache, generating text, and inspecting memory savings with MemoryObserver.
+keywords: [quickstart, mlx_lm, kivi, patch_model_kv_cache, memoryobserver, kvcacheconfig]
 ---
 
 # 5-Minute Quickstart
 
-This guide gets you from a fresh install to compressed LLM inference in five minutes. You will load a model with `mlx_lm`, attach a TurboQuant RVQ KV cache, generate text, and print memory statistics.
+This guide gets you from a fresh install to compressed LLM inference in five minutes. You will load a model with `mlx_lm`, attach a KIVI 2-bit KV cache, generate text, and print memory statistics.
 
 :::note[Prerequisites]
 Complete [Installation](../getting-started/installation) first. You need `mlx_lm` installed (`pip install mlx-lm`) and a model downloaded locally (e.g. `mlx-community/Llama-3.2-3B-Instruct-4bit`).
@@ -36,8 +36,8 @@ from veloxquant_mlx.cache import KVCacheConfig
 from veloxquant_mlx.integration.mlx_lm_patch import patch_model_kv_cache
 
 config = KVCacheConfig(
-    method="turboquant_rvq",  # zero-calibration 1-bit RVQ
-    bit_width_inlier=1,  # 1-bit inlier channels
+    method="kivi",  # asymmetric per-group min/max quantization
+    bit_width_inlier=2,  # 2-bit inlier channels
     seed=42,
 )
 
@@ -70,8 +70,8 @@ from veloxquant_mlx.observers.memory import MemoryObserver
 
 observer = MemoryObserver()
 config = KVCacheConfig(
-    method="turboquant_rvq",
-    bit_width_inlier=1,
+    method="kivi",
+    bit_width_inlier=2,
     seed=42,
     observers=[observer],
 )
@@ -101,8 +101,8 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 # Configure compressed cache + memory accounting
 observer = MemoryObserver()
 config = KVCacheConfig(
-    method="turboquant_rvq",
-    bit_width_inlier=1,
+    method="kivi",
+    bit_width_inlier=2,
     seed=42,
     observers=[observer],
 )

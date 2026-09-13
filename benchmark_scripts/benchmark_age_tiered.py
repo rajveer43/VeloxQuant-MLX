@@ -61,7 +61,6 @@ from pathlib import Path
 import mlx.core as mx
 import numpy as np
 
-
 # A long-context prompt so age-tiering actually has old tokens to act on —
 # AgeTieredKV's default age_mid_boundary is 1024, so the prefill needs to
 # clear that by a comfortable margin (same rationale as benchmark_kivi.py's

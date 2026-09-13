@@ -15,11 +15,12 @@ def base_cache():
 
 def test_sliding_window_evicts(base_cache) -> None:
     import mlx.core as mx
+
     from veloxquant_mlx.cache.sliding_window_cache import SlidingWindowKVCache
 
     sw = SlidingWindowKVCache(base_cache, window_size=5)
     rng = np.random.default_rng(0)
-    for i in range(10):
+    for _ in range(10):
         k = mx.array(rng.standard_normal(64).astype(np.float16))
         v = mx.array(rng.standard_normal(64).astype(np.float16))
         sw.append(k, v)
@@ -29,11 +30,12 @@ def test_sliding_window_evicts(base_cache) -> None:
 
 def test_sliding_window_attend(base_cache) -> None:
     import mlx.core as mx
+
     from veloxquant_mlx.cache.sliding_window_cache import SlidingWindowKVCache
 
     sw = SlidingWindowKVCache(base_cache, window_size=10)
     rng = np.random.default_rng(1)
-    for i in range(20):
+    for _ in range(20):
         k = mx.array(rng.standard_normal(64).astype(np.float16))
         v = mx.array(rng.standard_normal(64).astype(np.float16))
         sw.append(k, v)

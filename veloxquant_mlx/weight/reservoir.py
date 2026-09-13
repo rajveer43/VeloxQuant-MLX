@@ -1,3 +1,16 @@
+"""Flat-file serialization for TurboQuant-compressed model weights.
+
+Implements the "weight reservoir" format (magic ``VQRS``, page-aligned
+blobs behind a JSON header) for persisting and restoring a
+``quantize_model()``-processed model's ``QuantizedLinear`` layers:
+``save_reservoir``/``load_reservoir`` handle the flat-file round-trip
+(optionally persisting QR rotation matrices via ``persist_rotation``,
+otherwise re-deriving them from each layer's seed on load), and
+``graft_reservoir`` loads a reservoir and grafts its layers onto a matching
+model skeleton in place. See ``docs/WEIGHT_RESERVOIR_IDEATION.md`` for the
+format rationale and measured load-time/size tradeoffs.
+"""
+
 from __future__ import annotations
 
 import json
@@ -74,16 +87,17 @@ def save_reservoir(model: nn.Module, path: str | Path, persist_rotation: bool = 
             None if layer._bias is None else np.array(layer._bias, copy=False, dtype=np.float16)
         )
 
-        is_hadamard = isinstance(layer._preconditioner, HadamardPreconditioner)
+        preconditioner = layer._preconditioner
+        is_hadamard = isinstance(preconditioner, HadamardPreconditioner)
         # Hadamard diagonals are (d,) -- always cheap, always persisted.
         # QR rotation matrices are (d,d) -- only persisted when the caller
         # opts in via persist_rotation, since they can dominate file size
         # (Finding 4). When not persisting, store an empty array; the
         # loader re-derives the matrix from (seed, in_features) instead.
-        if is_hadamard:
-            rotation_np = np.array(layer._preconditioner._D, copy=False, dtype=np.float32)
-        elif persist_rotation:
-            rotation_np = np.array(layer._preconditioner._Pi, copy=False, dtype=np.float32)
+        if isinstance(preconditioner, HadamardPreconditioner):
+            rotation_np = np.array(preconditioner._D, copy=False, dtype=np.float32)
+        elif persist_rotation and isinstance(preconditioner, RotationPreconditioner):
+            rotation_np = np.array(preconditioner._Pi, copy=False, dtype=np.float32)
         else:
             rotation_np = np.zeros(0, dtype=np.float32)
         centroids_np = np.array(layer._codebook.centroids_numpy(), copy=False, dtype=np.float32)
@@ -158,7 +172,7 @@ def save_reservoir(model: nn.Module, path: str | Path, persist_rotation: bool = 
     )
 
     path = Path(path)
-    with open(path, "wb") as f:
+    with path.open("wb") as f:
         f.write(_MAGIC)
         f.write(struct.pack("<I", _VERSION))
         f.write(struct.pack("<I", len(header_bytes)))
@@ -235,7 +249,7 @@ def load_reservoir(path: str | Path) -> dict[str, Any]:
         graft these back onto a skeleton module tree by name.
     """
     path = Path(path)
-    with open(path, "rb") as f:
+    with path.open("rb") as f:
         magic = f.read(4)
         if magic != _MAGIC:
             raise ValueError(f"Not a VeloxQuant reservoir file: {path}")

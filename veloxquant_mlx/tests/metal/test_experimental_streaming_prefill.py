@@ -23,8 +23,8 @@ checked against the same reference and shape matrix.
 
 from __future__ import annotations
 
-import numpy as np
 import mlx.core as mx
+import numpy as np
 import pytest
 
 from veloxquant_mlx.metal import metal_available

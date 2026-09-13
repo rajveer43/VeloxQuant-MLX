@@ -1,3 +1,14 @@
+"""Handler stage adding a QJL-sketched residual correction (TurboQuantProd identity).
+
+Applies Quantized Johnson-Lindenstrauss (QJL) sign-sketching to the residual
+between the original vector and an earlier (e.g. MSE scalar) reconstruction:
+on encode it stores the residual's sign bits and norm via a shared
+``QJLEncoder``; on decode it adds the QJL-reconstructed residual back onto
+``ctx.x_current`` following the TurboQuantProd identity
+``x̃ = x̃_mse + ‖r‖·(√(π/2)/m)·S^T·sign(S·r)``, improving accuracy beyond what
+the base scalar quantizer alone achieves.
+"""
+
 from __future__ import annotations
 
 from veloxquant_mlx.core.abstractions import QuantizationHandler

@@ -27,8 +27,6 @@ dict-of-segments needs no locking.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import mlx.core as mx
 
 from veloxquant_mlx.quantizers.xquant import GroupParams
@@ -110,7 +108,7 @@ class XQuantCoordinator:
         )
         self._published_tokens[group_id] = published + n_tokens
 
-    def fetch_anchor(self, group_id: int, token_start: int) -> Optional[_Segment]:
+    def fetch_anchor(self, group_id: int, token_start: int) -> _Segment | None:
         """Fetch the anchor segment a reuse layer needs for this step.
 
         Once every expected reader (``n_readers`` passed to ``register_anchor``)

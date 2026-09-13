@@ -50,7 +50,6 @@ Public API:
 from __future__ import annotations
 
 import math
-from typing import Tuple
 
 import mlx.core as mx
 import numpy as np
@@ -218,7 +217,7 @@ def a2ats_select_retrieval_set(
     keys: mx.array,
     query: mx.array,
     retrieval_fraction: float = 0.20,
-) -> Tuple[mx.array, mx.array]:
+) -> tuple[mx.array, mx.array]:
     """Split token indices into a high-fidelity retrieval set and the bulk.
 
     Uses :class:`veloxquant_mlx.dsa.heap.MaxHeap` to select the top
@@ -254,7 +253,7 @@ def a2ats_select_retrieval_set(
     n_retrieve = max(1, math.ceil(retrieval_fraction * n))
     n_retrieve = min(n_retrieve, n)
 
-    heap: MaxHeap = MaxHeap()
+    heap: MaxHeap[int] = MaxHeap()
     sim_list = sim.tolist()
     for i, s in enumerate(sim_list):
         heap.push(float(s), i)

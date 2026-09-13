@@ -21,20 +21,20 @@ from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
 
 model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 
-config = KVCacheConfig(method="turboquant_rvq", bits=1, value_bits=2)
-cache = KVCacheBuilder.build(model, config)
+config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1)
+caches = KVCacheBuilder.for_model(model, config)
 
-# Pass cache directly to mlx_lm.generate
+# Pass the per-layer cache list directly to mlx_lm.generate
 response = mlx_lm.generate(
     model,
     tokenizer,
     prompt="Hello, world!",
     max_tokens=256,
-    kv_cache=cache,
+    kv_cache=caches,
 )
 ```
 
-`KVCacheBuilder.build()` works with any model that exposes `model.args.num_hidden_layers`, `model.args.num_key_value_heads`, and `model.args.head_dim` — which covers all major mlx_lm model families.
+`KVCacheBuilder.for_model()` works with any model that exposes `model.layers` or `model.model.layers` with per-layer `head_dim`/`num_key_value_heads` — which covers all major mlx_lm model families (text-only and VLM). It returns a list of one `KVCache` per layer, not a single object.
 
 ## Pattern 2 — mlx_lm monkey-patch
 
@@ -87,11 +87,12 @@ Behaviour to know:
 ```python
 from veloxquant_mlx.metal.fused_sdpa import patch_mlx_lm_for_fused_sdpa
 
-# Call once after loading the model
-patch_mlx_lm_for_fused_sdpa(model)
+# Call once, after the model is loaded (it patches the already-imported
+# mlx_lm.models.* modules in place — it takes no model argument).
+patch_mlx_lm_for_fused_sdpa()
 
 # Subsequent generate calls use the fused kernel automatically
-response = mlx_lm.generate(model, tokenizer, prompt="...", max_tokens=1024, kv_cache=cache)
+response = mlx_lm.generate(model, tokenizer, prompt="...", max_tokens=1024, kv_cache=caches)
 ```
 
 Fused SDPA is most beneficial when:
@@ -104,11 +105,11 @@ Check compatibility before patching:
 ```python
 from veloxquant_mlx.metal.fused_sdpa import supports_shape
 
-# Verify your model's attention shape is supported
+# Verify your VecInfer codebook shape is supported by the kernel's caps
+# (n_centroids, n_sub, head_dim) — not a batch/seq_len/heads check.
 is_supported = supports_shape(
-    batch=1,
-    heads=model.args.num_attention_heads,
-    seq_len=4096,
+    n_centroids=2**8,
+    n_sub=model.args.head_dim // 8,
     head_dim=model.args.head_dim,
 )
 print(f"Fused SDPA supported: {is_supported}")
@@ -188,8 +189,8 @@ for token in mlx_lm.stream_generate(
 For multi-turn chat, reuse the same cache across turns. The cache grows across turns but retains compression:
 
 ```python
-config = KVCacheConfig(method="turboquant_rvq", bits=1)
-cache = KVCacheBuilder.build(model, config)
+config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1)
+caches = KVCacheBuilder.for_model(model, config)
 
 turns = [
     "What is the capital of France?",
@@ -198,9 +199,9 @@ turns = [
 ]
 
 for turn in turns:
-    response = mlx_lm.generate(model, tokenizer, prompt=turn, max_tokens=200, kv_cache=cache)
+    response = mlx_lm.generate(model, tokenizer, prompt=turn, max_tokens=200, kv_cache=caches)
     print(f"User: {turn}\nAssistant: {response}\n")
-    # cache now contains compressed K/V for all prior turns
+    # caches now contain compressed K/V for all prior turns
 ```
 
 :::warning
@@ -213,12 +214,12 @@ All mlx_lm model families have been validated:
 
 | Model family | Recommended config |
 |---|---|
-| Llama 3.1 / 3.2 / 3.3 | `method="turboquant_rvq", bits=1` |
-| Mistral 7B / Mixtral | `method="vecinfer", bits=2` |
-| Qwen 2.5 (7–72B) | `method="spectral", signal_bits=4` |
-| Phi-3 / Phi-3.5 Mini | `method="commvq", bits=2` |
-| Gemma 2B / 7B | `method="turboquant_rvq", bits=2` |
-| Falcon 7B | `method="ratequant", target_bits=2.0` |
+| Llama 3.1 / 3.2 / 3.3 | `method="turboquant_rvq", bit_width_inlier=1` |
+| Mistral 7B / Mixtral | `method="vecinfer", key_codebook_bits=8, value_codebook_bits=8` |
+| Qwen 2.5 (7–72B) | `method="spectral", spectral_key_d_eff=4` |
+| Phi-3 / Phi-3.5 Mini | `method="kivi", bit_width_inlier=2` |
+| Gemma 2B / 7B | `method="turboquant_rvq", bit_width_inlier=2` |
+| Falcon 7B | `method="turboquant_rvq"` + a `bit_width_inlier` list from [RateQuant](../guides/mixed-precision) (per-layer allocation, not a `method=` value) |
 
 ## See also
 

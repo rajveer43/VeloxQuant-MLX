@@ -15,7 +15,6 @@ from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.core.registry import QuantizerRegistry
 from veloxquant_mlx.quantizers.kivi import KIVIQuantizer
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

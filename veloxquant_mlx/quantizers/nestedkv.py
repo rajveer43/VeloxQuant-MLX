@@ -358,7 +358,7 @@ def nestedkv_allocate_head_budgets(
     r = 1.0 - (total_budget / total_n)
     r = max(0.0, min(1.0, r))
 
-    floors = [max(0, min(n_h[h], int((safeguard_alpha * (1.0 - r) * n_h[h])))) for h in range(H)]
+    floors = [max(0, min(n_h[h], int(safeguard_alpha * (1.0 - r) * n_h[h]))) for h in range(H)]
     # Floors cannot collectively exceed total_budget; scale down proportionally if so.
     floor_sum = sum(floors)
     if floor_sum > total_budget:

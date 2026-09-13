@@ -56,7 +56,7 @@ Byte accounting:
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -106,8 +106,8 @@ class ChunkKVCache(_MLXKVCache):
     def __init__(
         self,
         config: Any,
-        layer_id: Optional[int] = None,
-        coordinator: Optional[ChunkKVIndexReuseCoordinator] = None,
+        layer_id: int | None = None,
+        coordinator: ChunkKVIndexReuseCoordinator | None = None,
     ) -> None:
         super().__init__()
         self._budget = int(getattr(config, "chunkkv_budget", 512))
@@ -182,12 +182,22 @@ class ChunkKVCache(_MLXKVCache):
                     if self._coordinator is not None and self._layer_id is not None:
                         self._coordinator.publish(self._layer_id, h, kept)
                 else:
-                    kept = self._coordinator.fetch(self._layer_id, h)
+                    # _is_leader is False only when coordinator/layer_id are both
+                    # non-None (see the `_is_leader =` assignment in __init__).
+                    assert self._coordinator is not None and self._layer_id is not None
+                    fetched = self._coordinator.fetch(self._layer_id, h)
+                    if fetched is None:
+                        raise RuntimeError(
+                            f"ChunkKVCache: follower layer {self._layer_id} fetched no "
+                            f"published indices for head {h} — its leader layer must be "
+                            f"updated first within the same step (see "
+                            f"ChunkKVIndexReuseCoordinator.fetch's docstring)."
+                        )
                     self._states[idx] = chunkkv_apply_reuse_indices(
                         self._states[idx],
                         keys[b, h].astype(mx.float16),
                         values[b, h].astype(mx.float16),
-                        kept,
+                        fetched,
                     )
 
         # 2) Whole-chunk retention lets heads keep slightly different token counts;

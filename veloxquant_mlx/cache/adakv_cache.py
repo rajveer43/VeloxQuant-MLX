@@ -36,7 +36,7 @@ What is NOT implemented (documented):
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -44,7 +44,6 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 from veloxquant_mlx.quantizers.adakv import (
     allocate_head_bits,
     compute_head_attention_entropy,
-    compute_head_norm_variance,
     quantize_head,
 )
 
@@ -95,8 +94,8 @@ class AdaKVCache(_MLXKVCache):
         self._allowed_bits: list[int] = sorted({self._lo_bit, self._mid_bit, self._hi_bit})
 
         # Running per-head accumulators of the per-token key L2 norm.
-        self._norm_sum: Optional[mx.array] = None  # [H] fp32
-        self._norm_sq_sum: Optional[mx.array] = None  # [H] fp32
+        self._norm_sum: mx.array | None = None  # [H] fp32
+        self._norm_sq_sum: mx.array | None = None  # [H] fp32
         self._n_tokens: int = 0  # total tokens seen
 
         # Last observed per-head attention entropy ([H] fp32), for the
@@ -105,10 +104,10 @@ class AdaKVCache(_MLXKVCache):
         # per-token quantities — so it is recomputed from whatever key block
         # the current call carries. At decode (S == 1) a single row carries no
         # attention distribution, so the prefill estimate is retained.
-        self._entropy: Optional[mx.array] = None  # [H] fp32
+        self._entropy: mx.array | None = None  # [H] fp32
 
         # Current per-head bit assignment ([H] ints). Set on first update.
-        self._head_bits: Optional[list[int]] = None
+        self._head_bits: list[int] | None = None
 
         # Degenerate-target warning is emitted at most once per cache.
         self._warned_degenerate: bool = False

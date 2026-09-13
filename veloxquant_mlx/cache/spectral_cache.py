@@ -8,7 +8,7 @@ Keys are compressed with SpectralQuant (spectral rotation + selective QJL
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -155,10 +155,7 @@ class SpectralQuantKVCache(KVCache):
         Args:
             v: Value vector, shape (d,) or (1, d), fp16.
         """
-        if v.ndim > 1:
-            v = v.reshape(1, -1)
-        else:
-            v = v[None]
+        v = v.reshape(1, -1) if v.ndim > 1 else v[None]
         ev = self._val_q.encode(v)
         if len(self._v_encoded) >= self._capacity:
             self._v_encoded.pop(0)
@@ -182,7 +179,6 @@ class SpectralQuantKVCache(KVCache):
         phys = self._physical_indices(n)
 
         # Batch encoded key vectors into a single EncodedVector for efficiency
-        from veloxquant_mlx.core.context import EncodedVector
 
         evs_k = [self._k_encoded[int(p)] for p in phys]
         evs_v = [self._v_encoded[int(p)] for p in phys]
@@ -237,6 +233,7 @@ def _batch_encoded(evs: list[Any], n: int) -> Any:
     """Concatenate a list of single-token EncodedVectors into a batch."""
     import mlx.core as mx
     import numpy as np
+
     from veloxquant_mlx.core.context import EncodedVector
 
     idx_list = [np.array(ev.indices, dtype=np.int32) for ev in evs]

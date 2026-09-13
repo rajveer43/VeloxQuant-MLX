@@ -1,6 +1,14 @@
-from __future__ import annotations
+"""Model-wide Linear-layer replacement with TurboQuant weight compression.
 
-from typing import Optional
+Provides ``quantize_model``, which walks an ``mlx.nn.Module`` tree and
+replaces each ``nn.Linear`` (and already affine-quantized ``mlx-lm``
+``QuantizedLinear``, which it first dequantizes) with a TurboQuant
+``QuantizedLinear`` (see ``weight/quantized_linear.py``), skipping
+embedding-like layers by name heuristic. ``compression_report`` then
+summarizes the resulting memory savings across all replaced layers.
+"""
+
+from __future__ import annotations
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -131,10 +139,7 @@ def _set_nested_attr(root: nn.Module, dotted_name: str, value: nn.Module) -> Non
     parts = dotted_name.split(".")
     obj = root
     for part in parts[:-1]:
-        if part.isdigit():
-            obj = obj[int(part)]
-        else:
-            obj = getattr(obj, part)
+        obj = obj[int(part)] if part.isdigit() else getattr(obj, part)
     last = parts[-1]
     if last.isdigit():
         obj[int(last)] = value

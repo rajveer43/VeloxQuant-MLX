@@ -18,16 +18,16 @@ from veloxquant_mlx.cache.palu_cache import PALUKVCache
 
 
 def _make(**cfg):
-    base = dict(
-        method="palu",
-        head_dim=64,
-        palu_rank=16,  # explicit rank for deterministic tests
-        palu_n_head_groups=2,
-        palu_hi_bit=4,
-        palu_lo_bit=2,
-        palu_hi_fraction=0.25,
-        palu_group_size=16,
-    )
+    base = {
+        "method": "palu",
+        "head_dim": 64,
+        "palu_rank": 16,  # explicit rank for deterministic tests
+        "palu_n_head_groups": 2,
+        "palu_hi_bit": 4,
+        "palu_lo_bit": 2,
+        "palu_hi_fraction": 0.25,
+        "palu_group_size": 16,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

@@ -30,8 +30,6 @@ dict-of-pending-publishes needs no locking.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import mlx.core as mx
 
 from veloxquant_mlx.quantizers.xkv import joint_svd_compress
@@ -47,7 +45,7 @@ class _PendingGroup:
         self.token_start = token_start
         self.n_tokens = n_tokens
         self.member_keys: dict[int, mx.array] = {}  # member_idx -> [S, D]
-        self.basis: Optional[tuple[mx.array, mx.array, mx.array]] = None
+        self.basis: tuple[mx.array, mx.array, mx.array] | None = None
 
 
 class XKVCoordinator:
@@ -112,9 +110,9 @@ class XKVCoordinator:
         group_id: int,
         token_start: int,
         expected_members: int,
-        rank: Optional[int] = None,
+        rank: int | None = None,
         energy_threshold: float = 0.95,
-    ) -> Optional[tuple[mx.array, mx.array, mx.array]]:
+    ) -> tuple[mx.array, mx.array, mx.array] | None:
         """Return the shared basis for this group/token range once every
         expected member has published; ``None`` if still waiting.
 

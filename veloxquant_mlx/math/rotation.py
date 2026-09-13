@@ -1,6 +1,17 @@
-from __future__ import annotations
+"""Random matrix generators backing the rotation, Hadamard, and JL-sketch preconditioners.
 
-import math
+Produces the numpy-side matrices that
+:mod:`veloxquant_mlx.preconditioners.rotation` and
+:mod:`veloxquant_mlx.preconditioners.jl_sketch` wrap as MLX arrays:
+Haar-distributed orthogonal rotations via QR decomposition
+(``make_rotation_matrix``), i.i.d. Gaussian JL projection matrices
+(``make_jl_matrix``), and the ±1 diagonal for the randomized Hadamard
+transform (``make_hadamard_diagonal``), plus a compatibility gate
+(``is_hadamard_compatible``) for ``mx.hadamard_transform``'s dimension
+constraint.
+"""
+
+from __future__ import annotations
 
 import numpy as np
 
@@ -114,5 +125,4 @@ def make_jl_matrix(d: int, m: int, seed: int = 42) -> np.ndarray:
         raise ValueError(f"make_jl_matrix: m must be >= 1, got {m}")
 
     rng = np.random.default_rng(seed + 1)
-    S = rng.standard_normal((m, d)).astype(np.float64)
-    return S
+    return rng.standard_normal((m, d)).astype(np.float64)

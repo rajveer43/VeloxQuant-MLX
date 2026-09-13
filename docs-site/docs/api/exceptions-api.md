@@ -3,8 +3,8 @@ id: exceptions-api
 title: Exceptions API
 sidebar_label: Exceptions
 slug: /api/exceptions-api
-description: Python API reference for veloxquant_mlx.core.exceptions, covering the VeloxQuantError base class and its subclasses such as ArtifactNotFoundError, CodebookDimensionMismatch, QuantizerConfigError, MetalUnavailableError, BlockPoolExhaustedError, and OwnerAlreadyActiveError.
-keywords: [exceptions, VeloxQuantError, "API reference", "python api", error handling, BlockPoolExhaustedError]
+description: Python API reference for veloxquant_mlx.core.exceptions, covering ArtifactNotFoundError, CodebookDimensionMismatch, CyclicPipelineError, QuantizerConfigError, BlockPoolExhaustedError, and OwnerAlreadyActiveError.
+keywords: [exceptions, "API reference", "python api", error handling, BlockPoolExhaustedError]
 ---
 
 # Exceptions API
@@ -15,34 +15,28 @@ keywords: [exceptions, VeloxQuantError, "API reference", "python api", error han
 
 ## Exception hierarchy
 
+There is no common VeloxQuant-specific base exception. Each of the six
+exceptions independently subclasses a Python builtin, grouped here by that
+builtin:
+
 ```
-Exception
-└── VeloxQuantError          # base for all library errors
-    ├── ArtifactNotFoundError
-    ├── CodebookDimensionMismatch
-    ├── CyclicPipelineError
-    ├── QuantizerConfigError
-    ├── MetalUnavailableError
-    ├── BlockPoolExhaustedError
-    └── OwnerAlreadyActiveError
-```
+ValueError
+├── QuantizerConfigError
+├── CodebookDimensionMismatch
+└── OwnerAlreadyActiveError
 
----
+FileNotFoundError
+└── ArtifactNotFoundError
 
-## VeloxQuantError
-
-```python
-from veloxquant_mlx.core.exceptions import VeloxQuantError
+RuntimeError
+├── CyclicPipelineError
+└── BlockPoolExhaustedError
 ```
 
-Base exception class. Catch this to handle any VeloxQuant-MLX error:
-
-```python
-try:
-    cache = KVCacheBuilder.build(model, config)
-except VeloxQuantError as e:
-    print(f"VeloxQuant error: {e}")
-```
+Catch a specific exception, or catch its builtin category if you want to
+handle a broader class of errors — for example, `except ValueError` also
+catches `QuantizerConfigError`, `CodebookDimensionMismatch`, and
+`OwnerAlreadyActiveError`, since all three subclass it.
 
 ---
 
@@ -52,12 +46,11 @@ except VeloxQuantError as e:
 from veloxquant_mlx.core.exceptions import ArtifactNotFoundError
 ```
 
-Raised when a required calibration artifact (codebook, rotation, sensitivity map) is not found in the `ArtifactStore`.
+Raised when a required precomputed artifact (rotation matrix, codebook, or JL matrix) is not found in the artifact store.
 
 **When raised:**
-- Calling `VecInferKVCache` without a pre-trained codebook
-- `load_cached_rotations()` when the path does not exist
-- `NpyArtifactStore.load()` for a key that was never saved
+- `NpyArtifactStore.load_rotation_matrix()` / `load_codebook()` / `load_jl_matrix()` when the backing `.npy` file does not exist on disk
+- The equivalent lookups on `MemoryArtifactStore` when the key was never saved
 
 ```python
 from veloxquant_mlx.core.exceptions import ArtifactNotFoundError
@@ -65,10 +58,10 @@ from veloxquant_mlx.artifacts.npy_store import NpyArtifactStore
 
 store = NpyArtifactStore("./artifacts/")
 try:
-    codebook = store.load("vecinfer_codebook")
+    codebook = store.load_codebook(distribution="gaussian", b=4, d=128)
 except ArtifactNotFoundError:
     print("Codebook not found. Run calibration first:")
-    print("  python -m veloxquant_mlx precompute --method vecinfer --model ...")
+    print("  python -m veloxquant_mlx precompute --head_dim 128 --bits 4")
 ```
 
 ---
@@ -79,15 +72,13 @@ except ArtifactNotFoundError:
 from veloxquant_mlx.core.exceptions import CodebookDimensionMismatch
 ```
 
-Raised when a loaded codebook's dimensions do not match the current model's head dimensions.
+Raised when a codebook's shape does not match the expected dimension — for example, when constructing a `ScalarCodebook` from centroids that aren't a 1-D array, or whose count isn't a power of two.
 
 **When raised:**
-- Codebook was trained on a different model (different `head_dim` or `num_subspaces`)
-- Codebook was trained with a different `num_subspaces` than specified in `KVCacheConfig`
+- `ScalarCodebook(centroids)` is given a `centroids` array with more than one dimension
+- `ScalarCodebook(centroids)` is given a number of centroids that is not a power of 2 (so it doesn't correspond to a whole number of bits)
 
-**Message format:** `"Codebook shape [32, 8, 256, 16] incompatible with head_dim=128, num_subspaces=8"`
-
-**Fix:** Re-run calibration with the correct model and configuration.
+**Fix:** Re-run calibration to regenerate a codebook with the expected shape, or check the array you're passing in.
 
 ---
 
@@ -97,11 +88,10 @@ Raised when a loaded codebook's dimensions do not match the current model's head
 from veloxquant_mlx.core.exceptions import CyclicPipelineError
 ```
 
-Raised when a `CompositeQuantizer` or the quantization DAG contains a cycle.
+Raised when a `QuantizationGraph` (see `veloxquant_mlx/dsa/dag.py`) contains a cycle and cannot be reduced to a valid topological order.
 
 **When raised:**
-- Building a `CompositeQuantizer` where a quantizer references itself (directly or transitively)
-- Misconfigured custom pipeline using the `dag.py` utilities
+- Calling the graph's topological-sort step on a `QuantizationGraph` whose `set_next()` / `add_edge()` calls introduced a cycle
 
 ---
 
@@ -111,42 +101,26 @@ Raised when a `CompositeQuantizer` or the quantization DAG contains a cycle.
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
 ```
 
-Raised when a `KVCacheConfig` is invalid for the requested method.
+Raised when a quantizer or KV cache is misconfigured — the most common exception in the library. It covers a range of validation failures across `KVCacheFactory`, `KVCacheBuilder`, `QuantizerFactory`, `PreconditionerFactory`, `CodebookFactory`, and individual quantizers/caches.
 
 **When raised:**
-- `method="vecinfer"` without `codebook` or `smooth_factors`
-- `method="spectral"` without `rotations`
-- `bits` value not supported by the algorithm (e.g., `bits=5` for RVQ)
-- `num_subspaces` does not divide `head_dim` evenly
-
-**Message format:** `"VecInfer requires 'codebook' and 'smooth_factors' in KVCacheConfig"`
+- An unknown `method` is passed to `KVCacheConfig` / `KVCacheFactory.create()`
+- `head_dim` is not a power of 2, or `bit_width_inlier` is invalid (e.g. `< 1`, or an empty/mixed-type list)
+- `jl_dim` or `n_outlier_channels` is out of range relative to `head_dim`
+- `sliding_window` is set for a method that doesn't support it
+- A quantizer- or preconditioner-specific constraint fails (e.g. `KIVIQuantizer`'s `b` outside `[1, 8]`, or a `PreconditionerFactory` call missing a required kwarg like `Pi` or `S`)
 
 ```python
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
+from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig
 
 try:
-    config = KVCacheConfig(method="vecinfer")  # missing codebook
-    cache = KVCacheBuilder.build(model, config)
+    config = KVCacheConfig(method="vecinfer", head_dim=100)  # not a power of 2
+    caches = KVCacheBuilder.for_model(model, config)
 except QuantizerConfigError as e:
     print(e)
-    # "VecInfer requires 'codebook' and 'smooth_factors' in KVCacheConfig"
+    # "KVCacheBuilder: head_dim=100 must be a power of 2."
 ```
-
----
-
-## MetalUnavailableError
-
-```python
-from veloxquant_mlx.core.exceptions import MetalUnavailableError
-```
-
-Raised when a Metal kernel is called on a device where Metal is not available.
-
-**When raised:**
-- Calling `vecinfer_quantize_metal()` on an Intel Mac or in a VM
-- `patch_mlx_lm_for_fused_sdpa()` on an unsupported device
-
-**Fix:** Run on macOS with an Apple M-series chip. See [Installation troubleshooting](../getting-started/installation).
 
 ---
 

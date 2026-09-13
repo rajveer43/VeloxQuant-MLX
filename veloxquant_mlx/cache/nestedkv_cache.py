@@ -62,7 +62,6 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.nestedkv import (
     NestedKVState,
-    full_nestedkv_fp16_bytes,
     init_nestedkv_state,
     nestedkv_allocate_head_budgets,
     nestedkv_append_decode,

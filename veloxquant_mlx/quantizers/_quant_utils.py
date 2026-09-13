@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 import mlx.core as mx
 
 
@@ -41,7 +39,7 @@ def _group_quant_dequant(x: mx.array, b: int, group_size: int = 32) -> mx.array:
 
 def _truncated_svd(
     x: mx.array,
-    rank: Optional[int] = None,
+    rank: int | None = None,
     energy_threshold: float = 0.90,
 ) -> tuple[mx.array, mx.array, mx.array]:
     """Truncated SVD of a centered-or-raw matrix ``[N, D]`` → ``(U_r, s_r, Vt_r)``.

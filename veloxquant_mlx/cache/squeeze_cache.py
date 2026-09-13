@@ -54,7 +54,7 @@ Byte accounting:
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -100,8 +100,8 @@ class SqueezeAttentionCache(_MLXKVCache):
     def __init__(
         self,
         config: Any,
-        layer_id: Optional[int] = None,
-        coordinator: Optional[SqueezeCoordinator] = None,
+        layer_id: int | None = None,
+        coordinator: SqueezeCoordinator | None = None,
     ) -> None:
         super().__init__()
         self._avg_budget = int(getattr(config, "squeeze_budget", 512))

@@ -19,14 +19,14 @@ from veloxquant_mlx.cache.gear_cache import GEARKVCache
 
 
 def _make(**cfg):
-    base = dict(
-        method="gear",
-        head_dim=128,
-        gear_bits=2,
-        gear_rank=8,
-        gear_sparse_fraction=0.005,
-        gear_group_size=32,
-    )
+    base = {
+        "method": "gear",
+        "head_dim": 128,
+        "gear_bits": 2,
+        "gear_rank": 8,
+        "gear_sparse_fraction": 0.005,
+        "gear_group_size": 32,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

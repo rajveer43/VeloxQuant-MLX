@@ -1,3 +1,17 @@
+"""Chain-of-Responsibility pipeline stages composing quantizer encode/decode paths.
+
+Each handler subclasses ``QuantizationHandler`` (see
+``veloxquant_mlx.core.abstractions``) and implements ``handle()`` to mutate a
+shared ``QuantizationContext`` in place before forwarding it to the next
+stage, so a quantizer is assembled by chaining handlers (normalization,
+rotation, outlier splitting, polar transform, scalar/value quantization, QJL
+residual, bit packing) rather than hardcoding one monolithic encode/decode
+function. Re-exports every concrete handler: ``BitPackingHandler``,
+``NormalizationHandler``, ``OutlierSplitHandler``, ``PolarTransformHandler``,
+``QJLResidualHandler``, ``RotationHandler``, ``ScalarQuantizerHandler``, and
+``ValueQuantizerHandler``.
+"""
+
 from __future__ import annotations
 
 from veloxquant_mlx.handlers.bit_pack_handler import BitPackingHandler

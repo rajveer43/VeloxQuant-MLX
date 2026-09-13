@@ -44,7 +44,7 @@ Byte accounting:
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -79,7 +79,7 @@ class GEARKVCache(_MLXKVCache):
         super().__init__()
         self._bits = int(getattr(config, "gear_bits", 2))
         rank = getattr(config, "gear_rank", None)
-        self._rank: Optional[int] = None if rank is None else int(rank)
+        self._rank: int | None = None if rank is None else int(rank)
         self._energy = float(getattr(config, "gear_energy_threshold", 0.90))
         self._sparse_frac = float(getattr(config, "gear_sparse_fraction", 0.01))
         self._gs = int(getattr(config, "gear_group_size", 32))

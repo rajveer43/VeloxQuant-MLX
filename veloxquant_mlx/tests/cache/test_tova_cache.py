@@ -20,7 +20,7 @@ from veloxquant_mlx.cache.tova_cache import TOVAKVCache
 
 
 def _make(**cfg):
-    base = dict(method="tova", head_dim=32, tova_budget=8, tova_n_sink=2)
+    base = {"method": "tova", "head_dim": 32, "tova_budget": 8, "tova_n_sink": 2}
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

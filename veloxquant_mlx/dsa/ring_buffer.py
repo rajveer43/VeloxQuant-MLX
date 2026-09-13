@@ -1,6 +1,19 @@
+"""Fixed-capacity circular buffer for streaming, FIFO-evicted token windows.
+
+Implements ``RingBuffer``, a generic O(1)-append circular buffer with
+negative indexing and oldest-first iteration, used wherever a component
+needs a bounded sliding window over recent elements (e.g. token or key/value
+history) that silently evicts the oldest entry once full rather than
+growing unbounded.
+"""
+
 from __future__ import annotations
 
-from typing import Generic, Iterator, List, Optional, TypeVar
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Generic, TypeVar
+
+if TYPE_CHECKING:
+    import mlx.core as mx
 
 T = TypeVar("T")
 
@@ -27,7 +40,7 @@ class RingBuffer(Generic[T]):
         if capacity < 1:
             raise ValueError(f"RingBuffer capacity must be >= 1, got {capacity}")
         self._capacity: int = capacity
-        self._data: List[Optional[T]] = [None] * capacity
+        self._data: list[T | None] = [None] * capacity
         self._head: int = 0  # index of oldest element
         self._size: int = 0  # current number of elements
 
@@ -35,7 +48,7 @@ class RingBuffer(Generic[T]):
     # Mutation
     # ------------------------------------------------------------------
 
-    def append(self, item: T) -> Optional[T]:
+    def append(self, item: T) -> T | None:
         """Append an item to the buffer.
 
         If the buffer is full the oldest item is evicted and returned.
@@ -46,7 +59,7 @@ class RingBuffer(Generic[T]):
         Returns:
             The evicted element if the buffer was full, otherwise ``None``.
         """
-        evicted: Optional[T] = None
+        evicted: T | None = None
         if self._size == self._capacity:
             # Overwrite oldest slot; advance head
             evicted = self._data[self._head]
@@ -101,7 +114,7 @@ class RingBuffer(Generic[T]):
         """Return True if the buffer is at capacity."""
         return self._size == self._capacity
 
-    def to_list(self) -> List[T]:
+    def to_list(self) -> list[T]:
         """Return all elements as a plain list (oldest first).
 
         Returns:
@@ -109,7 +122,7 @@ class RingBuffer(Generic[T]):
         """
         return [self[i] for i in range(self._size)]
 
-    def to_stacked(self) -> "import mlx.core as mx; mx.array":  # type: ignore[return]
+    def to_stacked(self) -> mx.array:
         """Stack all stored MLX arrays along axis 0.
 
         Only valid when ``T = mx.array``. Uses ``mx.stack`` for efficiency.

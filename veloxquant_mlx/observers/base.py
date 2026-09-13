@@ -1,9 +1,16 @@
+"""Shared event payload emitted by the quantization pipeline for observer consumption.
+
+Defines :class:`QuantizationEvent`, the single data structure every
+observer in :mod:`veloxquant_mlx.observers` (distortion, latency, memory,
+key-norm) consumes via its ``on_event`` hook — carrying the stage name,
+input shape, elapsed time, memory delta, and stage-specific metadata for
+one pipeline checkpoint.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict
-
-from veloxquant_mlx.core.abstractions import QuantizationObserver
+from typing import Any
 
 
 @dataclass
@@ -22,7 +29,7 @@ class QuantizationEvent:
     input_shape: tuple
     elapsed_ms: float = 0.0
     memory_delta_bytes: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __repr__(self) -> str:
         return (

@@ -1,5 +1,7 @@
 """Experimental ordered compaction; MLX computes threshold and prefix ranks."""
 
+from __future__ import annotations
+
 from functools import lru_cache
 from pathlib import Path
 

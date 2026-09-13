@@ -131,7 +131,7 @@ class PyramidKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         if values.shape != keys.shape:
             raise ValueError("pyramidkv: K/V shapes must match")
-        if self._states and (B, H, D) != (self._B, self._H, self._head_dim):
+        if self._states and (self._B, self._H, self._head_dim) != (B, H, D):
             raise ValueError("pyramidkv: batch/head dimensions cannot change")
         self._ensure_states(B, H, D)
 

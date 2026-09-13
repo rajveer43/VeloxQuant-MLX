@@ -12,12 +12,11 @@ SVDq).
 
 from __future__ import annotations
 
+import mlx.core as mx
 import numpy as np
 import pytest
-import mlx.core as mx
 
 from veloxquant_mlx.quantizers.kvtc import (
-    KVTCArtifact,
     kvtc_compress,
     kvtc_decompress,
     kvtc_fp16_bytes,

@@ -25,7 +25,7 @@ from veloxquant_mlx.cache.nestedkv_cache import NestedKVKVCache
 
 
 def _make(**cfg):
-    base = dict(method="nestedkv", head_dim=32, nestedkv_budget=8, nestedkv_n_sink=2)
+    base = {"method": "nestedkv", "head_dim": 32, "nestedkv_budget": 8, "nestedkv_n_sink": 2}
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

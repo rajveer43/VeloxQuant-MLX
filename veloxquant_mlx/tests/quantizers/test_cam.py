@@ -15,7 +15,6 @@ import numpy as np
 import pytest
 
 from veloxquant_mlx.quantizers.cam import (
-    CaMState,
     cam_fp16_bytes,
     cam_get_kv,
     cam_update,

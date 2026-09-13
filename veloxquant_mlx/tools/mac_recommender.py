@@ -116,7 +116,7 @@ def recommend(req: RecommendRequest) -> RecommendResult:
     tight = req.ram_gb <= 16 or headroom_gb < 3.0
     if req.goal == "everyday":
         method = "turboquant_rvq"
-        knobs = {"bit_width_inlier": 1, "seed": 42}
+        knobs: dict[str, Any] = {"bit_width_inlier": 1, "seed": 42}
         ratio = 7.5
         resident = False
         rationale = (

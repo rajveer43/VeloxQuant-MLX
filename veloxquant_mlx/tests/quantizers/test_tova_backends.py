@@ -1,5 +1,7 @@
 """Compare accelerated updates against the unchanged sequential reference."""
 
+from __future__ import annotations
+
 import mlx.core as mx
 import numpy as np
 import pytest

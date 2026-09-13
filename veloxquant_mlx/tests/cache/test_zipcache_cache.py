@@ -18,14 +18,14 @@ from veloxquant_mlx.cache.zipcache_cache import ZipCacheKVCache
 
 
 def _make(**cfg):
-    base = dict(
-        method="zipcache",
-        head_dim=128,
-        zipcache_hi_bits=4,
-        zipcache_lo_bits=2,
-        zipcache_hi_fraction=0.20,
-        zipcache_group_size=32,
-    )
+    base = {
+        "method": "zipcache",
+        "head_dim": 128,
+        "zipcache_hi_bits": 4,
+        "zipcache_lo_bits": 2,
+        "zipcache_hi_fraction": 0.20,
+        "zipcache_group_size": 32,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

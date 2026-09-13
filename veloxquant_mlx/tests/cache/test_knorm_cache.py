@@ -26,7 +26,7 @@ def _kv(B, H, S, D, seed=0):
 
 
 def _make(**cfg):
-    base = dict(method="knorm", head_dim=64, knorm_budget=16, knorm_n_sink=2)
+    base = {"method": "knorm", "head_dim": 64, "knorm_budget": 16, "knorm_n_sink": 2}
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

@@ -1,3 +1,12 @@
+"""In-memory :class:`ArtifactStore` implementation for tests and disk-free use.
+
+Holds rotation matrices, codebooks, and JL sketch matrices in plain Python
+dicts (keyed by their identifying parameters) instead of touching the
+filesystem, so unit tests and short-lived scripts can exercise the same
+``ArtifactStore`` contract as :class:`~veloxquant_mlx.artifacts.npy_store.NpyArtifactStore`
+without the I/O cost or cleanup.
+"""
+
 from __future__ import annotations
 
 from typing import Any

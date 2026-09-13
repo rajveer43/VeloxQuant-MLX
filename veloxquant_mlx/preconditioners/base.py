@@ -1,3 +1,11 @@
+"""Construction dispatch for registered :class:`~veloxquant_mlx.core.abstractions.Preconditioner` implementations.
+
+Provides :class:`PreconditionerFactory`, a thin ``create()`` dispatcher
+over :class:`~veloxquant_mlx.core.registry.PreconditionerRegistry` that
+validates the required constructor kwargs (``Pi`` for rotation, ``S`` for
+JL, ``D`` for Hadamard) per preconditioner kind before instantiating it.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -44,19 +52,18 @@ class PreconditionerFactory:
                 raise QuantizerConfigError("PreconditionerFactory: 'rotation' requires 'Pi' kwarg.")
             cls = PreconditionerRegistry.get("rotation")
             return cls(kwargs["Pi"])
-        elif kind == "jl":
+        if kind == "jl":
             if "S" not in kwargs:
                 raise QuantizerConfigError("PreconditionerFactory: 'jl' requires 'S' kwarg.")
             cls = PreconditionerRegistry.get("jl")
             return cls(kwargs["S"])
-        elif kind == "hadamard":
+        if kind == "hadamard":
             if "D" not in kwargs:
                 raise QuantizerConfigError(
                     "PreconditionerFactory: 'hadamard' requires 'D' kwarg (±1 diagonal vector)."
                 )
             cls = PreconditionerRegistry.get("hadamard")
             return cls(kwargs["D"])
-        else:
-            raise QuantizerConfigError(
-                f"PreconditionerFactory: unknown kind '{kind}'. Choices: rotation, jl, hadamard."
-            )
+        raise QuantizerConfigError(
+            f"PreconditionerFactory: unknown kind '{kind}'. Choices: rotation, jl, hadamard."
+        )

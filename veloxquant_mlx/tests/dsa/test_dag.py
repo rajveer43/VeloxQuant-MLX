@@ -13,6 +13,7 @@ from veloxquant_mlx.handlers.rotation_handler import RotationHandler
 def _make_rotation_handler():
     import mlx.core as mx
     import numpy as np
+
     from veloxquant_mlx.math.rotation import make_rotation_matrix
     from veloxquant_mlx.preconditioners.rotation import RotationPreconditioner
 

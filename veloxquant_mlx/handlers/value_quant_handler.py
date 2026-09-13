@@ -1,8 +1,19 @@
+"""Handler stage performing per-token int8 quantization for KV cache value vectors.
+
+Unlike the key-side handlers, which route through rotation/polar/codebook
+stages, value vectors use a simple dynamic per-token absmax int8 scheme: on
+encode the scale is ``max(|x|) / INT8_MAX`` (clamped away from zero) and
+stored in ``ctx.metadata["v_scale"]``; on decode the stored int8 values are
+rescaled back to fp16. This mirrors the value-cache quantization used by
+KIVI-style caches, where values tolerate coarser, cheaper quantization than
+keys.
+"""
+
 from __future__ import annotations
 
 from veloxquant_mlx.core.abstractions import QuantizationHandler
-from veloxquant_mlx.core.context import QuantizationContext
 from veloxquant_mlx.core.constants import INT8_MAX
+from veloxquant_mlx.core.context import QuantizationContext
 
 
 class ValueQuantizerHandler(QuantizationHandler):

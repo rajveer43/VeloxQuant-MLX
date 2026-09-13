@@ -13,7 +13,6 @@ Phase 2 (fused encode+decode):
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import mlx.core as mx
 
@@ -147,7 +146,7 @@ def _encode_decode_simple_kernel(D: int, n_sub: int, sub_dim: int, n_centroids: 
 def vecinfer_dequant_metal(
     indices: mx.array,
     codebook: mx.array,
-    out_dtype: Optional[mx.Dtype] = None,
+    out_dtype: mx.Dtype | None = None,
 ) -> mx.array:
     """Drop-in Metal replacement for ``dequantize_vq``.
 
@@ -230,7 +229,7 @@ def vecinfer_encode_decode_metal(
     k_codebook: mx.array,
     sub_dim: int,
     H_mat: mx.array,
-    smooth: Optional[mx.array] = None,
+    smooth: mx.array | None = None,
 ) -> tuple[mx.array, mx.array]:
     """Fused key encode+decode: smooth → WHT → VQ → dequant → inv-WHT → smooth.
 

@@ -24,10 +24,11 @@ Usage::
 from __future__ import annotations
 
 import copy
+import types
 import typing
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from enum import StrEnum
+from typing import Any, Union, cast
 
 __all__ = [
     "ServeTier",
@@ -53,7 +54,7 @@ DOCS_BASE = "https://veloxquant-mlx.netlify.app/docs/algorithms"
 #: yet have a page for most registry methods. A method absent from this map
 #: has no docs page; `docs_url` is `None` rather than a synthesized dead link.
 #: Sourced from https://veloxquant-mlx.netlify.app/sitemap.xml.
-_DOCS_SLUG: Dict[str, str] = {
+_DOCS_SLUG: dict[str, str] = {
     "turboquant_rvq": "rvq",
     "polar": "polarquant",
     "kivi": "kivi",
@@ -71,7 +72,7 @@ _DOCS_SLUG: Dict[str, str] = {
 DEFAULT_SERVE_METHOD = "turboquant_rvq"
 
 
-class ServeTier(str, Enum):
+class ServeTier(StrEnum):
     """How well a method behaves under an ``mlx_lm.server`` process.
 
     Ordering reflects #27's support matrix. ``HONEST_BYTES`` is currently
@@ -116,7 +117,7 @@ class ServeTier(str, Enum):
         }[self]
 
 
-class MethodFamily(str, Enum):
+class MethodFamily(StrEnum):
     """What the method primarily does to the cache."""
 
     QUANTIZATION = "quantization"
@@ -124,7 +125,7 @@ class MethodFamily(str, Enum):
     HYBRID = "hybrid"
 
 
-class TelemetryCoverage(str, Enum):
+class TelemetryCoverage(StrEnum):
     """Which byte counters a method actually reports.
 
     Coverage is uneven across the catalog: of 35 servable methods, 13 report
@@ -158,13 +159,13 @@ class MethodInfo:
     family: MethodFamily
     serve_tier: ServeTier
     blurb: str
-    config_fields: List[str] = field(default_factory=list)
-    paper_deviation: Optional[str] = None
-    unsupported_reason: Optional[str] = None
+    config_fields: list[str] = field(default_factory=list)
+    paper_deviation: str | None = None
+    unsupported_reason: str | None = None
     coverage: TelemetryCoverage = TelemetryCoverage.NONE
 
     @property
-    def docs_url(self) -> Optional[str]:
+    def docs_url(self) -> str | None:
         slug = _DOCS_SLUG.get(self.name)
         return f"{DOCS_BASE}/{slug}" if slug is not None else None
 
@@ -174,7 +175,7 @@ class MethodInfo:
         return self.paper_deviation is not None
 
     @property
-    def field_schema(self) -> List[Dict[str, Any]]:
+    def field_schema(self) -> list[dict[str, Any]]:
         """Type and default for each knob, derived from ``KVCacheConfig``.
 
         The UI renders inputs from this rather than from a hand-written table,
@@ -183,7 +184,7 @@ class MethodInfo:
         """
         return [describe_field(name) for name in self.config_fields]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """JSON-serializable form, consumed by ``veloxquant methods --json``."""
         return {
             "name": self.name,
@@ -209,7 +210,7 @@ class MethodInfo:
 # A method missing from this table still appears in the registry with a
 # placeholder blurb, so adding a cache never silently drops it from the UI.
 
-_FAMILY: Dict[str, MethodFamily] = {
+_FAMILY: dict[str, MethodFamily] = {
     "turboquant_prod": MethodFamily.QUANTIZATION,
     "turboquant_mse": MethodFamily.QUANTIZATION,
     "turboquant_rvq": MethodFamily.QUANTIZATION,
@@ -255,7 +256,7 @@ _FAMILY: Dict[str, MethodFamily] = {
     "age_tiered": MethodFamily.QUANTIZATION,
 }
 
-_BLURB: Dict[str, str] = {
+_BLURB: dict[str, str] = {
     "turboquant_prod": "TurboQuant product quantization; the library default for offline study.",
     "turboquant_mse": "TurboQuant variant fitted to minimize MSE rather than inner-product error.",
     "turboquant_rvq": "Residual vector quantization; the balanced default for serving.",
@@ -303,7 +304,7 @@ _BLURB: Dict[str, str] = {
 
 #: Honest "-adapted" notes. Sourced from open issues that document the
 #: deviation, so the UI cannot claim faithful reproduction where we know better.
-_PAPER_DEVIATION: Dict[str, str] = {
+_PAPER_DEVIATION: dict[str, str] = {
     "adakv": (
         "Default importance proxy (norm_variance) is sign-inverted vs the paper's "
         "attention-entropy criterion; set adakv_importance=\"attention_entropy\" to "
@@ -318,7 +319,7 @@ _PAPER_DEVIATION: Dict[str, str] = {
 }
 
 #: Method-specific knobs, so #35 can show only the relevant fields.
-_CONFIG_FIELDS: Dict[str, List[str]] = {
+_CONFIG_FIELDS: dict[str, list[str]] = {
     "turboquant_rvq": ["bit_width_inlier", "seed"],
     "turboquant_prod": ["bit_width_inlier", "seed"],
     "turboquant_mse": ["bit_width_inlier", "seed"],
@@ -388,18 +389,18 @@ _GENERIC_FIELDS = ["bit_width_inlier", "seed"]
 #: method's fields follow a plain ``{method}_*`` prefix — verified against
 #: every field name in ``KVCacheConfig`` — so this map only needs the
 #: exceptions, not a full method -> prefix table.
-_FIELD_PREFIX_ALIAS: Dict[str, str] = {
+_FIELD_PREFIX_ALIAS: dict[str, str] = {
     "snapkv": "snap",
     "streaming_llm": "stream",
     "pyramidkv": "pyramid",
 }
 
-_TIER_CACHE: Dict[str, "ServeTier"] = {}
-_UNSUPPORTED_REASON: Dict[str, str] = {}
+_TIER_CACHE: dict[str, ServeTier] = {}
+_UNSUPPORTED_REASON: dict[str, str] = {}
 
 
 #: Human-readable hints for knobs whose names don't explain themselves.
-_FIELD_HELP: Dict[str, str] = {
+_FIELD_HELP: dict[str, str] = {
     "bit_width_inlier": "Bits per element for the main quantizer.",
     "seed": "Random seed for rotations / sketches.",
     "jl_dim": "Johnson-Lindenstrauss projection dimension.",
@@ -415,7 +416,7 @@ _FIELD_HELP: Dict[str, str] = {
 }
 
 
-def describe_field(name: str) -> Dict[str, Any]:
+def describe_field(name: str) -> dict[str, Any]:
     """Describe one ``KVCacheConfig`` field for form rendering.
 
     Reads the dataclass rather than a parallel table: types and defaults stay
@@ -437,7 +438,10 @@ def describe_field(name: str) -> Dict[str, Any]:
     annotation = hints[name]
     optional = False
     origin = typing.get_origin(annotation)
-    if origin is Union:
+    # KVCacheConfig fields use PEP 604 `int | None` syntax, which resolves to
+    # types.UnionType, not typing.Union — both must be checked, or every
+    # Optional field here (25 of them) silently falls through as "unknown".
+    if origin is Union or origin is types.UnionType:
         args = [a for a in typing.get_args(annotation) if a is not type(None)]
         optional = len(args) != len(typing.get_args(annotation))
         annotation = args[0] if args else annotation
@@ -486,7 +490,7 @@ def field_is_relevant(method: str, name: str) -> bool:
     return name.startswith(prefix + "_")
 
 
-def all_method_names() -> List[str]:
+def all_method_names() -> list[str]:
     """Every method name ``KVCacheConfig`` accepts, straight from its ``Literal``.
 
     Read from the annotation rather than a copy of the list, so a new method
@@ -501,7 +505,7 @@ def all_method_names() -> List[str]:
     return list(typing.get_args(hints["method"]))
 
 
-def probe_serve_tier(method: str) -> "ServeTier":
+def probe_serve_tier(method: str) -> ServeTier:
     """Classify one method by exercising a real cache instance.
 
     A method serves only if it inherits the ``mlx_lm`` serving contract: the
@@ -523,16 +527,21 @@ def probe_serve_tier(method: str) -> "ServeTier":
     return tier
 
 
-def _run_probe(method: str) -> tuple["ServeTier", Optional[str]]:
+def _run_probe(method: str) -> tuple[ServeTier, str | None]:
     import mlx.core as mx
     from mlx_lm.models.cache import KVCache as _MLXKVCache
     from mlx_lm.models.cache import can_trim_prompt_cache
 
-    from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
+    from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory, MethodName
 
     try:
+        # method always originates from all_method_names(), which reads this
+        # same Literal back via reflection (see its docstring) — mypy can't
+        # see that connection through the reflection, but the invariant holds.
         cache = KVCacheFactory.create(
-            KVCacheConfig(method=method, head_dim=128, bit_width_inlier=2, seed=42)
+            KVCacheConfig(
+                method=cast(MethodName, method), head_dim=128, bit_width_inlier=2, seed=42
+            )
         )
     except Exception as exc:  # construction failure is itself disqualifying
         return ServeTier.CRASHES, f"cache construction failed: {type(exc).__name__}: {exc}"
@@ -591,10 +600,10 @@ def _run_probe(method: str) -> tuple["ServeTier", Optional[str]]:
     return ServeTier.ACCOUNTING_ONLY, None
 
 
-_COVERAGE_CACHE: Dict[str, "TelemetryCoverage"] = {}
+_COVERAGE_CACHE: dict[str, TelemetryCoverage] = {}
 
 
-def telemetry_coverage(method: str) -> "TelemetryCoverage":
+def telemetry_coverage(method: str) -> TelemetryCoverage:
     """Probe which byte counters a method exposes on a live cache.
 
     Probed rather than declared, for the same reason serve tier is: a counter
@@ -607,12 +616,22 @@ def telemetry_coverage(method: str) -> "TelemetryCoverage":
     coverage = TelemetryCoverage.NONE
     try:
         import mlx.core as mx
+        from mlx_lm.models.cache import KVCache as _MLXKVCache
 
-        from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
+        from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory, MethodName
 
+        # method always originates from all_method_names() — see the
+        # analogous comment in _run_probe.
         cache = KVCacheFactory.create(
-            KVCacheConfig(method=method, head_dim=128, bit_width_inlier=2, seed=42)
+            KVCacheConfig(
+                method=cast(MethodName, method), head_dim=128, bit_width_inlier=2, seed=42
+            )
         )
+        # Callers only reach here when tier.is_servable, which _run_probe
+        # already established means cache subclasses mlx_lm's KVCache (see its
+        # isinstance check) — standalone methods report CRASHES there instead.
+        if not isinstance(cache, _MLXKVCache):
+            return TelemetryCoverage.NONE
         keys = mx.random.normal((1, 8, 8, 128)).astype(mx.float16)
         cache.update_and_fetch(keys, keys)
 
@@ -652,8 +671,8 @@ def get_method(name: str) -> MethodInfo:
 def list_methods(
     *,
     servable_only: bool = False,
-    family: Optional[MethodFamily] = None,
-) -> List[MethodInfo]:
+    family: MethodFamily | None = None,
+) -> list[MethodInfo]:
     """All methods, optionally filtered. Sorted servable-first, then by name."""
     infos = [get_method(n) for n in all_method_names()]
 

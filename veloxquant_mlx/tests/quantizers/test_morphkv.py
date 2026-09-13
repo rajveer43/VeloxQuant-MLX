@@ -14,6 +14,7 @@ import mlx.core as mx
 import numpy as np
 import pytest
 
+from veloxquant_mlx.quantizers.h2o import h2o_get_kv, h2o_update, init_h2o_state
 from veloxquant_mlx.quantizers.morphkv import (
     full_morphkv_fp16_bytes,
     init_morphkv_state,
@@ -26,7 +27,6 @@ from veloxquant_mlx.quantizers.tova import (
     tova_get_kv,
     tova_update,
 )
-from veloxquant_mlx.quantizers.h2o import h2o_get_kv, h2o_update, init_h2o_state
 
 
 def _rand_kv(S: int, D: int = 32, seed: int = 0):

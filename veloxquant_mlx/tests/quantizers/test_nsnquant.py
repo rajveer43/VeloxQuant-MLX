@@ -30,7 +30,7 @@ from veloxquant_mlx.quantizers.nsnquant import (
 
 # Small-but-adequate codebooks for test speed; the module-level cache makes
 # repeated calls free within the test session.
-_CB_KW = dict(n_samples=131_072, iters=15)
+_CB_KW = {"n_samples": 131_072, "iters": 15}
 
 
 def _cb(kind: str) -> np.ndarray:

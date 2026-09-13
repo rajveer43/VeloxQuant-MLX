@@ -50,7 +50,7 @@ def test_fetch_hit_after_insert_returns_trimmed_rest() -> None:
     stored_tokens = list(range(1, 9))
     stored_cache, _ = pc.fetch(model, stored_tokens)
     for c in stored_cache:
-        c.update_and_fetch  # sanity: real cache objects, not stubs
+        assert hasattr(c, "update_and_fetch")  # sanity: real cache objects, not stubs
 
     import mlx.core as mx
     import numpy as np
@@ -163,8 +163,7 @@ def test_generate_convenience_wrapper_round_trips_cache_key(monkeypatch) -> None
 
     def _fake_stream_generate(*, model, tokenizer, prompt, prompt_cache, **kwargs):
         assert prompt == [1, 2, 3]  # full miss -> rest == whole prompt
-        for r in fake_responses:
-            yield r
+        yield from fake_responses
 
     import sys
 

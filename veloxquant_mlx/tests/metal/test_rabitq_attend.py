@@ -8,8 +8,8 @@ codebook values. The kernel's fp16 output must match within tolerance.
 
 from __future__ import annotations
 
-import numpy as np
 import mlx.core as mx
+import numpy as np
 import pytest
 
 from veloxquant_mlx.metal import metal_available

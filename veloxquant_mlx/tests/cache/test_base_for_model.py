@@ -60,13 +60,13 @@ def test_standalone_methods_is_exactly_the_five_known_methods() -> None:
     test forces a conscious update instead of silently widening or
     narrowing which methods get refused.
     """
-    assert STANDALONE_METHODS == {
+    assert {
         "turboquant_prod",
         "turboquant_mse",
         "polar",
         "qjl",
         "spectral",
-    }
+    } == STANDALONE_METHODS
 
 
 def test_for_model_refuses_before_touching_model_attributes() -> None:

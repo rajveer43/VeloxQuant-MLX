@@ -19,12 +19,12 @@ from veloxquant_mlx.cache.streaming_llm_cache import StreamingLLMKVCache
 
 
 def _make(**cfg):
-    base = dict(
-        method="streaming_llm",
-        head_dim=64,
-        stream_n_sink=4,
-        stream_window_size=8,
-    )
+    base = {
+        "method": "streaming_llm",
+        "head_dim": 64,
+        "stream_n_sink": 4,
+        "stream_window_size": 8,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

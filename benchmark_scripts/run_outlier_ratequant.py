@@ -46,7 +46,6 @@ from benchmark_scripts.outlier_ratequant_core import (
     run_outlier_ratequant_v4_from_results,
 )
 
-
 # ── Registry (matches run_full_reports.py) ────────────────────────────────────
 
 MODEL_REGISTRY: dict[str, tuple[str, str]] = {

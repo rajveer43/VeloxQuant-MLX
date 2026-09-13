@@ -6,8 +6,8 @@ Used by benchmark_mistral7b.py, benchmark_qwen3_4b.py, benchmark_qwen3_8b.py.
 import math
 import time
 
-import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+import matplotlib.pyplot as plt
 import mlx.core as mx
 import mlx_lm
 import numpy as np
@@ -317,7 +317,7 @@ def generate_figures(
     _bar(axes[1, 1], key_kb, "Key Cache Size (KB)", "Compressed Key Cache Size", fmt=".0f")
     fig1.tight_layout()
     fig1.savefig(f"{out_dir}/fig1_benchmark_summary.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig1_benchmark_summary.png")
+    print("  Saved fig1_benchmark_summary.png")
 
     # ── Fig 2: Quality vs bits ─────────────────────────────────────────────────
     fig2, (ax_s, ax_c) = plt.subplots(1, 2, figsize=(14, 6))
@@ -356,7 +356,7 @@ def generate_figures(
     ax_c.set_ylim(0.4, 1.05)
     fig2.tight_layout()
     fig2.savefig(f"{out_dir}/fig2_quality_vs_bits.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig2_quality_vs_bits.png")
+    print("  Saved fig2_quality_vs_bits.png")
 
     # ── Fig 3: Memory at scale ─────────────────────────────────────────────────
     def tq_bytes(tokens, bits):
@@ -446,7 +446,7 @@ def generate_figures(
     sns.despine(ax=ax_r)
     fig3.tight_layout()
     fig3.savefig(f"{out_dir}/fig3_memory_at_scale.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig3_memory_at_scale.png")
+    print("  Saved fig3_memory_at_scale.png")
 
     # ── Fig 4: Attention distortion ────────────────────────────────────────────
     N_k = len(sm_fp16)
@@ -487,7 +487,7 @@ def generate_figures(
     axes4[-1].set_xlabel("Key Token Index")
     fig4.tight_layout()
     fig4.savefig(f"{out_dir}/fig4_attention_distortion.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig4_attention_distortion.png")
+    print("  Saved fig4_attention_distortion.png")
 
     # ── Fig 5: Output quality text comparison ─────────────────────────────────
     fig5, axes5 = plt.subplots(4, 1, figsize=(16, 16))
@@ -522,7 +522,7 @@ def generate_figures(
         ax.axis("off")
     fig5.tight_layout()
     fig5.savefig(f"{out_dir}/fig5_output_comparison.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig5_output_comparison.png")
+    print("  Saved fig5_output_comparison.png")
 
     # ── Fig 6: Combined report ─────────────────────────────────────────────────
     fig6 = plt.figure(figsize=(20, 22))
@@ -667,7 +667,7 @@ def generate_figures(
         y=1.005,
     )
     fig6.savefig(f"{out_dir}/fig6_full_report.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig6_full_report.png")
+    print("  Saved fig6_full_report.png")
 
     plt.close("all")
 
@@ -752,7 +752,7 @@ def run_benchmark(model_id, out_dir, model_label):
     token_counts = np.array([256, 512, 1024, 2048, 4096, 8192, 16384, 32768])
     fp16_full = token_counts * n_layers * n_kv * hd * 2 * 2
 
-    print(f"\nComputing quality curves...")
+    print("\nComputing quality curves...")
     snrs, coss = compute_quality_curves(hd)
 
     np.random.seed(7)
@@ -892,7 +892,7 @@ def _generate_figures_v2(
     _bar(axes[1, 1], key_kb, "Key Cache Size (KB)", "Compressed Key Cache Size", fmt=".0f")
     fig1.tight_layout()
     fig1.savefig(f"{out_dir}/fig1_benchmark_summary.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig1_benchmark_summary.png")
+    print("  Saved fig1_benchmark_summary.png")
 
     # Fig 2: Quality vs bits, RVQ 2-bit highlighted
     fig2, (ax_s, ax_c) = plt.subplots(1, 2, figsize=(14, 6))
@@ -913,7 +913,7 @@ def _generate_figures_v2(
         marker="*",
         s=260,
         zorder=5,
-        label=f"RVQ 2-bit (this work)",
+        label="RVQ 2-bit (this work)",
     )
     ax_c.scatter(
         [2],
@@ -922,7 +922,7 @@ def _generate_figures_v2(
         marker="*",
         s=260,
         zorder=5,
-        label=f"RVQ 2-bit (this work)",
+        label="RVQ 2-bit (this work)",
     )
     ax_s.axhline(10, color="green", ls="--", lw=1.5, alpha=0.7, label="10 dB (near-lossless)")
     ax_c.axhline(0.90, color="green", ls="--", lw=1.5, alpha=0.7, label="0.90 (near-lossless)")
@@ -938,7 +938,7 @@ def _generate_figures_v2(
     ax_c.set_ylim(0.4, 1.05)
     fig2.tight_layout()
     fig2.savefig(f"{out_dir}/fig2_quality_vs_bits.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig2_quality_vs_bits.png")
+    print("  Saved fig2_quality_vs_bits.png")
 
     # Fig 3: Memory at scale (now includes RVQ 2-bit line)
     def tq_bytes(tokens, bits):
@@ -1049,7 +1049,7 @@ def _generate_figures_v2(
     sns.despine(ax=ax_r)
     fig3.tight_layout()
     fig3.savefig(f"{out_dir}/fig3_memory_at_scale.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig3_memory_at_scale.png")
+    print("  Saved fig3_memory_at_scale.png")
 
     # Fig 4: Attention distortion 5 panels (added RVQ 2-bit)
     N_k = len(sm_fp16)
@@ -1091,7 +1091,7 @@ def _generate_figures_v2(
     axes4[-1].set_xlabel("Key Token Index")
     fig4.tight_layout()
     fig4.savefig(f"{out_dir}/fig4_attention_distortion.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig4_attention_distortion.png")
+    print("  Saved fig4_attention_distortion.png")
 
     # Fig 5: Output text comparison (5 panels)
     fig5, axes5 = plt.subplots(5, 1, figsize=(16, 18))
@@ -1132,7 +1132,7 @@ def _generate_figures_v2(
         ax.axis("off")
     fig5.tight_layout()
     fig5.savefig(f"{out_dir}/fig5_output_comparison.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig5_output_comparison.png")
+    print("  Saved fig5_output_comparison.png")
 
     # Fig 6: Combined report
     fig6 = plt.figure(figsize=(20, 22))
@@ -1178,7 +1178,7 @@ def _generate_figures_v2(
         br, coss, color=PALETTE_V2["4bit"], marker="s", lw=2.2, ms=7, label="single-pass TurboQuant"
     )
     ax_c.scatter(
-        [2], [cos_rvq2], color=PALETTE_V2["rvq2"], marker="*", s=300, zorder=5, label=f"RVQ 2-bit ★"
+        [2], [cos_rvq2], color=PALETTE_V2["rvq2"], marker="*", s=300, zorder=5, label="RVQ 2-bit ★"
     )
     ax_c.axhline(0.90, color="green", ls="--", lw=1.5, alpha=0.7, label="0.90")
     ax_c.axhline(0.80, color="orange", ls="--", lw=1.5, alpha=0.7, label="0.80")
@@ -1275,7 +1275,7 @@ def _generate_figures_v2(
         y=1.005,
     )
     fig6.savefig(f"{out_dir}/fig6_full_report.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig6_full_report.png")
+    print("  Saved fig6_full_report.png")
     plt.close("all")
 
 
@@ -1383,7 +1383,7 @@ def run_benchmark_v2(model_id, out_dir, model_label):
     token_counts = np.array([256, 512, 1024, 2048, 4096, 8192, 16384, 32768])
     fp16_full = token_counts * n_layers * n_kv * hd * 2 * 2
 
-    print(f"\nComputing quality curves...")
+    print("\nComputing quality curves...")
     snrs, coss = compute_quality_curves(hd)
 
     # Synthetic RVQ 2-bit quality
@@ -1646,7 +1646,7 @@ def _generate_figures_v3(
     _bar(axes[1, 1], key_kb, "Key Cache Size (KB)", "Compressed Key Cache Size", fmt=".0f")
     fig1.tight_layout()
     fig1.savefig(f"{out_dir}/fig1_benchmark_summary.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig1_benchmark_summary.png")
+    print("  Saved fig1_benchmark_summary.png")
 
     # ── Fig 2: Quality vs bits (both RVQ stars) ───────────────────────────────
     fig2, (ax_s, ax_c) = plt.subplots(1, 2, figsize=(14, 6))
@@ -1685,7 +1685,7 @@ def _generate_figures_v3(
     ax_c.set_ylim(0.4, 1.05)
     fig2.tight_layout()
     fig2.savefig(f"{out_dir}/fig2_quality_vs_bits.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig2_quality_vs_bits.png")
+    print("  Saved fig2_quality_vs_bits.png")
 
     # ── Fig 3: Memory at scale (two RVQ lines) ────────────────────────────────
     def tq_bytes(tokens, bits):
@@ -1810,7 +1810,7 @@ def _generate_figures_v3(
     sns.despine(ax=ax_r)
     fig3.tight_layout()
     fig3.savefig(f"{out_dir}/fig3_memory_at_scale.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig3_memory_at_scale.png")
+    print("  Saved fig3_memory_at_scale.png")
 
     # ── Fig 4: Attention distortion (6 panels) ────────────────────────────────
     fig4, axes4 = plt.subplots(6, 1, figsize=(14, 18), sharex=True)
@@ -1850,7 +1850,7 @@ def _generate_figures_v3(
     axes4[-1].set_xlabel("Key Token Index")
     fig4.tight_layout()
     fig4.savefig(f"{out_dir}/fig4_attention_distortion.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig4_attention_distortion.png")
+    print("  Saved fig4_attention_distortion.png")
 
     # ── Fig 5: Output text comparison (6 panels) ─────────────────────────────
     resp_labels = [
@@ -1892,7 +1892,7 @@ def _generate_figures_v3(
         ax.axis("off")
     fig5.tight_layout()
     fig5.savefig(f"{out_dir}/fig5_output_comparison.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig5_output_comparison.png")
+    print("  Saved fig5_output_comparison.png")
 
     # ── Fig 6: Combined full report ───────────────────────────────────────────
     fig6 = plt.figure(figsize=(22, 24))
@@ -2041,7 +2041,7 @@ def _generate_figures_v3(
         y=1.005,
     )
     fig6.savefig(f"{out_dir}/fig6_full_report.png", dpi=150, bbox_inches="tight")
-    print(f"  Saved fig6_full_report.png")
+    print("  Saved fig6_full_report.png")
     plt.close("all")
 
 

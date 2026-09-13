@@ -9,12 +9,12 @@ arithmetic (float running accumulators, half 8x8 MAC fragments).
 
 from __future__ import annotations
 
-import numpy as np
 import mlx.core as mx
+import numpy as np
 import pytest
 
 from veloxquant_mlx.metal import metal_available
-from veloxquant_mlx.metal.kernels import rabitq_prefill_attend, rabitq_pack_values
+from veloxquant_mlx.metal.kernels import rabitq_pack_values, rabitq_prefill_attend
 
 pytestmark = pytest.mark.skipif(
     not metal_available(),

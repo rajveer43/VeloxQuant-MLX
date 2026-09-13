@@ -8,15 +8,13 @@ deterministic scorer would prune early).
 
 from __future__ import annotations
 
-import math
-
 import mlx.core as mx
 import numpy as np
 import pytest
 
 from veloxquant_mlx.quantizers.a2ats_rope import rope_remap_positions
+from veloxquant_mlx.quantizers.h2o import h2o_get_kv, h2o_update, init_h2o_state
 from veloxquant_mlx.quantizers.keyformer import (
-    KeyformerState,
     _gumbel_at,
     _tau_at,
     full_keyformer_fp16_bytes,
@@ -25,7 +23,6 @@ from veloxquant_mlx.quantizers.keyformer import (
     keyformer_get_kv,
     keyformer_update,
 )
-from veloxquant_mlx.quantizers.h2o import h2o_update, h2o_get_kv, init_h2o_state
 
 
 def _rand_kv(S: int, D: int = 32, seed: int = 0):
@@ -223,7 +220,6 @@ def test_gumbel_rescues_late_riser():
     per-seed guarantee.
     """
     D = 16
-    rng = np.random.default_rng(0)
     planted = np.zeros(D, dtype=np.float16)
     planted[0] = 3.0  # unique axis
 

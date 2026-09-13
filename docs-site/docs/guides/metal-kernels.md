@@ -40,6 +40,8 @@ All Metal kernels require macOS on an M-series chip. On unsupported hardware, Ve
 | `metal/_h2o_evict.py` | `h2o_fused_evict` | H2O fused eviction: sink-protected argmin + evict + RoPE-remap |
 | `metal/_keyformer_evict.py` | `keyformer_fused_evict` | Keyformer fused eviction: Gumbel-regularized argmin + evict + RoPE-remap |
 | `metal/_qfilters_evict.py` | `qfilters_fused_evict`, `qfilters_score` | Q-Filters fused eviction: projection scoring + block top-k compaction |
+| `metal/_pyramidkv_evict.py` | `pyramidkv_fused_evict` | PyramidKV fused eviction: cumulative-score argmin + compact (no RoPE remap) |
+| `metal/_tova_evict.py` | `tova_fused_evict`, `tova_fused_evict_virtual_values`, `tova_fused_evict_indices` | TOVA fused eviction: weight-based argmin + compact, with virtual-value and lineage-tracking variants |
 
 ## How kernels are loaded
 
@@ -313,7 +315,7 @@ out = streaming_prefill_attend(
 
 ## Fused KV-cache eviction kernels
 
-Three quantizer families — **H2O**, **Keyformer**, and **Q-Filters** — evict cache rows once a budget is exceeded. Each was originally a per-`(batch, head)` Python loop; these kernels batch the eviction decision and the row compaction across every `(batch, head)` group in two GPU dispatches.
+Five quantizer families — **H2O**, **Keyformer**, **Q-Filters**, **PyramidKV**, and **TOVA** — evict cache rows once a budget is exceeded. Each was originally a per-`(batch, head)` Python loop; these kernels batch the eviction decision and the row compaction across every `(batch, head)` group in two GPU dispatches.
 
 All three require callers to only invoke them when every group is already over budget — the below-budget case has no eviction step and is handled entirely by the existing vectorized MLX path.
 
@@ -378,6 +380,38 @@ keys_out, values_out, scores_out = qfilters_fused_evict(
 ```
 
 Unlike H2O/Keyformer, Q-Filters does **not** remap position ids after eviction (a documented limitation), so keys are copied bit-identically. `budget` is capped at `QFILTERS_MAX_BUDGET = 4096` — the apply kernel stages the survivor index list in threadgroup memory, which must be a compile-time size (16 KB at the cap, within Metal's 32 KB threadgroup budget); larger budgets should use the pure-MLX path.
+
+### PyramidKV fused evict
+
+`pyramidkv_fused_evict` follows the same two-dispatch shape as H2O/Keyformer — a sink-protected argmin reduction, then a compaction dispatch — scored from PyramidKV's own cumulative FP32 scores rather than H2O's. It deliberately does **not** remap positions or apply RoPE: PyramidKV's cache state has no position-remap contract, so evicted rows are dropped and survivors are copied in original order with no re-rotation step.
+
+```python
+from veloxquant_mlx.metal.kernels import pyramidkv_fused_evict
+
+keys_out, values_out, scores_out = pyramidkv_fused_evict(
+    keys_mid,  # [BH, n_total, D] fp16 — n_kept stored + 1 newly appended
+    values_mid,  # [BH, n_total, D] fp16
+    scores_mid,  # [BH, n_total] fp32 — cumulative scores, appended row = 0.0
+    n_sink=4,  # leading positions protected from eviction
+    nsg=4,  # SIMD-groups per threadgroup for the reduction dispatch
+)  # each output has n_total - 1 rows
+```
+
+### TOVA fused evict
+
+`tova_fused_evict` scores by per-step attention weight rather than a cumulative score, and comes in three variants for different caller shapes: the base form takes already-materialized K/V; `tova_fused_evict_virtual_values` avoids concatenating the incoming value row into a candidate buffer before eviction by reading it directly during apply; `tova_fused_evict_indices` compacts an integer lineage array alongside the keys instead of a value tensor, for callers tracking source-token provenance.
+
+```python
+from veloxquant_mlx.metal.kernels import tova_fused_evict
+
+keys_out, values_out = tova_fused_evict(
+    keys_mid,  # [BH, N, D] fp16
+    values_mid,  # [BH, N, D] fp16
+    weights,  # [BH, N] fp32 — current-step attention weights
+    n_sink=4,
+    nsg=4,
+)  # -> two [BH, N-1, D] fp16 arrays, survivors in original order
+```
 
 ## Bit packing
 

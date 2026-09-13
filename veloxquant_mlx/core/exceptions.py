@@ -1,3 +1,11 @@
+"""Exception types raised across VeloxQuant-MLX's quantizer, cache, and allocator code.
+
+Each error subclasses the closest matching built-in exception (``ValueError``,
+``FileNotFoundError``, ``RuntimeError``) so callers can catch either the
+specific VeloxQuant error or the general Python category, while still getting
+a precise, greppable exception name at the raise site.
+"""
+
 from __future__ import annotations
 
 

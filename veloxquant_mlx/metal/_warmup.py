@@ -21,6 +21,7 @@ left to compile lazily on first real use, same as today.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from typing import Any
 
@@ -76,10 +77,8 @@ def warmup_for_config(config: Any) -> None:
     warmer = _WARMERS.get(getattr(config, "method", None))
     if warmer is None:
         return
-    try:
+    with contextlib.suppress(Exception):
         warmer(config)
-    except Exception:
-        pass
 
 
 __all__ = ["warmup_for_config", "register_warmer"]

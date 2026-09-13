@@ -27,27 +27,25 @@
 
 from __future__ import annotations
 
-import numpy as np
 import mlx.core as mx
+import numpy as np
 
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.kvquant_cache import KVQuantKVCache
+from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
 from veloxquant_mlx.quantizers.kvquant import (
     fit_nuq_levels,
-    quantize_nuq,
-    dequant_nuq,
-    split_dense_sparse,
-    nuq_quant_dequant,
     nuq_distortion,
+    nuq_quant_dequant,
+    split_dense_sparse,
 )
-from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 def _cfg(**kwargs) -> KVCacheConfig:
-    d = dict(method="kvquant", head_dim=64, kvquant_bits=3)
+    d = {"method": "kvquant", "head_dim": 64, "kvquant_bits": 3}
     d.update(kwargs)
     return KVCacheConfig(**d)
 
@@ -183,14 +181,14 @@ def test_level_table_determinism():
 def test_decode_frozen_key_levels():
     cache = KVQuantKVCache(_cfg())
     cache.update_and_fetch(_laplace(1, 2, 20, 64), _laplace(1, 2, 20, 64, seed=1))
-    frozen = [np.array(l.tolist()) for l in cache.key_levels]
+    frozen = [np.array(level.tolist()) for level in cache.key_levels]
     for step in range(5):
         kd = _laplace(1, 2, 1, 64, seed=100 + step)
         vd = _laplace(1, 2, 1, 64, seed=200 + step)
         ko, _ = cache.update_and_fetch(kd, vd)
         assert ko.shape[2] == 20 + step + 1
     # Key levels unchanged (refit_interval=0 → frozen).
-    for a, b in zip(frozen, cache.key_levels):
+    for a, b in zip(frozen, cache.key_levels, strict=True):
         np.testing.assert_array_equal(a, np.array(b.tolist()))
 
 
@@ -348,7 +346,7 @@ def test_sink_excluded_from_level_fit():
     spiked = body.copy()
     spiked[:, :, 0, :] = 500.0  # extreme sink row
 
-    cfg = dict(head_dim=16, kvquant_bits=3, kvquant_n_sink=1, kvquant_outlier_fraction=0.0)
+    cfg = {"head_dim": 16, "kvquant_bits": 3, "kvquant_n_sink": 1, "kvquant_outlier_fraction": 0.0}
     c_spike = KVQuantKVCache(_cfg(**cfg))
     c_spike.update_and_fetch(mx.array(spiked), mx.array(spiked))
     lv_spike = np.array(c_spike.key_levels[0].tolist())

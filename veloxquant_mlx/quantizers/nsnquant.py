@@ -50,7 +50,6 @@ rationale):
 from __future__ import annotations
 
 import math
-from typing import Optional
 
 import mlx.core as mx
 import numpy as np

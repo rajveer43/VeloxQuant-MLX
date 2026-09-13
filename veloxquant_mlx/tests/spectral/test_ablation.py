@@ -45,6 +45,7 @@ def _cosine_sim(x_np: np.ndarray, sq, mx) -> float:
 def test_spectral_no_qjl_beats_random_rotation_on_low_rank():
     """Config A (spectral, no QJL) should beat random rotation on rank-4 data."""
     import mlx.core as mx
+
     from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
 
     x_np = _low_rank_keys()
@@ -74,6 +75,7 @@ def test_no_qjl_on_noise_dims_vs_full_qjl():
     should produce equal or better quality.
     """
     import mlx.core as mx
+
     from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
 
     x_np = _low_rank_keys()

@@ -1,22 +1,36 @@
+"""Manual binary max-heap and top-k channel tracking for outlier detection.
+
+Implements ``MaxHeap``, a hand-rolled (no ``heapq``) generic binary max-heap,
+and ``SortedChannelIndex``, a lazy-deletion, versioned top-k structure built
+on it that ``OutlierDetector`` uses to track the highest-magnitude channels
+seen during streaming prefill without rescanning the full channel set on
+every update.
+"""
+
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
 
 
-class MaxHeap:
+class MaxHeap(Generic[T]):
     """Binary max-heap backed by an internal array.
 
     Nodes are (priority, value) pairs. The heap property is
     ``priority[parent] >= priority[child]`` for all nodes.
 
     All heap operations are implemented manually without the ``heapq`` module.
+    ``value`` is typically an int (a channel/token index), but
+    SortedChannelIndex uses ``(channel_idx, version)`` tuples, hence the
+    generic parameter rather than a fixed ``int``.
 
     Args:
         None. The heap starts empty.
     """
 
     def __init__(self) -> None:
-        self._data: List[Tuple[float, int]] = []  # (priority, value)
+        self._data: list[tuple[float, T]] = []  # (priority, value)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -49,12 +63,12 @@ class MaxHeap:
         n = len(self._data)
         while True:
             largest = i
-            l = self._left(i)
-            r = self._right(i)
-            if l < n and self._data[l][0] > self._data[largest][0]:
-                largest = l
-            if r < n and self._data[r][0] > self._data[largest][0]:
-                largest = r
+            left = self._left(i)
+            right = self._right(i)
+            if left < n and self._data[left][0] > self._data[largest][0]:
+                largest = left
+            if right < n and self._data[right][0] > self._data[largest][0]:
+                largest = right
             if largest == i:
                 break
             self._data[i], self._data[largest] = self._data[largest], self._data[i]
@@ -64,17 +78,17 @@ class MaxHeap:
     # Public interface
     # ------------------------------------------------------------------
 
-    def push(self, priority: float, value: int) -> None:
+    def push(self, priority: float, value: T) -> None:
         """Insert a (priority, value) pair.
 
         Args:
             priority: Comparison key (higher = higher priority).
-            value: Associated integer payload.
+            value: Associated payload.
         """
         self._data.append((priority, value))
         self._sift_up(len(self._data) - 1)
 
-    def pop(self) -> Tuple[float, int]:
+    def pop(self) -> tuple[float, T]:
         """Remove and return the maximum (priority, value) pair.
 
         Returns:
@@ -92,7 +106,7 @@ class MaxHeap:
             self._sift_down(0)
         return top
 
-    def peek(self) -> Tuple[float, int]:
+    def peek(self) -> tuple[float, T]:
         """Return but do not remove the maximum pair.
 
         Raises:
@@ -126,7 +140,7 @@ class SortedChannelIndex:
         # Heap entries are (magnitude, (channel_idx, version)) so that
         # re-insertions with an unchanged magnitude can still be told apart
         # from the live entry by version rather than by value equality.
-        self._heap: MaxHeap = MaxHeap()
+        self._heap: MaxHeap[tuple[int, int]] = MaxHeap()
         # channel_idx -> (latest magnitude, latest version) — used to
         # recognize which heap entry for a channel is still live (lazy
         # deletion) and to skip redundant re-inserts of unchanged values.
@@ -167,7 +181,7 @@ class SortedChannelIndex:
         """
         self.insert(channel_idx, new_magnitude)
 
-    def top_k(self, k: int) -> List[int]:
+    def top_k(self, k: int) -> list[int]:
         """Return indices of the k channels with the highest magnitudes.
 
         This operation does *not* remove elements from the heap.
@@ -180,11 +194,11 @@ class SortedChannelIndex:
         """
         if k <= 0:
             return []
-        result: List[int] = []
+        result: list[int] = []
         seen: set[int] = set()
 
         # Copy the heap data to a temporary structure to avoid mutation
-        heap_copy = MaxHeap()
+        heap_copy: MaxHeap[tuple[int, int]] = MaxHeap()
         heap_copy._data = list(self._heap._data)
 
         while len(heap_copy) > 0 and len(result) < k:

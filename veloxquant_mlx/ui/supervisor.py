@@ -9,6 +9,7 @@ actually announce.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import signal
@@ -18,7 +19,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Deque, Dict, List, Optional
+from typing import Any
 
 from veloxquant_mlx.cli.serve import READY_PREFIX
 
@@ -48,7 +49,7 @@ class LogLine:
     text: str
     ts: float = field(default_factory=time.time)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {"stream": self.stream, "text": self.text, "ts": self.ts}
 
 
@@ -61,13 +62,13 @@ class ServerSupervisor:
     """
 
     def __init__(self) -> None:
-        self._proc: Optional[subprocess.Popen] = None
+        self._proc: subprocess.Popen | None = None
         self._lock = threading.Lock()
-        self._logs: Deque[LogLine] = deque(maxlen=LOG_CAPACITY)
+        self._logs: deque[LogLine] = deque(maxlen=LOG_CAPACITY)
         self._state = "stopped"
-        self._ready: Optional[Dict[str, Any]] = None
-        self._error: Optional[str] = None
-        self._config: Dict[str, Any] = {}
+        self._ready: dict[str, Any] | None = None
+        self._error: str | None = None
+        self._config: dict[str, Any] = {}
 
     # --- introspection ----------------------------------------------------
 
@@ -76,7 +77,7 @@ class ServerSupervisor:
         self._reap()
         return self._state
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         state = self.state
         return {
             "state": state,
@@ -86,16 +87,16 @@ class ServerSupervisor:
             "config": self._config,
         }
 
-    def logs(self, since: int = 0) -> Dict[str, Any]:
+    def logs(self, since: int = 0) -> dict[str, Any]:
         lines = list(self._logs)
         return {
-            "lines": [l.to_dict() for l in lines[since:]],
+            "lines": [entry.to_dict() for entry in lines[since:]],
             "total": len(lines),
         }
 
     # --- lifecycle --------------------------------------------------------
 
-    def start(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def start(self, config: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             if self._state in ("starting", "running"):
                 raise RuntimeError("server is already running; stop it first")
@@ -145,7 +146,7 @@ class ServerSupervisor:
 
         return self.status()
 
-    def stop(self, timeout: float = 10.0) -> Dict[str, Any]:
+    def stop(self, timeout: float = 10.0) -> dict[str, Any]:
         with self._lock:
             proc = self._proc
             if proc is None or proc.poll() is not None:
@@ -178,7 +179,7 @@ class ServerSupervisor:
 
     # --- internals --------------------------------------------------------
 
-    def _build_command(self, config: Dict[str, Any], model: str, method: str) -> List[str]:
+    def _build_command(self, config: dict[str, Any], model: str, method: str) -> list[str]:
         cmd = [
             sys.executable,
             "-m",
@@ -229,7 +230,7 @@ class ServerSupervisor:
                 f"{method!r} cannot be served: {info.unsupported_reason or 'unsupported'}"
             )
 
-    def _assert_valid_overrides(self, method: str, overrides: Dict[str, Any]) -> None:
+    def _assert_valid_overrides(self, method: str, overrides: dict[str, Any]) -> None:
         """Reject knobs that don't belong to this method, or won't parse.
 
         Catching it here turns a subprocess that dies a second after Start into
@@ -280,10 +281,8 @@ class ServerSupervisor:
         except (ValueError, OSError):
             pass  # pipe closed during shutdown
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 pipe.close()
-            except Exception:
-                pass
 
     def _on_ready(self, line: str) -> None:
         try:
@@ -326,7 +325,7 @@ class ServerSupervisor:
         self._ready = None
         self._log("panel", self._error)
 
-    def _diagnose(self) -> Optional[str]:
+    def _diagnose(self) -> str | None:
         """Turn the child's stderr into one line a user can act on.
 
         A raw traceback tail is nearly useless in the UI — the last three lines
@@ -334,7 +333,7 @@ class ServerSupervisor:
         #34 calls out by name first, and fall back to the exception line rather
         than to interior frames.
         """
-        stderr = [l.text for l in self._logs if l.stream == "stderr"]
+        stderr = [entry.text for entry in self._logs if entry.stream == "stderr"]
         blob = "\n".join(stderr)
 
         port = self._config.get("port")

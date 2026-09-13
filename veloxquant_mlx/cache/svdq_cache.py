@@ -44,7 +44,7 @@ Byte accounting:
 from __future__ import annotations
 
 import math
-from typing import Any, Optional, Sequence
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -84,7 +84,7 @@ class SVDqKVCache(_MLXKVCache):
     def __init__(self, config: Any) -> None:
         super().__init__()
         self._D = int(config.head_dim)
-        self._rank: Optional[int] = getattr(config, "svdq_rank", None)
+        self._rank: int | None = getattr(config, "svdq_rank", None)
         self._energy_threshold: float = float(getattr(config, "svdq_energy_threshold", 0.95))
         self._bit_schedule: tuple[int, ...] = tuple(
             getattr(config, "svdq_bit_schedule", DEFAULT_BIT_SCHEDULE)
@@ -96,9 +96,9 @@ class SVDqKVCache(_MLXKVCache):
         self._group_size: int = int(getattr(config, "svdq_group_size", 32))
 
         # SVD state — set on first prefill call
-        self._V: Optional[mx.array] = None  # [D, r] fp32
-        self._K_mean: Optional[mx.array] = None  # [D] fp32
-        self._singular_values: Optional[mx.array] = None  # [r] fp32
+        self._V: mx.array | None = None  # [D, r] fp32
+        self._K_mean: mx.array | None = None  # [D] fp32
+        self._singular_values: mx.array | None = None  # [r] fp32
         self._r: int = 0  # actual rank used
         # Schedule actually used for quantization, resolved at prefill time —
         # may differ from self._bit_schedule if the small-rank guard degraded

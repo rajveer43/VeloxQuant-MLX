@@ -22,8 +22,6 @@ dicts need no locking.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from veloxquant_mlx.quantizers.squeeze import squeeze_budgets
 
 
@@ -97,7 +95,7 @@ class SqueezeCoordinator:
         self._resolved = {lid: schedule[k] for k, lid in enumerate(order)}
         self._done = True
 
-    def resolved_budget(self, layer_id: int) -> Optional[int]:
+    def resolved_budget(self, layer_id: int) -> int | None:
         """Return the layer's resolved budget, or ``None`` if not yet finalised.
 
         Args:

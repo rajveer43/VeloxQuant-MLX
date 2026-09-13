@@ -10,11 +10,8 @@ position; tokens outside it are left **unrotated** on the key side (Eq. 12,
 
 from __future__ import annotations
 
-import math
-
 import mlx.core as mx
 import numpy as np
-import pytest
 
 from veloxquant_mlx.quantizers.a2ats_rope import (
     a2ats_apply_exact_rope,

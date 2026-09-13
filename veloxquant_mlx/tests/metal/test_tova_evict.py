@@ -1,5 +1,7 @@
 """Selection identity, copy parity, and launch-boundary tests for TOVA."""
 
+from __future__ import annotations
+
 import mlx.core as mx
 import numpy as np
 import pytest

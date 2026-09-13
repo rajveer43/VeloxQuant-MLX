@@ -1,7 +1,16 @@
+"""Observer that records per-pipeline-stage latency histograms.
+
+Provides :class:`LatencyObserver`, which collects every
+``elapsed_ms`` sample emitted per stage name in
+:class:`~veloxquant_mlx.observers.base.QuantizationEvent` and reports
+mean/min/max/count summaries — useful for finding which quantization
+pipeline stage (preconditioning, encoding, codebook lookup, etc.)
+dominates wall-clock time.
+"""
+
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any, Dict, List
 
 from veloxquant_mlx.core.abstractions import QuantizationObserver
 from veloxquant_mlx.observers.base import QuantizationEvent
@@ -18,7 +27,7 @@ class LatencyObserver(QuantizationObserver):
     """
 
     def __init__(self) -> None:
-        self._samples: Dict[str, List[float]] = defaultdict(list)
+        self._samples: dict[str, list[float]] = defaultdict(list)
 
     def on_event(self, event: QuantizationEvent) -> None:
         """Record the elapsed time for the given stage.
@@ -28,7 +37,7 @@ class LatencyObserver(QuantizationObserver):
         """
         self._samples[event.stage].append(event.elapsed_ms)
 
-    def report(self) -> Dict[str, Dict[str, float]]:
+    def report(self) -> dict[str, dict[str, float]]:
         """Return summary statistics per stage.
 
         Returns:

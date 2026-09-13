@@ -37,7 +37,6 @@ import matplotlib.pyplot as plt
 import mlx.core as mx
 import numpy as np
 
-
 _PASSAGE = (
     "The key-value cache stores the attention keys and values of every past "
     "token so the model need not recompute them. Its size grows linearly with "
@@ -108,7 +107,7 @@ def run_one(model, tokenizer, cache_arg, n_decode: int, label: str) -> dict:
 
 
 def build_cache(method: str, model, overrides: dict):
-    from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheBuilder
+    from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig
 
     cfg = KVCacheConfig(method=method, **overrides)
     return KVCacheBuilder.for_model(model, cfg)
@@ -116,8 +115,8 @@ def build_cache(method: str, model, overrides: dict):
 
 def reconstruction_mse_vs_uniform(seed: int = 0) -> dict:
     """Offline: NUQ vs uniform reconstruction MSE at equal bits on Laplacian data."""
-    from veloxquant_mlx.quantizers.kvquant import nuq_quant_dequant
     from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
+    from veloxquant_mlx.quantizers.kvquant import nuq_quant_dequant
 
     rng = np.random.default_rng(seed)
     x = mx.array(rng.laplace(0, 1, (512, 128)).astype(np.float16))

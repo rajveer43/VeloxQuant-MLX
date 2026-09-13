@@ -4,6 +4,8 @@ Scoring and append remain MLX operations. Inputs are FP16 K/V and FP32
 current-step weights; no position remapping or score history is involved.
 """
 
+from __future__ import annotations
+
 from functools import lru_cache
 from pathlib import Path
 

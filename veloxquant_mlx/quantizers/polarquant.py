@@ -1,12 +1,21 @@
+"""PolarQuant — recursive polar-coordinate KV quantizer.
+
+Applies a random rotation followed by ``RecursivePolarTransform``'s
+recursive angle/radius decomposition (see ``transforms/polar.py``), then
+quantizes each level's angles with a dedicated per-level codebook and
+stores the final scalar radius directly. Reconstruction and inner-product
+estimation both go through explicit decode of the rotated vector, unlike
+TurboQuant's residual-correction quantizers.
+"""
+
 from __future__ import annotations
 
-import math
-from typing import Any, List, Optional
+from typing import Any
 
 import numpy as np
 
 from veloxquant_mlx.codebooks.base import CodebookFactory
-from veloxquant_mlx.core.abstractions import ArtifactStore, Quantizer
+from veloxquant_mlx.core.abstractions import ArtifactStore, Preconditioner, Quantizer
 from veloxquant_mlx.core.constants import DEFAULT_POLAR_LEVELS
 from veloxquant_mlx.core.context import EncodedVector, TransformResult
 from veloxquant_mlx.core.registry import QuantizerRegistry
@@ -51,7 +60,7 @@ class PolarQuantizer(Quantizer):
         m: int = 128,
         seed: int = 42,
         n_levels: int = DEFAULT_POLAR_LEVELS,
-        store: Optional[ArtifactStore] = None,
+        store: ArtifactStore | None = None,
         use_hadamard: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -65,7 +74,7 @@ class PolarQuantizer(Quantizer):
         if use_hadamard and is_hadamard_compatible(d):
             D_np = make_hadamard_diagonal(d, seed=seed)
             D = mx.array(D_np)
-            self._rotation = HadamardPreconditioner(D)
+            self._rotation: Preconditioner = HadamardPreconditioner(D)
         else:
             if store is not None and store.exists("rotation", d=d, seed=seed):
                 Pi = store.load_rotation_matrix(d, seed)
@@ -113,8 +122,8 @@ class PolarQuantizer(Quantizer):
         result = self._transform.forward(y)
 
         # Quantize each level's angles
-        angle_indices: List[Any] = []
-        for ell, (angles, cb) in enumerate(zip(result.angles, self._codebooks)):
+        angle_indices: list[Any] = []
+        for angles, cb in zip(result.angles, self._codebooks, strict=True):
             idx = cb.quantize(angles)
             angle_indices.append(idx)
 
@@ -135,8 +144,15 @@ class PolarQuantizer(Quantizer):
         Returns:
             Reconstructed array of shape (batch, d), fp16.
         """
+        if ev.angles is None:
+            raise ValueError(
+                "PolarQuantizer.decode: ev.angles is None — ev wasn't produced by encode()."
+            )
+
         # Dequantize angles
-        dequant_angles = [cb.dequantize(idx) for cb, idx in zip(self._codebooks, ev.angles)]
+        dequant_angles = [
+            cb.dequantize(idx) for cb, idx in zip(self._codebooks, ev.angles, strict=True)
+        ]
 
         result = TransformResult(
             angles=dequant_angles,

@@ -1,6 +1,15 @@
-from __future__ import annotations
+"""Manual sub-byte bit packing for compact codebook index storage.
 
-import math
+Provides ``BitPackBuffer``, which packs arrays of 1/2/3/4-bit unsigned
+codebook indices into dense ``uint8`` byte arrays (and unpacks them back),
+using hand-rolled bit manipulation rather than a third-party bitstream
+library. This is what lets low-bit quantizers (e.g. 2-bit, 3-bit codebooks)
+actually realize their target storage footprint instead of padding every
+index out to a full byte; see ``veloxquant_mlx.handlers.bit_pack_handler``
+for the pipeline stage that drives it.
+"""
+
+from __future__ import annotations
 
 import numpy as np
 
@@ -52,12 +61,12 @@ class BitPackBuffer:
 
         if self.b == 1:
             return self._pack_1bit(indices)
-        elif self.b == 2:
+        if self.b == 2:
             return self._pack_2bit(indices)
-        elif self.b == 3:
+        if self.b == 3:
             return self._pack_3bit(indices)
-        else:  # b == 4
-            return self._pack_4bit(indices)
+        # b == 4
+        return self._pack_4bit(indices)
 
     def unpack(self, packed: np.ndarray, n: int) -> np.ndarray:
         """Unpack a byte array back into n b-bit unsigned integers.
@@ -72,12 +81,12 @@ class BitPackBuffer:
         packed = np.asarray(packed, dtype=np.uint8)
         if self.b == 1:
             return self._unpack_1bit(packed, n)
-        elif self.b == 2:
+        if self.b == 2:
             return self._unpack_2bit(packed, n)
-        elif self.b == 3:
+        if self.b == 3:
             return self._unpack_3bit(packed, n)
-        else:  # b == 4
-            return self._unpack_4bit(packed, n)
+        # b == 4
+        return self._unpack_4bit(packed, n)
 
     # ------------------------------------------------------------------
     # 1-bit: 8 values per byte

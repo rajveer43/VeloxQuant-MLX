@@ -1,7 +1,19 @@
+"""Johnson-Lindenstrauss sketch preconditioner and the 1-bit QJL key encoder.
+
+Provides two related but distinct transforms built on the same random
+projection matrix S ∈ ℝ^(m×d): :class:`JLSketchPreconditioner`, a
+dimension-reducing :class:`~veloxquant_mlx.core.abstractions.Preconditioner`
+(``y = x @ S^T``, with a biased low-rank inverse) usable wherever
+preconditioners are composed into a quantization pipeline; and
+:class:`QJLEncoder`, an unbiased 1-bit sign-sketch inner-product estimator
+(the QJL transform) that stores only ``sign(S·k)`` and ``‖k‖`` per key and
+reconstructs attention scores via ``ProdQJL``, without ever
+materializing an approximate key vector.
+"""
+
 from __future__ import annotations
 
-import math
-from typing import Any, Tuple
+from typing import Any
 
 from veloxquant_mlx.core.abstractions import Preconditioner
 from veloxquant_mlx.core.constants import SQRT_PI_OVER_2
@@ -83,7 +95,7 @@ class QJLEncoder:
         self._S = S
         self._m = int(S.shape[0])
 
-    def encode_key(self, k: Any) -> Tuple[Any, Any]:
+    def encode_key(self, k: Any) -> tuple[Any, Any]:
         """Encode a batch of key vectors.
 
         Args:

@@ -25,14 +25,14 @@ from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 
 
 def _make(**cfg):
-    base = dict(
-        method="anchorkv",
-        head_dim=32,
-        anchorkv_theta=0.3,
-        anchorkv_window=4,
-        anchorkv_anchor_frac=0.2,
-        anchorkv_seed=0,
-    )
+    base = {
+        "method": "anchorkv",
+        "head_dim": 32,
+        "anchorkv_theta": 0.3,
+        "anchorkv_window": 4,
+        "anchorkv_anchor_frac": 0.2,
+        "anchorkv_seed": 0,
+    }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
 

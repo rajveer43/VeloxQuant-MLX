@@ -29,8 +29,6 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import mlx.core as mx
-import numpy as np
-
 
 # KIVI only quantizes tokens that age out of the fp16 residual window, so a
 # realistic benchmark needs a prompt whose prefill length is >> residual_length.

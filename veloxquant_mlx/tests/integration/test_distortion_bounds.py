@@ -23,6 +23,7 @@ def test_turboquant_mse_within_bounds(b: int) -> None:
     unachievable bound.
     """
     import mlx.core as mx
+
     from veloxquant_mlx.quantizers.base import QuantizerFactory
 
     d, n = 128, 3000
@@ -52,6 +53,7 @@ def test_turboquant_mse_within_bounds(b: int) -> None:
 def test_turboquant_prod_ip_distortion(b: int) -> None:
     """IP distortion D_prod ≤ √(3π)/2 · ‖y‖²/d · 4^(-b) (with generous margin)."""
     import mlx.core as mx
+
     from veloxquant_mlx.quantizers.base import QuantizerFactory
 
     d, n, m = 64, 1000, 64
@@ -85,6 +87,7 @@ def test_builder_end_to_end() -> None:
     """Verify the KVCacheBuilder quick-start example runs end-to-end."""
     import mlx.core as mx
     import numpy as np
+
     from veloxquant_mlx import KVCacheBuilder
 
     cache = (

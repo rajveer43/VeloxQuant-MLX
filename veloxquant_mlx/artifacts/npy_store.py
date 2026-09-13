@@ -1,3 +1,14 @@
+"""Filesystem-backed :class:`ArtifactStore` that persists artifacts as ``.npy`` files.
+
+The production ``ArtifactStore`` implementation: rotation matrices,
+codebooks, and JL sketch matrices are precomputed once (via ``python -m
+veloxquant_mlx precompute``) and cached under a root directory using a fixed
+naming scheme (``rotation_d{d}_seed{seed}.npy``, etc.), so subsequent cache
+construction can load them instead of recomputing. Writes go through
+:func:`_atomic_save` (temp file + atomic rename) so concurrent
+readers/writers targeting the same artifact never observe a partial file.
+"""
+
 from __future__ import annotations
 
 import os
@@ -16,14 +27,14 @@ def _atomic_save(path: Path, arr: np.ndarray) -> None:
     Prevents concurrent readers/writers targeting the same path (e.g. two
     workers lazily constructing the same quantizer config) from observing a
     partially-written ``.npy`` file: ``np.save`` writes directly to the
-    destination and is not atomic, but ``os.replace`` is atomic on POSIX and
-    Windows. The temp name is PID- and object-id-qualified so concurrent
+    destination and is not atomic, but ``Path.replace`` is atomic on POSIX
+    and Windows. The temp name is PID- and object-id-qualified so concurrent
     writers never collide with each other's temp files either.
     """
     tmp_path = path.with_name(f".{path.name}.tmp{os.getpid()}-{id(arr)}.npy")
     try:
         np.save(tmp_path, arr)
-        os.replace(tmp_path, path)
+        tmp_path.replace(path)
     finally:
         tmp_path.unlink(missing_ok=True)
 

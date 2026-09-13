@@ -13,9 +13,6 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import sys
-
-import numpy as np
 
 from veloxquant_mlx.artifacts.npy_store import NpyArtifactStore
 from veloxquant_mlx.codebooks.base import CodebookFactory
@@ -77,7 +74,6 @@ def precompute(
                 print(f"FAILED: {exc}")
 
     # Polar angle codebooks per level
-    import math
 
     n_levels = 4
     for level in range(1, n_levels + 1):

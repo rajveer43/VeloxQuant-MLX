@@ -20,14 +20,14 @@ import pytest
 
 from veloxquant_mlx.metal import metal_available
 from veloxquant_mlx.metal.kernels import (
-    turboquant_bit_pack,
-    turboquant_bit_unpack,
-    turboquant_scalar_quantize,
-    turboquant_scalar_dequantize,
-    turboquant_hadamard_quantize,
     qjl_encode,
     qjl_inner_product,
+    turboquant_bit_pack,
+    turboquant_bit_unpack,
     turboquant_fused_rvq_decode_attend,
+    turboquant_hadamard_quantize,
+    turboquant_scalar_dequantize,
+    turboquant_scalar_quantize,
 )
 
 pytestmark = pytest.mark.skipif(

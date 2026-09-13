@@ -35,14 +35,14 @@ QJL sketch bits for the d - d_s = 124 noise dimensions.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
 from veloxquant_mlx.codebooks.base import CodebookFactory
 from veloxquant_mlx.core.abstractions import Quantizer
-from veloxquant_mlx.core.context import EncodedVector
 from veloxquant_mlx.core.constants import SQRT_PI_OVER_2
+from veloxquant_mlx.core.context import EncodedVector
 from veloxquant_mlx.math.rotation import make_jl_matrix
 
 
@@ -78,10 +78,10 @@ class SpectralQuantizer(Quantizer):
         d: int,
         b_signal: int = 3,
         b_noise: int = 3,
-        rotation: Optional[np.ndarray] = None,
+        rotation: np.ndarray | None = None,
         d_s: int = 4,
         apply_qjl: bool = False,
-        jl_dim: Optional[int] = None,
+        jl_dim: int | None = None,
         seed: int = 42,
     ) -> None:
         import mlx.core as mx
@@ -111,12 +111,11 @@ class SpectralQuantizer(Quantizer):
         # --- Codebooks: Lloyd-Max Gaussian, separate for signal / noise ---
         # Post-rotation coordinates are approximately N(0, λ_i / d), but
         # we use the standard Gaussian codebook (normalised per-dim by scale).
-        dist = "gaussian"
-        self._cb_signal = CodebookFactory.create(dist, b=b_signal, d=d)
+        self._cb_signal = CodebookFactory.create("gaussian", b=b_signal, d=d)
         if b_noise == b_signal:
             self._cb_noise = self._cb_signal
         else:
-            self._cb_noise = CodebookFactory.create(dist, b=b_noise, d=d)
+            self._cb_noise = CodebookFactory.create("gaussian", b=b_noise, d=d)
 
         # --- JL sketch matrix for signal residual (only if apply_qjl) ---
         self._qjl = None
@@ -238,10 +237,15 @@ class SpectralQuantizer(Quantizer):
         """
         import mlx.core as mx
 
+        if ev.norm is None or ev.final_radius is None:
+            raise ValueError(
+                "SpectralQuantizer.decode: ev.norm/final_radius is None — "
+                "ev wasn't produced by this quantizer's encode()."
+            )
+
         sig_scale = ev.norm.astype(mx.float32)[:, None]  # (batch, 1)
         noise_scale = ev.final_radius.astype(mx.float32)[:, None]  # (batch, 1)
         indices_np = np.array(ev.indices, dtype=np.int32)  # (batch, d)
-        batch = ev.batch_size
 
         idx_s = mx.array(indices_np[:, : self._d_s], dtype=mx.uint8)
         idx_n = mx.array(indices_np[:, self._d_s :], dtype=mx.uint8)
@@ -295,6 +299,12 @@ class SpectralQuantizer(Quantizer):
         q_rot = (self._R @ q_f32).reshape(-1)  # (d,)
         q_rot_s = q_rot[: self._d_s]  # signal dims of query
         q_rot_n = q_rot[self._d_s :]  # noise dims of query
+
+        if ev.norm is None or ev.final_radius is None:
+            raise ValueError(
+                "SpectralQuantizer.estimate_inner_product: ev.norm/final_radius is "
+                "None — ev wasn't produced by this quantizer's encode()."
+            )
 
         sig_scale = ev.norm.astype(mx.float32)  # (batch,)
         noise_scale = ev.final_radius.astype(mx.float32)  # (batch,)

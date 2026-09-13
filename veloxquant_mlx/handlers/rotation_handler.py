@@ -1,3 +1,13 @@
+"""Handler stage delegating to a ``Preconditioner`` for rotation/JL preconditioning.
+
+Applies a ``Preconditioner`` (e.g. a random rotation or Johnson-Lindenstrauss
+sketch) to ``ctx.x_current`` on encode, caching the rotated vector in
+``ctx.rotated``, and applies the inverse transform on decode. Runs upstream
+of scalar quantization so that quantizer-unfriendly channel structure
+(correlated or heavy-tailed dimensions) is spread out before codebook
+lookup.
+"""
+
 from __future__ import annotations
 
 from veloxquant_mlx.core.abstractions import Preconditioner, QuantizationHandler

@@ -24,7 +24,7 @@ Byte accounting:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
@@ -34,16 +34,16 @@ from veloxquant_mlx.quantizers.amc import (
     LOW,
     MID,
     AMCThresholdState,
+    _tier_config_for_dim,
     amc_adaptive_thresholds,
     amc_apply_rank_mask,
     amc_assign_tiers,
     amc_fp16_bytes,
-    amc_query_aware_saliency,
     amc_quantize_tier,
+    amc_query_aware_saliency,
     amc_saliency,
     full_amc_fp16_bytes,
     init_amc_threshold_state,
-    _tier_config_for_dim,
 )
 
 
@@ -115,15 +115,15 @@ class AMCKVCache(_MLXKVCache):
 
         self._B: int = 0
         self._H: int = 0
-        self._keys: List[mx.array] = []  # per (b,h): [n_seen, D] fp16
-        self._values: List[mx.array] = []  # per (b,h): [n_seen, D] fp16
+        self._keys: list[mx.array] = []  # per (b,h): [n_seen, D] fp16
+        self._values: list[mx.array] = []  # per (b,h): [n_seen, D] fp16
 
-        self._threshold_states: List[AMCThresholdState] = []
+        self._threshold_states: list[AMCThresholdState] = []
 
         self._amc_kept_bytes: int = 0
         self._full_seq_bytes: int = 0
         self._tokens_seen_total: int = 0
-        self._tier_counts: Dict[int, int] = {HIGH: 0, MID: 0, LOW: 0}
+        self._tier_counts: dict[int, int] = {HIGH: 0, MID: 0, LOW: 0}
 
     # ------------------------------------------------------------------
     def _ensure_state(self, B: int, H: int) -> None:
@@ -250,7 +250,7 @@ class AMCKVCache(_MLXKVCache):
         """
         return False
 
-    def _compress_step(self, x: mx.array, tiers: List[int], head_dim: int) -> mx.array:
+    def _compress_step(self, x: mx.array, tiers: list[int], head_dim: int) -> mx.array:
         """Apply per-token rank mask + quantization according to each token's tier."""
         n = x.shape[0]
         out_rows = []
