@@ -251,10 +251,16 @@ class TestFieldIsRelevant:
         assert not field_is_relevant("h2o", "tova_budget")
 
     def test_prefix_alias_methods(self):
-        """snapkv/streaming_llm/pyramidkv fields don't share the method name."""
+        """snapkv/streaming_llm/pyramidkv/nsnquant fields don't share the
+        method name. nsnquant (nsn_*) found via
+        test_uncurated_methods_still_expose_their_own_fields, which failed
+        before _FIELD_PREFIX_ALIAS had an entry for it -- same root cause
+        as the gear bug (issue #9), just the alias-lookup side of it rather
+        than the config_fields-fallback side."""
         assert field_is_relevant("snapkv", "snap_budget")
         assert field_is_relevant("streaming_llm", "stream_n_sink")
         assert field_is_relevant("pyramidkv", "pyramid_beta")
+        assert field_is_relevant("nsnquant", "nsn_bits")
         assert not field_is_relevant("snapkv", "stream_n_sink")
 
     def test_every_config_fields_entry_exists_on_the_dataclass(self):
@@ -269,3 +275,41 @@ class TestFieldIsRelevant:
         for method, fields in _CONFIG_FIELDS.items():
             for name in fields:
                 assert name in valid, (method, name)
+
+    def test_uncurated_methods_still_expose_their_own_fields(self):
+        """Regression for the gear bug (issue #9 in VeloxQuant-Studio):
+        get_method().config_fields used to fall back to _GENERIC_FIELDS only
+        for any method missing from _CONFIG_FIELDS, silently hiding every
+        method-specific knob from field_schema (what the macOS app's
+        parameter editor renders from) -- even though field_is_relevant()
+        already promised a name-prefix fallback for exactly this case.
+
+        gear has 6 real fields (gear_bits, gear_rank, ...) that were
+        completely invisible to any UI before this. Every method not in
+        _CONFIG_FIELDS must expose at least one of its own prefixed fields.
+        """
+        from veloxquant_mlx.cache.registry import _CONFIG_FIELDS, _GENERIC_FIELDS
+
+        for method in all_method_names():
+            if method in _CONFIG_FIELDS:
+                continue
+            info = get_method(method)
+            method_specific = [f for f in info.config_fields if f not in _GENERIC_FIELDS]
+            assert method_specific, (
+                f"{method} is not in _CONFIG_FIELDS and exposed no "
+                f"method-specific fields: {info.config_fields}"
+            )
+
+    def test_gear_config_fields_include_all_six_real_knobs(self):
+        """gear specifically (issue #9): the method this bug was found on."""
+        fields = set(get_method("gear").config_fields)
+        assert fields == {
+            "bit_width_inlier",
+            "seed",
+            "gear_bits",
+            "gear_rank",
+            "gear_energy_threshold",
+            "gear_sparse_fraction",
+            "gear_group_size",
+            "gear_quantize_values",
+        }
