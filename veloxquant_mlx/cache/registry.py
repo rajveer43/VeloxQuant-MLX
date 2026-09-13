@@ -305,8 +305,11 @@ _BLURB: Dict[str, str] = {
 #: deviation, so the UI cannot claim faithful reproduction where we know better.
 _PAPER_DEVIATION: Dict[str, str] = {
     "adakv": (
-        "Default config is non-adaptive (target equals lo_bit) and the importance "
-        "proxy is sign-inverted vs the paper. See issue #31."
+        "Default importance proxy (norm_variance) is sign-inverted vs the paper's "
+        "attention-entropy criterion; set adakv_importance=\"attention_entropy\" to "
+        "match the paper's sign. (The non-adaptive target==lo_bit default this "
+        "note used to describe was fixed by #31 — target_avg_bits now defaults "
+        "to 2.5, above lo_bit.)"
     ),
     "a2ats": (
         "Windowed RoPE rotates far keys that the paper leaves unrotated, and "
