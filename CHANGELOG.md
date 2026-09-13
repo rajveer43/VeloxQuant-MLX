@@ -432,6 +432,64 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.2 (2026-09-13)
+
+### Bug Fixes
+
+- **landing**: Scope playground footer-hide rule to the playground page only
+  ([`a58ab9c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a58ab9c7e903ed9e684a16af42fc358ad96e7e2d))
+
+- **readme**: Use real Loom thumbnail URL from oEmbed
+  ([`c564143`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c564143cf5eb6617026bf35c127210700728ee72))
+
+- **registry**: Update stale adakv paper-deviation caveat
+  ([#354](https://github.com/rajveer43/VeloxQuant-MLX/pull/354),
+  [`97be391`](https://github.com/rajveer43/VeloxQuant-MLX/commit/97be391fd8ade9646147f8694d05d09dfbb0f050))
+
+### Build System
+
+- **deps**: Move requirements.txt out of repo root
+  ([`0762c9b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0762c9b40d48c3084faae6974b47bdeba8612f6f))
+
+### Documentation
+
+- Note PEP 561 py.typed support in intro overview
+  ([`8c9d500`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8c9d5009706e21a78ee74b7361541c077f306e0e))
+
+- Sync getting-started pages and changelog with current source
+  ([`19da461`](https://github.com/rajveer43/VeloxQuant-MLX/commit/19da46143ce33c9ca2dd556b662d424152893cfd))
+
+- **algorithms**: Fix leftover KVCacheBuilder.build() call in spectral.md
+  ([`f83ade9`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f83ade984b7db4cc44c02dee9e67dce49ad008c5))
+
+- **algorithms**: Fix standalone-method examples and stale API calls
+  ([`54a6b76`](https://github.com/rajveer43/VeloxQuant-MLX/commit/54a6b7639604b91a2db5aa8a62ccd74b5ef1db1f))
+
+- **api**: Fix exceptions-api.md and memory-api.md against source
+  ([`8fd8e9d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8fd8e9d4ea1a42f121c96e94f1548343817ed763))
+
+- **api**: Rewrite fabricated allocators/cache/core/spectral/metal API pages
+  ([`96d737c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/96d737ce4794dc259fe073ba6ee706629e18dea8))
+
+- **control-panel**: Correct Optional-field count from 25 to 20
+  ([`778698a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/778698a2f84d771892b53d812bdc49a74657cbcc))
+
+- **control-panel**: Document --set overrides and optional-field blanking
+  ([`2fd1f00`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2fd1f00ead02af8c6422250aeafd3174a0ac943d))
+
+- **metal-kernels**: Add missing PyramidKV and TOVA fused-evict kernels
+  ([`5c13e1b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5c13e1b23e7a31710a9a24c341fa36fd028e8ddd))
+
+- **mlx-lm-integration**: Fix nonexistent bits/value_bits fields and API calls
+  ([`6b861ad`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6b861adb4608e4b1e92ee30e0ba292972a860e40))
+
+- **readme**: Add demo video thumbnail linking to Loom recording
+  ([`feacd40`](https://github.com/rajveer43/VeloxQuant-MLX/commit/feacd408bfc5c6b9f6e63f2d8cac72dcd36f6039))
+
+- **readme**: Add Star History chart
+  ([`5deb06a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5deb06ad6a277463c12d8e150440abdeccc70c5c))
+
+
 ## v0.83.1 (2026-09-12)
 
 ### Bug Fixes
