@@ -252,12 +252,46 @@ def attach_cache(model: Any, config: Any) -> int:
     Must run on the thread that will generate — see ``_Provider._load``.
     """
     from veloxquant_mlx.cache.base import KVCacheBuilder
+    from veloxquant_mlx.cli.telemetry import record_live_caches
+
+    # for_model() asks model.make_cache for hybrid-attention layers (mamba/
+    # linear-attention slots we don't quantize -- see its own docstring).
+    # Once this function patches model.make_cache below, that probe would
+    # otherwise find our own wrapper and recurse into itself on every call,
+    # silently hitting Python's recursion limit before for_model's broad
+    # `except Exception` catches it and falls back -- still correct, but
+    # every request pays for ~50 wasted stack frames and an exception catch
+    # for nothing.
+    #
+    # Capture the model's true native make_cache once, so the closure below
+    # can restore it for for_model's probe instead of exposing itself.
+    # Restoring via plain assignment works whether the original was a class
+    # method or an instance attribute -- getattr already bound it correctly
+    # either way. A model with no native make_cache at all gets a stand-in
+    # that returns None, which for_model's own
+    # `isinstance(built, list) and len(built) == len(layers)` check already
+    # treats identically to "no usable make_cache" (see its docstring).
+    _native_make_cache = getattr(model, "make_cache", None)
+    if not callable(_native_make_cache):
+        _native_make_cache = lambda *_a, **_kw: None  # noqa: E731
 
     probe = KVCacheBuilder.for_model(model, config)
     n_layers = len(probe)
     del probe
 
-    model.make_cache = lambda *_a, **_kw: KVCacheBuilder.for_model(model, config)
+    def _make_cache(*_a: Any, **_kw: Any) -> list[Any]:
+        model.make_cache = _native_make_cache
+        try:
+            caches = KVCacheBuilder.for_model(model, config)
+        finally:
+            model.make_cache = _make_cache
+        # Recorded here, not just after the probe above: every real request
+        # calls make_cache() again, and /v1/kv/stats must describe whichever
+        # cache list is currently live, not the discarded probe.
+        record_live_caches(caches, method=config.method, bits=config.bit_width_inlier)
+        return caches
+
+    model.make_cache = _make_cache
     return n_layers
 
 
@@ -265,7 +299,7 @@ def emit_ready(args: argparse.Namespace, n_caches: int) -> None:
     """Print the machine-readable handshake the control panel waits for."""
     base = f"http://{args.host}:{args.port}"
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "model": args.model,
         "method": args.method,
         "bits": args.bits,
@@ -280,6 +314,11 @@ def emit_ready(args: argparse.Namespace, n_caches: int) -> None:
             "chat_completions": f"{base}/v1/chat/completions",
             "completions": f"{base}/v1/completions",
             "models": f"{base}/v1/models",
+            # v2: TelemetryHandler (below) is the only handler this launcher
+            # ever installs, so this endpoint is always live once READY is
+            # printed — same "advertised only if actually served" rule as
+            # the others above.
+            "kv_stats": f"{base}/v1/kv/stats",
         },
         "accounting_only": True,
         "accounting_note": ACCOUNTING_WARNING,
@@ -387,7 +426,9 @@ def run_server(args: argparse.Namespace) -> None:
     calling ``load_default()`` from within ``_generate``; hooking ``_load``
     puts our patch on that same thread.
     """
-    from mlx_lm.server import ModelProvider, run
+    from mlx_lm.server import ModelProvider
+
+    from veloxquant_mlx.cli.telemetry import TelemetryHandler
 
     server_args = _mlx_server_args(args)
     config = build_config(args)
@@ -443,9 +484,40 @@ def run_server(args: argparse.Namespace) -> None:
         _warn("bound to 0.0.0.0 — reachable from your local network, with no auth.")
 
     try:
-        run(args.host, args.port, _Provider(server_args))
+        _run_with_handler(
+            args.host, args.port, _Provider(server_args), handler_class=TelemetryHandler
+        )
     except KeyboardInterrupt:
         _warn("shutting down.")
+
+
+def _run_with_handler(host: str, port: int, model_provider: Any, *, handler_class: type) -> None:
+    """Replacement for ``mlx_lm.server.run()`` that actually honors ``handler_class``.
+
+    The installed ``mlx_lm.server.run()`` accepts a ``handler_class`` keyword
+    but never forwards it to ``_run_http_server`` (verified by reading
+    ``mlx_lm/server.py`` directly: its body calls
+    ``_run_http_server(host, port, response_generator)`` with no
+    ``handler_class`` argument at all, silently falling back to
+    ``_run_http_server``'s own ``APIHandler`` default). Passing
+    ``handler_class=TelemetryHandler`` to ``run()`` is therefore a no-op on
+    this version — ``/v1/kv/stats`` would 404 forever.
+
+    This reproduces ``run()``'s few lines of setup and calls
+    ``_run_http_server`` directly, which *does* use the parameter correctly.
+    Kept as a small, isolated shim so it's easy to delete once upstream fixes
+    the forwarding bug.
+    """
+    import mlx.core as mx
+    from mlx_lm.server import LRUPromptCache, ResponseGenerator, _run_http_server
+
+    group = mx.distributed.init()
+    prompt_cache = LRUPromptCache(model_provider.cli_args.prompt_cache_size)
+    response_generator = ResponseGenerator(model_provider, prompt_cache)
+    if group.rank() == 0:
+        _run_http_server(host, port, response_generator, handler_class=handler_class)
+    else:
+        response_generator.join()
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -55,6 +55,7 @@ def test_ready_handshake_shape(capsys):
     assert payload["bits"] == 3
     assert payload["layer_caches"] == 16
     assert payload["endpoints"]["openai_base_url"] == "http://127.0.0.1:9999/v1"
+    assert payload["endpoints"]["kv_stats"] == "http://127.0.0.1:9999/v1/kv/stats"
 
     # The honesty flag must ride along with the numbers, not be optional.
     assert payload["accounting_only"] is True
@@ -200,3 +201,105 @@ def test_set_without_method_skips_relevance_check(capsys):
     assert overrides == {"kivi_group_size": 64}
     err = capsys.readouterr().err
     assert err == ""
+
+
+def _make_fake_model(n_layers: int = 2, n_heads: int = 2, head_dim: int = 32):
+    from types import SimpleNamespace
+
+    hidden_size = n_heads * head_dim
+    layers = [
+        SimpleNamespace(self_attn=SimpleNamespace(head_dim=head_dim)) for _ in range(n_layers)
+    ]
+    args = SimpleNamespace(hidden_size=hidden_size, num_attention_heads=n_heads)
+    return SimpleNamespace(layers=layers, args=args)
+
+
+def test_attach_cache_records_live_caches_on_each_call():
+    """#36: /v1/kv/stats reads whichever cache list is currently live.
+
+    ResponseGenerator._generate calls model.make_cache() fresh per request
+    (see cli/telemetry.py's module docstring) -- attach_cache must record
+    the *result of that call*, not just the throwaway probe it uses to count
+    layers, or telemetry would describe a discarded cache instead of the
+    one actually in use.
+    """
+    from veloxquant_mlx.cache.base import KVCacheConfig
+    from veloxquant_mlx.cli import telemetry
+
+    config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=2, seed=42)
+    model = _make_fake_model(n_layers=3)
+
+    telemetry._LIVE_CACHES = None
+    n_layers = serve_cli.attach_cache(model, config)
+    assert n_layers == 3
+    # The probe used only to count layers must not itself count as "live" --
+    # only a real make_cache() call (mlx_lm's own contract) should.
+    assert telemetry._LIVE_CACHES is None
+
+    caches = model.make_cache()
+    assert len(caches) == 3
+    assert telemetry._LIVE_CACHES is caches
+    assert telemetry._LIVE_METHOD == "turboquant_rvq"
+    assert telemetry._LIVE_BITS == 2
+
+    # A second request (mlx_lm calls make_cache() fresh per request) replaces
+    # the recorded list, not append.
+    second = model.make_cache()
+    assert telemetry._LIVE_CACHES is second
+    assert telemetry._LIVE_CACHES is not caches
+
+
+def test_attach_cache_does_not_recurse_into_its_own_wrapper(recwarn):
+    """Regression test: for_model() probes model.make_cache as a
+    hybrid-attention-layer heuristic (see its own docstring). Once
+    attach_cache patches model.make_cache, a naive implementation has that
+    probe find its own wrapper and recurse until RecursionError -- silently
+    caught by for_model's broad `except Exception` and falling back
+    correctly by accident, but wasting a full recursion-limit's worth of
+    stack frames and an exception catch on every single call.
+
+    This asserts the fix: repeated make_cache() calls on the same model
+    produce no warnings at all, not just "eventually falls back okay".
+    """
+    from veloxquant_mlx.cache.base import KVCacheConfig
+
+    config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=2, seed=42)
+    model = _make_fake_model(n_layers=3)
+    serve_cli.attach_cache(model, config)
+
+    for _ in range(3):
+        model.make_cache()
+
+    assert len(recwarn) == 0, [str(w.message) for w in recwarn]
+
+
+def test_attach_cache_preserves_a_real_native_make_cache():
+    """Hybrid-attention models (Qwen3.5/qwen3_next, mamba hybrids) define
+    their own make_cache for non-attention slots (see for_model's docstring
+    in cache/base.py). attach_cache's restore-around-the-probe trick must
+    not lose that native method -- for_model still needs to see and call it,
+    just not our own wrapper standing in for it.
+    """
+    from veloxquant_mlx.cache.base import KVCacheConfig
+
+    model = _make_fake_model(n_layers=2)
+    calls = []
+
+    def native_make_cache():
+        calls.append(1)
+        return  # a plain object's native cache isn't a real hybrid list here
+
+    model.make_cache = native_make_cache
+    config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=2, seed=42)
+
+    # attach_cache's own upfront layer-count probe already calls the native
+    # make_cache once, before model.make_cache is even patched.
+    serve_cli.attach_cache(model, config)
+    assert calls == [1]
+
+    model.make_cache()
+
+    # for_model's probe inside our wrapper (getattr(model, "make_cache",
+    # None) -> call it) reached the real native function a second time, not
+    # our wrapper calling itself.
+    assert calls == [1, 1]

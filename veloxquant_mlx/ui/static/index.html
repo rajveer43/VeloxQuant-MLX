@@ -37,6 +37,7 @@
 
   <aside class="sidebar">
     <button type="button" class="side-link is-active" data-view="server">Server</button>
+    <button type="button" class="side-link" data-view="chat">Chat</button>
     <button type="button" class="side-link" data-view="methods">Methods</button>
     <button type="button" class="side-link" data-view="about">About</button>
   </aside>
@@ -157,6 +158,15 @@
             </div>
           </section>
 
+          <section class="card" id="telemetry-card">
+            <div class="card-head">
+              <h2>Live cache telemetry</h2>
+            </div>
+            <div id="telemetry-body">
+              <p class="hint">Available once the server is running.</p>
+            </div>
+          </section>
+
           <section class="card card-grow">
             <div class="card-head">
               <h2>Server log</h2>
@@ -169,6 +179,26 @@
           </section>
 
         </div>
+      </div>
+    </section>
+
+    <!-- ══ CHAT VIEW ══ -->
+    <section class="view" id="view-chat">
+      <header class="pnl-header">
+        <div class="pnl-header-left">
+          <h1 class="view-title">Chat</h1>
+          <p class="pnl-sub" id="chat-sub">Start a server to try it here.</p>
+        </div>
+      </header>
+
+      <div class="card card-grow chat-card">
+        <div class="chat-messages" id="chat-messages">
+          <p class="hint">Nothing sent yet. Messages here are not saved anywhere.</p>
+        </div>
+        <form class="chat-form" id="chat-form">
+          <textarea id="chat-input" placeholder="Message the running model…" rows="2" disabled></textarea>
+          <button type="submit" class="btn btn-filled" id="chat-send" disabled>Send</button>
+        </form>
       </div>
     </section>
 
