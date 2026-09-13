@@ -52,7 +52,7 @@ Inside are 43 compression methods, each adapted from a published paper, spanning
 
 <div align="center">
 
-[![Watch the demo](https://cdn.loom.com/sessions/thumbnails/b8d14f283a494682b6917a64475e0dbd-with-play.gif)](https://www.loom.com/share/b8d14f283a494682b6917a64475e0dbd)
+[![Watch the demo](https://cdn.loom.com/sessions/thumbnails/b8d14f283a494682b6917a64475e0dbd-c8ae283c543f1997.gif)](https://www.loom.com/share/b8d14f283a494682b6917a64475e0dbd)
 
 </div>
 
