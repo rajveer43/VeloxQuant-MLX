@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.3 (2026-09-13)
+
+### Bug Fixes
+
+- **registry**: Expose real config fields for methods missing from _CONFIG_FIELDS
+  ([#355](https://github.com/rajveer43/VeloxQuant-MLX/pull/355),
+  [`d8c4674`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d8c4674c65af379193323264ab52e2eb539f65b4))
+
+
 ## v0.83.2 (2026-09-13)
 
 ### Bug Fixes
