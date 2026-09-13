@@ -393,6 +393,7 @@ _FIELD_PREFIX_ALIAS: dict[str, str] = {
     "snapkv": "snap",
     "streaming_llm": "stream",
     "pyramidkv": "pyramid",
+    "nsnquant": "nsn",
 }
 
 _TIER_CACHE: dict[str, ServeTier] = {}
@@ -488,6 +489,34 @@ def field_is_relevant(method: str, name: str) -> bool:
 
     prefix = _FIELD_PREFIX_ALIAS.get(method, method)
     return name.startswith(prefix + "_")
+
+
+def _default_config_fields(method: str) -> list[str]:
+    """Fallback ``config_fields`` for a method not yet curated in
+    ``_CONFIG_FIELDS``.
+
+    Prior to this, an uncurated method fell back to ``_GENERIC_FIELDS`` only
+    (``bit_width_inlier``, ``seed``) — silently hiding every method-specific
+    knob from any UI built on ``field_schema`` (the macOS app's parameter
+    editor), even though ``field_is_relevant`` already promises a name-prefix
+    fallback for exactly this case. Scans ``KVCacheConfig``'s real fields by
+    the same prefix rule ``field_is_relevant`` uses, so the two stay
+    consistent: a field this accepts as relevant now also appears in the
+    schema, and vice versa.
+
+    Sorted for a deterministic, reviewable order — an explicit
+    ``_CONFIG_FIELDS`` entry (hand-ordered by conceptual grouping) still wins
+    once a method is curated, same as today.
+    """
+    from veloxquant_mlx.cache import base as _base
+    from veloxquant_mlx.cache.base import KVCacheConfig
+
+    hints = typing.get_type_hints(KVCacheConfig, globalns=vars(_base))
+    prefix = _FIELD_PREFIX_ALIAS.get(method, method)
+    method_fields = sorted(
+        name for name in hints if name != "method" and name.startswith(prefix + "_")
+    )
+    return list(_GENERIC_FIELDS) + method_fields
 
 
 def all_method_names() -> list[str]:
@@ -659,7 +688,7 @@ def get_method(name: str) -> MethodInfo:
         family=_FAMILY.get(name, MethodFamily.QUANTIZATION),
         serve_tier=tier,
         blurb=_BLURB.get(name, f"{name} KV-cache method."),
-        config_fields=_CONFIG_FIELDS.get(name, list(_GENERIC_FIELDS)),
+        config_fields=_CONFIG_FIELDS.get(name) or _default_config_fields(name),
         paper_deviation=_PAPER_DEVIATION.get(name),
         unsupported_reason=_UNSUPPORTED_REASON.get(name),
         # Only meaningful for methods that actually run; a crash-tier cache
