@@ -50,6 +50,12 @@ Inside are 43 compression methods, each adapted from a published paper, spanning
 
 > **Compression ratios are bit-width accounting, not measured RSS.** Most methods still store fp16 internally on the default serving path, so Activity Monitor won't drop by the same factor; eviction/merging methods (marked 🔻RSS below) do reduce resident memory today. Details: [#27](https://github.com/rajveer43/VeloxQuant-MLX/issues/27).
 
+<div align="center">
+
+[![Watch the demo](https://cdn.loom.com/sessions/thumbnails/b8d14f283a494682b6917a64475e0dbd-with-play.gif)](https://www.loom.com/share/b8d14f283a494682b6917a64475e0dbd)
+
+</div>
+
 ---
 
 ## Numbers
