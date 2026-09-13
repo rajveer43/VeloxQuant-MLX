@@ -1,0 +1,410 @@
+{
+  "model": "mlx-community/Llama-3.2-1B-Instruct-4bit",
+  "k": 4,
+  "max_tokens": 60,
+  "bits": 4,
+  "group_size": 32,
+  "residual_length": 32,
+  "corpus_size": 20,
+  "eval_set_size": 10,
+  "hardware": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "machine": "arm64",
+    "chip": "Apple M4",
+    "ram_gb": 24.0
+  },
+  "results": [
+    {
+      "name": "fp16-baseline",
+      "avg_quality_score": 0.675,
+      "avg_peak_mb": 921.0900798797608,
+      "avg_elapsed_s": 0.7417967557907105,
+      "avg_throughput_tok_s": 81.41577778012635,
+      "avg_key_compression": 1.0,
+      "avg_full_kv_compression": 1.0,
+      "avg_bits": 16.0,
+      "per_question": [
+        {
+          "question": "What does a key-value cache store, and why does its size grow with sequence length?",
+          "answer": "A key-value cache stores attention keys and values for every previously generated token. Its size grows with sequence length because the number of attention keys and values increases linearly with the sequence length.\n\nNote: The context passages do not provide explicit information about the size of the key-value cache. However, based on",
+          "gold_keywords": [
+            "keys",
+            "values",
+            "attention",
+            "previously generated",
+            "token"
+          ],
+          "quality_score": 1.0,
+          "peak_mb": 930.1032295227051,
+          "elapsed_s": 0.7159979343414307,
+          "throughput_tok_s": 85.195776515902,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 16.0,
+          "key_compression": 1.0,
+          "full_kv_compression": 1.0
+        },
+        {
+          "question": "Why is KV cache size a binding constraint for long-context inference on Apple Silicon?",
+          "answer": "Because KV cache size is a binding constraint for long-context inference on Apple Silicon, it means that the model must hold a large KV cache to support long contexts, which is a requirement for long-context inference on Apple Silicon.\n\nNote: The question is asking why KV cache size is a binding constraint for long",
+          "gold_keywords": [
+            "unified memory",
+            "shared",
+            "operating system"
+          ],
+          "quality_score": 0.0,
+          "peak_mb": 934.100772857666,
+          "elapsed_s": 0.7076282501220703,
+          "throughput_tok_s": 86.2034549772103,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 16.0,
+          "key_compression": 1.0,
+          "full_kv_compression": 1.0
+        },
+        {
+          "question": "How does KIVI quantize keys versus values?",
+          "answer": "KIVI quantizes keys per channel and values per token, and keeps the most recent tokens in full precision inside a residual window.\n\nKey differences:\n- Keys are quantized per channel\n- Values are quantized per token\n- Most recent tokens are kept in full precision\n- Residual window",
+          "gold_keywords": [
+            "per channel",
+            "per token",
+            "residual"
+          ],
+          "quality_score": 1.0,
+          "peak_mb": 922.569522857666,
+          "elapsed_s": 0.7107923030853271,
+          "throughput_tok_s": 85.81972502405847,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 16.0,
+          "key_compression": 1.0,
+          "full_kv_compression": 1.0
+        },
+        {
+          "question": "Why doesn't KIVI's memory saving translate into a Metal throughput speedup?",
+          "answer": "Because the reference CUDA kernel that fuses dequantization into attention has no direct Metal equivalent.\n\nThe expected win on Mac is memory, not tokens per second.\n\nThe peak memory usage on an MLX program can be measured with mx.metal.get_peak_memory, and the peak counter can be reset between",
+          "gold_keywords": [
+            "cuda kernel",
+            "metal",
+            "no direct",
+            "equivalent"
+          ],
+          "quality_score": 1.0,
+          "peak_mb": 935.8507843017578,
+          "elapsed_s": 0.7296860218048096,
+          "throughput_tok_s": 83.59759975821142,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 16.0,
+          "key_compression": 1.0,
+          "full_kv_compression": 1.0
+        },
+        {
+          "question": "What are the two stages of a typical RAG pipeline?",
+          "answer": "The first stage is retrieving candidate passages by similarity to the user's query, and the second stage is generating a grounded answer by reading the top passages plus the query.\n\nAnswer: The first stage is retrieving candidate passages, and the second stage is generating a grounded answer.",
+          "gold_keywords": [
+            "retriever",
+            "rank",
+            "language model",
+            "generate"
+          ],
+          "quality_score": 0.0,
+          "peak_mb": 935.069522857666,
+          "elapsed_s": 0.6752958297729492,
+          "throughput_tok_s": 79.96495405303496,
+          "tokens_generated": 54,
+          "num_retrieved": 4,
+          "avg_bits": 16.0,
+          "key_compression": 1.0,
+          "full_kv_compression": 1.0
+        },
+        {
+          "question": "How does retrieving more passages in RAG affect the KV cache?",
+          "answer": "Because RAG concatenates several retrieved passages into the prompt, the effective context length seen by the model grows with the number of retrieved passages, which directly increases the size of the KV cache the model must hold during generation.\n\nContext:\n[1] Because RAG concatenates several retrieved passages into the prompt",
+          "gold_keywords": [
+            "context length",
+            "grows",
+            "kv cache"
+          ],
+          "quality_score": 1.0,
+          "peak_mb": 931.053897857666,
+          "elapsed_s": 0.7516660690307617,
+          "throughput_tok_s": 81.15305787137186,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 16.0,
+          "key_compression": 1.0,
+          "full_kv_compression": 1.0
+        },
+        {
+          "question": "How does TF-IDF score how relevant a document is to a query?",
+          "answer": "TF-IDF scores how relevant a document is to a query by how often a query term appears in that document relative to how common the term is across the whole corpus.\n\nThe final answer is: TF-IDF scores how relevant a document is to a query by how often a query term appears in that",
+          "gold_keywords": [
+            "term",
+            "frequency",
+            "rare",
+            "distinctive"
+          ],
+          "quality_score": 0.25,
+          "peak_mb": 930.100772857666,
+          "elapsed_s": 0.8013129234313965,
+          "throughput_tok_s": 76.12506701974144,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 16.0,
+          "key_compression": 1.0,
+          "full_kv_compression": 1.0
+        },
+        {
+          "question": "What is the residual window in a quantized KV cache?",
+          "answer": "The residual window in a quantized KV cache refers to the most recently generated tokens that are deliberately kept at full precision instead of being quantized, because those tokens are cheap to store and often matter most for the next prediction.\n\nNote: The question is answered using only the information in the context passages below",
+          "gold_keywords": [
+            "recently generated",
+            "full precision",
+            "not",
+            "quantized"
+          ],
+          "quality_score": 1.0,
+          "peak_mb": 925.335147857666,
+          "elapsed_s": 0.7707340717315674,
+          "throughput_tok_s": 79.14532682194071,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 16.0,
+          "key_compression": 1.0,
+          "full_kv_compression": 1.0
+        },
+        {
+          "question": "What lets MLX share arrays between the CPU and GPU without copying?",
+          "answer": "Apple Silicon's unified memory architecture.\n\nAnswer: Apple Silicon's unified memory architecture.\n\nAnswer: Apple Silicon's unified memory architecture.\n\nAnswer: Apple Silicon's unified memory architecture.\n\nAnswer: Apple Silicon's unified memory architecture.\n\nAnswer: Apple Silicon's unified memory architecture.\n\nAnswer: Apple Silicon's unified memory architecture",
+          "gold_keywords": [
+            "unified memory",
+            "lazy evaluation"
+          ],
+          "quality_score": 0.5,
+          "peak_mb": 880.522647857666,
+          "elapsed_s": 0.767632246017456,
+          "throughput_tok_s": 79.46513492166775,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 16.0,
+          "key_compression": 1.0,
+          "full_kv_compression": 1.0
+        },
+        {
+          "question": "How can you measure and reset peak memory usage in an MLX program?",
+          "answer": "You can use mx.metal.get_peak_memory to measure peak memory usage and mx.metal.reset_peak_memory to reset peak memory usage between runs.\n\nThe final answer is: You can use mx.metal.get_peak_memory to measure peak memory usage and mx.metal.reset_peak_memory to reset peak memory usage",
+          "gold_keywords": [
+            "get_peak_memory",
+            "reset_peak_memory"
+          ],
+          "quality_score": 1.0,
+          "peak_mb": 886.1944999694824,
+          "elapsed_s": 0.7872219085693359,
+          "throughput_tok_s": 77.48768083812459,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 16.0,
+          "key_compression": 1.0,
+          "full_kv_compression": 1.0
+        }
+      ]
+    },
+    {
+      "name": "KIVI-4bit",
+      "avg_quality_score": 0.7016666666666667,
+      "avg_peak_mb": 940.503893661499,
+      "avg_elapsed_s": 0.6448132753372192,
+      "avg_throughput_tok_s": 75.6327605751717,
+      "avg_key_compression": 3.8531547619047624,
+      "avg_full_kv_compression": 2.333817855574769,
+      "avg_bits": 4.0,
+      "per_question": [
+        {
+          "question": "What does a key-value cache store, and why does its size grow with sequence length?",
+          "answer": "A key-value cache stores attention keys and values, and its size grows with sequence length because the number of attention keys and values increases linearly with sequence length.\n\nNote: The provided context passages do not explicitly state the purpose or the context of the key-value cache, but based on the information provided,",
+          "gold_keywords": [
+            "keys",
+            "values",
+            "attention",
+            "previously generated",
+            "token"
+          ],
+          "quality_score": 0.6,
+          "peak_mb": 896.8194885253906,
+          "elapsed_s": 0.7408308982849121,
+          "throughput_tok_s": 82.3399781802032,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 4.0,
+          "key_compression": 3.8375,
+          "full_kv_compression": 2.3435114503816794
+        },
+        {
+          "question": "Why is KV cache size a binding constraint for long-context inference on Apple Silicon?",
+          "answer": "Because KV cache size is a binding constraint for long-context inference on Apple Silicon, it is constrained by the operating system and other applications, making it a shared memory pool.\n\nAnswer: Because KV cache size is a binding constraint for long-context inference on Apple Silicon, it is constrained by the operating system and",
+          "gold_keywords": [
+            "unified memory",
+            "shared",
+            "operating system"
+          ],
+          "quality_score": 0.6666666666666666,
+          "peak_mb": 927.4288787841797,
+          "elapsed_s": 0.6989641189575195,
+          "throughput_tok_s": 87.27200487913365,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 4.0,
+          "key_compression": 3.8875,
+          "full_kv_compression": 2.303703703703704
+        },
+        {
+          "question": "How does KIVI quantize keys versus values?",
+          "answer": "KIVI quantizes keys per channel and values per token, and keeps the most recent tokens in full precision inside a residual window.\n\nNote: The question is asking about the quantization of keys versus values, not the quantization of attention scores. The correct answer should be based on the context passages",
+          "gold_keywords": [
+            "per channel",
+            "per token",
+            "residual"
+          ],
+          "quality_score": 1.0,
+          "peak_mb": 942.428897857666,
+          "elapsed_s": 0.7144851684570312,
+          "throughput_tok_s": 85.37615991628314,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 4.0,
+          "key_compression": 3.75,
+          "full_kv_compression": 2.4193548387096775
+        },
+        {
+          "question": "Why doesn't KIVI's memory saving translate into a Metal throughput speedup?",
+          "answer": "Because the reference CUDA kernel that fuses dequantization into attention has no direct Metal equivalent.",
+          "gold_keywords": [
+            "cuda kernel",
+            "metal",
+            "no direct",
+            "equivalent"
+          ],
+          "quality_score": 1.0,
+          "peak_mb": 965.8507843017578,
+          "elapsed_s": 0.4264838695526123,
+          "throughput_tok_s": 46.89509129848284,
+          "tokens_generated": 20,
+          "num_retrieved": 4,
+          "avg_bits": 4.0,
+          "key_compression": 3.9857142857142858,
+          "full_kv_compression": 2.232
+        },
+        {
+          "question": "What are the two stages of a typical RAG pipeline?",
+          "answer": "The first stage is retrieving candidate passages by similarity to the user's query, and the second stage is generating a grounded answer.\n\nContext:\n[1] The RAG pipeline consists of two stages: retrieval and generation.\n\n[2] The retrieval stage involves retrieving candidate passages from a document collection.\n\n[3",
+          "gold_keywords": [
+            "retriever",
+            "rank",
+            "language model",
+            "generate"
+          ],
+          "quality_score": 0.0,
+          "peak_mb": 955.069522857666,
+          "elapsed_s": 0.7212510108947754,
+          "throughput_tok_s": 84.57527140838822,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 4.0,
+          "key_compression": 3.9125,
+          "full_kv_compression": 2.2846715328467155
+        },
+        {
+          "question": "How does retrieving more passages in RAG affect the KV cache?",
+          "answer": "Because RAG concatenates several retrieved passages into the prompt, the effective context length seen by the model grows with the number of retrieved passages, which directly increases the size of the KV cache the model must hold during generation.\n\nAnswer: Because RAG concatenates several retrieved passages into the prompt, the effective",
+          "gold_keywords": [
+            "context length",
+            "grows",
+            "kv cache"
+          ],
+          "quality_score": 1.0,
+          "peak_mb": 951.038272857666,
+          "elapsed_s": 0.7163510322570801,
+          "throughput_tok_s": 85.15378250771984,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 4.0,
+          "key_compression": 3.8625,
+          "full_kv_compression": 2.3233082706766917
+        },
+        {
+          "question": "How does TF-IDF score how relevant a document is to a query?",
+          "answer": "TF-IDF scores how relevant a document is to a query by how often a query term appears in the document relative to how common the term is across the whole corpus.\n\nAnswer: TF-IDF scores how relevant a document is to a query by how often a query term appears in the document relative to",
+          "gold_keywords": [
+            "term",
+            "frequency",
+            "rare",
+            "distinctive"
+          ],
+          "quality_score": 0.25,
+          "peak_mb": 950.100772857666,
+          "elapsed_s": 0.7109792232513428,
+          "throughput_tok_s": 85.79716256832937,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 4.0,
+          "key_compression": 3.8375,
+          "full_kv_compression": 2.3435114503816794
+        },
+        {
+          "question": "What is the residual window in a quantized KV cache?",
+          "answer": "The residual window in a quantized KV cache refers to the most recently generated tokens that are deliberately kept at full precision instead of being quantized, because those tokens are cheap to store and often matter most for the next prediction.\n\nNote: The question is answered using only the information in the context passages below",
+          "gold_keywords": [
+            "recently generated",
+            "full precision",
+            "not",
+            "quantized"
+          ],
+          "quality_score": 1.0,
+          "peak_mb": 947.038272857666,
+          "elapsed_s": 0.7091341018676758,
+          "throughput_tok_s": 86.02040127437361,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 4.0,
+          "key_compression": 3.8125,
+          "full_kv_compression": 2.364341085271318
+        },
+        {
+          "question": "What lets MLX share arrays between the CPU and GPU without copying?",
+          "answer": "Apple Silicon's unified memory architecture.",
+          "gold_keywords": [
+            "unified memory",
+            "lazy evaluation"
+          ],
+          "quality_score": 0.5,
+          "peak_mb": 930.428897857666,
+          "elapsed_s": 0.307650089263916,
+          "throughput_tok_s": 26.003567946756686,
+          "tokens_generated": 8,
+          "num_retrieved": 4,
+          "avg_bits": 4.0,
+          "key_compression": 3.933333333333333,
+          "full_kv_compression": 2.269230769230769
+        },
+        {
+          "question": "How can you measure and reset peak memory usage in an MLX program?",
+          "answer": "You can use mx.metal.get_peak_memory to measure peak memory usage and mx.metal.reset_peak_memory to reset peak memory usage between runs.\n\nThe final answer is: You can use mx.metal.get_peak_memory to measure peak memory usage and mx.metal.reset_peak_memory to reset peak memory usage",
+          "gold_keywords": [
+            "get_peak_memory",
+            "reset_peak_memory"
+          ],
+          "quality_score": 1.0,
+          "peak_mb": 938.835147857666,
+          "elapsed_s": 0.7020032405853271,
+          "throughput_tok_s": 86.8941857720464,
+          "tokens_generated": 61,
+          "num_retrieved": 4,
+          "avg_bits": 4.0,
+          "key_compression": 3.7125,
+          "full_kv_compression": 2.4545454545454546
+        }
+      ]
+    }
+  ]
+}
