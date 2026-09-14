@@ -55,6 +55,25 @@ def test_no_bits_leak() -> None:
     assert not hasattr(cache, "bits")
 
 
+def test_not_batchable_via_mlx_lm_server_probe() -> None:
+    """Issue #15: `mlx_lm.server`'s `ModelProvider.load()` decides whether a
+    method is batchable purely via `hasattr(cache, "merge")` on a probe
+    instance. The base `KVCache` this inherits from defines `merge()` as a
+    classmethod returning a plain `BatchKVCache` — oblivious to this class's
+    `_states`/`_true_offset`/key-norm scoring. Left inherited, every request
+    (even a lone one — `BatchGenerator` merges a batch of 1 too) would
+    silently replace this cache with that generic one: no budget, no
+    eviction, no telemetry, while the server still believes it is running
+    `knorm`. `hasattr` must see `merge` as absent so the server routes
+    `knorm` through its sequential path instead, where this class runs
+    correctly (verified live end-to-end against `mlx_lm.server` for #15).
+    """
+    cache = _make()
+    assert not hasattr(cache, "merge")
+    with pytest.raises(AttributeError):
+        cache.merge
+
+
 def test_under_budget_bitfor_bit_passthrough() -> None:
     cache = _make(knorm_budget=128)
     k, v = _kv(1, 2, 32, 64, seed=1)
