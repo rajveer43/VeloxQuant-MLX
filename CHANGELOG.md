@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.6 (2026-09-14)
+
+### Bug Fixes
+
+- **cache**: Kvquant loses n_sink config and its quantization under batched serving
+  ([#359](https://github.com/rajveer43/VeloxQuant-MLX/pull/359),
+  [`88bee7f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/88bee7fb7570e2303285da0e84fd69da1167ad86))
+
+
 ## v0.83.5 (2026-09-14)
 
 ### Bug Fixes
