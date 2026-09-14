@@ -106,6 +106,32 @@ class KVzipKVCache(_MLXKVCache):
         self._tokens_seen_total: int = 0
 
     # ------------------------------------------------------------------
+    # `mlx_lm.server`'s `ModelProvider.load()` decides whether to route
+    # requests through `BatchGenerator` (continuous batching) purely by
+    # `hasattr(c, "merge")` on a probe instance. The base `KVCache` this
+    # inherits from defines `merge()` as a classmethod that returns a plain
+    # `mlx_lm.models.cache.BatchKVCache`, oblivious to the reconstruction-
+    # reliance eviction state this class needs. Left inherited, every
+    # request — even a lone one, since `BatchGenerator` merges a batch of 1
+    # too, for uniform batch-shape handling — silently replaces this cache
+    # with that generic one: no eviction, no sink protection, unlimited
+    # growth, while the server believes it is still running `kvzip`. This
+    # hides `merge` from `hasattr` instead (a bare classmethod override
+    # wouldn't: `hasattr` would still see it as present and callable). That
+    # makes `is_batchable` correctly report `False`, routing `kvzip` through
+    # `mlx_lm.server`'s sequential `_serve_single` path instead, where this
+    # class already runs correctly. See VeloxQuant-MLX#358 for the full
+    # 37-method scope of this defect.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError(
+                "KVzipKVCache does not support batched merging; use it via "
+                "the sequential serving path (see class docstring)."
+            )
+        )
+    )
+
+    # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         if not self._states:
             self._B = B
