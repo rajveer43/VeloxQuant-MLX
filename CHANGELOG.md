@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.5 (2026-09-14)
+
+### Bug Fixes
+
+- **cache**: Stop knorm from silently losing eviction under batched serving
+  ([#357](https://github.com/rajveer43/VeloxQuant-MLX/pull/357),
+  [`8dbc1f6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8dbc1f64a5257cc9c5deed3bb05cb6f4fd0f9ce5))
+
+
 ## v0.83.4 (2026-09-14)
 
 ### Bug Fixes
