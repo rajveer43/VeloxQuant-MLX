@@ -365,6 +365,7 @@ _CONFIG_FIELDS: dict[str, list[str]] = {
         "kvquant_group_size",
         "kvquant_lloyd_iters",
         "kvquant_refit_interval",
+        "kvquant_n_sink",
     ],
     "palu": ["palu_rank", "palu_energy_threshold"],
     "qjl": ["jl_dim", "seed"],
