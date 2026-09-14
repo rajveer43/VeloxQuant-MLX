@@ -41,6 +41,14 @@ EXPECTED_CRASHING = {
 # reverting internal per-token eviction state. They serve correctly — the probe
 # used to misreport them as CRASHES, which told users 15 working methods were
 # unavailable (#152).
+#
+# skvq joined this set verifying VeloxQuant-Studio issue #26: it was
+# previously misreported as fully trimmable (is_trimmable() inherited the
+# base class's default True) even though its flush frontier (_q_end) and
+# frozen per-head channel permutations are exactly the kind of irreversible
+# internal state this comment already describes -- trimming past _q_end
+# desyncs it from offset and silently corrupts every later
+# update_and_fetch's chunk-boundary bookkeeping instead of crashing.
 EXPECTED_NOT_TRIMMABLE = {
     "age_tiered",
     "amc",
@@ -57,6 +65,7 @@ EXPECTED_NOT_TRIMMABLE = {
     "pyramidkv",
     "qfilters",
     "rocketkv",
+    "skvq",
     "squeeze",
     "streaming_llm",
     "tova",

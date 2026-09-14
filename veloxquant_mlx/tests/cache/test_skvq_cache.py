@@ -317,3 +317,84 @@ def test_for_model_wiring_and_fallback() -> None:
     ko, vo = caches[2].update_and_fetch(k, v)
     assert np.array_equal(np.array(ko), np.array(k))
     assert np.array_equal(np.array(vo), np.array(v))
+
+
+# ---------------------------------------------------------------------------
+# Regression for VeloxQuant-Studio issue #26.
+# ---------------------------------------------------------------------------
+
+
+def test_not_batchable_via_mlx_lm_server_probe() -> None:
+    """`mlx_lm.server`'s `BatchGenerator` calls `_merge_caches` on every
+    `PromptProcessingBatch` it builds -- including the very first, single-
+    sequence one -- whenever `hasattr(cache, "merge")` is `True` on a fresh
+    per-layer cache. Left inherited, `KVCache.merge()` would delegate to
+    `BatchKVCache.merge()`, which for a batch of brand-new (empty) caches
+    silently returns a plain `BatchKVCache` with no error: no sliding-window
+    flush, no channel reordering, no clipped quant, no sink filter, no byte
+    accounting, while the server still believes it is running `skvq`.
+    `hasattr` must see `merge` as absent so the server routes `skvq` through
+    its sequential path instead, where this class runs correctly.
+    """
+    c = _make()
+    assert not hasattr(c, "merge")
+    with pytest.raises(AttributeError):
+        c.merge
+
+
+def test_merge_on_empty_cache_would_silently_substitute_if_inherited() -> None:
+    """Documents *why* the merge guard above matters, reproducing the actual
+    server-triggered path: `_merge_caches` in mlx_lm always calls `merge()` on
+    brand-new, empty per-layer caches at the start of prefill, so
+    `BatchKVCache.merge`'s "no cache has content" fast path applies -- it does
+    not raise, it silently returns a generic `BatchKVCache` instance in place
+    of `SKVQKVCache`. This is the concrete failure `merge` being hidden from
+    `hasattr` prevents.
+    """
+    from mlx_lm.models.cache import BatchKVCache
+    from mlx_lm.models.cache import KVCache as _MLXKVCache
+
+    c = _make()
+    assert c.size() == 0
+    merged = _MLXKVCache.merge.__func__(SKVQKVCache, [c])
+    assert isinstance(merged, BatchKVCache)
+    assert not isinstance(merged, SKVQKVCache)
+
+
+def test_is_trimmable_false() -> None:
+    """SKVQ's flush frontier (`_q_end`) and frozen per-head channel
+    permutations are internal state a base-class `trim()` cannot roll back:
+    it only decrements `self.offset`. `is_trimmable()` must report `False` so
+    `mlx_lm.server` never calls `trim()` on this cache at all.
+    """
+    c = _make()
+    assert c.is_trimmable() is False
+
+
+def test_trim_would_desync_flush_frontier_if_trimmable() -> None:
+    """Documents *why* `is_trimmable()` must be `False`, reproducing the
+    corruption directly: the inherited `trim()` only rolls back `self.offset`,
+    leaving `_q_end` (the flush frontier) untouched. Once `offset` drops below
+    `_q_end`, the cache believes tokens it no longer considers valid are
+    already quantized and flushed -- `_q_end` desyncs from `offset` instead of
+    both shrinking together, corrupting every subsequent `update_and_fetch`
+    call's chunk-boundary bookkeeping rather than raising.
+    """
+    c = _make(skvq_window=4, skvq_n_sink=1, skvq_group_size=4, head_dim=8)
+    k, v = _kv(1, 2, 10, 8, seed=1)
+    c.update_and_fetch(k, v)
+    assert c.offset == 10
+    assert c._q_end == 8  # two whole 4-token chunks flushed
+
+    n = c.trim(6)  # base-class KVCache.trim: only touches self.offset
+    assert n == 6
+    assert c.offset == 4
+    assert c._q_end == 8  # untouched -- now inconsistent: offset < _q_end
+
+    # Feeding more tokens after this point folds the desync into the flush
+    # loop's chunk-boundary math instead of raising or recovering.
+    k2, v2 = _kv(1, 2, 20, 8, seed=2)
+    c.update_and_fetch(k2, v2)
+    assert c.offset - c._q_end < 4  # loop ran to completion, masking the desync
+    assert c._q_end == c.offset  # every token, including stale pre-trim rows,
+    # now reads as "already flushed" -- the corruption is silent, not a crash.

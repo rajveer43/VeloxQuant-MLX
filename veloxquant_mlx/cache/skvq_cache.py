@@ -311,5 +311,47 @@ class SKVQKVCache(_MLXKVCache):
         elems = n_q * self._D * self._B * self._H
         return 8.0 * self._compressed_key_bytes / elems
 
+    # ------------------------------------------------------------------
+    def is_trimmable(self) -> bool:
+        """False: trim() would only roll back base-class offset bookkeeping,
+        not the internal flush frontier (``_q_end``) or the frozen per-head
+        channel permutations (``_perm_k``/``_perm_v``, computed once from
+        chunk 0 and never revisited) that actually determine what gets
+        quantized and how. Unlike a pure-eviction cache, the information loss
+        here is irreversible: once a chunk is flushed, its rows are
+        overwritten in place with a lossy quantize/dequantize round-trip, so
+        there is no exact fp16 value to restore even if ``_q_end`` were
+        rolled back too. Reproduced directly: trimming past ``_q_end`` leaves
+        ``offset < _q_end``, and the next ``update_and_fetch`` treats
+        already-flushed rows sitting in the buffer at those same indices as
+        already-quantized instead of overwriting them with the new tokens
+        actually meant to land there — silently corrupting future calls
+        rather than crashing (see VeloxQuant-Studio issue #26).
+        """
+        return False
+
+    # ------------------------------------------------------------------
+    # Batching guard (see VeloxQuant-MLX#358)
+    # ------------------------------------------------------------------
+    # ``mlx_lm.server``'s ``BatchGenerator`` calls ``_merge_caches`` on every
+    # ``PromptProcessingBatch`` it builds -- including the very first, single-
+    # sequence one -- whenever ``hasattr(cache, "merge")`` is ``True`` on a
+    # fresh per-layer probe. The inherited ``KVCache.merge()`` classmethod
+    # delegates to ``BatchKVCache.merge()``, which for a batch of brand-new
+    # (empty) caches takes the "no cache has content" fast path and silently
+    # returns a plain empty ``BatchKVCache`` in place of ``SKVQKVCache`` --
+    # no sliding-window flush, no channel reordering, no clipped quant, no
+    # sink filter, no byte accounting, plain fp16 growth, while the server
+    # still believes it is running ``skvq`` (the same silent-substitution
+    # pattern as the other #358 occurrences). A bare method override is
+    # insufficient since ``hasattr()`` would still report ``True`` for a
+    # classmethod defined on the class; the property must raise on access
+    # instead so ``hasattr`` sees it as absent.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("SKVQKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
+
 
 __all__ = ["SKVQKVCache"]
