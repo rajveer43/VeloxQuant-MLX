@@ -297,3 +297,25 @@ def test_for_model_wiring_and_fallback() -> None:
     ko, vo = caches[2].update_and_fetch(k, v)
     assert np.array_equal(np.array(ko), np.array(k))
     assert np.array_equal(np.array(vo), np.array(v))
+
+
+# ------------------------------------------------------------------
+# Regression for VeloxQuant-Studio issue #22.
+# ------------------------------------------------------------------
+def test_not_batchable_via_mlx_lm_server_probe() -> None:
+    """`mlx_lm.server`'s `ModelProvider.load()` decides whether a method is
+    batchable purely via `hasattr(cache, "merge")` on a probe instance. This
+    class inherits from mlx_lm's own `KVCache`, whose `merge()` classmethod
+    returns a plain `BatchKVCache` — oblivious to the chunk-flush frontier
+    and NSN/VQ round-trip state this class maintains. Left inherited, every
+    request (even a lone one — `BatchGenerator` merges a batch of 1 too)
+    would silently replace this cache with that generic one: no
+    quantization, no byte accounting, plain fp16 growth, while the server
+    still believes it is running `nsnquant`. `hasattr` must see `merge` as
+    absent so the server routes `nsnquant` through its sequential path
+    instead, where this class runs correctly.
+    """
+    cache = _make()
+    assert not hasattr(cache, "merge")
+    with pytest.raises(AttributeError):
+        cache.merge

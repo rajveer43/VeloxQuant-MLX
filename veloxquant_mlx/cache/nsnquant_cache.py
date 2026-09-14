@@ -225,5 +225,26 @@ class NSNQuantKVCache(_MLXKVCache):
         elems = self._q_end * self._D * self._B * self._H
         return 8.0 * self._compressed_key_bytes / elems
 
+    # ------------------------------------------------------------------
+    # Batching guard (see VeloxQuant-MLX#358)
+    # ------------------------------------------------------------------
+    # ``mlx_lm.server``'s ``ModelProvider.load()`` decides whether a method is
+    # batchable purely via ``hasattr(cache, "merge")`` on a probe instance.
+    # The inherited ``KVCache.merge()`` classmethod returns a plain
+    # ``BatchKVCache`` — oblivious to the chunk-flush frontier and NSN/VQ
+    # round-trip state this class maintains. Left inherited, every request
+    # (even a lone one — ``BatchGenerator`` merges a batch of 1 too) would
+    # silently replace this cache with that generic one: no quantization, no
+    # byte accounting, plain fp16 growth, while the server still believes it
+    # is running ``nsnquant``. A bare method override is insufficient since
+    # ``hasattr()`` would still report ``True`` for a classmethod defined on
+    # the class; the property must raise on access instead so ``hasattr``
+    # sees it as absent.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("NSNQuantKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
+
 
 __all__ = ["NSNQuantKVCache"]
