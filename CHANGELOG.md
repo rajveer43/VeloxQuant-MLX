@@ -432,6 +432,23 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.8 (2026-09-14)
+
+### Bug Fixes
+
+- **cache**: Guard palu against silent merge() substitution; fix field_schema (issue #23)
+  ([#366](https://github.com/rajveer43/VeloxQuant-MLX/pull/366),
+  [`41d9870`](https://github.com/rajveer43/VeloxQuant-MLX/commit/41d987085f9f3b46caf681564833198a2534795b))
+
+- **cache**: Nestedkv's zero-padded ragged heads corrupt attention; also fix batching (issue #21)
+  ([#364](https://github.com/rajveer43/VeloxQuant-MLX/pull/364),
+  [`73ac248`](https://github.com/rajveer43/VeloxQuant-MLX/commit/73ac248a70e29524a2503e90292399c5f4f5b853))
+
+- **cache**: NSNQuantKVCache is silently unbatchable-unsafe (issue #22)
+  ([#365](https://github.com/rajveer43/VeloxQuant-MLX/pull/365),
+  [`6d0acb5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6d0acb5f8a44c5c6c9bb5cd8f6d7f306d3a930e6))
+
+
 ## v0.83.7 (2026-09-14)
 
 ### Bug Fixes
