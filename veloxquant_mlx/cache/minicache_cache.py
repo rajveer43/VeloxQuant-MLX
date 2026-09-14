@@ -83,6 +83,41 @@ class MiniCacheKVCache(_MLXKVCache):
         self._n_retained_this_call = 0
 
     # ------------------------------------------------------------------
+    # `mlx_lm.server`'s `ModelProvider.load()` decides whether to route
+    # requests through `BatchGenerator` (continuous batching) purely by
+    # `all(hasattr(c, "merge") for c in make_prompt_cache(model))` — every
+    # per-layer cache instance is probed, and `is_batchable` is `False` if
+    # even one lacks `merge`. The base `KVCache` this inherits from defines
+    # `merge()` as a classmethod returning a plain
+    # `mlx_lm.models.cache.BatchKVCache`, oblivious to this layer's role
+    # (primary/merge), its shared `MiniCacheCoordinator`, or the SLERP-merge
+    # state a "merge"-role layer needs from its paired primary. Left
+    # inherited, every request — even a lone one, since `BatchGenerator`
+    # merges a batch of 1 too — would silently replace every layer's cache
+    # with a generic unlimited fp16 cache: no cross-layer merging, no
+    # coordinator, while the server believes it is still running
+    # `minicache`. This hides `merge` from `hasattr` instead (a bare
+    # classmethod override wouldn't: `hasattr` would still see it as present
+    # and callable). That makes `is_batchable` correctly report `False`,
+    # routing `minicache` through `mlx_lm.server`'s sequential
+    # `_serve_single` path instead, where this class already runs
+    # correctly. No coordinator-specific handling is needed here: the probe
+    # only checks `hasattr` per instance and never actually calls `merge`,
+    # so this guard is safe regardless of role or coordinator wiring. See
+    # VeloxQuant-MLX#358 for the full 37-method scope of this defect
+    # (minicache flagged there as one of the coordinator-pattern methods
+    # needing extra care before applying the fix — verified above that no
+    # extra care is actually needed for this particular check).
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError(
+                "MiniCacheKVCache does not support batched merging; use it "
+                "via the sequential serving path (see class docstring)."
+            )
+        )
+    )
+
+    # ------------------------------------------------------------------
     def _merge_reconstruct(self, t_self: mx.array, t_primary: mx.array, is_key: bool) -> mx.array:
         """Merge this (merge-role) layer with the primary's tensor, per head.
 
