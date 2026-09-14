@@ -377,6 +377,19 @@ _CONFIG_FIELDS: dict[str, list[str]] = {
         "palu_group_size",
         "palu_quantize_values",
     ],
+    # pyramid_resolved_budget is deliberately excluded: it is an internal,
+    # per-layer field written only by KVCacheBuilder._build_pyramidkv (via
+    # dataclasses.replace), never a user-facing knob -- the uncurated
+    # name-prefix fallback (field_is_relevant / _default_config_fields) can't
+    # tell that apart from pyramid_budget/pyramid_n_sink/pyramid_beta, since
+    # all four share the "pyramid_" prefix. Left exposed, `--set
+    # pyramid_resolved_budget=N` or the app's parameter editor could silently
+    # pin every layer to one fixed budget, bypassing the pyramid schedule
+    # entirely with no indication anything unusual happened. Found verifying
+    # VeloxQuant-Studio issue #24; cachegen_resolved_bits and
+    # squeeze_resolved_budget are the same pattern on cachegen/squeeze and
+    # remain open (see #28 for squeeze).
+    "pyramidkv": ["pyramid_backend", "pyramid_beta", "pyramid_budget", "pyramid_n_sink"],
     "qjl": ["jl_dim", "seed"],
     "polar": ["bit_width_inlier", "seed"],
     "spectral": ["bit_width_inlier", "seed"],

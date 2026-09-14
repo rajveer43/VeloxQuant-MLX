@@ -229,5 +229,27 @@ class PyramidKVCache(_MLXKVCache):
             return 0
         return int(self._states[0].keys.shape[0])
 
+    # ------------------------------------------------------------------
+    # Batching guard (see VeloxQuant-MLX#358)
+    # ------------------------------------------------------------------
+    # ``mlx_lm.server``'s ``BatchGenerator`` calls ``_merge_caches`` on every
+    # ``PromptProcessingBatch`` it builds -- including the very first, single-
+    # sequence one -- whenever ``hasattr(cache, "merge")`` is ``True`` on a
+    # fresh per-layer probe. The inherited ``KVCache.merge()`` classmethod
+    # delegates to ``BatchKVCache.merge()``, which for a batch of brand-new
+    # (empty) caches takes the "no cache has content" fast path and silently
+    # returns a plain empty ``BatchKVCache`` in place of ``PyramidKVCache`` --
+    # no per-layer pyramid budget, no H2O eviction, no byte accounting, plain
+    # fp16 growth, while the server still believes it is running ``pyramidkv``
+    # (the same silent-substitution pattern as the other #358 occurrences).
+    # A bare method override is insufficient since ``hasattr()`` would still
+    # report ``True`` for a classmethod defined on the class; the property
+    # must raise on access instead so ``hasattr`` sees it as absent.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("PyramidKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
+
 
 __all__ = ["PyramidKVCache"]

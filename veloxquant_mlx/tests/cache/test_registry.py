@@ -366,6 +366,26 @@ class TestFieldIsRelevant:
         for f in fields - {"palu_rank", "palu_energy_threshold"}:
             assert field_is_relevant("palu", f)
 
+    def test_pyramidkv_config_fields_exclude_internal_resolved_budget(self):
+        """Regression for VeloxQuant-Studio issue #24: pyramidkv was
+        uncurated, so field_is_relevant/_default_config_fields fell back to a
+        plain "pyramid_" name-prefix match -- which can't distinguish the
+        three real user-facing knobs (backend, beta, n_sink -- plus
+        pyramid_budget) from pyramid_resolved_budget, a field written only by
+        KVCacheBuilder._build_pyramidkv (via dataclasses.replace) to hand each
+        layer its own slice of the pyramid schedule. Left exposed, `--set
+        pyramid_resolved_budget=N` or the app's parameter editor could
+        silently pin every layer to one fixed budget, bypassing the pyramid
+        schedule with no indication anything unusual happened. Curating the
+        method excludes it; the three real knobs remain relevant by the
+        (now-unused, since the method is curated) prefix rule too.
+        """
+        fields = set(get_method("pyramidkv").config_fields)
+        assert fields == {"pyramid_backend", "pyramid_beta", "pyramid_budget", "pyramid_n_sink"}
+        assert "pyramid_resolved_budget" not in fields
+        for f in fields:
+            assert field_is_relevant("pyramidkv", f)
+
     def test_tuple_valued_fields_describe_as_array_not_unknown(self):
         """Regression for VeloxQuant-Studio issue #17: describe_field()'s
         type-mapping dict only covered int/float/bool/str, so any
