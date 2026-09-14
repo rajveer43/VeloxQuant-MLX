@@ -432,6 +432,39 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.9 (2026-09-14)
+
+### Bug Fixes
+
+- **cache**: Guard palu against silent merge() substitution; fix field_schema (issue #23)
+  ([#368](https://github.com/rajveer43/VeloxQuant-MLX/pull/368),
+  [`8871807`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8871807fe8cc835881d334567ea83dbe4d12ef44))
+
+- **cache**: Guard palu against silent merge() substitution; fix field_schema (issue #23)
+  ([#367](https://github.com/rajveer43/VeloxQuant-MLX/pull/367),
+  [`d457ec1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d457ec1d9136da597260646709007cad4e617eba))
+
+- **cache**: Guard pyramidkv against silent merge() substitution; curate field_schema (issue #24)
+  ([#368](https://github.com/rajveer43/VeloxQuant-MLX/pull/368),
+  [`8871807`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8871807fe8cc835881d334567ea83dbe4d12ef44))
+
+- **cache**: Guard pyramidkv against silent merge() substitution; curate field_schema (issue #24)
+  ([#367](https://github.com/rajveer43/VeloxQuant-MLX/pull/367),
+  [`d457ec1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d457ec1d9136da597260646709007cad4e617eba))
+
+- **cache**: Guard qfilters against silent merge() substitution (issue #25)
+  ([#368](https://github.com/rajveer43/VeloxQuant-MLX/pull/368),
+  [`8871807`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8871807fe8cc835881d334567ea83dbe4d12ef44))
+
+- **cache**: Pyramidkv silent merge() substitution + field_schema leak (issue #24)
+  ([#367](https://github.com/rajveer43/VeloxQuant-MLX/pull/367),
+  [`d457ec1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d457ec1d9136da597260646709007cad4e617eba))
+
+- **cache**: Qfilters silent merge() substitution (issue #25)
+  ([#368](https://github.com/rajveer43/VeloxQuant-MLX/pull/368),
+  [`8871807`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8871807fe8cc835881d334567ea83dbe4d12ef44))
+
+
 ## v0.83.8 (2026-09-14)
 
 ### Bug Fixes
