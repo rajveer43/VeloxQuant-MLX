@@ -340,6 +340,32 @@ class TestFieldIsRelevant:
         assert "kvquant_n_sink" in fields
         assert field_is_relevant("kvquant", "kvquant_n_sink")
 
+    def test_palu_config_fields_include_all_eight_real_knobs(self):
+        """Regression for VeloxQuant-Studio issue #23: palu IS in
+        _CONFIG_FIELDS, but its explicit list held only palu_rank and
+        palu_energy_threshold since the method's original introduction --
+        six other real, consumed PALUKVCache.__init__ knobs (head-group
+        count, mixed-bit hi/lo bit-width, hi-fraction, group size, and the
+        quantize-values toggle) were invisible to field_schema, and so to the
+        macOS app's parameter editor and `veloxquant serve --set`, even
+        though field_is_relevant would have accepted them by prefix for an
+        uncurated method. A curated method's list is used verbatim, with no
+        prefix fallback.
+        """
+        fields = set(get_method("palu").config_fields)
+        assert fields == {
+            "palu_rank",
+            "palu_energy_threshold",
+            "palu_n_head_groups",
+            "palu_hi_bit",
+            "palu_lo_bit",
+            "palu_hi_fraction",
+            "palu_group_size",
+            "palu_quantize_values",
+        }
+        for f in fields - {"palu_rank", "palu_energy_threshold"}:
+            assert field_is_relevant("palu", f)
+
     def test_tuple_valued_fields_describe_as_array_not_unknown(self):
         """Regression for VeloxQuant-Studio issue #17: describe_field()'s
         type-mapping dict only covered int/float/bool/str, so any
