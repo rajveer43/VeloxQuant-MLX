@@ -313,3 +313,16 @@ class TestFieldIsRelevant:
             "gear_group_size",
             "gear_quantize_values",
         }
+
+    def test_kivi_sink_includes_n_sink_tokens(self):
+        """Regression for VeloxQuant-Studio issue #14: kivi_sink IS in
+        _CONFIG_FIELDS (unlike gear/#9's uncurated-method bug), but its
+        explicit list was missing n_sink_tokens -- SinkProtectedKVCache's
+        own sink-count knob (default 5), read directly in its __init__.
+        Because the name has no kivi_sink_ prefix, field_is_relevant's
+        prefix fallback would never have caught it either; a curated
+        method's list is used verbatim, with no fallback.
+        """
+        fields = set(get_method("kivi_sink").config_fields)
+        assert "n_sink_tokens" in fields
+        assert field_is_relevant("kivi_sink", "n_sink_tokens")
