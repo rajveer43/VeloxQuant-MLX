@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import mlx.core as mx
 import numpy as np
+import pytest
 
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.kvquant_cache import KVQuantKVCache
@@ -379,3 +380,26 @@ def test_accounting_tracks_realized_outliers_and_sinks():
     # Accounting stays honest: still below fp16, and effective_bits sane.
     assert c4.compressed_key_bytes < c4.fp16_key_bytes
     assert 3.0 <= c4.effective_bits <= 6.0
+
+
+# ---------------------------------------------------------------------------
+# Test 23 — not batchable via mlx_lm.server's probe (issue #16, same defect
+# as knorm/#15 and #357)
+# ---------------------------------------------------------------------------
+def test_not_batchable_via_mlx_lm_server_probe() -> None:
+    """`mlx_lm.server`'s `ModelProvider.load()` decides whether a method is
+    batchable purely via `hasattr(cache, "merge")` on a probe instance. The
+    base `KVCache` this inherits from defines `merge()` as a classmethod
+    returning a plain `BatchKVCache` — oblivious to this class's frozen NUQ
+    levels, outlier thresholds, and sink bookkeeping. Left inherited, every
+    request (even a lone one — `BatchGenerator` merges a batch of 1 too)
+    would silently replace this cache with that generic one: no
+    quantization, no outlier isolation, no sink protection, while the server
+    still believes it is running `kvquant`. `hasattr` must see `merge` as
+    absent so the server routes `kvquant` through its sequential path
+    instead, where this class runs correctly.
+    """
+    cache = KVQuantKVCache(_cfg())
+    assert not hasattr(cache, "merge")
+    with pytest.raises(AttributeError):
+        cache.merge

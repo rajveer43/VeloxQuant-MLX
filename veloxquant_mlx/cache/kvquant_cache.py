@@ -285,6 +285,34 @@ class KVQuantKVCache(_MLXKVCache):
         self._fp16_value_bytes += B * H * S * D * 2
 
     # ------------------------------------------------------------------
+    # `mlx_lm.server`'s `ModelProvider.load()` decides whether to route
+    # requests through `BatchGenerator` (continuous batching) purely by
+    # `hasattr(c, "merge")` on a probe cache — see #15/#357. The base
+    # `KVCache` class this inherits from defines `merge()` as a classmethod
+    # that returns a plain `mlx_lm.models.cache.BatchKVCache`, oblivious to
+    # the frozen NUQ levels, outlier thresholds, and sink bookkeeping this
+    # class needs. Left inherited, every request (even a lone one — a batch
+    # of size 1 is still merged for uniform batch-shape handling) silently
+    # replaces this cache with that generic one: no quantization, no
+    # outlier isolation, no sink protection, while the server believes it
+    # is still running `kvquant`. This hides `merge` from `hasattr` instead
+    # (a bare classmethod override wouldn't: `hasattr` would still see it as
+    # present and callable). That makes `is_batchable` correctly report
+    # `False`, routing `kvquant` through `mlx_lm.server`'s sequential
+    # `_serve_single` path instead, where this class already runs
+    # correctly. See VeloxQuant-MLX#358: this defect turned out to affect
+    # essentially every custom cache class in the repo (37, not the ~11
+    # originally scoped), not just eviction/hybrid methods.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError(
+                "KVQuantKVCache does not support batched merging; use it via "
+                "the sequential serving path (see class docstring)."
+            )
+        )
+    )
+
+    # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
     @property

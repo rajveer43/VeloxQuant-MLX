@@ -326,3 +326,16 @@ class TestFieldIsRelevant:
         fields = set(get_method("kivi_sink").config_fields)
         assert "n_sink_tokens" in fields
         assert field_is_relevant("kivi_sink", "n_sink_tokens")
+
+    def test_kvquant_config_fields_include_n_sink(self):
+        """Regression for VeloxQuant-Studio issue #16: kvquant IS in
+        _CONFIG_FIELDS, but its explicit list was missing kvquant_n_sink --
+        KVQuantKVCache's Attention Sink-Aware knob (default 1, paper §3.5),
+        read directly in its __init__ and documented/tested elsewhere in the
+        repo. Because the field has a kvquant_ prefix, field_is_relevant's
+        prefix fallback *would* have caught it for an uncurated method, but
+        a curated method's list is used verbatim, with no fallback.
+        """
+        fields = set(get_method("kvquant").config_fields)
+        assert "kvquant_n_sink" in fields
+        assert field_is_relevant("kvquant", "kvquant_n_sink")
