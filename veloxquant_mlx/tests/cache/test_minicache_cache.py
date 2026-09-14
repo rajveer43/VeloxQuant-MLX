@@ -278,3 +278,37 @@ def test_determinism() -> None:
     mx.eval(*out1, *out2)
     for a, b in zip(out1, out2, strict=True):
         assert np.allclose(np.array(a), np.array(b), atol=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# Regression for VeloxQuant-Studio issue #19.
+# ---------------------------------------------------------------------------
+def test_not_batchable_via_mlx_lm_server_probe() -> None:
+    """`mlx_lm.server`'s `ModelProvider.load()` decides batchability via
+    `all(hasattr(c, "merge") for c in make_prompt_cache(model))` — every
+    per-layer cache is probed. The base `KVCache` this inherits from
+    defines `merge()` as a classmethod returning a plain `BatchKVCache`,
+    oblivious to this layer's role (primary/merge) or its shared
+    `MiniCacheCoordinator`. Left inherited, every request (even a lone one
+    — `BatchGenerator` merges a batch of 1 too) would silently replace
+    every layer's cache with a generic unlimited fp16 cache: no cross-
+    layer merging, no coordinator, while the server still believes it is
+    running `minicache`. `hasattr` must see `merge` as absent so the
+    server routes `minicache` through its sequential path instead, where
+    this class runs correctly. Checked on both roles: the probe only
+    calls `hasattr`, never `merge` itself, so the guard is safe regardless
+    of role or coordinator wiring.
+    """
+    coord = MiniCacheCoordinator()
+    primary = MiniCacheKVCache(
+        KVCacheConfig(method="minicache", head_dim=64), role="primary", coordinator=coord
+    )
+    merge_role = MiniCacheKVCache(
+        KVCacheConfig(method="minicache", head_dim=64), role="merge", coordinator=coord
+    )
+    degenerate = KVCacheFactory.create(KVCacheConfig(method="minicache", head_dim=64))
+
+    for cache in (primary, merge_role, degenerate):
+        assert not hasattr(cache, "merge")
+        with pytest.raises(AttributeError):
+            cache.merge
