@@ -4,13 +4,18 @@ NestedKV-adapted (arXiv:2605.26678, no verified peer-reviewed venue as of
 2026-07-14 — a one-time, user-directed exception) compresses the KV cache
 ONCE at the end of prefill: each head is scored by three parallel key-only
 continuum-memory anomaly signals, combined via a head-adaptive blend and a
-per-token surprise gate, and the layer's total budget is allocated across
-heads by a cross-head competition. Decode tokens are always appended,
-unscored — the cache is NOT bounded during decode, unlike H2O/CurDKV.
+per-token surprise gate, then independently keeps its own top-
+nestedkv_budget scoring tokens — UNIFORM per-head budget, like H2O/CurDKV
+(see #21: the paper's cross-head budget competition produced ragged
+per-head lengths that were zero-padded to stack into one tensor, but that
+padding became real unmasked attention entries mlx_lm's shared-mask-per-
+model architecture cannot correctly exclude per layer, so this class no
+longer uses it). Decode tokens are always appended, unscored — the cache
+is NOT bounded during decode, unlike H2O/CurDKV.
 test_decode_growth_unbounded_past_prefill_budget and
 test_prefill_budget_bounds_only_prefill_output prove this directly. Tests
-also cover: factory dispatch, interface attributes, shape/dtype, cross-head
-budget allocation reaching every head, byte accounting, determinism, and
+also cover: factory dispatch, interface attributes, shape/dtype, uniform
+per-head budget reaching every head, byte accounting, determinism, and
 for_model config propagation. All data is synthetic.
 """
 
@@ -155,8 +160,8 @@ def test_tokens_kept_bounded_at_prefill_only() -> None:
 
 
 def test_all_heads_receive_nonzero_output_after_prefill() -> None:
-    """Every head must retain at least its safeguard floor of tokens after
-    prefill compression, even under an aggressive total budget."""
+    """Every head keeps its own uniform nestedkv_budget after prefill
+    compression (see #21), even under an aggressive budget."""
     c = _make(nestedkv_budget=4, nestedkv_n_sink=0, nestedkv_safeguard_alpha=0.20)
     k, v = _rand_kv(S=40, H=4, D=32)
     ko, vo = c.update_and_fetch(k, v)
@@ -274,3 +279,82 @@ def test_factory_smoke_compression_ratio_positive_both_kv() -> None:
     assert ko.shape[2] <= 30
     assert vo.shape[2] <= 30
     assert c.compression_ratio > 1.0
+
+
+# ---------------------------------------------------------------------------
+# Regression for VeloxQuant-Studio issue #21: uniform per-head budget /
+# no fake zero-padding rows leaking into attention.
+# ---------------------------------------------------------------------------
+def test_prefill_keeps_every_head_at_uniform_length() -> None:
+    """Regression for issue #21. An earlier version let NestedKV's
+    cross-head budget competition give heads different kept lengths, then
+    zero-padded shorter heads (at the front) purely to stack them into one
+    tensor. Those zero rows were never masked out of attention, so they
+    silently corrupted output for any head that got less than the layer's
+    max share -- reproduced directly against unpadded per-head state:
+    heads legitimately came back with lengths like [30, 31, 38, 39, 30, 40,
+    16, 32] out of a shared max of 40. This class now keeps every head at
+    the same nestedkv_budget so no padding is ever constructed. Uses
+    per-head score profiles specifically shaped to have driven ragged
+    allocation under the old cross-head competition.
+    """
+    H, S, D, budget = 6, 60, 16, 10
+    rng = np.random.default_rng(3)
+    # Deliberately different per-head magnitude/variance profiles -- the
+    # kind of spread that used to produce a wide head_budgets range under
+    # nestedkv_allocate_head_budgets's cross-head competition.
+    scales = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
+    K = np.stack(
+        [rng.standard_normal((S, D)).astype(np.float32) * s for s in scales], axis=0
+    )[None]
+    V = np.stack(
+        [rng.standard_normal((S, D)).astype(np.float32) * s for s in scales], axis=0
+    )[None]
+    c = _make(nestedkv_budget=budget, nestedkv_n_sink=2)
+    ko, vo = c.update_and_fetch(mx.array(K.astype(np.float16)), mx.array(V.astype(np.float16)))
+
+    assert ko.shape == (1, H, budget, D)
+    assert vo.shape == (1, H, budget, D)
+    lens = [int(st.keys.shape[0]) for st in c._states]
+    assert lens == [budget] * H
+
+    # No spurious all-zero rows anywhere (the old padded rows were exactly
+    # this: real-looking cache content that was actually fake).
+    Knp = np.array(ko)
+    for h in range(H):
+        zero_rows = np.all(Knp[0, h] == 0, axis=-1)
+        assert not zero_rows.any(), f"head {h} has {zero_rows.sum()} spurious zero rows"
+
+
+def test_decode_stays_uniform_length_after_prefill() -> None:
+    """Decode append must also stay uniform across heads (see #21):
+    every head enters decode at the same prefill length and grows by the
+    same S each call."""
+    c = _make(nestedkv_budget=6, nestedkv_n_sink=1)
+    k0, v0 = _rand_kv(S=20, H=3, D=32, seed=5)
+    c.update_and_fetch(k0, v0)
+    for i in range(4):
+        k1, v1 = _rand_kv(S=1, H=3, D=32, seed=100 + i)
+        ko, vo = c.update_and_fetch(k1, v1)
+    lens = [int(st.keys.shape[0]) for st in c._states]
+    assert len(set(lens)) == 1
+    assert ko.shape[2] == lens[0]
+
+
+def test_not_batchable_via_mlx_lm_server_probe() -> None:
+    """`mlx_lm.server`'s `ModelProvider.load()` decides whether a method is
+    batchable purely via `hasattr(cache, "merge")` on a probe instance. The
+    base `KVCache` this inherits from defines `merge()` as a classmethod
+    returning a plain `BatchKVCache` — oblivious to this class's
+    multi-scale ensembled eviction state. Left inherited, every request
+    (even a lone one — `BatchGenerator` merges a batch of 1 too) would
+    silently replace this cache with that generic one: no eviction, no
+    sink protection, unlimited growth, while the server still believes it
+    is running `nestedkv`. `hasattr` must see `merge` as absent so the
+    server routes `nestedkv` through its sequential path instead, where
+    this class runs correctly.
+    """
+    c = _make()
+    assert not hasattr(c, "merge")
+    with pytest.raises(AttributeError):
+        c.merge

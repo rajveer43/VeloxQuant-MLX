@@ -10,12 +10,14 @@ See ``paper/research/surveys/NEW_METHOD_SURVEY_V21.md``.
 Multi-scale ensembled eviction: at the end of prefill, each head's tokens are
 scored by three parallel continuum-memory anomaly signals (stable/global,
 episodic/block-local, current/recent-window), combined via a head-adaptive
-blend and a per-token surprise gate (see ``quantizers/nestedkv.py``). The
-resulting per-token scores compete for a shared layer budget ACROSS heads
-(not independently per head, unlike H2O/CurDKV) — a head whose tokens are
-collectively more anomalous is allocated a larger share of the layer's total
-budget. Decode tokens are appended unscored, never evicted — this is a
-one-shot prefill compressor, not a per-step recurring eviction loop.
+blend and a per-token surprise gate (see ``quantizers/nestedkv.py``). Each
+head then independently keeps its own top-``nestedkv_budget`` scoring tokens
+— UNIFORM per-head budget, like H2O/CurDKV (see "Uniform per-head budget"
+below, issue #21, for why this class does not use the paper's cross-head
+budget competition even though ``quantizers/nestedkv.py`` still implements
+it as a tested primitive). Decode tokens are appended unscored, never
+evicted — this is a one-shot prefill compressor, not a per-step recurring
+eviction loop.
 
 This is the 15th eviction-family method in VeloxQuant-MLX and the first that
 ensembles multiple independent importance signals rather than committing to
@@ -23,8 +25,7 @@ one:
   - H2O / CurDKV / KVzip / Keyformer / MorphKV : one signal, scored every step.
   - SnapKV : one signal (obs-window attention), scored once at prefill.
   - NestedKV : THREE signals, scored once at prefill, combined by a
-    head-adaptive blend + per-token surprise gate, with cross-head budget
-    competition.
+    head-adaptive blend + per-token surprise gate.
 
 Adaptation limitations (stated plainly — see quantizers/nestedkv.py for the
 full crux):
@@ -34,16 +35,28 @@ full crux):
   - Key-only scoring, no query/attention access at all (not even a proxy).
   - Gate/blend constants (beta=3.0, tau=0.60, kappa=10.0, prior=(0.4,0.4,0.2),
     safeguard_alpha=0.20) taken directly from the paper's Appendix A.
-  - **Ragged per-head budgets, zero-padded for stacking.** Every other
-    eviction method in this repo (H2O, CurDKV, PyramidKV) uses a UNIFORM
-    per-head budget, so every head's kept tensor is always the same length
-    and heads stack trivially. NestedKV's cross-head competition (component
-    5) can legitimately give different heads different token counts. This
-    wrapper zero-pads shorter heads (at the front) up to the layer's max
-    kept length purely so ``mx.stack`` can combine heads into one tensor;
-    the padding is a tensor-shape accommodation only — byte accounting
-    (``nestedkv_kept_bytes``) is computed from each head's true, unpadded
-    state, so reported compression numbers are unaffected.
+  - **Uniform per-head budget (issue #21).** The paper's cross-head budget
+    competition (component 5, ``nestedkv_allocate_head_budgets``) can
+    legitimately give different heads different token counts. An earlier
+    version of this wrapper let each head keep its ragged, cross-head-
+    competed count and zero-padded shorter heads (at the front) to stack
+    them into one tensor. That was a real correctness bug, not just a
+    shape accommodation: the padded rows became real (unmasked) cache
+    entries that the downstream attention computation attended to — and
+    ``mlx_lm``'s attention forward computes ONE shared mask from the
+    model's first layer's cache and reuses it for every layer, so a
+    per-cache mask override cannot correctly express each NestedKV layer's
+    independent padding pattern. Rather than build mask machinery this
+    architecture cannot actually support end-to-end, this class now keeps
+    every head's kept length uniform at ``nestedkv_budget`` — same
+    convention as every other eviction method here (H2O, CurDKV,
+    PyramidKV). ``nestedkv_score`` (the cross-scale anomaly ranking) still
+    runs per head exactly as before; only the cross-head *reallocation of
+    how many tokens each head keeps* is dropped, in favor of each head
+    independently keeping its own top-``nestedkv_budget`` scoring tokens
+    (sinks always included) — the same per-head-independent budget model
+    H2O and CurDKV already use. No padding is ever needed, so there is
+    nothing left to mask.
 
 Byte accounting:
     nestedkv_kept_bytes — fp16 bytes for currently retained K + V tokens
@@ -63,7 +76,6 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 from veloxquant_mlx.quantizers.nestedkv import (
     NestedKVState,
     init_nestedkv_state,
-    nestedkv_allocate_head_budgets,
     nestedkv_append_decode,
     nestedkv_compress_prefill,
     nestedkv_fp16_bytes,
@@ -77,20 +89,30 @@ class NestedKVKVCache(_MLXKVCache):
 
     Args:
         config: :class:`KVCacheConfig`. Fields consumed:
-            ``nestedkv_budget``    (int, default 512)   — per-head-equivalent
-                budget; total layer budget = this * n_heads,
+            ``nestedkv_budget``    (int, default 512)   — per-head budget
+                (uniform across heads, see #21 — NOT per-head-equivalent
+                summed into a cross-head-competed total as in the paper),
             ``nestedkv_n_sink``    (int, default 4)     — leading sink positions,
             ``nestedkv_window``    (int, default 64)    — current-memory window W,
             ``nestedkv_beta``      (float, default 3.0) — head-adaptive blend temperature,
             ``nestedkv_tau``       (float, default 0.60)— surprise gate threshold,
             ``nestedkv_kappa``     (float, default 10.0)— surprise gate sharpness,
-            ``nestedkv_safeguard_alpha`` (float, default 0.20) — per-head budget floor.
+            ``nestedkv_safeguard_alpha`` (float, default 0.20) — parsed and
+                stored for API stability but no longer consumed by this
+                class (see #21): it configured the cross-head budget floor
+                in ``nestedkv_allocate_head_budgets``, which this class no
+                longer calls. Still a real, tested parameter of that
+                quantizer-level function for direct callers.
 
     Notes:
         No ``.bits`` attribute — stores and returns fp16 K/V directly.
-        Eviction happens ONCE at prefill (S > 1), across all heads jointly
-        (cross-head budget competition). Decode tokens (S == 1) are always
-        appended, never rescored or evicted — same convention as
+        Eviction happens ONCE at prefill (S > 1), independently per head at
+        a UNIFORM budget (see #21 — NOT the paper's cross-head budget
+        competition, which produced ragged per-head lengths that could not
+        be safely stacked into one tensor without either corrupting
+        attention with fake padding rows or requiring per-layer attention
+        masks this architecture doesn't support). Decode tokens (S == 1)
+        are always appended, never rescored or evicted — same convention as
         SnapKV-adapted, NOT H2O's/CurDKV's per-step loop.
         Single-layer (no coordinator); ``KVCacheBuilder.for_model()``
         propagates all ``nestedkv_*`` fields automatically via
@@ -123,6 +145,33 @@ class NestedKVKVCache(_MLXKVCache):
         self._tokens_seen_total: int = 0
 
     # ------------------------------------------------------------------
+    # `mlx_lm.server`'s `ModelProvider.load()` decides whether to route
+    # requests through `BatchGenerator` (continuous batching) purely by
+    # `hasattr(c, "merge")` on a probe instance. The base `KVCache` this
+    # inherits from defines `merge()` as a classmethod that returns a plain
+    # `mlx_lm.models.cache.BatchKVCache`, oblivious to the multi-scale
+    # ensembled eviction state this class needs. Left inherited, every
+    # request — even a lone one, since `BatchGenerator` merges a batch of 1
+    # too, for uniform batch-shape handling — silently replaces this cache
+    # with that generic one: no eviction, no sink protection, unlimited
+    # growth, while the server believes it is still running `nestedkv`.
+    # This hides `merge` from `hasattr` instead (a bare classmethod
+    # override wouldn't: `hasattr` would still see it as present and
+    # callable). That makes `is_batchable` correctly report `False`,
+    # routing `nestedkv` through `mlx_lm.server`'s sequential
+    # `_serve_single` path instead, where this class already runs
+    # correctly. See VeloxQuant-MLX#358 for the full 37-method scope of
+    # this defect.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError(
+                "NestedKVKVCache does not support batched merging; use it via "
+                "the sequential serving path (see class docstring)."
+            )
+        )
+    )
+
+    # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         """Lazily initialise per-head NestedKVState list on first call."""
         if not self._states:
@@ -135,53 +184,15 @@ class NestedKVKVCache(_MLXKVCache):
         return b * self._H + h
 
     # ------------------------------------------------------------------
-    @staticmethod
-    def _pad_heads_to_common_length(rows: list[mx.array]) -> mx.array:
-        """Stack a list of ``[n_h, D]`` arrays (possibly different ``n_h``)
-        into ``[H, max_n, D]`` by zero-padding shorter heads at the front.
-
-        NestedKV's cross-head budget competition (paper Section 2.6) can
-        legitimately allocate different token counts to different heads —
-        unlike every other eviction method in this repo (H2O, CurDKV,
-        PyramidKV), which use a uniform per-head budget and never hit this.
-        Padding is a pure tensor-shape accommodation for stacking; the
-        library's own byte accounting (``nestedkv_fp16_bytes``) is computed
-        from each head's true (unpadded) state, so compression numbers are
-        unaffected by this padding.
-        """
-        max_n = max(int(r.shape[0]) for r in rows)
-        D = rows[0].shape[1]
-        padded = []
-        for r in rows:
-            n = int(r.shape[0])
-            if n < max_n:
-                pad = mx.zeros((max_n - n, D), dtype=r.dtype)
-                r = mx.concatenate([pad, r], axis=0)
-            padded.append(r)
-        return mx.stack(padded, axis=0)
-
     def _process_prefill(self, keys: mx.array, values: mx.array):
-        """One-shot prefill compression: score every head, allocate cross-head
-        budgets, evict down to each head's allocated budget."""
+        """One-shot prefill compression: score every head, evict down to a
+        uniform per-head budget (see #21 and the module docstring for why
+        this is uniform rather than the paper's cross-head-competed split).
+        """
         B, H, S, D = keys.shape
         k_out_b, v_out_b = [], []
 
         for b in range(B):
-            head_scores = [
-                nestedkv_score(
-                    keys[b, h].astype(mx.float32),
-                    window=self._window,
-                    beta=self._beta,
-                    tau=self._tau,
-                    kappa=self._kappa,
-                )
-                for h in range(H)
-            ]
-            total_budget = self._budget * H
-            head_budgets = nestedkv_allocate_head_budgets(
-                head_scores, total_budget, safeguard_alpha=self._safeguard_alpha
-            )
-
             k_out_h, v_out_h = [], []
             for h in range(H):
                 idx = self._head_idx(b, h)
@@ -190,7 +201,7 @@ class NestedKVKVCache(_MLXKVCache):
                     st,
                     keys[b, h],
                     values[b, h],
-                    budget=head_budgets[h],
+                    budget=self._budget,
                     window=self._window,
                     beta=self._beta,
                     tau=self._tau,
@@ -200,13 +211,22 @@ class NestedKVKVCache(_MLXKVCache):
                 k_h, v_h = nestedkv_get_kv(st)
                 k_out_h.append(k_h)
                 v_out_h.append(v_h)
-            k_out_b.append(self._pad_heads_to_common_length(k_out_h))
-            v_out_b.append(self._pad_heads_to_common_length(v_out_h))
+            # Every head kept exactly the same length: nestedkv_compress_prefill's
+            # budget_eff = max(n_sink_eff, min(budget, S)) depends only on
+            # budget (now uniform) and S (identical across heads in one
+            # call), so this stacks safely with no padding.
+            k_out_b.append(mx.stack(k_out_h, axis=0))
+            v_out_b.append(mx.stack(v_out_h, axis=0))
 
         return mx.stack(k_out_b, axis=0), mx.stack(v_out_b, axis=0)
 
     def _process_decode(self, keys: mx.array, values: mx.array):
-        """Plain unscored append for decode tokens — never evicted."""
+        """Plain unscored append for decode tokens — never evicted.
+
+        Every head entered decode at the same uniform prefill length (#21)
+        and grows by the same S every call, so heads stay uniform-length
+        here too — no padding needed.
+        """
         B, H, S, D = keys.shape
         k_out_b, v_out_b = [], []
         for b in range(B):
@@ -219,8 +239,8 @@ class NestedKVKVCache(_MLXKVCache):
                 k_h, v_h = nestedkv_get_kv(st)
                 k_out_h.append(k_h)
                 v_out_h.append(v_h)
-            k_out_b.append(self._pad_heads_to_common_length(k_out_h))
-            v_out_b.append(self._pad_heads_to_common_length(v_out_h))
+            k_out_b.append(mx.stack(k_out_h, axis=0))
+            v_out_b.append(mx.stack(v_out_h, axis=0))
         return mx.stack(k_out_b, axis=0), mx.stack(v_out_b, axis=0)
 
     # ------------------------------------------------------------------
@@ -248,13 +268,12 @@ class NestedKVKVCache(_MLXKVCache):
 
         self._nestedkv_kept_bytes = sum(nestedkv_fp16_bytes(st) for st in self._states)
 
-        # K_out/V_out is the full retained state every call (front-padded to
-        # a common per-head length by _pad_heads_to_common_length), not a
-        # delta — reset so the base class's append-only buffer starts fresh
-        # instead of stacking on top of the previous call's rows. Without
-        # this, self.keys/self.values/self.offset stay at __init__ defaults
-        # forever, and mlx_lm's generate() crashes on `cache.state` during
-        # chunked prefill (see #83).
+        # K_out/V_out is the full retained state every call (uniform length
+        # across heads, see #21), not a delta — reset so the base class's
+        # append-only buffer starts fresh instead of stacking on top of the
+        # previous call's rows. Without this, self.keys/self.values/self.offset
+        # stay at __init__ defaults forever, and mlx_lm's generate() crashes
+        # on `cache.state` during chunked prefill (see #83).
         self.keys = None
         self.values = None
         self.offset = 0
