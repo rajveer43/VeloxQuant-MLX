@@ -211,6 +211,37 @@ class L2NormKVCache(_MLXKVCache):
         return False
 
     # ------------------------------------------------------------------
+    # `mlx_lm.server`'s `ModelProvider.load()` decides whether to route
+    # requests through `BatchGenerator` (continuous batching) purely by
+    # `hasattr(c, "merge")` on a probe cache — see #15. The base `KVCache`
+    # class this inherits from defines `merge()` as a classmethod that
+    # returns a plain `mlx_lm.models.cache.BatchKVCache`, oblivious to
+    # `_states`/`_true_offset`/the key-norm scoring this class actually
+    # needs. Left inherited, every request (even a lone one — a batch of
+    # size 1 is still merged for uniform batch-shape handling, see
+    # `BatchGenerator.insert_segments` -> `_merge_caches`) silently replaces
+    # this cache with that generic one: no budget cap, no eviction, no
+    # `tokens_seen`/`tokens_kept`, while the server believes it is still
+    # running `knorm`. A real batch-aware merge would need to interleave
+    # per-sequence eviction state and per-head budgets across the batch — a
+    # much larger undertaking than restoring this method's actual behavior
+    # — so this hides `merge` from `hasattr` instead (a bare classmethod
+    # override wouldn't: `hasattr` would still see it as present and
+    # callable). That makes `is_batchable` correctly report `False`,
+    # routing `knorm` through `mlx_lm.server`'s sequential `_serve_single`
+    # path instead, where this class already runs correctly. See
+    # VeloxQuant-MLX#357 for the same defect in ~10 other eviction/hybrid
+    # cache classes that also never override `merge`.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError(
+                "L2NormKVCache does not support batched merging; use it via "
+                "the sequential serving path (see class docstring)."
+            )
+        )
+    )
+
+    # ------------------------------------------------------------------
     @property
     def knorm_kept_bytes(self) -> int:
         """Bytes currently stored across all heads (fp16 K + V, kept tokens only)."""
