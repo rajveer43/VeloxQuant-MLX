@@ -473,5 +473,28 @@ class QFiltersKVCache(_MLXKVCache):
         self._sync_states()
         return self._states
 
+    # ------------------------------------------------------------------
+    # Batching guard (see VeloxQuant-MLX#358)
+    # ------------------------------------------------------------------
+    # ``mlx_lm.server``'s ``BatchGenerator`` calls ``_merge_caches`` on every
+    # ``PromptProcessingBatch`` it builds -- including the very first, single-
+    # sequence one -- whenever ``hasattr(cache, "merge")`` is ``True`` on a
+    # fresh per-layer probe. The inherited ``KVCache.merge()`` classmethod
+    # delegates to ``BatchKVCache.merge()``, which for a batch of brand-new
+    # (empty) caches takes the "no cache has content" fast path and silently
+    # returns a plain empty ``BatchKVCache`` in place of ``QFiltersKVCache`` --
+    # no projection scoring, no eviction, no true-offset RoPE correction (see
+    # ``update_and_fetch``'s #171 note), no byte accounting, plain fp16
+    # growth, while the server still believes it is running ``qfilters`` (the
+    # same silent-substitution pattern as the other #358 occurrences). A bare
+    # method override is insufficient since ``hasattr()`` would still report
+    # ``True`` for a classmethod defined on the class; the property must raise
+    # on access instead so ``hasattr`` sees it as absent.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("QFiltersKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
+
 
 __all__ = ["QFiltersKVCache"]
