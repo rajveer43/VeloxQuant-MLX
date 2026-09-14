@@ -139,3 +139,25 @@ def test_window_one_deterministic_at_cache_level():
     a, b = run(), run()
     assert a.shape[2] <= 10
     assert bool(mx.all(a == b).item())
+
+
+# ---------------------------------------------------------------------------
+# Regression for VeloxQuant-Studio issue #20.
+# ---------------------------------------------------------------------------
+def test_not_batchable_via_mlx_lm_server_probe() -> None:
+    """`mlx_lm.server`'s `ModelProvider.load()` decides whether a method is
+    batchable purely via `hasattr(cache, "merge")` on a probe instance. The
+    base `KVCache` this inherits from defines `merge()` as a classmethod
+    returning a plain `BatchKVCache` — oblivious to this class's
+    recent-window correlation eviction state. Left inherited, every request
+    (even a lone one — `BatchGenerator` merges a batch of 1 too) would
+    silently replace this cache with that generic one: no eviction, no sink
+    protection, unlimited growth, while the server still believes it is
+    running `morphkv`. `hasattr` must see `merge` as absent so the server
+    routes `morphkv` through its sequential path instead, where this class
+    runs correctly.
+    """
+    cache = _make(morphkv_budget=16)
+    assert not hasattr(cache, "merge")
+    with pytest.raises(AttributeError):
+        cache.merge
