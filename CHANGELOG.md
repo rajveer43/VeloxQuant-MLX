@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.4 (2026-09-14)
+
+### Bug Fixes
+
+- **registry**: Add missing n_sink_tokens to kivi_sink's config fields
+  ([#356](https://github.com/rajveer43/VeloxQuant-MLX/pull/356),
+  [`c1ab722`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c1ab722bbe296fb2dc22d6d7496c608a616fe499))
+
+
 ## v0.83.3 (2026-09-13)
 
 ### Bug Fixes
