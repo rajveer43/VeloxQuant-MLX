@@ -1,7 +1,7 @@
 """Tests for the method browser, knobs, model picker and memory panel.
 
 The presentation rules here exist because telemetry coverage is uneven across
-the catalog (13 keys+values / 5 keys-only / 17 none). A UI that assumed uniform
+the catalog (14 keys+values / 5 keys-only / 19 none). A UI that assumed uniform
 coverage would render zeros for half the methods, which reads as "no
 compression" — a claim nobody measured.
 """
@@ -53,21 +53,23 @@ def _get(base, path):
 
 
 def test_coverage_split_is_stable():
-    """Locks the measured 13/5/20 split; drift should be a deliberate change.
+    """Locks the measured 14/5/19 split; drift should be a deliberate change.
 
-    age_tiered (issue #256) joined the NONE bucket in the same 20/13/5 -> the
-    only place a fourth split component (13/5/20) added a servable method
-    without a per-K/V ``compressed_key_bytes``/``compressed_value_bytes``
+    age_tiered (issue #256) joined the NONE bucket in the earlier 20/13/5 ->
+    the only place a fourth split component (13/5/20) added a servable
+    method without a per-K/V ``compressed_key_bytes``/``compressed_value_bytes``
     pair — same accounting shape as amc, which reports NONE for the same
-    reason.
+    reason. kvtc (issue #17) moved NONE -> KEYS_AND_VALUES after gaining
+    those four properties (it always compressed both K and V; it just never
+    exposed the split telemetry.py's probe looks for), giving 14/5/19.
     """
     counts = dict.fromkeys(TelemetryCoverage, 0)
     for info in list_methods(servable_only=True):
         counts[info.coverage] += 1
 
-    assert counts[TelemetryCoverage.KEYS_AND_VALUES] == 13
+    assert counts[TelemetryCoverage.KEYS_AND_VALUES] == 14
     assert counts[TelemetryCoverage.KEYS_ONLY] == 5
-    assert counts[TelemetryCoverage.NONE] == 20
+    assert counts[TelemetryCoverage.NONE] == 19
 
 
 def test_default_method_is_keys_only():

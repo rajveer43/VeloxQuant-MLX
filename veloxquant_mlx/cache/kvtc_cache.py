@@ -256,6 +256,32 @@ class KVTCKVCache(_MLXKVCache):
         self._last_state: tuple | None = None
 
     # ------------------------------------------------------------------
+    # `mlx_lm.server`'s `ModelProvider.load()` decides whether to route
+    # requests through `BatchGenerator` (continuous batching) purely by
+    # `hasattr(c, "merge")` on a probe cache — see #15/#357/#358. The base
+    # `KVCache` class this inherits from defines `merge()` as a classmethod
+    # that returns a plain `mlx_lm.models.cache.BatchKVCache`, oblivious to
+    # the frozen PCA basis, DP bit allocation, and entropy-coded state this
+    # class needs. Left inherited, every request (even a lone one — a batch
+    # of size 1 is still merged for uniform batch-shape handling) silently
+    # replaces this cache with that generic one: no PCA, no DP allocation,
+    # no entropy coding, while the server believes it is still running
+    # `kvtc`. This hides `merge` from `hasattr` instead (a bare classmethod
+    # override wouldn't: `hasattr` would still see it as present and
+    # callable). That makes `is_batchable` correctly report `False`, routing
+    # `kvtc` through `mlx_lm.server`'s sequential `_serve_single` path
+    # instead, where this class already runs correctly. See
+    # VeloxQuant-MLX#358 for the full 37-method scope of this defect.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError(
+                "KVTCKVCache does not support batched merging; use it via "
+                "the sequential serving path (see class docstring)."
+            )
+        )
+    )
+
+    # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int) -> None:
         if not self._keys_states:
             self._B, self._H = B, H
@@ -360,6 +386,36 @@ class KVTCKVCache(_MLXKVCache):
         return sum(s.stored_bytes for s in self._keys_states) + sum(
             s.stored_bytes for s in self._vals_states
         )
+
+    # ``cli/telemetry.py``'s ``/v1/kv/stats`` (and, downstream, the macOS
+    # app's live panel) discovers a method's byte coverage by probing for
+    # exactly these four attribute names (``compressed_key_bytes`` /
+    # ``compressed_value_bytes`` / ``fp16_key_bytes`` / ``fp16_value_bytes``)
+    # — see ``registry.py::telemetry_coverage`` and every sibling latent-
+    # storage cache this class is modeled on (``palu_cache.py``,
+    # ``svdq_cache.py``). Without them, ``kvtc`` silently probed as
+    # ``TelemetryCoverage.NONE``: `/v1/kv/stats` reported
+    # ``"not_reported_reason": "this method does not report byte or token
+    # counters"`` even while genuinely compressing, and the app's control
+    # panel showed nothing at all for a servable, compressing method.
+    # ``_keys_states``/``_vals_states`` already track K and V independently
+    # (unlike ``kvtc_bytes``, which sums both), so no new accounting is
+    # needed — these just expose the existing split.
+    @property
+    def compressed_key_bytes(self) -> int:
+        return sum(s.stored_bytes for s in self._keys_states)
+
+    @property
+    def compressed_value_bytes(self) -> int:
+        return sum(s.stored_bytes for s in self._vals_states)
+
+    @property
+    def fp16_key_bytes(self) -> int:
+        return self._full_seq_bytes // 2
+
+    @property
+    def fp16_value_bytes(self) -> int:
+        return self._full_seq_bytes // 2
 
     @property
     def pre_entropy_bytes(self) -> int:

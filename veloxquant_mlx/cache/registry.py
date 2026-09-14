@@ -453,8 +453,18 @@ def describe_field(name: str) -> dict[str, Any]:
         args = [a for a in typing.get_args(annotation) if a is not type(None)]
         optional = len(args) != len(typing.get_args(annotation))
         annotation = args[0] if args else annotation
+        origin = typing.get_origin(annotation)
 
-    kind = {int: "int", float: "float", bool: "bool", str: "str"}.get(annotation, "unknown")
+    # A parameterized tuple (`tuple[int, ...]`, e.g. svdq_bit_schedule)
+    # reduces to `tuple` via get_origin; a bare `tuple` annotation (e.g.
+    # kvtc_bit_choices) already *is* `tuple`, so origin is None and the
+    # annotation itself is checked directly below.
+    if origin is tuple:
+        kind = "array"
+    else:
+        kind = {int: "int", float: "float", bool: "bool", str: "str", tuple: "array"}.get(
+            annotation, "unknown"
+        )
 
     default = fields[name].default
     if default is dataclasses.MISSING:
