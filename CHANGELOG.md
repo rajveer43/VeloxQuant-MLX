@@ -432,6 +432,27 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.7 (2026-09-14)
+
+### Bug Fixes
+
+- **cache**: Kvtc is invisible to /v1/kv/stats and loses compression under batched serving (issue
+  #17) ([#360](https://github.com/rajveer43/VeloxQuant-MLX/pull/360),
+  [`b83a005`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b83a005f6d3b8ca6f61c0391f9ca6a5c2ed7375a))
+
+- **cache**: Kvzip loses all eviction under batched serving (issue #18)
+  ([#361](https://github.com/rajveer43/VeloxQuant-MLX/pull/361),
+  [`f7318b8`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f7318b8a007ef23c22f64988a3b996769df2502f))
+
+- **cache**: Minicache loses cross-layer merging under batched serving (issue #19)
+  ([#362](https://github.com/rajveer43/VeloxQuant-MLX/pull/362),
+  [`2c12c3f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2c12c3f2613633cd5914ec6e375e4a999ebd0b45))
+
+- **cache**: Morphkv loses all eviction under batched serving (issue #20)
+  ([#363](https://github.com/rajveer43/VeloxQuant-MLX/pull/363),
+  [`ff3d281`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ff3d281906573bd69f9ab241d7a80d0fe470212e))
+
+
 ## v0.83.6 (2026-09-14)
 
 ### Bug Fixes
