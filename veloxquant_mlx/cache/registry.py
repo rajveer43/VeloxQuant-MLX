@@ -331,7 +331,12 @@ _CONFIG_FIELDS: dict[str, list[str]] = {
         "residual_length",
     ],
     "kivi": ["bit_width_inlier", "kivi_group_size"],
-    "kivi_sink": ["bit_width_inlier", "kivi_group_size"],
+    # n_sink_tokens (SinkProtectedKVCache.__init__, default 5) was missing
+    # here -- unlike a kivi_*-prefixed field, its generic-looking name never
+    # matches field_is_relevant's own-name prefix fallback either, so it was
+    # invisible to both `--set` validation and the app's parameter editor.
+    # Found verifying VeloxQuant-Studio issue #14.
+    "kivi_sink": ["bit_width_inlier", "kivi_group_size", "n_sink_tokens"],
     "svdq": [
         "svdq_rank",
         "svdq_energy_threshold",
@@ -406,6 +411,7 @@ _FIELD_HELP: dict[str, str] = {
     "seed": "Random seed for rotations / sketches.",
     "jl_dim": "Johnson-Lindenstrauss projection dimension.",
     "kivi_group_size": "Tokens per min/max quantization group.",
+    "n_sink_tokens": "Number of early attention-sink tokens kept in fp16, never quantized.",
     "svdq_rank": "Latent rank; blank uses the energy threshold instead.",
     "svdq_energy_threshold": "Fraction of singular-value energy to retain.",
     "palu_rank": "Latent rank; blank uses the energy threshold instead.",
