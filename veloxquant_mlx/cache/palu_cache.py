@@ -381,5 +381,34 @@ class PALUKVCache(_MLXKVCache):
         """Effective bit-width — max of the key and value latent rates."""
         return max(self._keys_lr.assigned_avg_bits, self._vals_lr.assigned_avg_bits)
 
+    # ------------------------------------------------------------------
+    # Batching guard (see VeloxQuant-MLX#358)
+    # ------------------------------------------------------------------
+    # ``mlx_lm.server``'s ``BatchGenerator`` calls ``_merge_caches`` on every
+    # ``PromptProcessingBatch`` it builds — including the very first, single-
+    # sequence one — whenever ``hasattr(cache, "merge")`` is ``True`` on a
+    # fresh per-layer probe. The inherited ``KVCache.merge()`` classmethod
+    # delegates to ``BatchKVCache.merge()``, which for a batch of brand-new
+    # (empty, ``size() == 0``) caches takes the "no cache has content" fast
+    # path and returns a plain empty ``BatchKVCache`` with no error. Left
+    # inherited, this silently replaces ``PALUKVCache`` with that generic
+    # cache *before the first token is ever generated*: no low-rank
+    # projection, no latent storage, no byte accounting, plain fp16 growth,
+    # while the server still believes it is running ``palu``. (Were
+    # ``merge()`` ever invoked on an *already-populated* cache instead — not
+    # a path this server's request flow takes today, but not one any single
+    # site here rules out either — it would crash outright, since this class
+    # bypasses the parent's fp16 ring buffer entirely and ``self.keys`` stays
+    # ``None`` even with real content, and ``BatchKVCache.merge`` reads
+    # ``c.keys.shape[1]`` unconditionally once any cache in the batch is
+    # non-empty.) A bare method override is insufficient since ``hasattr()``
+    # would still report ``True`` for a classmethod defined on the class; the
+    # property must raise on access instead so ``hasattr`` sees it as absent.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("PALUKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
+
 
 __all__ = ["PALUKVCache"]

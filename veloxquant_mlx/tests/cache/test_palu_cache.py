@@ -254,3 +254,64 @@ def test_hi_fraction_above_one_rejected() -> None:
 def test_hi_fraction_negative_rejected() -> None:
     with pytest.raises(ValueError, match="palu_hi_fraction"):
         _make(palu_hi_fraction=-0.2)
+
+
+# ------------------------------------------------------------------
+# Regression for VeloxQuant-Studio issue #23.
+# ------------------------------------------------------------------
+def test_not_batchable_via_mlx_lm_server_probe() -> None:
+    """`mlx_lm.server`'s `BatchGenerator` calls `_merge_caches` on every
+    `PromptProcessingBatch` it builds -- including the very first,
+    single-sequence one -- whenever `hasattr(cache, "merge")` is `True` on a
+    fresh per-layer cache. Left inherited, `KVCache.merge()` would delegate
+    to `BatchKVCache.merge()`, which for a batch of brand-new (empty) caches
+    silently returns a plain `BatchKVCache` with no error: no low-rank
+    projection, no latent storage, no byte accounting, while the server
+    still believes it is running `palu`. `hasattr` must see `merge` as
+    absent so the server routes `palu` through its sequential path instead,
+    where this class runs correctly.
+    """
+    c = _make()
+    assert not hasattr(c, "merge")
+    with pytest.raises(AttributeError):
+        c.merge
+
+
+def test_merge_on_empty_cache_would_silently_substitute_if_inherited() -> None:
+    """Documents *why* the merge guard above matters, reproducing the actual
+    server-triggered path: `_merge_caches` in mlx_lm always calls `merge()`
+    on brand-new, empty per-layer caches at the start of prefill (never on
+    already-populated ones), so `BatchKVCache.merge`'s "no cache has
+    content" fast path applies -- it does not raise, it silently returns a
+    generic `BatchKVCache` instance in place of `PALUKVCache`. This is the
+    concrete failure `merge` being hidden from `hasattr` prevents.
+    """
+    from mlx_lm.models.cache import BatchKVCache
+    from mlx_lm.models.cache import KVCache as _MLXKVCache
+
+    c = _make()
+    assert c.size() == 0
+    merged = _MLXKVCache.merge.__func__(PALUKVCache, [c])
+    assert isinstance(merged, BatchKVCache)
+    assert not isinstance(merged, PALUKVCache)
+
+
+def test_merge_would_crash_on_populated_cache_if_inherited() -> None:
+    """A stricter, hypothetical variant: were `merge()` ever invoked on an
+    already-populated cache (not a path today's server flow takes, since
+    `_merge_caches` only ever runs on fresh caches, but not one ruled out by
+    any single call site), it would crash outright rather than silently
+    substitute -- `BatchKVCache.merge` reads `c.keys.shape[1]` once any
+    cache in the batch is non-empty, and this class bypasses the parent's
+    fp16 ring buffer entirely (`self.keys` stays `None` even with real
+    latent content, by design -- see `test_storage_is_latent_not_full_fp16`).
+    Belt-and-suspenders: the guard protects against both failure modes.
+    """
+    from mlx_lm.models.cache import KVCache as _MLXKVCache
+
+    c = _make()
+    K, V = _rand_kv(S=32, H=4, D=64)
+    c.update_and_fetch(K, V)
+    assert c.keys is None
+    with pytest.raises(ValueError):
+        _MLXKVCache.merge.__func__(PALUKVCache, [c])
