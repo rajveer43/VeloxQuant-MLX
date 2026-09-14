@@ -339,3 +339,26 @@ class TestFieldIsRelevant:
         fields = set(get_method("kvquant").config_fields)
         assert "kvquant_n_sink" in fields
         assert field_is_relevant("kvquant", "kvquant_n_sink")
+
+    def test_tuple_valued_fields_describe_as_array_not_unknown(self):
+        """Regression for VeloxQuant-Studio issue #17: describe_field()'s
+        type-mapping dict only covered int/float/bool/str, so any
+        KVCacheConfig field annotated bare `tuple` (kvtc_bit_choices,
+        svdq_bit_schedule) fell through to `"type": "unknown"`. That alone
+        was mostly cosmetic (the macOS app's editor renders every field as a
+        generic text field regardless of `type`), but Swift's `JSONValue`
+        decoder only recognizes bool/int/double/string and silently
+        collapses anything else -- including a real JSON array default like
+        `[0, 1, 2, 3, 4, 6, 8]` -- to `.null`, which the app then renders as
+        a blank default instead of the real one. `"array"` at least gives a
+        future Swift-side switch on `type` something correct to key off of.
+        """
+        from veloxquant_mlx.cache.registry import describe_field
+
+        for name, expected_default in [
+            ("kvtc_bit_choices", (0, 1, 2, 3, 4, 6, 8)),
+            ("svdq_bit_schedule", (8, 4, 2, 1, 1, 0, 0, 0)),
+        ]:
+            desc = describe_field(name)
+            assert desc["type"] == "array", (name, desc)
+            assert desc["default"] == expected_default, (name, desc)

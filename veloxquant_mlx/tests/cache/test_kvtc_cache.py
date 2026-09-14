@@ -249,3 +249,56 @@ def test_multi_head_batch_independent_shapes():
     K, V = cache.update_and_fetch(k, v)
     assert K.shape == (2, 3, 12, 8)
     assert V.shape == (2, 3, 12, 8)
+
+
+# ---------------------------------------------------------------------------
+# Regression for VeloxQuant-Studio issue #17.
+# ---------------------------------------------------------------------------
+def test_not_batchable_via_mlx_lm_server_probe() -> None:
+    """`mlx_lm.server`'s `ModelProvider.load()` decides whether a method is
+    batchable purely via `hasattr(cache, "merge")` on a probe instance. The
+    base `KVCache` this inherits from defines `merge()` as a classmethod
+    returning a plain `BatchKVCache` — oblivious to this class's frozen PCA
+    basis, DP bit allocation, and entropy-coded state. Left inherited, every
+    request (even a lone one — `BatchGenerator` merges a batch of 1 too)
+    would silently replace this cache with that generic one: no PCA, no DP
+    allocation, no entropy coding, while the server still believes it is
+    running `kvtc`. `hasattr` must see `merge` as absent so the server
+    routes `kvtc` through its sequential path instead, where this class runs
+    correctly.
+    """
+    cache = _make(head_dim=16, kvtc_bit_budget=32)
+    assert not hasattr(cache, "merge")
+    with pytest.raises(AttributeError):
+        cache.merge
+
+
+def test_telemetry_byte_properties_split_key_and_value() -> None:
+    """Regression for issue #17: `KVTCKVCache` lacked the
+    `compressed_key_bytes` / `compressed_value_bytes` / `fp16_key_bytes` /
+    `fp16_value_bytes` properties that `cli/telemetry.py`'s `/v1/kv/stats`
+    probes for (mirroring the sibling latent-storage caches this class is
+    modeled on, `palu_cache.py` and `svdq_cache.py`). Without them, the
+    method probed as `TelemetryCoverage.NONE` and `/v1/kv/stats` reported
+    "this method does not report byte or token counters" even while
+    genuinely compressing — verified live via a real `veloxquant serve`
+    process before/after this fix.
+    """
+    cache = _make(head_dim=16, kvtc_bit_budget=32)
+    k, v = _kv(1, 2, 40, 16, seed=5)
+    cache.update_and_fetch(k, v)
+
+    assert cache.compressed_key_bytes > 0
+    assert cache.compressed_value_bytes > 0
+    assert cache.fp16_key_bytes == 1 * 2 * 40 * 16 * 2
+    assert cache.fp16_value_bytes == 1 * 2 * 40 * 16 * 2
+    assert cache.compressed_key_bytes + cache.compressed_value_bytes == cache.kvtc_bytes
+
+
+def test_telemetry_coverage_probes_keys_and_values() -> None:
+    """`registry.py::telemetry_coverage` probes a live instance for the
+    same four attribute names `/v1/kv/stats` reads; this pins that `kvtc`
+    is discovered as `KEYS_AND_VALUES`, not `NONE`."""
+    from veloxquant_mlx.cache.registry import TelemetryCoverage, telemetry_coverage
+
+    assert telemetry_coverage("kvtc") is TelemetryCoverage.KEYS_AND_VALUES
