@@ -333,5 +333,49 @@ class SnapKVKVCache(_MLXKVCache):
             return 1.0
         return self._tokens_kept / self._tokens_total
 
+    # ------------------------------------------------------------------
+    def is_trimmable(self) -> bool:
+        """False: trim() reads a corrupted ``self.offset`` and both writes and
+        returns the wrong thing, worse than a mere bookkeeping rollback.
+
+        The base ``KVCache.trim(n)`` does ``n = min(self.offset, n); self.offset
+        -= n``. Outside ``update_and_fetch`` (``_in_base`` is False), this
+        class's ``offset`` property returns ``_true_offset`` — the absolute
+        token position used for RoPE — not the retained row count
+        (``_row_offset``) the base class's buffer actually holds. So ``n`` is
+        clamped against the wrong (larger) number, and the setter then writes
+        ``_row_offset -= n``, which can leave ``_row_offset`` **larger than
+        the number of rows ever written** whenever eviction has dropped any
+        tokens (the normal case once prefill has run). The next
+        ``update_and_fetch`` then returns a slice reaching past the real
+        data into the pre-allocated buffer's stale/uninitialized rows,
+        silently feeding garbage into attention rather than crashing.
+        Reproduced directly: budget=4, 20 real prefill tokens (so
+        ``_row_offset`` == 4, ``_true_offset`` == 20); ``trim(3)`` leaves
+        ``_row_offset`` == 17 though only 4 rows are real, and the following
+        decode step returns an 18-row slice (see VeloxQuant-Studio issue #27).
+        """
+        return False
+
+    # ------------------------------------------------------------------
+    # Batching guard (see VeloxQuant-MLX#358)
+    # ------------------------------------------------------------------
+    # mlx_lm.server's batching path (BatchGenerator._make_batch ->
+    # PromptProcessingBatch.__init__ -> _merge_caches) decides batchability
+    # via hasattr(cache, "merge") and calls it even on a brand-new, empty
+    # cache for the very first batch. Without this guard, SnapKVKVCache
+    # inherits the base KVCache.merge classmethod, which hasattr() reports as
+    # present; its "no cache has content" fast path then silently returns a
+    # plain BatchKVCache instead of raising -- before the first token
+    # generates. Substituting a BatchKVCache here would silently drop all
+    # SnapKV eviction, byte accounting, and the true-offset RoPE correction
+    # (see #171): every downstream token position and stored row would be
+    # wrong with no error raised.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("SnapKVKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
+
 
 __all__ = ["SnapKVKVCache"]

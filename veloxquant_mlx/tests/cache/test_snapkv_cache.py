@@ -295,3 +295,60 @@ def test_offset_tracks_true_position_not_retained_rows() -> None:
         k1, v1 = _rand_kv(S=1, H=1, D=8, seed=300 + i)
         c.update_and_fetch(k1, v1)
         assert c.offset == 64 + i + 1, f"position drift at decode step {i}"
+
+
+# ---------------------------------------------------------------------------
+# Batching + trim guards (issue #27)
+# ---------------------------------------------------------------------------
+
+
+def test_not_batchable_via_mlx_lm_server_probe() -> None:
+    c = _make()
+    assert not hasattr(c, "merge")
+    with pytest.raises(AttributeError):
+        c.merge
+
+
+def test_merge_on_empty_cache_would_silently_substitute_if_inherited() -> None:
+    from mlx_lm.models.cache import BatchKVCache
+    from mlx_lm.models.cache import KVCache as _MLXKVCache
+
+    c = _make()
+    assert c.size() == 0
+    merged = _MLXKVCache.merge.__func__(SnapKVKVCache, [c])
+    assert isinstance(merged, BatchKVCache)
+    assert not isinstance(merged, SnapKVKVCache)
+
+
+def test_is_trimmable_false() -> None:
+    c = _make()
+    assert c.is_trimmable() is False
+
+
+def test_trim_would_return_garbage_rows_if_trimmable() -> None:
+    """Reproduces the corruption directly: trim() reads ``offset`` (the true
+    absolute position) to clamp ``n``, then writes it back through the
+    property setter, which stores it as the RETAINED ROW COUNT instead —
+    leaving ``_row_offset`` larger than the number of rows ever written as
+    soon as eviction has dropped anything, and the next update_and_fetch
+    returns a slice reaching into stale buffer rows.
+    """
+    c = _make(snap_budget=4, snap_obs_window=2, snap_n_sink=1)
+    k, v = _rand_kv(S=20, H=2, D=8, seed=1)
+    c.update_and_fetch(k, v)
+
+    assert c._true_offset == 20
+    assert c._row_offset == 4  # eviction kept only the budget
+
+    n = c.trim(3)  # base-class KVCache.trim: n = min(self.offset, 3)
+    assert n == 3
+    # Corrupted: only 4 rows were ever real, but row_offset is now 17.
+    assert c._row_offset == 17
+    assert c._row_offset > 4
+
+    k2, v2 = _rand_kv(S=1, H=2, D=8, seed=99)
+    out_k, _ = c.update_and_fetch(k2, v2)
+    # The returned slice reaches past the 4 real rows into uninitialized
+    # buffer space -- silent corruption, not a crash.
+    assert out_k.shape[2] == 18
+    assert out_k.shape[2] > 5
