@@ -372,3 +372,27 @@ class TurboQuantRVQKVCache(_MLXKVCache):
         to switch attention kernel paths.
         """
         return self._bits
+
+    # Without this, TurboQuantRVQKVCache inherits the base mlx_lm
+    # KVCache.merge() classmethod unchanged, so hasattr(cache, "merge") is
+    # True and mlx_lm treats this cache as batchable with history. Two or
+    # more requests joining the same PromptProcessingBatch then hit
+    # mlx_lm.generate._merge_caches -> BatchKVCache.merge, which reads
+    # `c.keys`/`c.values` directly -- always None here, since this class
+    # stores compressed keys in `_packed1`/`_packed2`/`_norms` instead and
+    # never populates the base class's `.keys`/`.values` slot for keys.
+    # BatchKVCache.merge's `H = max(c.keys.shape[1] for c in caches if
+    # c.keys is not None)` then raises `ValueError: max() iterable argument
+    # is empty` -- not a silent degrade like most other #358 occurrences,
+    # but an outright crash of the generation thread the moment concurrent
+    # requests batch together. turboquant_rvq is DEFAULT_SERVE_METHOD, so
+    # this is hit by any concurrent usage of the default configuration.
+    # See VeloxQuant-MLX#358; found verifying VeloxQuant-Studio issue #32
+    # (16th occurrence).
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError(
+                "TurboQuantRVQKVCache does not support merge() — see VeloxQuant-MLX#358"
+            )
+        )
+    )
