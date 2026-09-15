@@ -261,3 +261,93 @@ def test_nbytes_reports_true_packed_size_not_fp16() -> None:
     # 2x reduction on total nbytes (keys+values+norm vs keys+values fp16) to
     # avoid over-fitting the test to the exact current constant.
     assert cache.nbytes < fp16_cache.nbytes / 2
+
+
+# ==================================================================
+# merge() batching guard (VeloxQuant-MLX#358)
+# ==================================================================
+
+
+def test_not_batchable_via_mlx_lm_server_probe() -> None:
+    """mlx_lm decides batchability via hasattr(cache, "merge").
+
+    Without an explicit guard, TurboQuantRVQKVCache inherits the base mlx_lm
+    KVCache.merge() classmethod unchanged, so hasattr(cache, "merge") is
+    True. This is a more severe variant of the #358 pattern than most: mlx_lm
+    calls mlx_lm.generate._merge_caches for *every* sequence entering a
+    PromptProcessingBatch (not just concurrent ones), even a single fresh
+    request -- turboquant_rvq is DEFAULT_SERVE_METHOD, so unguarded this
+    silently downgrades every served request to a plain fp16 BatchKVCache
+    with zero RVQ compression, never surfacing an error. Found verifying
+    VeloxQuant-Studio issue #32.
+    """
+    cache = _build()
+    assert not hasattr(cache, "merge")
+
+
+def test_merge_raises_attribute_error() -> None:
+    cache = _build()
+    with pytest.raises(AttributeError, match="does not support merge"):
+        cache.merge
+
+
+def test_inherited_merge_on_fresh_cache_would_silently_substitute() -> None:
+    """Reproduces what the *inherited* base mlx_lm KVCache.merge() classmethod
+    does to a fresh (empty) TurboQuantRVQKVCache if the guard were absent:
+    it returns a plain BatchKVCache with no RVQ state and no error. This is
+    the exact object mlx_lm.generate._merge_caches would install for every
+    request's first PromptProcessingBatch (even a single, non-concurrent
+    request -- turboquant_rvq is DEFAULT_SERVE_METHOD) if
+    hasattr(cache, "merge") were True; with the guard in place,
+    _merge_caches's own hasattr check now short-circuits before ever
+    reaching this call (see test_merge_on_populated_cache_fails_cleanly_via_guard).
+    """
+    from mlx_lm.models.cache import BatchKVCache
+    from mlx_lm.models.cache import KVCache as _MLXKVCache
+
+    cache = _build()
+    merged = _MLXKVCache.merge([cache])
+    assert isinstance(merged, BatchKVCache)
+    assert not isinstance(merged, TurboQuantRVQKVCache)
+
+
+def test_inherited_merge_on_populated_cache_would_crash() -> None:
+    """A non-empty TurboQuantRVQKVCache (e.g. restored from a prefix-cache
+    hit) hitting the *inherited* base mlx_lm KVCache.merge() classmethod
+    doesn't silently degrade -- it crashes outright, since
+    BatchKVCache.merge reads `c.keys`/`c.values` directly and this class
+    never populates that slot for keys (storing _packed1/_packed2/_norms
+    instead). This is what mlx_lm.generate._merge_caches would call if it
+    saw hasattr(cache, "merge") == True; with the guard in place,
+    _merge_caches's hasattr check now short-circuits before ever reaching
+    this call (see test_merge_on_populated_cache_fails_cleanly_via_guard),
+    turning a confusing mid-batching crash into a clear upfront refusal.
+    """
+    from mlx_lm.models.cache import KVCache as _MLXKVCache
+
+    cache = _build()
+    keys = mx.random.normal((1, 2, 5, 128)).astype(mx.float16)
+    vals = mx.random.normal((1, 2, 5, 128)).astype(mx.float16)
+    cache.update_and_fetch(keys, vals)
+
+    with pytest.raises(ValueError, match="max\\(\\) iterable argument is empty"):
+        _MLXKVCache.merge([cache])
+
+
+def test_merge_on_populated_cache_fails_cleanly_via_guard() -> None:
+    """With the merge() guard in place, mlx_lm.generate._merge_caches's own
+    hasattr(cache, "merge") check now sees False and takes its documented
+    "does not yet support batching with history" refusal instead of ever
+    reaching BatchKVCache.merge's confusing empty-max crash."""
+    import sys
+
+    import mlx_lm.server as _server  # noqa: F401
+
+    gen_mod = sys.modules["mlx_lm.generate"]
+    cache = _build()
+    keys = mx.random.normal((1, 2, 5, 128)).astype(mx.float16)
+    vals = mx.random.normal((1, 2, 5, 128)).astype(mx.float16)
+    cache.update_and_fetch(keys, vals)
+
+    with pytest.raises(ValueError, match="does not yet support batching with history"):
+        gen_mod._merge_caches([[cache]])
