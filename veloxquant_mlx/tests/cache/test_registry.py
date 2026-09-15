@@ -41,6 +41,17 @@ EXPECTED_CRASHING = {
 # reverting internal per-token eviction state. They serve correctly — the probe
 # used to misreport them as CRASHES, which told users 15 working methods were
 # unavailable (#152).
+#
+# snapkv added (VeloxQuant-Studio issue #27): worse than a mere bookkeeping
+# rollback. Its ``offset`` property splits true absolute position
+# (``_true_offset``, for RoPE, see #171) from retained row count
+# (``_row_offset``, for the base class's buffer). trim()'s ``self.offset -=
+# n`` reads the true position outside update_and_fetch and writes the row
+# count, so after eviction has dropped anything, trim() can leave
+# ``_row_offset`` larger than the number of rows ever stored — the next
+# update_and_fetch then returns a slice reaching into stale/uninitialized
+# buffer rows as if they were real cached tokens, silently feeding garbage
+# into attention rather than crashing.
 EXPECTED_NOT_TRIMMABLE = {
     "age_tiered",
     "amc",
@@ -57,6 +68,7 @@ EXPECTED_NOT_TRIMMABLE = {
     "pyramidkv",
     "qfilters",
     "rocketkv",
+    "snapkv",
     "squeeze",
     "streaming_llm",
     "tova",
