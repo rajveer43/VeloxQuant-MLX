@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.18 (2026-09-15)
+
+### Bug Fixes
+
+- **cache**: Guard skvq against silent merge() substitution (issue #26)
+  ([#383](https://github.com/rajveer43/VeloxQuant-MLX/pull/383),
+  [`bec339c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bec339c3a83284c57d80e8f7d812caf09c9ea26d))
+
+
 ## v0.83.17 (2026-09-15)
 
 ### Bug Fixes
