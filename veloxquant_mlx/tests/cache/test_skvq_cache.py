@@ -317,3 +317,45 @@ def test_for_model_wiring_and_fallback() -> None:
     ko, vo = caches[2].update_and_fetch(k, v)
     assert np.array_equal(np.array(ko), np.array(k))
     assert np.array_equal(np.array(vo), np.array(v))
+
+
+# ---------------------------------------------------------------------------
+# Regression for VeloxQuant-Studio issue #26.
+# ---------------------------------------------------------------------------
+
+
+def test_not_batchable_via_mlx_lm_server_probe() -> None:
+    """`mlx_lm.server`'s `BatchGenerator` calls `_merge_caches` on every
+    `PromptProcessingBatch` it builds -- including the very first, single-
+    sequence one -- whenever `hasattr(cache, "merge")` is `True` on a fresh
+    per-layer cache. Left inherited, `KVCache.merge()` would delegate to
+    `BatchKVCache.merge()`, which for a batch of brand-new (empty) caches
+    silently returns a plain `BatchKVCache` with no error: no sliding-window
+    flush, no channel reordering, no clipped quantization, no byte
+    accounting, while the server still believes it is running `skvq`.
+    `hasattr` must see `merge` as absent so the server routes `skvq` through
+    its sequential path instead, where this class runs correctly.
+    """
+    c = _make()
+    assert not hasattr(c, "merge")
+    with pytest.raises(AttributeError):
+        c.merge
+
+
+def test_merge_on_empty_cache_would_silently_substitute_if_inherited() -> None:
+    """Documents *why* the merge guard above matters, reproducing the actual
+    server-triggered path: `_merge_caches` in mlx_lm always calls `merge()`
+    on brand-new, empty per-layer caches at the start of prefill, so
+    `BatchKVCache.merge`'s "no cache has content" fast path applies -- it
+    does not raise, it silently returns a generic `BatchKVCache` instance in
+    place of `SKVQKVCache`. This is the concrete failure `merge` being
+    hidden from `hasattr` prevents.
+    """
+    from mlx_lm.models.cache import BatchKVCache
+    from mlx_lm.models.cache import KVCache as _MLXKVCache
+
+    c = _make()
+    assert c.size() == 0
+    merged = _MLXKVCache.merge.__func__(SKVQKVCache, [c])
+    assert isinstance(merged, BatchKVCache)
+    assert not isinstance(merged, SKVQKVCache)
