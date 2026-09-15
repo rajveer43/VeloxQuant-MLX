@@ -64,15 +64,20 @@ def test_no_bits_attribute() -> None:
 
 
 def test_svd_rank_stored_after_prefill() -> None:
+    """Each head gets its own SVD basis (see svdq_cache.py's
+    _run_prefill_svd) — _V/_K_mean are per-head lists, one entry per KV
+    head, not a single shared basis."""
     c = _make(svdq_rank=32)
-    K, V = _rand_kv(S=64, D=64)
+    K, V = _rand_kv(S=64, H=2, D=64)
     ko, vo = c.update_and_fetch(K, V)
     mx.eval(ko, vo)
-    assert c._V is not None
-    assert c._K_mean is not None
+    assert c._V and c._K_mean
+    assert len(c._V) == 2
+    assert len(c._K_mean) == 2
     assert c.rank == 32
-    assert c._V.shape == (64, 32)
-    assert c._K_mean.shape == (64,)
+    for h in range(2):
+        assert c._V[h].shape == (64, 32)
+        assert c._K_mean[h].shape == (64,)
 
 
 def test_output_shape_preserved() -> None:
@@ -127,6 +132,56 @@ def test_reconstruction_lower_mse_than_raw_2bit() -> None:
         f"SVDq MSE {svdq_mse:.6f} should be < naive 2-bit MSE {naive_mse:.6f} "
         f"on low-rank, energy-decaying data (true_rank={true_rank}, D={D})"
     )
+
+
+def test_each_head_reconstructs_from_its_own_basis() -> None:
+    """Each attention head must get its own SVD basis, not a basis fit on
+    one head and shared across all of them.
+
+    Previously _run_prefill_svd computed SVD on head 0 only and applied
+    that single V/K_mean to every head via _project_quantize_reconstruct.
+    Real attention heads have near-uncorrelated key distributions (heads
+    attend to different features), so a shared basis reconstructs the head
+    it was fit on well and every other head essentially as noise. This
+    test builds two heads with deliberately unrelated low-rank structure
+    (different random subspaces) so a shared-basis bug reproduces reliably
+    without needing real model weights: with a correct per-head basis both
+    heads should reconstruct comparably well; with a shared basis, one
+    head's error would be dramatically worse than the other's.
+    """
+    rng = np.random.default_rng(7)
+    S, D, true_rank = 128, 64, 32
+
+    def make_low_rank_head(seed: int) -> np.ndarray:
+        r = np.random.default_rng(seed)
+        U = r.standard_normal((S, true_rank)).astype(np.float32)
+        decay = np.exp(-0.1 * np.arange(true_rank)).astype(np.float32)
+        W = r.standard_normal((true_rank, D)).astype(np.float32) * decay[:, None]
+        noise = r.standard_normal((S, D)).astype(np.float32) * 0.01
+        return U @ W + noise
+
+    k_head0 = make_low_rank_head(1)
+    k_head1 = make_low_rank_head(2)  # independent random subspace from head 0
+    K_np = np.stack([k_head0, k_head1], axis=0)  # [H=2, S, D]
+    K_in = mx.array(K_np[None])  # [1, 2, S, D]
+    V_in = mx.zeros((1, 2, S, D))
+
+    c = _make(head_dim=D, svdq_rank=true_rank, svdq_bit_schedule=(8, 4, 2, 1, 1, 0, 0, 0))
+    ko, _ = c.update_and_fetch(K_in, V_in)
+    mx.eval(ko)
+
+    ko_np = np.array(ko).astype(np.float32)
+    rel_mse = []
+    for h in range(2):
+        mse = np.mean((ko_np[0, h] - K_np[h]) ** 2)
+        var = np.mean(K_np[h] ** 2)
+        rel_mse.append(mse / var)
+
+    # Both heads should reconstruct with low relative error (each through its
+    # own basis). A shared-basis bug would make one head near-perfect and the
+    # other's error close to or exceeding the signal variance (rel_mse ~ 1+).
+    for h, rmse in enumerate(rel_mse):
+        assert rmse < 0.1, f"head {h} rel_mse={rmse:.4f} — basis sharing regression?"
 
 
 def test_small_rank_near_group_count_is_rejected() -> None:
@@ -249,6 +304,28 @@ def test_compressed_bytes_less_than_fp16() -> None:
     assert c.compressed_key_bytes < c.fp16_key_bytes
 
 
+def test_compressed_bytes_stays_below_fp16_across_many_decode_steps() -> None:
+    """V [D, r] + K_mean [D] are computed once (at prefill) and reused for
+    every subsequent token — their storage cost must be charged into
+    compressed_key_bytes exactly once, not re-added on every
+    update_and_fetch call. Previously it was added unconditionally every
+    call, so a real decode-length sequence (many single-token calls after
+    one prefill) let this fixed, "negligible" cost accumulate without bound
+    and dominate compressed_key_bytes, eventually exceeding fp16_key_bytes
+    entirely (i.e. reporting the cache as larger than uncompressed fp16).
+    """
+    c = _make(svdq_rank=32)
+    K_pre, V_pre = _rand_kv(S=64, H=2, D=64, seed=0)
+    c.update_and_fetch(K_pre, V_pre)
+
+    for step in range(200):
+        K_dec, V_dec = _rand_kv(S=1, H=2, D=64, seed=step + 1)
+        c.update_and_fetch(K_dec, V_dec)
+
+    assert c.compressed_key_bytes < c.fp16_key_bytes
+    assert c.compressed_key_bytes > 0
+
+
 def test_value_fp16_bytes_positive() -> None:
     c = _make(svdq_rank=32)
     K, V = _rand_kv(S=64, D=64)
@@ -348,3 +425,36 @@ def test_default_schedule_gives_lower_effective_bits_than_old_default() -> None:
     K, V = _rand_kv(S=64, H=2, D=128)
     c.update_and_fetch(K, V)
     assert c.assigned_avg_bits < 1.5
+
+
+# ======================================================================
+# Batching guard (see VeloxQuant-MLX#358) — VeloxQuant-Studio issue #30
+# ======================================================================
+
+
+def test_not_batchable_via_mlx_lm_server_probe():
+    c = _make()
+    # mlx_lm.server's hasattr(cache, "merge") probe must see this as absent —
+    # a property that raises on access makes hasattr() return False.
+    assert not hasattr(c, "merge")
+    with pytest.raises(AttributeError):
+        c.merge  # noqa: B018 — accessing the property is the point
+
+
+def test_merge_on_empty_cache_would_silently_substitute_if_inherited():
+    """Guards against regressing to the base classmethod: on a batch of brand-new
+    (empty) caches, ``mlx_lm``'s ``KVCache.merge()`` silently returns a plain
+    ``BatchKVCache`` instead of raising or preserving SVDq behaviour — exactly
+    the substitution the ``merge`` property above must prevent. For svdq this
+    would mean the server runs plain fp16 storage with no SVD projection or
+    quantization at all, while still reporting method='svdq' and its
+    compression stats.
+    """
+    from mlx_lm.models.cache import BatchKVCache
+    from mlx_lm.models.cache import KVCache as _MLXKVCache
+
+    c = _make()
+    assert c.offset == 0
+    merged = _MLXKVCache.merge.__func__(SVDqKVCache, [c])
+    assert isinstance(merged, BatchKVCache)
+    assert not isinstance(merged, SVDqKVCache)
