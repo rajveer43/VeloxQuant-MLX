@@ -222,5 +222,41 @@ class StreamingLLMKVCache(_MLXKVCache):
         w = self._windows[0]
         return w.n_sink + w.n_recent
 
+    @property
+    def tokens_kept(self) -> int:
+        """Alias for :attr:`tokens_in_window`, matching the ``tokens_kept``
+        name every other eviction cache uses (h2o, tova, pyramidkv, snapkv,
+        squeeze, ...) for "tokens currently in the (B=0, H=0) head's cache".
+        Telemetry code (e.g. the ``/v1/kv/stats`` token-count aggregator)
+        probes for ``tokens_kept`` specifically via ``hasattr``/``getattr``;
+        without this alias it silently reports 0 retained tokens for
+        streaming_llm regardless of actual eviction state, since
+        ``tokens_seen`` alone is already enough to pass its "has telemetry"
+        check. Found verifying VeloxQuant-Studio issue #29.
+        """
+        return self.tokens_in_window
+
+    # ------------------------------------------------------------------
+    # Batching guard (see VeloxQuant-MLX#358)
+    # ------------------------------------------------------------------
+    # ``mlx_lm.server``'s ``BatchGenerator`` calls ``_merge_caches`` on every
+    # ``PromptProcessingBatch`` it builds -- including the very first, single-
+    # sequence one -- whenever ``hasattr(cache, "merge")`` is ``True`` on a
+    # fresh per-layer probe. The inherited ``KVCache.merge()`` classmethod
+    # delegates to ``BatchKVCache.merge()``, which for a batch of brand-new
+    # (empty) caches takes the "no cache has content" fast path and silently
+    # returns a plain empty ``BatchKVCache`` in place of ``StreamingLLMKVCache``
+    # -- no sink, no sliding window, no per-token eviction, plain fp16 growth,
+    # while the server still believes it is running ``streaming_llm`` (the
+    # same silent-substitution pattern as the other #358 occurrences). A bare
+    # method override is insufficient since ``hasattr()`` would still report
+    # ``True`` for a classmethod defined on the class; the property must raise
+    # on access instead so ``hasattr`` sees it as absent.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("StreamingLLMKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
+
 
 __all__ = ["StreamingLLMKVCache"]
