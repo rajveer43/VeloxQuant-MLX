@@ -118,3 +118,64 @@ def test_head_dim_must_divide_sub_dim() -> None:
             key_codebook_bits=4,
         )
         KVCacheFactory.create(cfg)
+
+
+# ==================================================================
+# merge() batching guard (VeloxQuant-MLX#358)
+# ==================================================================
+
+
+def test_not_batchable_via_mlx_lm_server_probe() -> None:
+    """mlx_lm.server decides batchability via hasattr(cache, "merge").
+
+    Without a guard, VecInferKVCache inherits the base mlx_lm
+    KVCache.merge() classmethod unchanged, so this probe would return
+    True and mlx_lm would treat the cache as batchable/mergeable —
+    which silently substitutes a plain BatchKVCache with no VQ
+    compression. See VeloxQuant-MLX#358.
+    """
+    c = _build()
+    assert not hasattr(c, "merge")
+
+
+def test_merge_raises_attribute_error() -> None:
+    c = _build()
+    with pytest.raises(AttributeError, match="does not support merge"):
+        c.merge
+
+
+def test_inherited_merge_on_fresh_cache_would_silently_substitute() -> None:
+    """Reproduces what the *inherited* base mlx_lm KVCache.merge() classmethod
+    does to a fresh (empty) VecInferKVCache if the guard were absent: mlx_lm's
+    BatchGenerator calls _merge_caches on every request's cache (even a single
+    non-concurrent one) when constructing a PromptProcessingBatch, and for a
+    fresh cache this hits BatchKVCache.merge's max_length==0 early-return —
+    silently returning a plain BatchKVCache instead of a VecInferKVCache, with
+    no error and no VQ compression ever applied.
+    """
+    from mlx_lm.models.cache import BatchKVCache
+    from mlx_lm.models.cache import KVCache as _MLXKVCache
+
+    c = _build()
+    merged = _MLXKVCache.merge([c])
+    assert isinstance(merged, BatchKVCache)
+    assert not isinstance(merged, VecInferKVCache)
+
+
+def test_merge_guard_short_circuits_mlx_lm_merge_caches() -> None:
+    """With the merge() guard in place, mlx_lm.generate._merge_caches's own
+    hasattr(cache, "merge") check now sees False and takes its documented
+    "does not yet support batching with history" refusal instead of ever
+    reaching the base classmethod's silent substitution."""
+    import sys
+
+    import mlx_lm.server as _server  # noqa: F401
+
+    gen_mod = sys.modules["mlx_lm.generate"]
+    c = _build()
+    keys = mx.random.normal((1, 4, 5, 128)).astype(mx.float16)
+    vals = mx.random.normal((1, 4, 5, 128)).astype(mx.float16)
+    c.update_and_fetch(keys, vals)
+
+    with pytest.raises(ValueError, match="does not yet support batching with history"):
+        gen_mod._merge_caches([[c]])

@@ -595,5 +595,22 @@ class VecInferKVCache(_MLXKVCache):
         v_bits = (self._head_dim // self._value_sub_dim) * self._value_bits / self._head_dim
         return (k_bits + v_bits) / 2.0
 
+    # Without this, VecInferKVCache inherits the base mlx_lm KVCache.merge()
+    # classmethod unchanged, so hasattr(cache, "merge") is True and mlx_lm
+    # treats this cache as batchable. mlx_lm.server's BatchGenerator calls
+    # mlx_lm.generate._merge_caches on every request's fresh cache (even a
+    # single non-concurrent one) when constructing a PromptProcessingBatch;
+    # for a fresh/empty cache this hits BatchKVCache.merge's max_length==0
+    # early-return, silently substituting a plain BatchKVCache with no VQ
+    # compression and no error. The dual-transform + codebook quantization
+    # this class exists for then never runs, while the server still reports
+    # method="vecinfer". See VeloxQuant-MLX#358; found verifying
+    # VeloxQuant-Studio issue #33 (17th occurrence).
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("VecInferKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
+
 
 __all__ = ["VecInferKVCache"]
