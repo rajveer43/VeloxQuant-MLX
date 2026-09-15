@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.20 (2026-09-15)
+
+### Bug Fixes
+
+- **cache**: Guard A2ATSKVCache.merge() against silent batching substitution
+  ([#385](https://github.com/rajveer43/VeloxQuant-MLX/pull/385),
+  [`d842ee7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d842ee73857ad6cd895aa7f36c2000aa177a6c99))
+
+
 ## v0.83.19 (2026-09-15)
 
 ### Bug Fixes
