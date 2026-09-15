@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import mlx.core as mx
 import numpy as np
+import pytest
 
 from veloxquant_mlx.cache import KVCacheBuilder, KVCacheConfig
 from veloxquant_mlx.cache.squeeze_cache import SqueezeAttentionCache
@@ -236,3 +237,73 @@ def test_for_model_budget_enforced_after_rebudget():
     caches = _build_and_run(6, 16, strength=1.0)
     for c in caches:
         assert c.tokens_kept <= c.layer_budget
+
+
+# ======================================================================
+# Batching guard (see VeloxQuant-MLX#358) — VeloxQuant-Studio issue #28
+# ======================================================================
+
+
+def test_is_trimmable_false():
+    cfg = KVCacheConfig(method="squeeze", head_dim=16, squeeze_budget=32, squeeze_n_sink=4)
+    cache = SqueezeAttentionCache(cfg)
+    assert cache.is_trimmable() is False
+
+
+def test_not_batchable_via_mlx_lm_server_probe():
+    cfg = KVCacheConfig(method="squeeze", head_dim=16, squeeze_budget=32, squeeze_n_sink=4)
+    cache = SqueezeAttentionCache(cfg)
+    # mlx_lm.server's hasattr(cache, "merge") probe must see this as absent —
+    # a property that raises on access makes hasattr() return False.
+    assert not hasattr(cache, "merge")
+    with pytest.raises(AttributeError):
+        cache.merge  # noqa: B018 — accessing the property is the point
+
+
+def test_merge_on_empty_cache_would_silently_substitute_if_inherited():
+    """Guards against regressing to the base classmethod: on a batch of brand-new
+    (empty) caches, ``mlx_lm``'s ``KVCache.merge()`` silently returns a plain
+    ``BatchKVCache`` instead of raising or preserving SqueezeAttention behaviour —
+    exactly the substitution the ``merge`` property above must prevent.
+    """
+    from mlx_lm.models.cache import BatchKVCache
+    from mlx_lm.models.cache import KVCache as _MLXKVCache
+
+    cfg = KVCacheConfig(method="squeeze", head_dim=16, squeeze_budget=32, squeeze_n_sink=4)
+    cache = SqueezeAttentionCache(cfg)
+    assert cache.size() == 0
+    merged = _MLXKVCache.merge.__func__(SqueezeAttentionCache, [cache])
+    assert isinstance(merged, BatchKVCache)
+    assert not isinstance(merged, SqueezeAttentionCache)
+
+
+# ======================================================================
+# field_is_relevant / config_fields leak — VeloxQuant-Studio issue #28
+# ======================================================================
+
+
+def test_squeeze_resolved_budget_not_relevant():
+    """squeeze_resolved_budget is an internal field the coordinator resolves at
+    runtime, not a user-facing knob — `--set squeeze_resolved_budget=N` or the
+    app's parameter editor must not treat it as a valid override, else it could
+    silently pin every layer to one fixed budget and bypass the 2D data-driven
+    reallocation entirely with no indication anything unusual happened.
+
+    field_is_relevant is the direct guard used by `--set` validation.
+    get_method(...).config_fields is what the app's parameter editor actually
+    renders — it must consult the curated _CONFIG_FIELDS entry (now present
+    for "squeeze"), not the uncurated name-prefix fallback
+    (_default_config_fields), which cannot tell squeeze_resolved_budget apart
+    from squeeze_budget/squeeze_n_sink/squeeze_strength.
+    """
+    from veloxquant_mlx.cache.registry import field_is_relevant, get_method
+
+    assert field_is_relevant("squeeze", "squeeze_resolved_budget") is False
+    assert "squeeze_resolved_budget" not in get_method("squeeze").config_fields
+
+
+def test_squeeze_user_facing_fields_still_relevant():
+    from veloxquant_mlx.cache.registry import field_is_relevant
+
+    for name in ("squeeze_budget", "squeeze_n_sink", "squeeze_strength"):
+        assert field_is_relevant("squeeze", name) is True
