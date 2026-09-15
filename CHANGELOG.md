@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.13 (2026-09-15)
+
+### Bug Fixes
+
+- **cache**: Svdq per-head SVD basis, merge() guard, --set array parsing (issue #30)
+  ([#374](https://github.com/rajveer43/VeloxQuant-MLX/pull/374),
+  [`c3daaa9`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c3daaa9bd4b65637f84696dff552676a262fd067))
+
+
 ## v0.83.12 (2026-09-15)
 
 ### Bug Fixes
