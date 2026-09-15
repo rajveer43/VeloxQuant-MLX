@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.12 (2026-09-15)
+
+### Bug Fixes
+
+- **cache**: Streaming_llm merge() batching guard and tokens_kept telemetry gap (issue #29)
+  ([#373](https://github.com/rajveer43/VeloxQuant-MLX/pull/373),
+  [`2e7d02e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2e7d02ea84100d3e746f4c0f311551b35e2dc02c))
+
+
 ## v0.83.11 (2026-09-15)
 
 ### Bug Fixes
