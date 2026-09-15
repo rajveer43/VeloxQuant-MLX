@@ -296,5 +296,25 @@ class XKVCache(_MLXKVCache):
         total = self._compressed_key_bytes + self._shared_basis_bytes
         return 16.0 * total / self._fp16_key_bytes
 
+    # Without this, XKVCache inherits the base mlx_lm KVCache.merge()
+    # classmethod unchanged, so hasattr(cache, "merge") is True and mlx_lm
+    # treats this cache as batchable. Unlike some other #358 occurrences,
+    # update_and_fetch here *does* populate the base class's self.keys via
+    # super().update_and_fetch, so the inherited merge() does not crash on a
+    # missing-keys AttributeError -- it succeeds silently, substituting a
+    # plain BatchKVCache built from the reconstructed fp16 keys. That loses
+    # not just this layer's own SVD-projection/quantization state but the
+    # entire cross-layer XKVCoordinator relationship (member_idx, group_id,
+    # the shared V_g/K_mean_g basis) -- every layer in the group is affected,
+    # not just the one that got merged, since the coordinator's basis-sharing
+    # protocol assumes all group members stay XKVCache instances for the
+    # life of the request. See VeloxQuant-MLX#358; found verifying
+    # VeloxQuant-Studio issue #34 (18th occurrence).
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("XKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
+
 
 __all__ = ["XKVCache"]
