@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.14 (2026-09-15)
+
+### Bug Fixes
+
+- **cache**: Tova merge() batching guard (issue #31)
+  ([#375](https://github.com/rajveer43/VeloxQuant-MLX/pull/375),
+  [`4e4148d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4e4148dcf0364fa762b53e8a1c0953410421fdeb))
+
+
 ## v0.83.13 (2026-09-15)
 
 ### Bug Fixes
