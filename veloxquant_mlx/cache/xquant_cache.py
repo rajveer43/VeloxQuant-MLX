@@ -240,5 +240,24 @@ class XQuantKVCache(_MLXKVCache):
         # fp16 = 2 bytes = 16 bits per element; ratio scales to bits.
         return 16.0 * self._compressed_key_bytes / self._fp16_key_bytes
 
+    # Without this, XQuantKVCache inherits the base mlx_lm KVCache.merge()
+    # classmethod unchanged, so hasattr(cache, "merge") is True and mlx_lm
+    # treats this cache as batchable. update_and_fetch here populates the base
+    # class's self.keys via super().update_and_fetch, so the inherited merge()
+    # does not crash -- it succeeds silently, substituting a plain
+    # BatchKVCache built from the reconstructed fp16 keys. That loses not just
+    # this layer's own anchor/reuse quantization state but its entire
+    # cross-layer XQuantCoordinator relationship (role, group_id, the shared
+    # published codes) -- every layer in the group is affected, since anchor
+    # publication and reuse fetch both assume all group members stay
+    # XQuantKVCache instances for the life of the request. See
+    # VeloxQuant-MLX#358; found verifying VeloxQuant-Studio issue #35 (19th
+    # occurrence).
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("XQuantKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
+
 
 __all__ = ["XQuantKVCache"]

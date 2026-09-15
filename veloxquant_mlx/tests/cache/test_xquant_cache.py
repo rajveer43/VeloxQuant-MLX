@@ -427,3 +427,61 @@ def test_for_model_pairing_survives_past_max_ctx():
         for a, r in anchors_reuses:
             a.update_and_fetch(kd, vd)  # must not raise past max_ctx=8
             r.update_and_fetch(kd, vd)
+
+
+# ---------------------------------------------------------------------------
+# merge() batching guard (VeloxQuant-MLX#358)
+# ---------------------------------------------------------------------------
+def test_not_batchable_via_mlx_lm_server_probe():
+    """mlx_lm.server decides batchability via hasattr(cache, "merge"). Without
+    a guard, XQuantKVCache inherits the base mlx_lm KVCache.merge() classmethod
+    unchanged, so this probe would return True. See VeloxQuant-MLX#358."""
+    cache = KVCacheFactory.create(_cfg())
+    assert not hasattr(cache, "merge")
+
+
+def test_merge_raises_attribute_error():
+    cache = KVCacheFactory.create(_cfg())
+    with pytest.raises(AttributeError, match="does not support merge"):
+        cache.merge
+
+
+def test_inherited_merge_on_populated_cache_would_silently_substitute():
+    """Reproduces what the *inherited* base mlx_lm KVCache.merge() classmethod
+    does to a populated XQuantKVCache if the guard were absent. Unlike some
+    other #358 occurrences, XQuantKVCache's update_and_fetch does populate the
+    base class's self.keys via super().update_and_fetch, so the inherited
+    merge() doesn't crash -- it silently succeeds, substituting a plain
+    BatchKVCache and severing this layer from its XQuantCoordinator group
+    (losing the shared anchor/reuse published-codes relationship for every
+    other member of the group too)."""
+    from mlx_lm.models.cache import BatchKVCache
+    from mlx_lm.models.cache import KVCache as _MLXKVCache
+
+    cache = KVCacheFactory.create(_cfg(xquant_base_bits=2))
+    k = _rand(1, 2, 5, 64, seed=1)
+    v = _rand(1, 2, 5, 64, seed=2)
+    cache.update_and_fetch(k, v)
+
+    merged = _MLXKVCache.merge([cache])
+    assert isinstance(merged, BatchKVCache)
+    assert not isinstance(merged, XQuantKVCache)
+
+
+def test_merge_guard_short_circuits_mlx_lm_merge_caches():
+    """With the merge() guard in place, mlx_lm.generate._merge_caches's own
+    hasattr(cache, "merge") check now sees False and takes its documented
+    "does not yet support batching with history" refusal instead of ever
+    reaching the base classmethod's silent substitution."""
+    import sys
+
+    import mlx_lm.server as _server  # noqa: F401
+
+    gen_mod = sys.modules["mlx_lm.generate"]
+    cache = KVCacheFactory.create(_cfg(xquant_base_bits=2))
+    k = _rand(1, 2, 5, 64, seed=1)
+    v = _rand(1, 2, 5, 64, seed=2)
+    cache.update_and_fetch(k, v)
+
+    with pytest.raises(ValueError, match="does not yet support batching with history"):
+        gen_mod._merge_caches([[cache]])
