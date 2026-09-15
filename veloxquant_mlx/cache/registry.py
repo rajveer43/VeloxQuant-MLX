@@ -387,9 +387,25 @@ _CONFIG_FIELDS: dict[str, list[str]] = {
     # pin every layer to one fixed budget, bypassing the pyramid schedule
     # entirely with no indication anything unusual happened. Found verifying
     # VeloxQuant-Studio issue #24; cachegen_resolved_bits and
-    # squeeze_resolved_budget are the same pattern on cachegen/squeeze and
-    # remain open (see #28 for squeeze).
+    # squeeze_resolved_budget are the same pattern on cachegen/squeeze.
+    # squeeze fixed verifying issue #28; cachegen_resolved_bits remains open.
     "pyramidkv": ["pyramid_backend", "pyramid_beta", "pyramid_budget", "pyramid_n_sink"],
+    # squeeze_resolved_budget is deliberately excluded: same class of bug as
+    # pyramid_resolved_budget above, but resolved differently at runtime --
+    # KVCacheBuilder._build_squeeze never writes it via dataclasses.replace;
+    # instead it hands every layer a shared SqueezeCoordinator object, and
+    # each layer pulls its resolved per-layer budget from the coordinator
+    # once every layer has reported prefill concentration
+    # (SqueezeAttentionCache._report_and_rebudget). The field only exists as
+    # a manual override for single-cache/testing construction with no
+    # coordinator. It still shares the "squeeze_" prefix with
+    # squeeze_budget/squeeze_n_sink/squeeze_strength, so the uncurated
+    # name-prefix fallback can't tell them apart. Left exposed, `--set
+    # squeeze_resolved_budget=N` or the app's parameter editor could silently
+    # pin every layer to one fixed budget, bypassing the 2D data-driven
+    # reallocation entirely with no indication anything unusual happened.
+    # Found verifying VeloxQuant-Studio issue #28.
+    "squeeze": ["squeeze_budget", "squeeze_n_sink", "squeeze_strength"],
     "qjl": ["jl_dim", "seed"],
     "polar": ["bit_width_inlier", "seed"],
     "spectral": ["bit_width_inlier", "seed"],
