@@ -286,3 +286,58 @@ def test_offset_survives_prefill_then_decode_mix() -> None:
         c.update_and_fetch(kd, vd)
         assert c.offset == S + t + 1
     assert c.tokens_in_window <= n_sink + window_size
+
+
+# ======================================================================
+# Batching guard (see VeloxQuant-MLX#358) — VeloxQuant-Studio issue #29
+# ======================================================================
+
+
+def test_not_batchable_via_mlx_lm_server_probe():
+    c = _make(stream_n_sink=4, stream_window_size=8)
+    # mlx_lm.server's hasattr(cache, "merge") probe must see this as absent —
+    # a property that raises on access makes hasattr() return False.
+    assert not hasattr(c, "merge")
+    with pytest.raises(AttributeError):
+        c.merge  # noqa: B018 — accessing the property is the point
+
+
+def test_merge_on_empty_cache_would_silently_substitute_if_inherited():
+    """Guards against regressing to the base classmethod: on a batch of brand-new
+    (empty) caches, ``mlx_lm``'s ``KVCache.merge()`` silently returns a plain
+    ``BatchKVCache`` instead of raising or preserving StreamingLLM behaviour —
+    exactly the substitution the ``merge`` property above must prevent.
+    """
+    from mlx_lm.models.cache import BatchKVCache
+    from mlx_lm.models.cache import KVCache as _MLXKVCache
+
+    c = _make(stream_n_sink=4, stream_window_size=8)
+    assert c.offset == 0
+    merged = _MLXKVCache.merge.__func__(StreamingLLMKVCache, [c])
+    assert isinstance(merged, BatchKVCache)
+    assert not isinstance(merged, StreamingLLMKVCache)
+
+
+# ======================================================================
+# tokens_kept telemetry alias — VeloxQuant-Studio issue #29
+# ======================================================================
+
+
+def test_tokens_kept_matches_tokens_in_window():
+    """Every other eviction cache (h2o, tova, pyramidkv, snapkv, squeeze, ...)
+    exposes a ``tokens_kept`` property; streaming_llm only had
+    ``tokens_in_window``. A ``/v1/kv/stats``-style telemetry aggregator that
+    probes for ``tokens_kept`` via ``hasattr``/``getattr`` would silently
+    report 0 retained tokens for streaming_llm regardless of actual eviction
+    state, since ``tokens_seen`` alone already satisfies its "has telemetry"
+    check.
+    """
+    n_sink, window_size = 4, 8
+    c = _make(stream_n_sink=n_sink, stream_window_size=window_size)
+    assert hasattr(c, "tokens_kept")
+
+    k, v = _rand_kv(S=16, D=64, seed=42)
+    c.update_and_fetch(k, v)
+
+    assert c.tokens_kept == c.tokens_in_window
+    assert c.tokens_kept == n_sink + window_size
