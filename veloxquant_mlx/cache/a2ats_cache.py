@@ -396,6 +396,21 @@ class A2ATSKVCache(_MLXKVCache):
     def tokens_retrieved(self) -> int:
         return self._tokens_retrieved
 
+    # Without this, A2ATSKVCache inherits the base mlx_lm KVCache.merge()
+    # classmethod unchanged, so hasattr(cache, "merge") is True and mlx_lm
+    # treats this cache as batchable. update_and_fetch here always ends with
+    # super().update_and_fetch(k_out, v_out), populating the base class's
+    # self.keys/self.values, so the inherited merge() does not crash -- it
+    # succeeds silently, substituting a plain BatchKVCache built from the
+    # reconstructed fp16 tensors and discarding this layer's codebook
+    # quantization, windowed-RoPE state, and retrieval-set byte accounting.
+    # See VeloxQuant-MLX#358; found verifying VeloxQuant-Studio issue #1.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("A2ATSKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
+
 
 def _nearest_centroid(x: mx.array, codebook: mx.array) -> mx.array:
     """Plain nearest-centroid assignment (no query awareness). ``[N] int32``."""
