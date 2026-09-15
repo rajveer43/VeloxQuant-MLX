@@ -31,7 +31,7 @@ $('theme-toggle').addEventListener('click', () => {
 });
 
 /* ── Views ─────────────────────────────────────────────── */
-const VIEWS = ['server', 'methods', 'about'];
+const VIEWS = ['server', 'chat', 'methods', 'about'];
 
 function showView(name, updateHash = true) {
   if (!VIEWS.includes(name)) name = 'server';
@@ -441,6 +441,196 @@ function renderMemory(report) {
     + `<p class="mem-note">${escapeHtml(report.note)}</p>`;
 }
 
+/* ── Telemetry ─────────────────────────────────────────── */
+// Coverage is uneven across the 35 servable methods (see
+// docs/control-panel-enhancements.md, Finding A): some report keys+values,
+// some keys only, eviction methods report tokens kept/seen instead of bytes,
+// and a method can report neither. Each branch below renders its own honest
+// row rather than falling back to a shared "ratio" field that would be
+// blank or misleading for the methods that don't have one.
+function renderTelemetry(data) {
+  const body = $('telemetry-body');
+
+  if (!data || !data.available) {
+    body.innerHTML = `<p class="hint">${escapeHtml((data && data.reason) || 'Available once the server is running.')}</p>`;
+    return;
+  }
+
+  // Reuses .mem-row / .mem-value / .prov — the same "provenance is part of
+  // the UI, not just the docs" vocabulary the memory card already uses.
+  const row = (label, value, prov) => {
+    const cell = value != null
+      ? `<span class="mem-value">${escapeHtml(value)}</span>`
+      : `<span class="mem-value is-absent">not reported</span>`;
+    const badge = prov ? `<span class="prov prov-${prov}">${prov}</span>` : '';
+    return `<div class="mem-row"><span class="mem-label">${escapeHtml(label)}</span>${cell} ${badge}</div>`;
+  };
+
+  const rows = [];
+
+  if (data.coverage === 'keys_and_values') {
+    rows.push(row('Keys', ratioText(data.keys), 'estimate'));
+    rows.push(row('Values', ratioText(data.values), 'estimate'));
+  } else if (data.coverage === 'keys_only') {
+    rows.push(row('Keys (keys only — no value counters)', ratioText(data.keys), 'estimate'));
+  } else if (data.tokens) {
+    rows.push(row('Tokens retained', `${data.tokens.retained} / ${data.tokens.seen} seen`, 'measured'));
+  } else {
+    // coverage is "none" and there are no token counters either: state it,
+    // rather than rendering a blank row that reads as "nothing happening".
+    rows.push(row('Byte or token counters', null, null));
+  }
+
+  rows.push(row('Process RSS', humanBytes(data.memory.rss_bytes), 'measured'));
+  rows.push(row('MLX active / peak', humanBytesPair(data.memory.mlx_active_bytes, data.memory.mlx_peak_bytes), 'measured'));
+
+  body.innerHTML = rows.join('');
+}
+
+function ratioText(counter) {
+  if (!counter) return null;
+  if (counter.ratio == null) return `${humanBytes(counter.compressed_bytes)} (no fp16 baseline yet)`;
+  return `${counter.ratio}× (${humanBytes(counter.compressed_bytes)} / ${humanBytes(counter.fp16_bytes)})`;
+}
+
+function humanBytesPair(a, b) {
+  if (a == null && b == null) return null;
+  return `${humanBytes(a) || '—'} / ${humanBytes(b) || '—'}`;
+}
+
+/* ── Chat ──────────────────────────────────────────────── */
+// Deliberately minimal: no history persistence (chatHistory lives only in
+// this tab's memory, gone on reload), no system-prompt editor, no markdown
+// rendering. See docs/control-panel-telemetry-and-chat.md §4 for why.
+let chatHistory = [];
+let chatBusy = false;
+
+function chatSetEnabled(enabled) {
+  $('chat-input').disabled = !enabled;
+  $('chat-send').disabled = !enabled || chatBusy;
+  $('chat-sub').textContent = enabled
+    ? 'Talking to the running server.'
+    : 'Start a server to try it here.';
+}
+
+function resetChat() {
+  // A stopped or newly-started server invalidates whatever conversation was
+  // in progress -- carrying it forward would send context for a model that
+  // may no longer even be the one running.
+  chatHistory = [];
+  $('chat-messages').innerHTML = '<p class="hint">Nothing sent yet. Messages here are not saved anywhere.</p>';
+}
+
+function appendChatMessage(role, text) {
+  const container = $('chat-messages');
+  const empty = container.querySelector('.hint');
+  if (empty) empty.remove();
+
+  const el = document.createElement('div');
+  el.className = `chat-msg chat-msg-${role}`;
+  // textContent only, never innerHTML: this renders model output, and a
+  // model asked to echo HTML/script back is a stored-XSS vector the moment
+  // it's inserted as markup instead of text.
+  el.textContent = text;
+  container.appendChild(el);
+  container.scrollTop = container.scrollHeight;
+  return el;
+}
+
+function appendChatStats(el, tokenCount, elapsedSeconds) {
+  const stats = document.createElement('span');
+  stats.className = 'chat-msg-stats';
+  const rate = elapsedSeconds > 0 ? (tokenCount / elapsedSeconds).toFixed(1) : '0.0';
+  stats.textContent = `${tokenCount} tokens · ${elapsedSeconds.toFixed(1)}s · ${rate} tok/s`;
+  el.appendChild(stats);
+}
+
+$('chat-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (chatBusy || state !== 'running') return;
+
+  const input = $('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  chatBusy = true;
+  $('chat-send').disabled = true;
+
+  appendChatMessage('user', text);
+  chatHistory.push({ role: 'user', content: text });
+
+  const assistantEl = appendChatMessage('assistant', '');
+  const start = performance.now();
+  let tokenCount = 0;
+  let assistantText = '';
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: chatHistory }),
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `request failed (${res.status})`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) !== -1) {
+        const chunk = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        const line = chunk.replace(/^data: /, '').trim();
+        if (!line || line === '[DONE]') continue;
+
+        let parsed;
+        try { parsed = JSON.parse(line); } catch (err) { continue; }
+        const delta = parsed.choices?.[0]?.delta?.content || '';
+        if (delta) {
+          assistantText += delta;
+          assistantEl.textContent = assistantText;
+          tokenCount++;
+        }
+      }
+    }
+
+    chatHistory.push({ role: 'assistant', content: assistantText });
+  } catch (err) {
+    assistantEl.textContent = assistantText || '';
+    const errSpan = document.createElement('span');
+    errSpan.className = 'chat-msg-error';
+    errSpan.textContent = `\n[error: ${err.message}]`;
+    assistantEl.appendChild(errSpan);
+    // A failed turn never joined chatHistory as an assistant message, so a
+    // retry doesn't replay a broken reply back to the model as context.
+  }
+
+  const elapsed = (performance.now() - start) / 1000;
+  appendChatStats(assistantEl, tokenCount, elapsed);
+  $('chat-messages').scrollTop = $('chat-messages').scrollHeight;
+
+  chatBusy = false;
+  chatSetEnabled(state === 'running');
+  input.focus();
+});
+
+$('chat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    $('chat-form').requestSubmit();
+  }
+});
+
 /* ── Status ────────────────────────────────────────────── */
 function setState(next, detail) {
   state = next;
@@ -463,6 +653,8 @@ function setState(next, detail) {
   const locked = next === 'running' || next === 'starting';
   for (const id of Object.values(FIELDS)) $(id).disabled = locked;
   document.querySelectorAll('#knobs input').forEach((el) => { el.disabled = locked; });
+
+  chatSetEnabled(next === 'running');
 
   refreshPrimary();
 }
@@ -593,8 +785,10 @@ async function tick() {
 
     if (status.state === 'running') {
       try { renderMemory(await api('/api/memory')); } catch (e) { renderMemory(null); }
+      try { renderTelemetry(await api('/api/telemetry')); } catch (e) { renderTelemetry(null); }
     } else {
       renderMemory(null);
+      renderTelemetry(null);
     }
 
     await refreshLogs();
@@ -624,10 +818,13 @@ $('primary-btn').addEventListener('click', async () => {
       setState('stopped', 'Pick a model and press Start Server.');
       renderEndpoints(null);
       renderMemory(null);
+      renderTelemetry(null);
+      resetChat();
     } else {
       logCount = 0;
       $('log').innerHTML = '<span class="log-empty">No output yet.</span>';
       setState('starting', 'Loading model and wiring caches …');
+      resetChat();
       await api('/api/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
