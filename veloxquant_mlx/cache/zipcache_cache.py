@@ -190,5 +190,20 @@ class ZipCacheKVCache(_MLXKVCache):
             return float(self._hi_bits)
         return 16.0 * self._compressed_key_bytes / self._fp16_key_bytes
 
+    # Without this, ZipCacheKVCache inherits the base mlx_lm KVCache.merge()
+    # classmethod unchanged, so hasattr(cache, "merge") is True and mlx_lm
+    # treats this cache as batchable. update_and_fetch here always ends with
+    # super().update_and_fetch(k_out, v_out), populating the base class's
+    # self.keys/self.values, so the inherited merge() does not crash -- it
+    # succeeds silently, substituting a plain BatchKVCache built from the
+    # reconstructed fp16 tensors and discarding this layer's saliency routing
+    # and mixed-bit byte accounting. See VeloxQuant-MLX#358; found verifying
+    # VeloxQuant-Studio issue #36 (20th occurrence).
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("ZipCacheKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
+
 
 __all__ = ["ZipCacheKVCache"]

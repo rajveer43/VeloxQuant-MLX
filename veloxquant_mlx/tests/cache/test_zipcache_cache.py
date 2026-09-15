@@ -207,3 +207,57 @@ def test_hi_fraction_above_one_rejected() -> None:
 def test_hi_fraction_negative_rejected() -> None:
     with pytest.raises(ValueError, match="zipcache_hi_fraction"):
         _make(zipcache_hi_fraction=-0.2)
+
+
+# ---------------------------------------------------------------------------
+# merge() batching guard (VeloxQuant-MLX#358)
+# ---------------------------------------------------------------------------
+
+
+def test_not_batchable_via_mlx_lm_server_probe():
+    """mlx_lm.server decides batchability via hasattr(cache, "merge"). Without
+    a guard, ZipCacheKVCache inherits the base mlx_lm KVCache.merge()
+    classmethod unchanged, so this probe would return True. See VeloxQuant-MLX#358."""
+    cache = _make()
+    assert not hasattr(cache, "merge")
+
+
+def test_merge_raises_attribute_error():
+    cache = _make()
+    with pytest.raises(AttributeError, match="does not support merge"):
+        cache.merge
+
+
+def test_inherited_merge_on_populated_cache_would_silently_substitute():
+    """update_and_fetch always ends with super().update_and_fetch(k_out, v_out),
+    populating the base class's self.keys/self.values, so the inherited merge()
+    doesn't crash -- it silently succeeds, substituting a plain BatchKVCache and
+    discarding this layer's saliency routing and mixed-bit byte accounting."""
+    from mlx_lm.models.cache import BatchKVCache
+    from mlx_lm.models.cache import KVCache as _MLXKVCache
+
+    cache = _make()
+    k, v = _rand_kv()
+    cache.update_and_fetch(k, v)
+
+    merged = _MLXKVCache.merge([cache])
+    assert isinstance(merged, BatchKVCache)
+    assert not isinstance(merged, ZipCacheKVCache)
+
+
+def test_merge_guard_short_circuits_mlx_lm_merge_caches():
+    """With the merge() guard in place, mlx_lm.generate._merge_caches's own
+    hasattr(cache, "merge") check now sees False and takes its documented
+    "does not yet support batching with history" refusal instead of ever
+    reaching the base classmethod's silent substitution."""
+    import sys
+
+    import mlx_lm.server as _server  # noqa: F401
+
+    gen_mod = sys.modules["mlx_lm.generate"]
+    cache = _make()
+    k, v = _rand_kv()
+    cache.update_and_fetch(k, v)
+
+    with pytest.raises(ValueError, match="does not yet support batching with history"):
+        gen_mod._merge_caches([[cache]])
