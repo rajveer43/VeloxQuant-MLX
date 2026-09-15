@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.10 (2026-09-15)
+
+### Bug Fixes
+
+- **cache**: Snapkv silent merge() substitution + trim() corruption (issue #27)
+  ([#371](https://github.com/rajveer43/VeloxQuant-MLX/pull/371),
+  [`3de9e2c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3de9e2cd01b2e9406d9273cb72b6b6becbc0070f))
+
+
 ## v0.83.9 (2026-09-14)
 
 ### Bug Fixes
