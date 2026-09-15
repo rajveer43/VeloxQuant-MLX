@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.16 (2026-09-15)
+
+### Bug Fixes
+
+- **cache**: Xquant merge() guard silently severed cross-layer basis sharing (issue #35)
+  ([#381](https://github.com/rajveer43/VeloxQuant-MLX/pull/381),
+  [`6d89b25`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6d89b2522bc4ea206b70d4f20877d7e6e95c583d))
+
+
 ## v0.83.15 (2026-09-15)
 
 ### Bug Fixes
