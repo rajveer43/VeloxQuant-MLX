@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.11 (2026-09-15)
+
+### Bug Fixes
+
+- **cache**: Squeeze silent merge() substitution + squeeze_resolved_budget field leak (issue #28)
+  ([#372](https://github.com/rajveer43/VeloxQuant-MLX/pull/372),
+  [`db2eaed`](https://github.com/rajveer43/VeloxQuant-MLX/commit/db2eaed05d5cc797e903a12c2077eec6f9e15aa8))
+
+
 ## v0.83.10 (2026-09-15)
 
 ### Bug Fixes
