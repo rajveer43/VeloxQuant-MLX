@@ -311,5 +311,35 @@ class SKVQKVCache(_MLXKVCache):
         elems = n_q * self._D * self._B * self._H
         return 8.0 * self._compressed_key_bytes / elems
 
+    # ------------------------------------------------------------------
+    # Batching guard (see VeloxQuant-MLX#358)
+    # ------------------------------------------------------------------
+    # ``mlx_lm.server``'s ``BatchGenerator`` calls ``_merge_caches`` on every
+    # ``PromptProcessingBatch`` it builds -- including the very first, single-
+    # sequence one -- whenever ``hasattr(cache, "merge")`` is ``True`` on a
+    # fresh per-layer probe. ``SKVQKVCache`` subclasses mlx_lm's ``KVCache``
+    # directly and never overrides ``merge()``, so the inherited classmethod
+    # delegates to ``BatchKVCache.merge()``, which for a batch of brand-new
+    # (empty) caches takes the "no cache has content" fast path and silently
+    # returns a plain ``BatchKVCache`` in place of ``SKVQKVCache`` -- no
+    # sliding-window flush, no channel reordering, no clipped quantization,
+    # plain fp16 growth, while the server still believes it is running
+    # ``skvq`` (the same silent-substitution pattern as the other #358
+    # occurrences). Unlike ``palu``/``qfilters``, this class does store real
+    # content in the inherited ``self.keys``/``self.values`` ring buffer, so
+    # a hypothetical merge of an *already-populated* cache would not crash
+    # outright -- but it would still silently drop every SKVQ-specific
+    # instance attribute (``_q_end``, ``_perm_k``, ``_perm_v``, the frozen
+    # reorder permutations and flush frontier), which live only on this
+    # subclass and are not reconstructed by ``BatchKVCache.merge``. A bare
+    # method override is insufficient since ``hasattr()`` would still report
+    # ``True`` for a classmethod defined on the class; the property must
+    # raise on access instead so ``hasattr`` sees it as absent.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("SKVQKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
+
 
 __all__ = ["SKVQKVCache"]
