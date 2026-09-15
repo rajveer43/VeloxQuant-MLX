@@ -211,6 +211,25 @@ def test_adapted_methods_carry_deviation_notes():
         assert info.paper_deviation
 
 
+def test_a2ats_paper_deviation_describes_current_behavior_not_fixed_bugs():
+    """Issue #29 fixed both the windowed-RoPE far-key rotation and the
+    write-time distance-gating freeze; the deviation note previously still
+    described those as live bugs (a stale note surfaced verbatim in
+    VeloxQuant-Studio's method detail card as an orange warning about bugs
+    that no longer exist). It should now describe the real remaining gap
+    (the decode-path cosine-blend query-aware assignment, vs. the paper's
+    exact H-weighted objective) and explicitly note the other two were
+    fixed, not just drop them silently."""
+    deviation = get_method("a2ats").paper_deviation
+    assert deviation is not None
+    assert "cosine-blend" in deviation
+    assert "a2ats_query_h" in deviation
+    assert "fixed by #29" in deviation
+    # The old, now-stale claims must not survive verbatim.
+    assert "rotates far keys that the paper leaves unrotated" not in deviation
+    assert "frozen at write time" not in deviation.split("fixed by #29")[0]
+
+
 def test_to_dict_is_json_serializable():
     payload = [i.to_dict() for i in list_methods()]
     round_tripped = json.loads(json.dumps(payload))

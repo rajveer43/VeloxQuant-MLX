@@ -313,8 +313,13 @@ _PAPER_DEVIATION: dict[str, str] = {
         "to 2.5, above lo_bit.)"
     ),
     "a2ats": (
-        "Windowed RoPE rotates far keys that the paper leaves unrotated, and "
-        "distance gating is frozen at write time. See issue #29."
+        "Query-aware codebook assignment defaults to a cosine-blend approximation "
+        "rather than the paper's exact H-weighted objective (Eq. 13/14); pass a "
+        "calibrated a2ats_query_h to enable the paper-faithful path. (The windowed-"
+        "RoPE rotation and write-time distance-gating deviations this note used to "
+        "describe were fixed by #29 — far keys are now correctly left unrotated and "
+        "distance gating is recomputed against the current decode position, not "
+        "frozen at write time.)"
     ),
 }
 
