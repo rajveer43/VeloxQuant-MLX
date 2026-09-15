@@ -432,6 +432,23 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.15 (2026-09-15)
+
+### Bug Fixes
+
+- **cache**: Turboquant_rvq merge() guard silently disabled compression on every request (issue #32)
+  ([#376](https://github.com/rajveer43/VeloxQuant-MLX/pull/376),
+  [`c63f006`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c63f0063bf6e013776710744a2c3e8e004110094))
+
+- **cache**: Vecinfer merge() guard silently disabled VQ compression (issue #33)
+  ([#377](https://github.com/rajveer43/VeloxQuant-MLX/pull/377),
+  [`714fa20`](https://github.com/rajveer43/VeloxQuant-MLX/commit/714fa204c0b4d9a89b4ed027de5bb3f39d84f73b))
+
+- **cache**: Xkv merge() guard silently severed cross-layer basis sharing (issue #34)
+  ([#379](https://github.com/rajveer43/VeloxQuant-MLX/pull/379),
+  [`7c2700e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7c2700e37f804a3497d4d0a7dd81470d3e571567))
+
+
 ## v0.83.14 (2026-09-15)
 
 ### Bug Fixes
