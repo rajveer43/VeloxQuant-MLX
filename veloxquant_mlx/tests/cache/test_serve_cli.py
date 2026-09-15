@@ -200,3 +200,21 @@ def test_set_without_method_skips_relevance_check(capsys):
     assert overrides == {"kivi_group_size": 64}
     err = capsys.readouterr().err
     assert err == ""
+
+
+def test_set_array_field_parses_comma_separated_ints():
+    """svdq_bit_schedule/kvtc_bit_choices are tuple[int, ...] fields
+    (describe_field reports type='array'). Previously these fell into the
+    plain-string passthrough branch, so `--set svdq_bit_schedule=8,4,2,1,1,0,0,0`
+    reached SVDqKVCache.__init__ as the raw string '8,4,2,1,1,0,0,0' rather
+    than a tuple of ints, crashing deep inside cache construction with a
+    confusing TypeError instead of failing cleanly here. Found verifying
+    VeloxQuant-Studio issue #30."""
+    overrides = serve_cli.parse_overrides(["svdq_bit_schedule=8,4,2,1,1,0,0,0"], method="svdq")
+
+    assert overrides == {"svdq_bit_schedule": (8, 4, 2, 1, 1, 0, 0, 0)}
+
+
+def test_set_array_field_rejects_non_integer_element():
+    with pytest.raises(SystemExit, match="svdq_bit_schedule.*expects array"):
+        serve_cli.parse_overrides(["svdq_bit_schedule=8,4,x,1"], method="svdq")

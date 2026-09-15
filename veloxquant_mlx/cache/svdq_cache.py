@@ -95,46 +95,75 @@ class SVDqKVCache(_MLXKVCache):
             )
         self._group_size: int = int(getattr(config, "svdq_group_size", 32))
 
-        # SVD state — set on first prefill call
-        self._V: mx.array | None = None  # [D, r] fp32
-        self._K_mean: mx.array | None = None  # [D] fp32
-        self._singular_values: mx.array | None = None  # [r] fp32
-        self._r: int = 0  # actual rank used
-        # Schedule actually used for quantization, resolved at prefill time —
-        # may differ from self._bit_schedule if the small-rank guard degraded
-        # it gracefully (automatic-rank case only; see _resolve_safe_schedule).
-        self._effective_schedule: tuple[int, ...] = self._bit_schedule
+        # SVD state — set per (attention) head on first prefill call. Indexed
+        # by head index; each head gets its own basis rather than sharing
+        # head 0's (see _run_prefill_svd — different heads attend to
+        # different features and have near-uncorrelated key distributions in
+        # practice, so a shared basis reconstructs the head it was fit on
+        # well and every other head essentially as noise. Found verifying
+        # VeloxQuant-Studio issue #30).
+        self._V: list[mx.array] = []  # each [D, r_h] fp32
+        self._K_mean: list[mx.array] = []  # each [D] fp32
+        self._singular_values: list[mx.array] = []  # each [r_h] fp32
+        self._r: list[int] = []  # actual rank used, per head
+        # Schedule actually used for quantization per head, resolved at
+        # prefill time — may differ from self._bit_schedule if the
+        # small-rank guard degraded it gracefully for that head (automatic-
+        # rank case only; see _resolve_safe_schedule).
+        self._effective_schedule: list[tuple[int, ...]] = []
 
         # Byte accounting
         self._compressed_key_bytes: int = 0
         self._fp16_key_bytes: int = 0
         self._value_fp16_bytes: int = 0
         self._tokens_seen: int = 0
+        # V/K_mean are stored once per layer (set only in _run_prefill_svd) and
+        # amortized over every token seen after that -- charge their bytes into
+        # _compressed_key_bytes exactly once, not on every update_and_fetch call.
+        self._projection_bytes_charged: bool = False
 
     # ------------------------------------------------------------------
     # SVD helpers
     # ------------------------------------------------------------------
     def _run_prefill_svd(self, keys: mx.array) -> mx.array:
-        """Compute SVD on keys [B, H, S, D], store projection, return reconstructed keys."""
+        """Compute one SVD basis per attention head, store projections, return
+        reconstructed keys.
+
+        Each head gets its own basis rather than sharing head 0's: different
+        heads attend to different features and have near-uncorrelated key
+        distributions in practice (measured cross-head correlation of
+        column means on real model keys: -0.11), so a basis fit on one head
+        reconstructs that head well and every other head essentially as
+        noise — confirmed on real Qwen2.5-0.5B keys, where head 0 reached
+        rel_mse=0.0002 while head 1 (forced through head 0's basis) reached
+        rel_mse=1.37 (error larger than the signal). Only assumes B == 1:
+        svdq has no merge() (see VeloxQuant-MLX#358), so mlx_lm.server always
+        serves it unbatched.
+        """
         B, H, S, D = keys.shape
-        # Process head 0 of batch 0 for the SVD; apply the same V to all heads.
-        # Keys across heads share the same D-dimensional space.
-        k0 = keys[0, 0].astype(mx.float32)  # [S, D]
-        L, V, K_mean, s_vals = svd_compress_keys(
-            k0, rank=self._rank, energy_threshold=self._energy_threshold
-        )
-        self._V = V  # [D, r]
-        self._K_mean = K_mean  # [D]
-        self._singular_values = s_vals  # [r]
-        self._r = int(V.shape[1])
+        self._V = []
+        self._K_mean = []
+        self._singular_values = []
+        self._r = []
+        self._effective_schedule = []
+
+        for h in range(H):
+            k_h = keys[0, h].astype(mx.float32)  # [S, D]
+            L, V, K_mean, s_vals = svd_compress_keys(
+                k_h, rank=self._rank, energy_threshold=self._energy_threshold
+            )
+            self._V.append(V)  # [D, r_h]
+            self._K_mean.append(K_mean)  # [D]
+            self._singular_values.append(s_vals)  # [r_h]
+            self._r.append(int(V.shape[1]))
         mx.eval(self._V, self._K_mean, self._singular_values)
 
-        self._effective_schedule = self._resolve_safe_schedule()
+        self._effective_schedule = [self._resolve_safe_schedule(h) for h in range(H)]
 
         # Project and quantize all heads
         return self._project_quantize_reconstruct(keys)
 
-    def _resolve_safe_schedule(self) -> tuple[int, ...]:
+    def _resolve_safe_schedule(self, h: int) -> tuple[int, ...]:
         """Guard against the truncation failure mode where 0-bit groups in
         the schedule wipe out real signal because rank is too small for
         len(bit_schedule) groups to each cover a safe channel span.
@@ -145,6 +174,10 @@ class SVDqKVCache(_MLXKVCache):
         Only relevant when the schedule actually truncates (has a 0-bit
         group) — a schedule with no zeros doesn't have this failure mode
         regardless of rank.
+
+        Evaluated per head ``h`` since each head's SVD can land at a
+        different rank (most sharply under energy-threshold auto-rank, where
+        rank depends on that head's own singular-value spectrum).
 
         Behavior differs by how rank was chosen:
           - Explicit ``svdq_rank``: the user made a specific, informed choice
@@ -161,7 +194,8 @@ class SVDqKVCache(_MLXKVCache):
             behavior degrades gracefully rather than failing outright.
         """
         n_groups = len(self._bit_schedule)
-        if 0 not in self._bit_schedule or self._r >= min_safe_rank(n_groups):
+        r_h = self._r[h]
+        if 0 not in self._bit_schedule or r_h >= min_safe_rank(n_groups):
             return self._bit_schedule
 
         if self._rank is not None:
@@ -170,7 +204,7 @@ class SVDqKVCache(_MLXKVCache):
                 f"svdq: explicit svdq_rank={self._rank} is too small for the "
                 f"{n_groups}-group bit schedule {self._bit_schedule}, which "
                 f"truncates trailing groups to 0 bits. With this rank, "
-                f"groups would average {self._r / n_groups:.1f} channels "
+                f"groups would average {r_h / n_groups:.1f} channels "
                 f"each, so a 0-bit group would wipe out individual channels "
                 f"that may still carry real signal rather than a genuinely "
                 f"negligible energy tail (the schedule assumes ~d/{n_groups} "
@@ -185,29 +219,27 @@ class SVDqKVCache(_MLXKVCache):
         return tuple(max(b, 1) for b in self._bit_schedule)
 
     def _project_quantize_reconstruct(self, keys: mx.array) -> mx.array:
-        """Project keys → latent → quantize → reconstruct for all [B, H, S, D]."""
+        """Project keys → latent → quantize → reconstruct for all [B, H, S, D],
+        each head through its own SVD basis (see _run_prefill_svd)."""
         B, H, S, D = keys.shape
-        V = self._V
-        K_mean = self._K_mean
-        sv = self._singular_values
 
-        out_heads = []
-        for b in range(B):
-            out_batch = []
-            for h in range(H):
-                k_bh = keys[b, h].astype(mx.float32)  # [S, D]
-                k_centered = k_bh - K_mean[None, :]
-                L = k_centered @ V  # [S, r]
-                L_q = quantize_latents_mixed(
-                    L,
-                    sv,
-                    bit_schedule=self._effective_schedule,
-                    group_size=self._group_size,
-                )
-                k_hat = reconstruct_keys(L_q, V, K_mean)  # [S, D] fp16
-                out_batch.append(k_hat)
-            out_heads.append(mx.stack(out_batch, axis=0))  # [H, S, D]
-        return mx.stack(out_heads, axis=0)  # [B, H, S, D]
+        out_batch = []
+        for h in range(H):
+            V = self._V[h]
+            K_mean = self._K_mean[h]
+            sv = self._singular_values[h]
+            k_bh = keys[0, h].astype(mx.float32)  # [S, D]
+            k_centered = k_bh - K_mean[None, :]
+            L = k_centered @ V  # [S, r_h]
+            L_q = quantize_latents_mixed(
+                L,
+                sv,
+                bit_schedule=self._effective_schedule[h],
+                group_size=self._group_size,
+            )
+            k_hat = reconstruct_keys(L_q, V, K_mean)  # [S, D] fp16
+            out_batch.append(k_hat)
+        return mx.stack(out_batch, axis=0)[None]  # [1, H, S, D]
 
     # ------------------------------------------------------------------
     # mlx_lm protocol
@@ -215,21 +247,17 @@ class SVDqKVCache(_MLXKVCache):
     def update_and_fetch(self, keys: mx.array, values: mx.array):
         B, H, S, D = keys.shape
 
-        if self._V is None:
+        if not self._V:
             # First call — run SVD on the incoming batch (prefill)
             k_out = self._run_prefill_svd(keys)
         else:
-            # Subsequent calls — project into existing V
+            # Subsequent calls — project into each head's existing V
             k_out = self._project_quantize_reconstruct(keys)
 
         self._account_bytes(B, H, S, D)
         return super().update_and_fetch(k_out, values)
 
     def _account_bytes(self, B: int, H: int, S: int, D: int) -> None:
-        r = self._r if self._r > 0 else D
-        schedule = self._effective_schedule
-        slices = latent_group_slices(r, n_groups=len(schedule))
-
         # Latent storage: each group's channels at its own bit width, plus
         # group-quant overhead (scale + zero per group, fp16). A 0-bit group
         # costs nothing beyond that overhead (paper Eq. 6 truncation).
@@ -239,15 +267,39 @@ class SVDqKVCache(_MLXKVCache):
             code_bytes = math.ceil(n_tokens * n_ch * b / 8) if b > 0 else 0
             n_groups = math.ceil(n_tokens / self._group_size)
             param_bytes = n_groups * n_ch * 2 * 2 if b > 0 else 0  # scale + zero, fp16
-            return (code_bytes + param_bytes) * H * B
+            return (code_bytes + param_bytes) * B
 
-        key_bytes = sum(
-            _latent_bytes(S, end - start, schedule[i]) for i, (start, end) in enumerate(slices)
-        )
-        # V [D, r] + K_mean [D] stored once — amortized over tokens seen
-        projection_bytes = (D * r + D) * 4 * H * B  # fp32
+        # Each head can have its own rank/schedule (energy-threshold auto-rank
+        # depends on that head's own singular-value spectrum), so bytes are
+        # summed per head rather than multiplied by a single shared rank.
+        key_bytes = 0
+        for h in range(H):
+            r_h = self._r[h] if self._r[h] > 0 else D
+            schedule_h = self._effective_schedule[h]
+            slices = latent_group_slices(r_h, n_groups=len(schedule_h))
+            key_bytes += sum(
+                _latent_bytes(S, end - start, schedule_h[i])
+                for i, (start, end) in enumerate(slices)
+            )
+        self._compressed_key_bytes += key_bytes
 
-        self._compressed_key_bytes += key_bytes + projection_bytes
+        # V [D, r_h] + K_mean [D] stored once per head (set only in
+        # _run_prefill_svd) — charge their bytes into the running total
+        # exactly once, the first time _account_bytes runs after they exist,
+        # rather than re-adding this fixed cost on every update_and_fetch
+        # call. Previously this was added unconditionally every call
+        # (prefill AND every decode step), so on a real decode-length
+        # sequence the "amortized, negligible" projection cost this class's
+        # docstring promises instead dominated compressed_key_bytes by 1-2
+        # orders of magnitude, making /v1/kv/stats report a compression
+        # ratio far below 1.0 (inflation, not compression) even though the
+        # actual latent quantization was working correctly. Found verifying
+        # VeloxQuant-Studio issue #30.
+        if not self._projection_bytes_charged and self._V:
+            projection_bytes = sum((D * r_h + D) * 4 for r_h in self._r) * B  # fp32
+            self._compressed_key_bytes += projection_bytes
+            self._projection_bytes_charged = True
+
         self._fp16_key_bytes += B * H * S * D * 2
         self._value_fp16_bytes += B * H * S * D * 2
         self._tokens_seen += S
@@ -269,18 +321,50 @@ class SVDqKVCache(_MLXKVCache):
 
     @property
     def assigned_avg_bits(self) -> float:
-        """Effective key bit-width: schedule's mean bit-width scaled by r/D."""
-        schedule = self._effective_schedule
-        if self._r == 0 or self._D == 0:
-            return equivalent_bit_width(self._r, schedule)
-        b_bar = equivalent_bit_width(self._r, schedule)
-        # Scale by r/D — latent dim is smaller than original
-        return b_bar * self._r / self._D
+        """Effective key bit-width: schedule's mean bit-width scaled by r/D,
+        averaged across heads (each head can land at its own rank/schedule
+        under energy-threshold auto-rank — see _run_prefill_svd)."""
+        if not self._r or self._D == 0:
+            return 0.0
+        per_head = []
+        for r_h, schedule_h in zip(self._r, self._effective_schedule):
+            b_bar = equivalent_bit_width(r_h, schedule_h)
+            per_head.append(b_bar * r_h / self._D)  # scale by r/D
+        return sum(per_head) / len(per_head)
 
     @property
     def rank(self) -> int:
-        """Actual SVD rank used after energy-threshold selection."""
-        return self._r
+        """Actual SVD rank used after energy-threshold selection, averaged
+        across heads (rounded down) — see assigned_avg_bits for why heads
+        can differ. Use the per-head ranks directly (e.g. via a subclass
+        instance's internal state) if the per-head breakdown matters."""
+        if not self._r:
+            return 0
+        return sum(self._r) // len(self._r)
+
+    # ------------------------------------------------------------------
+    # Batching guard (see VeloxQuant-MLX#358)
+    # ------------------------------------------------------------------
+    # ``mlx_lm.server``'s ``BatchGenerator`` calls ``_merge_caches`` on every
+    # ``PromptProcessingBatch`` it builds -- including the very first, single-
+    # sequence one -- whenever ``hasattr(cache, "merge")`` is ``True`` on a
+    # fresh per-layer probe. The inherited ``KVCache.merge()`` classmethod
+    # delegates to ``BatchKVCache.merge()``, which for a batch of brand-new
+    # (empty) caches takes the "no cache has content" fast path and silently
+    # returns a plain empty ``BatchKVCache`` in place of ``SVDqKVCache`` -- no
+    # SVD projection, no mixed-precision quantization, plain fp16 storage,
+    # while the server still believes it is running ``svdq`` and reports its
+    # compression stats (the same silent-substitution pattern as the other
+    # #358 occurrences, here disabling compression entirely rather than
+    # disabling eviction). A bare method override is insufficient since
+    # ``hasattr()`` would still report ``True`` for a classmethod defined on
+    # the class; the property must raise on access instead so ``hasattr``
+    # sees it as absent.
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("SVDqKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
 
 
 __all__ = ["SVDqKVCache"]

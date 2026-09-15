@@ -189,6 +189,16 @@ def parse_overrides(pairs: list[str], method: str | None = None) -> dict[str, An
                 overrides[name] = float(raw)
             elif schema["type"] == "bool":
                 overrides[name] = raw.lower() in ("1", "true", "yes", "on")
+            elif schema["type"] == "array":
+                # svdq_bit_schedule, kvtc_bit_choices: comma-separated ints
+                # (e.g. --set svdq_bit_schedule=8,4,2,1,1,0,0,0). Previously
+                # fell into the plain-string passthrough below, so the raw
+                # string reached the cache constructor unconverted and
+                # crashed deep inside it (e.g. svdq_cache.py comparing a str
+                # element with `< 0`) instead of failing cleanly here with
+                # the field name in the message. Found verifying
+                # VeloxQuant-Studio issue #30.
+                overrides[name] = tuple(int(x) for x in raw.split(","))
             else:
                 overrides[name] = raw
         except ValueError:
