@@ -229,5 +229,20 @@ class TOVAKVCache(_MLXKVCache):
             return 0
         return int(self._states[0].keys.shape[0])
 
+    # Without this, TOVAKVCache inherits the base mlx_lm KVCache.merge()
+    # classmethod unchanged, so hasattr(cache, "merge") is True and
+    # mlx_lm.server's batching machinery treats this cache as batchable.
+    # Calling the inherited merge() on a fresh per-request cache silently
+    # substitutes a plain BatchKVCache with no eviction and no error --
+    # the request then runs with an unbounded fp16 cache while the server
+    # still reports method="tova" and a NOT_TRIMMABLE tier, giving no
+    # indication eviction never happened. See VeloxQuant-MLX#358; found
+    # verifying VeloxQuant-Studio issue #31 (15th occurrence).
+    merge = property(
+        lambda self: (_ for _ in ()).throw(
+            AttributeError("TOVAKVCache does not support merge() — see VeloxQuant-MLX#358")
+        )
+    )
+
 
 __all__ = ["TOVAKVCache"]
