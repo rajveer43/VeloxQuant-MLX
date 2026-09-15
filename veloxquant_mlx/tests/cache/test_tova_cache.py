@@ -326,6 +326,44 @@ def test_shape_change_rejected_without_mutating_state():
     assert cache.offset == 2
 
 
+# ==================================================================
+# merge() batching guard (VeloxQuant-MLX#358)
+# ==================================================================
+
+
+def test_not_batchable_via_mlx_lm_server_probe():
+    """mlx_lm.server decides batchability via hasattr(cache, "merge").
+
+    Without an explicit guard, TOVAKVCache inherits the base mlx_lm
+    KVCache.merge() classmethod unchanged, so hasattr(cache, "merge") is
+    True and the server treats it as batchable -- silently substituting a
+    plain BatchKVCache (see the next test) instead of ever running real
+    TOVA eviction. Found verifying VeloxQuant-Studio issue #31.
+    """
+    cache = _make()
+    assert not hasattr(cache, "merge")
+
+
+def test_merge_on_empty_cache_would_silently_substitute_if_inherited():
+    """Reproduces the substitution mlx_lm.server would perform if
+    TOVAKVCache had no merge() guard: calling the inherited base-class
+    merge() classmethod on a fresh cache list returns a plain BatchKVCache
+    with none of TOVA's eviction behavior, and no error is raised."""
+    from mlx_lm.models.cache import BatchKVCache
+    from mlx_lm.models.cache import KVCache as _MLXKVCache
+
+    cache = _make()
+    substituted = _MLXKVCache.merge([cache])
+    assert isinstance(substituted, BatchKVCache)
+    assert not isinstance(substituted, TOVAKVCache)
+
+
+def test_merge_raises_attribute_error():
+    cache = _make()
+    with pytest.raises(AttributeError, match="does not support merge"):
+        cache.merge
+
+
 def test_real_mlx_lm_llama_gqa_forward_parity():
     """Actual mlx-lm model code with tiny random weights, not a quality test."""
     from mlx_lm.models.llama import Model, ModelArgs
