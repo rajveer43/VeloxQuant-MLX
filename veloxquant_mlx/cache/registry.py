@@ -465,6 +465,12 @@ _FIELD_HELP: dict[str, str] = {
     "kvquant_outlier_fraction": "Top-magnitude fraction kept in fp16.",
     "residual_length": "Recent tokens kept uncompressed.",
     "rocketkv_compression_ratio": "Overall target ratio; adaptively split across both stages.",
+    "xquant_residual_bits": (
+        "Bits for the reuse layer's residual vs. the anchor's codes. The default 0 "
+        "assumes adjacent layers are highly correlated, which often does not hold on "
+        "real models and can produce incoherent output even at high base_bits — set "
+        "to 4+ if generation degrades (see VeloxQuant-MLX#380)."
+    ),
 }
 
 

@@ -420,3 +420,23 @@ class TestFieldIsRelevant:
             desc = describe_field(name)
             assert desc["type"] == "array", (name, desc)
             assert desc["default"] == expected_default, (name, desc)
+
+    def test_xquant_residual_bits_help_warns_about_unsafe_default(self):
+        """Regression for VeloxQuant-Studio issue #35 / VeloxQuant-MLX#380:
+        the shipped default `xquant_residual_bits=0` produces incoherent
+        output on real models (adjacent-layer key correlation is ~0, not the
+        "highly similar" the cross-layer reuse premise assumes), at every
+        `xquant_base_bits` including near-lossless settings. #380 was filed
+        separately since changing the shipped default has broader
+        implications, but its own minimal suggested fix — warning users in
+        the field's help text, since that's what the macOS app's parameter
+        editor renders next to the field — is applied here. Before this,
+        `xquant_residual_bits` had no `_FIELD_HELP` entry at all (fell
+        through to `None`), so nothing anywhere warned about the risk.
+        """
+        from veloxquant_mlx.cache.registry import describe_field
+
+        help_text = describe_field("xquant_residual_bits")["help"]
+        assert help_text is not None
+        assert "0" in help_text
+        assert "incoherent" in help_text.lower()
