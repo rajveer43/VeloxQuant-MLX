@@ -432,6 +432,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.17 (2026-09-15)
+
+### Bug Fixes
+
+- **cache**: Zipcache merge() guard silently substituted plain fp16 cache (issue #36)
+  ([#382](https://github.com/rajveer43/VeloxQuant-MLX/pull/382),
+  [`c391311`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c39131193eb825898c0261fa3a82a98e56dddf20))
+
+
 ## v0.83.16 (2026-09-15)
 
 ### Bug Fixes
