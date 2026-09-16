@@ -51,7 +51,9 @@ class XQuantKVCache(_MLXKVCache):
     Args:
         config: :class:`KVCacheConfig`. Fields consumed:
             ``xquant_base_bits``       (int, default 2),
-            ``xquant_residual_bits``   (int, default 0),
+            ``xquant_residual_bits``   (int, default 4 -- see VeloxQuant-MLX#380;
+                0 is unsafe on real models, adjacent-layer correlation is too
+                weak for pure reuse to reconstruct coherently),
             ``xquant_group_quant_size``(int, default 32).
         role: ``"anchor"`` or ``"reuse"`` (default ``"anchor"``).
         group_id: Cross-layer group this layer belongs to.

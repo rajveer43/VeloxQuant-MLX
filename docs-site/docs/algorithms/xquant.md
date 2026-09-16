@@ -3,7 +3,7 @@ id: xquant
 title: XQuant — Cross-Layer KV Cache Reuse
 sidebar_label: XQuant
 slug: /algorithms/xquant
-description: XQuant is VeloxQuant-MLX's first cross-layer method, pairing transformer layers into anchor/reuse groups so reuse layers share the anchor's quantized codes and store only their own scale/zero, reaching roughly 1.0-1.4 effective key bits.
+description: XQuant is VeloxQuant-MLX's first cross-layer method, pairing transformer layers into anchor/reuse groups so reuse layers share the anchor's quantized codes and store only their own scale/zero plus a residual, reaching roughly 4.5 effective key bits at the safe default.
 keywords: [xquant, cross-layer kv cache reuse, anchor reuse groups, layer coordinator, effective bit-width, sub-2-bit keys]
 ---
 
@@ -11,7 +11,7 @@ keywords: [xquant, cross-layer kv cache reuse, anchor reuse groups, layer coordi
 
 **Available since:** v0.13.0  
 **Paper:** arXiv:2510.11236 (EMNLP 2025, Yang et al.) — VeloxQuant-MLX implementation is faithful to the cross-layer-reuse core, adapted at the integration boundary (see [Adaptation notes](#adaptation-notes)).  
-**Effective key bits:** sub-2-bit per reuse layer (≈1.0–1.4 with a 2-bit anchor) → 11×–16× key bandwidth reduction across a group  
+**Effective key bits:** ≈4.5 bits/element (group_size=2, base_bits=2) at the safe default `residual_bits=4`; sub-2-bit is reachable with `residual_bits=0`, but that setting is unsafe on real models — see the warning below.  
 **Calibration:** None — zero-shot, works on any model immediately.
 
 This is VeloxQuant-MLX's **first cross-layer method**. Every other algorithm operates strictly within one layer's `update_and_fetch`; XQuant has layers *coordinate*.
@@ -29,7 +29,7 @@ config = KVCacheConfig(
     method="xquant",
     xquant_group_size=2,  # layers per anchor/reuse group (2 = pairs)
     xquant_base_bits=2,  # anchor quantizer bit-width
-    xquant_residual_bits=0,  # reuse-layer correction residual (0 = pure reuse)
+    xquant_residual_bits=4,  # reuse-layer correction residual (default; see warning below)
     xquant_group_quant_size=32,
 )
 
@@ -57,7 +57,13 @@ output = generate(model, tokenizer, prompt="Tell me about KV caches", kv_cache=c
 
 ### Intuition
 
-Adjacent transformer layers produce highly similar key/value tensors — their attention representations evolve gradually with depth. XQuant exploits this redundancy: instead of every layer storing its own quantized cache, layers are grouped into **anchor / reuse** groups. The anchor pays the full quantization cost and publishes its integer codes; the reuse layers borrow those codes and store only their own dequantization parameters (a fresh scale/zero), which correct for the small cross-layer drift. Across a group, the *effective* per-element bit-width falls well below the anchor's.
+Adjacent transformer layers are *assumed* to produce similar key/value tensors — the premise XQuant's cross-layer reuse is built on. XQuant exploits this by grouping layers into **anchor / reuse** groups: the anchor pays the full quantization cost and publishes its integer codes; the reuse layers borrow those codes and store only their own dequantization parameters (a fresh scale/zero), which correct for cross-layer drift.
+
+:::warning[Measured correlation is weak on real models]
+On real checkpoints (Qwen2.5-0.5B, Llama-3.2-1B), measured cosine similarity between adjacent layers' real keys is **~0, sometimes negative** — not "highly similar." Pure reuse (`xquant_residual_bits=0`) then reconstructs mostly noise and generation degrades to incoherent output, at *every* `xquant_base_bits`, including near-lossless settings (see [VeloxQuant-MLX#380](https://github.com/veloxquant/veloxquant-mlx/issues/380)). Always measure with `cross_layer_similarity` before trusting `residual_bits=0` for a given model; the shipped default is `4`, which recovers coherent output even with no correlation at all.
+:::
+
+Across a group with a sufficient residual, the *effective* per-element bit-width still falls below the anchor's — just not all the way down to the param-only floor pure reuse would imply.
 
 ### Layer pairing
 
@@ -82,7 +88,7 @@ On each `update_and_fetch(keys, values)`:
 
 1. Fetch the paired anchor's codes for the same token range from the coordinator.
 2. Fit this layer's **own** per-group scale/zero against its incoming K/V (the codes are shared; the dequant *parameters* are per-layer — this is what corrects cross-layer magnitude/offset drift).
-3. Dequantize the shared codes with this layer's params. Optionally add a quantized low-bit residual (`xquant_residual_bits`, default 0 = pure reuse).
+3. Dequantize the shared codes with this layer's params. Add a quantized low-bit residual (`xquant_residual_bits`, default 4) — see the correlation warning above for why 0 is unsafe on real models.
 4. Store only `(scale, zero, [residual_codes])` — never a full code tensor. This is the byte win.
 
 If the anchor has not yet published a step (e.g. mis-ordered iteration), the reuse layer falls back to self-quantization, so correctness never depends on iteration order.
@@ -95,10 +101,18 @@ per_layer_bits(anchor) = base_bits + amortized param overhead
 
 group_effective_bits   = ( anchor_bits + (group_size - 1) * reuse_bits ) / group_size
 
-At group_size=2, base_bits=2, residual_bits=0:
-  reuse layer charges only scale/zero (param-only) -> ~1.0 bits/element
-  group effective ~= (2 + 1) / 2 ~= 1.25 bits/element
+At group_size=2, base_bits=2, residual_bits=0 (unsafe, see warning above):
+  anchor charges base_bits + amortized params -> effective_pair_bits ~= 3.0
+  reuse layer charges only scale/zero (param-only) -> effective_pair_bits ~= 1.0
+  group effective ~= (3.0 + 1.0) / 2 = 2.0 bits/element
+
+At group_size=2, base_bits=2, residual_bits=4 (shipped default):
+  anchor unchanged -> effective_pair_bits ~= 3.0
+  reuse layer charges scale/zero + a 4-bit residual -> effective_pair_bits ~= 6.0
+  group effective ~= (3.0 + 6.0) / 2 = 4.5 bits/element
 ```
+
+(`effective_pair_bits` measured directly from the accounting properties, not a closed-form approximation — param overhead depends on `xquant_group_quant_size`.)
 
 `effective_pair_bits` on each cache reports the bits actually charged to that layer (`16 × compressed_key_bytes / fp16_key_bytes`).
 
@@ -110,18 +124,20 @@ At group_size=2, base_bits=2, residual_bits=0:
 |---|---|---|
 | `xquant_group_size` | `2` | Layers per anchor/reuse group. 2 → pairs; 3 → one anchor feeds two reusers. |
 | `xquant_base_bits` | `2` | Anchor quantizer bit-width. |
-| `xquant_residual_bits` | `0` | Reuse-layer correction residual. 0 = pure reuse (max compression). 1–4 = trade bits for fidelity on less-correlated pairs. |
+| `xquant_residual_bits` | `4` | Reuse-layer correction residual. **0 is unsafe on real models** (see warning above) — measured near-zero cross-layer correlation means pure reuse reconstructs mostly noise. 4 is the validated floor that recovers coherent output with no correlation assumed; only lower it after confirming strong correlation for your specific model with `cross_layer_similarity`. |
 | `xquant_group_quant_size` | `32` | Tokens per quantization group (along the sequence axis). |
 | `xquant_max_ctx` | `8192` | Per-group token budget. Exceeding it raises `RuntimeError`. |
 
 ### Tuning the residual
 
+Group effective bits measured via `effective_pair_bits` (not a closed-form estimate — depends on `xquant_group_quant_size`):
+
 | `group_size` | `base_bits` | `residual_bits` | Group effective bits | When |
 |---|---|---|---|---|
-| 2 | 2 | 0 | ~1.25 | Highly correlated adjacent layers (most models) |
-| 2 | 2 | 1 | ~1.75 | Moderate correlation; cheap quality insurance |
-| 3 | 2 | 0 | ~1.0 | Very correlated; aggressive compression |
-| 2 | 2 | 4 | ~3.0 | Low correlation; residual carries most of the signal |
+| 2 | 2 | 4 (default) | ~4.5 | Safe default; no correlation assumed |
+| 2 | 2 | 1 | ~3.0 | Only if you've measured strong correlation for this model |
+| 3 | 2 | 0 | ~1.7 | **Unsafe** — pure reuse; aggressive compression, real models degrade to incoherent output |
+| 2 | 2 | 0 | ~2.0 | **Unsafe** — pure reuse (former default; see VeloxQuant-MLX#380) |
 
 ---
 
@@ -131,13 +147,13 @@ At group_size=2, base_bits=2, residual_bits=0:
 |---|---|---|---|---|
 | Compression axis | **Cross-layer** | Latent (SVD) | Per-channel | None (uniform) |
 | Key space | Original | Latent (SVD) | Original | Original |
-| Effective key bits | ~1.0–1.4 (group) | ~1.25 | ~2.5 | 2.0 |
-| Key compression | 11×–16× | 12.8× | 6.4× | 8× |
+| Effective key bits | ~4.5 (group, safe default) / ~1.0–1.4 (group, `residual_bits=0`, unsafe) | ~1.25 | ~2.5 | 2.0 |
+| Key compression | ~3.5× (safe default) / 11×–16× (`residual_bits=0`, unsafe) | 12.8× | 6.4× | 8× |
 | Calibration | None | SVD at prefill | None | None |
 | Coordinates layers | **Yes (coordinator)** | No | No | No |
 | Values compressed | Yes | No | No | Yes |
 
-**When to use XQuant over KIVI/SVDq/Kitty:** When adjacent layers in your model are highly correlated (the common case) and you want the lowest effective bit-width available. XQuant is the only method that exploits *inter-layer* redundancy — an axis orthogonal to every other method, so it can in principle compose with them (anchor quantizer swapped for SVDq/Kitty) in future.
+**When to use XQuant over KIVI/SVDq/Kitty:** When you've *measured* (via `cross_layer_similarity`) that adjacent layers in your model are strongly correlated and want the lowest effective bit-width available — that measurement is not something to assume, real checkpoints checked so far show near-zero correlation. Otherwise, XQuant at its safe default is still cross-layer-aware but closer to KIVI's compression ratio. XQuant is the only method that exploits *inter-layer* redundancy — an axis orthogonal to every other method, so it can in principle compose with them (anchor quantizer swapped for SVDq/Kitty) in future.
 
 **When to prefer the others:** Single-layer methods (KIVI, SVDq, Kitty) have no cross-layer coupling and are simpler to reason about. If your model's layers are weakly correlated, XQuant with `residual_bits=0` will degrade — measure cross-layer similarity first (the benchmark reports it) or raise `residual_bits`.
 

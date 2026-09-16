@@ -422,21 +422,30 @@ class TestFieldIsRelevant:
             assert desc["default"] == expected_default, (name, desc)
 
     def test_xquant_residual_bits_help_warns_about_unsafe_default(self):
-        """Regression for VeloxQuant-Studio issue #35 / VeloxQuant-MLX#380:
-        the shipped default `xquant_residual_bits=0` produces incoherent
-        output on real models (adjacent-layer key correlation is ~0, not the
-        "highly similar" the cross-layer reuse premise assumes), at every
-        `xquant_base_bits` including near-lossless settings. #380 was filed
-        separately since changing the shipped default has broader
-        implications, but its own minimal suggested fix — warning users in
-        the field's help text, since that's what the macOS app's parameter
-        editor renders next to the field — is applied here. Before this,
-        `xquant_residual_bits` had no `_FIELD_HELP` entry at all (fell
-        through to `None`), so nothing anywhere warned about the risk.
+        """Regression for VeloxQuant-Studio issue #35 / VeloxQuant-MLX#380.
+
+        `xquant_residual_bits=0` (pure reuse) produces incoherent output on
+        real models: adjacent-layer key correlation is ~0, not the "highly
+        similar" the cross-layer reuse premise assumes, at every
+        `xquant_base_bits` including near-lossless settings. The shipped
+        default was raised from 0 to 4 (see
+        test_xquant_residual_bits_default_is_safe below) as the fuller fix;
+        the field's help text still warns that dropping below 4 is unsafe
+        without confirming real cross-layer correlation, since that's what
+        the macOS app's parameter editor renders next to the field.
         """
         from veloxquant_mlx.cache.registry import describe_field
 
         help_text = describe_field("xquant_residual_bits")["help"]
         assert help_text is not None
-        assert "0" in help_text
         assert "incoherent" in help_text.lower()
+
+    def test_xquant_residual_bits_default_is_safe(self):
+        """Regression for VeloxQuant-MLX#380: the shipped default must not be
+        the unsafe pure-reuse value. 4 is the validated floor
+        (test_uncorrelated_residual_recovers in test_xquant_cache.py) that
+        recovers coherent output even when adjacent layers are uncorrelated.
+        """
+        from veloxquant_mlx.cache.base import KVCacheConfig
+
+        assert KVCacheConfig(method="xquant", head_dim=64).xquant_residual_bits == 4
