@@ -377,9 +377,15 @@ class SnapKVKVCache(_MLXKVCache):
         if self._kept_positions is None:
             return super().make_mask(N, return_array=return_array, window_size=window_size)
         query_positions = mx.arange(self._true_offset, self._true_offset + N, dtype=mx.int32)
-        query_positions = mx.broadcast_to(query_positions[None, :], (self._kept_positions.shape[0], N))
+        query_positions = mx.broadcast_to(
+            query_positions[None, :], (self._kept_positions.shape[0], N)
+        )
         return eviction_make_mask(
-            query_positions, self._kept_positions, N, return_array=return_array, window_size=window_size
+            query_positions,
+            self._kept_positions,
+            N,
+            return_array=return_array,
+            window_size=window_size,
         )
 
     # ------------------------------------------------------------------
