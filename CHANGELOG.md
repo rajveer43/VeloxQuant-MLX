@@ -495,6 +495,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.22 (2026-09-16)
+
+### Bug Fixes
+
+- **cache**: SlidingWindowKVCache now actually evicts (issue #274)
+  ([#388](https://github.com/rajveer43/VeloxQuant-MLX/pull/388),
+  [`b6ad648`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b6ad6481e1b96ad5d68c65ab2b7924180ce97a55))
+
+
 ## v0.83.21 (2026-09-16)
 
 ### Bug Fixes
