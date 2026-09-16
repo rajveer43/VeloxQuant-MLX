@@ -80,12 +80,20 @@ def test_output_shape_below_budget() -> None:
 
 
 def test_output_shape_bounded_by_budget() -> None:
-    """S > budget → output seq dim <= budget."""
+    """S > budget → STORED seq dim <= budget.
+
+    The call's own RETURN value is deliberately NOT capped at budget (see
+    #370): mlx_lm's attention mask for this call is fixed before eviction
+    can run, so update_and_fetch defers eviction to storage only and
+    returns the full pre-eviction set for this call's own (already
+    correctly masked) attention.
+    """
     budget = 8
     c = _make(h2o_budget=budget, h2o_n_sink=2)
     k, v = _rand_kv(S=20, H=2, D=32)
     ko, vo = c.update_and_fetch(k, v)
-    assert ko.shape[2] <= budget
+    assert ko.shape[2] == 20
+    assert c.keys.shape[2] <= budget
 
 
 def test_output_dtype_fp16() -> None:
@@ -112,13 +120,18 @@ def test_output_batch_head_dims_preserved() -> None:
 
 
 def test_budget_enforced_after_many_steps() -> None:
-    """30 decode steps — output seq dim never exceeds budget."""
+    """30 decode steps — STORED seq dim never exceeds budget.
+
+    Each step's own return is one token larger than what's stored (the
+    previous step's kept set + this step's 1 new token, un-evicted — see
+    #370's deferred-eviction fix in update_and_fetch's docstring).
+    """
     budget = 10
     c = _make(h2o_budget=budget, h2o_n_sink=3)
     for i in range(30):
         k, v = _rand_kv(S=1, H=2, D=32, seed=i)
-        ko, vo = c.update_and_fetch(k, v)
-        assert ko.shape[2] <= budget, f"step {i}: seq={ko.shape[2]} > {budget}"
+        c.update_and_fetch(k, v)
+        assert c.keys.shape[2] <= budget, f"step {i}: stored={c.keys.shape[2]} > {budget}"
 
 
 def test_tokens_kept_bounded_by_budget() -> None:
@@ -135,12 +148,14 @@ def test_tokens_kept_bounded_by_budget() -> None:
 
 
 def test_n_sink_zero_still_enforces_budget() -> None:
-    """With n_sink=0, all tokens may be evicted; budget still respected."""
+    """With n_sink=0, all tokens may be evicted; STORED budget still
+    respected (see #370: the call's own return is deliberately un-evicted)."""
     budget = 4
     c = _make(h2o_budget=budget, h2o_n_sink=0)
     k, v = _rand_kv(S=20, H=2, D=32)
     ko, vo = c.update_and_fetch(k, v)
-    assert ko.shape[2] <= budget
+    assert ko.shape[2] == 20
+    assert c.keys.shape[2] <= budget
 
 
 # ---------------------------------------------------------------------------
@@ -345,3 +360,70 @@ def test_size_returns_kept_count_not_offset() -> None:
         c.update_and_fetch(k, v)
     assert c.size() == c.keys.shape[2] <= budget
     assert c.size() != c.offset
+
+
+# ---------------------------------------------------------------------------
+# Attention mask correctness (#370)
+# ---------------------------------------------------------------------------
+
+
+def test_make_mask_before_any_call_falls_back_to_base() -> None:
+    from mlx_lm.models.base import create_attention_mask
+
+    c = _make(h2o_budget=8, h2o_n_sink=2)
+    h_fake = mx.zeros((1, 5, 4))
+    assert create_attention_mask(h_fake, c) == "causal"
+
+
+def test_every_call_returns_full_unevicted_set_for_own_attention() -> None:
+    """Neither the first nor any later multi-token call may shrink what it
+    RETURNS below its own pre-eviction count — mlx_lm's mask for that call
+    is fixed (based on the previous call's true kept positions) before this
+    call's own eviction can run, and only what's returned matches that
+    fixed mask's shape."""
+    budget = 6
+    c = _make(h2o_budget=budget, h2o_n_sink=1, h2o_grace=1)
+    k1, v1 = _rand_kv(S=5, H=1, D=8, seed=1)
+    ko1, _ = c.update_and_fetch(k1, v1)
+    assert ko1.shape[2] == 5  # first call: nothing stored yet to concat onto
+    assert c.keys.shape[2] <= budget
+
+    k2, v2 = _rand_kv(S=5, H=1, D=8, seed=2)
+    ko2, _ = c.update_and_fetch(k2, v2)
+    # returned == (previously stored, <= budget) ++ (this call's 5 new)
+    prev_stored = min(5, budget)
+    assert ko2.shape[2] == prev_stored + 5
+    assert c.keys.shape[2] <= budget
+
+
+def test_make_mask_after_eviction_is_position_correct_explicit_array() -> None:
+    from mlx_lm.models.base import create_attention_mask
+
+    budget = 4
+    c = _make(h2o_budget=budget, h2o_n_sink=1, h2o_grace=1)
+    k1, v1 = _rand_kv(S=15, H=1, D=8, seed=3)
+    c.update_and_fetch(k1, v1)
+    assert c.keys.shape[2] <= budget
+    kept_positions = c._kept_positions[0].tolist()
+
+    h_fake = mx.zeros((1, 3, 4))
+    mask = create_attention_mask(h_fake, c)
+    assert isinstance(mask, mx.array)
+    n_stored = c.keys.shape[2]
+    assert mask.shape == (1, 1, 3, n_stored + 3)
+
+    query_positions = [c.offset + i for i in range(3)]
+    key_positions = kept_positions + [c.offset + i for i in range(3)]
+    expected = [[kj <= qi for kj in key_positions] for qi in query_positions]
+    assert mask[0, 0].tolist() == expected
+
+
+def test_make_mask_single_query_returns_none() -> None:
+    from mlx_lm.models.base import create_attention_mask
+
+    c = _make(h2o_budget=4, h2o_n_sink=1, h2o_grace=1)
+    k, v = _rand_kv(S=15, H=1, D=8, seed=3)
+    c.update_and_fetch(k, v)
+
+    h_fake = mx.zeros((1, 1, 4))
+    assert create_attention_mask(h_fake, c) is None

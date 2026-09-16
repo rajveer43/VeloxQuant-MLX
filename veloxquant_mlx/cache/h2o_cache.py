@@ -130,6 +130,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.cache._eviction_mask import eviction_make_mask
 from veloxquant_mlx.quantizers.h2o import h2o_update_batched
 
 
@@ -212,6 +213,11 @@ class H2OKVCache(_MLXKVCache):
         self._full_seq_bytes: int = 0
         self._tokens_seen_total: int = 0
 
+        # [B, n_kept] int32 true absolute position of each currently-stored
+        # (head 0) row — see make_mask() and update_and_fetch()'s #370
+        # deferred-eviction docstrings.
+        self._kept_positions: mx.array | None = None
+
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         """Lazily record shape and validate config on first call (shape is
@@ -280,8 +286,25 @@ class H2OKVCache(_MLXKVCache):
             values: ``[B, H, S, D]`` new value tokens.
 
         Returns:
-            ``(K_out, V_out)`` both ``[B, H, n_kept, D]`` fp16, where
-            ``n_kept <= h2o_budget`` for all heads.
+            ``(K_out, V_out)`` for THIS call's own attention — the full,
+            un-evicted concatenation of whatever was stored before this call
+            plus the ``S`` new tokens (see #370 below), NOT capped at
+            ``h2o_budget``. What gets *stored* afterward (``self.keys`` /
+            ``self.values``, visible to the next call) is capped at
+            ``h2o_budget`` as before.
+
+        mlx_lm builds the attention mask for this call from hidden states —
+        before q/k/v projections exist, let alone this cache's own
+        ``update_and_fetch`` — so it is fixed (as either the "causal" string
+        or an explicit array from ``make_mask``, called with only this
+        call's query count ``N``) before eviction can possibly run. If this
+        method shrank what it returns to fewer than ``N`` keys via eviction,
+        that already-fixed mask would silently desync from the shape it was
+        built for (VeloxQuant-MLX#370). So eviction is deferred: this call
+        returns the full pre-eviction concatenation (matching the mask
+        ``make_mask`` already built from the previous call's true kept
+        positions — see that method), and only ``self.keys``/``self.values``
+        shrink, for the *next* call's ``make_mask`` to reflect correctly.
         """
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
@@ -296,6 +319,11 @@ class H2OKVCache(_MLXKVCache):
 
         new_keys_flat = keys_fixed.reshape(B * H, S, D)
         new_values_flat = values.astype(mx.float16).reshape(B * H, S, D)
+
+        # This call's own attention gets the full pre-eviction concatenation
+        # — captured before h2o_update_batched (below) evicts anything.
+        prev_keys_flat = self._bh_keys
+        prev_values_flat = self._bh_values
 
         (
             self._bh_keys,
@@ -334,7 +362,46 @@ class H2OKVCache(_MLXKVCache):
         self.keys = K_out
         self.values = V_out
         self.offset = self._next_pos
-        return K_out, V_out
+
+        # head-0 true kept positions per batch element, for the NEXT call's
+        # make_mask (see that method) — not this call's own mask, already
+        # fixed by the time we get here.
+        self._kept_positions = self._bh_positions.reshape(B, H, n_kept)[:, 0, :]
+
+        if prev_keys_flat is None:
+            # First call ever — nothing to concatenate; the mask mlx_lm
+            # already built for this call was "causal" over N==S queries
+            # against S keys (correct: no prior state to misalign with).
+            return keys_fixed, values.astype(mx.float16)
+        full_keys_flat = mx.concatenate([prev_keys_flat, new_keys_flat], axis=1)
+        full_values_flat = mx.concatenate([prev_values_flat, new_values_flat], axis=1)
+        n_full = full_keys_flat.shape[1]
+        return full_keys_flat.reshape(B, H, n_full, D), full_values_flat.reshape(B, H, n_full, D)
+
+    # ------------------------------------------------------------------
+    def make_mask(self, N: int, return_array: bool = False, window_size: int | None = None, **_):
+        """Explicit position-based causal mask — see VeloxQuant-MLX#370.
+
+        Called BEFORE this step's own ``update_and_fetch`` (and thus before
+        this step's own eviction, which ``update_and_fetch`` defers past
+        this step's return anyway — see its docstring). ``self._kept_positions``
+        holds the true positions of whatever ``self.keys`` already stores
+        from the *previous* call, which is exactly ``update_and_fetch``'s
+        ``prev_keys_flat`` this call will concatenate its ``N`` new tokens
+        onto — so a mask sized ``[B, 1, N, len(kept) + N]`` covers this
+        call's actual returned key count precisely.
+        """
+        if self._kept_positions is None:
+            return super().make_mask(N, return_array=return_array, window_size=window_size)
+        B = self._kept_positions.shape[0]
+        prev_positions = self._kept_positions
+        new_positions = mx.arange(self.offset, self.offset + N, dtype=mx.int32)
+        new_positions = mx.broadcast_to(new_positions[None, :], (B, N))
+        key_positions = mx.concatenate([prev_positions, new_positions], axis=1)
+        query_positions = new_positions
+        return eviction_make_mask(
+            query_positions, key_positions, N, return_array=return_array, window_size=window_size
+        )
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:
@@ -384,6 +451,7 @@ class H2OKVCache(_MLXKVCache):
             self._bh_keys = self._bh_values = self._bh_scores = self._bh_positions = None
             self._next_pos = 0
             self._initialised = False
+            self._kept_positions = None
         else:
             B, H, n, D = self.keys.shape
             self._ensure_states(B, H, D)
@@ -392,6 +460,7 @@ class H2OKVCache(_MLXKVCache):
             self._bh_scores = mx.zeros((B * H, n), dtype=mx.float32)
             self._bh_positions = mx.broadcast_to(mx.arange(n, dtype=mx.int32)[None], (B * H, n))
             self._next_pos = n
+            self._kept_positions = mx.broadcast_to(mx.arange(n, dtype=mx.int32)[None], (B, n))
 
     # ------------------------------------------------------------------
     @property

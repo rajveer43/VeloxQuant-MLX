@@ -34,6 +34,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.cache._eviction_mask import eviction_make_mask
 from veloxquant_mlx.quantizers.streaming_llm import (
     StreamingWindow,
     init_streaming_window,
@@ -86,6 +87,21 @@ class StreamingLLMKVCache(_MLXKVCache):
         # after tokens are dropped (see #171 and update_and_fetch).
         self._true_offset: int = 0
 
+        # [B, n_kept] int32 true absolute position of each currently-stored
+        # (head 0) row — see make_mask() and update_and_fetch()'s #370
+        # deferred-eviction docstrings. None before the first update. Unlike
+        # score-based eviction methods, StreamingLLM's kept positions are
+        # purely structural (sink prefix + FIFO recency window) and need no
+        # quantizer-side bookkeeping — derived directly from
+        # self._windows[0]'s n_sink/n_recent/tokens_seen each call.
+        self._kept_positions: mx.array | None = None
+
+        # (K_out, V_out) actually returned by the last call — since #370's
+        # deferred eviction, generally NOT the same as this call's full
+        # (capped) window. A following S==0 no-op call must return this
+        # unchanged (mirrors TOVAKVCache/H2OKVCache's equivalent handling).
+        self._last_returned: tuple[mx.array, mx.array] | None = None
+
     # ------------------------------------------------------------------
     def _ensure_windows(self, B: int, H: int, D: int) -> None:
         """Initialise per-head window list on first call."""
@@ -107,28 +123,70 @@ class StreamingLLMKVCache(_MLXKVCache):
             values: ``[B, H, S, D]`` new value tokens.
 
         Returns:
-            ``(K_out, V_out)`` both ``[B, H, n_keep, D]`` fp16, where
-            ``n_keep = min(n_sink + n_recent, stream_n_sink + stream_window_size)``.
+            ``(K_out, V_out)`` for THIS call's own attention — the full,
+            un-evicted concatenation of whatever the sink+recent window held
+            before this call plus the ``S`` new tokens (see #370 below), NOT
+            capped at ``stream_n_sink + stream_window_size``. What gets
+            *stored* afterward (the window state, visible to the next call)
+            is capped as before.
+
+        mlx_lm builds the attention mask for this call from hidden states —
+        before q/k/v projections exist, let alone this cache's own
+        ``update_and_fetch`` — so it is fixed (as either the "causal" string
+        or an explicit array from ``make_mask``, called with only this
+        call's query count ``N``) before eviction can possibly run. If this
+        method shrank what it returns to fewer than ``N`` keys via window
+        trimming, that already-fixed mask would silently desync from the
+        shape it was built for (VeloxQuant-MLX#370). So trimming is
+        deferred: this call returns the full pre-trim concatenation
+        (matching the mask ``make_mask`` already built from the previous
+        call's true kept positions — see that method), and only the stored
+        window shrinks, for the *next* call's ``make_mask`` to reflect
+        correctly.
         """
         B, H, S, D = keys.shape
         self._ensure_windows(B, H, D)
+
+        if S == 0:
+            if self._last_returned is not None:
+                return self._last_returned
+            return keys.astype(mx.float16), values.astype(mx.float16)
 
         # Byte accounting for this batch
         fp16_new = B * H * S * D * 2 * 2  # K + V, fp16
         self._full_seq_bytes += fp16_new
         self._tokens_seen_total += B * H * S
 
-        # Update each head's window
+        # Update each head's window, capturing the OLD (pre-this-call)
+        # window's K/V before stream_update overwrites self._windows[idx] —
+        # this call's own RETURN is old_window ++ this call's raw incoming
+        # tokens (#370), never the new (capped) window.
         k_out_b, v_out_b = [], []
+        k_full_b, v_full_b = [], []
         for b in range(B):
             k_out_h, v_out_h = [], []
+            k_full_h, v_full_h = [], []
             for h in range(H):
                 idx = self._window_idx(b, h)
-                w = self._windows[idx]
+                w_old = self._windows[idx]
+                new_k_bh = keys[b, h].astype(mx.float16)
+                new_v_bh = values[b, h].astype(mx.float16)
+                if w_old.n_sink == 0 and w_old.n_recent == 0:
+                    # Nothing stored yet for this head — stream_get_kv would
+                    # return a degenerate (0,1)-shaped placeholder, not
+                    # (0,D); skip the concat entirely (mirrors H2OKVCache/
+                    # TOVAKVCache's `previous_k is None` bootstrap case).
+                    k_full_h.append(new_k_bh)
+                    v_full_h.append(new_v_bh)
+                else:
+                    k_old, v_old = stream_get_kv(w_old)
+                    k_full_h.append(mx.concatenate([k_old, new_k_bh], axis=0))
+                    v_full_h.append(mx.concatenate([v_old, new_v_bh], axis=0))
+
                 w = stream_update(
-                    w,
-                    keys[b, h].astype(mx.float16),
-                    values[b, h].astype(mx.float16),
+                    w_old,
+                    new_k_bh,
+                    new_v_bh,
                     n_sink=self._n_sink,
                     window_size=self._window_size,
                 )
@@ -138,13 +196,27 @@ class StreamingLLMKVCache(_MLXKVCache):
                 v_out_h.append(v_h)
             k_out_b.append(mx.stack(k_out_h, axis=0))  # [H, n_keep, D]
             v_out_b.append(mx.stack(v_out_h, axis=0))
+            k_full_b.append(mx.stack(k_full_h, axis=0))  # [H, n_full, D]
+            v_full_b.append(mx.stack(v_full_h, axis=0))
 
-        K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_keep, D]
+        K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_keep, D] — for STORAGE
         V_out = mx.stack(v_out_b, axis=0)
+        K_full = mx.stack(k_full_b, axis=0)  # [B, H, n_full, D] — this call's RETURN
+        V_full = mx.stack(v_full_b, axis=0)
 
         # Recount kept bytes from first (B=0, H=0) head as representative
         kept_bytes = stream_fp16_bytes(self._windows[0]) * B * H
         self._stream_kept_bytes = kept_bytes  # snapshot (not cumulative; current state)
+
+        # head-0 true kept positions per batch element, for the NEXT call's
+        # make_mask (see that method) — purely structural, derived directly
+        # from the new (post-trim) window's sink/recent boundaries, not
+        # this call's own mask (already fixed by the time we get here).
+        w0 = self._windows[self._window_idx(0, 0)]
+        sink_pos = mx.arange(0, w0.n_sink, dtype=mx.int32)
+        recent_pos = mx.arange(w0.tokens_seen - w0.n_recent, w0.tokens_seen, dtype=mx.int32)
+        kept_pos_1d = mx.concatenate([sink_pos, recent_pos], axis=0)
+        self._kept_positions = mx.broadcast_to(kept_pos_1d[None, :], (B, kept_pos_1d.shape[0]))
 
         # K_out/V_out is the full sink+recent window every call, not a
         # delta — reset so the base class's append-only buffer starts fresh
@@ -155,7 +227,9 @@ class StreamingLLMKVCache(_MLXKVCache):
         self.keys = None
         self.values = None
         self.offset = 0
-        out = super().update_and_fetch(K_out, V_out)
+        super().update_and_fetch(K_out, V_out)
+        out = (K_full, V_full)
+        self._last_returned = out
 
         # RoPE position correctness (see #171).
         #
@@ -182,6 +256,31 @@ class StreamingLLMKVCache(_MLXKVCache):
         self._true_offset += S
         self.offset = self._true_offset
         return out
+
+    # ------------------------------------------------------------------
+    def make_mask(self, N: int, return_array: bool = False, window_size: int | None = None, **_):
+        """Explicit position-based causal mask — see VeloxQuant-MLX#370.
+
+        Called BEFORE this step's own ``update_and_fetch`` (and thus before
+        this step's own window trim, which ``update_and_fetch`` defers past
+        this step's return anyway — see its docstring). ``self._kept_positions``
+        holds the true positions of whatever the sink+recent window already
+        holds from the *previous* call, which is exactly what
+        ``update_and_fetch`` will concatenate its ``N`` new tokens onto — so
+        a mask sized ``[B, 1, N, len(kept) + N]`` covers this call's actual
+        returned key count precisely.
+        """
+        if self._kept_positions is None:
+            return super().make_mask(N, return_array=return_array, window_size=window_size)
+        B = self._kept_positions.shape[0]
+        prev_positions = self._kept_positions
+        new_positions = mx.arange(self.offset, self.offset + N, dtype=mx.int32)
+        new_positions = mx.broadcast_to(new_positions[None, :], (B, N))
+        key_positions = mx.concatenate([prev_positions, new_positions], axis=1)
+        query_positions = new_positions
+        return eviction_make_mask(
+            query_positions, key_positions, N, return_array=return_array, window_size=window_size
+        )
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:

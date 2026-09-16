@@ -210,8 +210,18 @@ def _snapkv_compress_batched(
     backend="auto",
     output_dtype=mx.float16,
     batched_scoring=False,
+    return_indices=False,
 ):
-    """Batch selection/gather while preserving the original per-head scorer."""
+    """Batch selection/gather while preserving the original per-head scorer.
+
+    Args:
+        return_indices: If True, also return ``indices`` — ``[B, H, count]``
+            int32, the kept rows' positions in the input ``keys``/``values``
+            (ascending per (batch, head)). Used by the cache wrapper to build
+            an explicit attention mask instead of relying on mlx_lm's
+            ``mask="causal"`` shortcut, which silently mis-attends once these
+            kept rows are a non-contiguous subset (see VeloxQuant-MLX#370).
+    """
     B, H, S, D = keys.shape
     if values.shape != keys.shape or min(B, H, D) <= 0:
         raise ValueError("K/V must have matching nonzero batch/head/dimension shapes")
@@ -221,7 +231,12 @@ def _snapkv_compress_batched(
     sinks = min(max(n_sink, 0), count)
     # Shape-only no-selection paths avoid constructing the scorer entirely.
     if count == S or sinks == count:
-        return keys[:, :, :count].astype(output_dtype), values[:, :, :count].astype(output_dtype)
+        k_out = keys[:, :, :count].astype(output_dtype)
+        v_out = values[:, :, :count].astype(output_dtype)
+        if return_indices:
+            idx = mx.broadcast_to(mx.arange(count, dtype=mx.int32), (B, H, count))
+            return k_out, v_out, idx
+        return k_out, v_out
     if batched_scoring:
         w = min(max(obs_window, 1), S)
         k32 = flat_k.astype(mx.float32)
@@ -239,7 +254,11 @@ def _snapkv_compress_batched(
     else:
         k = mx.take_along_axis(flat_k, indices[..., None], axis=1).astype(output_dtype)
         v = mx.take_along_axis(flat_v, indices[..., None], axis=1).astype(output_dtype)
-    return k.reshape(B, H, count, D), v.reshape(B, H, count, D)
+    k_out = k.reshape(B, H, count, D)
+    v_out = v.reshape(B, H, count, D)
+    if return_indices:
+        return k_out, v_out, indices.reshape(B, H, count)
+    return k_out, v_out
 
 
 def snapkv_fp16_bytes(state: SnapKVState) -> int:

@@ -67,12 +67,21 @@ def test_output_shape_sink_only() -> None:
 
 
 def test_output_shape_bounded_by_sink_plus_window() -> None:
-    """After many tokens, output seq dim <= n_sink + window_size."""
+    """After many tokens, STORED seq dim <= n_sink + window_size.
+
+    The call's own RETURN value is deliberately NOT capped (see #370):
+    mlx_lm's attention mask for this call is fixed before trimming can run,
+    so update_and_fetch defers trimming to storage only and returns the
+    full pre-trim set for this call's own (already correctly masked)
+    attention. This is the cache's first-ever call, so the return is
+    exactly the S=32 raw incoming tokens (nothing stored yet to concat).
+    """
     c = _make(stream_n_sink=4, stream_window_size=8)
     # prefill 32 tokens
     k, v = _rand_kv(S=32, H=2, D=64)
     ko, vo = c.update_and_fetch(k, v)
-    assert ko.shape[2] <= 4 + 8
+    assert ko.shape[2] == 32
+    assert c.tokens_in_window <= 4 + 8
 
 
 def test_output_dtype_fp16() -> None:
@@ -103,7 +112,11 @@ def test_decode_grow_within_window() -> None:
 
 
 def test_window_trims_oldest_recent() -> None:
-    """Once recent window > window_size, oldest recent tokens are evicted."""
+    """Once recent window > window_size, oldest recent tokens are evicted
+    from STORAGE. Each step's own RETURN is one token larger than what's
+    stored (the previous step's kept window + this step's 1 new token,
+    un-trimmed — see #370's deferred-eviction fix in update_and_fetch's
+    docstring)."""
     c = _make(stream_n_sink=2, stream_window_size=4)
     # Fill sinks
     k, v = _rand_kv(S=2, D=64, seed=0)
@@ -112,8 +125,9 @@ def test_window_trims_oldest_recent() -> None:
     for i in range(8):
         k1, v1 = _rand_kv(S=1, D=64, seed=10 + i)
         ko, vo = c.update_and_fetch(k1, v1)
-    # seq dim must be exactly n_sink + window_size = 2 + 4 = 6
-    assert ko.shape[2] == 6
+    # STORED seq dim must be exactly n_sink + window_size = 2 + 4 = 6
+    assert c.tokens_in_window == 6
+    assert ko.shape[2] == 7  # 6 stored (prior step) + this step's 1 new
 
 
 def test_tokens_in_window_bounded() -> None:
@@ -164,20 +178,25 @@ def test_tokens_seen_accumulates() -> None:
 
 
 def test_n_sink_zero() -> None:
-    """n_sink=0: all tokens go into recent window only."""
+    """n_sink=0: all tokens go into recent window only. STORED count is
+    capped; the call's own RETURN is deliberately un-trimmed (#370) — this
+    is the first-ever call, so it's exactly the S=20 raw incoming tokens."""
     c = _make(stream_n_sink=0, stream_window_size=8)
     k, v = _rand_kv(S=20, D=64)
     ko, vo = c.update_and_fetch(k, v)
-    assert ko.shape[2] == 8
+    assert ko.shape[2] == 20
     assert c.tokens_in_window == 8
 
 
 def test_large_prefill_trimmed_correctly() -> None:
-    """Large prefill (S >> n_sink + window_size) trims to exact bound."""
+    """Large prefill (S >> n_sink + window_size) trims STORAGE to exact
+    bound. The call's own RETURN is deliberately un-trimmed (#370) — this
+    is the first-ever call, so it's exactly the S=1000 raw incoming tokens."""
     c = _make(stream_n_sink=4, stream_window_size=8)
     k, v = _rand_kv(S=1000, D=64)
     ko, vo = c.update_and_fetch(k, v)
-    assert ko.shape[2] == 12  # 4 + 8
+    assert ko.shape[2] == 1000
+    assert c.tokens_in_window == 12  # 4 + 8
 
 
 # ---------------------------------------------------------------------------
@@ -341,3 +360,70 @@ def test_tokens_kept_matches_tokens_in_window():
 
     assert c.tokens_kept == c.tokens_in_window
     assert c.tokens_kept == n_sink + window_size
+
+
+# ---------------------------------------------------------------------------
+# Attention mask correctness (#370)
+# ---------------------------------------------------------------------------
+
+
+def test_make_mask_before_any_call_falls_back_to_base() -> None:
+    from mlx_lm.models.base import create_attention_mask
+
+    c = _make(stream_n_sink=4, stream_window_size=8)
+    h_fake = mx.zeros((1, 5, 4))
+    assert create_attention_mask(h_fake, c) == "causal"
+
+
+def test_every_call_returns_full_unevicted_set_for_own_attention() -> None:
+    """Neither the first nor any later multi-token call may shrink what it
+    RETURNS below its own pre-trim count — mlx_lm's mask for that call is
+    fixed (based on the previous call's true kept positions) before this
+    call's own window trim can run, and only what's returned matches that
+    fixed mask's shape."""
+    n_sink, window_size = 1, 5
+    c = _make(stream_n_sink=n_sink, stream_window_size=window_size)
+    k1, v1 = _rand_kv(S=5, H=1, D=64, seed=1)
+    ko1, _ = c.update_and_fetch(k1, v1)
+    assert ko1.shape[2] == 5  # first call: nothing stored yet to concat onto
+    assert c.tokens_in_window <= n_sink + window_size
+
+    k2, v2 = _rand_kv(S=5, H=1, D=64, seed=2)
+    ko2, _ = c.update_and_fetch(k2, v2)
+    # returned == (previously stored, <= n_sink+window_size) ++ (this call's 5 new)
+    prev_stored = min(5, n_sink + window_size)
+    assert ko2.shape[2] == prev_stored + 5
+    assert c.tokens_in_window <= n_sink + window_size
+
+
+def test_make_mask_after_eviction_is_position_correct_explicit_array() -> None:
+    from mlx_lm.models.base import create_attention_mask
+
+    n_sink, window_size = 1, 3
+    c = _make(stream_n_sink=n_sink, stream_window_size=window_size)
+    k1, v1 = _rand_kv(S=15, H=1, D=64, seed=3)
+    c.update_and_fetch(k1, v1)
+    assert c.tokens_in_window <= n_sink + window_size
+    kept_positions = c._kept_positions[0].tolist()
+
+    h_fake = mx.zeros((1, 3, 4))
+    mask = create_attention_mask(h_fake, c)
+    assert isinstance(mask, mx.array)
+    n_stored = c.tokens_in_window
+    assert mask.shape == (1, 1, 3, n_stored + 3)
+
+    query_positions = [c.offset + i for i in range(3)]
+    key_positions = kept_positions + [c.offset + i for i in range(3)]
+    expected = [[kj <= qi for kj in key_positions] for qi in query_positions]
+    assert mask[0, 0].tolist() == expected
+
+
+def test_make_mask_single_query_returns_none() -> None:
+    from mlx_lm.models.base import create_attention_mask
+
+    c = _make(stream_n_sink=1, stream_window_size=3)
+    k, v = _rand_kv(S=15, H=1, D=64, seed=3)
+    c.update_and_fetch(k, v)
+
+    h_fake = mx.zeros((1, 1, 4))
+    assert create_attention_mask(h_fake, c) is None

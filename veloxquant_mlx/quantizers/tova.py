@@ -110,7 +110,9 @@ def _tova_update_reference(
     state: TovaState,
     new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
-) -> TovaState:
+    positions: mx.array | None = None,  # [n] int32, parallel to state.keys
+    new_positions: mx.array | None = None,  # [S] int32, parallel to new_keys
+) -> tuple[TovaState, mx.array | None]:
     """Absorb S new tokens into state, evicting the lowest current-step-weight token if over budget.
 
     For each of the S incoming tokens:
@@ -127,15 +129,30 @@ def _tova_update_reference(
         state:      Current TovaState for this head.
         new_keys:   [S, D] fp16 new key rows.
         new_values: [S, D] fp16 new value rows.
+        positions:  Optional ``[n]`` int32 true absolute positions parallel to
+            ``state.keys``. Must be ``None`` iff ``state.keys`` is ``None``
+            (mirrors K/V's own bootstrap contract) while ``new_positions``
+            is given. Gathered under the exact same ``evict_idx``/
+            ``keep_indices`` decision as K/V (see VeloxQuant-MLX#370), so
+            it is always consistent with whichever rows this function
+            actually kept — never independently re-derived.
+        new_positions: Optional ``[S]`` int32 true absolute positions
+            parallel to ``new_keys``. ``None`` disables position tracking
+            entirely (the default).
 
     Returns:
-        Updated TovaState with at most ``state.budget`` tokens.
+        ``(state, positions_out)`` — ``positions_out`` is ``None`` iff
+        ``new_positions`` was ``None``.
     """
     S = new_keys.shape[0]
+    track = new_positions is not None
+    if track and (positions is None) != (state.keys is None):
+        raise ValueError("tova: positions must be given iff state.keys is given")
 
     for i in range(S):
         k_i = new_keys[i]  # [D]
         v_i = new_values[i]  # [D]
+        p_i = new_positions[i : i + 1] if track else None
 
         if state.keys is None:
             # Bootstrap: first token ever — no eviction needed.
@@ -145,11 +162,15 @@ def _tova_update_reference(
                 n_sink=state.n_sink,
                 budget=state.budget,
             )
+            if track:
+                positions = p_i
             continue
 
         # --- append new token ----------------------------------------------
         keys_cat = mx.concatenate([state.keys, k_i[None].astype(mx.float16)], axis=0)
         values_cat = mx.concatenate([state.values, v_i[None].astype(mx.float16)], axis=0)
+        if track:
+            positions = mx.concatenate([positions, p_i], axis=0)
 
         n_total = keys_cat.shape[0]
 
@@ -171,6 +192,8 @@ def _tova_update_reference(
             keep_indices = [j for j in range(n_total) if j != evict_idx]
             keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
+            if track:
+                positions = positions[keep_indices]
 
         state = TovaState(
             keys=keys_cat,
@@ -179,7 +202,7 @@ def _tova_update_reference(
             budget=state.budget,
         )
 
-    return state
+    return state, (positions if track else None)
 
 
 _EVAL_FLUSH_INTERVAL = 32
@@ -219,41 +242,108 @@ def _evict_mlx(keys, values, weights, n_sink):
     )
 
 
-def _evict_mlx_virtual_values(keys, values_old, values_new, weights, n_sink):
-    """GPU-only selection with V read from retained/new virtual sources."""
+def _evict_mlx_virtual_values(
+    keys, values_old, values_new, weights, n_sink, positions_old=None, position_new=None
+):
+    """GPU-only selection with V read from retained/new virtual sources.
+
+    ``positions_old``/``position_new`` (see VeloxQuant-MLX#370): optional
+    parallel true-absolute-position bookkeeping, gathered under the exact
+    same ``source``/``evicted`` indices as K/V so the surviving rows' true
+    positions stay in lockstep with the surviving K/V rows. ``None`` for
+    either disables position tracking (returns ``None``) — used by callers
+    that don't need it (e.g. quantizer-only unit tests / ``tova_update``'s
+    single-head convenience wrapper).
+    """
     n = keys.shape[1]
-    protected = mx.where(mx.arange(n)[None] < n_sink, float("inf"), weights)
-    evicted = mx.argmin(protected, axis=-1, keepdims=True)
-    rows = mx.arange(n - 1)[None]
-    source = rows + (rows >= evicted)
+    source = _eviction_source_row(weights, n_sink)
     source_k = source[..., None]
     keys_out = mx.take_along_axis(keys, source_k, axis=1)
     old_n = n - 1
     old_source = mx.minimum(source, old_n - 1)
     old_v = mx.take_along_axis(values_old, old_source[..., None], axis=1)
     new_v = values_new[:, None, :]
-    return keys_out, mx.where((source == old_n)[..., None], new_v, old_v)
+    values_out = mx.where((source == old_n)[..., None], new_v, old_v)
+    positions_out = None
+    if positions_old is not None and position_new is not None:
+        old_p = mx.take_along_axis(positions_old, old_source, axis=1)
+        new_p = position_new[:, None]
+        positions_out = mx.where(source == old_n, new_p, old_p)
+    return keys_out, values_out, positions_out
+
+
+def _eviction_source_row(weights, n_sink):
+    """The ``[BH, N-1]`` source-row gather index shared by every eviction
+    step, regardless of which kernel (mlx or metal) is used to compact K/V.
+
+    Computing this once in pure MLX — cheap, an argmin over ``[BH, N]`` — and
+    reusing it to gather ``positions`` independently of the K/V compaction
+    kernel is what lets position tracking (#370) stay bit-for-bit consistent
+    with the metal backend's eviction decisions without needing the metal
+    kernels themselves to expose ``evicted`` or know about positions at all:
+    the metal kernels compute this exact same value internally from the same
+    ``weights``/``n_sink`` inputs (see ``src/tova_evict_reduce.metal``).
+    """
+    n = weights.shape[1]
+    protected = mx.where(mx.arange(n)[None] < n_sink, float("inf"), weights)
+    evicted = mx.argmin(protected, axis=-1, keepdims=True)
+    rows = mx.arange(n - 1)[None]
+    return rows + (rows >= evicted)
 
 
 def _evict_mlx_indices(keys, lineage, weights, n_sink):
     """GPU-only K and lineage compaction for deferred V."""
-    n = keys.shape[1]
-    protected = mx.where(mx.arange(n)[None] < n_sink, float("inf"), weights)
-    evicted = mx.argmin(protected, axis=-1, keepdims=True)
-    rows = mx.arange(n - 1)[None]
-    source = rows + (rows >= evicted)
+    source = _eviction_source_row(weights, n_sink)
     return (
         mx.take_along_axis(keys, source[..., None], axis=1),
         mx.take_along_axis(lineage, source, axis=1),
     )
 
 
-def _tova_update_batched(keys, values, new_keys, new_values, n_sink, budget, *, backend="auto"):
+def _tova_update_batched(
+    keys,
+    values,
+    new_keys,
+    new_values,
+    n_sink,
+    budget,
+    *,
+    backend="auto",
+    positions=None,
+    new_positions=None,
+):
     """Internal [BH,S,D] update; token steps remain sequential after fill.
 
     The incoming proxy keeps its original precision, matching direct quantizer
     callers. K/V storage is FP16. No device-derived Python control flow occurs.
+
+    Args:
+        positions: ``[BH, n]`` int32 true absolute positions of the
+            currently-stored rows (parallel to ``keys``/``values``), or
+            ``None`` iff ``keys`` is also ``None`` (nothing stored yet —
+            mirrors K/V's own bootstrap contract) while still tracking
+            positions via ``new_positions``. Ignored (may be omitted) when
+            ``new_positions`` is ``None`` — the default, paying no extra
+            cost for existing callers that don't need it.
+        new_positions: ``[BH, S]`` int32 true absolute positions of the
+            incoming rows. ``None`` disables position tracking entirely
+            (the default). Non-``None`` is what actually switches tracking
+            on — used by ``TOVAKVCache`` to build an explicit attention
+            mask post-eviction instead of relying on mlx_lm's
+            ``mask="causal"`` shortcut (see VeloxQuant-MLX#370) — TOVA's
+            surviving rows are a non-contiguous subset of original
+            positions (no renumbering), so their true positions must be
+            tracked through eviction exactly like K/V are.
+
+    Returns:
+        ``(keys, values)`` if ``new_positions`` is ``None``, else
+        ``(keys, values, positions_out)`` with ``positions_out`` the true
+        absolute positions of the surviving rows, gathered under the same
+        eviction indices as K/V at every step.
     """
+    track_positions = new_positions is not None
+    if track_positions and (positions is None) != (keys is None):
+        raise ValueError("tova: positions must be given iff keys is given (both None or both set)")
     if new_keys.ndim != 3 or new_keys.shape != new_values.shape:
         raise ValueError("tova: new K/V must have matching [BH,S,D] shapes")
     bh, s, d = new_keys.shape
@@ -263,11 +353,13 @@ def _tova_update_batched(keys, values, new_keys, new_values, n_sink, budget, *, 
     if keys is not None and (keys.shape != values.shape or keys.shape[::2] != (bh, d)):
         raise ValueError("tova: stored K/V shape does not match incoming batch/heads/dim")
     if s == 0:
+        if track_positions:
+            return keys, values, positions
         return keys, values
     # Retain the original zero/negative-budget bootstrap behavior and support
     # explicitly overfull states without inventing a new eviction policy.
     if backend == "reference" or budget <= 0 or n_sink < 0:
-        states = [
+        results = [
             _tova_update_reference(
                 TovaState(
                     None if keys is None else keys[h],
@@ -277,10 +369,16 @@ def _tova_update_batched(keys, values, new_keys, new_values, n_sink, budget, *, 
                 ),
                 new_keys[h],
                 new_values[h],
+                None if positions is None else positions[h],
+                None if new_positions is None else new_positions[h],
             )
             for h in range(bh)
         ]
-        return mx.stack([st.keys for st in states]), mx.stack([st.values for st in states])
+        out_k = mx.stack([st.keys for st, _ in results])
+        out_v = mx.stack([st.values for st, _ in results])
+        if not track_positions:
+            return out_k, out_v
+        return out_k, out_v, mx.stack([pos for _, pos in results])
     if n_sink >= budget:
         raise ValueError("tova: sinks must leave at least one evictable position")
     n = 0 if keys is None else keys.shape[1]
@@ -294,6 +392,12 @@ def _tova_update_batched(keys, values, new_keys, new_values, n_sink, budget, *, 
     if deferred:
         source_values = new_values if keys is None else mx.concatenate([values, new_values], axis=1)
         lineage = mx.broadcast_to(mx.arange(n, dtype=mx.int32)[None], (bh, n))
+    if track_positions and prefix:
+        positions = (
+            new_positions[:, :prefix]
+            if positions is None
+            else mx.concatenate([positions, new_positions[:, :prefix]], axis=1)
+        )
     if prefix:
         k = new_keys[:, :prefix].astype(mx.float16)
         v = new_values[:, :prefix].astype(mx.float16)
@@ -308,6 +412,12 @@ def _tova_update_batched(keys, values, new_keys, new_values, n_sink, budget, *, 
         # Values are not touched during the dependent eviction chain. The
         # immutable source buffer is gathered exactly once after all decisions.
         values = None
+    # Positions ride the exact same "append then compact under the eviction
+    # argmin" chain as K, whether or not the deferred lineage path is active
+    # — a plain parallel array, gathered with the same `source`/`evicted`
+    # indices at every step (see _evict_mlx_virtual_values's positions_old/
+    # position_new and _evict_mlx_indices's lineage, which position tracking
+    # here reuses unmodified for the deferred path).
     for i in range(prefix, s):
         keys = mx.concatenate([keys, new_keys[:, i : i + 1].astype(mx.float16)], axis=1)
         proxy = new_keys[:, i].astype(mx.float32)
@@ -316,6 +426,15 @@ def _tova_update_batched(keys, values, new_keys, new_values, n_sink, budget, *, 
         if deferred:
             incoming_id = mx.full((bh, 1), n + i, dtype=mx.int32)
             lineage = mx.concatenate([lineage, incoming_id], axis=1)
+            if track_positions:
+                positions = mx.concatenate([positions, new_positions[:, i : i + 1]], axis=1)
+                # Computed once, in pure MLX, from `weights`/`n_sink` alone —
+                # bit-for-bit the same decision the metal kernel below makes
+                # internally (see _eviction_source_row's docstring) — so
+                # positions stay consistent with the metal path's K/V without
+                # needing the kernel to expose its internal `evicted` index.
+                source = _eviction_source_row(weights, n_sink)
+                positions = mx.take_along_axis(positions, source, axis=1)
             if backend == "metal":
                 from veloxquant_mlx.metal import tova_fused_evict_indices
 
@@ -324,6 +443,13 @@ def _tova_update_batched(keys, values, new_keys, new_values, n_sink, budget, *, 
                 keys, lineage = _evict_mlx_indices(keys, lineage, weights, n_sink)
         else:
             incoming_v = new_values[:, i].astype(mx.float16)
+            if track_positions:
+                source = _eviction_source_row(weights, n_sink)
+                old_n = source.shape[1]
+                old_source = mx.minimum(source, old_n - 1)
+                old_p = mx.take_along_axis(positions, old_source, axis=1)
+                new_p = new_positions[:, i][:, None]
+                positions = mx.where(source == old_n, new_p, old_p)
             if backend == "metal":
                 from veloxquant_mlx.metal import tova_fused_evict_virtual_values
 
@@ -331,11 +457,15 @@ def _tova_update_batched(keys, values, new_keys, new_values, n_sink, budget, *, 
                     keys, values, incoming_v, weights, n_sink
                 )
             else:
-                keys, values = _evict_mlx_virtual_values(keys, values, incoming_v, weights, n_sink)
+                keys, values, _ = _evict_mlx_virtual_values(
+                    keys, values, incoming_v, weights, n_sink
+                )
         if (i - prefix + 1) % _EVAL_FLUSH_INTERVAL == 0:
             mx.eval(keys, lineage if deferred else values)
     if deferred:
         values = mx.take_along_axis(source_values, lineage[..., None], axis=1)
+    if track_positions:
+        return keys, values, positions
     return keys, values
 
 
