@@ -30,6 +30,10 @@ class _FakeKVCache:
     def memory_bytes(self) -> int:
         return len(self.keys) * 2
 
+    def reset(self) -> None:
+        self.keys = []
+        self.values = []
+
     def __len__(self) -> int:
         return len(self.values)
 
@@ -107,3 +111,24 @@ def test_pool_exhaustion_propagates_from_inner_allocate():
     cache = PooledKVCache(_FakeKVCache(), pool, owner=1)
     with pytest.raises(BlockPoolExhaustedError):
         cache.append(mx.zeros((8,)), mx.zeros((8,)))
+
+
+def test_reset_releases_blocks_and_clears_inner():
+    """reset() must return held blocks to the pool (like release()) and
+    also clear the wrapped cache's own token storage, so a PooledKVCache
+    composed underneath a SlidingWindowKVCache actually empties on window
+    advance instead of leaking blocks or leaving stale inner state."""
+    pool = _pool(n_blocks=8)
+    inner = _FakeKVCache()
+    cache = PooledKVCache(inner, pool, owner=1)
+    for _ in range(BLOCK_SIZE + 1):
+        cache.append(mx.zeros((8,)), mx.zeros((8,)))
+    assert pool.stats.blocks_in_use() > 0
+    assert len(inner.keys) > 0
+
+    cache.reset()
+
+    assert pool.stats.blocks_in_use() == 0
+    assert cache.n_blocks_held() == 0
+    assert len(inner.keys) == 0
+    assert len(inner.values) == 0

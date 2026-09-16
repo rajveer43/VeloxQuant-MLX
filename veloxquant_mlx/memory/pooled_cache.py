@@ -136,6 +136,11 @@ class PooledKVCache(KVCache):
         """Total K + V blocks currently checked out to this cache."""
         return len(self._k_blocks) + len(self._v_blocks)
 
+    def reset(self) -> None:
+        """Return all held blocks to the pool and clear the inner cache."""
+        self.release()
+        self._inner.reset()
+
     def __len__(self) -> int:
         return self._n_tokens
 

@@ -114,3 +114,27 @@ def test_attend_correct_after_eviction() -> None:
     out2 = cache.attend(q)
     mx.eval(out1, out2)
     assert np.array_equal(np.array(out1), np.array(out2))
+
+
+def test_reset_returns_to_empty_state() -> None:
+    """Regression for #274: reset() (called by SlidingWindowKVCache on every
+    window advance) must return the cache to a genuinely empty, reusable
+    state — len 0, memory_bytes 0 — not merely a same-sized buffer whose
+    old contents were never actually cleared."""
+    cache = _make(capacity=10)
+    for i in range(6):
+        cache.append_key(_rand_vec(seed=i))
+        cache.append_value(_rand_vec(seed=100 + i))
+    assert len(cache) == 6
+
+    cache.reset()
+    assert len(cache) == 0
+    assert cache.memory_bytes() == 0
+
+    for i in range(3):
+        cache.append_key(_rand_vec(seed=200 + i))
+        cache.append_value(_rand_vec(seed=300 + i))
+    assert len(cache) == 3
+    out = cache.attend(_rand_vec(seed=999))
+    mx.eval(out)
+    assert out.shape == (8,)

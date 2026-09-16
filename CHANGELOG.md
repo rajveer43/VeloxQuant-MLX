@@ -6,6 +6,43 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ### Fixed
 
+**`SlidingWindowKVCache` now actually evicts**
+([#274](https://github.com/rajveer43/VeloxQuant-MLX/issues/274)) —
+`SlidingWindowKVCache` (`veloxquant_mlx/cache/sliding_window_cache.py`)
+claimed to bound a wrapped cache to the last `window_size` tokens, but its
+`_rebuild_inner()` reset was gated behind `hasattr(fresh, "_k_indices")`,
+an attribute name no currently-registered cache class actually has
+(`TurboQuantKVCache` uses `_k_indices_packed`, `QJLKVCache` uses
+`_k_signs`/`_k_norms`, `PolarQuantKVCache` uses `_k_angles`/`_k_radii`,
+`SpectralQuantKVCache` uses yet another layout). The reset silently never
+ran for any method: the deep-copied inner cache kept its already-grown
+state and only had the current window's tokens re-appended on top, so
+memory grew unbounded forever and `attend()` was computed over the full
+accumulated history rather than the last `window_size` tokens (`len()`
+meanwhile kept reporting the correct capped count, masking the bug).
+Fixed by adding `reset()` to the `KVCache` ABC
+(`veloxquant_mlx/core/abstractions.py`, non-abstract — defaults to raising,
+since one existing decorator, `KVCacheProfiler`, already has an unrelated,
+intentionally-different `reset()` that only clears its own stats) and
+implementing it on all five standalone cache classes
+(`TurboQuantKVCache`, `PolarQuantKVCache`, `QJLKVCache`,
+`SpectralQuantKVCache`) plus the decorators that delegate to one
+(`SlidingWindowKVCache`, `PooledKVCache`). Each `reset()` clears only token
+storage, not quantizer/calibration state — `SpectralQuantKVCache`'s
+externally-injected `calibrate()` rotation matrices survive a window
+eviction unchanged, while `TurboQuantKVCache`'s online outlier-channel
+detector (calibrated purely from the token stream itself) correctly
+re-calibrates from scratch against the new window instead of keeping
+channel picks from now-evicted tokens. `_rebuild_inner()` now calls
+`self._inner.reset()` directly instead of `deepcopy` + attribute-guessing,
+which is both correct and cheaper (no wasted copy of buffers about to be
+cleared). `workload_replay_benchmark.py`'s `cache_eviction_reuse` workload
+and its test no longer need the "only `n_tokens` is reliable" caveat —
+`memory_bytes()` now plateaus across checkpoints once the window fills, as
+verified directly against the issue's own repro (windowed `memory_bytes()`
+and `attend()` output now exactly match a fresh cache fed only the true
+last `window_size` tokens, vs. a `max_abs_error` of 2.18 before the fix).
+
 **`xquant_residual_bits` default raised from `0` to `4`**
 ([#380](https://github.com/rajveer43/VeloxQuant-MLX/issues/380)) —
 XQuant's cross-layer reuse (`XQuantKVCache`/`pair_layers`) assumed adjacent

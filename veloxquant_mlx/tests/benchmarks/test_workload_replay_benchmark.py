@@ -103,21 +103,30 @@ def test_run_workload_reuse_cache_grows_and_snapshots():
     assert mem_bytes == sorted(mem_bytes)
 
 
-def test_run_workload_sliding_window_caps_token_count():
-    """sliding_window caps the *token count* the wrapper reports.
+def test_run_workload_sliding_window_caps_token_count_and_memory():
+    """sliding_window caps both the token count the wrapper reports AND the
+    actual memory_bytes() of the wrapped cache.
 
-    It does NOT currently cap memory_bytes() or the tokens actually
-    attended over — SlidingWindowKVCache._rebuild_inner()'s reset logic
-    checks for a bare ``_k_indices`` attribute that no registered cache
-    class has, so the "eviction" never resets the wrapped inner cache and
-    it keeps growing unbounded instead (see issue #274). Once that's fixed,
-    this test can be extended to also assert memory/attend-window bounds.
+    Regression for issue #274: SlidingWindowKVCache._rebuild_inner() used to
+    guess internal attribute names to reset the wrapped cache
+    (``hasattr(fresh, "_k_indices")``), which matched no registered cache
+    class, so eviction never actually reset the inner cache and it grew
+    unbounded even though the wrapper's own token count looked capped. Fixed
+    by giving every concrete standalone cache a real reset(). With multiple
+    checkpoints (repeat=3) here, memory_bytes() must plateau once the window
+    fills rather than keep growing across checkpoints.
     """
     workload = _small_scenario(
-        prompt_lens=[1], n_new_tokens=20, repeat=1, reuse_cache=True, sliding_window=4
+        prompt_lens=[1], n_new_tokens=20, repeat=3, reuse_cache=True, sliding_window=4
     )
     result = run_workload("turboquant_prod", workload, head_dim=HEAD_DIM, bits=2, seed=5)
     assert result.memory_snapshots[-1].n_tokens == 4
+    # Every checkpoint after the window first fills must report the same
+    # memory_bytes -- a real cap, not one that keeps climbing per checkpoint.
+    mem_values = [s.memory_bytes for s in result.memory_snapshots]
+    assert len(set(mem_values)) == 1, (
+        f"memory_bytes should plateau across checkpoints once the window is full, got {mem_values}"
+    )
 
 
 def test_run_suite_builds_nested_results():

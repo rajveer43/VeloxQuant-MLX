@@ -327,3 +327,35 @@ class TurboQuantKVCache(KVCache):
             f"method={'prod' if self._use_prod else 'mse'}, "
             f"b_mse={self._b_mse})"
         )
+
+    def reset(self) -> None:
+        """Clear all stored tokens; the key quantizer (seeded, deterministic
+        rotation/codebook) is untouched. The outlier detector, if enabled,
+        is re-created rather than preserved: its calibrated channels reflect
+        the token stream observed so far, and after a reset that stream
+        starts over (e.g. a fresh sliding-window rebuild) — reusing stale
+        channel picks from evicted tokens would be wrong, not just stale.
+        """
+        capacity = self._capacity
+        self._k_indices_packed = np.zeros((capacity, self._idx_packed_len), dtype=np.uint8)
+        self._k_signs_packed = (
+            np.zeros((capacity, self._sign_packed_len), dtype=np.uint8) if self._use_prod else None
+        )
+        self._k_residual_norms = np.zeros((capacity,), dtype=np.float16)
+        self._v_cache = np.zeros((capacity, self._d), dtype=np.int8)
+        self._v_scales = np.zeros((capacity,), dtype=np.float16)
+        self._size = 0
+        self._head = 0
+        self._n_tokens = 0
+        self._outlier_detector = (
+            OutlierDetector(n_outliers=self._n_outliers, n_calib=self._n_calib)
+            if self._enable_outlier_two_stream and self._n_outliers > 0
+            else None
+        )
+        self._outlier_idx = None
+        self._inlier_idx = None
+        self._outlier_cache = None
+        self._outlier_scales = None
+        if self._outlier_detector is not None:
+            self._outlier_cache = np.zeros((capacity, self._n_outliers), dtype=np.int8)
+            self._outlier_scales = np.zeros((capacity,), dtype=np.float16)
