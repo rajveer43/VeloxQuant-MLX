@@ -495,6 +495,28 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.23 (2026-09-16)
+
+### Bug Fixes
+
+- **cache**: Eviction caches no longer corrupt prefill/decode attention via mask="causal" (issue
+  #370) ([#392](https://github.com/rajveer43/VeloxQuant-MLX/pull/392),
+  [`454821b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/454821bed03edc8c51f37092b1497e8e33009cf3))
+
+- **cache**: Skvq trim() silently corrupts flush-frontier state (issue #26)
+  ([#369](https://github.com/rajveer43/VeloxQuant-MLX/pull/369),
+  [`a498f7c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a498f7c6811e2e10b8d88b8e0b19b336708db651))
+
+- **cli**: Sync recommend argparse choices with mac_recommender.py (issue #391)
+  ([`7d3b4c4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7d3b4c468ad8de8c6a9c4d62c928db386726f17d))
+
+### Code Style
+
+- **cache**: Ruff-format snapkv mask fix from #392
+  ([#393](https://github.com/rajveer43/VeloxQuant-MLX/pull/393),
+  [`f7747af`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f7747af19989ea9dc4ea68e3b55348c5ca6c168b))
+
+
 ## v0.83.22 (2026-09-16)
 
 ### Bug Fixes
