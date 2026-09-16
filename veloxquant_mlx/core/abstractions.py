@@ -151,6 +151,27 @@ class KVCache(ABC):
     def memory_bytes(self) -> int:
         """Return current memory footprint of the cache in bytes."""
 
+    def reset(self) -> None:
+        """Clear all stored tokens, returning the cache to its empty state.
+
+        Not abstract: only concrete storage-owning caches (TurboQuant,
+        PolarQuant, QJL, Spectral, and decorators that delegate to one —
+        SlidingWindowKVCache, PooledKVCache) implement this. A decorator with
+        an unrelated, already-established meaning for "reset" (e.g.
+        KVCacheProfiler.reset(), which clears only its own accumulated
+        profiling stats and deliberately leaves the wrapped cache untouched)
+        is not required to satisfy this contract, so this default raises
+        rather than being abstract.
+
+        Implementers must clear only token storage (ring buffers / lists /
+        counters) and leave any quantizer, calibration, or configuration
+        state untouched — callers such as :class:`~veloxquant_mlx.cache.
+        sliding_window_cache.SlidingWindowKVCache` rely on ``reset()`` to
+        rebuild an emptied cache without re-running (or losing) prior
+        calibration.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not implement reset()")
+
     def append(self, k: Any, v: Any) -> None:
         """Append a key-value pair in one call.
 

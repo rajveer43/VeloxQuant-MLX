@@ -134,6 +134,16 @@ class PolarQuantKVCache(KVCache):
         v_bytes = n * (d + 2)
         return angle_bytes + radius_bytes + v_bytes
 
+    def reset(self) -> None:
+        """Clear all stored tokens; the key quantizer (seeded, deterministic
+        polar rotation) is untouched."""
+        capacity = self._k_angles._capacity
+        self._k_angles = RingBuffer(capacity)
+        self._k_radii = RingBuffer(capacity)
+        self._v_cache = RingBuffer(capacity)
+        self._v_scales = RingBuffer(capacity)
+        self._n_tokens = 0
+
     def __len__(self) -> int:
         return len(self._k_angles)
 

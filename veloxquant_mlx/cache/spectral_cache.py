@@ -228,6 +228,15 @@ class SpectralQuantKVCache(KVCache):
             f"key_ds={self._key_d_s}, qjl={self._apply_qjl})"
         )
 
+    def reset(self) -> None:
+        """Clear all stored tokens; the key/value quantizers are untouched,
+        so a prior ``calibrate()`` injection survives the reset."""
+        self._k_encoded = []
+        self._v_encoded = []
+        self._size = 0
+        self._head = 0
+        self._n_tokens = 0
+
 
 def _batch_encoded(evs: list[Any], n: int) -> Any:
     """Concatenate a list of single-token EncodedVectors into a batch."""

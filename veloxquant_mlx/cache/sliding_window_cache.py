@@ -4,8 +4,9 @@
 :class:`~veloxquant_mlx.core.abstractions.KVCache` instance to cap it at the
 most recent ``window_size`` tokens. Because the wrapped caches (TurboQuant,
 PolarQuant, QJL, etc.) don't support random deletion, eviction is
-implemented by keeping raw key/value vectors in ring buffers and rebuilding
-a fresh inner cache each time the window advances — correct but O(window)
+implemented by keeping raw key/value vectors in ring buffers and, each time
+the window advances, resetting the inner cache to empty (via its own
+``reset()``) and re-feeding it the current window — correct but O(window)
 per eviction, so it targets inference rather than training. Only compatible
 with :data:`~veloxquant_mlx.cache.base.STANDALONE_METHODS` (see
 ``KVCacheFactory.create``'s ``sliding_window`` handling).
@@ -26,12 +27,13 @@ class SlidingWindowKVCache(KVCache):
     When the window is full, the oldest token is evicted.
 
     Because the inner cache does not support random deletion, we maintain
-    a fresh inner cache per sliding window: a new one is created each time
-    a token is evicted. This simple strategy is correct but rebuilds the
-    cache every ``window_size`` tokens; suitable for inference not training.
+    the window by resetting the inner cache to empty and re-feeding it the
+    current window's tokens each time one is evicted. This simple strategy
+    is correct but rebuilds the cache every ``window_size`` tokens; suitable
+    for inference not training.
 
-    For efficiency, we cache all key-value vectors in the ring buffer and
-    re-feed them to a fresh inner cache on window advance.
+    We cache all key-value vectors in our own ring buffer so they're
+    available to re-feed on each window advance.
 
     Args:
         inner: The underlying KVCache to wrap.
@@ -77,34 +79,21 @@ class SlidingWindowKVCache(KVCache):
             self._rebuild_inner()
 
     def _rebuild_inner(self) -> None:
-        """Rebuild the inner cache from the current window of raw vectors."""
-        # Create a fresh inner cache of the same type
-        from copy import deepcopy
+        """Rebuild the inner cache from the current window of raw vectors.
 
-        fresh = deepcopy(self._inner)
-        # Reset its state
-        if hasattr(fresh, "_n_tokens"):
-            fresh._n_tokens = 0
-        if hasattr(fresh, "_k_indices"):
-            from veloxquant_mlx.dsa.ring_buffer import RingBuffer
-
-            cap = fresh._k_indices._capacity
-            fresh._k_indices = RingBuffer(cap)
-            # These four attribute names are specific to whichever concrete
-            # KVCache subclass _inner happens to be (not part of the KVCache
-            # ABC) — reached into reflectively like _k_indices above, since
-            # this class works with any wrapped cache that has this shape.
-            fresh._k_signs = RingBuffer(cap)  # type: ignore[attr-defined]
-            fresh._k_norms = RingBuffer(cap)  # type: ignore[attr-defined]
-            fresh._v_cache = RingBuffer(cap)  # type: ignore[attr-defined]
-            fresh._v_scales = RingBuffer(cap)  # type: ignore[attr-defined]
-            if hasattr(fresh, "_k_residual_norms"):
-                fresh._k_residual_norms = RingBuffer(cap)
-        # Re-append window tokens
+        Uses the wrapped cache's own ``reset()`` (part of the ``KVCache``
+        ABC) rather than guessing internal attribute names — every concrete
+        subclass knows how to clear its own token storage while preserving
+        its quantizer/calibration state, which a generic reflective reset
+        cannot do correctly across differently-shaped implementations. See
+        VeloxQuant-MLX#274: the previous attribute-guessing reset matched no
+        registered cache class, so eviction never actually happened and the
+        inner cache grew unbounded across the life of the request.
+        """
+        self._inner.reset()
         for i in range(len(self._raw_keys)):
-            fresh.append_key(self._raw_keys[i])
-            fresh.append_value(self._raw_values[i])
-        self._inner = fresh
+            self._inner.append_key(self._raw_keys[i])
+            self._inner.append_value(self._raw_values[i])
 
     def attend(self, q: Any) -> Any:
         """Delegate to the inner cache for attention computation.
@@ -120,6 +109,14 @@ class SlidingWindowKVCache(KVCache):
     def memory_bytes(self) -> int:
         """Return memory usage of the inner (windowed) cache."""
         return self._inner.memory_bytes()
+
+    def reset(self) -> None:
+        """Clear the window and the inner cache, returning both to empty."""
+        self._raw_keys = RingBuffer(self._window_size)
+        self._raw_values = RingBuffer(self._window_size)
+        self._pending_key = None
+        self._n_tokens = 0
+        self._inner.reset()
 
     def __len__(self) -> int:
         return min(self._n_tokens, self._window_size)

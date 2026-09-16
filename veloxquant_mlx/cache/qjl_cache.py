@@ -121,6 +121,16 @@ class QJLKVCache(KVCache):
         v_bytes = n * (self._d + 2)
         return sign_bytes + norm_bytes + v_bytes
 
+    def reset(self) -> None:
+        """Clear all stored tokens; the key quantizer (seeded, deterministic
+        JL projection) is untouched."""
+        capacity = self._k_signs._capacity
+        self._k_signs = RingBuffer(capacity)
+        self._k_norms = RingBuffer(capacity)
+        self._v_cache = RingBuffer(capacity)
+        self._v_scales = RingBuffer(capacity)
+        self._n_tokens = 0
+
     def __len__(self) -> int:
         return len(self._k_signs)
 

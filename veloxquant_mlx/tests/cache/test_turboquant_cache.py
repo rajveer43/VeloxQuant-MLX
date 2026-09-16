@@ -279,3 +279,44 @@ def test_fused_query_dot_matches_baseline() -> None:
     out_fused = cache_fused.attend(q)
     mx.eval(out_base, out_fused)
     np.testing.assert_allclose(np.array(out_fused), np.array(out_base), rtol=5e-3, atol=5e-3)
+
+
+def test_reset_clears_storage_and_reinitializes_outlier_detector() -> None:
+    """Regression for #274: reset() must return the cache to a genuinely
+    empty state (len 0, memory_bytes 0) usable for further appends, and
+    since TurboQuant's outlier detector calibrates online from the token
+    stream, reset() rebuilds it fresh rather than keeping stale channel
+    picks from tokens that no longer exist post-reset."""
+    import mlx.core as mx
+
+    rng = np.random.default_rng(9)
+    cache = _build_cache_with_flags(
+        method="turboquant_prod",
+        vectorized=True,
+        outlier=True,
+        n_outliers=2,
+        n_calib=3,
+    )
+    for _ in range(6):
+        k = mx.array(rng.standard_normal(64).astype(np.float16))
+        v = mx.array(rng.standard_normal(64).astype(np.float16))
+        cache.append(k, v)
+    assert len(cache) == 6
+    assert cache._outlier_idx is not None  # calibrated after n_calib=3 tokens
+
+    cache.reset()
+    assert len(cache) == 0
+    assert cache.memory_bytes() == 0
+    assert cache._outlier_idx is None  # fresh detector, not yet re-calibrated
+
+    for _ in range(6):
+        k = mx.array(rng.standard_normal(64).astype(np.float16))
+        v = mx.array(rng.standard_normal(64).astype(np.float16))
+        cache.append(k, v)
+    assert len(cache) == 6
+    assert cache._outlier_idx is not None
+
+    q = mx.array(rng.standard_normal(64).astype(np.float16))
+    out = cache.attend(q)
+    mx.eval(out)
+    assert out.shape == (64,)
