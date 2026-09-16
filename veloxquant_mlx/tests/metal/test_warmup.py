@@ -25,10 +25,13 @@ from veloxquant_mlx.cache.kivi_cache import KIVIKVCache
 from veloxquant_mlx.metal import _kivi_quant, metal_available
 from veloxquant_mlx.metal._warmup import register_warmer, warmup_for_config
 
-pytestmark = pytest.mark.skipif(
-    not metal_available(),
-    reason="Metal compute kernels not available on this build of mlx.",
-)
+pytestmark = [
+    pytest.mark.metal,
+    pytest.mark.skipif(
+        not metal_available(),
+        reason="Metal compute kernels not available on this build of mlx.",
+    ),
+]
 
 
 def _make_fake_model(n_layers: int = 2, n_heads: int = 2, head_dim: int = 32) -> SimpleNamespace:

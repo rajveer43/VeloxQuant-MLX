@@ -15,10 +15,13 @@ import pytest
 from veloxquant_mlx import KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.metal import metal_available
 
-pytestmark = pytest.mark.skipif(
-    not metal_available(),
-    reason="Metal compute kernels not available on this build of mlx.",
-)
+pytestmark = [
+    pytest.mark.metal,
+    pytest.mark.skipif(
+        not metal_available(),
+        reason="Metal compute kernels not available on this build of mlx.",
+    ),
+]
 
 
 def _build_cache(use_metal: bool, head_dim: int = 128, key_sub_dim: int = 4):

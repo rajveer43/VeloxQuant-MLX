@@ -35,10 +35,13 @@ from veloxquant_mlx.cache.kivi_cache import KIVIKVCache
 from veloxquant_mlx.metal import _kivi_quant, metal_available
 from veloxquant_mlx.metal.kernels import kivi_group_quant_dequant
 
-pytestmark = pytest.mark.skipif(
-    not metal_available(),
-    reason="Metal compute kernels not available on this build of mlx.",
-)
+pytestmark = [
+    pytest.mark.metal,
+    pytest.mark.skipif(
+        not metal_available(),
+        reason="Metal compute kernels not available on this build of mlx.",
+    ),
+]
 
 
 def _cache(b: int = 2, g: int = 32) -> KIVIKVCache:

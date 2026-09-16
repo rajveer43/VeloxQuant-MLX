@@ -18,10 +18,13 @@ from veloxquant_mlx.tests.metal.test_rabitq_attend import (
     _reference_attend,
 )
 
-pytestmark = pytest.mark.skipif(
-    not metal_available(),
-    reason="Metal compute kernels not available on this build of mlx.",
-)
+pytestmark = [
+    pytest.mark.metal,
+    pytest.mark.skipif(
+        not metal_available(),
+        reason="Metal compute kernels not available on this build of mlx.",
+    ),
+]
 
 
 def _pack_np(v_idx: np.ndarray) -> np.ndarray:

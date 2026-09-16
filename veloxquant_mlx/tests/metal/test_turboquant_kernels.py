@@ -30,10 +30,13 @@ from veloxquant_mlx.metal.kernels import (
     turboquant_scalar_quantize,
 )
 
-pytestmark = pytest.mark.skipif(
-    not metal_available(),
-    reason="Metal compute kernels not available on this build of mlx.",
-)
+pytestmark = [
+    pytest.mark.metal,
+    pytest.mark.skipif(
+        not metal_available(),
+        reason="Metal compute kernels not available on this build of mlx.",
+    ),
+]
 
 # ---------------------------------------------------------------------------
 # Helpers
