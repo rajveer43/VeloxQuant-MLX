@@ -312,6 +312,25 @@ class SKVQKVCache(_MLXKVCache):
         return 8.0 * self._compressed_key_bytes / elems
 
     # ------------------------------------------------------------------
+    def is_trimmable(self) -> bool:
+        """False: trim() would only roll back base-class offset bookkeeping,
+        not the internal flush frontier (``_q_end``) or the frozen per-head
+        channel permutations (``_perm_k``/``_perm_v``, computed once from
+        chunk 0 and never revisited) that actually determine what gets
+        quantized and how. Unlike a pure-eviction cache, the information loss
+        here is irreversible: once a chunk is flushed, its rows are
+        overwritten in place with a lossy quantize/dequantize round-trip, so
+        there is no exact fp16 value to restore even if ``_q_end`` were
+        rolled back too. Reproduced directly: trimming past ``_q_end`` leaves
+        ``offset < _q_end``, and the next ``update_and_fetch`` treats
+        already-flushed rows sitting in the buffer at those same indices as
+        already-quantized instead of overwriting them with the new tokens
+        actually meant to land there — silently corrupting future calls
+        rather than crashing (see VeloxQuant-Studio issue #26).
+        """
+        return False
+
+    # ------------------------------------------------------------------
     # Batching guard (see VeloxQuant-MLX#358)
     # ------------------------------------------------------------------
     # ``mlx_lm.server``'s ``BatchGenerator`` calls ``_merge_caches`` on every
