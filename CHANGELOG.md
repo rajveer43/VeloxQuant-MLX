@@ -458,6 +458,21 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.83.21 (2026-09-16)
+
+### Bug Fixes
+
+- **cache**: Raise xquant_residual_bits default from 0 to 4 (issue #380)
+  ([#386](https://github.com/rajveer43/VeloxQuant-MLX/pull/386),
+  [`69d533c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/69d533c80beb1af6e3055b94d3e01c4c0b74518d))
+
+### Chores
+
+- Drop duplicate author entry and stale GitPython pin comment
+  ([#387](https://github.com/rajveer43/VeloxQuant-MLX/pull/387),
+  [`3f2fb89`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3f2fb89bd51ac2514652c8203c807437aedfd187))
+
+
 ## v0.83.20 (2026-09-15)
 
 ### Bug Fixes
