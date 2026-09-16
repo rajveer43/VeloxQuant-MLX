@@ -68,6 +68,7 @@ EXPECTED_NOT_TRIMMABLE = {
     "pyramidkv",
     "qfilters",
     "rocketkv",
+    "skvq",
     "snapkv",
     "squeeze",
     "streaming_llm",
