@@ -175,7 +175,13 @@ class KVCacheConfig:
     # --- XQuant configuration (cross-layer KV cache reuse) ---------------
     xquant_group_size: int = 2  # layers per anchor/reuse group (2 = pairs)
     xquant_base_bits: int = 2  # anchor quantizer bit-width
-    xquant_residual_bits: int = 0  # reuse-layer correction residual (0 = pure reuse)
+    # Reuse-layer correction residual. 0 (pure reuse) assumes adjacent layers'
+    # K/V are highly correlated, which measured ~0 (sometimes negative) cosine
+    # similarity on real models -- pure reuse then reproduces incoherent output
+    # even at near-lossless xquant_base_bits (VeloxQuant-MLX#380). 4 is the
+    # validated floor (test_uncorrelated_residual_recovers): sufficient to
+    # recover coherent generation without correlation, at a modest byte cost.
+    xquant_residual_bits: int = 4
     xquant_group_quant_size: int = 32  # token group size for quantization
     xquant_max_ctx: int = 8192  # coordinator per-group token budget
     # --- KVQuant-NUQ configuration (non-uniform datatype + outlier isolation) -

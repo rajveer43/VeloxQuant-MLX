@@ -4,6 +4,32 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+**`xquant_residual_bits` default raised from `0` to `4`**
+([#380](https://github.com/rajveer43/VeloxQuant-MLX/issues/380)) —
+XQuant's cross-layer reuse (`XQuantKVCache`/`pair_layers`) assumed adjacent
+transformer layers' K/V tensors are similar enough that a reuse layer can
+borrow the anchor's quantization codes and just re-fit its own per-group
+scale/zero. At the previously-shipped default `xquant_residual_bits=0`
+(pure reuse, no correction), that assumption does not hold on real models:
+measured cosine similarity between adjacent layers' real keys is ~0
+(occasionally negative) on `Qwen2.5-0.5B-Instruct-4bit` and
+`Llama-3.2-1B-Instruct-4bit`, not "highly similar" as the module docstring
+assumed, and generation degraded to incoherent output at every
+`xquant_base_bits` including near-lossless settings. The residual path
+(`xquant_residual_bits`) already existed for exactly this case —
+`test_uncorrelated_residual_recovers` documented that a sufficient residual
+recovers quality even when layers are uncorrelated — but was left off by
+default. `4` is the validated floor: it recovers coherent generation with
+no correlation assumed, at a modest byte-budget cost (group-effective bits
+~2.0 → ~4.5 at `group_size=2, base_bits=2`). A prior PR
+([#384](https://github.com/rajveer43/VeloxQuant-MLX/pull/384)) had already
+applied the docs-only half of the fix (a `field_schema` help-text warning);
+this closes the remaining shipped-default half. `xquant.md` updated to
+stop stating "highly similar" as fact and to document measured, not
+assumed, effective bit-widths.
+
 ### Changed
 
 **`enable_vectorized_attend` now defaults to `True`**
