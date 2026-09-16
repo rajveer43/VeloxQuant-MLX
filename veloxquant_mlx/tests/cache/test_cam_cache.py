@@ -55,14 +55,21 @@ def test_single_cache_reports_budget_and_mode():
 
 
 def test_single_cache_enforces_budget():
+    """STORED seq dim <= budget. The call's own RETURN value is deliberately
+    NOT capped at budget (see #370): mlx_lm's attention mask for this call
+    is fixed before eviction can run, so update_and_fetch defers eviction to
+    storage only and returns the full pre-eviction set for this call's own
+    (already correctly masked) attention — here, the first-ever call, so
+    the return is exactly the S=60 raw incoming tokens."""
     cfg = KVCacheConfig(
         method="cam", head_dim=16, cam_budget=12, cam_merge="sim_weighted", cam_n_sink=2
     )
     cache = CaMKVCache(cfg)
     k, v = _kv(1, 2, 60, 16)
     K, V = cache.update_and_fetch(k, v)
-    assert K.shape[2] <= 12
-    assert V.shape[2] <= 12
+    assert K.shape[2] == 60
+    assert V.shape[2] == 60
+    assert cache.tokens_kept <= 12
 
 
 def test_single_cache_preserves_sinks():
@@ -109,7 +116,9 @@ def test_mean_mode_runs():
     cache = CaMKVCache(cfg)
     k, v = _kv(1, 2, 50, 8, seed=4)
     K, V = cache.update_and_fetch(k, v)
-    assert K.shape[2] <= 12
+    # RETURN is deliberately un-evicted (#370); STORAGE is capped.
+    assert K.shape[2] == 50
+    assert cache.tokens_kept <= 12
 
 
 def test_merge_keys_flag_runs():
@@ -124,18 +133,26 @@ def test_merge_keys_flag_runs():
     cache = CaMKVCache(cfg)
     k, v = _kv(1, 2, 50, 8, seed=6)
     K, V = cache.update_and_fetch(k, v)
-    assert K.shape[2] <= 12
+    # RETURN is deliberately un-evicted (#370); STORAGE is capped.
+    assert K.shape[2] == 50
+    assert cache.tokens_kept <= 12
 
 
 def test_prefill_then_decode():
+    """STORED seq dim stays <= budget across prefill + decode. Each step's
+    own RETURN is one token larger than what's stored (the previous step's
+    kept set + this step's 1 new token, un-evicted — see #370's
+    deferred-eviction fix in update_and_fetch's docstring)."""
     cfg = KVCacheConfig(method="cam", head_dim=8, cam_budget=12, cam_n_sink=2)
     cache = CaMKVCache(cfg)
     k, v = _kv(1, 2, 30, 8, seed=6)
     cache.update_and_fetch(k, v)
     for step in range(5):
+        stored_before = cache.tokens_kept
         kd, vd = _kv(1, 2, 1, 8, seed=100 + step)
         K, V = cache.update_and_fetch(kd, vd)
-        assert K.shape[2] <= 12
+        assert cache.tokens_kept <= 12
+        assert K.shape[2] == stored_before + 1
     assert cache.tokens_seen == (30 + 5) * 2
 
 
@@ -217,15 +234,20 @@ def test_cache_merge_gate_off_reports_false():
 
 
 def test_cache_gate_off_matches_old_unconditional_merge_shape():
-    """merge_gate=False still enforces budget the same way as gated merging."""
+    """merge_gate=False still enforces budget (in STORAGE) the same way as
+    gated merging. RETURN is deliberately un-evicted (#370) — both configs'
+    first-ever call returns the full S=50 raw incoming tokens."""
     cfg_gated = KVCacheConfig(method="cam", head_dim=16, cam_budget=12, cam_n_sink=2)
     cfg_ungated = KVCacheConfig(
         method="cam", head_dim=16, cam_budget=12, cam_n_sink=2, cam_merge_gate=False
     )
     k, v = _kv(1, 2, 50, 16, seed=15)
-    Kg, Vg = CaMKVCache(cfg_gated).update_and_fetch(k, v)
-    Ku, Vu = CaMKVCache(cfg_ungated).update_and_fetch(k, v)
-    assert Kg.shape == Ku.shape == (1, 2, 12, 16)
+    cache_g = CaMKVCache(cfg_gated)
+    cache_u = CaMKVCache(cfg_ungated)
+    Kg, Vg = cache_g.update_and_fetch(k, v)
+    Ku, Vu = cache_u.update_and_fetch(k, v)
+    assert Kg.shape == Ku.shape == (1, 2, 50, 16)
+    assert cache_g.tokens_kept == cache_u.tokens_kept == 12
 
 
 def test_cache_gate_is_deterministic_across_runs():
@@ -235,3 +257,100 @@ def test_cache_gate_is_deterministic_across_runs():
     K2, V2 = CaMKVCache(cfg).update_and_fetch(k, v)
     assert bool(mx.all(K1 == K2).item())
     assert bool(mx.all(V1 == V2).item())
+
+
+# ======================================================================
+# Attention mask correctness (#370)
+# ======================================================================
+
+
+def test_make_mask_before_any_call_falls_back_to_base() -> None:
+    from mlx_lm.models.base import create_attention_mask
+
+    cfg = KVCacheConfig(method="cam", head_dim=8, cam_budget=8, cam_n_sink=2)
+    c = CaMKVCache(cfg)
+    h_fake = mx.zeros((1, 5, 4))
+    assert create_attention_mask(h_fake, c) == "causal"
+
+
+def test_every_call_returns_full_unevicted_set_for_own_attention() -> None:
+    """Neither the first nor any later multi-token call may shrink what it
+    RETURNS below its own pre-eviction count — mlx_lm's mask for that call
+    is fixed (based on the previous call's true kept positions) before this
+    call's own eviction/merge can run, and only what's returned matches
+    that fixed mask's shape."""
+    budget = 6
+    cfg = KVCacheConfig(method="cam", head_dim=8, cam_budget=budget, cam_n_sink=1)
+    c = CaMKVCache(cfg)
+    k1, v1 = _kv(1, 1, 5, 8, seed=1)
+    ko1, _ = c.update_and_fetch(k1, v1)
+    assert ko1.shape[2] == 5  # first call: nothing stored yet to concat onto
+    assert c.tokens_kept <= budget
+
+    k2, v2 = _kv(1, 1, 5, 8, seed=2)
+    ko2, _ = c.update_and_fetch(k2, v2)
+    # returned == (previously stored, <= budget) ++ (this call's 5 new)
+    prev_stored = min(5, budget)
+    assert ko2.shape[2] == prev_stored + 5
+    assert c.tokens_kept <= budget
+
+
+def test_make_mask_after_eviction_is_position_correct_explicit_array() -> None:
+    from mlx_lm.models.base import create_attention_mask
+
+    budget = 6
+    cfg = KVCacheConfig(method="cam", head_dim=8, cam_budget=budget, cam_n_sink=1)
+    c = CaMKVCache(cfg)
+    k1, v1 = _kv(1, 1, 15, 8, seed=3)
+    c.update_and_fetch(k1, v1)
+    assert c.tokens_kept <= budget
+    kept_positions = c._kept_positions[0].tolist()
+
+    h_fake = mx.zeros((1, 3, 4))
+    mask = create_attention_mask(h_fake, c)
+    assert isinstance(mask, mx.array)
+    n_stored = c.tokens_kept
+    assert mask.shape == (1, 1, 3, n_stored + 3)
+
+    query_positions = [c.offset + i for i in range(3)]
+    key_positions = kept_positions + [c.offset + i for i in range(3)]
+    expected = [[kj <= qi for kj in key_positions] for qi in query_positions]
+    assert mask[0, 0].tolist() == expected
+
+
+def test_make_mask_single_query_returns_none() -> None:
+    from mlx_lm.models.base import create_attention_mask
+
+    cfg = KVCacheConfig(method="cam", head_dim=8, cam_budget=6, cam_n_sink=1)
+    c = CaMKVCache(cfg)
+    k, v = _kv(1, 1, 15, 8, seed=3)
+    c.update_and_fetch(k, v)
+
+    h_fake = mx.zeros((1, 1, 4))
+    assert create_attention_mask(h_fake, c) is None
+
+
+def test_kept_positions_valid_after_merge_with_merging_enabled():
+    """With merging enabled (not drop mode) and the gate off (unconditional
+    merge, maximizing how often merges actually happen), every tracked
+    position must stay within [0, true_offset) and sinks must remain
+    exactly [0, n_sink) — the merge-position semantics (survivor position
+    becomes max(survivor, loser)) must never produce an out-of-range or
+    sink-corrupting position."""
+    budget, n_sink = 6, 2
+    cfg = KVCacheConfig(
+        method="cam",
+        head_dim=8,
+        cam_budget=budget,
+        cam_n_sink=n_sink,
+        cam_merge="sim_weighted",
+        cam_merge_gate=False,  # unconditional merge — exercises the merge-position path every time
+    )
+    c = CaMKVCache(cfg)
+    k, v = _kv(1, 1, 40, 8, seed=9)
+    c.update_and_fetch(k, v)
+    assert c.tokens_kept <= budget
+    positions = c._kept_positions[0].tolist()
+    assert positions[:n_sink] == list(range(n_sink))
+    assert all(0 <= p < c.offset for p in positions)
+    assert len(positions) == len(set(positions))  # no duplicate positions

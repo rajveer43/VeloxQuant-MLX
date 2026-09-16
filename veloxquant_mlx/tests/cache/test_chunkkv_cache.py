@@ -59,14 +59,21 @@ def test_single_cache_reports_budget_and_chunk():
 
 
 def test_single_cache_enforces_budget():
+    """STORED seq dim <= budget. The call's own RETURN value is deliberately
+    NOT capped at budget (see #370): mlx_lm's attention mask for this call
+    is fixed before eviction can run, so update_and_fetch defers eviction to
+    storage only and returns the full pre-eviction set for this call's own
+    (already correctly masked) attention — here, the first-ever call, so
+    the return is exactly the S=60 raw incoming tokens."""
     cfg = KVCacheConfig(
         method="chunkkv", head_dim=16, chunkkv_budget=12, chunkkv_chunk_size=4, chunkkv_n_sink=2
     )
     cache = ChunkKVCache(cfg)
     k, v = _kv(1, 2, 60, 16)
     K, V = cache.update_and_fetch(k, v)
-    assert K.shape[2] <= 12
-    assert V.shape[2] <= 12
+    assert K.shape[2] == 60
+    assert V.shape[2] == 60
+    assert cache.tokens_kept <= 12
 
 
 def test_single_cache_chunk_aligned_survivors():
@@ -137,10 +144,16 @@ def test_key_norm_score_mode():
     cache = ChunkKVCache(cfg)
     k, v = _kv(1, 2, 50, 8, seed=4)
     K, V = cache.update_and_fetch(k, v)
-    assert K.shape[2] <= 12
+    # RETURN is deliberately un-evicted (#370); STORAGE is capped.
+    assert K.shape[2] == 50
+    assert cache.tokens_kept <= 12
 
 
 def test_prefill_then_decode():
+    """STORED seq dim stays <= budget across prefill + decode. Each step's
+    own RETURN is one token larger than what's stored (the previous step's
+    kept set + this step's 1 new token, un-evicted — see #370's
+    deferred-eviction fix in update_and_fetch's docstring)."""
     cfg = KVCacheConfig(
         method="chunkkv", head_dim=8, chunkkv_budget=12, chunkkv_chunk_size=4, chunkkv_n_sink=2
     )
@@ -148,9 +161,11 @@ def test_prefill_then_decode():
     k, v = _kv(1, 2, 30, 8, seed=6)  # prefill
     cache.update_and_fetch(k, v)
     for step in range(5):  # decode
+        stored_before = cache.tokens_kept
         kd, vd = _kv(1, 2, 1, 8, seed=100 + step)
         K, V = cache.update_and_fetch(kd, vd)
-        assert K.shape[2] <= 12
+        assert cache.tokens_kept <= 12
+        assert K.shape[2] == stored_before + 1
     assert cache.tokens_seen == (30 + 5) * 2
 
 
@@ -342,3 +357,105 @@ def test_for_model_reuse_matches_no_reuse_kv():
     assert bool(mx.all(outputs[0][1] == outputs[1][1]).item())
     assert bool(mx.all(outputs[2][0] == outputs[3][0]).item())
     assert bool(mx.all(outputs[2][1] == outputs[3][1]).item())
+
+
+# ======================================================================
+# Attention mask correctness (#370)
+# ======================================================================
+
+
+def test_make_mask_before_any_call_falls_back_to_base() -> None:
+    from mlx_lm.models.base import create_attention_mask
+
+    cfg = KVCacheConfig(
+        method="chunkkv", head_dim=8, chunkkv_budget=8, chunkkv_chunk_size=2, chunkkv_n_sink=2
+    )
+    c = ChunkKVCache(cfg)
+    h_fake = mx.zeros((1, 5, 4))
+    assert create_attention_mask(h_fake, c) == "causal"
+
+
+def test_every_call_returns_full_unevicted_set_for_own_attention() -> None:
+    """Neither the first nor any later multi-token call may shrink what it
+    RETURNS below its own pre-eviction count — mlx_lm's mask for that call
+    is fixed (based on the previous call's true kept positions) before this
+    call's own eviction can run, and only what's returned matches that
+    fixed mask's shape."""
+    budget = 6
+    cfg = KVCacheConfig(
+        method="chunkkv", head_dim=8, chunkkv_budget=budget, chunkkv_chunk_size=2, chunkkv_n_sink=2
+    )
+    c = ChunkKVCache(cfg)
+    k1, v1 = _kv(1, 1, 5, 8, seed=1)
+    ko1, _ = c.update_and_fetch(k1, v1)
+    assert ko1.shape[2] == 5  # first call: nothing stored yet to concat onto
+    assert c.tokens_kept <= budget
+
+    k2, v2 = _kv(1, 1, 5, 8, seed=2)
+    ko2, _ = c.update_and_fetch(k2, v2)
+    # returned == (previously stored, <= budget) ++ (this call's 5 new)
+    prev_stored = min(5, budget)
+    assert ko2.shape[2] == prev_stored + 5
+    assert c.tokens_kept <= budget
+
+
+def test_make_mask_after_eviction_is_position_correct_explicit_array() -> None:
+    from mlx_lm.models.base import create_attention_mask
+
+    budget = 6
+    cfg = KVCacheConfig(
+        method="chunkkv", head_dim=8, chunkkv_budget=budget, chunkkv_chunk_size=2, chunkkv_n_sink=2
+    )
+    c = ChunkKVCache(cfg)
+    k1, v1 = _kv(1, 1, 15, 8, seed=3)
+    c.update_and_fetch(k1, v1)
+    assert c.tokens_kept <= budget
+    kept_positions = c._kept_positions[0].tolist()
+
+    h_fake = mx.zeros((1, 3, 4))
+    mask = create_attention_mask(h_fake, c)
+    assert isinstance(mask, mx.array)
+    n_stored = c.tokens_kept
+    assert mask.shape == (1, 1, 3, n_stored + 3)
+
+    query_positions = [c.offset + i for i in range(3)]
+    key_positions = kept_positions + [c.offset + i for i in range(3)]
+    expected = [[kj <= qi for kj in key_positions] for qi in query_positions]
+    assert mask[0, 0].tolist() == expected
+
+
+def test_make_mask_single_query_returns_none() -> None:
+    from mlx_lm.models.base import create_attention_mask
+
+    cfg = KVCacheConfig(
+        method="chunkkv", head_dim=8, chunkkv_budget=6, chunkkv_chunk_size=2, chunkkv_n_sink=2
+    )
+    c = ChunkKVCache(cfg)
+    k, v = _kv(1, 1, 15, 8, seed=3)
+    c.update_and_fetch(k, v)
+
+    h_fake = mx.zeros((1, 1, 4))
+    assert create_attention_mask(h_fake, c) is None
+
+
+def test_follower_make_mask_matches_leader():
+    """Followers reuse the leader's exact kept-index decisions, so their
+    true positions — and therefore their explicit masks — must match the
+    leader's exactly (mirrors the existing K/V-identity contract)."""
+    B, H, D, budget, n_sink, chunk_size = 1, 1, 8, 6, 2, 2
+    coord = ChunkKVIndexReuseCoordinator(n_layers=2, reuse_layers=2)
+    cfg = KVCacheConfig(
+        method="chunkkv",
+        head_dim=D,
+        chunkkv_budget=budget,
+        chunkkv_n_sink=n_sink,
+        chunkkv_chunk_size=chunk_size,
+    )
+    leader = ChunkKVCache(cfg, layer_id=0, coordinator=coord)
+    follower = ChunkKVCache(cfg, layer_id=1, coordinator=coord)
+
+    k, v = _kv(B, H, 15, D, seed=50)
+    leader.update_and_fetch(k, v)
+    follower.update_and_fetch(k, v)
+
+    assert leader._kept_positions.tolist() == follower._kept_positions.tolist()

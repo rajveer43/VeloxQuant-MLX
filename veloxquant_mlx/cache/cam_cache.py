@@ -66,6 +66,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.cache._eviction_mask import eviction_make_mask
 from veloxquant_mlx.quantizers.cam import (
     CaMState,
     cam_fp16_bytes,
@@ -125,6 +126,28 @@ class CaMKVCache(_MLXKVCache):
         self._full_seq_bytes: int = 0
         self._tokens_seen_total: int = 0
 
+        # True absolute token position, independent of how many rows survive
+        # eviction/merge. Reported as ``self.offset`` so mlx_lm's RoPE stays
+        # correct after tokens are dropped/merged (see #171-style handling
+        # elsewhere).
+        self._true_offset: int = 0
+
+        # Per-(b,h) list of [n] int32 true absolute positions, parallel to
+        # each head's CaMState.keys/values. None entries mean "nothing
+        # stored yet for this head" (mirrors CaMState.keys is None).
+        self._bh_positions: list[mx.array | None] = []
+
+        # [B, n_kept] int32 true absolute position of each currently-stored
+        # (head 0) row — see make_mask() and update_and_fetch()'s #370
+        # deferred-eviction docstrings. None before the first update.
+        self._kept_positions: mx.array | None = None
+
+        # (K_out, V_out) actually returned by the last call — since #370's
+        # deferred eviction, generally NOT the same as this call's full
+        # (capped) retained state. A following S==0 no-op call must return
+        # this unchanged.
+        self._last_returned: tuple[mx.array, mx.array] | None = None
+
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         """Lazily initialise per-head CaMState list on first call."""
@@ -144,6 +167,7 @@ class CaMKVCache(_MLXKVCache):
                 )
                 for head_idx in range(B * H)
             ]
+            self._bh_positions = [None for _ in range(B * H)]
 
     def _head_idx(self, b: int, h: int) -> int:
         return b * self._H + h
@@ -157,38 +181,90 @@ class CaMKVCache(_MLXKVCache):
             values: ``[B, H, S, D]`` new value tokens.
 
         Returns:
-            ``(K_out, V_out)`` both ``[B, H, n_kept, D]`` fp16, where
-            ``n_kept <= cam_budget`` for all heads.
+            ``(K_out, V_out)`` for THIS call's own attention — the full,
+            un-evicted concatenation of whatever was stored before this call
+            plus the ``S`` new tokens (see #370 below), NOT capped at
+            ``cam_budget``. What gets *stored* afterward (visible to the
+            next call) is capped as before.
+
+        mlx_lm builds the attention mask for this call from hidden states —
+        before q/k/v projections exist, let alone this cache's own
+        ``update_and_fetch`` — so it is fixed (as either the "causal" string
+        or an explicit array from ``make_mask``, called with only this
+        call's query count ``N``) before eviction can possibly run. If this
+        method shrank what it returns to fewer than ``N`` keys via merge-
+        eviction, that already-fixed mask would silently desync from the
+        shape it was built for (VeloxQuant-MLX#370). So eviction is
+        deferred: this call returns the full pre-eviction concatenation
+        (matching the mask ``make_mask`` already built from the previous
+        call's true kept positions — see that method), and only the stored
+        per-head states shrink, for the *next* call's ``make_mask`` to
+        reflect correctly.
         """
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
 
+        if S == 0:
+            if self._last_returned is not None:
+                return self._last_returned
+            return keys.astype(mx.float16), values.astype(mx.float16)
+
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
+        new_positions = mx.arange(self._true_offset, self._true_offset + S, dtype=mx.int32)
+
+        # Capture each head's pre-update stored K/V (for THIS call's own
+        # deferred return) BEFORE running cam_update — see #370.
+        previous_k = [cam_get_kv(st)[0] if st.keys is not None else None for st in self._states]
+        previous_v = [cam_get_kv(st)[1] if st.keys is not None else None for st in self._states]
+
         k_out_b, v_out_b = [], []
+        k_full_b, v_full_b = [], []
         for b in range(B):
             k_out_h, v_out_h = [], []
+            k_full_h, v_full_h = [], []
             for h in range(H):
                 idx = self._head_idx(b, h)
                 st = self._states[idx]
-                st = cam_update(
+                st, pos = cam_update(
                     st,
                     keys[b, h].astype(mx.float16),
                     values[b, h].astype(mx.float16),
+                    self._bh_positions[idx],
+                    new_positions,
                 )
                 self._states[idx] = st
+                self._bh_positions[idx] = pos
                 k_h, v_h = cam_get_kv(st)
                 k_out_h.append(k_h)  # [n_kept, D]
                 v_out_h.append(v_h)
+                new_k_bh = keys[b, h].astype(mx.float16)
+                new_v_bh = values[b, h].astype(mx.float16)
+                if previous_k[idx] is None:
+                    k_full_h.append(new_k_bh)
+                    v_full_h.append(new_v_bh)
+                else:
+                    k_full_h.append(mx.concatenate([previous_k[idx], new_k_bh], axis=0))
+                    v_full_h.append(mx.concatenate([previous_v[idx], new_v_bh], axis=0))
             k_out_b.append(mx.stack(k_out_h, axis=0))  # [H, n_kept, D]
             v_out_b.append(mx.stack(v_out_h, axis=0))
+            k_full_b.append(mx.stack(k_full_h, axis=0))  # [H, n_full, D]
+            v_full_b.append(mx.stack(v_full_h, axis=0))
 
-        K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_kept, D]
+        K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_kept, D] — for STORAGE
         V_out = mx.stack(v_out_b, axis=0)
+        K_full = mx.stack(k_full_b, axis=0)  # [B, H, n_full, D] — this call's RETURN
+        V_full = mx.stack(v_full_b, axis=0)
 
         # Byte accounting: sum across all head states.
         self._cam_kept_bytes = sum(cam_fp16_bytes(st) for st in self._states)
+
+        # head-0 true kept positions per batch element, for the NEXT call's
+        # make_mask (see that method) — not this call's own mask, already
+        # fixed by the time we get here.
+        head0_positions = [self._bh_positions[self._head_idx(b, 0)] for b in range(B)]
+        self._kept_positions = mx.stack(head0_positions, axis=0)
 
         # K_out/V_out is the full retained state every call, not a delta —
         # reset so the base class's append-only buffer starts fresh instead
@@ -199,7 +275,37 @@ class CaMKVCache(_MLXKVCache):
         self.keys = None
         self.values = None
         self.offset = 0
-        return super().update_and_fetch(K_out, V_out)
+        super().update_and_fetch(K_out, V_out)
+        self._true_offset += S
+        self.offset = self._true_offset
+        out = (K_full, V_full)
+        self._last_returned = out
+        return out
+
+    # ------------------------------------------------------------------
+    def make_mask(self, N: int, return_array: bool = False, window_size: int | None = None, **_):
+        """Explicit position-based causal mask — see VeloxQuant-MLX#370.
+
+        Called BEFORE this step's own ``update_and_fetch`` (and thus before
+        this step's own eviction, which ``update_and_fetch`` defers past
+        this step's return anyway — see its docstring). ``self._kept_positions``
+        holds the true positions of whatever every head's state already
+        stores from the *previous* call, which is exactly what
+        ``update_and_fetch`` will concatenate its ``N`` new tokens onto —
+        so a mask sized ``[B, 1, N, len(kept) + N]`` covers this call's
+        actual returned key count precisely.
+        """
+        if self._kept_positions is None:
+            return super().make_mask(N, return_array=return_array, window_size=window_size)
+        B = self._kept_positions.shape[0]
+        prev_positions = self._kept_positions
+        new_positions = mx.arange(self.offset, self.offset + N, dtype=mx.int32)
+        new_positions = mx.broadcast_to(new_positions[None, :], (B, N))
+        key_positions = mx.concatenate([prev_positions, new_positions], axis=1)
+        query_positions = new_positions
+        return eviction_make_mask(
+            query_positions, key_positions, N, return_array=return_array, window_size=window_size
+        )
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:

@@ -50,6 +50,24 @@ ARMS = [
     ("knorm", {"method": "knorm", "knorm_budget": BUDGET, "knorm_n_sink": 4}),
 ]
 
+# Methods whose update_and_fetch RETURN value is, since #370, deliberately
+# the full pre-eviction set for a multi-token call (never capped at budget)
+# — mlx_lm's attention mask for that call is fixed before this cache's own
+# eviction can run, so shrinking the return would desync from it (see
+# veloxquant_mlx/cache/_eviction_mask.py). Only what these caches STORE
+# (``cache.keys``) is capped; qfilters/knorm are unaffected by #370 (not in
+# its scope) and still cap their own return value directly.
+_DEFERRED_EVICTION_METHODS = {"h2o", "tova", "streaming_llm", "chunkkv", "cam"}
+
+
+def _stored_or_returned_count(name: str, cache, k_out) -> int:
+    """Row count to check against the budget: STORED rows for #370-fixed
+    caches (their own return is deliberately un-evicted), else the RETURN
+    value itself (unaffected caches still cap what they return)."""
+    if name in _DEFERRED_EVICTION_METHODS:
+        return cache.keys.shape[2]
+    return k_out.shape[2]
+
 
 def _kv(S, H=2, D=HEAD_DIM, seed=0):
     rng = np.random.default_rng(seed)
@@ -94,7 +112,7 @@ def test_offset_tracks_true_position_across_prefill_then_decode(name, cfg) -> No
 
     assert cache.offset == S_pre, f"{name}: offset stalled at {cache.offset} after prefill"
     # Eviction genuinely happened — otherwise this test proves nothing.
-    assert k_out.shape[2] <= BUDGET < S_pre
+    assert _stored_or_returned_count(name, cache, k_out) <= BUDGET < S_pre
 
     for t in range(n_dec):
         k1, v1 = _kv(S=1, seed=1000 + t)
@@ -124,5 +142,7 @@ def test_offset_is_independent_of_retained_row_count(name, cfg) -> None:
     kl, _ = large.update_and_fetch(k, v)
     mx.eval(ks, kl)
 
-    assert ks.shape[2] != kl.shape[2], f"{name}: budgets did not change the retained count"
+    n_small = _stored_or_returned_count(name, small, ks)
+    n_large = _stored_or_returned_count(name, large, kl)
+    assert n_small != n_large, f"{name}: budgets did not change the retained count"
     assert small.offset == large.offset == S

@@ -42,6 +42,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.cache._eviction_mask import eviction_make_mask
 from veloxquant_mlx.quantizers.snapkv import (
     _snapkv_compress_batched,
     snapkv_compress,
@@ -121,6 +122,22 @@ class SnapKVKVCache(_MLXKVCache):
         # stays correct after tokens are dropped (see #171).
         self._true_offset: int = 0
 
+        # [B, n_kept] int32 true absolute position of each currently-stored
+        # row, head 0 only (mlx_lm's mask contract can't vary by attention
+        # head — see _eviction_mask.py's module docstring). Used by
+        # make_mask() to build an explicit causal mask instead of relying on
+        # the inherited "causal" string shortcut, which silently mis-attends
+        # once eviction has made the kept set non-contiguous (#370).
+        self._kept_positions: mx.array | None = None
+
+        # Set by _process_prefill on this cache's first eviction-triggering
+        # call to (evicted_k, evicted_v) — applied to self.keys/self.values
+        # AFTER super().update_and_fetch() has already returned the full,
+        # un-evicted set for this call's own (already-mask-fixed) attention.
+        # See _process_prefill's docstring for why eviction must be deferred
+        # past this call's own attention rather than applied before it.
+        self._post_step_evicted: tuple[mx.array, mx.array] | None = None
+
     # ------------------------------------------------------------------
     # ``offset`` carries TWO meanings that diverge as soon as eviction drops a
     # row, and #171 was caused by conflating them:
@@ -174,9 +191,30 @@ class SnapKVKVCache(_MLXKVCache):
         return state.kept_keys, state.kept_values, state.n_kept
 
     def _process_prefill(self, keys: mx.array, values: mx.array):
-        """Evict ``[B, H, S, D]`` prefill K/V per head; accumulate byte accounting."""
+        """Compute this call's eviction, but do NOT apply it to what's
+        returned for THIS step's own attention.
+
+        mlx_lm builds the attention mask from hidden states before q/k/v
+        projections run, so it is fixed (``mask="causal"``, sized for this
+        call's own N queries) before ``update_and_fetch`` is ever invoked —
+        this cache cannot make that mask reflect an eviction it hasn't
+        performed yet. Shrinking the returned keys here would leave that
+        already-fixed mask silently wrong for this call specifically (see
+        VeloxQuant-MLX#370: the mask assumes a contiguous trailing window,
+        false once eviction drops non-trailing rows).
+
+        So the eviction decision is computed here (for byte accounting and
+        to seed ``self._true_kept_k/v`` — what gets *stored* for future
+        calls) but the K/V actually returned for this step's attention are
+        the full, un-evicted set, for which the pre-built "causal" mask
+        (this call's query count == this call's key count) is exactly
+        correct. ``update_and_fetch`` compresses ``self.keys``/``self.values``
+        down to the evicted subset immediately afterward, so every
+        subsequent call sees the compact stored cache and a correct
+        ``make_mask`` (see ``_kept_positions``).
+        """
         B, H, S, D = keys.shape
-        k, v = _snapkv_compress_batched(
+        k, v, indices = _snapkv_compress_batched(
             keys,
             values,
             self._budget,
@@ -185,6 +223,7 @@ class SnapKVKVCache(_MLXKVCache):
             backend=self._backend,
             output_dtype=self._storage_dtype,
             batched_scoring=self._batched_scoring,
+            return_indices=True,
         )
         kept = k.shape[2]
         self._evicted_key_bytes += B * H * kept * D * 2
@@ -193,7 +232,13 @@ class SnapKVKVCache(_MLXKVCache):
         self._full_value_bytes += B * H * S * D * 2
         self._tokens_kept += B * H * kept
         self._tokens_total += B * H * S
-        return k, v
+        # indices are positions within this call's own [S] frame, which
+        # starts at the true absolute offset seen so far (0, for the first
+        # prefill call — later chunks recompute from scratch in
+        # _process_prefill_chunk, not here).
+        self._kept_positions = indices[:, 0, :] + self._true_offset
+        self._post_step_evicted = (k, v)
+        return keys.astype(self._storage_dtype), values.astype(self._storage_dtype)
 
     def _process_decode(self, keys: mx.array, values: mx.array):
         """Pass through decode tokens (S == 1) — never evicted."""
@@ -205,6 +250,13 @@ class SnapKVKVCache(_MLXKVCache):
         self._full_value_bytes += fp16_cost
         self._tokens_kept += B * H * S
         self._tokens_total += B * H * S
+        new_pos = mx.arange(self._true_offset, self._true_offset + S, dtype=mx.int32)
+        new_pos = mx.broadcast_to(new_pos[None, :], (B, S))
+        self._kept_positions = (
+            new_pos
+            if self._kept_positions is None
+            else mx.concatenate([self._kept_positions, new_pos], axis=1)
+        )
         return keys.astype(self._storage_dtype), values.astype(self._storage_dtype)
 
     def _process_prefill_chunk(self, keys: mx.array, values: mx.array):
@@ -231,7 +283,7 @@ class SnapKVKVCache(_MLXKVCache):
         prev_kept = self._row_offset
         cat_k = mx.concatenate([self.keys[:, :, :prev_kept], keys], axis=2)
         cat_v = mx.concatenate([self.values[:, :, :prev_kept], values], axis=2)
-        k_out, v_out = _snapkv_compress_batched(
+        k_out, v_out, indices = _snapkv_compress_batched(
             cat_k,
             cat_v,
             self._budget,
@@ -240,7 +292,17 @@ class SnapKVKVCache(_MLXKVCache):
             backend=self._backend,
             output_dtype=self._storage_dtype,
             batched_scoring=self._batched_scoring,
+            return_indices=True,
         )
+        # indices select from the concatenation [prior kept rows (true
+        # positions in self._kept_positions) ++ this chunk's S new rows
+        # (true positions true_offset..true_offset+S)] — build that same
+        # concatenated position frame (head 0, per batch) and gather.
+        assert self._kept_positions is not None  # prefill_done implies this
+        new_pos = mx.arange(self._true_offset, self._true_offset + S, dtype=mx.int32)
+        new_pos = mx.broadcast_to(new_pos[None, :], (B, S))
+        cat_pos = mx.concatenate([self._kept_positions, new_pos], axis=1)
+        self._kept_positions = mx.take_along_axis(cat_pos, indices[:, 0, :], axis=1)
         delta = B * H * (k_out.shape[2] - prev_kept)
         self._evicted_key_bytes += delta * D * 2
         self._evicted_value_bytes += delta * D * 2
@@ -282,9 +344,43 @@ class SnapKVKVCache(_MLXKVCache):
         self._true_offset += keys.shape[2]
         self._in_base = True
         try:
-            return super().update_and_fetch(k_out, v_out)
+            result = super().update_and_fetch(k_out, v_out)
         finally:
             self._in_base = False
+        # Deferred eviction (see _process_prefill): this call's own attention
+        # already got the correct (full, un-evicted) `result` above, matching
+        # the mask mlx_lm had already fixed before this call ran. Now shrink
+        # what's *stored* so future calls' make_mask sees the compact kept
+        # set and future update_and_fetch calls append onto it, not the full
+        # un-evicted history.
+        if self._post_step_evicted is not None:
+            k_evicted, v_evicted = self._post_step_evicted
+            self._post_step_evicted = None
+            self.keys = k_evicted
+            self.values = v_evicted
+            self._row_offset = k_evicted.shape[2]
+        return result
+
+    # ------------------------------------------------------------------
+    def make_mask(self, N: int, return_array: bool = False, window_size: int | None = None, **_):
+        """Explicit position-based causal mask — see VeloxQuant-MLX#370.
+
+        The inherited ``KVCache.make_mask`` returns the string ``"causal"``
+        whenever ``offset == 0`` (the very first prefill call, before any
+        eviction has run) or otherwise builds a mask keyed off row index
+        rather than true position — both wrong once eviction has made the
+        kept keys a non-contiguous subset. Before the first prefill call
+        (``_kept_positions`` is still ``None``, nothing evicted yet) this
+        falls back to the base class's behavior exactly, since a plain
+        trailing-window mask is correct there.
+        """
+        if self._kept_positions is None:
+            return super().make_mask(N, return_array=return_array, window_size=window_size)
+        query_positions = mx.arange(self._true_offset, self._true_offset + N, dtype=mx.int32)
+        query_positions = mx.broadcast_to(query_positions[None, :], (self._kept_positions.shape[0], N))
+        return eviction_make_mask(
+            query_positions, self._kept_positions, N, return_array=return_array, window_size=window_size
+        )
 
     # ------------------------------------------------------------------
     @property

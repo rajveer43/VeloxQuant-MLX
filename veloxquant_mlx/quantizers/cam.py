@@ -358,7 +358,9 @@ def cam_update(
     state: CaMState,
     new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
-) -> CaMState:
+    positions: mx.array | None = None,  # [n] int32, parallel to state.keys
+    new_positions: mx.array | None = None,  # [S] int32, parallel to new_keys
+) -> CaMState | tuple[CaMState, mx.array | None]:
     """Absorb S new tokens, merging the lowest-score token into a survivor if over budget.
 
     For each of the S incoming tokens:
@@ -379,15 +381,35 @@ def cam_update(
         state:      Current CaMState for this head.
         new_keys:   [S, D] fp16 new key rows.
         new_values: [S, D] fp16 new value rows.
+        positions:  Optional ``[n]`` int32 true absolute positions parallel to
+            ``state.keys``. Must be ``None`` iff ``state.keys`` is ``None``
+            (mirrors K/V's own bootstrap contract) while ``new_positions``
+            is given. See VeloxQuant-MLX#370 — used by ``CaMKVCache`` to
+            build an explicit attention mask. On a merge, the survivor's
+            position becomes ``max(survivor_position, loser_position)``:
+            safe because a mask that is too PERMISSIVE toward a row already
+            causally visible to a query can't newly violate causality — the
+            target position was already <= any future query it's visible
+            to, and folding in a not-older token's mass can only keep that
+            true, never make a stale position look newer than it is.
+        new_positions: Optional ``[S]`` int32 true absolute positions
+            parallel to ``new_keys``. ``None`` disables position tracking
+            entirely (the default).
 
     Returns:
-        Updated CaMState with at most ``state.budget`` tokens.
+        Updated ``CaMState`` with at most ``state.budget`` tokens, or, when
+        ``new_positions`` is given, ``(state, positions_out)`` where
+        ``positions_out`` mirrors the final surviving rows' true positions.
     """
     S = new_keys.shape[0]
+    track = new_positions is not None
+    if track and (positions is None) != (state.keys is None):
+        raise ValueError("cam: positions must be given iff state.keys is given")
 
     for i in range(S):
         k_i = new_keys[i]  # [D]
         v_i = new_values[i]  # [D]
+        p_i = new_positions[i : i + 1] if track else None
 
         if state.keys is None:
             # Bootstrap: first token ever — no eviction needed.
@@ -403,6 +425,8 @@ def cam_update(
                 seed=state.seed,
                 draw_count=state.draw_count,
             )
+            if track:
+                positions = p_i
             continue
 
         # --- score update (identical to H2O) -------------------------------
@@ -413,6 +437,8 @@ def cam_update(
         keys_cat = mx.concatenate([state.keys, k_i[None].astype(mx.float16)], axis=0)
         values_cat = mx.concatenate([state.values, v_i[None].astype(mx.float16)], axis=0)
         scores_cat = mx.concatenate([updated_scores, mx.zeros((1,), dtype=mx.float32)], axis=0)
+        if track:
+            positions_cat = mx.concatenate([positions, p_i], axis=0)
 
         n_total = keys_cat.shape[0]
 
@@ -460,15 +486,28 @@ def cam_update(
                             [scores_cat[:tgt], merged_score[None], scores_cat[tgt + 1 :]],
                             axis=0,
                         )
+                        if track:
+                            # Survivor's position becomes the more-recent of
+                            # the two folded-in positions (see this
+                            # function's docstring for why this is safe).
+                            merged_pos = mx.maximum(positions_cat[tgt], positions_cat[evict_idx])
+                            positions_cat = mx.concatenate(
+                                [positions_cat[:tgt], merged_pos[None], positions_cat[tgt + 1 :]],
+                                axis=0,
+                            )
 
             # Remove the loser's slot.
             keep_indices = [j for j in range(n_total) if j != evict_idx]
             keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
             scores_cat = scores_cat[keep_indices]
+            if track:
+                positions_cat = positions_cat[keep_indices]
         else:
             draw_count = state.draw_count
 
+        if track:
+            positions = positions_cat
         state = CaMState(
             keys=keys_cat,
             values=values_cat,
@@ -482,6 +521,8 @@ def cam_update(
             draw_count=draw_count,
         )
 
+    if track:
+        return state, positions
     return state
 
 

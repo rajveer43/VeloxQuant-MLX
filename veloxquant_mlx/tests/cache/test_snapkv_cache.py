@@ -59,13 +59,21 @@ def test_no_bits_attribute() -> None:
 
 
 def test_prefill_output_shape_evicted() -> None:
-    """After prefill, seq dim should be min(budget, S)."""
+    """The FIRST eviction-triggering call must return the full, un-evicted
+    seq dim (S) — not the post-eviction budget — since mlx_lm's attention
+    mask for that call was already fixed (as "causal", sized for S queries
+    against S keys) before update_and_fetch ran; shrinking the returned
+    keys here would silently desync from that mask (see #370). Eviction is
+    applied to *storage* only, visible via ``c.keys``, not this call's
+    return value.
+    """
     c = _make(snap_budget=16, snap_obs_window=8, snap_n_sink=2)
     k, v = _rand_kv(S=64, H=2, D=128)
     ko, vo = c.update_and_fetch(k, v)
-    # mlx_lm accumulates: seq dim after one prefill = min(budget, S) = 16
-    assert ko.shape[2] == 16
-    assert vo.shape[2] == 16
+    assert ko.shape[2] == 64
+    assert vo.shape[2] == 64
+    # Storage is compressed to the budget for subsequent calls.
+    assert c.keys.shape[2] == 16
 
 
 def test_output_dtype_fp16() -> None:
@@ -92,16 +100,24 @@ def test_no_eviction_short_seq() -> None:
 
 def test_chunked_prefill_budget_stays_capped() -> None:
     """Regression for #84: mlx_lm's chunked prefill calls update_and_fetch
-    once per prefill_step_size chunk. The retained token count must stay
-    capped at snap_budget across multiple S>1 calls, not grow by up to
-    budget per chunk."""
+    once per prefill_step_size chunk. The retained STORED token count must
+    stay capped at snap_budget across multiple S>1 calls, not grow by up to
+    budget per chunk.
+
+    The first chunk's own RETURN value is the full S=50 (see #370 — that
+    call's attention mask was already fixed before eviction could run, so
+    eviction is deferred to storage only); subsequent chunks' returns are
+    the re-capped budget, since by then make_mask has correct kept-position
+    data to build a mask matching a shrunk return.
+    """
     c = _make(snap_budget=10, snap_obs_window=2, snap_n_sink=1)
     k1, v1 = _rand_kv(S=50, H=1, D=8, seed=1)
     k2, v2 = _rand_kv(S=50, H=1, D=8, seed=2)
     k3, v3 = _rand_kv(S=50, H=1, D=8, seed=3)
 
     ko1, _ = c.update_and_fetch(k1, v1)
-    assert ko1.shape[2] == 10
+    assert ko1.shape[2] == 50
+    assert c.keys.shape[2] == 10
 
     ko2, _ = c.update_and_fetch(k2, v2)
     assert ko2.shape[2] == 10, (
@@ -210,11 +226,13 @@ def test_keep_rate_no_eviction() -> None:
 
 
 def test_n_sink_zero() -> None:
-    """n_sink=0 runs without error."""
+    """n_sink=0 runs without error. First-call return is the full S (#370
+    deferred eviction); storage is compressed to the budget."""
     c = _make(snap_n_sink=0, snap_budget=16)
     k, v = _rand_kv(S=64)
     ko, vo = c.update_and_fetch(k, v)
-    assert ko.shape[2] == 16
+    assert ko.shape[2] == 64
+    assert c.keys.shape[2] == 16
 
 
 def test_decode_only_no_eviction() -> None:
@@ -285,8 +303,11 @@ def test_offset_tracks_true_position_not_retained_rows() -> None:
     k, v = _rand_kv(S=64, H=1, D=8, seed=7)
     ko, _ = c.update_and_fetch(k, v)
 
-    # Compression really did drop rows — otherwise this test proves nothing.
-    assert ko.shape[2] == 16
+    # Compression really did drop rows from STORAGE — otherwise this test
+    # proves nothing. The call's own return value is the full, un-evicted
+    # S=64 (see #370: eviction is deferred past this call's own attention).
+    assert ko.shape[2] == 64
+    assert c.keys.shape[2] == 16
     assert c.offset == 64, "offset must be the true position, not the row count"
 
     # Each decode token advances the position by exactly one, with no drift
@@ -352,3 +373,76 @@ def test_trim_would_return_garbage_rows_if_trimmable() -> None:
     # buffer space -- silent corruption, not a crash.
     assert out_k.shape[2] == 18
     assert out_k.shape[2] > 5
+
+
+# ---------------------------------------------------------------------------
+# Attention mask correctness (#370)
+# ---------------------------------------------------------------------------
+
+
+def test_make_mask_before_any_eviction_falls_back_to_base() -> None:
+    """Before the first update_and_fetch, nothing has been evicted, so the
+    inherited "causal"-string fast path is exactly correct and make_mask
+    must not diverge from it."""
+    from mlx_lm.models.base import create_attention_mask
+
+    c = _make(snap_budget=16, snap_obs_window=4, snap_n_sink=2)
+    h_fake = mx.zeros((1, 20, 4))
+    assert create_attention_mask(h_fake, c) == "causal"
+
+
+def test_first_evicting_call_returns_full_unevicted_set() -> None:
+    """The mask mlx_lm builds for a cache's first multi-token call is fixed
+    BEFORE update_and_fetch (and thus eviction) ever runs — it has no way to
+    know eviction is about to shrink the key count. Shrinking what's
+    RETURNED for that call would desync from that already-fixed mask, so
+    eviction must be deferred to storage only (see #370's "defer eviction"
+    fix direction) — this call's own attention gets the full, correctly
+    "causal"-masked set, and only what's stored for future calls shrinks."""
+    c = _make(snap_budget=10, snap_obs_window=2, snap_n_sink=1)
+    k, v = _rand_kv(S=40, H=1, D=8, seed=3)
+    ko, vo = c.update_and_fetch(k, v)
+    assert ko.shape[2] == 40
+    assert vo.shape[2] == 40
+    assert c.keys.shape[2] == 10
+    assert c._kept_positions is not None
+    assert c._kept_positions.shape == (1, 10)
+
+
+def test_make_mask_after_eviction_is_position_correct_explicit_array() -> None:
+    """Once eviction has happened, a later multi-token call's make_mask must
+    return an explicit array (never the "causal" string, whose lower-right
+    alignment silently assumes a contiguous trailing key window — false once
+    eviction has kept a sparse subset), and that array must reflect true
+    absolute positions: kept row j is visible to query i iff its true
+    position is <= query i's true position."""
+    from mlx_lm.models.base import create_attention_mask
+
+    c = _make(snap_budget=5, snap_obs_window=2, snap_n_sink=1)
+    k, v = _rand_kv(S=20, H=1, D=8, seed=5)
+    c.update_and_fetch(k, v)
+    kept_positions = c._kept_positions[0].tolist()
+
+    h_fake = mx.zeros((1, 3, 4))
+    mask = create_attention_mask(h_fake, c)
+    assert isinstance(mask, mx.array), "must be an explicit array, not the causal string"
+    assert mask.shape == (1, 1, 3, 5)
+
+    query_positions = [c.offset + i for i in range(3)]
+    expected = [
+        [kj <= qi for kj in kept_positions] for qi in query_positions
+    ]
+    assert mask[0, 0].tolist() == expected
+
+
+def test_make_mask_single_query_returns_none() -> None:
+    """N==1 (decode) keeps mlx_lm's own no-mask-needed fast path — the cache
+    already excludes evicted/future rows from what it stores."""
+    from mlx_lm.models.base import create_attention_mask
+
+    c = _make(snap_budget=5, snap_obs_window=2, snap_n_sink=1)
+    k, v = _rand_kv(S=20, H=1, D=8, seed=5)
+    c.update_and_fetch(k, v)
+
+    h_fake = mx.zeros((1, 1, 4))
+    assert create_attention_mask(h_fake, c) is None
