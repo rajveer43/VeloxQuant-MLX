@@ -7,10 +7,14 @@ import json
 import sys
 
 from veloxquant_mlx.tools.mac_recommender import (
+    ALLOWED_RAM_GB,
+    MODEL_WEIGHT_GB_4BIT,
     RecommendRequest,
     recommend,
     ruleset_dict,
 )
+
+_CHIP_CHOICES = ["M1", "M2", "M3", "M4"]
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -25,19 +29,19 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--chip",
         required=True,
-        choices=["M1", "M2", "M3", "M4"],
+        choices=_CHIP_CHOICES,
         help="Apple Silicon family (Pro/Max/Ultra are RAM tiers, not separate chips here)",
     )
     parser.add_argument(
         "--ram-gb",
         required=True,
         type=int,
-        choices=[8, 16, 24, 32, 36, 48, 64, 128],
+        choices=list(ALLOWED_RAM_GB),
     )
     parser.add_argument(
         "--model-class",
         required=True,
-        choices=["1B", "3B", "7B", "14B", "32B"],
+        choices=list(MODEL_WEIGHT_GB_4BIT),
         help="Approximate parameter class (4-bit weight footprint estimate)",
     )
     parser.add_argument(
