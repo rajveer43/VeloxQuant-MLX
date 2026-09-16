@@ -429,9 +429,7 @@ def test_make_mask_after_eviction_is_position_correct_explicit_array() -> None:
     assert mask.shape == (1, 1, 3, 5)
 
     query_positions = [c.offset + i for i in range(3)]
-    expected = [
-        [kj <= qi for kj in kept_positions] for qi in query_positions
-    ]
+    expected = [[kj <= qi for kj in kept_positions] for qi in query_positions]
     assert mask[0, 0].tolist() == expected
 
 
