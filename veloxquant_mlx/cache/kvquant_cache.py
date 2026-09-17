@@ -47,6 +47,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.kvquant import (
     dequant_nuq,
     fit_nuq_levels,
@@ -81,7 +82,9 @@ class KVQuantKVCache(_MLXKVCache):
         self._refit_interval: int = int(getattr(config, "kvquant_refit_interval", 0))
         self._n_sink: int = int(getattr(config, "kvquant_n_sink", 1))
         if self._n_sink < 0:
-            raise ValueError(f"KVQuantKVCache: kvquant_n_sink={self._n_sink} must be >= 0")
+            raise QuantizerConfigError(
+                f"KVQuantKVCache: kvquant_n_sink={self._n_sink} must be >= 0"
+            )
 
         # Per-channel |key| outlier threshold frozen at prefill, reused at decode
         # where a single token cannot define its own per-channel top-k.

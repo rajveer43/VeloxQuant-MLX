@@ -131,6 +131,7 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.cache._eviction_mask import eviction_make_mask
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.h2o import h2o_update_batched
 
 
@@ -227,18 +228,18 @@ class H2OKVCache(_MLXKVCache):
         """
         if not self._initialised:
             if self._n_sink > 0 and self._n_sink >= self._budget:
-                raise ValueError(
+                raise QuantizerConfigError(
                     f"h2o: n_sink ({self._n_sink}) must be < budget ({self._budget}) — no "
                     "evictable positions remain, so sinks would be evicted once the cache fills"
                 )
             if (self._n_sink > 0 or self._grace > 0) and self._n_sink + self._grace >= self._budget:
-                raise ValueError(
+                raise QuantizerConfigError(
                     f"h2o: n_sink ({self._n_sink}) + grace ({self._grace}) must be < budget "
                     f"({self._budget}) — every row would be protected, leaving nothing "
                     "evictable once the cache fills"
                 )
             if not (0.0 < self._decay <= 1.0):
-                raise ValueError(f"h2o: decay ({self._decay}) must be in (0, 1]")
+                raise QuantizerConfigError(f"h2o: decay ({self._decay}) must be in (0, 1]")
             self._B = B
             self._H = H
             self._head_dim = D

@@ -35,6 +35,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.zipcache import (
     base_only_bytes,
     zipcache_bytes,
@@ -68,7 +69,7 @@ class ZipCacheKVCache(_MLXKVCache):
         self._lo_bits = int(getattr(config, "zipcache_lo_bits", 2))
         self._hi_fraction = float(getattr(config, "zipcache_hi_fraction", 0.20))
         if not 0.0 <= self._hi_fraction <= 1.0:
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"zipcache: zipcache_hi_fraction must be in [0, 1], got {self._hi_fraction}"
             )
         self._gs = int(getattr(config, "zipcache_group_size", 32))

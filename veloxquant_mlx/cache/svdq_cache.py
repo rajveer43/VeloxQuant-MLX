@@ -49,6 +49,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.svdq import (
     DEFAULT_BIT_SCHEDULE,
     equivalent_bit_width,
@@ -90,7 +91,7 @@ class SVDqKVCache(_MLXKVCache):
             getattr(config, "svdq_bit_schedule", DEFAULT_BIT_SCHEDULE)
         )
         if not self._bit_schedule or any(b < 0 for b in self._bit_schedule):
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"svdq: svdq_bit_schedule entries must be >= 0, got {self._bit_schedule}"
             )
         self._group_size: int = int(getattr(config, "svdq_group_size", 32))
@@ -200,7 +201,7 @@ class SVDqKVCache(_MLXKVCache):
 
         if self._rank is not None:
             floor = min_safe_rank(n_groups)
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"svdq: explicit svdq_rank={self._rank} is too small for the "
                 f"{n_groups}-group bit schedule {self._bit_schedule}, which "
                 f"truncates trailing groups to 0 bits. With this rank, "

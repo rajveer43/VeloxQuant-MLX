@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from veloxquant_mlx.core.abstractions import KVCache
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.dsa.ring_buffer import RingBuffer
 
 
@@ -42,7 +43,9 @@ class SlidingWindowKVCache(KVCache):
 
     def __init__(self, inner: KVCache, window_size: int) -> None:
         if window_size < 1:
-            raise ValueError(f"SlidingWindowKVCache: window_size must be >= 1, got {window_size}")
+            raise QuantizerConfigError(
+                f"SlidingWindowKVCache: window_size must be >= 1, got {window_size}"
+            )
         self._inner = inner
         self._window_size = window_size
         # Ring buffers for raw key and value vectors

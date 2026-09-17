@@ -78,6 +78,7 @@ import numpy as np
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.allocators.kvtc_dp import DEFAULT_BETA, DEFAULT_BIT_CHOICES
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.kvtc import (
     KVTCArtifact,
     _encode_survived_codes,
@@ -239,7 +240,9 @@ class KVTCKVCache(_MLXKVCache):
         self._beta = float(getattr(config, "kvtc_beta", DEFAULT_BETA))
 
         if self._bit_budget < 0:
-            raise ValueError(f"KVTCKVCache: kvtc_bit_budget must be >= 0, got {self._bit_budget!r}")
+            raise QuantizerConfigError(
+                f"KVTCKVCache: kvtc_bit_budget must be >= 0, got {self._bit_budget!r}"
+            )
 
         self._keys_states: list[_TensorKVTC] = []
         self._vals_states: list[_TensorKVTC] = []

@@ -29,6 +29,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.amc import (
     HIGH,
     LOW,
@@ -87,12 +88,12 @@ class AMCKVCache(_MLXKVCache):
         self._k_high = float(getattr(config, "amc_k_high", 0.20))
         self._k_mid = float(getattr(config, "amc_k_mid", 0.30))
         if not 0.0 <= self._k_high <= 1.0 or not 0.0 <= self._k_mid <= 1.0:
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"AMCKVCache: amc_k_high ({self._k_high}) and amc_k_mid "
                 f"({self._k_mid}) must each be in [0, 1]."
             )
         if self._k_high + self._k_mid > 1.0:
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"AMCKVCache: amc_k_high + amc_k_mid must be <= 1.0, got "
                 f"{self._k_high} + {self._k_mid} = "
                 f"{self._k_high + self._k_mid}."
@@ -106,7 +107,7 @@ class AMCKVCache(_MLXKVCache):
         self._group_size = int(getattr(config, "amc_group_size", 32))
 
         if self._use_adaptive_thresholds and self._calib_variance is None:
-            raise ValueError(
+            raise QuantizerConfigError(
                 "AMCKVCache: amc_adaptive_thresholds=True requires "
                 "amc_calib_variance to be set (from offline calibration)."
             )

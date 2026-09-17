@@ -62,6 +62,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.metal import metal_available
 from veloxquant_mlx.metal._qfilters_evict import QFILTERS_MAX_BUDGET, qfilters_fused_evict
 from veloxquant_mlx.quantizers.qfilters import (
@@ -162,12 +163,12 @@ class QFiltersKVCache(_MLXKVCache):
         )
         self._on_low_retention: str = str(getattr(config, "qfilters_on_low_retention", "warn"))
         if self._on_low_retention not in ("warn", "raise", "ignore"):
-            raise ValueError(
+            raise QuantizerConfigError(
                 "QFiltersKVCache: qfilters_on_low_retention must be one of "
                 f"'warn', 'raise', 'ignore' — got {self._on_low_retention!r}"
             )
         if self._min_retention is not None and not (0.0 < self._min_retention <= 1.0):
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"QFiltersKVCache: qfilters_min_retention must be in (0, 1] or "
                 f"None — got {self._min_retention!r}"
             )
@@ -180,7 +181,7 @@ class QFiltersKVCache(_MLXKVCache):
         # builder was given a calibration artifact. None => key-SVD fallback.
         self._filters = filters.astype(mx.float32) if filters is not None else None
         if self._filters is not None and self._filters.ndim != 2:
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"QFiltersKVCache: filters must be 2-D [H_kv, D], got {tuple(self._filters.shape)}"
             )
 
@@ -204,7 +205,7 @@ class QFiltersKVCache(_MLXKVCache):
         # Checked ahead of hardware availability so this failure is the same
         # on every machine, Metal or not.
         if requested_metal is True and self._budget > QFILTERS_MAX_BUDGET:
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"QFiltersKVCache: use_metal_kernels=True but qfilters_budget="
                 f"{self._budget} exceeds QFILTERS_MAX_BUDGET={QFILTERS_MAX_BUDGET} "
                 "(the eviction kernel stages the survivor index list in "
@@ -212,7 +213,7 @@ class QFiltersKVCache(_MLXKVCache):
                 "use_metal_kernels or lower the budget."
             )
         if requested_metal is True and not metal_ok:
-            raise ValueError(
+            raise QuantizerConfigError(
                 "QFiltersKVCache: use_metal_kernels=True but Metal kernels are "
                 "not available on this build of mlx."
             )

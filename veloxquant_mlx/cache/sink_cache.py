@@ -37,6 +37,7 @@ from typing import Any
 import mlx.core as mx
 
 from veloxquant_mlx.cache.kivi_cache import KIVIKVCache
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 
 
 class SinkProtectedKVCache(KIVIKVCache):
@@ -63,7 +64,9 @@ class SinkProtectedKVCache(KIVIKVCache):
         super().__init__(config)
         self._n_sink = int(getattr(config, "n_sink_tokens", 5))
         if self._n_sink < 0:
-            raise ValueError(f"SinkProtectedKVCache: n_sink_tokens={self._n_sink} must be >= 0.")
+            raise QuantizerConfigError(
+                f"SinkProtectedKVCache: n_sink_tokens={self._n_sink} must be >= 0."
+            )
         # Running candidates per batch element: list index b -> {absolute
         # position -> key-norm}. Each batch element's dict is independently
         # pruned to the top n_sink entries after every update. Lazily grown

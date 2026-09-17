@@ -34,6 +34,7 @@ from veloxquant_mlx.allocators.vecinfer import (
     quantize_vq,
     walsh_hadamard_matrix,
 )
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.metal import metal_available
 from veloxquant_mlx.metal.fused_sdpa import supports_shape as _fused_supports_shape
 
@@ -69,12 +70,12 @@ class VecInferKVCache(_MLXKVCache):
         self._residual_length = int(getattr(config, "residual_length", 128))
 
         if self._head_dim % self._key_sub_dim != 0:
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"VecInferKVCache: head_dim={self._head_dim} not divisible "
                 f"by key_sub_dim={self._key_sub_dim}"
             )
         if self._head_dim % self._value_sub_dim != 0:
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"VecInferKVCache: head_dim={self._head_dim} not divisible "
                 f"by value_sub_dim={self._value_sub_dim}"
             )
