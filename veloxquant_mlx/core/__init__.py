@@ -42,8 +42,10 @@ from veloxquant_mlx.core.constants import (
 from veloxquant_mlx.core.context import EncodedVector, QuantizationContext, TransformResult
 from veloxquant_mlx.core.exceptions import (
     ArtifactNotFoundError,
+    BlockPoolExhaustedError,
     CodebookDimensionMismatch,
     CyclicPipelineError,
+    OwnerAlreadyActiveError,
     QuantizerConfigError,
 )
 from veloxquant_mlx.core.registry import CodebookRegistry, PreconditionerRegistry, QuantizerRegistry
@@ -63,8 +65,10 @@ __all__ = [
     "QuantizationContext",
     "TransformResult",
     "ArtifactNotFoundError",
+    "BlockPoolExhaustedError",
     "CodebookDimensionMismatch",
     "CyclicPipelineError",
+    "OwnerAlreadyActiveError",
     "QuantizerConfigError",
     "QuantizerRegistry",
     "CodebookRegistry",
