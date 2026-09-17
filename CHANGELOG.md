@@ -525,6 +525,34 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.86.0 (2026-09-17)
+
+### Documentation
+
+- **blog**: Honest KIVI Metal kernel benchmark on Qwen3-8B
+  ([`715a1ab`](https://github.com/rajveer43/VeloxQuant-MLX/commit/715a1ab3ff5200046a47118e9356262f6e26a8f0))
+
+- **blog**: Honest QFilters benchmark on Qwen3-8B
+  ([`d319478`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d319478ffa6da4b583726777edc76f67ba017cc4))
+
+- **blog**: Honest TurboQuantRVQ benchmark on Qwen3-8B
+  ([`bded781`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bded7818f26a33f1bca98f5064a41166fdf8f11d))
+
+- **blog**: Honest VecInfer benchmark on Qwen3-8B
+  ([`f585dd1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f585dd14168d601a703866a529a150f85913c94a))
+
+- **blog**: QFilters budget sweep finds a coherence cliff on Qwen3-8B
+  ([`5296152`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5296152b02bd2472fe29bc42f219482fd2d2720f))
+
+- **blog**: QFilters real-calibration follow-up on Qwen3-8B
+  ([`6d879a6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6d879a65edc3304f0d65d80f1d53abc88c1414b5))
+
+### Features
+
+- **cache**: Warn/raise on low QFilters retention before output degrades
+  ([`0463b55`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0463b554bff80933c888f8c7b3c7bf9d40913576))
+
+
 ## v0.85.0 (2026-09-17)
 
 ### Features
