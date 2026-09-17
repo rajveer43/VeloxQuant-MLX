@@ -9,11 +9,15 @@ on:
 jobs:
   recommender:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - name: Install pytest only
         run: pip install pytest
       # Keep tests under repo-root tests/non_metal/ so pytest does not
