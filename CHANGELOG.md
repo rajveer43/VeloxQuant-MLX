@@ -4,6 +4,36 @@ All notable changes to **VeloxQuant-MLX** are documented here.
 
 ## [Unreleased]
 
+### Added
+
+**`QFiltersKVCache` warns (or raises) before silently returning degraded output** —
+a benchmark series against `mlx-community/Qwen3-8B-4bit` on a real
+2,238-token prompt (`docs-site/blog/2026-09-17-qwen3-8b-qfilters-*`) found
+that `QFiltersKVCache`'s default `qfilters_budget=512` produces a fully
+reproducible generation collapse into repeated tokens — and that throughput
+and the existing `compression_ratio` property both move smoothly as the
+budget shrinks relative to context length, giving no signal that anything
+is wrong. A follow-up budget sweep found the failure is a sharp coherence
+cliff, not a gradual slope: word overlap against an fp16 reference sat flat
+near zero from 23% to 80% token retention, then jumped roughly 20x between
+80% and 92% retention. Two new `KVCacheConfig` fields close the visibility
+gap: `qfilters_min_retention` (`float | None`, default `0.9`) and
+`qfilters_on_low_retention` (`"warn" | "raise" | "ignore"`, default
+`"warn"`). `QFiltersKVCache.update_and_fetch()`
+(`veloxquant_mlx/cache/qfilters_cache.py`) now compares retained tokens
+against true tokens seen on every call and, the first time retention drops
+below the floor, either emits one `warnings.warn()` (default — fires once
+per cache instance, not once per decode step) or raises `ValueError`
+instead of continuing to return text nothing has verified is usable. The
+threshold (0.9) and the shape of the risk are from one measured
+prompt/model, not a universal guarantee, and the warning/error message
+says so explicitly; `qfilters_min_retention=None` or
+`qfilters_on_low_retention="ignore"` disables the check for callers who've
+verified their own prompt shape is safe at a lower retention. No behavior
+changes for any other cache method; no change to `QFiltersKVCache`'s
+eviction logic itself, byte accounting, or Metal kernel dispatch — this is
+purely a visibility guard around the existing, unmodified eviction path.
+
 ### Fixed
 
 **`SlidingWindowKVCache` now actually evicts**

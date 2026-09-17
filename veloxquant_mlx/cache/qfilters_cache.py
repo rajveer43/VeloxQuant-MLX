@@ -56,6 +56,7 @@ Byte accounting (same names as L2NormKVCache):
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import mlx.core as mx
@@ -84,6 +85,21 @@ class QFiltersKVCache(_MLXKVCache):
             ``qfilters_calib_tokens`` (int, default 128) — fallback only: tokens
                 observed before the filter direction is estimated and frozen,
             ``qfilters_sign`` (int, default 1)     — +1 = paper direction; -1 = inverted.
+            ``qfilters_min_retention`` (float | None, default 0.9) — warn (or raise,
+                see ``qfilters_on_low_retention``) the first time retained tokens
+                fall below this fraction of tokens seen. A budget sweep against a
+                real long-context prompt (docs-site blog:
+                "qwen3-8b-qfilters-budget-sweep") found generation collapses into
+                fully repeated, non-language output anywhere from 23% to 80%
+                retention, then recovers sharply between 80% and 92% — this is a
+                warning about a measured failure mode, not a quality guarantee at
+                or above the threshold, and not proven universal across prompts
+                or models. ``None`` disables the check entirely.
+            ``qfilters_on_low_retention`` (``"warn" | "raise" | "ignore"``, default
+                ``"warn"``) — what happens the first time the retention floor above
+                is crossed. ``"raise"`` turns a silently-degraded generation into a
+                hard failure at the point it starts happening, instead of a normal
+                looking response that just happens to be unusable.
             ``use_metal_kernels`` (bool | None, default None) — three-state Metal
                 fast-path flag for the calibrated/batched path (see Notes below):
                 ``None`` auto-detects, ``True`` requires Metal (raises at
@@ -139,6 +155,26 @@ class QFiltersKVCache(_MLXKVCache):
         self._recent = int(getattr(config, "qfilters_recent", 0))
         self._calib = int(getattr(config, "qfilters_calib_tokens", 128))
         self._sign = int(getattr(config, "qfilters_sign", 1))
+
+        min_retention = getattr(config, "qfilters_min_retention", 0.9)
+        self._min_retention: float | None = (
+            float(min_retention) if min_retention is not None else None
+        )
+        self._on_low_retention: str = str(getattr(config, "qfilters_on_low_retention", "warn"))
+        if self._on_low_retention not in ("warn", "raise", "ignore"):
+            raise ValueError(
+                "QFiltersKVCache: qfilters_on_low_retention must be one of "
+                f"'warn', 'raise', 'ignore' — got {self._on_low_retention!r}"
+            )
+        if self._min_retention is not None and not (0.0 < self._min_retention <= 1.0):
+            raise ValueError(
+                f"QFiltersKVCache: qfilters_min_retention must be in (0, 1] or "
+                f"None — got {self._min_retention!r}"
+            )
+        # Fires once per cache instance, not once per update_and_fetch call —
+        # a long generation that's already below the floor would otherwise
+        # warn on every single decode step.
+        self._low_retention_flagged: bool = False
 
         # Paper-faithful query-SVD filters for THIS layer, [H_kv, D], if the
         # builder was given a calibration artifact. None => key-SVD fallback.
@@ -419,8 +455,50 @@ class QFiltersKVCache(_MLXKVCache):
         # and this cache does not: they renumber positions on eviction, we do
         # not.
         self._true_offset += S
+        self._check_retention(int(K_out.shape[2]), self._true_offset)
         self.offset = self._true_offset
         return out
+
+    # ------------------------------------------------------------------
+    def _check_retention(self, n_kept: int, tokens_seen: int) -> None:
+        """Flag the first call where retention drops below ``qfilters_min_retention``.
+
+        Exists because throughput and the ``compression_ratio`` property both
+        move smoothly as the budget shrinks relative to context length, while
+        actual output quality does not — a swept benchmark against a real
+        long-context prompt found a sharp coherence cliff between ~80% and
+        ~92% retention (everything from 23% to 80% retained produced the same
+        fully-repeated, non-language output; see the "qwen3-8b-qfilters-
+        budget-sweep" post in docs-site/blog). Nothing about compression
+        ratio or tokens/sec would have surfaced that on its own, so this
+        checks the one signal that does: how much of what the model has seen
+        is actually still in the cache.
+        """
+        if self._min_retention is None or self._on_low_retention == "ignore":
+            return
+        if self._low_retention_flagged or tokens_seen <= 0:
+            return
+        retention = n_kept / tokens_seen
+        if retention >= self._min_retention:
+            return
+
+        self._low_retention_flagged = True
+        message = (
+            f"QFiltersKVCache: retention dropped to {retention:.1%} "
+            f"({n_kept}/{tokens_seen} tokens kept), below "
+            f"qfilters_min_retention={self._min_retention:.1%}. A budget "
+            f"sweep against a real long-context prompt found output "
+            f"degrading into fully repeated, non-language text anywhere in "
+            f"the 23%-80% retention range, recovering only around 80%-92% — "
+            f"this is not a proven universal threshold, but retention this "
+            f"low has produced unusable output before. Raise qfilters_budget "
+            f"(or qfilters_min_retention, if you have verified this "
+            f"prompt/model is fine at this retention) to silence this, or "
+            f"set qfilters_on_low_retention='ignore' to disable the check."
+        )
+        if self._on_low_retention == "raise":
+            raise ValueError(message)
+        warnings.warn(message, stacklevel=3)
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:

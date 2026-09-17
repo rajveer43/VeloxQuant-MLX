@@ -318,6 +318,21 @@ class KVCacheConfig:
     qfilters_recent: int = 0  # trailing protected window (extension, off)
     qfilters_calib_tokens: int = 128  # tokens observed before the filter freezes
     qfilters_sign: int = 1  # +1 = paper direction; -1 = inverted ablation
+    # Retention floor: below qfilters_budget / tokens_seen < this, generation
+    # quality is unverified for the caller's prompt shape. A benchmark swept
+    # across qfilters_budget on a real long-context prompt (see the
+    # "qwen3-8b-qfilters-budget-sweep" post in docs-site/blog) found a sharp
+    # coherence cliff between ~80% and ~92% retention, not a gradual slope —
+    # everything from 23% to 80% retained produced the same fully-repeated,
+    # non-language output. 0.9 sits just above where that run recovered
+    # coherence; it is a warning threshold from one measured prompt/model,
+    # not a proven universal safe point (see qfilters_on_low_retention below).
+    qfilters_min_retention: float | None = 0.9
+    # What to do the first time retention drops below qfilters_min_retention:
+    #   "warn"   (default) — emit one warnings.warn(), keep running.
+    #   "raise"  — raise ValueError instead of silently returning degraded text.
+    #   "ignore" — no check at all (also skipped when qfilters_min_retention=None).
+    qfilters_on_low_retention: Literal["warn", "raise", "ignore"] = "warn"
     # --- Keyformer-adapted configuration (Gumbel-regularized eviction) --
     keyformer_budget: int = 512  # max tokens kept (incl. sinks)
     keyformer_n_sink: int = 4  # leading positions never evicted
