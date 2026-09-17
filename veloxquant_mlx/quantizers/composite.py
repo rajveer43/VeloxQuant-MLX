@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import mlx.core as mx
 import numpy as np
 
 from veloxquant_mlx.core.abstractions import Quantizer
@@ -47,6 +48,11 @@ class CompositeQuantizer(Quantizer):
         self._outlier_idx = np.asarray(outlier_idx, dtype=np.int32)
         self._inlier_idx = np.setdiff1d(np.arange(total_dim), self._outlier_idx)
         self._d = total_dim
+        # MLX-array copies of the same indices, precomputed once so decode()'s
+        # scatter (mx array indexed by mx array) never converts NumPy -> MLX
+        # on the read hot path.
+        self._outlier_idx_mx = mx.array(self._outlier_idx)
+        self._inlier_idx_mx = mx.array(self._inlier_idx.astype(np.int32))
 
     def encode(self, x: Any) -> EncodedVector:
         """Encode by routing channels to respective child quantizers.
@@ -60,8 +66,8 @@ class CompositeQuantizer(Quantizer):
         if x.ndim == 1:
             x = x[None]
 
-        x_out = x[:, self._outlier_idx]
-        x_in = x[:, self._inlier_idx]
+        x_out = x[:, self._outlier_idx_mx]
+        x_in = x[:, self._inlier_idx_mx]
 
         ev_out = self._outlier_q.encode(x_out)
         ev_in = self._inlier_q.encode(x_in)
@@ -84,8 +90,6 @@ class CompositeQuantizer(Quantizer):
         Returns:
             Reconstructed array of shape (batch, d), fp16.
         """
-        import mlx.core as mx
-
         if ev.outlier_encoded is None or ev.inlier_encoded is None:
             raise ValueError(
                 "CompositeQuantizer.decode: ev.outlier_encoded/inlier_encoded is "
@@ -96,10 +100,10 @@ class CompositeQuantizer(Quantizer):
         x_in = self._inlier_q.decode(ev.inlier_encoded)  # (batch, n_in)
 
         batch = x_out.shape[0]
-        out_np = np.zeros((batch, self._d), dtype=np.float32)
-        out_np[:, self._outlier_idx] = np.array(x_out, dtype=np.float32)
-        out_np[:, self._inlier_idx] = np.array(x_in, dtype=np.float32)
-        return mx.array(out_np).astype(x_out.dtype)
+        out = mx.zeros((batch, self._d), dtype=x_out.dtype)
+        out[:, self._outlier_idx_mx] = x_out
+        out[:, self._inlier_idx_mx] = x_in.astype(x_out.dtype)
+        return out
 
     def estimate_inner_product(self, q: Any, ev: EncodedVector) -> Any:
         """Estimate ⟨q, k⟩ by summing contributions from both children.
@@ -119,8 +123,8 @@ class CompositeQuantizer(Quantizer):
             )
 
         q_flat = q.reshape(-1)
-        q_out = q_flat[self._outlier_idx]
-        q_in = q_flat[self._inlier_idx]
+        q_out = q_flat[self._outlier_idx_mx]
+        q_in = q_flat[self._inlier_idx_mx]
 
         ip_out = self._outlier_q.estimate_inner_product(q_out, ev.outlier_encoded)
         ip_in = self._inlier_q.estimate_inner_product(q_in, ev.inlier_encoded)
