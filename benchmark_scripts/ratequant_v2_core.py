@@ -113,7 +113,6 @@ def calibrate_layer_sensitivities(
 
     Returns: list[float] of length n_layers, each > 0.
     """
-    rng = np.random.default_rng(seed)
     layers = getattr(model, "layers", None) or getattr(getattr(model, "model", None), "layers", [])
     n_layers = len(layers)
     probes = [_SensitivityProbeCache() for _ in range(n_layers)]

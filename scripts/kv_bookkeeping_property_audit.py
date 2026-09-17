@@ -238,7 +238,6 @@ def run_h2o_trial(rng: random.Random, seed_id: int) -> dict:
     ref_k, ref_v = ref.kv()
     ref_pos = ref.positions()
     real_k = _to_py(state.keys) if state.keys is not None else []
-    real_v = _to_py(state.values) if state.values is not None else []
     real_pos = _to_py(state.positions) if state.positions is not None else []
 
     ok_len = len(ref_k) == len(real_k)

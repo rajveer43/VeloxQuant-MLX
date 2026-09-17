@@ -73,7 +73,6 @@ def _synth_inputs(model, n_img: int, n_text: int, seed: int = 0):
     typical text-embedding norms. The remaining n_text rows are real embedding
     rows pulled from the model's embedding table.
     """
-    layers = getattr(model, "layers", None) or model.model.layers
     # Find the embedding module — Qwen2-VL: model.language_model.model.embed_tokens
     inner = getattr(model, "language_model", model)
     inner_model = getattr(inner, "model", inner)

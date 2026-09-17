@@ -67,6 +67,7 @@ dev = [
     "GitPython<3.1.60",
     "pre-commit>=3.7",
     "ruff>=0.6",
+    "mypy>=1.11",
 ]
 
 [project.urls]
@@ -100,7 +101,13 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.11"
+# 3.12, not the 3.11 floor in `requires-python`: numpy's bundled stubs use the
+# PEP 695 `type X = ...` alias syntax, which mypy only parses when the
+# configured target is 3.12+. Pinning this to 3.11 makes mypy fail outright
+# ("Type statement is only supported in Python 3.12 and greater") against any
+# numpy satisfying this project's own `numpy>=1.26` dependency floor, before
+# it even reaches real code.
+python_version = "3.12"
 ignore_missing_imports = true
 
 [tool.ruff]
