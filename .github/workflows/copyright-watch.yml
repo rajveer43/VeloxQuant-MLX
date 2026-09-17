@@ -13,12 +13,21 @@ name: copyright-watch
 # sender (onboarding@resend.dev) can email your own verified address with
 # no domain setup needed.
 #
+# Watch list: every KVCache/Cache class under veloxquant_mlx/cache/ (43 as of
+# writing), generated from source on each run -- not hand-maintained, so a
+# newly added method is covered automatically. See the in-step comment for
+# how false positives from paper-name classes (H2OKVCache, TOVAKVCache, etc.
+# -- independently reused by unrelated projects) are filtered out.
+#
 # Limitations:
 #   - Only indexes PUBLIC GitHub repos (no GitLab, Bitbucket, private mirrors).
 #   - Search has a few-day indexing lag for new repos.
 #   - Forks of THIS repo are excluded automatically by the -repo: filter,
 #     so legitimate forks (which preserve the LICENSE) won't trigger alerts.
 #   - Won't catch a copy that renames all identifiers before redistributing.
+#   - Only watches veloxquant_mlx/cache/ classes plus a couple of hand-picked
+#     non-class identifiers -- a copy of only quantizer/allocator/CLI code
+#     with the cache layer stripped out would not be caught.
 
 on:
   schedule:
@@ -32,13 +41,23 @@ permissions:
 jobs:
   search:
     runs-on: ubuntu-latest
+    # ~45 queries * 20s apart is ~15min; give real headroom for retries.
+    timeout-minutes: 30
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Search for unauthorized copies
         uses: actions/github-script@v7
         with:
           script: |
-            // Distinctive identifiers — strongly unique class/function names only.
-            // Excluding our own repo so legitimate forks don't trigger.
+            const fs = require('fs');
+            const path = require('path');
+
+            // Query list is generated from source every run instead of a
+            // hand-maintained list, so a newly added cache method (there
+            // are 43 as of this writing, one per veloxquant_mlx/cache/*.py
+            // file) is watched automatically -- nothing to remember to add.
             //
             // We deliberately do NOT search for the generic strings
             // "mlx_kv_quant" or "VeloxQuant-MLX" — those have high
@@ -46,29 +65,76 @@ jobs:
             // mirrors (e.g. szabgab/pydigger-data), AI-assistant transcripts,
             // and legitimate downstream users' install scripts.
             //
-            // We also dropped "TurboQuantKVCache" (previously watched here):
-            // it returns 1000+ hits, including files literally named
-            // TurboQuantKVCache.swift / turboquant_cache.py in ml-explore/
-            // mlx-swift-lm and pytorch/executorch -- other projects that
-            // independently landed on the same obvious name for the same
-            // technique. Not a copy signal. "TurboQuantRVQKVCache" (this
-            // repo's actual class name, one token longer) has zero hits
-            // outside this repo and stays as the watched string instead.
+            // Class names split into two tiers, because most of them are
+            // this repo's spelling of a *paper's own* method name, not a
+            // VeloxQuant-MLX coinage -- e.g. "TurboQuantKVCache" (dropped
+            // from here previously) matches 1000+ hits including files
+            // literally named TurboQuantKVCache.swift / turboquant_cache.py
+            // in ml-explore/mlx-swift-lm and pytorch/executorch, and the
+            // same is true of "H2OKVCache" (130 hits, incl. independent
+            // paper reimplementations) and "SlidingWindowKVCache" (188
+            // hits, incl. apple/axlearn) -- other projects independently
+            // landing on the obvious name for a published technique, not
+            // copies of this code.
+            //   - BRANDED: class name contains one of this project's own
+            //     coinages (TurboQuant, VecInfer, RateQuant, ...). These
+            //     are searched standalone -- verified low-noise.
+            //   - GENERIC: everything else (H2OKVCache, TOVAKVCache, ...).
+            //     Searched combined with the class's own source filename
+            //     (e.g. "H2OKVCache" "h2o_cache.py"), since an independent
+            //     reimplementation won't also happen to use this repo's
+            //     internal module filename. Verified this collapses
+            //     H2OKVCache from 130 hits to 9 (all this repo) and
+            //     SlidingWindowKVCache from 188 to 1 (this repo only).
             const SELF = 'rajveer43/VeloxQuant-MLX';
-            const queries = [
-              `"TurboQuantRVQKVCache" -repo:${SELF}`,
-              `"VecInferKVCache" -repo:${SELF}`,
-              `"_rvq_quality_synthetic" -repo:${SELF}`,
-              `"allocate_bits_ratequant" -repo:${SELF}`,
-            ];
+            const BRAND_MARKERS = ['turboquant', 'vecinfer', 'ratequant'];
+            // Confirmed too generic DESPITE containing a brand marker --
+            // "TurboQuantKVCache" is this repo's name for the *baseline*
+            // TurboQuant paper method (as opposed to TurboQuantRVQKVCache,
+            // its own extension), and other projects independently landed
+            // on the identical name for the identical paper technique (see
+            // the 1000+-hit false positive documented below). Force these
+            // through the filename-combined (GENERIC) path regardless of
+            // the brand check.
+            const FORCE_GENERIC = new Set(['TurboQuantKVCache']);
+
+            const cacheDir = 'veloxquant_mlx/cache';
+            const classPattern = /^class\s+([A-Za-z0-9_]+(?:KVCache|Cache))\b/;
+            const queries = [];
+
+            for (const file of fs.readdirSync(cacheDir)) {
+              if (!file.endsWith('.py')) continue;
+              const text = fs.readFileSync(path.join(cacheDir, file), 'utf8');
+              for (const line of text.split('\n')) {
+                const m = line.match(classPattern);
+                if (!m) continue;
+                const className = m[1];
+                const isBranded =
+                  !FORCE_GENERIC.has(className) &&
+                  BRAND_MARKERS.some(b => className.toLowerCase().includes(b));
+                const q = isBranded
+                  ? `"${className}" -repo:${SELF}`
+                  : `"${className}" "${file}" -repo:${SELF}`;
+                queries.push(q);
+              }
+            }
+
+            // A few additional distinctive, non-class identifiers kept from
+            // the original hand-picked list -- confirmed unique to this repo.
+            queries.push(`"_rvq_quality_synthetic" -repo:${SELF}`);
+            queries.push(`"allocate_bits_ratequant" -repo:${SELF}`);
+
+            core.info(`Generated ${queries.length} watch queries from ${cacheDir}`);
 
             // The default GITHUB_TOKEN hits GitHub's search secondary rate
             // limit ("abuse detection") on back-to-back code-search calls
-            // even with several seconds between them -- every one of these
-            // 4 queries failed on every scheduled run since this workflow
-            // was added, silently, because the failure was only ever logged
-            // as a core.warning. Retry with backoff before giving up, and
-            // widen the base gap between queries.
+            // even with several seconds between them -- every one of the 4
+            // hand-picked queries this workflow started with failed on every
+            // scheduled run, silently, because the failure was only ever
+            // logged as a core.warning. Retry with backoff before giving up,
+            // and widen the base gap between queries. At ~45 queries and 20s
+            // apart this run now takes ~15min -- fine for a weekly cron, well
+            // under GitHub Actions' default job timeout.
             async function searchWithRetry(q, attempt = 1) {
               try {
                 return await github.rest.search.code({ q, per_page: 10 });
