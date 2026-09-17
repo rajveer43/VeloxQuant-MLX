@@ -43,6 +43,7 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.cache._eviction_mask import eviction_make_mask
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.snapkv import (
     _snapkv_compress_batched,
     snapkv_compress,
@@ -89,10 +90,10 @@ class SnapKVKVCache(_MLXKVCache):
         super().__init__()
         self._backend = getattr(config, "snap_backend", "auto")
         if self._backend not in ("auto", "mlx", "metal", "reference"):
-            raise ValueError(f"Unsupported SnapKV backend: {self._backend}")
+            raise QuantizerConfigError(f"Unsupported SnapKV backend: {self._backend}")
         self._dtype_policy = getattr(config, "snap_dtype", "auto")
         if self._dtype_policy not in ("auto", "float16"):
-            raise ValueError(f"Unsupported SnapKV dtype policy: {self._dtype_policy}")
+            raise QuantizerConfigError(f"Unsupported SnapKV dtype policy: {self._dtype_policy}")
         # Stored as a name, not the mlx.core.Dtype itself: mlx_lm.server
         # deepcopies cache entries per request, and mx.core.Dtype objects
         # (mx.float16, mx.bfloat16, ...) raise TypeError from copy.deepcopy

@@ -40,6 +40,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.math.rotation import is_hadamard_compatible
 from veloxquant_mlx.quantizers.nsnquant import (
     build_universal_codebook,
@@ -80,20 +81,22 @@ class NSNQuantKVCache(_MLXKVCache):
 
         # Fail at build time, not on the first update (clear messages).
         if self._bits not in (1, 2):
-            raise ValueError(f"NSNQuantKVCache: nsn_bits must be 1 or 2, got {self._bits}")
+            raise QuantizerConfigError(
+                f"NSNQuantKVCache: nsn_bits must be 1 or 2, got {self._bits}"
+            )
         if self._D % self._sub_d != 0:
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"NSNQuantKVCache: head_dim {self._D} must be divisible by "
                 f"nsn_subvector_dim {self._sub_d}"
             )
         if not is_hadamard_compatible(self._D):
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"NSNQuantKVCache: head_dim {self._D} unsupported by "
                 f"mx.hadamard_transform (needs d = m * 2^k, m in "
                 f"{{1, 12, 20, 28}})"
             )
         if self._residual_length < 2:
-            raise ValueError(
+            raise QuantizerConfigError(
                 "NSNQuantKVCache: nsn_residual_length must be >= 2 (a chunk "
                 "must contain enough tokens for a meaningful channel mean)"
             )

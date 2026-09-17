@@ -22,6 +22,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.age_tiered import (
     MID,
     OLD,
@@ -70,12 +71,12 @@ class AgeTieredKVCache(_MLXKVCache):
         self._age_recent_boundary = int(getattr(config, "age_recent_boundary", 128))
         self._age_mid_boundary = int(getattr(config, "age_mid_boundary", 1024))
         if self._age_recent_boundary <= 0:
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"AgeTieredKVCache: age_recent_boundary must be > 0, got "
                 f"{self._age_recent_boundary}."
             )
         if self._age_mid_boundary < self._age_recent_boundary:
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"AgeTieredKVCache: age_mid_boundary ({self._age_mid_boundary}) must be "
                 f">= age_recent_boundary ({self._age_recent_boundary})."
             )
@@ -89,7 +90,7 @@ class AgeTieredKVCache(_MLXKVCache):
             ("age_bits_old", bits_old),
         ):
             if not 1 <= b <= 16:
-                raise ValueError(f"AgeTieredKVCache: {name} must be in [1, 16], got {b}.")
+                raise QuantizerConfigError(f"AgeTieredKVCache: {name} must be in [1, 16], got {b}.")
         self._tiers = default_age_tiers(bits_recent, bits_mid, bits_old)
 
         self._group_size = int(getattr(config, "age_group_size", 32))

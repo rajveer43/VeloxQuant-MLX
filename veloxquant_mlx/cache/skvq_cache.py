@@ -52,6 +52,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.skvq import (
     DEFAULT_ALPHA_GRID,
     clipped_group_dequant,
@@ -94,21 +95,27 @@ class SKVQKVCache(_MLXKVCache):
         # Fail at build time, not on the first update (clear messages).
         for name, b in (("skvq_bits_key", self._bits_k), ("skvq_bits_value", self._bits_v)):
             if not (1 <= b <= 8):
-                raise ValueError(f"SKVQKVCache: {name}={b} must be in [1, 8] (uint8 codes)")
+                raise QuantizerConfigError(
+                    f"SKVQKVCache: {name}={b} must be in [1, 8] (uint8 codes)"
+                )
         if self._group_size < 1:
-            raise ValueError(f"SKVQKVCache: skvq_group_size={self._group_size} must be >= 1")
+            raise QuantizerConfigError(
+                f"SKVQKVCache: skvq_group_size={self._group_size} must be >= 1"
+            )
         if self._window < 2:
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"SKVQKVCache: skvq_window={self._window} must be >= 2 (the "
                 f"first chunk supplies the channel statistics)"
             )
         if not (0 <= self._n_sink < self._window):
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"SKVQKVCache: skvq_n_sink={self._n_sink} must be in "
                 f"[0, skvq_window) so sinks live entirely inside chunk 0"
             )
         if not (0.0 < self._clip_alpha <= 1.0):
-            raise ValueError(f"SKVQKVCache: skvq_clip_alpha={self._clip_alpha} must be in (0, 1]")
+            raise QuantizerConfigError(
+                f"SKVQKVCache: skvq_clip_alpha={self._clip_alpha} must be in (0, 1]"
+            )
 
         self._alphas = DEFAULT_ALPHA_GRID if self._clip_search else (self._clip_alpha,)
 

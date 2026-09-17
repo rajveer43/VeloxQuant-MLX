@@ -75,6 +75,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.metal import metal_available
 from veloxquant_mlx.metal.kernels import kivi_group_quant_dequant as _kivi_group_quant_dequant
 
@@ -99,7 +100,7 @@ class KIVIKVCache(_MLXKVCache):
         self._head_dim = int(config.head_dim)
         b = config.bit_width_inlier
         if isinstance(b, list):
-            raise ValueError(
+            raise QuantizerConfigError(
                 "KIVIKVCache: bit_width_inlier must be a single int; "
                 "per-layer lists are dispatched by KVCacheBuilder.for_model()."
             )

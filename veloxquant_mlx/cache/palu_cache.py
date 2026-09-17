@@ -49,6 +49,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.palu import (
     group_head_svd,
     head_group_bounds,
@@ -237,7 +238,7 @@ class PALUKVCache(_MLXKVCache):
         lo_bit = int(getattr(config, "palu_lo_bit", 2))
         hi_frac = float(getattr(config, "palu_hi_fraction", 0.25))
         if not 0.0 <= hi_frac <= 1.0:
-            raise ValueError(f"palu: palu_hi_fraction must be in [0, 1], got {hi_frac}")
+            raise QuantizerConfigError(f"palu: palu_hi_fraction must be in [0, 1], got {hi_frac}")
         gsize = int(getattr(config, "palu_group_size", 32))
         quant_values = bool(getattr(config, "palu_quantize_values", True))
 

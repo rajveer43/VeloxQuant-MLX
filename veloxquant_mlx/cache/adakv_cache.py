@@ -41,6 +41,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.adakv import (
     allocate_head_bits,
     compute_head_attention_entropy,
@@ -85,7 +86,7 @@ class AdaKVCache(_MLXKVCache):
         self._importance_mode: str = str(getattr(config, "adakv_importance", "norm_variance"))
         self._obs_window: int = int(getattr(config, "adakv_obs_window", 32))
         if self._importance_mode not in ("norm_variance", "attention_entropy"):
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"AdaKVCache: adakv_importance must be 'norm_variance' or "
                 f"'attention_entropy', got {self._importance_mode!r}."
             )

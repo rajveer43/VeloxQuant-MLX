@@ -63,6 +63,7 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.allocators.vecinfer import dequantize_vq
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.a2ats import (
     a2ats_cholesky_factor,
     a2ats_h_weighted_assignment,
@@ -121,18 +122,20 @@ class A2ATSKVCache(_MLXKVCache):
         self._rope_base = float(getattr(config, "a2ats_rope_base", 10000.0))
 
         if self._head_dim % 2 != 0:
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"A2ATSKVCache: head_dim={self._head_dim} must be even (required by RoPE)."
             )
         if self._head_dim % self._sub_dim != 0:
-            raise ValueError(
+            raise QuantizerConfigError(
                 f"A2ATSKVCache: head_dim={self._head_dim} not divisible by "
                 f"a2ats_sub_dim={self._sub_dim}."
             )
         if not 0.0 <= self._beta <= 1.0:
-            raise ValueError(f"A2ATSKVCache: a2ats_beta must be in [0, 1], got {self._beta}")
+            raise QuantizerConfigError(
+                f"A2ATSKVCache: a2ats_beta must be in [0, 1], got {self._beta}"
+            )
         if not 0.0 <= self._retrieval_fraction <= 1.0:
-            raise ValueError(
+            raise QuantizerConfigError(
                 "A2ATSKVCache: a2ats_retrieval_fraction must be in [0, 1], "
                 f"got {self._retrieval_fraction}"
             )
@@ -163,7 +166,7 @@ class A2ATSKVCache(_MLXKVCache):
             if not isinstance(query_h, mx.array):
                 query_h = mx.array(query_h)
             if query_h.shape != (self._sub_dim, self._sub_dim):
-                raise ValueError(
+                raise QuantizerConfigError(
                     "A2ATSKVCache: a2ats_query_h must have shape "
                     f"({self._sub_dim}, {self._sub_dim}) to match "
                     f"a2ats_sub_dim={self._sub_dim}, got {tuple(query_h.shape)}."
