@@ -495,6 +495,28 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.84.0 (2026-09-17)
+
+### Bug Fixes
+
+- **ci**: Copyright-watch false positives and silent query failures
+  ([`41cfc1b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/41cfc1b19504af5176596f0da69c32dd776ce15c))
+
+### Continuous Integration
+
+- Add throwaway macos runner Metal availability probe (issue #395)
+  ([`698e569`](https://github.com/rajveer43/VeloxQuant-MLX/commit/698e5699fa4f6e749b15cff99c7173f6c1105ece))
+
+- Formalize metal pytest marker + run MLX suite on every PR (issue #395)
+  ([#396](https://github.com/rajveer43/VeloxQuant-MLX/pull/396),
+  [`e992835`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e992835d9d5a85d90bb83b3f708153bffa1af0a2))
+
+### Features
+
+- **ci**: Auto-generate copyright-watch queries from all 43 cache methods
+  ([`ab81875`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ab81875302052b823f34743a33c949ab07ba2677))
+
+
 ## v0.83.23 (2026-09-16)
 
 ### Bug Fixes
