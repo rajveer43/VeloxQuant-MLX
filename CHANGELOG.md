@@ -495,6 +495,14 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.84.1 (2026-09-17)
+
+### Bug Fixes
+
+- **ci**: Honor GitHub's actual rate-limit cooldown in copyright-watch
+  ([`7815ff5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7815ff5c8b9c56fb585cac2e754de96505299062))
+
+
 ## v0.84.0 (2026-09-17)
 
 ### Bug Fixes
