@@ -5,11 +5,16 @@ from __future__ import annotations
 import mlx.core as mx
 
 
-def _group_quant_dequant(x: mx.array, b: int, group_size: int = 32) -> mx.array:
-    """Asymmetric min/max group quantization along axis 0. Returns fp16.
+def _group_quant_codes(
+    x: mx.array, b: int, group_size: int = 32
+) -> tuple[mx.array, mx.array, mx.array]:
+    """Asymmetric min/max group quantization along axis 0. Returns raw codes.
 
     Groups are formed along axis 0 (token/sequence axis). Each group is
     independently scaled and zero-pointed using the group's min/max values.
+    This is the split-output core shared by :func:`_group_quant_dequant`
+    (round-tripped fp16) and any caller that needs the codes/scale/zero
+    triple directly (e.g. to store codes at a reduced bit-width).
 
     Args:
         x: Input array [N, D] fp16 or fp32.
@@ -17,7 +22,11 @@ def _group_quant_dequant(x: mx.array, b: int, group_size: int = 32) -> mx.array:
         group_size: Number of rows per quantization group.
 
     Returns:
-        Quantized-then-dequantized array [N, D] fp16.
+        ``(codes, scale, zero)`` where ``codes`` is ``[n_groups, group_size, D]``
+        fp32 (unpacked, pre-rounding-dtype-cast), and ``scale``/``zero`` are
+        ``[n_groups, 1, D]`` fp32. Note ``codes`` retains the padded row count
+        (``n_groups * group_size``, not the original ``N``) — callers reshape
+        and truncate as needed (see :func:`_group_dequant_codes`).
     """
     n, d = x.shape
     gs = group_size
@@ -33,8 +42,55 @@ def _group_quant_dequant(x: mx.array, b: int, group_size: int = 32) -> mx.array:
     eps = 1e-8
     scale = mx.maximum((gmax - gmin) / levels, eps)
     codes = mx.clip(mx.round((xg - gmin) / scale), 0, levels)
-    recon = codes * scale + gmin
-    return recon.reshape(n_groups * gs, d)[:n].astype(mx.float16)
+    return codes, scale, gmin
+
+
+def _group_dequant_codes(
+    codes: mx.array, scale: mx.array, zero: mx.array, n: int, group_size: int = 32
+) -> mx.array:
+    """Reconstruct ``[n, D]`` fp32 from :func:`_group_quant_codes` output.
+
+    Args:
+        codes: ``[n_groups, group_size, D]`` (as returned by
+            :func:`_group_quant_codes`) or ``[n_groups * group_size, D]``.
+        scale: ``[n_groups, 1, D]`` or ``[n_groups, D]`` fp32.
+        zero: ``[n_groups, 1, D]`` or ``[n_groups, D]`` fp32, same shape as
+            ``scale``.
+        n: Original (unpadded) row count to truncate back to.
+        group_size: Number of rows per quantization group (must match the
+            value used to produce ``codes``/``scale``/``zero``).
+
+    Returns:
+        Reconstructed array ``[n, D]`` fp32.
+    """
+    d = codes.shape[-1]
+    n_groups = scale.shape[0]
+    gs = group_size
+    codes = codes.reshape(n_groups, gs, d)
+    scale = scale.reshape(n_groups, 1, d)
+    zero = zero.reshape(n_groups, 1, d)
+    recon = codes * scale + zero
+    return recon.reshape(n_groups * gs, d)[:n]
+
+
+def _group_quant_dequant(x: mx.array, b: int, group_size: int = 32) -> mx.array:
+    """Asymmetric min/max group quantization along axis 0. Returns fp16.
+
+    Groups are formed along axis 0 (token/sequence axis). Each group is
+    independently scaled and zero-pointed using the group's min/max values.
+
+    Args:
+        x: Input array [N, D] fp16 or fp32.
+        b: Bit width (1–8).
+        group_size: Number of rows per quantization group.
+
+    Returns:
+        Quantized-then-dequantized array [N, D] fp16.
+    """
+    n = x.shape[0]
+    codes, scale, gmin = _group_quant_codes(x, b, group_size)
+    recon = _group_dequant_codes(codes, scale, gmin, n, group_size)
+    return recon.astype(mx.float16)
 
 
 def _truncated_svd(
@@ -85,4 +141,9 @@ def _truncated_svd(
     return U[:, :rank], s_vals[:rank], Vt[:rank, :]
 
 
-__all__ = ["_group_quant_dequant", "_truncated_svd"]
+__all__ = [
+    "_group_quant_codes",
+    "_group_dequant_codes",
+    "_group_quant_dequant",
+    "_truncated_svd",
+]

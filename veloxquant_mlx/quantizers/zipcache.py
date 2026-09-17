@@ -48,6 +48,8 @@ from typing import NamedTuple
 
 import mlx.core as mx
 
+from veloxquant_mlx.quantizers._quant_utils import _group_dequant_codes, _group_quant_codes
+
 
 class ZipCacheState(NamedTuple):
     """A ZipCache-compressed key or value matrix with per-token bit routing.
@@ -151,19 +153,9 @@ def channel_quant(
 
     n, d = x.shape
     gs = group_size
-    levels = (1 << bits) - 1
-    eps = 1e-8
     n_groups = (n + gs - 1) // gs
-    pad = n_groups * gs - n
-    x32 = x.astype(mx.float32)
-    if pad:
-        x32 = mx.concatenate([x32, mx.broadcast_to(x32[-1:], (pad, d))], axis=0)
-    xg = x32.reshape(n_groups, gs, d)  # [G, gs, D]
-    gmin = mx.min(xg, axis=1, keepdims=True)  # [G, 1, D]
-    gmax = mx.max(xg, axis=1, keepdims=True)
-    scale = mx.maximum((gmax - gmin) / levels, eps)
-    codes = mx.clip(mx.round((xg - gmin) / scale), 0, levels).astype(mx.uint8)
-    codes = codes.reshape(n_groups * gs, d)[:n]  # drop padding
+    raw_codes, scale, gmin = _group_quant_codes(x, bits, gs)
+    codes = raw_codes.reshape(n_groups * gs, d)[:n].astype(mx.uint8)  # drop padding
     scales = scale.reshape(n_groups, d)
     zeros = gmin.reshape(n_groups, d)
     return codes, scales.astype(mx.float32), zeros.astype(mx.float32)
@@ -186,9 +178,7 @@ def channel_dequant(
     c = codes.astype(mx.float32)
     if pad:
         c = mx.concatenate([c, mx.broadcast_to(c[-1:], (pad, d))], axis=0)
-    cg = c.reshape(n_groups, gs, d)
-    recon = cg * scales[:, None, :] + zeros[:, None, :]
-    return recon.reshape(n_groups * gs, d)[:n]
+    return _group_dequant_codes(c, scales, zeros, n, gs)
 
 
 # ---------------------------------------------------------------------------
