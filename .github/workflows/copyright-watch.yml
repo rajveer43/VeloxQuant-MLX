@@ -37,33 +37,64 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            // Distinctive identifiers — strongly unique class names only.
+            // Distinctive identifiers — strongly unique class/function names only.
             // Excluding our own repo so legitimate forks don't trigger.
             //
             // We deliberately do NOT search for the generic strings
             // "mlx_kv_quant" or "VeloxQuant-MLX" — those have high
             // false-positive rates because they appear in PyPI metadata
             // mirrors (e.g. szabgab/pydigger-data), AI-assistant transcripts,
-            // and legitimate downstream users' install scripts. The class
-            // names below are unique enough that any hit warrants review.
+            // and legitimate downstream users' install scripts.
+            //
+            // We also dropped "TurboQuantKVCache" (previously watched here):
+            // it returns 1000+ hits, including files literally named
+            // TurboQuantKVCache.swift / turboquant_cache.py in ml-explore/
+            // mlx-swift-lm and pytorch/executorch -- other projects that
+            // independently landed on the same obvious name for the same
+            // technique. Not a copy signal. "TurboQuantRVQKVCache" (this
+            // repo's actual class name, one token longer) has zero hits
+            // outside this repo and stays as the watched string instead.
             const SELF = 'rajveer43/VeloxQuant-MLX';
             const queries = [
               `"TurboQuantRVQKVCache" -repo:${SELF}`,
               `"VecInferKVCache" -repo:${SELF}`,
-              `"TurboQuantKVCache" -repo:${SELF}`,
               `"_rvq_quality_synthetic" -repo:${SELF}`,
               `"allocate_bits_ratequant" -repo:${SELF}`,
             ];
+
+            // The default GITHUB_TOKEN hits GitHub's search secondary rate
+            // limit ("abuse detection") on back-to-back code-search calls
+            // even with several seconds between them -- every one of these
+            // 4 queries failed on every scheduled run since this workflow
+            // was added, silently, because the failure was only ever logged
+            // as a core.warning. Retry with backoff before giving up, and
+            // widen the base gap between queries.
+            async function searchWithRetry(q, attempt = 1) {
+              try {
+                return await github.rest.search.code({ q, per_page: 10 });
+              } catch (e) {
+                const isRateLimited =
+                  e.status === 403 ||
+                  e.status === 429 ||
+                  /rate limit|abuse/i.test(e.message || '');
+                if (isRateLimited && attempt < 4) {
+                  const backoffMs = 10000 * attempt;
+                  core.info(
+                    `Query "${q}" rate-limited (attempt ${attempt}), retrying in ${backoffMs / 1000}s...`
+                  );
+                  await new Promise(r => setTimeout(r, backoffMs));
+                  return searchWithRetry(q, attempt + 1);
+                }
+                throw e;
+              }
+            }
 
             let total_hits = 0;
             const findings = [];
 
             for (const q of queries) {
               try {
-                const r = await github.rest.search.code({
-                  q,
-                  per_page: 10,
-                });
+                const r = await searchWithRetry(q);
                 if (r.data.total_count > 0) {
                   total_hits += r.data.total_count;
                   const repos = [...new Set(r.data.items.map(
@@ -78,8 +109,11 @@ jobs:
                     `Query "${q}" → ${r.data.total_count} hit(s) in: ${repos.join(', ')}`
                   );
                 }
-                // GitHub code-search rate limit: 10 req/min
-                await new Promise(r => setTimeout(r, 7000));
+                // GitHub code-search rate limit: 10 req/min, but the
+                // GITHUB_TOKEN's secondary rate limit needs more headroom
+                // than that implies -- 20s between queries clears it in
+                // practice (4 queries/run, well under the per-minute cap).
+                await new Promise(r => setTimeout(r, 20000));
               } catch (e) {
                 core.warning(`Query failed: ${q} — ${e.message}`);
               }
