@@ -115,6 +115,10 @@ Five bit-identical repeats of a degenerate output is stronger evidence than one 
 
 Three methods into this series, three different shapes of honest result: a kernel that changes nothing, a method with a real and growing cost and a memory claim that reverses sign, and a method where the Metal kernel is once again bit-exact but the method itself, run at its own default budget with the calibration path actually available, can turn a long-context prompt into forty characters of `=`.
 
+:::info[Does real calibration fix this?]
+This post used the uncalibrated fallback filter path. This repo also has a real calibration module implementing the paper's actual query-SVD mechanism -- [Calibration Changed the Failure, Not the Outcome](/blog/qwen3-8b-qfilters-calibrated-followup) runs it and finds a 3.6x throughput improvement and a different collapse pattern, but not coherent output, at this same budget.
+:::
+
 ---
 
 *Benchmarked on an Apple M4 (10-core GPU, 24GB unified memory) against `mlx-community/Qwen3-8B-4bit` (36 layers, 8 KV heads, head_dim 128), QFilters `qfilters_budget=512` (the method's own default), fallback (uncalibrated) filter path, 5 interleaved repeats per arm, 120 max tokens. Benchmark script: [`benchmark_scripts/benchmark_qwen3_8b_qfilters_honest.py`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/benchmark_scripts/benchmark_qwen3_8b_qfilters_honest.py). See the [KIVI/Qwen3-8B post](/blog/qwen3-8b-kivi-honest-benchmark) and [TurboQuantRVQ/Qwen3-8B post](/blog/qwen3-8b-turboquant-rvq-honest-benchmark) for the first two posts in this series, and [`qfilters_cache.py`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/veloxquant_mlx/cache/qfilters_cache.py) for the method's implementation, its calibrated-vs-fallback filter distinction, and its own documented limitations.*

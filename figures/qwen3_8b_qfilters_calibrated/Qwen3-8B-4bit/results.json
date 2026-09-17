@@ -1,0 +1,112 @@
+{
+  "model": "mlx-community/Qwen3-8B-4bit",
+  "n_layers": 36,
+  "n_kv_heads": 8,
+  "head_dim": 128,
+  "qfilters_budget": 512,
+  "max_tokens": 120,
+  "repeats": 5,
+  "calibration_artifact": "figures/qwen3_8b_qfilters_calibrated/qfilters_qwen3_8b.npz",
+  "calibration_dataset": "repo-local synthetic-prose calibration passages (see script docstring)",
+  "hardware": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "chip": "Apple M4",
+    "ram_gb": 24.0
+  },
+  "gpu_contention_suspects": [
+    "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+  ],
+  "prompt_tokens": 2238,
+  "summaries": {
+    "fp16": {
+      "n_repeats": 5,
+      "throughput_median": 6.4663477511336485,
+      "throughput_min": 5.399920835225068,
+      "throughput_max": 7.052249206416751,
+      "peak_mb_median": 5226.424579620361,
+      "peak_mb_min": 5226.424579620361,
+      "peak_mb_max": 5226.424579620361,
+      "compression_ratio": 1.0,
+      "texts": [
+        "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+        "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+        "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+        "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+        "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For"
+      ]
+    },
+    "fallback_off": {
+      "n_repeats": 5,
+      "throughput_median": 0.9510134769747847,
+      "throughput_min": 0.8567104163542065,
+      "throughput_max": 1.1230529523446966,
+      "peak_mb_median": 5266.667163848877,
+      "peak_mb_min": 5266.541187286377,
+      "peak_mb_max": 5266.793140411377,
+      "compression_ratio": 4.5964912280701755,
+      "texts": [
+        "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+        "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+        "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+        "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+        "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is==========="
+      ]
+    },
+    "fallback_on": {
+      "n_repeats": 5,
+      "throughput_median": 0.909136537997666,
+      "throughput_min": 0.8294253041873814,
+      "throughput_max": 1.1224968154873594,
+      "peak_mb_median": 5266.136047363281,
+      "peak_mb_min": 5262.072582244873,
+      "peak_mb_max": 5266.199054718018,
+      "compression_ratio": 4.5964912280701755,
+      "texts": [
+        "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+        "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+        "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+        "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+        "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is==========="
+      ]
+    },
+    "calibrated_off": {
+      "n_repeats": 5,
+      "throughput_median": 3.41089624484805,
+      "throughput_min": 3.1378027198160847,
+      "throughput_max": 4.229503321477538,
+      "peak_mb_median": 5565.494087219238,
+      "peak_mb_min": 5565.494087219238,
+      "peak_mb_max": 5565.494087219238,
+      "compression_ratio": 4.5964912280701755,
+      "texts": [
+        "...........,. the..........,. the. the. and.,..... the.,. the. the. and. the. the. the. and. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. the.",
+        "...........,. the..........,. the. the. and.,..... the.,. the. the. and. the. the. the. and. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. the.",
+        "...........,. the..........,. the. the. and.,..... the.,. the. the. and. the. the. the. and. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. the.",
+        "...........,. the..........,. the. the. and.,..... the.,. the. the. and. the. the. the. and. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. the.",
+        "...........,. the..........,. the. the. and.,..... the.,. the. the. and. the. the. the. and. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. the."
+      ]
+    },
+    "calibrated_on": {
+      "n_repeats": 5,
+      "throughput_median": 3.317347850133478,
+      "throughput_min": 0.25611383849832503,
+      "throughput_max": 4.091391616235449,
+      "peak_mb_median": 5547.291034698486,
+      "peak_mb_min": 5547.291034698486,
+      "peak_mb_max": 5547.291034698486,
+      "compression_ratio": 4.5964912280701755,
+      "texts": [
+        "...........,. the..........,. the. the. and.,..... the.,. the. the. and. the. the. the. and. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. the.",
+        "...........,. the..........,. the. the. and.,..... the.,. the. the. and. the. the. the. and. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. the.",
+        "...........,. the..........,. the. the. and.,..... the.,. the. the. and. the. the. the. and. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. the.",
+        "...........,. the..........,. the. the. and.,..... the.,. the. the. and. the. the. the. and. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. the.",
+        "...........,. the..........,. the. the. and.,..... the.,. the. the. and. the. the. the. and. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. the."
+      ]
+    }
+  },
+  "fallback_on_vs_off_identical_text": true,
+  "calibrated_on_vs_off_identical_text": true,
+  "fp16_vs_calibrated_word_overlap": 0.0,
+  "fp16_vs_fallback_word_overlap": 0.014084507042253521
+}
