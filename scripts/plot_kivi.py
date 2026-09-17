@@ -136,7 +136,6 @@ def fig3_memory_at_scale(kivi: dict) -> None:
     meta = kivi[model0]
     hd, hkv, nl = meta["head_dim"], meta["n_kv_heads"], meta["n_layers"]
     r = meta.get("residual_length", 32)
-    rows = {x["name"]: x for x in meta["results"]}
     seqs = np.array([512, 1024, 2048, 4096, 8192, 16384, 32768])
 
     def kv_bytes_fp16(S):

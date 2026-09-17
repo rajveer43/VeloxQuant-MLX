@@ -268,8 +268,6 @@ def main() -> int:
 
     summaries = {arm: _summarize(runs) for arm, runs in collected.items()}
 
-    fallback_texts = set(summaries["fallback_off"]["texts"]) | set(summaries["fallback_on"]["texts"])
-    calibrated_texts = set(summaries["calibrated_off"]["texts"]) | set(summaries["calibrated_on"]["texts"])
     fp16_text = summaries["fp16"]["texts"][0]
 
     payload = {

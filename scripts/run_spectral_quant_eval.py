@@ -340,7 +340,6 @@ def run_eval_on_vectors(
     d = key_data.shape[1]
     n_layers, n_heads = 32, 8
     ctx_lengths = [512, 1024, 2048, 4096, 8192]
-    sq_primary = SpectralQuantizer(d=d, b_signal=3, b_noise=3, d_s=key_ds, apply_qjl=False)
     # bits: quantization only (paper Table 2 accounting)
     sq_bits = d * 3 + 32  # 3 bits/elem + 2 fp16 scales
     tq_bits = d * 3 + d + 16 + 32  # 3 bits + QJL signs (d) + norm + scales
@@ -1054,14 +1053,9 @@ def generate_benchmark_figures(
         tps_list = [
             bench_results.get(k, {}).get("tps", 0.0) for k in ("fp16", "tq3", "sq_noqjl", "sq_qjl")
         ]
-        prefill_list = [
-            bench_results.get(k, {}).get("prefill_toks", 0)
-            for k in ("fp16", "tq3", "sq_noqjl", "sq_qjl")
-        ]
         has_tps = True
     else:
         tps_list = [0.0] * 4
-        prefill_list = [0] * 4
         has_tps = False
 
     print(f"  TQ 3-bit:           cosim={cs_tq3:.4f}, ratio={ratio_tq3:.2f}×")
@@ -1140,8 +1134,6 @@ def generate_benchmark_figures(
         ax.set_ylabel(ylabel)
         ax.set_title(title, fontsize=11, fontweight="bold")
         ax.set_ylim(0, max(vals) * 1.3)
-
-    to_mb = lambda b: b / 1024**2  # noqa: E731
 
     # ── Fig 1: Benchmark summary ─────────────────────────────────────────────
     fig1, axes = plt.subplots(2, 2, figsize=(14, 10))
