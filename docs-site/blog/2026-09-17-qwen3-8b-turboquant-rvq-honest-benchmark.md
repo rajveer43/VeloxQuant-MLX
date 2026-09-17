@@ -17,6 +17,10 @@ The [previous post](/blog/qwen3-8b-kivi-honest-benchmark) in this pair ran the s
 
 This post runs the identical protocol against **TurboQuantRVQ** -- this repo's namesake method, and its `DEFAULT_SERVE_METHOD` -- and gets a different kind of answer: two real findings, not a null, and one of them contradicts a number already committed to this codebase.
 
+:::info[Companion post]
+A third post in this series runs the same protocol against QFilters, an eviction method rather than a quantization one -- [The Output That Stopped Being Output](/blog/qwen3-8b-qfilters-honest-benchmark) finds the same bit-exact Metal kernel pattern, but also a fully reproducible coherence collapse once the cache exceeds its token budget, a failure mode quantization methods can't produce by construction.
+:::
+
 ## Why TurboQuantRVQ, and why it's a different kind of test
 
 KIVI quantizes keys, then **immediately dequantizes them back to fp16** before attention runs. The live tensor is fp16 at all times -- this repo's own `kivi_cache.py` docstring says so explicitly. That's why KIVI's "compression ratio" is a hypothetical byte-accounting number, not a memory-savings claim, and why testing for a memory win there would have been testing something ruled out by construction.

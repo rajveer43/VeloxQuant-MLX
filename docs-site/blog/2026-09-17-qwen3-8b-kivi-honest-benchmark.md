@@ -13,8 +13,8 @@ tags: [metal, apple-silicon, mlx, kivi, benchmarking, kv-cache]
 
 ---
 
-:::info[Companion post]
-A second post runs the same protocol against a structurally different method -- [A Real Cost and a Claim That Didn't Hold](/blog/qwen3-8b-turboquant-rvq-honest-benchmark) benchmarks TurboQuantRVQ, this repo's default serving method, and finds a real throughput cost and a memory-savings claim that reverses sign at longer context. Read this post first; that one builds on it.
+:::info[Companion posts]
+Two more posts run the same protocol against structurally different methods. [A Real Cost and a Claim That Didn't Hold](/blog/qwen3-8b-turboquant-rvq-honest-benchmark) benchmarks TurboQuantRVQ, this repo's default serving method, and finds a real throughput cost and a memory-savings claim that reverses sign at longer context. [The Output That Stopped Being Output](/blog/qwen3-8b-qfilters-honest-benchmark) benchmarks QFilters, an eviction method rather than a quantization one, and finds a fully reproducible coherence collapse once the cache exceeds its token budget. Read this post first; the other two build on it.
 :::
 
 There's a specific kind of benchmark result that's more useful than a win: a clean, well-measured null. Not "it didn't work," not "the code is broken" -- but "I measured this carefully, twice, at two context lengths, with the noise floor exposed, and the answer is that nothing moved."

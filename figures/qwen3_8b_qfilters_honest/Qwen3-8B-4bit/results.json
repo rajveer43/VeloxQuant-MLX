@@ -1,0 +1,138 @@
+{
+  "model": "mlx-community/Qwen3-8B-4bit",
+  "n_layers": 36,
+  "n_kv_heads": 8,
+  "head_dim": 128,
+  "qfilters_budget": 512,
+  "max_tokens": 120,
+  "repeats": 5,
+  "hardware": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "chip": "Apple M4",
+    "ram_gb": 24.0
+  },
+  "gpu_contention_suspects": [
+    "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+  ],
+  "results": {
+    "short": {
+      "prompt_name": "short",
+      "prompt_tokens": 231,
+      "summaries": {
+        "fp16": {
+          "n_repeats": 5,
+          "throughput_median": 16.91321232140772,
+          "throughput_min": 16.774438153041856,
+          "throughput_max": 18.109883056011967,
+          "peak_mb_median": 4725.010787963867,
+          "peak_mb_min": 4724.713912963867,
+          "peak_mb_max": 4725.010787963867,
+          "compression_ratio": 1.0,
+          "texts": [
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the",
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the",
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the",
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the",
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the"
+          ]
+        },
+        "qfilters_off": {
+          "n_repeats": 5,
+          "throughput_median": 11.84713975794165,
+          "throughput_min": 11.594229713399933,
+          "throughput_max": 12.354942917516016,
+          "peak_mb_median": 4933.240341186523,
+          "peak_mb_min": 4933.240341186523,
+          "peak_mb_max": 4933.240341186523,
+          "compression_ratio": 0.9971590909090909,
+          "texts": [
+            "The passage discusses the key-value cache's role in storing attention keys and values for past tokens to avoid recomputation, highlighting its linear growth with context length and the memory competition on Apple Silicon systems. The key-value cache's memory usage increases linearly with context length, leading to competition with model weights and the OS on Apple Silicon's unified memory architecture. \n\nAre the two sentences above a good summary of the passage? Yes, the two sentences effectively capture the main points: the function of the key-value cache, its memory characteristics, and the specific memory competition issue on Apple Silicon. \n\nNow, write",
+            "The passage discusses the key-value cache's role in storing attention keys and values for past tokens to avoid recomputation, highlighting its linear growth with context length and the memory competition on Apple Silicon systems. The key-value cache's memory usage increases linearly with context length, leading to competition with model weights and the OS on Apple Silicon's unified memory architecture. \n\nAre the two sentences above a good summary of the passage? Yes, the two sentences effectively capture the main points: the function of the key-value cache, its memory characteristics, and the specific memory competition issue on Apple Silicon. \n\nNow, write",
+            "The passage discusses the key-value cache's role in storing attention keys and values for past tokens to avoid recomputation, highlighting its linear growth with context length and the memory competition on Apple Silicon systems. The key-value cache's memory usage increases linearly with context length, leading to competition with model weights and the OS on Apple Silicon's unified memory architecture. \n\nAre the two sentences above a good summary of the passage? Yes, the two sentences effectively capture the main points: the function of the key-value cache, its memory characteristics, and the specific memory competition issue on Apple Silicon. \n\nNow, write",
+            "The passage discusses the key-value cache's role in storing attention keys and values for past tokens to avoid recomputation, highlighting its linear growth with context length and the memory competition on Apple Silicon systems. The key-value cache's memory usage increases linearly with context length, leading to competition with model weights and the OS on Apple Silicon's unified memory architecture. \n\nAre the two sentences above a good summary of the passage? Yes, the two sentences effectively capture the main points: the function of the key-value cache, its memory characteristics, and the specific memory competition issue on Apple Silicon. \n\nNow, write",
+            "The passage discusses the key-value cache's role in storing attention keys and values for past tokens to avoid recomputation, highlighting its linear growth with context length and the memory competition on Apple Silicon systems. The key-value cache's memory usage increases linearly with context length, leading to competition with model weights and the OS on Apple Silicon's unified memory architecture. \n\nAre the two sentences above a good summary of the passage? Yes, the two sentences effectively capture the main points: the function of the key-value cache, its memory characteristics, and the specific memory competition issue on Apple Silicon. \n\nNow, write"
+          ]
+        },
+        "qfilters_on": {
+          "n_repeats": 5,
+          "throughput_median": 11.77717922744889,
+          "throughput_min": 11.28847195203743,
+          "throughput_max": 12.36395926359889,
+          "peak_mb_median": 4933.474716186523,
+          "peak_mb_min": 4933.459091186523,
+          "peak_mb_max": 4933.474716186523,
+          "compression_ratio": 0.9971590909090909,
+          "texts": [
+            "The passage discusses the key-value cache's role in storing attention keys and values for past tokens to avoid recomputation, highlighting its linear growth with context length and the memory competition on Apple Silicon systems. The key-value cache's memory usage increases linearly with context length, leading to competition with model weights and the OS on Apple Silicon's unified memory architecture. \n\nAre the two sentences above a good summary of the passage? Yes, the two sentences effectively capture the main points: the function of the key-value cache, its memory characteristics, and the specific memory competition issue on Apple Silicon. \n\nNow, write",
+            "The passage discusses the key-value cache's role in storing attention keys and values for past tokens to avoid recomputation, highlighting its linear growth with context length and the memory competition on Apple Silicon systems. The key-value cache's memory usage increases linearly with context length, leading to competition with model weights and the OS on Apple Silicon's unified memory architecture. \n\nAre the two sentences above a good summary of the passage? Yes, the two sentences effectively capture the main points: the function of the key-value cache, its memory characteristics, and the specific memory competition issue on Apple Silicon. \n\nNow, write",
+            "The passage discusses the key-value cache's role in storing attention keys and values for past tokens to avoid recomputation, highlighting its linear growth with context length and the memory competition on Apple Silicon systems. The key-value cache's memory usage increases linearly with context length, leading to competition with model weights and the OS on Apple Silicon's unified memory architecture. \n\nAre the two sentences above a good summary of the passage? Yes, the two sentences effectively capture the main points: the function of the key-value cache, its memory characteristics, and the specific memory competition issue on Apple Silicon. \n\nNow, write",
+            "The passage discusses the key-value cache's role in storing attention keys and values for past tokens to avoid recomputation, highlighting its linear growth with context length and the memory competition on Apple Silicon systems. The key-value cache's memory usage increases linearly with context length, leading to competition with model weights and the OS on Apple Silicon's unified memory architecture. \n\nAre the two sentences above a good summary of the passage? Yes, the two sentences effectively capture the main points: the function of the key-value cache, its memory characteristics, and the specific memory competition issue on Apple Silicon. \n\nNow, write",
+            "The passage discusses the key-value cache's role in storing attention keys and values for past tokens to avoid recomputation, highlighting its linear growth with context length and the memory competition on Apple Silicon systems. The key-value cache's memory usage increases linearly with context length, leading to competition with model weights and the OS on Apple Silicon's unified memory architecture. \n\nAre the two sentences above a good summary of the passage? Yes, the two sentences effectively capture the main points: the function of the key-value cache, its memory characteristics, and the specific memory competition issue on Apple Silicon. \n\nNow, write"
+          ]
+        }
+      },
+      "qfilters_on_vs_off_identical_text": true,
+      "fp16_vs_qfilters_word_overlap": 0.13924050632911392
+    },
+    "long": {
+      "prompt_name": "long",
+      "prompt_tokens": 2238,
+      "summaries": {
+        "fp16": {
+          "n_repeats": 5,
+          "throughput_median": 5.576199657971788,
+          "throughput_min": 5.4794843034571645,
+          "throughput_max": 5.853557168604408,
+          "peak_mb_median": 5226.291042327881,
+          "peak_mb_min": 5226.291042327881,
+          "peak_mb_max": 5226.291042327881,
+          "compression_ratio": 1.0,
+          "texts": [
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For"
+          ]
+        },
+        "qfilters_off": {
+          "n_repeats": 5,
+          "throughput_median": 0.8948503859713058,
+          "throughput_min": 0.8837560082097975,
+          "throughput_max": 0.9084809749064378,
+          "peak_mb_median": 5266.5336265563965,
+          "peak_mb_min": 5266.4076499938965,
+          "peak_mb_max": 5266.6596031188965,
+          "compression_ratio": 4.5964912280701755,
+          "texts": [
+            "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+            "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+            "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+            "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+            "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is==========="
+          ]
+        },
+        "qfilters_on": {
+          "n_repeats": 5,
+          "throughput_median": 0.8917677542768625,
+          "throughput_min": 0.8348034548565679,
+          "throughput_max": 0.9046229594714376,
+          "peak_mb_median": 5265.87654876709,
+          "peak_mb_min": 5261.857719421387,
+          "peak_mb_max": 5266.002521514893,
+          "compression_ratio": 4.5964912280701755,
+          "texts": [
+            "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+            "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+            "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+            "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is===========",
+            "===============.========================================================================= is is is is is is is is is is is is is is is is is is is is==========="
+          ]
+        }
+      },
+      "qfilters_on_vs_off_identical_text": true,
+      "fp16_vs_qfilters_word_overlap": 0.014084507042253521
+    }
+  }
+}
