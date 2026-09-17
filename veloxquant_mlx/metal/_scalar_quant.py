@@ -11,17 +11,17 @@ TurboQuantMSE, TurboQuantRVQ, and the Hadamard preconditioner:
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import mlx.core as mx
+
+from veloxquant_mlx.metal._kernel_utils import KernelCache, read_kernel_source
 
 
 def _read_kernel_source(filename: str) -> str:
     """Read a standalone .metal kernel source file from metal/src/."""
-    return (Path(__file__).parent / "src" / filename).read_text()
+    return read_kernel_source(__file__, filename)
 
 
-_cache: dict = {}
+_cache = KernelCache()
 
 
 # ===========================================================================
@@ -72,42 +72,45 @@ _HADAMARD_QUANTIZE_SRC = _read_kernel_source("hadamard_quantize.metal")
 
 def _scalar_quantize_kernel(b: int, dtype: mx.Dtype):
     key = ("scalar_quantize", b, str(dtype))
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
             name=f"turboquant_scalar_quantize_b{b}_{str(dtype).replace('.', '_')}",
             input_names=["x", "centroids"],
             output_names=["indices"],
             source=_SCALAR_QUANTIZE_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 def _scalar_dequantize_kernel():
     key = "scalar_dequantize"
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
             name="turboquant_scalar_dequantize",
             input_names=["indices", "centroids"],
             output_names=["x_hat"],
             source=_SCALAR_DEQUANTIZE_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 def _hadamard_quantize_kernel(D: int, b: int):
     key = ("hadamard_quantize", D, b)
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
             name=f"turboquant_hadamard_quantize_d{D}_b{b}",
             input_names=["x", "diag", "centroids"],
             output_names=["indices"],
             header=f"#define MAX_D {D}\n",
             source=_HADAMARD_QUANTIZE_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

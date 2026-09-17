@@ -36,9 +36,9 @@ Public API:
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import mlx.core as mx
+
+from veloxquant_mlx.metal._kernel_utils import KernelCache, read_kernel_source
 
 # Upper bound on `budget` this kernel serves. The apply kernel stages the
 # survivor index list in threadgroup memory, which must be a compile-time
@@ -50,10 +50,10 @@ QFILTERS_MAX_BUDGET = 4096
 
 def _read_kernel_source(filename: str) -> str:
     """Read a standalone .metal kernel source file from metal/src/."""
-    return (Path(__file__).parent / "src" / filename).read_text()
+    return read_kernel_source(__file__, filename)
 
 
-_cache: dict = {}
+_cache = KernelCache()
 
 
 # ===========================================================================
@@ -79,29 +79,31 @@ _QFILTERS_EVICT_APPLY_SRC = _read_kernel_source("qfilters_evict_apply.metal")
 
 def _score_kernel():
     key = ("qfilters_score",)
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
             name="qfilters_score",
             input_names=["keys", "filter_dir", "n_sink_arr", "n_recent_arr", "sign_arr"],
             output_names=["scores_out"],
             source=_QFILTERS_SCORE_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 def _evict_apply_kernel(max_budget: int):
     key = ("qfilters_evict_apply", max_budget)
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
             name=f"qfilters_evict_apply_b{max_budget}",
             input_names=["keys_mid", "values_mid", "scores", "thresh_arr", "budget_arr"],
             output_names=["keys_out", "values_out", "scores_out"],
             header=f"#define QF_MAX_BUDGET {max_budget}\n",
             source=_QFILTERS_EVICT_APPLY_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

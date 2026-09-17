@@ -17,17 +17,17 @@ set ``grid = n_threadgroups * 32`` accordingly.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import mlx.core as mx
+
+from veloxquant_mlx.metal._kernel_utils import KernelCache, read_kernel_source
 
 
 def _read_kernel_source(filename: str) -> str:
     """Read a standalone .metal kernel source file from metal/src/."""
-    return (Path(__file__).parent / "src" / filename).read_text()
+    return read_kernel_source(__file__, filename)
 
 
-_cache: dict = {}
+_cache = KernelCache()
 
 
 # ===========================================================================
@@ -70,29 +70,29 @@ _QJL_INNER_PRODUCT_SRC = _read_kernel_source("qjl_inner_product.metal")
 
 
 def _encode_kernel():
-    key = "qjl_encode"
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        "qjl_encode",
+        lambda: mx.fast.metal_kernel(
             name="qjl_encode",
             input_names=["x", "S"],
             output_names=["packed_signs", "norms"],
             source=_QJL_ENCODE_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 def _inner_product_kernel():
-    key = "qjl_inner_product"
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        "qjl_inner_product",
+        lambda: mx.fast.metal_kernel(
             name="qjl_inner_product",
             input_names=["q_proj", "packed_signs", "norms"],
             output_names=["scores"],
             source=_QJL_INNER_PRODUCT_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

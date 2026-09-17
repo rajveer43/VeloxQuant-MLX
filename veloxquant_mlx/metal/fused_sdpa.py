@@ -95,14 +95,14 @@ compressed indices (16× smaller for VecInfer-1bit).
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import mlx.core as mx
+
+from veloxquant_mlx.metal._kernel_utils import KernelCache, read_kernel_source
 
 
 def _read_kernel_source(filename: str) -> str:
     """Read a standalone .metal kernel source file from metal/src/."""
-    return (Path(__file__).parent / "src" / filename).read_text()
+    return read_kernel_source(__file__, filename)
 
 
 # ===========================================================================
@@ -130,7 +130,7 @@ _FUSED_SDPA_SRC = _read_kernel_source("fused_sdpa.metal")
 # ---------------------------------------------------------------------------
 # Compile cache — one kernel per (n_centroids, n_sub, D) tuple
 # ---------------------------------------------------------------------------
-_kernel_cache: dict = {}
+_kernel_cache = KernelCache()
 
 # Public caps; raise these only after benchmarking threadgroup memory budget.
 MAX_N_CENTROIDS = 256
@@ -161,8 +161,8 @@ def _get_kernel(n_centroids: int, n_sub: int, D: int):
             f"Fused SDPA kernel: head_dim must be a multiple of 32 "
             f"(lane-owned output layout), got D={D}."
         )
-    key = (n_centroids, n_sub, D)
-    if key not in _kernel_cache:
+
+    def _build():
         src = (
             _FUSED_SDPA_SRC.replace("LUT_N_CENTROIDS", str(n_centroids))
             .replace("LUT_MAX_SIZE", str(n_sub * n_centroids))
@@ -173,7 +173,7 @@ def _get_kernel(n_centroids: int, n_sub: int, D: int):
         # is the correct place.  'relaxed' mode honors INF/NaN unlike 'fast'
         # and enables FMA contraction across statements for the LUT dot loop.
         header = "#pragma METAL fp math_mode(relaxed)\n"
-        _kernel_cache[key] = mx.fast.metal_kernel(
+        return mx.fast.metal_kernel(
             name=f"vecinfer_fused_sdpa_c{n_centroids}_s{n_sub}_d{D}",
             input_names=[
                 "q",
@@ -190,7 +190,8 @@ def _get_kernel(n_centroids: int, n_sub: int, D: int):
             source=src,
             ensure_row_contiguous=True,
         )
-    return _kernel_cache[key]
+
+    return _kernel_cache.get_or_create((n_centroids, n_sub, D), _build)
 
 
 # ===========================================================================

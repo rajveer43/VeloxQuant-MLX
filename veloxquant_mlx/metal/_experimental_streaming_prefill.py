@@ -21,19 +21,19 @@ Public API:
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import mlx.core as mx
+
+from veloxquant_mlx.metal._kernel_utils import KernelCache, read_kernel_source
 
 
 def _read_kernel_source(filename: str) -> str:
     """Read a standalone .metal kernel source file from metal/src/."""
-    return (Path(__file__).parent / "src" / filename).read_text()
+    return read_kernel_source(__file__, filename)
 
 
 _STREAMING_PREFILL_SRC = _read_kernel_source("experimental_streaming_prefill.metal")
 
-_cache: dict = {}
+_cache = KernelCache()
 
 # implementation name -> (kv_block, rows_per_threadgroup)
 _IMPLEMENTATIONS = {
@@ -52,15 +52,16 @@ _MULTIROW_ROWS_PER_TG = 4
 
 def _stream_kernel(d: int, kv_block: int, rows_per_tg: int):
     key = ("experimental_streaming_prefill_attend", d, kv_block, rows_per_tg)
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
             name=f"experimental_streaming_prefill_attend_d{d}_kb{kv_block}_rtg{rows_per_tg}",
             input_names=["q", "k", "v", "scale"],
             output_names=["out"],
             source=_STREAMING_PREFILL_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
