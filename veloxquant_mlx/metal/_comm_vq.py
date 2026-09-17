@@ -9,7 +9,8 @@ with a single GPU dispatch:
        c. Accumulate across all sub-codebooks for this output position
        d. Apply RoPE in-place (paired complex multiply)
 
-Grid: (N * D, 1, 1) — one thread per output scalar.
+Grid: (N * D, 1, 1) rounded up to a threadgroup multiple — one thread per
+      output scalar; the kernel bounds-checks and no-ops padding threads.
 Threadgroup: (min(D, 256), 1, 1)
 
 Public API:
@@ -64,7 +65,6 @@ def _comm_vq_kernel(n_cb: int, sub_dim: int, cb_size: int, D: int):
             input_names=["indices", "codebook", "positions", "inv_freq"],
             output_names=["out"],
             source=_COMM_VQ_DECODE_SRC,
-            template_names=["N_CB", "SUB_DIM", "CB_SIZE"],
             ensure_row_contiguous=True,
         )
     return _cache[key]
@@ -100,7 +100,9 @@ def comm_vq_decode_metal(
     """
     N = indices.shape[0]
     D = n_cb * sub_dim
-    n_pairs = N * (D // 2)
+    total_threads = N * D  # one thread per output scalar; kernel handles pairs
+    tg = min(D, 256)
+    grid = ((total_threads + tg - 1) // tg) * tg
 
     outputs = _comm_vq_kernel(n_cb, sub_dim, cb_size, D)(
         inputs=[
@@ -110,8 +112,8 @@ def comm_vq_decode_metal(
             inv_freq.astype(mx.float32),
         ],
         template=[("N_CB", n_cb), ("SUB_DIM", sub_dim), ("CB_SIZE", cb_size)],
-        grid=(n_pairs * 2, 1, 1),  # total threads = N * D; kernel handles pairs
-        threadgroup=(min(D, 256), 1, 1),
+        grid=(grid, 1, 1),
+        threadgroup=(tg, 1, 1),
         output_shapes=[(N, D)],
         output_dtypes=[mx.float16],
     )
