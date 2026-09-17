@@ -9,7 +9,7 @@ The repo has two, separately-run test trees:
 
 | Directory | Suite | Runner | Run via |
 | --- | --- | --- | --- |
-| `veloxquant_mlx/tests/` | Main suite (MLX-dependent) | `macos-14` (Apple Silicon) | `pytest` (`testpaths` in `pyproject.toml`) |
+| `veloxquant_mlx/tests/` | Main suite (MLX-dependent) | `macos-14` (Apple Silicon) | `pytest` (`testpaths` in `pyproject.toml`); on every push/PR to `master` via `.github/workflows/mlx-tests.yml`, and again as a release gate in `release.yml` |
 | `tests/non_metal/` | Pure-Python, MLX-free tests | `ubuntu-latest` | `.github/workflows/non-metal-unit.yml` |
 
 This split is **intentional, not a stray duplicate** — do not merge the two
@@ -53,8 +53,9 @@ test's own content:**
 | Suite | Where | Notes |
 | --- | --- | --- |
 | Pure Python unit tests (no Metal) | Linux CI (`non-metal-unit.yml`) or macOS CI | Examples: `tests/non_metal/test_mac_recommender.py`, many quantizer math tests under `veloxquant_mlx/tests/` |
-| Metal parity / kernel tests | Apple Silicon only | Skip or mark `metal` on headless/Linux runners |
-| End-to-end generation benches | Local macOS | Scripts under `benchmark_scripts/` and `scripts/validate_kv_memory.py` |
+| Metal parity / kernel tests (correctness) | GitHub-hosted `macos-14`/`macos-15` (via `mlx-tests.yml`, every PR) or any real Apple Silicon | Validated in issue #395: hosted runners expose a genuine, correct — if paravirtualized — Metal device. Selectable via `pytest -m metal` / `-m "not metal"`. |
+| Metal kernel **performance**/timing numbers | Real Apple Silicon only, never hosted runners | The hosted runner's device reports as `"Apple Paravirtual device"` with a synthetic `memory_size`; its timing characteristics are unknown and not assumed representative. See `docs/BENCHMARK_INFRASTRUCTURE_FEASIBILITY.md` Lane B. |
+| End-to-end generation benches | Local macOS / dedicated bare-metal | Scripts under `benchmark_scripts/` and `scripts/validate_kv_memory.py` |
 
 ## Guidance for contributors
 
@@ -64,7 +65,23 @@ test's own content:**
    (see CONTRIBUTING).
 3. Do not assume GitHub-hosted Linux runners can execute Metal kernels.
 
+## The `metal` marker
+
+Tests that need a real Metal device carry both a module-level
+`pytest.mark.metal` marker and the pre-existing
+`pytest.mark.skipif(not metal_available(), ...)`. Keep both: the marker lets
+CI *select* (`-m metal`) or *deselect* (`-m "not metal"`) this subset
+explicitly (e.g. to isolate a hosted-runner correctness job from a
+bare-metal performance job), while the `skipif` still makes the test suite
+self-skip correctly on a real machine that genuinely lacks Metal (older
+Intel Mac, CI misconfiguration) even if nobody passed `-m`. Registered in
+`pyproject.toml`'s `[tool.pytest.ini_options] markers`.
+
+Do not mark a test `metal` if it specifically tests the *absence* of Metal
+(e.g. `test_use_metal_kernels_true_without_metal_raises` in
+`test_qfilters_cache.py`) — it should keep its own `skipif(metal_available(), ...)`
+guard and no `metal` marker, so `-m metal` never selects it.
+
 ## Suggested follow-up CI (not required for Phase 1)
 
-- Document `pytest -m "not metal"` once Metal tests are consistently marked.
 - Keep release publishing (PyPI) separate from e2e benches.

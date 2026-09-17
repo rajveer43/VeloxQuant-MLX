@@ -24,7 +24,10 @@ import pytest
 
 from veloxquant_mlx.metal import metal_available
 
-pytestmark = pytest.mark.skipif(not metal_available(), reason="requires Metal GPU")
+pytestmark = [
+    pytest.mark.metal,
+    pytest.mark.skipif(not metal_available(), reason="requires Metal GPU"),
+]
 
 from veloxquant_mlx.metal._qfilters_evict import (  # noqa: E402
     QFILTERS_MAX_BUDGET,

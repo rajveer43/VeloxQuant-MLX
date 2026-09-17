@@ -93,6 +93,9 @@ veloxquant_mlx = ["metal/src/*.metal", "py.typed"]
 testpaths = ["veloxquant_mlx/tests"]
 addopts = "-v"
 filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "metal: requires a real Metal device (mx.fast.metal_kernel); select with -m metal, deselect with -m 'not metal'. Tests still self-skip via metal_available() when run where Metal is genuinely absent -- this marker exists so CI can also *choose* to exclude or isolate them, e.g. to keep a hosted-runner correctness job separate from a bare-metal performance job.",
+]
 
 [tool.mypy]
 python_version = "3.11"

@@ -22,10 +22,13 @@ from veloxquant_mlx.metal import metal_available
 from veloxquant_mlx.metal.kernels import h2o_fused_evict, keyformer_fused_evict
 from veloxquant_mlx.quantizers.a2ats_rope import a2ats_apply_exact_rope, rope_remap_positions
 
-pytestmark = pytest.mark.skipif(
-    not metal_available(),
-    reason="Metal compute kernels not available on this build of mlx.",
-)
+pytestmark = [
+    pytest.mark.metal,
+    pytest.mark.skipif(
+        not metal_available(),
+        reason="Metal compute kernels not available on this build of mlx.",
+    ),
+]
 
 
 def _make_fingerprinted(n_total: int, D: int, seed: int = 0):

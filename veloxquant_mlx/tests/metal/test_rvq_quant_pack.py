@@ -26,10 +26,13 @@ from veloxquant_mlx.metal import metal_available
 from veloxquant_mlx.metal.kernels import rvq_quant_pack
 from veloxquant_mlx.quantizers.turboquant_rvq import TurboQuantRVQ
 
-pytestmark = pytest.mark.skipif(
-    not metal_available(),
-    reason="Metal compute kernels not available on this build of mlx.",
-)
+pytestmark = [
+    pytest.mark.metal,
+    pytest.mark.skipif(
+        not metal_available(),
+        reason="Metal compute kernels not available on this build of mlx.",
+    ),
+]
 
 
 def _reference_pack(quantizer: TurboQuantRVQ, x: mx.array, bits: int):

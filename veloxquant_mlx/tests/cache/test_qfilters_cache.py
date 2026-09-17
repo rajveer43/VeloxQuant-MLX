@@ -727,6 +727,7 @@ def test_use_metal_kernels_true_without_metal_raises() -> None:
         QFiltersKVCache(cfg, filters=_calibrated_filters(4, 16))
 
 
+@pytest.mark.metal
 @pytest.mark.skipif(not metal_available(), reason="requires Metal GPU")
 @pytest.mark.parametrize(
     "B,H,S,budget,n_sink,recent,sign",

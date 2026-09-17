@@ -1,0 +1,41 @@
+name: mlx-tests
+
+# PR-triggered run of the main MLX/Metal test suite (veloxquant_mlx/tests/).
+# Previously this suite only ran as a release gate in release.yml, on merge
+# to master -- meaning a PR could land with a broken Metal kernel and nobody
+# would know until the next release. See issue #395.
+#
+# Runs on macos-14 (the same runner release.yml already uses). Issue #395
+# confirmed empirically (2026-09-16, mlx 0.32.2) that hosted macOS runners
+# expose a working, CORRECT Metal device: mx.metal.is_available() is True,
+# it reports as "Apple Paravirtual device", and a real Metal-gated test
+# subset (test_warmup.py, test_tova_evict.py) passed including
+# reference-comparison correctness assertions, not just no-crash checks.
+#
+# What this workflow does NOT establish: performance/timing fidelity of the
+# paravirtual device. Do not read wall-clock numbers from this job as
+# representative of real Apple Silicon throughput -- that stays the job of
+# bare-metal hardware (see docs/BENCHMARK_INFRASTRUCTURE_FEASIBILITY.md,
+# Lane B). This workflow only asserts correctness.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package + dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run full MLX test suite
+        run: python -m pytest veloxquant_mlx/tests -q

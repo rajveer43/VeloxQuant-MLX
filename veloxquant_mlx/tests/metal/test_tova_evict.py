@@ -13,7 +13,10 @@ from veloxquant_mlx.metal import (
 )
 from veloxquant_mlx.quantizers.tova import _evict_mlx
 
-pytestmark = pytest.mark.skipif(not metal_available(), reason="Metal unavailable")
+pytestmark = [
+    pytest.mark.metal,
+    pytest.mark.skipif(not metal_available(), reason="Metal unavailable"),
+]
 
 
 @pytest.mark.parametrize(
