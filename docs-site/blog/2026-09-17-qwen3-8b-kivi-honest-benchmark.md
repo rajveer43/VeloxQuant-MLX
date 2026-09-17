@@ -13,6 +13,10 @@ tags: [metal, apple-silicon, mlx, kivi, benchmarking, kv-cache]
 
 ---
 
+:::info[Companion post]
+A second post runs the same protocol against a structurally different method -- [A Real Cost and a Claim That Didn't Hold](/blog/qwen3-8b-turboquant-rvq-honest-benchmark) benchmarks TurboQuantRVQ, this repo's default serving method, and finds a real throughput cost and a memory-savings claim that reverses sign at longer context. Read this post first; that one builds on it.
+:::
+
 There's a specific kind of benchmark result that's more useful than a win: a clean, well-measured null. Not "it didn't work," not "the code is broken" -- but "I measured this carefully, twice, at two context lengths, with the noise floor exposed, and the answer is that nothing moved."
 
 That's what happened when I ran this repo's KIVI KV-cache quantization kernel against Qwen3-8B on an Apple M4. This post is the full record -- including the part where the model I actually wanted to test turned out to be disqualified before I wrote a single line.

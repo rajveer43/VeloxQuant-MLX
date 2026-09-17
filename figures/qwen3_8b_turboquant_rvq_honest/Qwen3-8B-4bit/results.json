@@ -1,0 +1,136 @@
+{
+  "model": "mlx-community/Qwen3-8B-4bit",
+  "n_layers": 36,
+  "n_kv_heads": 8,
+  "head_dim": 128,
+  "bits": 2,
+  "max_tokens": 120,
+  "repeats": 5,
+  "hardware": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "chip": "Apple M4",
+    "ram_gb": 24.0
+  },
+  "gpu_contention_suspects": [
+    "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+  ],
+  "results": {
+    "short": {
+      "prompt_name": "short",
+      "prompt_tokens": 231,
+      "summaries": {
+        "fp16": {
+          "n_repeats": 5,
+          "throughput_median": 17.021319883199624,
+          "throughput_min": 15.760049779209966,
+          "throughput_max": 17.43613751725499,
+          "peak_mb_median": 4725.385787963867,
+          "peak_mb_min": 4724.713912963867,
+          "peak_mb_max": 4725.385787963867,
+          "key_compression": 1.0,
+          "texts": [
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the",
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the",
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the",
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the",
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the"
+          ]
+        },
+        "rvq_off": {
+          "n_repeats": 5,
+          "throughput_median": 14.417953003595548,
+          "throughput_min": 14.199671310801161,
+          "throughput_max": 14.62819346214693,
+          "peak_mb_median": 4637.174949645996,
+          "peak_mb_min": 4637.174949645996,
+          "peak_mb_max": 4637.174949645996,
+          "key_compression": 3.878787878787879,
+          "texts": [
+            "The passage discusses the role and characteristics of the key-value cache in transformer models, emphasizing its function of storing attention keys and values to avoid recomputation, and its memory usage, particularly on Apple Silicon platforms where it competes with model weights and the operating system for memory resources. The key-value cache stores attention keys and values of past tokens to avoid recomputation, with its size growing linearly with context length, and on Apple Silicon, it competes with model weights and the OS for memory resources. \n\nThe key-value cache in transformer models stores attention keys and values of past tokens to avoid recomputation",
+            "The passage discusses the role and characteristics of the key-value cache in transformer models, emphasizing its function of storing attention keys and values to avoid recomputation, and its memory usage, particularly on Apple Silicon platforms where it competes with model weights and the operating system for memory resources. The key-value cache stores attention keys and values of past tokens to avoid recomputation, with its size growing linearly with context length, and on Apple Silicon, it competes with model weights and the OS for memory resources. \n\nThe key-value cache in transformer models stores attention keys and values of past tokens to avoid recomputation",
+            "The passage discusses the role and characteristics of the key-value cache in transformer models, emphasizing its function of storing attention keys and values to avoid recomputation, and its memory usage, particularly on Apple Silicon platforms where it competes with model weights and the operating system for memory resources. The key-value cache stores attention keys and values of past tokens to avoid recomputation, with its size growing linearly with context length, and on Apple Silicon, it competes with model weights and the OS for memory resources. \n\nThe key-value cache in transformer models stores attention keys and values of past tokens to avoid recomputation",
+            "The passage discusses the role and characteristics of the key-value cache in transformer models, emphasizing its function of storing attention keys and values to avoid recomputation, and its memory usage, particularly on Apple Silicon platforms where it competes with model weights and the operating system for memory resources. The key-value cache stores attention keys and values of past tokens to avoid recomputation, with its size growing linearly with context length, and on Apple Silicon, it competes with model weights and the OS for memory resources. \n\nThe key-value cache in transformer models stores attention keys and values of past tokens to avoid recomputation",
+            "The passage discusses the role and characteristics of the key-value cache in transformer models, emphasizing its function of storing attention keys and values to avoid recomputation, and its memory usage, particularly on Apple Silicon platforms where it competes with model weights and the operating system for memory resources. The key-value cache stores attention keys and values of past tokens to avoid recomputation, with its size growing linearly with context length, and on Apple Silicon, it competes with model weights and the OS for memory resources. \n\nThe key-value cache in transformer models stores attention keys and values of past tokens to avoid recomputation"
+          ]
+        },
+        "rvq_on": {
+          "n_repeats": 5,
+          "throughput_median": 14.632763530916465,
+          "throughput_min": 13.888966139268407,
+          "throughput_max": 15.280064576727078,
+          "peak_mb_median": 4648.322898864746,
+          "peak_mb_min": 4648.322883605957,
+          "peak_mb_max": 4648.3232498168945,
+          "key_compression": 3.878787878787879,
+          "texts": [
+            "The passage discusses the role and characteristics of the key-value cache in transformer models, emphasizing its function of storing attention keys and values to avoid recomputation, and its memory usage, particularly on Apple Silicon platforms where it competes with model weights and the operating system for memory resources. The key-value cache stores attention keys and values of past tokens to avoid recomputation, with its size growing linearly with context length, and on Apple Silicon, it competes with model weights and the OS for memory resources. \n\nThe key-value cache in transformer models stores attention keys and values of past tokens to avoid recomputation",
+            "The passage discusses the role and characteristics of the key-value cache in transformer models, emphasizing its function of storing attention keys and values to avoid recomputation, and its memory usage, particularly on Apple Silicon platforms where it competes with model weights and the operating system for memory resources. The key-value cache stores attention keys and values of past tokens to avoid recomputation, with its size growing linearly with context length, and on Apple Silicon, it competes with model weights and the OS for memory resources. \n\nThe key-value cache in transformer models stores attention keys and values of past tokens to avoid recomputation",
+            "The passage discusses the role and characteristics of the key-value cache in transformer models, emphasizing its function of storing attention keys and values to avoid recomputation, and its memory usage, particularly on Apple Silicon platforms where it competes with model weights and the operating system for memory resources. The key-value cache stores attention keys and values of past tokens to avoid recomputation, with its size growing linearly with context length, and on Apple Silicon, it competes with model weights and the OS for memory resources. \n\nThe key-value cache in transformer models stores attention keys and values of past tokens to avoid recomputation",
+            "The passage discusses the role and characteristics of the key-value cache in transformer models, emphasizing its function of storing attention keys and values to avoid recomputation, and its memory usage, particularly on Apple Silicon platforms where it competes with model weights and the operating system for memory resources. The key-value cache stores attention keys and values of past tokens to avoid recomputation, with its size growing linearly with context length, and on Apple Silicon, it competes with model weights and the OS for memory resources. \n\nThe key-value cache in transformer models stores attention keys and values of past tokens to avoid recomputation",
+            "The passage discusses the role and characteristics of the key-value cache in transformer models, emphasizing its function of storing attention keys and values to avoid recomputation, and its memory usage, particularly on Apple Silicon platforms where it competes with model weights and the operating system for memory resources. The key-value cache stores attention keys and values of past tokens to avoid recomputation, with its size growing linearly with context length, and on Apple Silicon, it competes with model weights and the OS for memory resources. \n\nThe key-value cache in transformer models stores attention keys and values of past tokens to avoid recomputation"
+          ]
+        }
+      },
+      "rvq_on_vs_off_identical_text": true
+    },
+    "long": {
+      "prompt_name": "long",
+      "prompt_tokens": 2238,
+      "summaries": {
+        "fp16": {
+          "n_repeats": 5,
+          "throughput_median": 5.939120147156974,
+          "throughput_min": 5.674872645674414,
+          "throughput_max": 6.833800595386074,
+          "peak_mb_median": 5226.283954620361,
+          "peak_mb_min": 5226.283954620361,
+          "peak_mb_max": 5226.283954620361,
+          "key_compression": 1.0,
+          "texts": [
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For"
+          ]
+        },
+        "rvq_off": {
+          "n_repeats": 5,
+          "throughput_median": 4.104963070610842,
+          "throughput_min": 3.8672316281951185,
+          "throughput_max": 4.552730246612137,
+          "peak_mb_median": 5285.193700790405,
+          "peak_mb_min": 5285.193700790405,
+          "peak_mb_max": 5285.193700790405,
+          "key_compression": 3.878787878787879,
+          "texts": [
+            "\n\nThe key-value cache (KV cache) is a critical component in transformer-based models, such as the LLaMA, where the model's ability to handle long-context inputs is limited by the cache's capacity. The cache stores the attention keys and values of every past token, allowing the model to reuse these keys and values during subsequent computations, thereby reducing the need to recompute them. This is essential for efficient inference, as recomputing these keys and values would be computationally expensive. However, on Apple Silicon unified memory, the cache's size grows linearly with the context length, which",
+            "\n\nThe key-value cache (KV cache) is a critical component in transformer-based models, such as the LLaMA, where the model's ability to handle long-context inputs is limited by the cache's capacity. The cache stores the attention keys and values of every past token, allowing the model to reuse these keys and values during subsequent computations, thereby reducing the need to recompute them. This is essential for efficient inference, as recomputing these keys and values would be computationally expensive. However, on Apple Silicon unified memory, the cache's size grows linearly with the context length, which",
+            "\n\nThe key-value cache (KV cache) is a critical component in transformer-based models, such as the LLaMA, where the model's ability to handle long-context inputs is limited by the cache's capacity. The cache stores the attention keys and values of every past token, allowing the model to reuse these keys and values during subsequent computations, thereby reducing the need to recompute them. This is essential for efficient inference, as recomputing these keys and values would be computationally expensive. However, on Apple Silicon unified memory, the cache's size grows linearly with the context length, which",
+            "\n\nThe key-value cache (KV cache) is a critical component in transformer-based models, such as the LLaMA, where the model's ability to handle long-context inputs is limited by the cache's capacity. The cache stores the attention keys and values of every past token, allowing the model to reuse these keys and values during subsequent computations, thereby reducing the need to recompute them. This is essential for efficient inference, as recomputing these keys and values would be computationally expensive. However, on Apple Silicon unified memory, the cache's size grows linearly with the context length, which",
+            "\n\nThe key-value cache (KV cache) is a critical component in transformer-based models, such as the LLaMA, where the model's ability to handle long-context inputs is limited by the cache's capacity. The cache stores the attention keys and values of every past token, allowing the model to reuse these keys and values during subsequent computations, thereby reducing the need to recompute them. This is essential for efficient inference, as recomputing these keys and values would be computationally expensive. However, on Apple Silicon unified memory, the cache's size grows linearly with the context length, which"
+          ]
+        },
+        "rvq_on": {
+          "n_repeats": 5,
+          "throughput_median": 4.12286873690046,
+          "throughput_min": 3.6767474965551616,
+          "throughput_max": 4.480564582860188,
+          "peak_mb_median": 5293.193525314331,
+          "peak_mb_min": 5293.193525314331,
+          "peak_mb_max": 5293.193525314331,
+          "key_compression": 3.878787878787879,
+          "texts": [
+            "\n\nThe key-value cache (KV cache) is a critical component in transformer-based models, such as the LLaMA, where the model's ability to handle long-context inputs is limited by the cache's capacity. The cache stores the attention keys and values of every past token, allowing the model to reuse these keys and values during subsequent computations, thereby reducing the need to recompute them. This is essential for efficient inference, as recomputing these keys and values would be computationally expensive. However, on Apple Silicon unified memory, the cache's size grows linearly with the context length, which",
+            "\n\nThe key-value cache (KV cache) is a critical component in transformer-based models, such as the LLaMA, where the model's ability to handle long-context inputs is limited by the cache's capacity. The cache stores the attention keys and values of every past token, allowing the model to reuse these keys and values during subsequent computations, thereby reducing the need to recompute them. This is essential for efficient inference, as recomputing these keys and values would be computationally expensive. However, on Apple Silicon unified memory, the cache's size grows linearly with the context length, which",
+            "\n\nThe key-value cache (KV cache) is a critical component in transformer-based models, such as the LLaMA, where the model's ability to handle long-context inputs is limited by the cache's capacity. The cache stores the attention keys and values of every past token, allowing the model to reuse these keys and values during subsequent computations, thereby reducing the need to recompute them. This is essential for efficient inference, as recomputing these keys and values would be computationally expensive. However, on Apple Silicon unified memory, the cache's size grows linearly with the context length, which",
+            "\n\nThe key-value cache (KV cache) is a critical component in transformer-based models, such as the LLaMA, where the model's ability to handle long-context inputs is limited by the cache's capacity. The cache stores the attention keys and values of every past token, allowing the model to reuse these keys and values during subsequent computations, thereby reducing the need to recompute them. This is essential for efficient inference, as recomputing these keys and values would be computationally expensive. However, on Apple Silicon unified memory, the cache's size grows linearly with the context length, which",
+            "\n\nThe key-value cache (KV cache) is a critical component in transformer-based models, such as the LLaMA, where the model's ability to handle long-context inputs is limited by the cache's capacity. The cache stores the attention keys and values of every past token, allowing the model to reuse these keys and values during subsequent computations, thereby reducing the need to recompute them. This is essential for efficient inference, as recomputing these keys and values would be computationally expensive. However, on Apple Silicon unified memory, the cache's size grows linearly with the context length, which"
+          ]
+        }
+      },
+      "rvq_on_vs_off_identical_text": true
+    }
+  }
+}
