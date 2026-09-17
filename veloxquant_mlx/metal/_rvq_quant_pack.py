@@ -34,19 +34,19 @@ Public API:
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import mlx.core as mx
+
+from veloxquant_mlx.metal._kernel_utils import KernelCache, read_kernel_source
 
 _WORD_BITS = 32
 
 
 def _read_kernel_source(filename: str) -> str:
     """Read a standalone .metal kernel source file from metal/src/."""
-    return (Path(__file__).parent / "src" / filename).read_text()
+    return read_kernel_source(__file__, filename)
 
 
-_cache: dict = {}
+_cache = KernelCache()
 
 # ===========================================================================
 # Metal source — fused stage-1 + stage-2 RVQ quantize, packed to uint32
@@ -63,16 +63,17 @@ _RVQ_QUANT_PACK_SRC = _read_kernel_source("rvq_quant_pack.metal")
 
 def _quant_pack_kernel(d: int, bits: int):
     key = ("rvq_quant_pack", d, bits)
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
             name=f"rvq_quant_pack_d{d}_b{bits}",
             input_names=["rotated", "centroids1", "boundaries1", "boundaries2"],
             output_names=["packed1", "packed2"],
             header=f"#define MAX_D {d}\n#define BITS {bits}u\n",
             source=_RVQ_QUANT_PACK_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 def rvq_quant_pack(

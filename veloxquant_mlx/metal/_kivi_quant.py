@@ -45,9 +45,10 @@ Public API:
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 import mlx.core as mx
+
+from veloxquant_mlx.metal._kernel_utils import KernelCache, read_kernel_source
 
 # Threads per threadgroup for the per-token kernel: one SIMD group, so the
 # butterfly reduction stays within a warp and needs no barriers.
@@ -66,10 +67,10 @@ _MLX_TO_METAL_DTYPE = {
 
 def _read_kernel_source(filename: str) -> str:
     """Read a standalone .metal kernel source file from metal/src/."""
-    return (Path(__file__).parent / "src" / filename).read_text()
+    return read_kernel_source(__file__, filename)
 
 
-_cache: dict = {}
+_cache = KernelCache()
 
 
 # ===========================================================================
@@ -113,9 +114,10 @@ def _quant_kernel(
     without bound and every step would pay a shader compile.
     """
     key = ("kivi_group_quant", axis, group_size, levels, eps, head_dim, dtype_name)
-    if key not in _cache:
+
+    def _build():
         per_channel = axis == -2
-        _cache[key] = mx.fast.metal_kernel(
+        return mx.fast.metal_kernel(
             name=("kivi_group_quant_channel" if per_channel else "kivi_group_quant_token")
             + f"_g{group_size}_l{levels}_d{head_dim}",
             input_names=["x"],
@@ -124,7 +126,8 @@ def _quant_kernel(
             source=_KIVI_QUANT_CHANNEL_SRC if per_channel else _KIVI_QUANT_TOKEN_SRC,
             ensure_row_contiguous=True,
         )
-    return _cache[key]
+
+    return _cache.get_or_create(key, _build)
 
 
 # ---------------------------------------------------------------------------
