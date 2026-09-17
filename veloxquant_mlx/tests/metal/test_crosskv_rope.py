@@ -63,6 +63,24 @@ def test_matches_reference_in_fp16():
     assert float(err) < 1e-2
 
 
+def test_matches_reference_in_bfloat16():
+    """bf16 keys must dispatch to their own kernel, not fall through to fp32.
+
+    Calls fp32 first at the same shape so a wrapper that keys its kernel
+    cache on a collapsed dtype label (see #400) would be exercised here.
+    """
+    mx.random.seed(7)
+    keys_f32 = mx.random.normal((4, 64, 64)).astype(mx.float32)
+    pos = mx.arange(64)
+    crosskv_rope_recode(keys_f32, pos, SRC_BASE, TGT_BASE)
+
+    keys = keys_f32.astype(mx.bfloat16)
+    got = crosskv_rope_recode(keys, pos, SRC_BASE, TGT_BASE)
+    assert got.dtype == mx.bfloat16
+    err = mx.max(mx.abs(_reference(keys, pos).astype(mx.float32) - got.astype(mx.float32)))
+    assert float(err) < 1e-1
+
+
 def test_equal_bases_is_identity():
     """No net rotation when source and target share a base — pins the sign."""
     mx.random.seed(2)

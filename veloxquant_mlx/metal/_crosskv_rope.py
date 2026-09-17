@@ -55,11 +55,11 @@ def is_available() -> bool:
         return False
 
 
-def _recode_kernel(dtype_name: str):
-    key = ("crosskv_rope_recode", dtype_name)
+def _recode_kernel(dtype: mx.Dtype):
+    key = ("crosskv_rope_recode", str(dtype))
     if key not in _cache:
         _cache[key] = mx.fast.metal_kernel(
-            name=f"crosskv_rope_recode_{dtype_name}",
+            name=f"crosskv_rope_recode_{str(dtype).replace('.', '_')}",
             input_names=["keys", "positions", "rope_bases"],
             output_names=["out"],
             source=_CROSSKV_ROPE_RECODE_SRC,
@@ -82,8 +82,8 @@ def crosskv_rope_recode(
     dispatch.
 
     Args:
-        keys: ``[BH, N, D]`` fp16/fp32 keys rotated under ``source_base``.
-            ``BH`` folds batch and head; ``D`` must be even.
+        keys: ``[BH, N, D]`` float keys (fp16/fp32/bf16) rotated under
+            ``source_base``. ``BH`` folds batch and head; ``D`` must be even.
         positions: ``[N]`` absolute positions, shared across the ``BH`` groups.
         source_base: Source model's ``rope_theta``.
         target_base: Target model's ``rope_theta``.
@@ -108,15 +108,20 @@ def crosskv_rope_recode(
     if n == 0:
         return keys
 
-    dtype_name = "float16" if keys.dtype == mx.float16 else "float32"
-    kernel = _recode_kernel(dtype_name)
+    # Cache/compile keyed on keys.dtype itself (not a collapsed float16/
+    # float32 label) so a bfloat16 call can never reuse a pipeline object
+    # compiled for a different dtype's `template=[("T", ...)]`. The explicit
+    # astype is a no-op cast (defense-in-depth, matching every other wrapper
+    # in this directory) that guarantees the array handed to `inputs` is
+    # exactly the dtype the cache key and template were derived from.
+    kernel = _recode_kernel(keys.dtype)
 
     total_threads = bh * n * (d // 2)
     tg = min(256, total_threads)
 
     (out,) = kernel(
         inputs=[
-            keys,
+            keys.astype(keys.dtype),
             positions.astype(mx.float32),
             mx.array([source_base, target_base], dtype=mx.float32),
         ],
