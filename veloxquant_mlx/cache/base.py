@@ -234,6 +234,24 @@ _CACHE_CLASS_BY_METHOD: dict[str, tuple[str, str]] = {
 }
 
 
+def _resolve_head_dim(layer: Any, args: Any) -> int | None:
+    """Resolve a layer's attention head_dim, or None if it has no attention.
+
+    Checks ``layer.self_attn``/``layer.attn`` first (covers models that carry
+    a per-layer ``head_dim``, e.g. after GQA/MQA reshaping), then falls back
+    to the model-level ``args.head_dim`` or ``hidden_size // num_attention_heads``.
+    Returns None for non-attention layers (MoE gates, recurrent/linear-attention
+    slots, etc.) so callers can route those to a fallback cache.
+    """
+    attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+    if attn is None:
+        return None
+    hd = getattr(attn, "head_dim", None)
+    if hd is None and args is not None:
+        hd = getattr(args, "head_dim", None) or (args.hidden_size // args.num_attention_heads)
+    return hd
+
+
 @dataclass
 class KVCacheConfig:
     """Configuration for a KVCache instance.
@@ -1019,15 +1037,7 @@ class KVCacheBuilder:
         attn_idx = 0  # index into b_spec, advances only for attention layers
         warmed_keys: set = set()
         for i, layer in enumerate(layers):
-            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
-            if attn is None:
-                caches.append(_fallback_for(i))
-                continue
-            hd = getattr(attn, "head_dim", None)
-            if hd is None and args is not None:
-                hd = getattr(args, "head_dim", None) or (
-                    args.hidden_size // args.num_attention_heads
-                )
+            hd = _resolve_head_dim(layer, args)
             if hd is None:
                 caches.append(_fallback_for(i))
                 continue
@@ -1055,9 +1065,7 @@ class KVCacheBuilder:
         return caches
 
     @staticmethod
-    def _build_reader_counts(
-        roles: list[tuple[str, int]], reader_role: str
-    ) -> dict[int, int]:
+    def _build_reader_counts(roles: list[tuple[str, int]], reader_role: str) -> dict[int, int]:
         """Count readers per group for a coordinator's anchor/primary-and-reuse
         role assignment.
 
@@ -1085,18 +1093,7 @@ class KVCacheBuilder:
         from veloxquant_mlx.cache.xquant_coordinator import XQuantCoordinator
         from veloxquant_mlx.quantizers.xquant import pair_layers
 
-        def _head_dim(layer):
-            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
-            if attn is None:
-                return None
-            hd = getattr(attn, "head_dim", None)
-            if hd is None and args is not None:
-                hd = getattr(args, "head_dim", None) or (
-                    args.hidden_size // args.num_attention_heads
-                )
-            return hd
-
-        attn_layer_idx = [i for i, L in enumerate(layers) if _head_dim(L) is not None]
+        attn_layer_idx = [i for i, L in enumerate(layers) if _resolve_head_dim(L, args) is not None]
         roles = pair_layers(len(attn_layer_idx), config.xquant_group_size)
         coordinator = XQuantCoordinator(max_ctx=config.xquant_max_ctx)
 
@@ -1107,7 +1104,7 @@ class KVCacheBuilder:
 
         caches = []
         for i, layer in enumerate(layers):
-            hd = _head_dim(layer)
+            hd = _resolve_head_dim(layer, args)
             if hd is None:
                 caches.append(fallback_cls())
                 continue
@@ -1148,18 +1145,7 @@ class KVCacheBuilder:
         from veloxquant_mlx.cache.xkv_coordinator import XKVCoordinator
         from veloxquant_mlx.quantizers.xkv import pair_layers_grouped
 
-        def _head_dim(layer):
-            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
-            if attn is None:
-                return None
-            hd = getattr(attn, "head_dim", None)
-            if hd is None and args is not None:
-                hd = getattr(args, "head_dim", None) or (
-                    args.hidden_size // args.num_attention_heads
-                )
-            return hd
-
-        attn_layer_idx = [i for i, L in enumerate(layers) if _head_dim(L) is not None]
+        attn_layer_idx = [i for i, L in enumerate(layers) if _resolve_head_dim(L, args) is not None]
         roles = pair_layers_grouped(len(attn_layer_idx), config.xkv_group_size)
         coordinator = XKVCoordinator(max_ctx=config.xkv_max_ctx)
 
@@ -1169,7 +1155,7 @@ class KVCacheBuilder:
 
         caches = []
         for i, layer in enumerate(layers):
-            hd = _head_dim(layer)
+            hd = _resolve_head_dim(layer, args)
             if hd is None:
                 caches.append(fallback_cls())
                 continue
@@ -1208,18 +1194,7 @@ class KVCacheBuilder:
         from veloxquant_mlx.cache.minicache_coordinator import MiniCacheCoordinator
         from veloxquant_mlx.quantizers.minicache import pair_layers_depth
 
-        def _head_dim(layer):
-            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
-            if attn is None:
-                return None
-            hd = getattr(attn, "head_dim", None)
-            if hd is None and args is not None:
-                hd = getattr(args, "head_dim", None) or (
-                    args.hidden_size // args.num_attention_heads
-                )
-            return hd
-
-        attn_layer_idx = [i for i, L in enumerate(layers) if _head_dim(L) is not None]
+        attn_layer_idx = [i for i, L in enumerate(layers) if _resolve_head_dim(L, args) is not None]
         roles = pair_layers_depth(
             len(attn_layer_idx),
             start_frac=config.minicache_start_frac,
@@ -1234,7 +1209,7 @@ class KVCacheBuilder:
 
         caches = []
         for i, layer in enumerate(layers):
-            hd = _head_dim(layer)
+            hd = _resolve_head_dim(layer, args)
             if hd is None:
                 caches.append(fallback_cls())
                 continue
@@ -1272,18 +1247,7 @@ class KVCacheBuilder:
         from veloxquant_mlx.cache.pyramidkv_cache import PyramidKVCache
         from veloxquant_mlx.quantizers.pyramidkv import pyramid_budgets
 
-        def _head_dim(layer):
-            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
-            if attn is None:
-                return None
-            hd = getattr(attn, "head_dim", None)
-            if hd is None and args is not None:
-                hd = getattr(args, "head_dim", None) or (
-                    args.hidden_size // args.num_attention_heads
-                )
-            return hd
-
-        attn_layer_idx = [i for i, L in enumerate(layers) if _head_dim(L) is not None]
+        attn_layer_idx = [i for i, L in enumerate(layers) if _resolve_head_dim(L, args) is not None]
         schedule = pyramid_budgets(
             n_layers=len(attn_layer_idx),
             avg_budget=config.pyramid_budget,
@@ -1296,7 +1260,7 @@ class KVCacheBuilder:
 
         caches = []
         for i, layer in enumerate(layers):
-            hd = _head_dim(layer)
+            hd = _resolve_head_dim(layer, args)
             if hd is None:
                 caches.append(fallback_cls())
                 continue
@@ -1324,18 +1288,7 @@ class KVCacheBuilder:
         from veloxquant_mlx.cache.cachegen_cache import CacheGenKVCache
         from veloxquant_mlx.quantizers.cachegen import layer_group_bits
 
-        def _head_dim(layer):
-            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
-            if attn is None:
-                return None
-            hd = getattr(attn, "head_dim", None)
-            if hd is None and args is not None:
-                hd = getattr(args, "head_dim", None) or (
-                    args.hidden_size // args.num_attention_heads
-                )
-            return hd
-
-        attn_layer_idx = [i for i, L in enumerate(layers) if _head_dim(L) is not None]
+        attn_layer_idx = [i for i, L in enumerate(layers) if _resolve_head_dim(L, args) is not None]
         schedule = layer_group_bits(
             n_layers=len(attn_layer_idx),
             base_bits=config.cachegen_bits,
@@ -1347,7 +1300,7 @@ class KVCacheBuilder:
 
         caches = []
         for i, layer in enumerate(layers):
-            hd = _head_dim(layer)
+            hd = _resolve_head_dim(layer, args)
             if hd is None:
                 caches.append(fallback_cls())
                 continue
@@ -1375,18 +1328,7 @@ class KVCacheBuilder:
         from veloxquant_mlx.cache.squeeze_cache import SqueezeAttentionCache
         from veloxquant_mlx.cache.squeeze_coordinator import SqueezeCoordinator
 
-        def _head_dim(layer):
-            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
-            if attn is None:
-                return None
-            hd = getattr(attn, "head_dim", None)
-            if hd is None and args is not None:
-                hd = getattr(args, "head_dim", None) or (
-                    args.hidden_size // args.num_attention_heads
-                )
-            return hd
-
-        attn_layer_idx = [i for i, L in enumerate(layers) if _head_dim(L) is not None]
+        attn_layer_idx = [i for i, L in enumerate(layers) if _resolve_head_dim(L, args) is not None]
         coordinator = SqueezeCoordinator(
             n_layers=len(attn_layer_idx),
             avg_budget=config.squeeze_budget,
@@ -1396,7 +1338,7 @@ class KVCacheBuilder:
 
         caches = []
         for i, layer in enumerate(layers):
-            hd = _head_dim(layer)
+            hd = _resolve_head_dim(layer, args)
             if hd is None:
                 caches.append(fallback_cls())
                 continue
@@ -1425,18 +1367,7 @@ class KVCacheBuilder:
         from veloxquant_mlx.cache.chunkkv_cache import ChunkKVCache
         from veloxquant_mlx.cache.chunkkv_coordinator import ChunkKVIndexReuseCoordinator
 
-        def _head_dim(layer):
-            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
-            if attn is None:
-                return None
-            hd = getattr(attn, "head_dim", None)
-            if hd is None and args is not None:
-                hd = getattr(args, "head_dim", None) or (
-                    args.hidden_size // args.num_attention_heads
-                )
-            return hd
-
-        attn_layer_idx = [i for i, L in enumerate(layers) if _head_dim(L) is not None]
+        attn_layer_idx = [i for i, L in enumerate(layers) if _resolve_head_dim(L, args) is not None]
         coordinator = ChunkKVIndexReuseCoordinator(
             n_layers=len(attn_layer_idx),
             reuse_layers=config.chunkkv_reuse_layers,
@@ -1445,7 +1376,7 @@ class KVCacheBuilder:
         caches = []
         attn_pos = 0  # 0-based index among attention-bearing layers only
         for i, layer in enumerate(layers):
-            hd = _head_dim(layer)
+            hd = _resolve_head_dim(layer, args)
             if hd is None:
                 caches.append(fallback_cls())
                 continue
