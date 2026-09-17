@@ -15,6 +15,10 @@ tags: [metal, apple-silicon, mlx, qfilters, eviction, benchmarking, kv-cache, co
 
 The [first post](/blog/qwen3-8b-kivi-honest-benchmark) in this series found a Metal kernel with zero end-to-end effect. The [second](/blog/qwen3-8b-turboquant-rvq-honest-benchmark) found a real throughput cost and a memory claim that flipped sign at longer context. Both methods, though, were **quantization** -- every key and value survives, just approximated. Nothing in either post could produce genuinely broken output, because nothing was ever thrown away.
 
+:::info[Companion post]
+A fourth post in this series runs the same protocol against VecInfer, another quantization method -- [The Kernel That Finally Did Something](/blog/qwen3-8b-vecinfer-honest-benchmark) finds the first Metal kernel in the series that is both a real, large speedup (up to 14x) and, unlike every kernel tested so far including this post's, not byte-identical to its own pure-MLX fallback.
+:::
+
 This post benchmarks **QFilters**, this repo's query-agnostic eviction method, which works differently on purpose: past a fixed token budget, it *drops* the lowest-scoring cached tokens outright. Their information doesn't get approximated -- it's gone. That makes a different question testable, one the first two posts structurally couldn't ask: does the cache stay coherent once it starts forgetting things?
 
 ## Why eviction is a different kind of test

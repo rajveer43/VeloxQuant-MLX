@@ -17,8 +17,8 @@ The [previous post](/blog/qwen3-8b-kivi-honest-benchmark) in this pair ran the s
 
 This post runs the identical protocol against **TurboQuantRVQ** -- this repo's namesake method, and its `DEFAULT_SERVE_METHOD` -- and gets a different kind of answer: two real findings, not a null, and one of them contradicts a number already committed to this codebase.
 
-:::info[Companion post]
-A third post in this series runs the same protocol against QFilters, an eviction method rather than a quantization one -- [The Output That Stopped Being Output](/blog/qwen3-8b-qfilters-honest-benchmark) finds the same bit-exact Metal kernel pattern, but also a fully reproducible coherence collapse once the cache exceeds its token budget, a failure mode quantization methods can't produce by construction.
+:::info[Companion posts]
+Two more posts in this series run the same protocol against other methods. [The Output That Stopped Being Output](/blog/qwen3-8b-qfilters-honest-benchmark) benchmarks QFilters, an eviction method rather than a quantization one, and finds the same bit-exact Metal kernel pattern plus a fully reproducible coherence collapse once the cache exceeds its token budget. [The Kernel That Finally Did Something](/blog/qwen3-8b-vecinfer-honest-benchmark) benchmarks VecInfer and finds the first kernel in the series that breaks the bit-exactness pattern -- a real 14x speedup that is not byte-identical to its own pure-MLX fallback.
 :::
 
 ## Why TurboQuantRVQ, and why it's a different kind of test

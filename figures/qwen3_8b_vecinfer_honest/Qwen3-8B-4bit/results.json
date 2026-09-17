@@ -1,0 +1,140 @@
+{
+  "model": "mlx-community/Qwen3-8B-4bit",
+  "n_layers": 36,
+  "n_kv_heads": 8,
+  "head_dim": 128,
+  "key_codebook_bits": 12,
+  "value_codebook_bits": 8,
+  "key_sub_dim": 4,
+  "value_sub_dim": 8,
+  "calibration": "synthetic-gaussian (NOT real model activations, see script docstring)",
+  "max_tokens": 120,
+  "repeats": 5,
+  "hardware": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "chip": "Apple M4",
+    "ram_gb": 24.0
+  },
+  "gpu_contention_suspects": [
+    "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+  ],
+  "results": {
+    "short": {
+      "prompt_name": "short",
+      "prompt_tokens": 231,
+      "summaries": {
+        "fp16": {
+          "n_repeats": 5,
+          "throughput_median": 17.689823995704813,
+          "throughput_min": 17.142971584539094,
+          "throughput_max": 17.930372015428237,
+          "peak_mb_median": 4724.850631713867,
+          "peak_mb_min": 4724.788131713867,
+          "peak_mb_max": 4724.850631713867,
+          "key_compression": 1.0,
+          "texts": [
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the",
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the",
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the",
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the",
+            "The first sentence should describe the purpose of the key-value cache, and the second sentence should describe the memory implications on Apple Silicon. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the second sentence should be a restatement of the second sentence in the passage. Do not use markdown. The first sentence should be a restatement of the first sentence in the passage, and the"
+          ]
+        },
+        "vecinfer_off": {
+          "n_repeats": 5,
+          "throughput_median": 3.1636114043636496,
+          "throughput_min": 2.908227106831237,
+          "throughput_max": 3.246194126198533,
+          "peak_mb_median": 5829.493396759033,
+          "peak_mb_min": 5829.493396759033,
+          "peak_mb_max": 5829.805896759033,
+          "key_compression": 5.333333333333333,
+          "texts": [
+            "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss::ssssssssssssssssssssssssssss:s:ssss:sssssss:s:ssss",
+            "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss::ssssssssssssssssssssssssssss:s:ssss:sssssss:s:ssss",
+            "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss::ssssssssssssssssssssssssssss:s:ssss:sssssss:s:ssss",
+            "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss::ssssssssssssssssssssssssssss:s:ssss:sssssss:s:ssss",
+            "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss::ssssssssssssssssssssssssssss:s:ssss:sssssss:s:ssss"
+          ]
+        },
+        "vecinfer_on": {
+          "n_repeats": 5,
+          "throughput_median": 3.2109752756255094,
+          "throughput_min": 3.122168382214591,
+          "throughput_max": 3.30475370736722,
+          "peak_mb_median": 5114.330509185791,
+          "peak_mb_min": 5114.330509185791,
+          "peak_mb_max": 5114.330509185791,
+          "key_compression": 5.333333333333333,
+          "texts": [
+            "ssssssssssssssssssssssssss::sssssssssssssssssssssssssssss::s:ssssss:::::sssssstrationsss::::ss:s::::sss:s:::ssss:s:ssss::::s:::",
+            "ssssssssssssssssssssssssss::sssssssssssssssssssssssssssss::s:ssssss:::::sssssstrationsss::::ss:s::::sss:s:::ssss:s:ssss::::s:::",
+            "ssssssssssssssssssssssssss::sssssssssssssssssssssssssssss::s:ssssss:::::sssssstrationsss::::ss:s::::sss:s:::ssss:s:ssss::::s:::",
+            "ssssssssssssssssssssssssss::sssssssssssssssssssssssssssss::s:ssssss:::::sssssstrationsss::::ss:s::::sss:s:::ssss:s:ssss::::s:::",
+            "ssssssssssssssssssssssssss::sssssssssssssssssssssssssssss::s:ssssss:::::sssssstrationsss::::ss:s::::sss:s:::ssss:s:ssss::::s:::"
+          ]
+        }
+      },
+      "vecinfer_on_vs_off_identical_text": false
+    },
+    "long": {
+      "prompt_name": "long",
+      "prompt_tokens": 2238,
+      "summaries": {
+        "fp16": {
+          "n_repeats": 5,
+          "throughput_median": 5.325335610537196,
+          "throughput_min": 4.794945894289338,
+          "throughput_max": 5.89579191059175,
+          "peak_mb_median": 5226.365261077881,
+          "peak_mb_min": 5226.365261077881,
+          "peak_mb_max": 5226.365261077881,
+          "key_compression": 1.0,
+          "texts": [
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+            "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For"
+          ]
+        },
+        "vecinfer_off": {
+          "n_repeats": 5,
+          "throughput_median": 0.1722199900040627,
+          "throughput_min": 0.16053419642469102,
+          "throughput_max": 0.179267871616636,
+          "peak_mb_median": 6204.850505828857,
+          "peak_mb_min": 6204.850505828857,
+          "peak_mb_max": 6204.850505828857,
+          "key_compression": 5.333333333333333,
+          "texts": [
+            ":::::::::::::::::::::::::::::::::::::::::::::::::::::\n:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::",
+            ":::::::::::::::::::::::::::::::::::::::::::::::::::::\n:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::",
+            ":::::::::::::::::::::::::::::::::::::::::::::::::::::\n:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::",
+            ":::::::::::::::::::::::::::::::::::::::::::::::::::::\n:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::",
+            ":::::::::::::::::::::::::::::::::::::::::::::::::::::\n:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+          ]
+        },
+        "vecinfer_on": {
+          "n_repeats": 5,
+          "throughput_median": 2.4169714417642814,
+          "throughput_min": 2.2367892643177014,
+          "throughput_max": 2.431449440712718,
+          "peak_mb_median": 5787.67989730835,
+          "peak_mb_min": 5787.67989730835,
+          "peak_mb_max": 5787.67989730835,
+          "key_compression": 5.333333333333333,
+          "texts": [
+            ":\n:\n:\n:\n:\n:\ned:\ned:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\ned:\ned:\n:\ned:\ned:\ned:\ned:\ned:\n:\n:\n:\n:\n:\ned:\n:\ned:\n:\ned:\n:\n:\n:\n:\ned:\ned:\n:\ned:\ned:\ned:\ned:\n",
+            ":\n:\n:\n:\n:\n:\ned:\ned:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\ned:\ned:\n:\ned:\ned:\ned:\ned:\ned:\n:\n:\n:\n:\n:\ned:\n:\ned:\n:\ned:\n:\n:\n:\n:\ned:\ned:\n:\ned:\ned:\ned:\ned:\n",
+            ":\n:\n:\n:\n:\n:\ned:\ned:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\ned:\ned:\n:\ned:\ned:\ned:\ned:\ned:\n:\n:\n:\n:\n:\ned:\n:\ned:\n:\ned:\n:\n:\n:\n:\ned:\ned:\n:\ned:\ned:\ned:\ned:\n",
+            ":\n:\n:\n:\n:\n:\ned:\ned:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\ned:\ned:\n:\ned:\ned:\ned:\ned:\ned:\n:\n:\n:\n:\n:\ned:\n:\ned:\n:\ned:\n:\n:\n:\n:\ned:\ned:\n:\ned:\ned:\ned:\ned:\n",
+            ":\n:\n:\n:\n:\n:\ned:\ned:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\n:\n:\ned:\n:\n:\n:\ned:\ned:\n:\ned:\ned:\ned:\ned:\ned:\n:\n:\n:\n:\n:\ned:\n:\ned:\n:\ned:\n:\n:\n:\n:\ned:\ned:\n:\ned:\ned:\ned:\ned:\n"
+          ]
+        }
+      },
+      "vecinfer_on_vs_off_identical_text": false
+    }
+  }
+}
