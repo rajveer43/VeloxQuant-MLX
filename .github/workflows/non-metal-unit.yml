@@ -21,8 +21,11 @@ jobs:
       - name: Install pytest only
         run: pip install pytest
       # Keep tests under repo-root tests/non_metal/ so pytest does not
-      # walk into veloxquant_mlx/ (package __init__ imports mlx).
-      - name: Run Mac recommender unit tests (no MLX)
+      # walk into veloxquant_mlx/ (package __init__ imports mlx). Run the
+      # whole directory, not individual files by name -- naming files
+      # explicitly is how test_block_pool.py went uncovered for a while
+      # despite living right next to test_mac_recommender.py (#425).
+      - name: Run non-metal unit tests (no MLX)
         run: >
-          python -m pytest tests/non_metal/test_mac_recommender.py -q
+          python -m pytest tests/non_metal/ -q
           --noconftest --import-mode=importlib -c /dev/null -o addopts=

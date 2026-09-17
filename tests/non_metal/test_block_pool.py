@@ -31,13 +31,31 @@ def _load(mod_name: str, rel_path: str):
 
 # core.exceptions has no third-party deps; load it first so block_pool's
 # `from veloxquant_mlx.core.exceptions import BlockPoolExhaustedError`
-# resolves against this already-imported stand-in module.
+# resolves against this already-imported stand-in module. The stand-in
+# entries are removed from sys.modules again right after block_pool loads
+# (see below) rather than left behind: leaving them in place would shadow
+# the real `veloxquant_mlx` package for any other test file collected in
+# the same pytest session (e.g. tests/non_metal/test_mac_recommender.py,
+# which does need the real package), making a fake, submodule-less stand-in
+# win the import instead of ever reaching veloxquant_mlx/__init__.py.
+_stand_ins = ["veloxquant_mlx", "veloxquant_mlx.core"]
+_prior_modules = {name: sys.modules.get(name) for name in _stand_ins}
 _exceptions_mod = _load("veloxquant_mlx.core.exceptions", "veloxquant_mlx/core/exceptions.py")
 sys.modules.setdefault("veloxquant_mlx", type(sys)("veloxquant_mlx"))
 sys.modules.setdefault("veloxquant_mlx.core", type(sys)("veloxquant_mlx.core"))
 sys.modules["veloxquant_mlx.core.exceptions"] = _exceptions_mod
 
 _block_pool = _load("block_pool", "veloxquant_mlx/memory/block_pool.py")
+
+# Undo the stand-ins now that block_pool.py has finished importing against
+# them, so this file doesn't leak a fake `veloxquant_mlx` into sys.modules
+# for the rest of the pytest process.
+del sys.modules["veloxquant_mlx.core.exceptions"]
+for _name in _stand_ins:
+    if _prior_modules[_name] is None:
+        sys.modules.pop(_name, None)
+    else:
+        sys.modules[_name] = _prior_modules[_name]
 
 AllocationStats = _block_pool.AllocationStats
 Block = _block_pool.Block
