@@ -41,8 +41,11 @@ permissions:
 jobs:
   search:
     runs-on: ubuntu-latest
-    # ~45 queries * 20s apart is ~15min; give real headroom for retries.
-    timeout-minutes: 30
+    # ~45 queries * 20s apart is ~15min baseline, but a secondary rate-limit
+    # cooldown has been observed up to ~175s on a single query with no
+    # retry cap (see in-step comment) -- this is a background weekly cron,
+    # not something anyone waits on, so generous headroom costs nothing.
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -127,31 +130,42 @@ jobs:
             core.info(`Generated ${queries.length} watch queries from ${cacheDir}`);
 
             // The default GITHUB_TOKEN hits GitHub's search secondary rate
-            // limit ("abuse detection") on back-to-back code-search calls
-            // even with several seconds between them -- every one of the 4
-            // hand-picked queries this workflow started with failed on every
-            // scheduled run, silently, because the failure was only ever
-            // logged as a core.warning. Retry with backoff before giving up,
-            // and widen the base gap between queries. At ~45 queries and 20s
-            // apart this run now takes ~15min -- fine for a weekly cron, well
-            // under GitHub Actions' default job timeout.
-            async function searchWithRetry(q, attempt = 1) {
-              try {
-                return await github.rest.search.code({ q, per_page: 10 });
-              } catch (e) {
-                const isRateLimited =
-                  e.status === 403 ||
-                  e.status === 429 ||
-                  /rate limit|abuse/i.test(e.message || '');
-                if (isRateLimited && attempt < 4) {
-                  const backoffMs = 10000 * attempt;
+            // limit ("abuse detection") on back-to-back code-search calls.
+            // At low query counts (4-5) a fixed 20s gap and a few fixed-size
+            // retries cleared it. At the full 45-query sweep it does not:
+            // GitHub's cooldown escalates with sustained traffic -- one run
+            // saw "try again in 173.47s" while a fixed 10/20/30s retry
+            // ladder only waited 60s total before giving up, so every retry
+            // just got rejected again. Fix: parse GitHub's own quoted
+            // wait time out of the error and sleep exactly that long (plus
+            // a small margin), rather than guessing at a backoff schedule.
+            // No retry cap -- honoring the real cooldown either clears it
+            // or the job's own 30min timeout ends things, which is a more
+            // honest failure than silently skipping queries.
+            function rateLimitWaitMs(e) {
+              const isRateLimited =
+                e.status === 403 ||
+                e.status === 429 ||
+                /rate limit|abuse/i.test(e.message || '');
+              if (!isRateLimited) return null;
+              const m = /try again in ([\d.]+)s/i.exec(e.message || '');
+              // +5s margin: GitHub's own countdown is exact to the second,
+              // but the clock starts back at the moment the 403 was raised.
+              return m ? Math.ceil(parseFloat(m[1]) * 1000) + 5000 : 30000;
+            }
+
+            async function searchWithRetry(q) {
+              for (;;) {
+                try {
+                  return await github.rest.search.code({ q, per_page: 10 });
+                } catch (e) {
+                  const waitMs = rateLimitWaitMs(e);
+                  if (waitMs === null) throw e;
                   core.info(
-                    `Query "${q}" rate-limited (attempt ${attempt}), retrying in ${backoffMs / 1000}s...`
+                    `Query "${q}" rate-limited, waiting ${Math.round(waitMs / 1000)}s (GitHub's own cooldown) before retrying...`
                   );
-                  await new Promise(r => setTimeout(r, backoffMs));
-                  return searchWithRetry(q, attempt + 1);
+                  await new Promise(r => setTimeout(r, waitMs));
                 }
-                throw e;
               }
             }
 
@@ -175,10 +189,10 @@ jobs:
                     `Query "${q}" → ${r.data.total_count} hit(s) in: ${repos.join(', ')}`
                   );
                 }
-                // GitHub code-search rate limit: 10 req/min, but the
-                // GITHUB_TOKEN's secondary rate limit needs more headroom
-                // than that implies -- 20s between queries clears it in
-                // practice (4 queries/run, well under the per-minute cap).
+                // GitHub code-search rate limit: 10 req/min. 20s between
+                // queries stays under that on its own merits; the retry
+                // loop above is what actually absorbs secondary-limit
+                // cooldowns when they happen.
                 await new Promise(r => setTimeout(r, 20000));
               } catch (e) {
                 core.warning(`Query failed: ${q} — ${e.message}`);
