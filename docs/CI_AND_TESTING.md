@@ -47,12 +47,21 @@ test's own content:**
   `importlib.util.spec_from_file_location` loading pattern in
   `tests/non_metal/test_mac_recommender.py` to avoid importing
   `veloxquant_mlx/__init__.py`.
+  - If your module needs a stand-in for a `veloxquant_mlx` parent package
+    (so a `from veloxquant_mlx.x.y import z` inside it resolves), remove
+    the stand-in `sys.modules` entries again once your module has finished
+    loading (see `tests/non_metal/test_block_pool.py`). `non-metal-unit.yml`
+    runs every file in this directory in one pytest process, so a stand-in
+    left behind at module-collection time shadows the real package for
+    every other file collected afterward — #425 was exactly this: a fake,
+    submodule-less `veloxquant_mlx` leaking past its own file and breaking
+    `test_mac_recommender.py`'s import of the real package.
 
 ## What should run where
 
 | Suite | Where | Notes |
 | --- | --- | --- |
-| Pure Python unit tests (no Metal) | Linux CI (`non-metal-unit.yml`) or macOS CI | Examples: `tests/non_metal/test_mac_recommender.py`, many quantizer math tests under `veloxquant_mlx/tests/` |
+| Pure Python unit tests (no Metal) | Linux CI (`non-metal-unit.yml`) or macOS CI | Examples: `tests/non_metal/test_mac_recommender.py`, `tests/non_metal/test_block_pool.py`, many quantizer math tests under `veloxquant_mlx/tests/` |
 | Metal parity / kernel tests (correctness) | GitHub-hosted `macos-14`/`macos-15` (via `mlx-tests.yml`, every PR) or any real Apple Silicon | Validated in issue #395: hosted runners expose a genuine, correct — if paravirtualized — Metal device. Selectable via `pytest -m metal` / `-m "not metal"`. |
 | Metal kernel **performance**/timing numbers | Real Apple Silicon only, never hosted runners | The hosted runner's device reports as `"Apple Paravirtual device"` with a synthetic `memory_size`; its timing characteristics are unknown and not assumed representative. See `docs/BENCHMARK_INFRASTRUCTURE_FEASIBILITY.md` Lane B. |
 | End-to-end generation benches | Local macOS / dedicated bare-metal | Scripts under `benchmark_scripts/` and `scripts/validate_kv_memory.py` |
