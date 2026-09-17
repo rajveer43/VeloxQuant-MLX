@@ -1127,6 +1127,25 @@ class KVCacheBuilder:
         return caches
 
     @staticmethod
+    def _build_reader_counts(
+        roles: list[tuple[str, int]], reader_role: str
+    ) -> dict[int, int]:
+        """Count readers per group for a coordinator's anchor/primary-and-reuse
+        role assignment.
+
+        A group's published entry (anchor/primary) is consumed by every
+        ``reader_role`` layer in that group before the coordinator can
+        reclaim it (#79/#80). Every group is seeded at 0 first so a trailing
+        or standalone group (no reuse/merge partners) doesn't fall through to
+        some other group's reader count.
+        """
+        n_readers_by_group: dict[int, int] = {group_id: 0 for _, group_id in roles}
+        for role, group_id in roles:
+            if role == reader_role:
+                n_readers_by_group[group_id] += 1
+        return n_readers_by_group
+
+    @staticmethod
     def _build_xquant(layers, args, config: KVCacheConfig, fallback_cls) -> list:
         """Build one shared XQuantCoordinator and role-assigned caches per layer.
 
@@ -1156,14 +1175,7 @@ class KVCacheBuilder:
         role_by_layer: dict[int, tuple[str, int]] = {
             attn_layer_idx[k]: roles[k] for k in range(len(attn_layer_idx))
         }
-        # Each anchor's published segment is consumed by every reuse layer in
-        # its group before the coordinator can reclaim it (#80). Seed every
-        # group at 0 first so a trailing degenerate group (anchor with no
-        # reusers) doesn't fall through to some other group's reader count.
-        n_readers_by_group: dict[int, int] = {group_id: 0 for _, group_id in roles}
-        for role, group_id in roles:
-            if role == "reuse":
-                n_readers_by_group[group_id] += 1
+        n_readers_by_group = KVCacheBuilder._build_reader_counts(roles, "reuse")
 
         caches = []
         for i, layer in enumerate(layers):
@@ -1290,15 +1302,7 @@ class KVCacheBuilder:
         role_by_layer: dict[int, tuple[str, int]] = {
             attn_layer_idx[k]: roles[k] for k in range(len(attn_layer_idx))
         }
-        # Each primary's published entry is consumed by every merge layer in
-        # its group before the coordinator can reclaim it (#79). Seed every
-        # group at 0 first so a standalone primary (no merge partners, e.g.
-        # an early layer below minicache_start_frac) doesn't fall through to
-        # some other group's reader count.
-        n_readers_by_group: dict[int, int] = {group_id: 0 for _, group_id in roles}
-        for role, group_id in roles:
-            if role == "merge":
-                n_readers_by_group[group_id] += 1
+        n_readers_by_group = KVCacheBuilder._build_reader_counts(roles, "merge")
 
         caches = []
         for i, layer in enumerate(layers):
