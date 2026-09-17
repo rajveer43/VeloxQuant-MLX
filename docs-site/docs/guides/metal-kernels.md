@@ -311,7 +311,7 @@ out = streaming_prefill_attend(
 )
 ```
 
-`implementation` selects the variant: `"streaming"` is the block=1 baseline; `"streaming_block2/4/8"` unroll the KV loop to amortize the softmax update over more tokens per step; `"streaming_multirow"` dispatches 4 independent SIMD-groups per threadgroup purely for occupancy (no data sharing between them). See `veloxquant_mlx/metal/src/experimental_streaming_prefill_ARCHITECTURE.md` for the full design rationale and the hypotheses the benchmarking step was meant to confirm or refute — matrix-unit throughput is expected to win at large `D`/compute-bound `S`, while the streaming kernel's zero fixed overhead is expected to win at small `S`.
+`implementation` selects the variant: `"streaming"` is the block=1 baseline; `"streaming_block2/4/8"` unroll the KV loop to amortize the softmax update over more tokens per step; `"streaming_multirow"` dispatches 4 independent SIMD-groups per threadgroup purely for occupancy (no data sharing between them). See `docs/STREAMING_PREFILL_ARCHITECTURE.md` for the full design rationale and the hypotheses the benchmarking step was meant to confirm or refute — matrix-unit throughput is expected to win at large `D`/compute-bound `S`, while the streaming kernel's zero fixed overhead is expected to win at small `S`.
 
 ## Fused KV-cache eviction kernels
 

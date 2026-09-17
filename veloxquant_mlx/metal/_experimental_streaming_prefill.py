@@ -3,13 +3,13 @@
 From-scratch alternative architecture to ``flash_prefill_attend``
 (``_flash_prefill.py`` / ``flash_prefill.metal``), built to compare a
 genuinely different computational decomposition against the conventional
-tiled ``simdgroup_matrix`` FlashAttention-style kernel. See
-``metal/src/experimental_streaming_prefill_ARCHITECTURE.md`` for the full
-design rationale — in short: ownership is by QUERY ROW (one SIMD-group
-owns one query row for the whole kernel), each lane owns a fixed
-stride-32 slab of head-dims, K/V stream directly from device memory one
-(or a small block of) token(s) at a time, and there is zero threadgroup
-memory / zero barriers anywhere in this kernel family.
+tiled ``simdgroup_matrix`` FlashAttention-style kernel. In short:
+ownership is by QUERY ROW (one SIMD-group owns one query row for the
+whole kernel), each lane owns a fixed stride-32 slab of head-dims, K/V
+stream directly from device memory one (or a small block of) token(s)
+at a time, and there is zero threadgroup memory / zero barriers
+anywhere in this kernel family. See ``docs/STREAMING_PREFILL_ARCHITECTURE.md``
+(repo root) for the full design rationale.
 
 This module is purely additive: it does not modify ``_flash_prefill.py``,
 ``flash_prefill.metal``, or any existing export. ``flash_prefill_attend``
@@ -84,7 +84,7 @@ def streaming_prefill_attend(
     the whole kernel and streams K/V directly from device memory, with
     the online-softmax update redundantly (but bit-identically) computed
     in every lane. Zero threadgroup memory, zero barriers. See
-    ``metal/src/experimental_streaming_prefill_ARCHITECTURE.md``.
+    ``docs/STREAMING_PREFILL_ARCHITECTURE.md`` (repo root).
 
     Always causal: queries align to the tail of the KV cache
     (``q_abs = (S_kv - S_q) + q_pos``), matching ``flash_prefill_attend``'s
