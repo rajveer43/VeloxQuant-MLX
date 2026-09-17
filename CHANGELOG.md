@@ -495,6 +495,14 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.85.0 (2026-09-17)
+
+### Features
+
+- Declare and test Python 3.13/3.14 support
+  ([`a909628`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a909628f449bf69c3020685c2df68335ce86d96b))
+
+
 ## v0.84.1 (2026-09-17)
 
 ### Bug Fixes
