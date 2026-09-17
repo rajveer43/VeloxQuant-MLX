@@ -285,3 +285,26 @@ def test_streaming_prefill_rejects_bad_inputs():
         streaming_prefill_attend(
             mx.array(q), mx.array(k), mx.array(v), mx.array(scale), implementation="bogus"
         )
+
+
+def test_streaming_prefill_kernel_name_matches_source_file_stem(monkeypatch):
+    """Regression for #406: the compiled kernel name must match its .metal
+    file's stem (``experimental_streaming_prefill.metal`` ->
+    ``experimental_streaming_prefill...``), the convention every other
+    kernel in metal/src/ follows, so grepping a kernel name from an
+    Instruments trace finds its source file.
+    """
+    from veloxquant_mlx.metal import _experimental_streaming_prefill
+
+    _experimental_streaming_prefill._cache.clear()
+    captured = {}
+    real_metal_kernel = mx.fast.metal_kernel
+
+    def _spy(*args, **kwargs):
+        captured["name"] = kwargs["name"]
+        return real_metal_kernel(*args, **kwargs)
+
+    monkeypatch.setattr(mx.fast, "metal_kernel", _spy)
+    _experimental_streaming_prefill._stream_kernel(d=64, kv_block=1, rows_per_tg=1)
+
+    assert captured["name"].startswith("experimental_streaming_prefill")

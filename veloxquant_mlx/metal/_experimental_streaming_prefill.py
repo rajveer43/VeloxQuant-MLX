@@ -51,10 +51,10 @@ _MULTIROW_ROWS_PER_TG = 4
 
 
 def _stream_kernel(d: int, kv_block: int, rows_per_tg: int):
-    key = ("streaming_prefill_attend", d, kv_block, rows_per_tg)
+    key = ("experimental_streaming_prefill_attend", d, kv_block, rows_per_tg)
     if key not in _cache:
         _cache[key] = mx.fast.metal_kernel(
-            name=f"stream_prefill_attend_d{d}_kb{kv_block}_rtg{rows_per_tg}",
+            name=f"experimental_streaming_prefill_attend_d{d}_kb{kv_block}_rtg{rows_per_tg}",
             input_names=["q", "k", "v", "scale"],
             output_names=["out"],
             source=_STREAMING_PREFILL_SRC,

@@ -83,10 +83,10 @@ _N_SIMDGROUPS = 8
 
 
 def _rabitq_attend_kernel(n_bytes: int, d: int, v_packed: bool):
-    key = ("rabitq_fused_attend", n_bytes, d, v_packed)
+    key = ("rabitq_attend", n_bytes, d, v_packed)
     if key not in _cache:
         _cache[key] = mx.fast.metal_kernel(
-            name=f"rabitq_fused_attend_nb{n_bytes}_d{d}_vp{int(v_packed)}",
+            name=f"rabitq_attend_nb{n_bytes}_d{d}_vp{int(v_packed)}",
             input_names=[
                 "q",
                 "q_scale",

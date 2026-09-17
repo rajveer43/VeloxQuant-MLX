@@ -179,3 +179,25 @@ def test_rabitq_attend_rejects_bad_shapes():
             mx.array(v_idx),
             mx.array(v_cents),
         )
+
+
+def test_rabitq_attend_kernel_name_matches_source_file_stem(monkeypatch):
+    """Regression for #406: the compiled kernel name must match its .metal
+    file's stem (``rabitq_attend.metal`` -> ``rabitq_attend...``), the
+    convention every other kernel in metal/src/ follows, so grepping a
+    kernel name from an Instruments trace finds its source file.
+    """
+    from veloxquant_mlx.metal import _rabitq_attend
+
+    _rabitq_attend._cache.clear()
+    captured = {}
+    real_metal_kernel = mx.fast.metal_kernel
+
+    def _spy(*args, **kwargs):
+        captured["name"] = kwargs["name"]
+        return real_metal_kernel(*args, **kwargs)
+
+    monkeypatch.setattr(mx.fast, "metal_kernel", _spy)
+    _rabitq_attend._rabitq_attend_kernel(n_bytes=8, d=64, v_packed=False)
+
+    assert captured["name"].startswith("rabitq_attend")
