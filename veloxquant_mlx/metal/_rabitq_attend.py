@@ -28,17 +28,17 @@ Public API:
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import mlx.core as mx
+
+from veloxquant_mlx.metal._kernel_utils import KernelCache, read_kernel_source
 
 
 def _read_kernel_source(filename: str) -> str:
     """Read a standalone .metal kernel source file from metal/src/."""
-    return (Path(__file__).parent / "src" / filename).read_text()
+    return read_kernel_source(__file__, filename)
 
 
-_cache: dict = {}
+_cache = KernelCache()
 
 
 # ===========================================================================
@@ -83,10 +83,11 @@ _N_SIMDGROUPS = 8
 
 
 def _rabitq_attend_kernel(n_bytes: int, d: int, v_packed: bool):
-    key = ("rabitq_fused_attend", n_bytes, d, v_packed)
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
-            name=f"rabitq_fused_attend_nb{n_bytes}_d{d}_vp{int(v_packed)}",
+    key = ("rabitq_attend", n_bytes, d, v_packed)
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
+            name=f"rabitq_attend_nb{n_bytes}_d{d}_vp{int(v_packed)}",
             input_names=[
                 "q",
                 "q_scale",
@@ -99,8 +100,8 @@ def _rabitq_attend_kernel(n_bytes: int, d: int, v_packed: bool):
             output_names=["out"],
             source=_RABITQ_ATTEND_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

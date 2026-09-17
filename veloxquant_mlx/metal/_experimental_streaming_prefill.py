@@ -3,13 +3,13 @@
 From-scratch alternative architecture to ``flash_prefill_attend``
 (``_flash_prefill.py`` / ``flash_prefill.metal``), built to compare a
 genuinely different computational decomposition against the conventional
-tiled ``simdgroup_matrix`` FlashAttention-style kernel. See
-``metal/src/experimental_streaming_prefill_ARCHITECTURE.md`` for the full
-design rationale — in short: ownership is by QUERY ROW (one SIMD-group
-owns one query row for the whole kernel), each lane owns a fixed
-stride-32 slab of head-dims, K/V stream directly from device memory one
-(or a small block of) token(s) at a time, and there is zero threadgroup
-memory / zero barriers anywhere in this kernel family.
+tiled ``simdgroup_matrix`` FlashAttention-style kernel. In short:
+ownership is by QUERY ROW (one SIMD-group owns one query row for the
+whole kernel), each lane owns a fixed stride-32 slab of head-dims, K/V
+stream directly from device memory one (or a small block of) token(s)
+at a time, and there is zero threadgroup memory / zero barriers
+anywhere in this kernel family. See ``docs/STREAMING_PREFILL_ARCHITECTURE.md``
+(repo root) for the full design rationale.
 
 This module is purely additive: it does not modify ``_flash_prefill.py``,
 ``flash_prefill.metal``, or any existing export. ``flash_prefill_attend``
@@ -21,19 +21,19 @@ Public API:
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import mlx.core as mx
+
+from veloxquant_mlx.metal._kernel_utils import KernelCache, read_kernel_source
 
 
 def _read_kernel_source(filename: str) -> str:
     """Read a standalone .metal kernel source file from metal/src/."""
-    return (Path(__file__).parent / "src" / filename).read_text()
+    return read_kernel_source(__file__, filename)
 
 
 _STREAMING_PREFILL_SRC = _read_kernel_source("experimental_streaming_prefill.metal")
 
-_cache: dict = {}
+_cache = KernelCache()
 
 # implementation name -> (kv_block, rows_per_threadgroup)
 _IMPLEMENTATIONS = {
@@ -51,16 +51,17 @@ _MULTIROW_ROWS_PER_TG = 4
 
 
 def _stream_kernel(d: int, kv_block: int, rows_per_tg: int):
-    key = ("streaming_prefill_attend", d, kv_block, rows_per_tg)
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
-            name=f"stream_prefill_attend_d{d}_kb{kv_block}_rtg{rows_per_tg}",
+    key = ("experimental_streaming_prefill_attend", d, kv_block, rows_per_tg)
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
+            name=f"experimental_streaming_prefill_attend_d{d}_kb{kv_block}_rtg{rows_per_tg}",
             input_names=["q", "k", "v", "scale"],
             output_names=["out"],
             source=_STREAMING_PREFILL_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +84,7 @@ def streaming_prefill_attend(
     the whole kernel and streams K/V directly from device memory, with
     the online-softmax update redundantly (but bit-identically) computed
     in every lane. Zero threadgroup memory, zero barriers. See
-    ``metal/src/experimental_streaming_prefill_ARCHITECTURE.md``.
+    ``docs/STREAMING_PREFILL_ARCHITECTURE.md`` (repo root).
 
     Always causal: queries align to the tail of the KV cache
     (``q_abs = (S_kv - S_q) + q_pos``), matching ``flash_prefill_attend``'s

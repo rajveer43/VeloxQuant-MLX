@@ -26,17 +26,17 @@ Public API:
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import mlx.core as mx
+
+from veloxquant_mlx.metal._kernel_utils import KernelCache, read_kernel_source
 
 
 def _read_kernel_source(filename: str) -> str:
     """Read a standalone .metal kernel source file from metal/src/."""
-    return (Path(__file__).parent / "src" / filename).read_text()
+    return read_kernel_source(__file__, filename)
 
 
-_cache: dict = {}
+_cache = KernelCache()
 
 
 # ===========================================================================
@@ -151,15 +151,16 @@ def _pick_pdt(d: int, bq: int, bk: int) -> int:
 
 def _flash_kernel(d: int, bq: int, bk: int, pdt: int):
     key = ("flash_prefill_attend", d, bq, bk, pdt)
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
             name=f"flash_prefill_attend_d{d}_bq{bq}_bk{bk}_pdt{pdt}",
             input_names=["q", "k", "v", "scale"],
             output_names=["out"],
             source=_FLASH_PREFILL_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

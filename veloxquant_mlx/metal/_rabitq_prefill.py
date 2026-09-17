@@ -31,17 +31,17 @@ Public API:
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import mlx.core as mx
+
+from veloxquant_mlx.metal._kernel_utils import KernelCache, read_kernel_source
 
 
 def _read_kernel_source(filename: str) -> str:
     """Read a standalone .metal kernel source file from metal/src/."""
-    return (Path(__file__).parent / "src" / filename).read_text()
+    return read_kernel_source(__file__, filename)
 
 
-_cache: dict = {}
+_cache = KernelCache()
 
 
 # ===========================================================================
@@ -85,8 +85,9 @@ _N_SIMDGROUPS = 4
 
 def _prefill_kernel(n_bytes: int, d: int):
     key = ("rabitq_prefill_attend", n_bytes, d)
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
             name=f"rabitq_prefill_attend_nb{n_bytes}_d{d}",
             input_names=[
                 "q",
@@ -101,8 +102,8 @@ def _prefill_kernel(n_bytes: int, d: int):
             output_names=["out"],
             source=_RABITQ_PREFILL_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

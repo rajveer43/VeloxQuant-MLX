@@ -1,7 +1,8 @@
 # Architecture note: row-owned streaming causal prefill attention
 
 Status: design note, written before implementation (Step 2 of the research
-process). Companion kernel file: `experimental_streaming_prefill.metal`.
+process). Companion kernel file:
+`veloxquant_mlx/metal/src/experimental_streaming_prefill.metal`.
 
 ## 1. What this is not
 

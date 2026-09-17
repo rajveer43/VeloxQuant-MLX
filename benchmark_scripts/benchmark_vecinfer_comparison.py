@@ -500,17 +500,23 @@ def _run_model(model_id: str, max_tokens: int) -> list | None:
     vec_ksd = 4 if head_dim % 4 == 0 else (2 if head_dim % 2 == 0 else 1)
     vec_vsd = vec_ksd
 
+    # `model` is captured by the closures below and consumed synchronously in
+    # the `for label, builder in configs` loop right after, well before the
+    # `del model` at the end of this function. Ruff/pyflakes' F821 check is
+    # scope-wide rather than control-flow-sensitive, so it flags every closure
+    # reference to a name that is `del`'d anywhere later in the same function
+    # -- these are false positives, not real undefined-name bugs.
     configs = [
-        ("fp16-baseline", lambda: _build_fp16(model)),
-        ("TQ-2bit", lambda: _build_tq(model, 2)),
-        ("TQ-3bit", lambda: _build_tq(model, 3)),
-        ("TQ-4bit", lambda: _build_tq(model, 4)),
-        ("RVQ-2bit", lambda: _build_rvq(model, 2)),
-        ("RVQ-1bit", lambda: _build_rvq(model, 1)),
+        ("fp16-baseline", lambda: _build_fp16(model)),  # noqa: F821
+        ("TQ-2bit", lambda: _build_tq(model, 2)),  # noqa: F821
+        ("TQ-3bit", lambda: _build_tq(model, 3)),  # noqa: F821
+        ("TQ-4bit", lambda: _build_tq(model, 4)),  # noqa: F821
+        ("RVQ-2bit", lambda: _build_rvq(model, 2)),  # noqa: F821
+        ("RVQ-1bit", lambda: _build_rvq(model, 1)),  # noqa: F821
         (
             "VecInfer-2bit",
             lambda: _build_vecinfer(
-                model,
+                model,  # noqa: F821
                 key_bits=8,
                 value_bits=8,
                 key_sub_dim=vec_ksd,
@@ -521,7 +527,7 @@ def _run_model(model_id: str, max_tokens: int) -> list | None:
         (
             "VecInfer-1bit",
             lambda: _build_vecinfer(
-                model,
+                model,  # noqa: F821
                 key_bits=8,
                 value_bits=8,
                 key_sub_dim=8 if head_dim % 8 == 0 else vec_ksd,

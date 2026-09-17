@@ -235,3 +235,40 @@ def test_deterministic() -> None:
     out1 = zipcache_quant_dequant(x, hi_bits=4, lo_bits=2, hi_fraction=0.2)
     out2 = zipcache_quant_dequant(x, hi_bits=4, lo_bits=2, hi_fraction=0.2)
     assert _mse(out1, out2) == pytest.approx(0.0, abs=0.0)
+
+
+# ---------------------------------------------------------------------------
+# Regression for #408: channel_quant/channel_dequant must share the same
+# quantization formula as the canonical _group_quant_dequant, not an
+# independently maintained copy that can silently drift.
+# ---------------------------------------------------------------------------
+
+
+def test_channel_quant_dequant_matches_canonical_group_quant_dequant() -> None:
+    """channel_quant + channel_dequant round-trip must be bit-identical to
+    _quant_utils._group_quant_dequant on the same input/bits/group_size,
+    since both are meant to implement the identical min/max group formula.
+    """
+    from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
+
+    x = _rand((97, 64), seed=11)
+    for bits in (2, 3, 4):
+        codes, scales, zeros = channel_quant(x, bits, group_size=32)
+        recon = channel_dequant(codes, scales, zeros, group_size=32).astype(mx.float16)
+        expected = _group_quant_dequant(x, bits, group_size=32)
+        assert _mse(recon, expected) == pytest.approx(0.0, abs=0.0)
+
+
+def test_channel_quant_uses_shared_group_quant_codes_helper() -> None:
+    """Guards against a future reimplementation drifting back to a private
+    copy of the min/max group-quantize formula: channel_quant must delegate
+    to the same _quant_utils helper every other quantizer shares.
+    """
+    import inspect
+
+    from veloxquant_mlx.quantizers import zipcache as zipcache_module
+
+    src = inspect.getsource(zipcache_module.channel_quant)
+    assert "_group_quant_codes" in src
+    src = inspect.getsource(zipcache_module.channel_dequant)
+    assert "_group_dequant_codes" in src

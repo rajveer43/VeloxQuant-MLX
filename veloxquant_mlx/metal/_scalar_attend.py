@@ -133,17 +133,17 @@ Public API:
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import mlx.core as mx
+
+from veloxquant_mlx.metal._kernel_utils import KernelCache, read_kernel_source
 
 
 def _read_kernel_source(filename: str) -> str:
     """Read a standalone .metal kernel source file from metal/src/."""
-    return (Path(__file__).parent / "src" / filename).read_text()
+    return read_kernel_source(__file__, filename)
 
 
-_cache: dict = {}
+_cache = KernelCache()
 
 
 # ===========================================================================
@@ -199,8 +199,9 @@ def _d_slots(D: int) -> int:
 
 def _scalar_affine_attend_kernel(D: int, nsg: int, heads_per_kv: int):
     key = ("scalar_affine_attend", D, nsg, heads_per_kv)
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
             name=f"scalar_affine_attend_d{D}_nsg{nsg}_hpk{heads_per_kv}",
             input_names=[
                 "q",
@@ -221,14 +222,15 @@ def _scalar_affine_attend_kernel(D: int, nsg: int, heads_per_kv: int):
             ),
             source=_SCALAR_AFFINE_ATTEND_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 def _scalar_affine_attend_batched_kernel(D: int, nsg: int, heads_per_kv: int):
     key = ("scalar_affine_attend_batched", D, nsg, heads_per_kv)
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
             name=f"scalar_affine_attend_batched_d{D}_nsg{nsg}_hpk{heads_per_kv}",
             input_names=[
                 "q",
@@ -249,37 +251,39 @@ def _scalar_affine_attend_batched_kernel(D: int, nsg: int, heads_per_kv: int):
             ),
             source=_SCALAR_AFFINE_ATTEND_BATCHED_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 def _scalar_affine_decode_kernel(mode: str):
     assert mode in ("K", "V")
     key = ("scalar_affine_decode_once", mode)
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
             name=f"scalar_affine_decode_once_{mode.lower()}",
             input_names=["codes", "scale", "zero", "gsize"],
             output_names=["out"],
             header=f"#define DECODE_MODE_K {1 if mode == 'K' else 0}\n",
             source=_SCALAR_AFFINE_DECODE_ONCE_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 def _scalar_predecoded_attend_kernel(nsg: int):
     key = ("scalar_predecoded_attend", nsg)
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        key,
+        lambda: mx.fast.metal_kernel(
             name=f"scalar_predecoded_attend_nsg{nsg}",
             input_names=["q", "k_hat", "v_hat", "scale_arr"],
             output_names=["out"],
             header=f"#define NSG_C {nsg}\n",
             source=_SCALAR_PREDECODED_ATTEND_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 # Threadgroup-memory budget (bytes), matching the 32KB ceiling

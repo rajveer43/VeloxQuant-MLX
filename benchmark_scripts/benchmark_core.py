@@ -2073,7 +2073,6 @@ def run_benchmark_v3_from_results(
     hd, n_kv, nl = head_dim, n_kv_heads, n_layers
 
     # Compression ratios
-    kf_ref = _rat("fp16") or 1.0  # always 1.0 for fp16
     compress = [
         1.00,
         _rat("tq2"),

@@ -149,7 +149,6 @@ def test_each_head_reconstructs_from_its_own_basis() -> None:
     heads should reconstruct comparably well; with a shared basis, one
     head's error would be dramatically worse than the other's.
     """
-    rng = np.random.default_rng(7)
     S, D, true_rank = 128, 64, 32
 
     def make_low_rank_head(seed: int) -> np.ndarray:

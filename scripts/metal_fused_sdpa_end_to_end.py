@@ -237,7 +237,6 @@ def main() -> int:
         )
 
     # Verdict
-    fp16 = next((r for r in runs if r["method"] == "fp16" and not r.get("error")), None)
     pure = next((r for r in runs if r["method"] == "vecinfer-pure" and not r.get("error")), None)
     fused = next((r for r in runs if r["method"] == "vecinfer-fused" and not r.get("error")), None)
 

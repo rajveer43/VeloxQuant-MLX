@@ -17,6 +17,7 @@ with a clear error rather than failing deep inside generation.
 
 from __future__ import annotations
 
+import importlib
 import warnings
 from dataclasses import dataclass, field
 from dataclasses import replace as dataclasses_replace
@@ -98,6 +99,139 @@ MethodName = Literal[
     "rocketkv",
     "age_tiered",
 ]
+
+# Single source of truth mapping each MethodName to the (module, class name)
+# that implements it, resolved lazily by KVCacheFactory.create() via
+# importlib so that constructing one cache only imports that method's
+# module instead of eagerly importing all ~40 on every call. Also the
+# source for the factory's "unknown method" error message, so the valid-
+# methods list can never drift from what's actually dispatchable.
+_CACHE_CLASS_BY_METHOD: dict[str, tuple[str, str]] = {
+    "turboquant_prod": ("veloxquant_mlx.cache.turboquant_cache", "TurboQuantKVCache"),
+    "turboquant_mse": ("veloxquant_mlx.cache.turboquant_cache", "TurboQuantKVCache"),
+    "turboquant_rvq": ("veloxquant_mlx.cache.turboquant_rvq_cache", "TurboQuantRVQKVCache"),
+    "polar": ("veloxquant_mlx.cache.polar_cache", "PolarQuantKVCache"),
+    "qjl": ("veloxquant_mlx.cache.qjl_cache", "QJLKVCache"),
+    "vecinfer": ("veloxquant_mlx.cache.vecinfer_cache", "VecInferKVCache"),
+    "spectral": ("veloxquant_mlx.cache.spectral_cache", "SpectralQuantKVCache"),
+    "kivi": ("veloxquant_mlx.cache.kivi_cache", "KIVIKVCache"),
+    "kivi_sink": ("veloxquant_mlx.cache.sink_cache", "SinkProtectedKVCache"),
+    "svdq": ("veloxquant_mlx.cache.svdq_cache", "SVDqKVCache"),
+    "kitty": ("veloxquant_mlx.cache.kitty_cache", "KittyKVCache"),
+    "adakv": ("veloxquant_mlx.cache.adakv_cache", "AdaKVCache"),
+    # Single-cache construction yields a degenerate (coordinator-less)
+    # anchor. Cross-layer reuse requires KVCacheBuilder.for_model(), which
+    # builds the shared XQuantCoordinator and assigns anchor/reuse roles.
+    "xquant": ("veloxquant_mlx.cache.xquant_cache", "XQuantKVCache"),
+    "kvquant": ("veloxquant_mlx.cache.kvquant_cache", "KVQuantKVCache"),
+    "palu": ("veloxquant_mlx.cache.palu_cache", "PALUKVCache"),
+    "cachegen": ("veloxquant_mlx.cache.cachegen_cache", "CacheGenKVCache"),
+    # Single-cache construction yields a degenerate (coordinator-less)
+    # primary that behaves as lossless fp16 passthrough. Cross-layer
+    # merging requires KVCacheBuilder.for_model(), which builds the
+    # shared MiniCacheCoordinator and assigns primary/merge roles.
+    "minicache": ("veloxquant_mlx.cache.minicache_cache", "MiniCacheKVCache"),
+    "gear": ("veloxquant_mlx.cache.gear_cache", "GEARKVCache"),
+    "zipcache": ("veloxquant_mlx.cache.zipcache_cache", "ZipCacheKVCache"),
+    "snapkv": ("veloxquant_mlx.cache.snapkv_cache", "SnapKVKVCache"),
+    "streaming_llm": ("veloxquant_mlx.cache.streaming_llm_cache", "StreamingLLMKVCache"),
+    "h2o": ("veloxquant_mlx.cache.h2o_cache", "H2OKVCache"),
+    "tova": ("veloxquant_mlx.cache.tova_cache", "TOVAKVCache"),
+    "pyramidkv": ("veloxquant_mlx.cache.pyramidkv_cache", "PyramidKVCache"),
+    # Single-cache construction yields a coordinator-less layer that falls
+    # back to squeeze_budget (uniform H2O). The 2D data-driven reallocation
+    # requires KVCacheBuilder.for_model(), which builds the shared
+    # SqueezeCoordinator and re-budgets after prefill.
+    "squeeze": ("veloxquant_mlx.cache.squeeze_cache", "SqueezeAttentionCache"),
+    # No coordinator: each layer resolves its own chunks independently, so
+    # the default for_model path (one ChunkKVCache per layer) is all it
+    # needs. chunk_size=1 reduces bit-for-bit to H2O-adapted.
+    "chunkkv": ("veloxquant_mlx.cache.chunkkv_cache", "ChunkKVCache"),
+    # No coordinator: each layer merges independently, so the default
+    # for_model path (one CaMKVCache per layer) is all it needs.
+    # cam_merge="drop" reduces bit-for-bit to H2O-adapted.
+    "cam": ("veloxquant_mlx.cache.cam_cache", "CaMKVCache"),
+    # Single-cache construction yields a degenerate (coordinator-less)
+    # standalone member — behaves as per-layer SVD compression with no
+    # basis sharing. Cross-layer subspace sharing requires
+    # KVCacheBuilder.for_model(), which builds the shared
+    # XKVCoordinator and assigns member/group roles.
+    "xkv": ("veloxquant_mlx.cache.xkv_cache", "XKVCache"),
+    # No coordinator: single-layer wrapper with a chunk-flush residual
+    # buffer; the universal codebook is model-independent (synthetic
+    # Gaussian), so the default for_model path (one NSNQuantKVCache
+    # per layer) is all it needs.
+    "nsnquant": ("veloxquant_mlx.cache.nsnquant_cache", "NSNQuantKVCache"),
+    # No coordinator: intrinsic key-norm scores need no cross-layer or
+    # cross-step state; the default for_model path (one L2NormKVCache
+    # per layer) is all it needs.
+    "knorm": ("veloxquant_mlx.cache.knorm_cache", "L2NormKVCache"),
+    # No coordinator: single-layer chunk-flush wrapper; the channel
+    # permutations are per-layer state frozen from the first flushed
+    # chunk, so the default for_model path (one SKVQKVCache per
+    # layer) is all it needs.
+    "skvq": ("veloxquant_mlx.cache.skvq_cache", "SKVQKVCache"),
+    # No coordinator: the query-agnostic filter is per-layer state
+    # frozen from the first observed chunk (projection scorer), so the
+    # default for_model path (one QFiltersKVCache per layer) suffices.
+    "qfilters": ("veloxquant_mlx.cache.qfilters_cache", "QFiltersKVCache"),
+    # No coordinator: the Gumbel-regularized accumulating scorer is
+    # per-layer per-head state; the default for_model path (one
+    # KeyformerKVCache per layer) is all it needs.
+    "keyformer": ("veloxquant_mlx.cache.keyformer_cache", "KeyformerKVCache"),
+    # No coordinator: recent-window correlation retention is per-layer
+    # per-head state recomputed each step; the default for_model path
+    # (one MorphKVKVCache per layer) is all it needs.
+    "morphkv": ("veloxquant_mlx.cache.morphkv_cache", "MorphKVKVCache"),
+    # No coordinator: context-reconstruction reliance is per-layer
+    # per-head state recomputed each step; the default for_model path
+    # (one KVzipKVCache per layer) is all it needs.
+    "kvzip": ("veloxquant_mlx.cache.kvzip_cache", "KVzipKVCache"),
+    # No coordinator: local PCA basis + DP-optimal bit allocation are
+    # fit once per (batch, head) at prefill and frozen thereafter; the
+    # default for_model path (one KVTCKVCache per layer) is all it
+    # needs.
+    "kvtc": ("veloxquant_mlx.cache.kvtc_cache", "KVTCKVCache"),
+    # No coordinator: value-aware leverage-score eviction is per-layer
+    # per-head state recomputed each step; the default for_model path
+    # (one CurDKVKVCache per layer) is all it needs.
+    "curdkv": ("veloxquant_mlx.cache.curdkv_cache", "CurDKVKVCache"),
+    # No coordinator: multi-scale ensembled scoring, head-adaptive
+    # blend, and cross-head budget competition all run once per
+    # (batch, layer) at prefill end and freeze thereafter; the
+    # default for_model path (one NestedKVKVCache per layer) is all
+    # it needs.
+    "nestedkv": ("veloxquant_mlx.cache.nestedkv_cache", "NestedKVKVCache"),
+    # No coordinator: per-token saliency scoring, tier assignment, rank
+    # masking, and quantization all run independently every step
+    # (prefill and decode alike); the default for_model path (one
+    # AMCKVCache per layer) is all it needs.
+    "amc": ("veloxquant_mlx.cache.amc_cache", "AMCKVCache"),
+    # No coordinator: windowed RoPE regime selection, retrieval-set
+    # split, and query-aware codebook assignment all run
+    # independently every step (prefill and decode alike, using
+    # the incoming key as a proxy query — see a2ats_cache.py's
+    # module docstring); the default for_model path (one
+    # A2ATSKVCache per layer) is all it needs.
+    "a2ats": ("veloxquant_mlx.cache.a2ats_cache", "A2ATSKVCache"),
+    # No coordinator: anchor selection, per-token assignment/
+    # projection, utility scoring, and cross-head residual-budget
+    # allocation all run once per (batch, layer) at prefill end and
+    # freeze thereafter; the default for_model path (one
+    # AnchorKVKVCache per layer) is all it needs.
+    "anchorkv": ("veloxquant_mlx.cache.anchorkv_cache", "AnchorKVKVCache"),
+    # No coordinator: stage-1 SnapKV eviction and stage-2 HSA paged
+    # summaries are both per-layer per-head state recomputed at
+    # prefill/decode; the default for_model path (one RocketKVKVCache
+    # per layer) is all it needs.
+    "rocketkv": ("veloxquant_mlx.cache.rocketkv_cache", "RocketKVKVCache"),
+    # No coordinator: age-tier assignment and re-quantization are
+    # per-layer per-head state recomputed independently every step
+    # (prefill and decode alike, purely from cumulative position);
+    # the default for_model path (one AgeTieredKVCache per layer) is
+    # all it needs.
+    "age_tiered": ("veloxquant_mlx.cache.age_tiered_cache", "AgeTieredKVCache"),
+}
 
 
 def _resolve_head_dim(layer: Any, args: Any) -> int | None:
@@ -517,49 +651,7 @@ class KVCacheFactory:
             abstractions), every other method produces an mlx_lm.models.
             cache.KVCache subclass — see the STANDALONE_METHODS comment above.
         """
-        from veloxquant_mlx.cache.a2ats_cache import A2ATSKVCache
-        from veloxquant_mlx.cache.adakv_cache import AdaKVCache
-        from veloxquant_mlx.cache.age_tiered_cache import AgeTieredKVCache
-        from veloxquant_mlx.cache.amc_cache import AMCKVCache
-        from veloxquant_mlx.cache.anchorkv_cache import AnchorKVKVCache
-        from veloxquant_mlx.cache.cachegen_cache import CacheGenKVCache
-        from veloxquant_mlx.cache.cam_cache import CaMKVCache
-        from veloxquant_mlx.cache.chunkkv_cache import ChunkKVCache
-        from veloxquant_mlx.cache.curdkv_cache import CurDKVKVCache
-        from veloxquant_mlx.cache.gear_cache import GEARKVCache
-        from veloxquant_mlx.cache.h2o_cache import H2OKVCache
-        from veloxquant_mlx.cache.keyformer_cache import KeyformerKVCache
-        from veloxquant_mlx.cache.kitty_cache import KittyKVCache
-        from veloxquant_mlx.cache.kivi_cache import KIVIKVCache
-        from veloxquant_mlx.cache.knorm_cache import L2NormKVCache
-        from veloxquant_mlx.cache.kvquant_cache import KVQuantKVCache
-        from veloxquant_mlx.cache.kvtc_cache import KVTCKVCache
-        from veloxquant_mlx.cache.kvzip_cache import KVzipKVCache
-        from veloxquant_mlx.cache.minicache_cache import MiniCacheKVCache
-        from veloxquant_mlx.cache.morphkv_cache import MorphKVKVCache
-        from veloxquant_mlx.cache.nestedkv_cache import NestedKVKVCache
-        from veloxquant_mlx.cache.nsnquant_cache import NSNQuantKVCache
-        from veloxquant_mlx.cache.palu_cache import PALUKVCache
-        from veloxquant_mlx.cache.polar_cache import PolarQuantKVCache
-        from veloxquant_mlx.cache.pyramidkv_cache import PyramidKVCache
-        from veloxquant_mlx.cache.qfilters_cache import QFiltersKVCache
-        from veloxquant_mlx.cache.qjl_cache import QJLKVCache
-        from veloxquant_mlx.cache.rocketkv_cache import RocketKVKVCache
-        from veloxquant_mlx.cache.sink_cache import SinkProtectedKVCache
-        from veloxquant_mlx.cache.skvq_cache import SKVQKVCache
         from veloxquant_mlx.cache.sliding_window_cache import SlidingWindowKVCache
-        from veloxquant_mlx.cache.snapkv_cache import SnapKVKVCache
-        from veloxquant_mlx.cache.spectral_cache import SpectralQuantKVCache
-        from veloxquant_mlx.cache.squeeze_cache import SqueezeAttentionCache
-        from veloxquant_mlx.cache.streaming_llm_cache import StreamingLLMKVCache
-        from veloxquant_mlx.cache.svdq_cache import SVDqKVCache
-        from veloxquant_mlx.cache.tova_cache import TOVAKVCache
-        from veloxquant_mlx.cache.turboquant_cache import TurboQuantKVCache
-        from veloxquant_mlx.cache.turboquant_rvq_cache import TurboQuantRVQKVCache
-        from veloxquant_mlx.cache.vecinfer_cache import VecInferKVCache
-        from veloxquant_mlx.cache.xkv_cache import XKVCache
-        from veloxquant_mlx.cache.xquant_cache import XQuantKVCache
-        from veloxquant_mlx.cache.zipcache_cache import ZipCacheKVCache
 
         b = config.bit_width_inlier
         if isinstance(b, list) and config.method != "vecinfer":
@@ -569,179 +661,15 @@ class KVCacheFactory:
                 "KVCacheBuilder.for_model(), which dispatches to create() once per layer."
             )
 
-        if config.method in ("turboquant_prod", "turboquant_mse"):
-            cache: KVCache | _MLXKVCache = TurboQuantKVCache(config)
-        elif config.method == "turboquant_rvq":
-            cache = TurboQuantRVQKVCache(config)
-        elif config.method == "polar":
-            cache = PolarQuantKVCache(config)
-        elif config.method == "qjl":
-            cache = QJLKVCache(config)
-        elif config.method == "vecinfer":
-            cache = VecInferKVCache(config)
-        elif config.method == "spectral":
-            cache = SpectralQuantKVCache(config)
-        elif config.method == "kivi":
-            cache = KIVIKVCache(config)
-        elif config.method == "kivi_sink":
-            cache = SinkProtectedKVCache(config)
-        elif config.method == "svdq":
-            cache = SVDqKVCache(config)
-        elif config.method == "kitty":
-            cache = KittyKVCache(config)
-        elif config.method == "adakv":
-            cache = AdaKVCache(config)
-        elif config.method == "xquant":
-            # Single-cache construction yields a degenerate (coordinator-less)
-            # anchor. Cross-layer reuse requires KVCacheBuilder.for_model(), which
-            # builds the shared XQuantCoordinator and assigns anchor/reuse roles.
-            cache = XQuantKVCache(config)
-        elif config.method == "kvquant":
-            cache = KVQuantKVCache(config)
-        elif config.method == "palu":
-            cache = PALUKVCache(config)
-        elif config.method == "cachegen":
-            cache = CacheGenKVCache(config)
-        elif config.method == "minicache":
-            # Single-cache construction yields a degenerate (coordinator-less)
-            # primary that behaves as lossless fp16 passthrough. Cross-layer
-            # merging requires KVCacheBuilder.for_model(), which builds the
-            # shared MiniCacheCoordinator and assigns primary/merge roles.
-            cache = MiniCacheKVCache(config)
-        elif config.method == "gear":
-            cache = GEARKVCache(config)
-        elif config.method == "zipcache":
-            cache = ZipCacheKVCache(config)
-        elif config.method == "snapkv":
-            cache = SnapKVKVCache(config)
-        elif config.method == "streaming_llm":
-            cache = StreamingLLMKVCache(config)
-        elif config.method == "h2o":
-            cache = H2OKVCache(config)
-        elif config.method == "tova":
-            cache = TOVAKVCache(config)
-        elif config.method == "pyramidkv":
-            cache = PyramidKVCache(config)
-        elif config.method == "squeeze":
-            # Single-cache construction yields a coordinator-less layer that falls
-            # back to squeeze_budget (uniform H2O). The 2D data-driven reallocation
-            # requires KVCacheBuilder.for_model(), which builds the shared
-            # SqueezeCoordinator and re-budgets after prefill.
-            cache = SqueezeAttentionCache(config)
-        elif config.method == "chunkkv":
-            # No coordinator: each layer resolves its own chunks independently, so
-            # the default for_model path (one ChunkKVCache per layer) is all it
-            # needs. chunk_size=1 reduces bit-for-bit to H2O-adapted.
-            cache = ChunkKVCache(config)
-        elif config.method == "cam":
-            # No coordinator: each layer merges independently, so the default
-            # for_model path (one CaMKVCache per layer) is all it needs.
-            # cam_merge="drop" reduces bit-for-bit to H2O-adapted.
-            cache = CaMKVCache(config)
-        elif config.method == "xkv":
-            # Single-cache construction yields a degenerate (coordinator-less)
-            # standalone member — behaves as per-layer SVD compression with no
-            # basis sharing. Cross-layer subspace sharing requires
-            # KVCacheBuilder.for_model(), which builds the shared
-            # XKVCoordinator and assigns member/group roles.
-            cache = XKVCache(config)
-        elif config.method == "nsnquant":
-            # No coordinator: single-layer wrapper with a chunk-flush residual
-            # buffer; the universal codebook is model-independent (synthetic
-            # Gaussian), so the default for_model path (one NSNQuantKVCache
-            # per layer) is all it needs.
-            cache = NSNQuantKVCache(config)
-        elif config.method == "knorm":
-            # No coordinator: intrinsic key-norm scores need no cross-layer or
-            # cross-step state; the default for_model path (one L2NormKVCache
-            # per layer) is all it needs.
-            cache = L2NormKVCache(config)
-        elif config.method == "skvq":
-            # No coordinator: single-layer chunk-flush wrapper; the channel
-            # permutations are per-layer state frozen from the first flushed
-            # chunk, so the default for_model path (one SKVQKVCache per
-            # layer) is all it needs.
-            cache = SKVQKVCache(config)
-        elif config.method == "qfilters":
-            # No coordinator: the query-agnostic filter is per-layer state
-            # frozen from the first observed chunk (projection scorer), so the
-            # default for_model path (one QFiltersKVCache per layer) suffices.
-            cache = QFiltersKVCache(config)
-        elif config.method == "keyformer":
-            # No coordinator: the Gumbel-regularized accumulating scorer is
-            # per-layer per-head state; the default for_model path (one
-            # KeyformerKVCache per layer) is all it needs.
-            cache = KeyformerKVCache(config)
-        elif config.method == "morphkv":
-            # No coordinator: recent-window correlation retention is per-layer
-            # per-head state recomputed each step; the default for_model path
-            # (one MorphKVKVCache per layer) is all it needs.
-            cache = MorphKVKVCache(config)
-        elif config.method == "kvzip":
-            # No coordinator: context-reconstruction reliance is per-layer
-            # per-head state recomputed each step; the default for_model path
-            # (one KVzipKVCache per layer) is all it needs.
-            cache = KVzipKVCache(config)
-        elif config.method == "kvtc":
-            # No coordinator: local PCA basis + DP-optimal bit allocation are
-            # fit once per (batch, head) at prefill and frozen thereafter; the
-            # default for_model path (one KVTCKVCache per layer) is all it
-            # needs.
-            cache = KVTCKVCache(config)
-        elif config.method == "curdkv":
-            # No coordinator: value-aware leverage-score eviction is per-layer
-            # per-head state recomputed each step; the default for_model path
-            # (one CurDKVKVCache per layer) is all it needs.
-            cache = CurDKVKVCache(config)
-        elif config.method == "nestedkv":
-            # No coordinator: multi-scale ensembled scoring, head-adaptive
-            # blend, and cross-head budget competition all run once per
-            # (batch, layer) at prefill end and freeze thereafter; the
-            # default for_model path (one NestedKVKVCache per layer) is all
-            # it needs.
-            cache = NestedKVKVCache(config)
-        elif config.method == "amc":
-            # No coordinator: per-token saliency scoring, tier assignment, rank
-            # masking, and quantization all run independently every step
-            # (prefill and decode alike); the default for_model path (one
-            # AMCKVCache per layer) is all it needs.
-            cache = AMCKVCache(config)
-        elif config.method == "a2ats":
-            # No coordinator: windowed RoPE regime selection, retrieval-set
-            # split, and query-aware codebook assignment all run
-            # independently every step (prefill and decode alike, using
-            # the incoming key as a proxy query — see a2ats_cache.py's
-            # module docstring); the default for_model path (one
-            # A2ATSKVCache per layer) is all it needs.
-            cache = A2ATSKVCache(config)
-        elif config.method == "anchorkv":
-            # No coordinator: anchor selection, per-token assignment/
-            # projection, utility scoring, and cross-head residual-budget
-            # allocation all run once per (batch, layer) at prefill end and
-            # freeze thereafter; the default for_model path (one
-            # AnchorKVKVCache per layer) is all it needs.
-            cache = AnchorKVKVCache(config)
-        elif config.method == "rocketkv":
-            # No coordinator: stage-1 SnapKV eviction and stage-2 HSA paged
-            # summaries are both per-layer per-head state recomputed at
-            # prefill/decode; the default for_model path (one RocketKVKVCache
-            # per layer) is all it needs.
-            cache = RocketKVKVCache(config)
-        elif config.method == "age_tiered":
-            # No coordinator: age-tier assignment and re-quantization are
-            # per-layer per-head state recomputed independently every step
-            # (prefill and decode alike, purely from cumulative position);
-            # the default for_model path (one AgeTieredKVCache per layer) is
-            # all it needs.
-            cache = AgeTieredKVCache(config)
-        else:
+        entry = _CACHE_CLASS_BY_METHOD.get(config.method)
+        if entry is None:
+            choices = ", ".join(_CACHE_CLASS_BY_METHOD)
             raise QuantizerConfigError(
-                f"KVCacheFactory: unknown method '{config.method}'. "
-                f"Choices: turboquant_prod, turboquant_mse, turboquant_rvq, "
-                f"polar, qjl, vecinfer, spectral, kivi, kivi_sink, svdq, kitty, "
-                f"adakv, xquant, kvquant, palu, cachegen, minicache, gear, zipcache, snapkv, "
-                f"streaming_llm, h2o, tova, pyramidkv, squeeze, chunkkv, cam, xkv, nsnquant, knorm, skvq, qfilters, keyformer, morphkv, kvzip, kvtc, curdkv, nestedkv, amc, a2ats, anchorkv, rocketkv, age_tiered."
+                f"KVCacheFactory: unknown method '{config.method}'. Choices: {choices}."
             )
+        module_name, class_name = entry
+        cache_cls = getattr(importlib.import_module(module_name), class_name)
+        cache: KVCache | _MLXKVCache = cache_cls(config)
 
         if config.sliding_window is not None:
             if config.method not in STANDALONE_METHODS:

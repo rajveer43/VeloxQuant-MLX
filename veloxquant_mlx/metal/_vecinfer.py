@@ -12,20 +12,20 @@ Phase 2 (fused encode+decode):
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import mlx.core as mx
+
+from veloxquant_mlx.metal._kernel_utils import KernelCache, read_kernel_source
 
 
 def _read_kernel_source(filename: str) -> str:
     """Read a standalone .metal kernel source file from metal/src/."""
-    return (Path(__file__).parent / "src" / filename).read_text()
+    return read_kernel_source(__file__, filename)
 
 
 # ---------------------------------------------------------------------------
 # Shared kernel cache (keyed by (tag, *shape_params))
 # ---------------------------------------------------------------------------
-_cache: dict = {}
+_cache = KernelCache()
 
 
 # ===========================================================================
@@ -79,38 +79,37 @@ _ENCODE_DECODE_SIMPLE_SRC = _read_kernel_source("vecinfer_encode_decode_simple.m
 
 
 def _dequant_kernel(dtype: mx.Dtype):
-    key = ("dequant", str(dtype))
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        ("dequant", str(dtype)),
+        lambda: mx.fast.metal_kernel(
             name=f"vecinfer_dequant_{str(dtype).replace('.', '_')}",
             input_names=["indices", "codebook"],
             output_names=["out"],
             source=_DEQUANT_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 def _quantize_kernel(dtype: mx.Dtype):
-    key = ("quantize", str(dtype))
-    if key not in _cache:
-        _cache[key] = mx.fast.metal_kernel(
+    return _cache.get_or_create(
+        ("quantize", str(dtype)),
+        lambda: mx.fast.metal_kernel(
             name=f"vecinfer_quantize_{str(dtype).replace('.', '_')}",
             input_names=["x", "codebook"],
             output_names=["out"],
             source=_QUANTIZE_SRC,
             ensure_row_contiguous=True,
-        )
-    return _cache[key]
+        ),
+    )
 
 
 def _encode_decode_full_kernel(D: int, n_sub: int, sub_dim: int, n_centroids: int):
-    key = ("enc_dec_full", D, n_sub, sub_dim, n_centroids)
-    if key not in _cache:
+    def _build():
         header = (
             f"#pragma METAL fp math_mode(relaxed)\n#define MAX_D {D}\n#define MAX_N_SUB {n_sub}\n"
         )
-        _cache[key] = mx.fast.metal_kernel(
+        return mx.fast.metal_kernel(
             name=f"vecinfer_enc_dec_full_d{D}_ns{n_sub}_sd{sub_dim}_nc{n_centroids}",
             input_names=["keys", "k_codebook", "smooth", "H_mat", "params"],
             output_names=["k_hat_out", "idx_out"],
@@ -118,16 +117,16 @@ def _encode_decode_full_kernel(D: int, n_sub: int, sub_dim: int, n_centroids: in
             source=_ENCODE_DECODE_FULL_SRC,
             ensure_row_contiguous=True,
         )
-    return _cache[key]
+
+    return _cache.get_or_create(("enc_dec_full", D, n_sub, sub_dim, n_centroids), _build)
 
 
 def _encode_decode_simple_kernel(D: int, n_sub: int, sub_dim: int, n_centroids: int):
-    key = ("enc_dec_simple", D, n_sub, sub_dim, n_centroids)
-    if key not in _cache:
+    def _build():
         header = (
             f"#pragma METAL fp math_mode(relaxed)\n#define MAX_D {D}\n#define MAX_N_SUB {n_sub}\n"
         )
-        _cache[key] = mx.fast.metal_kernel(
+        return mx.fast.metal_kernel(
             name=f"vecinfer_enc_dec_simple_d{D}_ns{n_sub}_sd{sub_dim}_nc{n_centroids}",
             input_names=["values", "v_codebook", "params"],
             output_names=["v_hat_out", "idx_out"],
@@ -135,7 +134,8 @@ def _encode_decode_simple_kernel(D: int, n_sub: int, sub_dim: int, n_centroids: 
             source=_ENCODE_DECODE_SIMPLE_SRC,
             ensure_row_contiguous=True,
         )
-    return _cache[key]
+
+    return _cache.get_or_create(("enc_dec_simple", D, n_sub, sub_dim, n_centroids), _build)
 
 
 # ---------------------------------------------------------------------------

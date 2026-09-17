@@ -525,6 +525,65 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.86.2 (2026-09-17)
+
+### Bug Fixes
+
+- **metal**: Align rabitq_attend/streaming_prefill kernel names with source stems
+  ([#417](https://github.com/rajveer43/VeloxQuant-MLX/pull/417),
+  [`6e0b147`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6e0b147f28007f95ce9241cdb207095515742fea))
+
+### Documentation
+
+- **metal**: Move streaming-prefill architecture note into docs/
+  ([`4e5b3a1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4e5b3a1c7bbc0e8d1161d64e304410df8f09dffd))
+
+### Refactoring
+
+- **cache**: Dispatch KVCacheFactory.create() via a registry table
+  ([#416](https://github.com/rajveer43/VeloxQuant-MLX/pull/416),
+  [`7c8bf22`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7c8bf2283ef6b0b4df662b3ad0323269c828ecaa))
+
+- **metal**: Extract shared kernel-source-loading + caching helpers
+  ([#418](https://github.com/rajveer43/VeloxQuant-MLX/pull/418),
+  [`483c22d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/483c22d06e863a00ea227774c7abd15697034b6b))
+
+- **quantizers**: Route zipcache channel_quant/dequant through shared group-quant helper
+  ([#419](https://github.com/rajveer43/VeloxQuant-MLX/pull/419),
+  [`6a138c4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6a138c4e8aa4665e83762f6ec1472cce412d4b4d))
+
+
+## v0.86.1 (2026-09-17)
+
+### Bug Fixes
+
+- **cache**: Raise QuantizerConfigError instead of bare ValueError for config validation
+  ([#410](https://github.com/rajveer43/VeloxQuant-MLX/pull/410),
+  [`1f8a345`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1f8a3454d72f02ab759b73930a7c16df91bcd6df))
+
+- **core**: Re-export BlockPoolExhaustedError and OwnerAlreadyActiveError
+  ([#414](https://github.com/rajveer43/VeloxQuant-MLX/pull/414),
+  [`2a12e87`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2a12e87c1ea3c49972c234bb614f4d09f9e1a8be))
+
+- **metal**: Key crosskv_rope's kernel cache on the real dtype, not a collapsed label
+  ([#411](https://github.com/rajveer43/VeloxQuant-MLX/pull/411),
+  [`0f56817`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0f568173f3c3becdf15111684d09ec2e70c1625c))
+
+- **metal**: Round comm_vq grid to threadgroup multiple; remove invalid template_names kwarg
+  ([#412](https://github.com/rajveer43/VeloxQuant-MLX/pull/412),
+  [`cc302d4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cc302d434da0f4bfec2cf72a8688267fa171d46b))
+
+- **quantizers**: Replace CompositeQuantizer's NumPy round-trip with on-device MLX scatter
+  ([#413](https://github.com/rajveer43/VeloxQuant-MLX/pull/413),
+  [`d4aa911`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d4aa911e2429f193ab077f81ff0e1c6d55c2f26c))
+
+### Refactoring
+
+- **cache**: Extract shared reader-counting helper for xquant/minicache
+  ([#409](https://github.com/rajveer43/VeloxQuant-MLX/pull/409),
+  [`18e0aa9`](https://github.com/rajveer43/VeloxQuant-MLX/commit/18e0aa9a3614307c41c634a2b2727d921078fb8e))
+
+
 ## v0.86.0 (2026-09-17)
 
 ### Documentation
