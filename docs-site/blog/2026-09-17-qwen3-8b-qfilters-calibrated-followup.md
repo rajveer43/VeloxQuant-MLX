@@ -81,6 +81,10 @@ The VecInfer post found a real kernel speedup with a correctness gap. This post 
 The header of this post could have been "calibration solves it" (flattering, and false) or nothing at all (if the run had been quietly discarded for not showing the hoped-for improvement). Reporting "it's different and faster but still not coherent" is the accurate middle ground, and it's the more useful one for anyone deciding whether to trust QFilters at this budget in production.
 :::
 
+:::info[So what budget do you actually need?]
+This post held `qfilters_budget=512` fixed and varied the filter quality. The next post in this sub-series does the opposite -- [It's a Cliff, Not a Slope](/blog/qwen3-8b-qfilters-budget-sweep) holds calibration fixed and sweeps the budget from 512 up to and past the prompt length, and finds the transition from broken to coherent is a sharp threshold around 80-92% of the prompt's token count, not a gradual slope.
+:::
+
 ---
 
 *Benchmarked on an Apple M4 (10-core GPU, 24GB unified memory) against `mlx-community/Qwen3-8B-4bit` (36 layers, 8 KV heads, head_dim 128), QFilters `qfilters_budget=512`, 5 interleaved repeats, 120 max tokens, long prompt only (2,238 tokens -- the configuration that exceeds budget). Calibration script: [`benchmark_scripts/calibrate_qwen3_8b_qfilters.py`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/benchmark_scripts/calibrate_qwen3_8b_qfilters.py). Comparison script: [`benchmark_scripts/benchmark_qwen3_8b_qfilters_calibrated.py`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/benchmark_scripts/benchmark_qwen3_8b_qfilters_calibrated.py). See the [original QFilters post](/blog/qwen3-8b-qfilters-honest-benchmark) for the finding this follows up on, and [`qfilters_calibration.py`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/veloxquant_mlx/quantizers/qfilters_calibration.py) for the calibration mechanism itself.*

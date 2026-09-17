@@ -1,0 +1,209 @@
+{
+  "model": "mlx-community/Qwen3-8B-4bit",
+  "prompt_tokens": 2238,
+  "max_tokens": 120,
+  "repeats": 3,
+  "budgets": [
+    512,
+    768,
+    1024,
+    1280,
+    1536,
+    1792,
+    2048,
+    2304,
+    2560
+  ],
+  "calibration_artifact": "figures/qwen3_8b_qfilters_calibrated/qfilters_qwen3_8b.npz",
+  "hardware": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "chip": "Apple M4",
+    "ram_gb": 24.0
+  },
+  "gpu_contention_suspects": [
+    "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+  ],
+  "fp16": {
+    "throughput_median": 6.0589912871837495,
+    "peak_mb_median": 5226.424579620361,
+    "texts": [
+      "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+      "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For",
+      "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nPlease make sure your explanations are clear and concise, avoiding any technical jargon. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token the model has processed. For"
+    ]
+  },
+  "sweep": {
+    "512": {
+      "n_repeats": 3,
+      "throughput_median": 3.0847566445451045,
+      "throughput_min": 2.9803637837012444,
+      "throughput_max": 3.264111336878169,
+      "peak_mb_median": 5907.291034698486,
+      "peak_mb_min": 5907.291034698486,
+      "peak_mb_max": 5907.291034698486,
+      "compression_ratio": 4.5964912280701755,
+      "word_overlap_median": 0.0,
+      "word_overlap_min": 0.0,
+      "word_overlap_max": 0.0,
+      "n_unique_texts": 1,
+      "texts": [
+        "...........,. the..........,. the. the. and.,..... the.,. the. the. and. the. the. the. and. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. the.",
+        "...........,. the..........,. the. the. and.,..... the.,. the. the. and. the. the. the. and. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. the.",
+        "...........,. the..........,. the. the. and.,..... the.,. the. the. and. the. the. the. and. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. and. the. the. the. the. the. the. the. the. the. the. the. the."
+      ]
+    },
+    "768": {
+      "n_repeats": 3,
+      "throughput_median": 3.3860102396097433,
+      "throughput_min": 3.3723289613575513,
+      "throughput_max": 3.4344558737232043,
+      "peak_mb_median": 5866.700653076172,
+      "peak_mb_min": 5866.700653076172,
+      "peak_mb_max": 5866.950653076172,
+      "compression_ratio": 3.0663198959687907,
+      "word_overlap_median": 0.0,
+      "word_overlap_min": 0.0,
+      "word_overlap_max": 0.0,
+      "n_unique_texts": 1,
+      "texts": [
+        "The. and. and. . the. and. with. and. and. and. and. and. and. . and. 2.3.2.2.3.45.2.2.3.2.2.3.4.5. 2.3.3.4.5.5.2.3. . 2. 2.2.2.2.2.2.2.2. 2.3.2. .2. 2.2. . 2.",
+        "The. and. and. . the. and. with. and. and. and. and. and. and. . and. 2.3.2.2.3.45.2.2.3.2.2.3.4.5. 2.3.3.4.5.5.2.3. . 2. 2.2.2.2.2.2.2.2. 2.3.2. .2. 2.2. . 2.",
+        "The. and. and. . the. and. with. and. and. and. and. and. and. . and. 2.3.2.2.3.45.2.2.3.2.2.3.4.5. 2.3.3.4.5.5.2.3. . 2. 2.2.2.2.2.2.2.2. 2.3.2. .2. 2.2. . 2."
+      ]
+    },
+    "1024": {
+      "n_repeats": 3,
+      "throughput_median": 3.509835040504527,
+      "throughput_min": 3.4474499390904243,
+      "throughput_max": 3.55417895476919,
+      "peak_mb_median": 6034.700653076172,
+      "peak_mb_min": 6034.700653076172,
+      "peak_mb_max": 6034.700653076172,
+      "compression_ratio": 2.3004878048780486,
+      "word_overlap_median": 0.014084507042253521,
+      "word_overlap_min": 0.014084507042253521,
+      "word_overlap_max": 0.014084507042253521,
+      "n_unique_texts": 1,
+      "texts": [
+        "the model. the. the model. the. the. model. the. the. model. the. the. the. model. the. the. the. the. model. the. the. the. the. the. model. the. the. the. model. the. the. the. the. the. the. the. the. the. the. the. model. the. the. the. the. the. the. the. the. model. the. the. the. the. the. the. the. the. the. the.",
+        "the model. the. the model. the. the. model. the. the. model. the. the. the. model. the. the. the. the. model. the. the. the. the. the. model. the. the. the. model. the. the. the. the. the. the. the. the. the. the. the. model. the. the. the. the. the. the. the. the. model. the. the. the. the. the. the. the. the. the. the.",
+        "the model. the. the model. the. the. model. the. the. model. the. the. the. model. the. the. the. the. model. the. the. the. the. the. model. the. the. the. model. the. the. the. the. the. the. the. the. the. the. the. model. the. the. the. the. the. the. the. the. model. the. the. the. the. the. the. the. the. the. the."
+      ]
+    },
+    "1280": {
+      "n_repeats": 3,
+      "throughput_median": 3.4079171034278724,
+      "throughput_min": 3.3013623291682106,
+      "throughput_max": 3.4477688648141624,
+      "peak_mb_median": 6203.255340576172,
+      "peak_mb_min": 6203.255340576172,
+      "peak_mb_max": 6203.255340576172,
+      "compression_ratio": 1.8407494145199064,
+      "word_overlap_median": 0.013513513513513514,
+      "word_overlap_min": 0.013513513513513514,
+      "word_overlap_max": 0.013513513513513514,
+      "n_unique_texts": 1,
+      "texts": [
+        "the model. the system. the model. with the. model. the. the. system. with. the. model. the. the. the. model. the. the. system. with. the. model. the. the. system. with. the. model. the. the. the. system. the. the. model. the. the. the. the. the. the. the. the. system. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the.",
+        "the model. the system. the model. with the. model. the. the. system. with. the. model. the. the. the. model. the. the. system. with. the. model. the. the. system. with. the. model. the. the. the. system. the. the. model. the. the. the. the. the. the. the. the. system. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the.",
+        "the model. the system. the model. with the. model. the. the. system. with. the. model. the. the. the. model. the. the. system. with. the. model. the. the. system. with. the. model. the. the. the. system. the. the. model. the. the. the. the. the. the. the. the. system. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the."
+      ]
+    },
+    "1536": {
+      "n_repeats": 3,
+      "throughput_median": 3.2246690677203307,
+      "throughput_min": 3.1675637192825135,
+      "throughput_max": 3.2880936383390114,
+      "peak_mb_median": 6371.255340576172,
+      "peak_mb_min": 6371.255340576172,
+      "peak_mb_max": 6371.255340576172,
+      "compression_ratio": 1.5341574495770982,
+      "word_overlap_median": 0.0136986301369863,
+      "word_overlap_min": 0.0136986301369863,
+      "word_overlap_max": 0.0136986301369863,
+      "n_unique_texts": 1,
+      "texts": [
+        "the model. the system. the model. the. the. model. the. the. and. the. the. model. the. the. model. the. the. model. the. model. the. the. model. the. model. the. model. the. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the",
+        "the model. the system. the model. the. the. model. the. the. and. the. the. model. the. the. model. the. the. model. the. model. the. the. model. the. model. the. model. the. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the",
+        "the model. the system. the model. the. the. model. the. the. and. the. the. model. the. the. model. the. the. model. the. model. the. the. model. the. model. the. model. the. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the. the. model. the"
+      ]
+    },
+    "1792": {
+      "n_repeats": 3,
+      "throughput_median": 2.805709047999461,
+      "throughput_min": 2.6634975699515917,
+      "throughput_max": 3.198494767616914,
+      "peak_mb_median": 6539.802215576172,
+      "peak_mb_min": 6539.802215576172,
+      "peak_mb_max": 6539.802215576172,
+      "compression_ratio": 1.3151143335192415,
+      "word_overlap_median": 0.014084507042253521,
+      "word_overlap_min": 0.014084507042253521,
+      "word_overlap_max": 0.014084507042253521,
+      "n_unique_texts": 1,
+      "texts": [
+        "\n\n the model. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the.",
+        "\n\n the model. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the.",
+        "\n\n the model. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the. the."
+      ]
+    },
+    "2048": {
+      "n_repeats": 3,
+      "throughput_median": 2.80702399367553,
+      "throughput_min": 2.6885799178598155,
+      "throughput_max": 2.915017196735216,
+      "peak_mb_median": 6139.490268707275,
+      "peak_mb_min": 6139.490268707275,
+      "peak_mb_max": 6139.490268707275,
+      "compression_ratio": 1.150805270863836,
+      "word_overlap_median": 0.3,
+      "word_overlap_min": 0.3,
+      "word_overlap_max": 0.3,
+      "n_unique_texts": 1,
+      "texts": [
+        "Also, explain why the model weights are not the main constraint. \n\nAnswer in English, in a clear and concise manner, using simple terms. Do not use markdown. \n\nOkay, so I need to explain why the KV cache is the main memory constraint for long-context inference on Apple Silicon. Let me start by recalling what the KV cache is. From what I remember, in transformer models, the key-value cache stores the keys and values of the attention mechanism for previous tokens. This helps the model avoid recomputing them each time, which saves computation. But the problem here is memory.\n\nThe",
+        "Also, explain why the model weights are not the main constraint. \n\nAnswer in English, in a clear and concise manner, using simple terms. Do not use markdown. \n\nOkay, so I need to explain why the KV cache is the main memory constraint for long-context inference on Apple Silicon. Let me start by recalling what the KV cache is. From what I remember, in transformer models, the key-value cache stores the keys and values of the attention mechanism for previous tokens. This helps the model avoid recomputing them each time, which saves computation. But the problem here is memory.\n\nThe",
+        "Also, explain why the model weights are not the main constraint. \n\nAnswer in English, in a clear and concise manner, using simple terms. Do not use markdown. \n\nOkay, so I need to explain why the KV cache is the main memory constraint for long-context inference on Apple Silicon. Let me start by recalling what the KV cache is. From what I remember, in transformer models, the key-value cache stores the keys and values of the attention mechanism for previous tokens. This helps the model avoid recomputing them each time, which saves computation. But the problem here is memory.\n\nThe"
+      ]
+    },
+    "2304": {
+      "n_repeats": 3,
+      "throughput_median": 3.1139260185100106,
+      "throughput_min": 2.9027615598967915,
+      "throughput_max": 3.121336723846943,
+      "peak_mb_median": 6139.490268707275,
+      "peak_mb_min": 6139.490268707275,
+      "peak_mb_max": 6139.490268707275,
+      "compression_ratio": 1.022993492407809,
+      "word_overlap_median": 0.8108108108108109,
+      "word_overlap_min": 0.8108108108108109,
+      "word_overlap_max": 0.8108108108108109,
+      "n_unique_texts": 1,
+      "texts": [
+        "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nMake sure your answers are concise, clear, and suitable for a non-technical audience. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token processed. For each",
+        "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nMake sure your answers are concise, clear, and suitable for a non-technical audience. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token processed. For each",
+        "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nMake sure your answers are concise, clear, and suitable for a non-technical audience. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token processed. For each"
+      ]
+    },
+    "2560": {
+      "n_repeats": 3,
+      "throughput_median": 3.077195697686922,
+      "throughput_min": 3.066694173600415,
+      "throughput_max": 3.1671969833162774,
+      "peak_mb_median": 6139.490268707275,
+      "peak_mb_min": 6139.490268707275,
+      "peak_mb_max": 6139.490268707275,
+      "compression_ratio": 0.9995760915642221,
+      "word_overlap_median": 0.8108108108108109,
+      "word_overlap_min": 0.8108108108108109,
+      "word_overlap_max": 0.8108108108108109,
+      "n_unique_texts": 1,
+      "texts": [
+        "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nMake sure your answers are concise, clear, and suitable for a non-technical audience. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token processed. For each",
+        "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nMake sure your answers are concise, clear, and suitable for a non-technical audience. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token processed. For each",
+        "\n\nAlso, explain in simple terms what the KV cache is, and what it does. \n\nFinally, explain in simple terms what \"long-context inference\" means. \n\nMake sure your answers are concise, clear, and suitable for a non-technical audience. \n\nOkay, let me try to break this down. First, the user wants me to explain why the KV cache is a memory constraint for long-context inference on Apple Silicon. They mentioned two things: the linear growth and the unified-memory contention. \n\nSo, the KV cache stores the attention keys and values for each token processed. For each"
+      ]
+    }
+  }
+}
