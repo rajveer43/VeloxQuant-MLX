@@ -27,11 +27,21 @@ CONTROL_HOST = "127.0.0.1"
 
 
 class PanelHandler(BaseHTTPRequestHandler):
+    """Request handler serving the panel's static assets and JSON API.
+
+    Bound to a single :class:`~veloxquant_mlx.ui.supervisor.ServerSupervisor`
+    instance (injected onto the ``supervisor`` class attribute by
+    :func:`serve_panel`, since :class:`~http.server.ThreadingHTTPServer`
+    instantiates a fresh handler per request). See :meth:`do_GET` and
+    :meth:`do_POST` for the route table.
+    """
+
     supervisor: ServerSupervisor  # injected by serve_panel
 
     # --- plumbing ---------------------------------------------------------
 
     def log_message(self, fmt: str, *args: Any) -> None:
+        """Suppress the base class's stderr access log; server logs go to the UI instead."""
         pass  # the panel's own access log is noise; server logs go to the UI
 
     def _send_json(self, payload: dict[str, Any], status: int = 200) -> None:
@@ -80,6 +90,17 @@ class PanelHandler(BaseHTTPRequestHandler):
     # --- routes -----------------------------------------------------------
 
     def do_GET(self) -> None:  # noqa: N802
+        """Serve a JSON API route under ``/api/*``, or fall back to a static file.
+
+        Routes: ``/api/methods`` (available quantization methods),
+        ``/api/status`` (supervisor state + version), ``/api/logs``
+        (supervised-process output, paginated via ``?since=``),
+        ``/api/config`` (persisted panel settings), ``/api/models`` (locally
+        cached models), ``/api/models/search`` (Hub search via ``?q=``), and
+        ``/api/memory`` (memory usage of the supervised process). Anything
+        else is served as a static file from ``STATIC_DIR`` by
+        :meth:`_send_static`.
+        """
         route = self.path.split("?")[0]
 
         if route == "/api/methods":
@@ -145,6 +166,15 @@ class PanelHandler(BaseHTTPRequestHandler):
         self._send_static(route)
 
     def do_POST(self) -> None:  # noqa: N802
+        """Handle the panel's mutating routes: start/stop the server, or save config.
+
+        Routes: ``/api/start`` (launch ``veloxquant serve`` with the posted
+        config, returning 400 on invalid model/method/overrides),
+        ``/api/stop`` (terminate the supervised process, returning 500 on
+        unexpected failure rather than leaking a raw exception), and
+        ``/api/config`` (merge and persist the posted settings, returning
+        the full merged config). Any other route is a 404.
+        """
         route = self.path.split("?")[0]
 
         if route == "/api/start":
@@ -177,6 +207,15 @@ class PanelHandler(BaseHTTPRequestHandler):
 
 
 def serve_panel(port: int = 7860, open_browser: bool = True) -> None:
+    """Start the control panel's HTTP server and block until interrupted.
+
+    Binds ``CONTROL_HOST`` (loopback only, unconditionally — see module
+    docstring) on ``port``, optionally opens the panel URL in the default
+    browser, and serves until ``Ctrl-C``. Always stops any running
+    supervised ``veloxquant serve`` child and closes the HTTP server on
+    exit, so interrupting the panel never leaves an orphaned inference
+    server holding a port.
+    """
     supervisor = ServerSupervisor()
 
     handler = type("BoundPanelHandler", (PanelHandler,), {"supervisor": supervisor})

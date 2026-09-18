@@ -6,6 +6,7 @@ __all__ = ["serve_panel"]
 
 
 def serve_panel(*args, **kwargs):
+    """Re-export of :func:`veloxquant_mlx.ui.server.serve_panel`; see its docstring."""
     from veloxquant_mlx.ui.server import serve_panel as _serve
 
     return _serve(*args, **kwargs)

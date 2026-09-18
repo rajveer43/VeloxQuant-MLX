@@ -45,11 +45,19 @@ def _is_noise(line: str) -> bool:
 
 @dataclass
 class LogLine:
+    """One line of supervised-process output, tagged with its source stream.
+
+    ``stream`` is ``"stdout"``/``"stderr"`` for lines from the child
+    ``veloxquant serve`` process, or ``"panel"`` for lines the supervisor
+    itself generates (lifecycle messages, diagnosed errors).
+    """
+
     stream: str  # "stdout" | "stderr" | "panel"
     text: str
     ts: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize to the JSON-compatible shape the panel's log API returns."""
         return {"stream": self.stream, "text": self.text, "ts": self.ts}
 
 
@@ -74,10 +82,23 @@ class ServerSupervisor:
 
     @property
     def state(self) -> str:
+        """Current lifecycle state, reaping a dead child first if needed.
+
+        One of ``"stopped"``, ``"starting"``, ``"running"``, or ``"error"``.
+        Always calls :meth:`_reap` first so a process that died on its own
+        (bad port, OOM, external kill) is reflected immediately rather than
+        on the next explicit :meth:`stop` call.
+        """
         self._reap()
         return self._state
 
     def status(self) -> dict[str, Any]:
+        """Full status snapshot for the panel's ``/api/status`` endpoint.
+
+        Includes the child PID (``None`` unless a server is starting or
+        running), the READY handshake payload once received, the last
+        diagnosed error if any, and the config the server was started with.
+        """
         state = self.state
         return {
             "state": state,
@@ -88,6 +109,12 @@ class ServerSupervisor:
         }
 
     def logs(self, since: int = 0) -> dict[str, Any]:
+        """Return log lines captured after index ``since`` (bounded by ``LOG_CAPACITY``).
+
+        The panel polls this repeatedly, passing back the previous
+        response's ``total`` as the next call's ``since`` to fetch only new
+        lines.
+        """
         lines = list(self._logs)
         return {
             "lines": [entry.to_dict() for entry in lines[since:]],
@@ -97,6 +124,17 @@ class ServerSupervisor:
     # --- lifecycle --------------------------------------------------------
 
     def start(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Launch ``veloxquant serve`` as a child process with ``config``'s settings.
+
+        Validates the model, method, and per-method overrides synchronously
+        (raising :class:`ValueError`) before spawning, so obviously-bad
+        input fails immediately in the UI rather than after the subprocess
+        starts and dies. Raises :class:`RuntimeError` if a server is already
+        ``starting``/``running`` (stop it first) or if the subprocess itself
+        fails to launch. Returns the same shape as :meth:`status`; the state
+        does not become ``"running"`` until the child's READY handshake
+        arrives (handled asynchronously by :meth:`_on_ready`).
+        """
         with self._lock:
             if self._state in ("starting", "running"):
                 raise RuntimeError("server is already running; stop it first")
@@ -147,6 +185,14 @@ class ServerSupervisor:
         return self.status()
 
     def stop(self, timeout: float = 10.0) -> dict[str, Any]:
+        """Terminate the supervised process, if any, and wait up to ``timeout`` seconds.
+
+        Signals the whole process group (SIGTERM, then SIGKILL if it hasn't
+        exited within ``timeout``) rather than just the child itself, since
+        ``mlx_lm`` spawns worker threads that ignore a bare SIGTERM to the
+        parent alone. A no-op (returns the current status) if nothing is
+        running. Always leaves the supervisor in the ``"stopped"`` state.
+        """
         with self._lock:
             proc = self._proc
             if proc is None or proc.poll() is not None:
