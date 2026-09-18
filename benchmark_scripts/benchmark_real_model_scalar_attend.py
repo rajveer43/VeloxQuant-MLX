@@ -40,10 +40,27 @@ and exposes them for the fused kernel, plus a monkeypatch of
 (`S_q > 1`) on the standard path.
 
 Usage: python benchmark_scripts/benchmark_real_model_scalar_attend.py
+
+CLI flags
+---------
+By default this reproduces the original fixed-256-token invocation exactly
+(see docs/NSG_AUTOTUNE_BENCHMARK_REPORT.md:317-327 for why prompt_len=256 is
+the SHORTEST, least occupancy-favorable point in the sweep, and not
+representative on its own). Use --sweep-prompt-len to see the full picture:
+
+    python benchmark_scripts/benchmark_real_model_scalar_attend.py \\
+        --sweep-prompt-len 256,1024,2048,4096
+
+--prompt-len sets a single prompt length (default 256, unchanged).
+--sweep-prompt-len overrides --prompt-len with a comma-separated list, one
+table per length.
+--nsg pins scalar_fused_decode_attend's threadgroup width instead of the
+now-shipped _auto_nsg default (nsg=None) that the rest of the codebase uses.
 """
 
 from __future__ import annotations
 
+import argparse
 import time
 
 import mlx.core as mx
@@ -206,7 +223,7 @@ _patched_modules: list = []
 _route_count = {"decode_fused": 0, "decode_dequant_baseline": 0, "fallback": 0}
 
 
-def _patched_sdpa_factory(nsg: int, use_fused: bool):
+def _patched_sdpa_factory(nsg: int | None, use_fused: bool):
     """Build the SDPA replacement for one arm of the comparison.
 
     Both arms attend over EXACTLY the same KIVI-quantized state
@@ -263,7 +280,7 @@ def _patched_sdpa_factory(nsg: int, use_fused: bool):
     return _patched_sdpa
 
 
-def _patch_sdpa_for_scalar_attend(model, nsg: int = 4, use_fused: bool = True) -> None:
+def _patch_sdpa_for_scalar_attend(model, nsg: int | None = None, use_fused: bool = True) -> None:
     """Patch ``scaled_dot_product_attention`` everywhere it's bound.
 
     ``mlx_lm.models.base.scaled_dot_product_attention`` is the canonical
@@ -357,23 +374,40 @@ def _run_decode(model, tokenizer, batch_size: int, prompt_len: int, n_decode: in
     return ttft, decode_tps
 
 
-def main() -> None:
-    print(f"[real-model] loading {MODEL_ID} ...")
-    model, tokenizer = load(MODEL_ID)
-    print(
-        f"[real-model] {len(model.model.layers)} layers, "
-        f"H_q={model.model.layers[0].self_attn.n_heads}, "
-        f"H_kv={model.model.layers[0].self_attn.n_kv_heads}\n"
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--prompt-len",
+        type=int,
+        default=256,
+        help="Single prompt length to benchmark (default: 256, matching the "
+        "original fixed invocation). Ignored if --sweep-prompt-len is given.",
     )
+    parser.add_argument(
+        "--sweep-prompt-len",
+        type=str,
+        default=None,
+        help="Comma-separated prompt lengths (e.g. 256,1024,2048,4096); prints "
+        "one table per length, matching Table 5.2 in "
+        "docs/NSG_AUTOTUNE_BENCHMARK_REPORT.md. Overrides --prompt-len.",
+    )
+    parser.add_argument(
+        "--nsg",
+        type=int,
+        default=None,
+        help="Pin scalar_fused_decode_attend's threadgroup width instead of "
+        "the shipped _auto_nsg default (omit this flag to use _auto_nsg).",
+    )
+    return parser.parse_args()
 
-    prompt_len = 256
-    n_decode = 30
 
+def _run_table(model, tokenizer, prompt_len: int, nsg: int | None, n_decode: int = 30) -> None:
     print("=" * 100)
     print("Apples-to-apples: BOTH arms attend over the SAME KIVI-quantized state.")
     print("baseline = dequantize-to-fp16 then standard MLX SDPA (what a real KIVI-style cache")
     print("does today) | fused = scalar_fused_decode_attend on-the-fly, no dequant materialized")
-    print(f"Qwen3-4B-4bit, prompt_len={prompt_len}, n_decode={n_decode}")
+    nsg_label = "auto (_auto_nsg)" if nsg is None else str(nsg)
+    print(f"Qwen3-4B-4bit, prompt_len={prompt_len}, n_decode={n_decode}, nsg={nsg_label}")
     print("=" * 100)
     print(
         f"{'B':>3} {'TTFT base (s)':>14} {'decode tok/s base':>18} | "
@@ -383,14 +417,14 @@ def main() -> None:
     for B in (1, 4, 16, 32):
         _route_count["decode_dequant_baseline"] = 0
         _route_count["fallback"] = 0
-        _patch_sdpa_for_scalar_attend(model, nsg=4, use_fused=False)
+        _patch_sdpa_for_scalar_attend(model, nsg=nsg, use_fused=False)
         ttft_base, tps_base = _run_decode(model, tokenizer, B, prompt_len, n_decode)
         n_base = _route_count["decode_dequant_baseline"]
         _unpatch_sdpa()
 
         _route_count["decode_fused"] = 0
         _route_count["fallback"] = 0
-        _patch_sdpa_for_scalar_attend(model, nsg=4, use_fused=True)
+        _patch_sdpa_for_scalar_attend(model, nsg=nsg, use_fused=True)
         ttft_fused, tps_fused = _run_decode(model, tokenizer, B, prompt_len, n_decode)
         n_fused, n_fallback = _route_count["decode_fused"], _route_count["fallback"]
         _unpatch_sdpa()
@@ -416,8 +450,27 @@ def main() -> None:
         "identical prefill; expect no difference), decode tok/s is real "
         "end-to-end throughput including all non-attention work (embeddings, "
         "MLPs, o_proj, sampling, per-step quantization), not an isolated "
-        "kernel call."
+        "kernel call.\n"
     )
+
+
+def main() -> None:
+    args = _parse_args()
+    if args.sweep_prompt_len:
+        prompt_lens = [int(p.strip()) for p in args.sweep_prompt_len.split(",")]
+    else:
+        prompt_lens = [args.prompt_len]
+
+    print(f"[real-model] loading {MODEL_ID} ...")
+    model, tokenizer = load(MODEL_ID)
+    print(
+        f"[real-model] {len(model.model.layers)} layers, "
+        f"H_q={model.model.layers[0].self_attn.n_heads}, "
+        f"H_kv={model.model.layers[0].self_attn.n_kv_heads}\n"
+    )
+
+    for prompt_len in prompt_lens:
+        _run_table(model, tokenizer, prompt_len, args.nsg)
 
 
 if __name__ == "__main__":
