@@ -134,6 +134,40 @@ markers = [
 python_version = "3.12"
 ignore_missing_imports = true
 
+# Per-module strictness ladder. These modules pass the flags below today, so
+# enabling them costs nothing now and stops the layer everything else types
+# against from regressing. The package ships `py.typed`, so downstream type
+# checkers consume these annotations -- this is what makes that marker mean
+# something.
+#
+# NOT a repo-wide strict flip. The remaining ~343 shipped-source errors are
+# dominated by mlx/numpy scalar-union stub artifacts (`int | float | complex`,
+# `floating`, `bool_` reaching `float()` and index positions), plus 12
+# `union-attr` hits on documented "None until loaded" fields guarded by
+# separate `is_loaded()`-style predicates mypy cannot correlate with a later
+# attribute access. Neither bucket is a confirmed runtime bug, and both want
+# design work rather than a flag. See #438 for the full triage.
+#
+# `warn_redundant_casts` is deliberately absent despite being in #438's
+# proposed snippet: it is a *global-only* flag. Inside a per-module section
+# mypy prints "Per-module sections should only specify per-module flags" and
+# then exits 0 -- a permanent warning on every run that never fails anything.
+# If you want it, set it at the top level of [tool.mypy], not here.
+#
+# To extend the ladder: run the module under these flags, and only add it once
+# it is already clean. `cache/base.py` is the next candidate -- its 10 errors
+# are all `[no-untyped-def]` (missing annotations, not type errors).
+[[tool.mypy.overrides]]
+module = [
+    "veloxquant_mlx.core.abstractions",
+    "veloxquant_mlx.memory.block_pool",
+    "veloxquant_mlx.cache.options",
+    "veloxquant_mlx.cache.registry",
+]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_optional = true
+
 [tool.ruff]
 target-version = "py310"
 line-length = 100
