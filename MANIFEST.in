@@ -1,0 +1,25 @@
+# The sdist is the reproducibility artifact: it must carry the test suite so a
+# reviewer (JOSS, PyPI, packagers) can unpack it and run `pytest` to verify the
+# claims. The *wheel* deliberately does not -- see the `exclude` in
+# [tool.setuptools.packages.find] and #434.
+#
+# `packages.find` drives both artifacts, so excluding the tests subpackage there
+# drops it from the sdist too. Graft it back here: MANIFEST.in only affects the
+# sdist, so this restores test coverage of the source release without putting
+# the 184 files back into every `pip install`.
+recursive-include veloxquant_mlx/tests *.py
+
+# veloxquant_mlx/tests/core/test_sync_release_badges.py reads this script off
+# disk, so an sdist without it fails at *collection* -- aborting the whole run,
+# not just that test. The sdist has never carried scripts/, so that test could
+# never run from one; ship it now that the sdist is meant to be testable.
+include scripts/sync_release_badges.py
+
+# Metal kernel sources and the control-panel frontend are declared in
+# [tool.setuptools.package-data] for the wheel; repeat them here so the sdist
+# is self-contained and can rebuild an identical wheel.
+recursive-include veloxquant_mlx/metal/src *.metal
+recursive-include veloxquant_mlx/ui/static *
+include veloxquant_mlx/py.typed
+
+include LICENSE NOTICE README.md CHANGELOG.md CITATIONS.md

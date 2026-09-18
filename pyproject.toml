@@ -86,12 +86,31 @@ mlx-kv-quant = "veloxquant_mlx.__main__:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["veloxquant_mlx*"]
+# The `veloxquant_mlx*` glob above also matches `veloxquant_mlx.tests` and its
+# subpackages, which silently put 184 test files -- 18.4% of the wheel's
+# uncompressed payload -- into every PyPI install. 138 of them import `pytest`
+# or `psutil`, neither of which is a runtime dependency, so they were
+# unimportable in a default install anyway.
+#
+# This `exclude` drives BOTH artifacts, so on its own it also strips the tests
+# from the sdist -- which would break the reproducibility story, since the sdist
+# is what a reviewer unpacks to run `pytest`. MANIFEST.in grafts them back into
+# the sdist only; keep the two in sync if this list ever changes. See #434.
+exclude = ["veloxquant_mlx.tests", "veloxquant_mlx.tests.*"]
 
 [tool.setuptools.package-data]
 # The control panel's frontend is plain static files with no build step, so
 # they must be shipped in the wheel alongside the Python sources.
 "veloxquant_mlx.ui" = ["static/*"]
 veloxquant_mlx = ["metal/src/*.metal", "py.typed"]
+
+[tool.setuptools.exclude-package-data]
+# Under pyproject.toml setuptools defaults `include-package-data = true`, which
+# makes MANIFEST.in feed the *wheel* too -- so the `recursive-include` there
+# that keeps tests in the sdist would otherwise put them straight back into the
+# wheel, defeating the `exclude` in [tool.setuptools.packages.find]. Prune them
+# from the wheel explicitly. See #434.
+veloxquant_mlx = ["tests/*", "tests/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["veloxquant_mlx/tests"]
