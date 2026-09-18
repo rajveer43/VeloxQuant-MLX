@@ -27,7 +27,7 @@ import copy
 import types
 import typing
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum
 from typing import Any, Union, cast
 
 __all__ = [
@@ -72,7 +72,7 @@ _DOCS_SLUG: dict[str, str] = {
 DEFAULT_SERVE_METHOD = "turboquant_rvq"
 
 
-class ServeTier(StrEnum):
+class ServeTier(str, Enum):
     """How well a method behaves under an ``mlx_lm.server`` process.
 
     Ordering reflects #27's support matrix. ``HONEST_BYTES`` is currently
@@ -117,7 +117,7 @@ class ServeTier(StrEnum):
         }[self]
 
 
-class MethodFamily(StrEnum):
+class MethodFamily(str, Enum):
     """What the method primarily does to the cache."""
 
     QUANTIZATION = "quantization"
@@ -125,7 +125,7 @@ class MethodFamily(StrEnum):
     HYBRID = "hybrid"
 
 
-class TelemetryCoverage(StrEnum):
+class TelemetryCoverage(str, Enum):
     """Which byte counters a method actually reports.
 
     Coverage is uneven across the catalog: of 35 servable methods, 13 report

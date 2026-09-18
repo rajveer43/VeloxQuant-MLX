@@ -97,7 +97,7 @@ methodology: [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md).
 pip install VeloxQuant-MLX
 ```
 
-Requirements: Apple Silicon M1+, Python ≥ 3.11, MLX ≥ 0.18, NumPy ≥ 1.26.
+Requirements: Apple Silicon M1+, Python ≥ 3.10, MLX ≥ 0.18, NumPy ≥ 1.26.
 
 Source install, conda/miniforge, Metal troubleshooting, and verifying the install
 are covered in the [installation guide](https://veloxquant.dev/docs/getting-started/installation).
@@ -404,7 +404,7 @@ MIT — see [LICENSE](LICENSE).
 ---
 
 <div align="center">
-  <sub>Apple Silicon M1+ · Python 3.11+ · 43 methods · MIT License</sub>
+  <sub>Apple Silicon M1+ · Python 3.10+ · 43 methods · MIT License</sub>
   <br/>
   <sub>
     <a href="https://veloxquant.dev/">Docs</a> ·
