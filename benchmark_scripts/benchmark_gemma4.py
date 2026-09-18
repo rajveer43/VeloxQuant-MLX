@@ -25,8 +25,10 @@ import numpy as np
 import seaborn as sns
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 from mlx_lm.models.cache import RotatingKVCache
+from mlx_lm.utils import _download, load_tokenizer
 
 from veloxquant_mlx.quantizers.turboquant_prod import TurboQuantProd
+from veloxquant_mlx.quantizers.turboquant_prod import TurboQuantProd as TQP
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 MODEL_ID = "mlx-community/gemma-4-e4b-it-4bit"
@@ -171,7 +173,6 @@ def run(model, tokenizer, cache_factory, label: str):
 
 # ── Load model ─────────────────────────────────────────────────────────────────
 print(f"Loading {MODEL_ID}  (strict=False patch active)...")
-from mlx_lm.utils import _download, load_tokenizer
 
 model_path = _download(MODEL_ID)
 model, _ = _mlx_utils.load_model(model_path, lazy=False, strict=False)
@@ -361,8 +362,6 @@ print(f"Saved {OUT_DIR}/fig2_hybrid_architecture.png")
 
 
 # ── Fig 3: Quality vs bits at head_dim=512 ────────────────────────────────────
-from veloxquant_mlx.quantizers.turboquant_prod import TurboQuantProd as TQP
-
 bit_range = [2, 3, 4, 5, 6]
 dims = [256, 512]
 dim_cols = [PALETTE["3bit"], PALETTE["4bit"]]
