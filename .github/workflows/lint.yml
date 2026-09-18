@@ -3,16 +3,22 @@ name: lint
 # ruff-format enforces the current repo-wide formatting baseline and blocks
 # the PR on failure.
 #
-# ruff-check and mypy are reporting-only (continue-on-error: true) for now.
-# As of #422, `ruff check .` has 528 pre-existing violations and `mypy
-# veloxquant_mlx` has 715, both predating this job -- see #40 for the
-# original ruff-check gap. Making either blocking today would fail every PR
-# regardless of what it touches. They stay wired into CI so regressions are
-# at least visible (green/red on the job, not silence), while the actual
-# backlog is worked down in dedicated cleanup PRs. Once a rule group's
-# backlog is cleared, drop its `continue-on-error` (or, for ruff, fold it
-# into `pre-commit run --all-files` so CI and the local hook enforce the
-# same thing).
+# ruff-check-tooling and mypy are reporting-only (continue-on-error: true) for
+# now. `ruff check scripts benchmark_scripts` and `mypy veloxquant_mlx` still
+# carry real backlogs (see #435/#436/#438 for the triage of what's in each and
+# why), predating this job -- see #40 for the original ruff-check gap. Making
+# either blocking today would fail every PR regardless of what it touches.
+# They stay wired into CI so regressions are at least visible (green/red on
+# the job, not silence), while the actual backlog is worked down in dedicated
+# cleanup PRs.
+#
+# ruff-check-package (the shipped code under veloxquant_mlx/, excluding
+# tests/) and mypy-strict-modules are BLOCKING -- see #436 and #438. Each is
+# scoped to a subset of the codebase that was verified clean before the gate
+# was turned on. Once a job's remaining backlog is cleared (repo-wide for
+# ruff, whole-package for mypy), widen its scope and retire the matching
+# reporting-only job (or, for ruff, fold it into `pre-commit run
+# --all-files` so CI and the local hook enforce the same thing).
 
 on:
   push:
@@ -31,16 +37,44 @@ jobs:
       - name: Check formatting with ruff
         run: pipx run ruff format --check .
 
-  ruff-check:
+  # BLOCKING. Scoped to the shipped package minus tests -- exactly what
+  # [tool.setuptools.packages.find] distributes in the wheel. Verified clean
+  # (0 violations) before this gate was added; the two pre-existing hits
+  # (F401 in cache/nestedkv_cache.py, B905 in cache/svdq_cache.py) were fixed
+  # rather than ignored. See #436.
+  #
+  # tests/ is excluded here on purpose, not swept under this gate: it still
+  # carries 20 B018 (useless-expression) violations of its own -- see #434 for
+  # why tests currently ship in the wheel regardless. Once those are cleared,
+  # drop the --exclude and this job covers the whole package.
+  ruff-check-package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Lint with ruff (non-blocking until the pre-existing backlog is cleared)
+      - name: Lint the shipped package (blocking)
+        run: pipx run ruff check veloxquant_mlx --exclude veloxquant_mlx/tests
+
+  # Reporting-only. scripts/ and benchmark_scripts/ are developer tooling,
+  # excluded from the wheel -- see #435, which already cleared their 167
+  # verified-false-positive B023/E402 hits via documented per-file-ignores.
+  # veloxquant_mlx/tests/ is included here (not in ruff-check-package above)
+  # for the same reason it's excluded there: its 20 B018 hits are a real,
+  # separate backlog, not developer-tooling noise, so this job's status
+  # reflects two different kinds of "not yet blocking" without conflating
+  # them into one number.
+  ruff-check-tooling:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Lint developer tooling and tests (non-blocking until cleared)
         continue-on-error: true
-        run: pipx run ruff check .
+        run: pipx run ruff check scripts benchmark_scripts veloxquant_mlx/tests
 
   mypy:
     # macos-14, not ubuntu-latest: `pip install -e ".[dev]"` pulls in the
