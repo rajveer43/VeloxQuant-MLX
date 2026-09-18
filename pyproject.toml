@@ -121,12 +121,16 @@ markers = [
 ]
 
 [tool.mypy]
-# 3.12, not the 3.11 floor in `requires-python`: numpy's bundled stubs use the
+# 3.12, not the 3.10 floor in `requires-python`: numpy's bundled stubs use the
 # PEP 695 `type X = ...` alias syntax, which mypy only parses when the
-# configured target is 3.12+. Pinning this to 3.11 makes mypy fail outright
-# ("Type statement is only supported in Python 3.12 and greater") against any
-# numpy satisfying this project's own `numpy>=1.26` dependency floor, before
-# it even reaches real code.
+# configured target is 3.12+. Pinning this to the floor makes mypy fail
+# outright ("Type statement is only supported in Python 3.12 and greater")
+# against any numpy satisfying this project's own `numpy>=1.26` dependency
+# floor, before it even reaches real code.
+#
+# This is a type-checking target only: it does not narrow what the package
+# supports or runs on. `requires-python = ">=3.10"` is what users install
+# against, and CI runs the suite on 3.10 through 3.14.
 python_version = "3.12"
 ignore_missing_imports = true
 
