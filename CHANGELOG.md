@@ -525,6 +525,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.87.0 (2026-09-18)
+
+### Features
+
+- **cache**: Add per-method KVCacheConfig.options dataclasses (#420)
+  ([#429](https://github.com/rajveer43/VeloxQuant-MLX/pull/429),
+  [`d7a80a7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d7a80a74aa01de1366cc2f783d5a7c606aca068f))
+
+
 ## v0.86.3 (2026-09-18)
 
 ### Bug Fixes
