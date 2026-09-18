@@ -194,6 +194,31 @@ select = ["E", "F", "I", "W", "UP", "B", "PTH", "RET", "SIM", "C4"]
 # without hurting readability, not real multi-statement code.
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+# B023: verified false positives, not fixed because fixing would make the code
+# worse. Every flagged closure across these 8 benchmark harnesses is handed to
+# a local timing helper (_bench/_timeit/bench_decode_step) that calls fn()
+# synchronously inside its own loops and never stores, schedules, or returns
+# it -- so the closure is fully consumed before the enclosing loop rebinds
+# anything. Checked all 8 files for any deferral primitive
+# (functools.partial/.append(lambda.../Thread/Pool/submit/asyncio/.map(/
+# callback=/schedule): none present. Binding defaults to silence the rule
+# would add ~9 dummy parameters per call site to benchmark code purely to
+# satisfy a rule that isn't describing a real defect here -- one lambda at
+# kv_kernel_roofline_bench.py:257 alone accounts for 9 of the 137 hits
+# (q, k_codes, k_scale, k_zero, v_codes, v_scale, v_zero, scale, plus one
+# more). See #435.
+"scripts/*.py" = ["B023"]
+
+# E402: these standalone scripts insert the repo root into sys.path so they
+# run from a checkout without an install; the first-party imports below that
+# line cannot be hoisted above it without breaking the whole point of the
+# pattern. Standard sys.path-bootstrap exception. (benchmark_gemma4.py's two
+# E402 hits were a different, genuinely fixable shape -- unrelated mid-file
+# re-imports with no path dependency -- and were fixed directly rather than
+# ignored; it no longer triggers this rule at all.) See #435.
+"benchmark_scripts/*.py" = ["E402"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["veloxquant_mlx"]
 
