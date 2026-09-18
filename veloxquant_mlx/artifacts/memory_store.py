@@ -37,6 +37,7 @@ class InMemoryArtifactStore(ArtifactStore):
     # ------------------------------------------------------------------
 
     def load_rotation_matrix(self, d: int, seed: int) -> Any:
+        """Look up a rotation matrix by ``(d, seed)``; raises if never saved this run."""
         key = (d, seed)
         if key not in self._rotations:
             raise ArtifactNotFoundError(
@@ -47,6 +48,7 @@ class InMemoryArtifactStore(ArtifactStore):
         return mx.array(self._rotations[key])
 
     def save_rotation_matrix(self, Pi: Any, d: int, seed: int) -> None:
+        """Store ``Pi`` (cast to fp16) under ``(d, seed)``, silently overwriting any prior entry."""
         self._rotations[(d, seed)] = np.array(Pi, dtype=np.float16)
 
     # ------------------------------------------------------------------
@@ -54,6 +56,7 @@ class InMemoryArtifactStore(ArtifactStore):
     # ------------------------------------------------------------------
 
     def load_codebook(self, distribution: str, b: int, d: int) -> Any:
+        """Look up a codebook by ``(distribution, b, d)``; raises if never saved this run."""
         key = (distribution, b, d)
         if key not in self._codebooks:
             raise ArtifactNotFoundError(
@@ -64,6 +67,7 @@ class InMemoryArtifactStore(ArtifactStore):
         return mx.array(self._codebooks[key])
 
     def save_codebook(self, cb: Any, distribution: str, b: int, d: int) -> None:
+        """Store ``cb`` (cast to fp16) under ``(distribution, b, d)``, silently overwriting any prior entry."""
         self._codebooks[(distribution, b, d)] = np.array(cb, dtype=np.float16)
 
     # ------------------------------------------------------------------
@@ -71,6 +75,7 @@ class InMemoryArtifactStore(ArtifactStore):
     # ------------------------------------------------------------------
 
     def load_jl_matrix(self, d: int, m: int, seed: int) -> Any:
+        """Look up a JL matrix by ``(d, m, seed)``; raises if never saved this run."""
         key = (d, m, seed)
         if key not in self._jls:
             raise ArtifactNotFoundError(
@@ -81,6 +86,7 @@ class InMemoryArtifactStore(ArtifactStore):
         return mx.array(self._jls[key])
 
     def save_jl_matrix(self, S: Any, d: int, m: int, seed: int) -> None:
+        """Store ``S`` (cast to fp16) under ``(d, m, seed)``, silently overwriting any prior entry."""
         self._jls[(d, m, seed)] = np.array(S, dtype=np.float16)
 
     # ------------------------------------------------------------------
@@ -88,6 +94,13 @@ class InMemoryArtifactStore(ArtifactStore):
     # ------------------------------------------------------------------
 
     def exists(self, artifact_type: str, **kwargs: Any) -> bool:
+        """Check whether a rotation/codebook/JL artifact is already stored.
+
+        ``artifact_type`` must be one of ``"rotation"``, ``"codebook"``, or
+        ``"jl"``; ``kwargs`` must supply that type's identifying parameters
+        (e.g. ``d=``/``seed=`` for a rotation). Returns ``False`` for an
+        unrecognized ``artifact_type`` rather than raising.
+        """
         if artifact_type == "rotation":
             return (kwargs["d"], kwargs["seed"]) in self._rotations
         if artifact_type == "codebook":

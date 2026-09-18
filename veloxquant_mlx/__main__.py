@@ -6,6 +6,14 @@ import sys
 
 
 def main() -> None:
+    """Dispatch to the subcommand named in ``sys.argv[1]`` and run it.
+
+    Registered as both the ``veloxquant`` and ``mlx-kv-quant`` console
+    scripts (see ``pyproject.toml``). Rewrites ``sys.argv`` to strip the
+    subcommand name before delegating, so each subcommand's own argument
+    parser sees a clean ``argv`` as if it were invoked directly. Exits with
+    status 1 (via ``sys.exit``) if no subcommand or an unknown one is given.
+    """
     if len(sys.argv) < 2:
         print(
             "Usage: veloxquant "
