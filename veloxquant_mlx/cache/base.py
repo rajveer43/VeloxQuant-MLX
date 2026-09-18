@@ -17,9 +17,11 @@ with a clear error rather than failing deep inside generation.
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
 import warnings
 from dataclasses import dataclass, field
+from dataclasses import fields as dataclasses_fields
 from dataclasses import replace as dataclasses_replace
 from typing import Any, Literal, cast
 
@@ -234,6 +236,213 @@ _CACHE_CLASS_BY_METHOD: dict[str, tuple[str, str]] = {
 }
 
 
+# Generated from the flat-field groupings in this file's history; maps each
+# deprecated flat field name to the options dataclass (in veloxquant_mlx.cache
+# .options) that now owns it, for __post_init__ read-through and the
+# __setattr__ DeprecationWarning below. See docs/API_SURFACE.md and #420.
+_FIELD_TO_OPTIONS_CLASS: dict[str, str] = {
+    "key_sub_dim": "VecInferOptions",
+    "value_sub_dim": "VecInferOptions",
+    "key_codebook_bits": "VecInferOptions",
+    "value_codebook_bits": "VecInferOptions",
+    "residual_length": "VecInferOptions",
+    "kivi_group_size": "KIVIOptions",
+    "svdq_rank": "SVDqOptions",
+    "svdq_energy_threshold": "SVDqOptions",
+    "svdq_bit_schedule": "SVDqOptions",
+    "svdq_group_size": "SVDqOptions",
+    "kitty_hi_fraction": "KittyOptions",
+    "kitty_hi_bit": "KittyOptions",
+    "kitty_lo_bit": "KittyOptions",
+    "kitty_group_size": "KittyOptions",
+    "adakv_target_avg_bits": "AdaKVOptions",
+    "adakv_lo_bit": "AdaKVOptions",
+    "adakv_mid_bit": "AdaKVOptions",
+    "adakv_hi_bit": "AdaKVOptions",
+    "adakv_group_size": "AdaKVOptions",
+    "adakv_update_interval": "AdaKVOptions",
+    "adakv_importance": "AdaKVOptions",
+    "adakv_obs_window": "AdaKVOptions",
+    "xquant_group_size": "XQuantOptions",
+    "xquant_base_bits": "XQuantOptions",
+    "xquant_residual_bits": "XQuantOptions",
+    "xquant_group_quant_size": "XQuantOptions",
+    "xquant_max_ctx": "XQuantOptions",
+    "kvquant_bits": "KVQuantOptions",
+    "kvquant_outlier_fraction": "KVQuantOptions",
+    "kvquant_group_size": "KVQuantOptions",
+    "kvquant_lloyd_iters": "KVQuantOptions",
+    "kvquant_refit_interval": "KVQuantOptions",
+    "kvquant_n_sink": "KVQuantOptions",
+    "palu_rank": "PALUOptions",
+    "palu_energy_threshold": "PALUOptions",
+    "palu_n_head_groups": "PALUOptions",
+    "palu_hi_bit": "PALUOptions",
+    "palu_lo_bit": "PALUOptions",
+    "palu_hi_fraction": "PALUOptions",
+    "palu_group_size": "PALUOptions",
+    "palu_quantize_values": "PALUOptions",
+    "cachegen_bits": "CacheGenOptions",
+    "cachegen_group_size": "CacheGenOptions",
+    "cachegen_use_delta": "CacheGenOptions",
+    "cachegen_per_channel": "CacheGenOptions",
+    "cachegen_layer_groups": "CacheGenOptions",
+    "cachegen_resolved_bits": "CacheGenOptions",
+    "minicache_start_frac": "MiniCacheOptions",
+    "minicache_group_size": "MiniCacheOptions",
+    "minicache_retention_threshold": "MiniCacheOptions",
+    "minicache_slerp_t": "MiniCacheOptions",
+    "minicache_max_ctx": "MiniCacheOptions",
+    "gear_bits": "GEAROptions",
+    "gear_rank": "GEAROptions",
+    "gear_energy_threshold": "GEAROptions",
+    "gear_sparse_fraction": "GEAROptions",
+    "gear_group_size": "GEAROptions",
+    "gear_quantize_values": "GEAROptions",
+    "zipcache_hi_bits": "ZipCacheOptions",
+    "zipcache_lo_bits": "ZipCacheOptions",
+    "zipcache_hi_fraction": "ZipCacheOptions",
+    "zipcache_group_size": "ZipCacheOptions",
+    "zipcache_quantize_values": "ZipCacheOptions",
+    "snap_dtype": "SnapKVOptions",
+    "snap_batched_scoring": "SnapKVOptions",
+    "snap_backend": "SnapKVOptions",
+    "snap_budget": "SnapKVOptions",
+    "snap_obs_window": "SnapKVOptions",
+    "snap_n_sink": "SnapKVOptions",
+    "stream_n_sink": "StreamingLLMOptions",
+    "stream_window_size": "StreamingLLMOptions",
+    "h2o_budget": "H2OOptions",
+    "h2o_n_sink": "H2OOptions",
+    "h2o_rope_base": "H2OOptions",
+    "h2o_grace": "H2OOptions",
+    "h2o_decay": "H2OOptions",
+    "tova_budget": "TOVAOptions",
+    "tova_n_sink": "TOVAOptions",
+    "tova_backend": "TOVAOptions",
+    "pyramid_budget": "PyramidKVOptions",
+    "pyramid_backend": "PyramidKVOptions",
+    "pyramid_n_sink": "PyramidKVOptions",
+    "pyramid_beta": "PyramidKVOptions",
+    "pyramid_resolved_budget": "PyramidKVOptions",
+    "squeeze_budget": "SqueezeAttentionOptions",
+    "squeeze_n_sink": "SqueezeAttentionOptions",
+    "squeeze_strength": "SqueezeAttentionOptions",
+    "squeeze_resolved_budget": "SqueezeAttentionOptions",
+    "chunkkv_budget": "ChunkKVOptions",
+    "chunkkv_chunk_size": "ChunkKVOptions",
+    "chunkkv_n_sink": "ChunkKVOptions",
+    "chunkkv_score": "ChunkKVOptions",
+    "chunkkv_reuse_layers": "ChunkKVOptions",
+    "cam_budget": "CaMOptions",
+    "cam_n_sink": "CaMOptions",
+    "cam_merge": "CaMOptions",
+    "cam_merge_keys": "CaMOptions",
+    "cam_merge_gate": "CaMOptions",
+    "xkv_group_size": "XKVOptions",
+    "xkv_rank": "XKVOptions",
+    "xkv_energy_threshold": "XKVOptions",
+    "xkv_latent_bits": "XKVOptions",
+    "xkv_group_quant_size": "XKVOptions",
+    "xkv_max_ctx": "XKVOptions",
+    "nsn_bits": "NSNQuantOptions",
+    "nsn_residual_length": "NSNQuantOptions",
+    "nsn_codebook_size": "NSNQuantOptions",
+    "nsn_subvector_dim": "NSNQuantOptions",
+    "nsn_seed": "NSNQuantOptions",
+    "nsn_max_ctx": "NSNQuantOptions",
+    "knorm_budget": "L2NormOptions",
+    "knorm_n_sink": "L2NormOptions",
+    "knorm_recent": "L2NormOptions",
+    "knorm_keep": "L2NormOptions",
+    "skvq_bits_key": "SKVQOptions",
+    "skvq_bits_value": "SKVQOptions",
+    "skvq_group_size": "SKVQOptions",
+    "skvq_window": "SKVQOptions",
+    "skvq_n_sink": "SKVQOptions",
+    "skvq_reorder": "SKVQOptions",
+    "skvq_clip_search": "SKVQOptions",
+    "skvq_clip_alpha": "SKVQOptions",
+    "skvq_max_ctx": "SKVQOptions",
+    "qfilters_budget": "QFiltersOptions",
+    "qfilters_n_sink": "QFiltersOptions",
+    "qfilters_recent": "QFiltersOptions",
+    "qfilters_calib_tokens": "QFiltersOptions",
+    "qfilters_sign": "QFiltersOptions",
+    "qfilters_min_retention": "QFiltersOptions",
+    "qfilters_on_low_retention": "QFiltersOptions",
+    "keyformer_budget": "KeyformerOptions",
+    "keyformer_n_sink": "KeyformerOptions",
+    "keyformer_recent": "KeyformerOptions",
+    "keyformer_tau": "KeyformerOptions",
+    "keyformer_tau_init": "KeyformerOptions",
+    "keyformer_tau_end": "KeyformerOptions",
+    "keyformer_anneal_steps": "KeyformerOptions",
+    "keyformer_rope_base": "KeyformerOptions",
+    "keyformer_seed": "KeyformerOptions",
+    "morphkv_budget": "MorphKVOptions",
+    "morphkv_n_sink": "MorphKVOptions",
+    "morphkv_window": "MorphKVOptions",
+    "kvzip_budget": "KVzipOptions",
+    "kvzip_n_sink": "KVzipOptions",
+    "kvzip_probe": "KVzipOptions",
+    "kvtc_bit_budget": "KVTCOptions",
+    "kvtc_bit_choices": "KVTCOptions",
+    "kvtc_beta": "KVTCOptions",
+    "curdkv_budget": "CurDKVOptions",
+    "curdkv_n_sink": "CurDKVOptions",
+    "curdkv_rank_cap": "CurDKVOptions",
+    "curdkv_rope_base": "CurDKVOptions",
+    "nestedkv_budget": "NestedKVOptions",
+    "nestedkv_n_sink": "NestedKVOptions",
+    "nestedkv_window": "NestedKVOptions",
+    "nestedkv_beta": "NestedKVOptions",
+    "nestedkv_tau": "NestedKVOptions",
+    "nestedkv_kappa": "NestedKVOptions",
+    "nestedkv_safeguard_alpha": "NestedKVOptions",
+    "amc_k_high": "AMCOptions",
+    "amc_k_mid": "AMCOptions",
+    "amc_use_query_saliency": "AMCOptions",
+    "amc_query_alpha": "AMCOptions",
+    "amc_adaptive_thresholds": "AMCOptions",
+    "amc_threshold_window": "AMCOptions",
+    "amc_gamma": "AMCOptions",
+    "amc_calib_variance": "AMCOptions",
+    "amc_group_size": "AMCOptions",
+    "a2ats_codebook_bits": "A2ATSOptions",
+    "a2ats_sub_dim": "A2ATSOptions",
+    "a2ats_window": "A2ATSOptions",
+    "a2ats_b": "A2ATSOptions",
+    "a2ats_use_query_aware": "A2ATSOptions",
+    "a2ats_beta": "A2ATSOptions",
+    "a2ats_retrieval_fraction": "A2ATSOptions",
+    "a2ats_rope_base": "A2ATSOptions",
+    "a2ats_query_h": "A2ATSOptions",
+    "a2ats_codebook": "A2ATSOptions",
+    "anchorkv_theta": "AnchorKVOptions",
+    "anchorkv_window": "AnchorKVOptions",
+    "anchorkv_rho": "AnchorKVOptions",
+    "anchorkv_anchor_frac": "AnchorKVOptions",
+    "anchorkv_residual_bits": "AnchorKVOptions",
+    "anchorkv_seed": "AnchorKVOptions",
+    "rocketkv_compression_ratio": "RocketKVOptions",
+    "rocketkv_page_size": "RocketKVOptions",
+    "rocketkv_head_topk1": "RocketKVOptions",
+    "rocketkv_obs_window": "RocketKVOptions",
+    "rocketkv_n_sink": "RocketKVOptions",
+    "age_recent_boundary": "AgeTieredKVOptions",
+    "age_mid_boundary": "AgeTieredKVOptions",
+    "age_bits_recent": "AgeTieredKVOptions",
+    "age_bits_mid": "AgeTieredKVOptions",
+    "age_bits_old": "AgeTieredKVOptions",
+    "age_group_size": "AgeTieredKVOptions",
+    "spectral_key_d_eff": "SpectralQuantOptions",
+    "spectral_val_d_eff": "SpectralQuantOptions",
+    "spectral_apply_qjl": "SpectralQuantOptions",
+    "spectral_model_name": "SpectralQuantOptions",
+}
+
+
 def _resolve_head_dim(layer: Any, args: Any) -> int | None:
     """Resolve a layer's attention head_dim, or None if it has no attention.
 
@@ -273,6 +482,18 @@ class KVCacheConfig:
         sliding_window: If set, wrap cache with sliding-window eviction.
         store: ArtifactStore to load precomputed artifacts from.
         observers: List of QuantizationObserver instances.
+        options: Method-specific option dataclass from
+            :mod:`veloxquant_mlx.cache.options` (e.g. ``H2OOptions``,
+            ``SnapKVOptions``), grouping the flat per-method fields below
+            (``h2o_budget``, ``snap_budget``, ...) into one small object per
+            method. Preferred over setting the flat fields directly (#420):
+            values from ``options`` populate the matching flat fields at
+            construction time (see ``__post_init__``), so every existing
+            cache class -- which reads the flat fields via
+            ``getattr(config, "h2o_budget", 512)`` -- keeps working
+            unchanged. Setting a flat per-method field directly still works
+            but emits a ``DeprecationWarning`` naming its ``options``
+            replacement.
     """
 
     method: MethodName = "turboquant_rvq"
@@ -291,6 +512,7 @@ class KVCacheConfig:
     sliding_window: int | None = None
     store: ArtifactStore | None = None
     observers: list = field(default_factory=list)
+    options: object | None = None
     # --- VecInfer-specific configuration -------------------------------
     key_sub_dim: int = 4
     value_sub_dim: int = 8
@@ -633,6 +855,40 @@ class KVCacheConfig:
             f"KVCacheConfig(method={self.method!r}, d={self.head_dim}, "
             f"b={self.bit_width_inlier}, seed={self.seed})"
         )
+
+    def __post_init__(self) -> None:
+        # Read-through: an `options` instance populates its matching flat
+        # fields (e.g. H2OOptions.budget -> self.h2o_budget) for any flat
+        # field still at its dataclass default, so KVCacheFactory/cache
+        # classes -- which read flat fields via getattr(config,
+        # "h2o_budget", ...) -- see the options-supplied values without
+        # changes. A flat field passed explicitly to KVCacheConfig(...)
+        # still wins over `options` (matches the field's own default check,
+        # not `options`' priority) so existing direct-kwarg construction is
+        # unaffected by adding `options` support.
+        if self.options is not None and dataclasses.is_dataclass(self.options):
+            defaults = {f.name: f.default for f in dataclasses_fields(self)}
+            for opt_field in dataclasses_fields(self.options):
+                flat_name = opt_field.name
+                if flat_name not in _FIELD_TO_OPTIONS_CLASS:
+                    continue
+                if getattr(self, flat_name, defaults.get(flat_name)) == defaults.get(flat_name):
+                    object.__setattr__(self, flat_name, getattr(self.options, opt_field.name))
+        object.__setattr__(self, "_post_init_done", True)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if getattr(self, "_post_init_done", False) and name in _FIELD_TO_OPTIONS_CLASS:
+            cls_name = _FIELD_TO_OPTIONS_CLASS[name]
+            warnings.warn(
+                f"KVCacheConfig.{name} is deprecated in favor of "
+                f"veloxquant_mlx.cache.options.{cls_name} (pass it via "
+                f"KVCacheConfig(options={cls_name}({name}=...))). The flat "
+                f"field still works but will be removed in a future major "
+                f"version (#420).",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        object.__setattr__(self, name, value)
 
 
 class KVCacheFactory:

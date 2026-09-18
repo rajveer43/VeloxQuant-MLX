@@ -525,6 +525,25 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.86.3 (2026-09-18)
+
+### Bug Fixes
+
+- **ci**: Run tests/non_metal/ as a whole, not test_mac_recommender.py by name
+  ([#427](https://github.com/rajveer43/VeloxQuant-MLX/pull/427),
+  [`9336ea8`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9336ea89e7062fa8a3bab9d22c1fd97097dbddd4))
+
+- **lint**: Clear F821/F841 ruff violations; wire ruff-check + mypy into CI
+  ([#426](https://github.com/rajveer43/VeloxQuant-MLX/pull/426),
+  [`c0e6bbf`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c0e6bbfde86dc0de50153139b30c59f8fb0f0042))
+
+### Refactoring
+
+- **cache**: Extract _resolve_head_dim helper, dedupe 8 copies
+  ([#415](https://github.com/rajveer43/VeloxQuant-MLX/pull/415),
+  [`92ba841`](https://github.com/rajveer43/VeloxQuant-MLX/commit/92ba8416c51e11795100e99df85e8aa9672ad286))
+
+
 ## v0.86.2 (2026-09-17)
 
 ### Bug Fixes
