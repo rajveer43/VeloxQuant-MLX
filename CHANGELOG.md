@@ -525,6 +525,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.88.0 (2026-09-18)
+
+### Features
+
+- **bench**: Make prompt_len/nsg CLI-configurable in scalar_attend benchmark
+  ([#428](https://github.com/rajveer43/VeloxQuant-MLX/pull/428),
+  [`6a4da48`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6a4da4853b8716fa72959e6bbb20d20ee00b1c6a))
+
+
 ## v0.87.0 (2026-09-18)
 
 ### Features
