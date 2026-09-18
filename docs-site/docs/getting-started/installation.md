@@ -19,7 +19,7 @@ VeloxQuant-MLX uses Metal GPU kernels compiled at runtime. It requires **macOS o
 |---|---|
 | macOS | 13 Ventura or later |
 | Apple Silicon | M1, M2, M3, M4 (any tier) |
-| Python | 3.11 or 3.12 |
+| Python | 3.10 – 3.14 |
 | MLX | ≥ 0.18 |
 | NumPy | ≥ 1.26 |
 
