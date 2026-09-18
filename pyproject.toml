@@ -7,7 +7,7 @@ name = "VeloxQuant-MLX"
 version = "0.88.1"
 description = "Fast KV-cache quantization for Apple Silicon (MLX) — 43 research-adapted compression methods, from TurboQuant and KIVI to A2ATS, with Metal kernels"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
@@ -34,6 +34,7 @@ classifiers = [
     "Environment :: GPU",
     "Operating System :: MacOS",
     "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -111,7 +112,7 @@ python_version = "3.12"
 ignore_missing_imports = true
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py310"
 line-length = 100
 
 [tool.ruff.lint]

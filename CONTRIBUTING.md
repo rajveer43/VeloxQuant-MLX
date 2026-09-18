@@ -65,7 +65,7 @@ committed `results.json` (see Submitting changes).
 
 ## Getting set up
 
-Requires Apple Silicon (M1 or later), Python ≥ 3.11, and MLX ≥ 0.18.
+Requires Apple Silicon (M1 or later), Python ≥ 3.10, and MLX ≥ 0.18.
 
 ```bash
 git clone https://github.com/rajveer43/VeloxQuant-MLX
