@@ -17,6 +17,7 @@ import pytest
 
 from veloxquant_mlx.cache.age_tiered_cache import AgeTieredKVCache
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
+from veloxquant_mlx.quantizers.age_tiered import MID, OLD, RECENT
 
 
 def _make(**cfg):
@@ -321,3 +322,107 @@ def test_factory_smoke_compression_ratio_positive_both_kv() -> None:
 def test_is_not_trimmable() -> None:
     c = _make()
     assert c.is_trimmable() is False
+
+
+# ---------------------------------------------------------------------------
+# Re-quantization bounded to boundary crossings (issue #397)
+# ---------------------------------------------------------------------------
+
+
+def test_settled_group_is_not_touched_on_later_steps() -> None:
+    """Once a fixed-size group has finished crossing into OLD (and is full,
+    so its membership can no longer change), its stored (already quantized)
+    values must stay bit-for-bit identical on every subsequent step -- the
+    bug this issue reports is that the whole buffer got re-quantized from
+    its own lossy fp16 reconstruction on every single call, regardless of
+    whether any token's tier actually changed.
+    """
+    c = _make(
+        age_recent_boundary=4,
+        age_mid_boundary=8,
+        age_bits_recent=8,
+        age_bits_mid=2,
+        age_bits_old=2,
+        age_group_size=4,
+        head_dim=8,
+    )
+    k, v = _rand_kv(S=4, H=1, D=8, seed=7)
+    c.update_and_fetch(k, v)
+
+    # Advance until the first group of 4 tokens is fully OLD and frozen.
+    for i in range(20):
+        k, v = _rand_kv(S=1, H=1, D=8, seed=100 + i)
+        ko, vo = c.update_and_fetch(k, v)
+    assert list(c._group_tier[0][:1]) == [OLD]
+
+    settled_k_before = np.array(ko[0, 0, :4])
+    settled_v_before = np.array(vo[0, 0, :4])
+
+    # One more step only appends a new token; the settled group must not move.
+    k, v = _rand_kv(S=1, H=1, D=8, seed=999)
+    ko, vo = c.update_and_fetch(k, v)
+    settled_k_after = np.array(ko[0, 0, :4])
+    settled_v_after = np.array(vo[0, 0, :4])
+
+    assert np.array_equal(settled_k_before, settled_k_after)
+    assert np.array_equal(settled_v_before, settled_v_after)
+
+
+def test_no_compounding_precision_loss_over_many_steps() -> None:
+    """Regression for #397: the original code re-quantized the entire
+    buffer from its own already-dequantized (lossy) reconstruction on every
+    single step, regardless of whether any token's tier changed -- so a
+    token that settled into OLD early kept accumulating fresh rounding
+    error indefinitely as more steps ran. With group-level freeze-once
+    -per-tier-change semantics, a settled group's stored value must be
+    identical no matter how many further steps elapse.
+    """
+    c = _make(
+        age_recent_boundary=2,
+        age_mid_boundary=4,
+        age_bits_recent=8,
+        age_bits_mid=4,
+        age_bits_old=2,
+        age_group_size=32,
+        head_dim=8,
+    )
+    k0, v0 = _rand_kv(S=4, H=1, D=8, seed=42)
+    c.update_and_fetch(k0, v0)
+
+    snapshots = []
+    for i in range(200):
+        k, v = _rand_kv(S=1, H=1, D=8, seed=200 + i)
+        ko, _ = c.update_and_fetch(k, v)
+        snapshots.append(np.array(ko[0, 0, :4]).astype(np.float32))
+
+    # Group 0 (positions [0:32]) only freezes once the buffer holds >= 32
+    # tokens (n=32 is reached at step index 32 - 4 - 1 = 27, since prefill
+    # already wrote 4). Everything from there on must be byte-identical --
+    # any drift after freezing indicates ongoing re-quantization of an
+    # unchanged group.
+    settled = snapshots[30:]
+    for snap in settled[1:]:
+        assert np.array_equal(snap, settled[0])
+
+
+def test_requantize_only_touches_groups_containing_a_crossing() -> None:
+    """Direct unit check on the fixed helper: a full group with no tier
+    change (by its first/oldest token, which defines the group's tier)
+    must reuse its previous quantized output byte-for-byte, while a group
+    whose first token just crossed a boundary is re-derived from raw.
+    """
+    c = _make(age_group_size=4, head_dim=8, age_bits_recent=8, age_bits_old=2)
+    rng = np.random.default_rng(3)
+    raw = mx.array(rng.standard_normal((8, 8)).astype(np.float16))
+
+    # Two full groups of 4; only the second group (first index 4) crosses.
+    prev_tiers = [RECENT, RECENT, RECENT, RECENT, MID, MID, MID, MID]
+    tiers = [RECENT, RECENT, RECENT, RECENT, OLD, OLD, OLD, OLD]
+    prev_group_tier = [RECENT, MID]
+
+    prev_out, _ = c._requantize(raw, None, prev_tiers, [])
+    out, group_tier = c._requantize(raw, prev_out, tiers, prev_group_tier)
+
+    assert np.array_equal(np.array(out[:4]), np.array(prev_out[:4]))
+    assert not np.array_equal(np.array(out[4:]), np.array(prev_out[4:]))
+    assert group_tier == [RECENT, OLD]
