@@ -58,3 +58,36 @@ jobs:
       - name: Type check with mypy (non-blocking until the pre-existing backlog is cleared)
         continue-on-error: true
         run: mypy veloxquant_mlx
+
+  # Blocking counterpart to the reporting-only `mypy` job above. It checks only
+  # the modules on the strictness ladder in [[tool.mypy.overrides]] -- the
+  # Protocol/ABC layer and the config surface, which everything else types
+  # against. Those pass clean today, so this gates regressions without being
+  # blocked on the ~343-error backlog the whole-package job reports.
+  #
+  # The strictness flags live in pyproject.toml, not here: repeating them on
+  # this command line would create a second source of truth that silently
+  # drifts from the config every local `mypy` run uses. Keep the module list
+  # here in sync with the `module = [...]` list in that override.
+  mypy-strict-modules:
+    # macos-14 for the same reason as the `mypy` job above: mlx/mlx-lm ship no
+    # Linux wheels, so `pip install -e ".[dev]"` cannot resolve on ubuntu.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package + dev dependencies
+        run: pip install -e ".[dev]"
+      - name: Type check the ladder modules (blocking)
+        # --follow-imports=silent: type-check these files against their
+        # dependencies without reporting errors *in* those dependencies, which
+        # are still on the backlog. Without it, a single module expands to ~91
+        # files and hundreds of unrelated errors.
+        run: |
+          mypy --follow-imports=silent \
+            veloxquant_mlx/core/abstractions.py \
+            veloxquant_mlx/memory/block_pool.py \
+            veloxquant_mlx/cache/options.py \
+            veloxquant_mlx/cache/registry.py
