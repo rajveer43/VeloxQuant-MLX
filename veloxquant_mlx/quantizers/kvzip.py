@@ -79,6 +79,13 @@ from dataclasses import dataclass
 
 import mlx.core as mx
 
+from veloxquant_mlx.quantizers._eviction_common import (
+    attention_scores,
+    fp16_kv_bytes,
+    full_fp16_kv_bytes,
+    get_kv,
+)
+
 _VALID_PROBES = ("context", "latest")
 
 
@@ -140,24 +147,6 @@ def init_kvzip_state(
     )
 
 
-def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
-    """Softmax proxy-attention weights of ``query_proxy`` against each key row.
-
-    Identical formula to quantizers/morphkv.py / keyformer.py / tova.py — softmax
-    of the key-as-query dot products, scaled by 1/sqrt(D).
-
-    Args:
-        query_proxy: [D] key used as a stand-in for the reconstruction query.
-        keys:        [n, D] existing key rows.
-
-    Returns:
-        [n] softmax weights summing to ~1.
-    """
-    scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
-    logits = (keys @ query_proxy) * scale  # [n]
-    return mx.softmax(logits, axis=-1)
-
-
 def _reconstruction_importance(keys: mx.array, probe: str) -> mx.array:
     """Reconstruction reliance each stored key receives from the probe.
 
@@ -187,7 +176,7 @@ def _reconstruction_importance(keys: mx.array, probe: str) -> mx.array:
     if probe == "latest":
         # Single most-recent key as the reconstruction probe → exactly the
         # TOVA-adapted latest-token attention over the keep set.
-        return _attention_scores(keys_f[n - 1], keys_f)
+        return attention_scores(keys_f[n - 1], keys_f)
 
     # probe == "context": max over all probe rows of the attention placed on
     # each stored key. Build the [n_probe, n] matrix and reduce with max(axis=0).
@@ -275,10 +264,7 @@ def kvzip_get_kv(state: KVzipState) -> tuple[mx.array, mx.array]:
     Returns ``([0, 1], [0, 1])`` zero-row placeholders before the first update
     (same contract as ``morphkv_get_kv`` / ``tova_get_kv``).
     """
-    if state.keys is None:
-        dummy = mx.zeros((0, 1), dtype=mx.float16)
-        return dummy, dummy
-    return state.keys, state.values
+    return get_kv(state.keys, state.values)
 
 
 def kvzip_fp16_bytes(state: KVzipState) -> int:
@@ -287,15 +273,12 @@ def kvzip_fp16_bytes(state: KVzipState) -> int:
     The reconstruction probe reuses ``keys`` (not extra payload), so only K + V
     are counted — same accounting as H2O / TOVA / MorphKV.
     """
-    if state.keys is None:
-        return 0
-    n, D = state.keys.shape
-    return n * D * 2 * 2  # K + V, 2 bytes each
+    return fp16_kv_bytes(state.keys)
 
 
 def full_kvzip_fp16_bytes(tokens_seen: int, head_dim: int) -> int:
     """Hypothetical fp16 K + V bytes if all ``tokens_seen`` were stored."""
-    return tokens_seen * head_dim * 2 * 2
+    return full_fp16_kv_bytes(tokens_seen, head_dim)
 
 
 __all__ = [

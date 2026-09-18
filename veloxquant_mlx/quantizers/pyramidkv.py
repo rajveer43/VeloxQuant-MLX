@@ -48,10 +48,16 @@ full_pyramid_fp16_bytes — hypothetical cost without eviction
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 import mlx.core as mx
+
+from veloxquant_mlx.quantizers._eviction_common import (
+    attention_scores,
+    fp16_kv_bytes,
+    full_fp16_kv_bytes,
+    get_kv,
+)
 
 
 def pyramid_budgets(
@@ -180,21 +186,6 @@ def init_pyramid_state(n_sink: int, budget: int, head_dim: int) -> PyramidState:
     return PyramidState(keys=None, values=None, scores=None, n_sink=n_sink, budget=budget)
 
 
-def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
-    """Softmax attention weights of query_proxy against each key row.
-
-    Args:
-        query_proxy: [D] — used as a stand-in for the true query.
-        keys:        [n, D] — existing key rows.
-
-    Returns:
-        [n] softmax weights summing to ~1.
-    """
-    scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
-    logits = (keys @ query_proxy) * scale  # [n]
-    return mx.softmax(logits, axis=-1)
-
-
 def pyramid_update(
     state: PyramidState,
     new_keys: mx.array,  # [S, D] fp16
@@ -238,7 +229,7 @@ def pyramid_update(
             continue
 
         # --- score update --------------------------------------------------
-        attn = _attention_scores(k_i.astype(mx.float32), state.keys.astype(mx.float32))
+        attn = attention_scores(k_i.astype(mx.float32), state.keys.astype(mx.float32))
         updated_scores = state.scores + attn  # [n_kept]
 
         # --- append new token (score = 0; begins accumulating next step) ---
@@ -327,7 +318,7 @@ def pyramid_update_heads(states, new_keys, new_values, *, backend):
     for step in range(start, steps):
         attention = mx.stack(
             [
-                _attention_scores(new_keys[g, step].astype(mx.float32), k[g].astype(mx.float32))
+                attention_scores(new_keys[g, step].astype(mx.float32), k[g].astype(mx.float32))
                 for g in range(bh)
             ]
         )
@@ -357,23 +348,17 @@ def pyramid_get_kv(state: PyramidState) -> tuple[mx.array, mx.array]:
 
     Returns ``([0, 1], [0, 1])`` zero-row placeholders before the first update.
     """
-    if state.keys is None:
-        dummy = mx.zeros((0, 1), dtype=mx.float16)
-        return dummy, dummy
-    return state.keys, state.values
+    return get_kv(state.keys, state.values)
 
 
 def pyramid_fp16_bytes(state: PyramidState) -> int:
     """Bytes currently stored for K + V in fp16."""
-    if state.keys is None:
-        return 0
-    n, D = state.keys.shape
-    return n * D * 2 * 2  # K + V, 2 bytes each
+    return fp16_kv_bytes(state.keys)
 
 
 def full_pyramid_fp16_bytes(tokens_seen: int, head_dim: int) -> int:
     """Hypothetical fp16 K + V bytes if all ``tokens_seen`` were stored."""
-    return tokens_seen * head_dim * 2 * 2  # K + V, 2 bytes each
+    return full_fp16_kv_bytes(tokens_seen, head_dim)
 
 
 __all__ = [

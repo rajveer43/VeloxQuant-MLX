@@ -69,10 +69,16 @@ full_morphkv_fp16_bytes — hypothetical cost without eviction
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 import mlx.core as mx
+
+from veloxquant_mlx.quantizers._eviction_common import (
+    attention_scores,
+    fp16_kv_bytes,
+    full_fp16_kv_bytes,
+    get_kv,
+)
 
 
 @dataclass
@@ -139,24 +145,6 @@ def init_morphkv_state(
     )
 
 
-def _attention_scores(query_proxy: mx.array, keys: mx.array) -> mx.array:
-    """Softmax proxy-attention weights of ``query_proxy`` against each key row.
-
-    Identical formula to quantizers/keyformer.py / tova.py — softmax of the
-    key-as-query dot products, scaled by 1/sqrt(D).
-
-    Args:
-        query_proxy: [D] incoming key used as a stand-in for the true query.
-        keys:        [n, D] existing key rows.
-
-    Returns:
-        [n] softmax weights summing to ~1.
-    """
-    scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
-    logits = (keys @ query_proxy) * scale  # [n]
-    return mx.softmax(logits, axis=-1)
-
-
 def _recent_relevance(keys: mx.array, recent_keys: mx.array) -> mx.array:
     """Aggregate proxy-attention each stored key receives from the recent window.
 
@@ -180,7 +168,7 @@ def _recent_relevance(keys: mx.array, recent_keys: mx.array) -> mx.array:
     acc = mx.zeros((keys_f.shape[0],), dtype=mx.float32)
     w = int(recent_keys.shape[0])
     for j in range(w):
-        acc = acc + _attention_scores(recent_keys[j].astype(mx.float32), keys_f)
+        acc = acc + attention_scores(recent_keys[j].astype(mx.float32), keys_f)
     return acc / float(w)
 
 
@@ -266,10 +254,7 @@ def morphkv_get_kv(state: MorphKVState) -> tuple[mx.array, mx.array]:
     Returns ``([0, 1], [0, 1])`` zero-row placeholders before the first update
     (same contract as ``keyformer_get_kv`` / ``tova_get_kv``).
     """
-    if state.keys is None:
-        dummy = mx.zeros((0, 1), dtype=mx.float16)
-        return dummy, dummy
-    return state.keys, state.values
+    return get_kv(state.keys, state.values)
 
 
 def morphkv_fp16_bytes(state: MorphKVState) -> int:
@@ -278,15 +263,12 @@ def morphkv_fp16_bytes(state: MorphKVState) -> int:
     The recent-window ring is a view into ``keys`` (not extra payload), so only
     K + V are counted — same accounting as H2O / TOVA / Keyformer.
     """
-    if state.keys is None:
-        return 0
-    n, D = state.keys.shape
-    return n * D * 2 * 2  # K + V, 2 bytes each
+    return fp16_kv_bytes(state.keys)
 
 
 def full_morphkv_fp16_bytes(tokens_seen: int, head_dim: int) -> int:
     """Hypothetical fp16 K + V bytes if all ``tokens_seen`` were stored."""
-    return tokens_seen * head_dim * 2 * 2
+    return full_fp16_kv_bytes(tokens_seen, head_dim)
 
 
 __all__ = [
