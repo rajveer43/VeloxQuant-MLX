@@ -80,7 +80,6 @@ from veloxquant_mlx.quantizers.nestedkv import (
     nestedkv_compress_prefill,
     nestedkv_fp16_bytes,
     nestedkv_get_kv,
-    nestedkv_score,
 )
 
 

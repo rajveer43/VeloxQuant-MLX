@@ -328,7 +328,12 @@ class SVDqKVCache(_MLXKVCache):
         if not self._r or self._D == 0:
             return 0.0
         per_head = []
-        for r_h, schedule_h in zip(self._r, self._effective_schedule):
+        # strict=True: both lists are built one-append-per-head over the same
+        # range(H) in _compress_prefill (self._r.append(...) then a
+        # comprehension over the identical range), so they are always the same
+        # length. strict makes a future divergence a loud ValueError instead of
+        # a silently truncated, per-head-misaligned average.
+        for r_h, schedule_h in zip(self._r, self._effective_schedule, strict=True):
             b_bar = equivalent_bit_width(r_h, schedule_h)
             per_head.append(b_bar * r_h / self._D)  # scale by r/D
         return sum(per_head) / len(per_head)
