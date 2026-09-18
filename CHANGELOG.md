@@ -525,6 +525,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.88.1 (2026-09-18)
+
+### Bug Fixes
+
+- **cache**: Stop AgeTieredKVCache from re-quantizing settled tokens every step (#397)
+  ([#430](https://github.com/rajveer43/VeloxQuant-MLX/pull/430),
+  [`ef1baee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ef1baee470f9b0e6d4f9609875b29f90812331eb))
+
+
 ## v0.88.0 (2026-09-18)
 
 ### Features
