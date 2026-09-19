@@ -42,4 +42,17 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Run full MLX test suite
+        # Coverage is measured in a separate step below, on one leg only, so
+        # this plain run stays the correctness check across all 5 Python
+        # versions without paying coverage-instrumentation overhead 5x.
+        if: matrix.python-version != '3.12'
         run: python -m pytest veloxquant_mlx/tests -q
+
+      # BLOCKING, one matrix leg only (3.12) -- see [tool.coverage.report] in
+      # pyproject.toml for the fail_under=80 floor and why it's the measured
+      # 81.5% source-only figure (#437) rounded down, not an aspirational
+      # target. Running --cov on all 5 legs would instrument and report the
+      # identical number 5 times for no extra signal.
+      - name: Run full MLX test suite with coverage
+        if: matrix.python-version == '3.12'
+        run: python -m pytest veloxquant_mlx/tests -q --cov=veloxquant_mlx --cov-report=term-missing
