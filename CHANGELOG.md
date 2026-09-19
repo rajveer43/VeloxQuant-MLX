@@ -525,6 +525,91 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.89.0 (2026-09-18)
+
+### Bug Fixes
+
+- **benchmark_scripts**: Hoist gemma4's mid-file imports instead of ignoring E402
+  ([#435](https://github.com/rajveer43/VeloxQuant-MLX/pull/435),
+  [`7fc9775`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7fc9775f960c5aca40a29ff836fba8f6f7b212ee))
+
+- **cache**: Add strict=True to svdq's per-head zip()
+  ([#446](https://github.com/rajveer43/VeloxQuant-MLX/pull/446),
+  [`be7501c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/be7501c5d7cbe4203eebc451bfee79836641edf5))
+
+- **cache**: Drop unused nestedkv_score import
+  ([#446](https://github.com/rajveer43/VeloxQuant-MLX/pull/446),
+  [`be7501c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/be7501c5d7cbe4203eebc451bfee79836641edf5))
+
+- **packaging**: Exclude tests from the wheel, keep them in the sdist (#434)
+  ([#440](https://github.com/rajveer43/VeloxQuant-MLX/pull/440),
+  [`791908c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/791908ca7aa972a24ae9d057ce2f5cf93da6971d))
+
+### Chores
+
+- Lower Python floor to 3.10, matching mlx's own requirement
+  ([#432](https://github.com/rajveer43/VeloxQuant-MLX/pull/432),
+  [`26ec112`](https://github.com/rajveer43/VeloxQuant-MLX/commit/26ec11213f0b237b9a412ff3094680fd3f540847))
+
+- **deps**: Bump anyio from 4.13.0 to 4.14.2
+  ([#442](https://github.com/rajveer43/VeloxQuant-MLX/pull/442),
+  [`a2a0e86`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a2a0e86c93bed5d896e9dcc1ddcdd19abaaaf524))
+
+- **deps**: Bump anyio from 4.13.0 to 4.14.2 in /scripts
+  ([#441](https://github.com/rajveer43/VeloxQuant-MLX/pull/441),
+  [`6358205`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6358205f71be08c5a7a7cde63c1f8845d5e76192))
+
+### Continuous Integration
+
+- Make ruff check blocking for the shipped package
+  ([#446](https://github.com/rajveer43/VeloxQuant-MLX/pull/446),
+  [`be7501c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/be7501c5d7cbe4203eebc451bfee79836641edf5))
+
+- Make ruff check blocking for the shipped package (#436)
+  ([#446](https://github.com/rajveer43/VeloxQuant-MLX/pull/446),
+  [`be7501c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/be7501c5d7cbe4203eebc451bfee79836641edf5))
+
+### Documentation
+
+- Correct stale 3.11 Python-floor references left by #432
+  ([#443](https://github.com/rajveer43/VeloxQuant-MLX/pull/443),
+  [`1ff0ac7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1ff0ac71e8cebfffd3ed5ceddbff40bfc05c6cd3))
+
+- Correct stale 3.11 Python-floor references left by #432 (#439)
+  ([#443](https://github.com/rajveer43/VeloxQuant-MLX/pull/443),
+  [`1ff0ac7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1ff0ac71e8cebfffd3ed5ceddbff40bfc05c6cd3))
+
+- **cache**: Backfill docstrings on CLI entry point, panel UI, and artifact store (#424)
+  ([#431](https://github.com/rajveer43/VeloxQuant-MLX/pull/431),
+  [`480a553`](https://github.com/rajveer43/VeloxQuant-MLX/commit/480a553eeaee98f165fe727cb460c5e331679656))
+
+### Features
+
+- **typing**: Add a per-module mypy strictness ladder
+  ([#444](https://github.com/rajveer43/VeloxQuant-MLX/pull/444),
+  [`586e097`](https://github.com/rajveer43/VeloxQuant-MLX/commit/586e0979073bac2336b75b89ed5afea4f2d510c2))
+
+- **typing**: Add a per-module mypy strictness ladder (#438)
+  ([#444](https://github.com/rajveer43/VeloxQuant-MLX/pull/444),
+  [`586e097`](https://github.com/rajveer43/VeloxQuant-MLX/commit/586e0979073bac2336b75b89ed5afea4f2d510c2))
+
+### Refactoring
+
+- **quantizers**: Dedupe eviction-quantizer scaffolding into shared helper
+  ([#433](https://github.com/rajveer43/VeloxQuant-MLX/pull/433),
+  [`8dbee45`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8dbee45fc92842d601db5239ca49e9401832cb55))
+
+### Testing
+
+- Pin documented Python floor to requires-python so #439 cannot recur
+  ([#443](https://github.com/rajveer43/VeloxQuant-MLX/pull/443),
+  [`1ff0ac7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1ff0ac71e8cebfffd3ed5ceddbff40bfc05c6cd3))
+
+- Pin the mypy ladder's two module lists together
+  ([#444](https://github.com/rajveer43/VeloxQuant-MLX/pull/444),
+  [`586e097`](https://github.com/rajveer43/VeloxQuant-MLX/commit/586e0979073bac2336b75b89ed5afea4f2d510c2))
+
+
 ## v0.88.1 (2026-09-18)
 
 ### Bug Fixes
