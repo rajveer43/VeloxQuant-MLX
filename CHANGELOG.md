@@ -525,6 +525,31 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.90.0 (2026-09-19)
+
+### Continuous Integration
+
+- Gate coverage on the MLX lane's 3.12 leg only
+  ([#447](https://github.com/rajveer43/VeloxQuant-MLX/pull/447),
+  [`203c51d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/203c51d5881b1b4e129ad50b309d9fb5e50d650e))
+
+### Documentation
+
+- Document the coverage gate in CI_AND_TESTING.md
+  ([#447](https://github.com/rajveer43/VeloxQuant-MLX/pull/447),
+  [`203c51d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/203c51d5881b1b4e129ad50b309d9fb5e50d650e))
+
+### Features
+
+- **testing**: Add pytest-cov with a measured 80% floor
+  ([#447](https://github.com/rajveer43/VeloxQuant-MLX/pull/447),
+  [`203c51d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/203c51d5881b1b4e129ad50b309d9fb5e50d650e))
+
+- **testing**: Add pytest-cov with a measured 80% floor (#437)
+  ([#447](https://github.com/rajveer43/VeloxQuant-MLX/pull/447),
+  [`203c51d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/203c51d5881b1b4e129ad50b309d9fb5e50d650e))
+
+
 ## v0.89.0 (2026-09-18)
 
 ### Bug Fixes
