@@ -91,6 +91,32 @@ Do not mark a test `metal` if it specifically tests the *absence* of Metal
 `test_qfilters_cache.py`) — it should keep its own `skipif(metal_available(), ...)`
 guard and no `metal` marker, so `-m metal` never selects it.
 
+## Coverage
+
+`mlx-tests.yml` measures coverage on one matrix leg only (Python 3.12) and
+gates it — `fail_under = 80` in `[tool.coverage.report]` (`pyproject.toml`).
+The other four legs (3.10, 3.11, 3.13, 3.14) still run the plain suite for
+correctness; only 3.12 pays the instrumentation cost, since coverage doesn't
+vary by interpreter version and running it five times would report the same
+number five times for no extra signal.
+
+The measured number excludes test files themselves
+(`omit = ["veloxquant_mlx/tests/*"]`) — otherwise pytest merely collecting and
+executing a test body counts as "covering" its own lines, which describes
+nothing about the library. 80% is the actual measured source-only figure at
+the time the gate was added (81.5%, #437), rounded down to a floor that
+blocks regression without demanding new tests just to land it.
+
+`tests/non_metal/` is **not** covered by this gate. It runs on `ubuntu-latest`
+with MLX not installed and deliberately never imports `veloxquant_mlx` at all
+(see above) — coverage there would either be permanently near-zero or require
+combining two runners' worth of instrumentation for a number nobody would
+act on differently. If you need to check current coverage locally:
+
+```bash
+python -m pytest veloxquant_mlx/tests -q --cov=veloxquant_mlx --cov-report=term-missing
+```
+
 ## Suggested follow-up CI (not required for Phase 1)
 
 - Keep release publishing (PyPI) separate from e2e benches.

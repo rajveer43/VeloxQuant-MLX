@@ -61,6 +61,7 @@ plots = [
 dev = [
     "pytest>=8.0",
     "pytest-xdist",
+    "pytest-cov>=5.0",
     "psutil>=5.9",
     "build>=1.2",
     "twine>=5.0",
@@ -119,6 +120,30 @@ filterwarnings = ["ignore::DeprecationWarning"]
 markers = [
     "metal: requires a real Metal device (mx.fast.metal_kernel); select with -m metal, deselect with -m 'not metal'. Tests still self-skip via metal_available() when run where Metal is genuinely absent -- this marker exists so CI can also *choose* to exclude or isolate them, e.g. to keep a hosted-runner correctness job separate from a bare-metal performance job.",
 ]
+
+[tool.coverage.run]
+source = ["veloxquant_mlx"]
+# Test files themselves inflate the number without saying anything about the
+# library: pytest collecting and executing a test body already "covers" its
+# lines. Omitting them is what turns a self-referential ~91% into the
+# source-only number (measured 81.5%, #437) that actually describes how much
+# of the shipped package the suite exercises.
+omit = ["veloxquant_mlx/tests/*"]
+
+[tool.coverage.report]
+# 80%, not the measured 81.5%: a floor just under the current value blocks
+# regression without requiring new tests to land it. Deliberately the
+# measured number rounded down, not an aspirational target -- see #437 for
+# where the gap actually is (benchmarks/ and cli/ are ~0% covered and are
+# the main drag; closing that is separate follow-up work, not implied by
+# this floor).
+#
+# Measured on the MLX lane only (mlx-tests.yml, macos-14, one matrix leg --
+# see that workflow's coverage step). tests/non_metal/ (non-metal-unit.yml,
+# ubuntu, no MLX installed) is not gated: it deliberately never imports
+# veloxquant_mlx at all, so a repo-wide or combined percentage there would
+# either fail permanently or require a floor low enough to measure nothing.
+fail_under = 80
 
 [tool.mypy]
 # 3.12, not the 3.10 floor in `requires-python`: numpy's bundled stubs use the
