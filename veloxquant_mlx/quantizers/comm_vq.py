@@ -236,6 +236,12 @@ class CommVQQuantizer(Quantizer):
         self._calib_buf: list[np.ndarray] = []
         self._trained = False
 
+        # RoPE inverse-frequency table cache (see _apply_rope_mlx). Depends
+        # only on self._d/self._rope_base, both fixed for the lifetime of
+        # this instance, so it is safe to compute once instead of rebuilding
+        # it from mx.arange/pow on every decode() call.
+        self._inv_freq_cache: mx.array | None = None
+
     # ------------------------------------------------------------------
     # Training
     # ------------------------------------------------------------------
@@ -369,11 +375,21 @@ class CommVQQuantizer(Quantizer):
         return x_hat.astype(mx.float16)
 
     def _apply_rope_mlx(self, x: mx.array, positions: mx.array) -> mx.array:
-        """Apply RoPE to x [N, D] at the given integer positions [N]."""
+        """Apply RoPE to x [N, D] at the given integer positions [N].
+
+        This runs on every decode() call (the per-token KV read-back hot
+        path). inv_freq depends only on self._d/self._rope_base, which are
+        fixed at construction, so it is memoized in _inv_freq_cache instead
+        of being rebuilt from mx.arange/pow every call.
+        """
         half = self._d // 2
-        inv_freq = (
-            1.0 / (self._rope_base ** (mx.arange(0, half, dtype=mx.float32) / half))
-        ).astype(mx.float32)  # [half]
+        if self._inv_freq_cache is None:
+            inv_freq = (
+                1.0 / (self._rope_base ** (mx.arange(0, half, dtype=mx.float32) / half))
+            ).astype(mx.float32)  # [half]
+            mx.eval(inv_freq)
+            self._inv_freq_cache = inv_freq
+        inv_freq = self._inv_freq_cache
         angles = positions[:, None].astype(mx.float32) * inv_freq[None, :]  # [N, half]
         cos = mx.cos(angles).astype(mx.float16)  # [N, half]
         sin = mx.sin(angles).astype(mx.float16)  # [N, half]
