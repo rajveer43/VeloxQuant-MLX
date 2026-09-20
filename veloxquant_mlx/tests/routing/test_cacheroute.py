@@ -344,11 +344,6 @@ def test_rate_estimator_rejects_negative_half_life():
         RateEstimator(half_life=-5)
 
 
-def test_rate_estimator_rejects_zero_window():
-    with pytest.raises(QuantizerConfigError):
-        RateEstimator(window=0)
-
-
 def test_rate_estimator_unseen_owner_has_zero_rate():
     estimator = RateEstimator()
     assert estimator.rate(999) == 0.0
@@ -393,11 +388,19 @@ def test_rate_estimator_rates_snapshot_matches_recorded_owners():
     assert all(v > 0 for v in snapshot.values())
 
 
-def test_rate_estimator_window_bounds_history_length():
-    estimator = RateEstimator(window=3)
-    for _ in range(10):
+def test_rate_estimator_memory_is_bounded_by_distinct_owners_not_request_count():
+    """Recording the same owner many times must not grow per-owner state.
+
+    RateEstimator used to also retain a bounded deque of per-request
+    timestamps (``_history``, sized by a since-removed ``window`` param) that
+    nothing ever read — pure overhead on the module's hottest call. This pins
+    the actual contract instead: an owner's footprint is one float in
+    ``_counts``, regardless of how many times :meth:`record` is called.
+    """
+    estimator = RateEstimator()
+    for _ in range(10_000):
         estimator.record(owner=1)
-    assert len(estimator._history[1]) == 3
+    assert len(estimator._counts) == 1
 
 
 def test_rate_estimator_feeds_directly_into_planner():
