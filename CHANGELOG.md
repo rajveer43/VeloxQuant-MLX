@@ -525,6 +525,38 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.90.2 (2026-09-20)
+
+### Performance Improvements
+
+- **allocators**: Vectorize DP inner loop and k-means distance; fix quadratic concat
+  ([#454](https://github.com/rajveer43/VeloxQuant-MLX/pull/454),
+  [`37b9313`](https://github.com/rajveer43/VeloxQuant-MLX/commit/37b9313d95f76b18f9c8f8178de091e5435c6dfd))
+
+- **artifacts**: Move mlx imports to module level, fix temp file collisions
+  ([`fd37947`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fd37947863a03794ee7d17b8c4b67cb47d1ad9b0))
+
+- **outlier**: Replace per-token heap top-k with vectorized argpartition
+  ([#451](https://github.com/rajveer43/VeloxQuant-MLX/pull/451),
+  [`bb74404`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bb744040ecee24179ca12dc897d93f984908391d))
+
+- **preconditioners**: Float32 accumulation and cache S in QJL/Hadamard
+  ([#453](https://github.com/rajveer43/VeloxQuant-MLX/pull/453),
+  [`532c15d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/532c15d4f5103f71b0f96baaccfd37d3386f2a76))
+
+- **routing**: Drop RateEstimator's dead per-request history tracking
+  ([#450](https://github.com/rajveer43/VeloxQuant-MLX/pull/450),
+  [`6370412`](https://github.com/rajveer43/VeloxQuant-MLX/commit/637041242b44d405c81db12d34dbc9b6b81cc7b3))
+
+- **transfer**: Batch per-head ridge solves in cross-model KV mapper fit
+  ([#452](https://github.com/rajveer43/VeloxQuant-MLX/pull/452),
+  [`dca047d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/dca047d7c2c968b55de1edfd04f792602ea97de3))
+
+- **ui**: Avoid full-buffer copies on the panel's 1s poll loop
+  ([#449](https://github.com/rajveer43/VeloxQuant-MLX/pull/449),
+  [`e545a62`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e545a629a714b57ab9bf90ec949f9984c9916e2c))
+
+
 ## v0.90.1 (2026-09-20)
 
 ### Performance Improvements
