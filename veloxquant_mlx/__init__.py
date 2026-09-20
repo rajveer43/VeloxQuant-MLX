@@ -41,6 +41,16 @@ from veloxquant_mlx.core.exceptions import (
 )
 from veloxquant_mlx.memory import BlockPoolAllocator, PoolConfig, PooledKVCache
 from veloxquant_mlx.observers import KeyNormObserver, KeyNormReport
+from veloxquant_mlx.planning import (
+    AutoOptimizer,
+    AutoOptimizerOptions,
+    HardwareProfile,
+    MemoryEstimate,
+    ModelProfile,
+    RecommendationResult,
+    WorkloadObjective,
+    WorkloadProfile,
+)
 from veloxquant_mlx.profiling import (
     KVCacheProfiler,
     LayerProfile,
@@ -105,6 +115,15 @@ __all__ = [
     "WorkloadSpec",
     "detect_hardware_info",
     "select_kv_cache_config",
+    # Automatic strategy selection (RFC method="auto")
+    "AutoOptimizer",
+    "AutoOptimizerOptions",
+    "HardwareProfile",
+    "ModelProfile",
+    "WorkloadProfile",
+    "WorkloadObjective",
+    "RecommendationResult",
+    "MemoryEstimate",
     # CacheRoute: rate-aware session admission and shard placement (issue #278)
     "CacheRoutePlanner",
     "RateEstimator",

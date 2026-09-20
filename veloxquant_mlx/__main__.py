@@ -17,7 +17,8 @@ def main() -> None:
     if len(sys.argv) < 2:
         print(
             "Usage: veloxquant "
-            "{precompute|benchmark|recommend|auto-config|methods|serve|profile|panel|worker}"
+            "{precompute|benchmark|recommend|auto-config|methods|serve|profile|"
+            "profile-hardware|estimate-memory|panel|worker}"
         )
         sys.exit(1)
 
@@ -53,6 +54,14 @@ def main() -> None:
         from veloxquant_mlx.cli.profile import main as _main
 
         _main()
+    elif command == "profile-hardware":
+        from veloxquant_mlx.cli.profile_hardware import main as _main
+
+        _main()
+    elif command == "estimate-memory":
+        from veloxquant_mlx.cli.estimate_memory import main as _main
+
+        _main()
     elif command == "panel":
         from veloxquant_mlx.cli.panel import main as _main
 
@@ -64,7 +73,8 @@ def main() -> None:
     else:
         print(
             f"Unknown command: {command!r}. "
-            "Choices: precompute, benchmark, recommend, auto-config, methods, serve, profile, panel, worker"
+            "Choices: precompute, benchmark, recommend, auto-config, methods, "
+            "serve, profile, profile-hardware, estimate-memory, panel, worker"
         )
         sys.exit(1)
 
