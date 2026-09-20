@@ -34,9 +34,11 @@ __all__ = [
     "ServeTier",
     "MethodFamily",
     "MethodInfo",
+    "StrategyCapabilities",
     "all_method_names",
     "list_methods",
     "get_method",
+    "static_method_info",
     "probe_serve_tier",
     "describe_field",
     "field_is_relevant",
@@ -152,6 +154,52 @@ class TelemetryCoverage(str, Enum):
 
 
 @dataclass(frozen=True)
+class StrategyCapabilities:
+    """What a strategy can and cannot do, for the auto-selection pipeline.
+
+    Fed to :func:`veloxquant_mlx.planning.candidate_filter.filter_candidates`
+    so incompatible methods can be ruled out before any scoring happens.
+    Conservative defaults (``supports_*`` all True) mean a method whose
+    capabilities are unknown is never *wrongly* excluded — the cost of being
+    wrong that way is a recommendation that does not fit, whereas the cost of
+    wrongly including a method is at most a deprioritized candidate.
+    """
+
+    supported_bits: list[int] | None = None
+    requires_calibration: bool = False
+    supports_gqa: bool = True
+    supports_mqa: bool = True
+    supports_mha: bool = True
+    supports_prefill: bool = True
+    supports_decode: bool = True
+    supports_streaming: bool = False
+    has_metal_kernel: bool = False
+    compresses_keys: bool = True
+    compresses_values: bool = False
+    uses_eviction: bool = False
+    uses_merging: bool = False
+    tunable_parameters: dict[str, str] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "supported_bits": self.supported_bits,
+            "requires_calibration": self.requires_calibration,
+            "supports_gqa": self.supports_gqa,
+            "supports_mqa": self.supports_mqa,
+            "supports_mha": self.supports_mha,
+            "supports_prefill": self.supports_prefill,
+            "supports_decode": self.supports_decode,
+            "supports_streaming": self.supports_streaming,
+            "has_metal_kernel": self.has_metal_kernel,
+            "compresses_keys": self.compresses_keys,
+            "compresses_values": self.compresses_values,
+            "uses_eviction": self.uses_eviction,
+            "uses_merging": self.uses_merging,
+            "tunable_parameters": dict(self.tunable_parameters),
+        }
+
+
+@dataclass(frozen=True)
 class MethodInfo:
     """Everything a UI needs to present one method."""
 
@@ -163,6 +211,7 @@ class MethodInfo:
     paper_deviation: str | None = None
     unsupported_reason: str | None = None
     coverage: TelemetryCoverage = TelemetryCoverage.NONE
+    capabilities: StrategyCapabilities = field(default_factory=StrategyCapabilities)
 
     @property
     def docs_url(self) -> str | None:
@@ -201,6 +250,7 @@ class MethodInfo:
             "is_adapted": self.is_adapted,
             "unsupported_reason": self.unsupported_reason,
             "docs_url": self.docs_url,
+            "capabilities": self.capabilities.to_dict(),
         }
 
 
@@ -428,6 +478,68 @@ _CONFIG_FIELDS: dict[str, list[str]] = {
 
 _GENERIC_FIELDS = ["bit_width_inlier", "seed"]
 
+#: Per-method capability overrides on top of the family-derived defaults.
+#: A method missing here keeps the family defaults (quantization -> key
+#: compression; eviction -> bounded-memory token dropping), which is the
+#: conservative choice for the auto-selection pipeline: better to include a
+#: method that turns out weaker than to wrongly rule one out. `supported_bits`
+#: and `has_metal_kernel` are always explicit because neither follows from the
+#: family alone.
+_CAPABILITIES: dict[str, dict[str, Any]] = {
+    # --- TurboQuant family: vector rotations/codebooks precomputed offline ---
+    "turboquant_prod": {"requires_calibration": True, "supported_bits": [1, 2, 3, 4]},
+    "turboquant_mse": {"requires_calibration": True, "supported_bits": [1, 2, 3, 4]},
+    "turboquant_rvq": {"supported_bits": [1, 2, 3, 4], "has_metal_kernel": True},
+    # --- Standalone research methods: precomputed transform artifacts --------
+    "polar": {"requires_calibration": True, "supported_bits": [1, 2, 3, 4]},
+    "qjl": {"requires_calibration": True, "supported_bits": [1]},
+    "spectral": {"requires_calibration": True, "supported_bits": [1, 2, 3, 4]},
+    # --- VecInfer: trained codebook over keys and values ---------------------
+    "vecinfer": {
+        "requires_calibration": True,
+        "has_metal_kernel": True,
+        "compresses_keys": True,
+        "compresses_values": True,
+        "supported_bits": None,
+    },
+    # --- Group / channel quantization ----------------------------------------
+    "kivi": {"supported_bits": [1, 2, 3, 4], "has_metal_kernel": True},
+    "kivi_sink": {"supported_bits": [1, 2, 3, 4], "has_metal_kernel": True},
+    "kitty": {"supported_bits": [2, 4]},
+    "adakv": {"supported_bits": [2, 3, 4]},
+    "kvquant": {"supported_bits": [2, 3, 4]},
+    "cachegen": {"supported_bits": [2, 4, 8]},
+    "nsnquant": {"supported_bits": [1, 2, 3, 4]},
+    # --- Low-rank / latent methods: need offline fits on calibration tokens ---
+    "svdq": {"requires_calibration": True, "supported_bits": [1, 2, 3, 4, 8]},
+    "palu": {
+        "requires_calibration": True,
+        "compresses_values": True,
+        "supported_bits": [2, 4],
+    },
+    # --- Cross-layer sharing -------------------------------------------------
+    "xquant": {"compresses_values": True, "uses_merging": True, "supported_bits": [2, 4]},
+    "minicache": {"uses_merging": True},
+    # --- GEAR: quantization + low-rank residual over keys AND values ---------
+    "gear": {"compresses_values": True, "supported_bits": [2, 4]},
+    # --- Transform coding ----------------------------------------------------
+    "kvtc": {"compresses_values": True},
+    "nestedkv": {"compresses_values": True, "supported_bits": [1, 2, 3, 4]},
+    # --- Hybrid: compression plus token selection ----------------------------
+    "zipcache": {"uses_eviction": True, "supported_bits": [2, 4]},
+    "skvq": {"supported_bits": [1, 2, 3, 4], "supports_streaming": True},
+    "a2ats": {"supported_bits": [1, 2, 3, 4]},
+    "anchorkv": {"supported_bits": [1, 2, 3, 4]},
+    # --- Eviction methods with Metal backends --------------------------------
+    "snapkv": {"has_metal_kernel": True},
+    "h2o": {"has_metal_kernel": True},
+    "tova": {"has_metal_kernel": True},
+    "pyramidkv": {"has_metal_kernel": True},
+    "qfilters": {"has_metal_kernel": True},
+    # --- Eviction that merges state back instead of discarding it ------------
+    "cam": {"uses_merging": True},
+}
+
 #: Methods whose config-field prefix doesn't match the method name itself
 #: (e.g. ``snapkv``'s fields are ``snap_*``, not ``snapkv_*``). Every other
 #: method's fields follow a plain ``{method}_*`` prefix — verified against
@@ -585,6 +697,41 @@ def _default_config_fields(method: str) -> list[str]:
         name for name in hints if name != "method" and name.startswith(prefix + "_")
     )
     return list(_GENERIC_FIELDS) + method_fields
+
+
+def _capabilities_for(method: str) -> StrategyCapabilities:
+    """Build the :class:`StrategyCapabilities` for one method.
+
+    Family-derived defaults (quantization compresses keys, eviction bounds
+    memory, hybrid merges the two) are overridden by the curated
+    ``_CAPABILITIES`` table, and the tunable-parameter map is derived from the
+    same ``KVCacheConfig`` field rules the rest of the registry uses
+    (``_CONFIG_FIELDS``, then the name-prefix fallback), so knob lists cannot
+    drift from what the config actually accepts.
+    """
+    family = _FAMILY.get(method, MethodFamily.QUANTIZATION)
+    caps: dict[str, Any] = {
+        "supported_bits": None,
+        "requires_calibration": False,
+        "supports_gqa": True,
+        "supports_mqa": True,
+        "supports_mha": True,
+        "supports_prefill": True,
+        "supports_decode": True,
+        "supports_streaming": family is MethodFamily.EVICTION,
+        "has_metal_kernel": False,
+        "compresses_keys": family is not MethodFamily.EVICTION,
+        "compresses_values": False,
+        "uses_eviction": family is MethodFamily.EVICTION,
+        "uses_merging": False,
+    }
+    caps.update(_CAPABILITIES.get(method, {}))
+
+    tunable: dict[str, str] = {}
+    for field_name in _CONFIG_FIELDS.get(method) or _default_config_fields(method):
+        tunable[field_name] = describe_field(field_name)["type"]
+    caps["tunable_parameters"] = tunable
+    return StrategyCapabilities(**caps)
 
 
 def all_method_names() -> list[str]:
@@ -762,6 +909,35 @@ def get_method(name: str) -> MethodInfo:
         # Only meaningful for methods that actually run; a crash-tier cache
         # never reports anything.
         coverage=(telemetry_coverage(name) if tier.is_servable else TelemetryCoverage.NONE),
+        capabilities=_capabilities_for(name),
+    )
+
+
+def static_method_info(name: str) -> MethodInfo:
+    """Build a :class:`MethodInfo` without exercising a real cache.
+
+    Used by the auto-selection pipeline's *ranking* pass: it needs all 43
+    methods' capabilities immediately, and probing each one (exercising an
+    ``mlx_lm`` cache with real tensors) costs on the order of a second per
+    method. Serve tier is reported optimistically as ``HONEST_BYTES`` and
+    probing is deferred until the caller *commits* to a method
+    (``get_method`` / :func:`probe_serve_tier`) — so a stale tier can never
+    silently disappear: the crash surface is real tensors, not this table.
+    """
+    if name not in all_method_names():
+        raise KeyError(
+            f"unknown method {name!r}. Known methods: {', '.join(all_method_names())}"
+        )
+    return MethodInfo(
+        name=name,
+        family=_FAMILY.get(name, MethodFamily.QUANTIZATION),
+        serve_tier=ServeTier.HONEST_BYTES,
+        blurb=_BLURB.get(name, f"{name} KV-cache method."),
+        config_fields=_CONFIG_FIELDS.get(name) or _default_config_fields(name),
+        paper_deviation=_PAPER_DEVIATION.get(name),
+        unsupported_reason=None,
+        coverage=TelemetryCoverage.NONE,
+        capabilities=_capabilities_for(name),
     )
 
 

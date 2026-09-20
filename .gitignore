@@ -32,3 +32,10 @@ turboquant-mlx/
 
 .bench_tmp/.claude/
 .env
+
+.brag/
+.agents/
+
+brag-*
+
+skill-lock.json
