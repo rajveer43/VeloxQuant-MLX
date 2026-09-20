@@ -525,6 +525,37 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.90.8 (2026-09-20)
+
+### Bug Fixes
+
+- **cache**: Don't drop window_size bound at N==1 in eviction mask
+  ([#463](https://github.com/rajveer43/VeloxQuant-MLX/pull/463),
+  [`a60d5db`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a60d5db7f247141f70953c40825711b9b64a8298))
+
+### Performance Improvements
+
+- **a2ats**: Skip redundant codebook float32 re-cast in decode hot path
+  ([#464](https://github.com/rajveer43/VeloxQuant-MLX/pull/464),
+  [`ea1e30c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ea1e30cf3b78a4c405c128090f365da9bfb416eb))
+
+- **adakv**: Skip redundant mx.eval() in per-token norm accumulator update
+  ([#465](https://github.com/rajveer43/VeloxQuant-MLX/pull/465),
+  [`71d7308`](https://github.com/rajveer43/VeloxQuant-MLX/commit/71d7308b8dabcc7b798e144a4565b44ad95dc601))
+
+- **age-tiered**: Stop recomputing tier assignment twice per decode step
+  ([#466](https://github.com/rajveer43/VeloxQuant-MLX/pull/466),
+  [`f4c95c1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f4c95c1a7d983d8435f1153a49bf128f69e06cd0))
+
+- **amc**: Hoist per-tier (rank, bits) config lookup out of the per-token loop
+  ([#467](https://github.com/rajveer43/VeloxQuant-MLX/pull/467),
+  [`b99c047`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b99c047a5205def38bc860d7a5da4e593568c9d2))
+
+- **anchorkv**: Build ResidualCodec once instead of once per head at prefill
+  ([#468](https://github.com/rajveer43/VeloxQuant-MLX/pull/468),
+  [`aad12ca`](https://github.com/rajveer43/VeloxQuant-MLX/commit/aad12ca04c8333a9bbcb28239d76b4888d3ae177))
+
+
 ## v0.90.7 (2026-09-20)
 
 ### Performance Improvements
