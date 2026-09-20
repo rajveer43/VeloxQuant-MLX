@@ -525,6 +525,19 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.90.3 (2026-09-20)
+
+### Performance Improvements
+
+- **codebooks**: Use mx.searchsorted in ScalarCodebook.quantize, drop per-call import
+  ([#455](https://github.com/rajveer43/VeloxQuant-MLX/pull/455),
+  [`6617459`](https://github.com/rajveer43/VeloxQuant-MLX/commit/66174596c4d99afd66a4b77811217bf13f83e22a))
+
+- **dsa**: Vectorize 1/2-bit pack/unpack loops, drop heap copy in top_k
+  ([#456](https://github.com/rajveer43/VeloxQuant-MLX/pull/456),
+  [`6474187`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6474187b5deedf09ca18cce9f0aaaa787b82f807))
+
+
 ## v0.90.2 (2026-09-20)
 
 ### Performance Improvements
