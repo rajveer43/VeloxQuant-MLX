@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import mlx.core as mx
 import numpy as np
 
 from veloxquant_mlx.codebooks.base import CodebookFactory
@@ -84,8 +85,6 @@ class SpectralQuantizer(Quantizer):
         jl_dim: int | None = None,
         seed: int = 42,
     ) -> None:
-        import mlx.core as mx
-
         self._d = d
         self._b_signal = b_signal
         self._b_noise = b_noise
@@ -150,8 +149,6 @@ class SpectralQuantizer(Quantizer):
               signs:   int8  (batch, m) — QJL signs of signal residual (if apply_qjl).
               residual_norm: fp16 (batch,) — ‖ε_s‖ (if apply_qjl).
         """
-        import mlx.core as mx
-
         if x.ndim == 1:
             x = x[None]
         batch = x.shape[0]
@@ -159,35 +156,38 @@ class SpectralQuantizer(Quantizer):
         # Step 1: Spectral rotation h̃ = U^T h = _R @ h
         x_f32 = x.astype(mx.float32)
         h_tilde = x_f32 @ self._R.T  # (batch, d); _R is U^T so _R^T = U
-        mx.eval(h_tilde)
-        h_tilde_np = np.array(h_tilde, dtype=np.float32)
 
         # Step 2: Per-vector std-dev scale so rotated coordinates fit codebook
         # We scale by the std of the signal dims (the dominant energy).
         # This matches the paper's normalisation before codebook lookup.
-        h_s = h_tilde_np[:, : self._d_s]  # (batch, d_s)
-        h_n = h_tilde_np[:, self._d_s :]  # (batch, d - d_s)
+        h_s = h_tilde[:, : self._d_s]  # (batch, d_s)
+        h_n = h_tilde[:, self._d_s :]  # (batch, d - d_s)
 
-        # Per-vector abs-max scale for signal dims (matches TurboQuant convention)
-        sig_absmax = np.max(np.abs(h_s), axis=1, keepdims=True)  # (batch, 1)
-        sig_absmax = np.where(sig_absmax < 1e-8, 1.0, sig_absmax)
-        sig_scale = sig_absmax[:, 0].astype(np.float32)  # (batch,)
+        # Per-vector abs-max scale for signal dims (matches TurboQuant convention).
+        # Stays on-device (mx.max/mx.abs) instead of round-tripping through numpy --
+        # everything downstream (codebook quantize, QJL) is MLX-native anyway, so
+        # there is no reason to force a sync here.
+        sig_absmax = mx.max(mx.abs(h_s), axis=1, keepdims=True)  # (batch, 1)
+        sig_absmax = mx.where(sig_absmax < 1e-8, mx.array(1.0, dtype=mx.float32), sig_absmax)
+        sig_scale = sig_absmax[:, 0]  # (batch,)
 
         # Noise dims: use noise absmax for independent scaling
-        if h_n.size > 0:
-            noise_absmax = np.max(np.abs(h_n), axis=1, keepdims=True)
-            noise_absmax = np.where(noise_absmax < 1e-8, 1.0, noise_absmax)
+        if h_n.shape[1] > 0:
+            noise_absmax = mx.max(mx.abs(h_n), axis=1, keepdims=True)
+            noise_absmax = mx.where(
+                noise_absmax < 1e-8, mx.array(1.0, dtype=mx.float32), noise_absmax
+            )
         else:
-            noise_absmax = np.ones((batch, 1), dtype=np.float32)
-        noise_scale = noise_absmax[:, 0].astype(np.float32)
+            noise_absmax = mx.ones((batch, 1), dtype=mx.float32)
+        noise_scale = noise_absmax[:, 0]
 
         # Step 3: Quantize signal dims with C_signal
-        h_s_norm = mx.array(h_s / sig_absmax, dtype=mx.float16)  # normalised
+        h_s_norm = (h_s / sig_absmax).astype(mx.float16)  # normalised
         idx_s_mx = self._cb_signal.quantize(h_s_norm)  # (batch, d_s) uint8
 
         # Step 4: Quantize noise dims with C_noise
-        if h_n.size > 0:
-            h_n_norm = mx.array(h_n / noise_absmax, dtype=mx.float16)
+        if h_n.shape[1] > 0:
+            h_n_norm = (h_n / noise_absmax).astype(mx.float16)
             idx_n_mx = self._cb_noise.quantize(h_n_norm)  # (batch, d-d_s) uint8
         else:
             idx_n_mx = None
@@ -204,14 +204,13 @@ class SpectralQuantizer(Quantizer):
         if self._apply_qjl and self._qjl is not None:
             # Reconstruct signal estimate ĥ_s^(0) to compute residual
             h_s_hat_norm = self._cb_signal.dequantize(idx_s_mx)  # (batch, d_s) fp16
-            h_s_hat = h_s_hat_norm.astype(mx.float32) * mx.array(sig_absmax, dtype=mx.float32)
-            h_s_mx = mx.array(h_s, dtype=mx.float32)
-            epsilon_s = (h_s_mx - h_s_hat).astype(mx.float16)  # (batch, d_s)
+            h_s_hat = h_s_hat_norm.astype(mx.float32) * sig_absmax
+            epsilon_s = (h_s - h_s_hat).astype(mx.float16)  # (batch, d_s)
             signs_mx, residual_norm_mx = self._qjl.encode_key(epsilon_s)
 
         # Pack scales: store signal scale in norm field, noise scale in final_radius
-        scales_mx = mx.array(sig_scale, dtype=mx.float16)
-        noise_scales_mx = mx.array(noise_scale, dtype=mx.float16)
+        scales_mx = sig_scale.astype(mx.float16)
+        noise_scales_mx = noise_scale.astype(mx.float16)
 
         return EncodedVector(
             quantizer_type="spectral_quant",
@@ -235,8 +234,6 @@ class SpectralQuantizer(Quantizer):
         Returns:
             Reconstructed array of shape (batch, d), fp16.
         """
-        import mlx.core as mx
-
         if ev.norm is None or ev.final_radius is None:
             raise ValueError(
                 "SpectralQuantizer.decode: ev.norm/final_radius is None — "
@@ -245,10 +242,12 @@ class SpectralQuantizer(Quantizer):
 
         sig_scale = ev.norm.astype(mx.float32)[:, None]  # (batch, 1)
         noise_scale = ev.final_radius.astype(mx.float32)[:, None]  # (batch, 1)
-        indices_np = np.array(ev.indices, dtype=np.int32)  # (batch, d)
-
-        idx_s = mx.array(indices_np[:, : self._d_s], dtype=mx.uint8)
-        idx_n = mx.array(indices_np[:, self._d_s :], dtype=mx.uint8)
+        # ev.indices is already an mx.array (uint8, (batch, d)) -- see
+        # EncodedVector.indices and how encode() builds it via mx.concatenate.
+        # Slicing/dtype-casting it stays on-device; there is no need to round
+        # trip through numpy here.
+        idx_s = ev.indices[:, : self._d_s].astype(mx.uint8)
+        idx_n = ev.indices[:, self._d_s :].astype(mx.uint8)
 
         # Decode signal dims: ĥ_s^(0) = decode(c_s) * scale
         h_s_hat = self._cb_signal.dequantize(idx_s).astype(mx.float32) * sig_scale
@@ -262,8 +261,10 @@ class SpectralQuantizer(Quantizer):
         ):
             scale_qjl = SQRT_PI_OVER_2 / self._qjl.m
             r_norm = ev.residual_norm.astype(mx.float32)[:, None]  # (batch, 1)
+            # self._qjl._S_f32 is the pre-cast fp32 copy of S built once in
+            # QJLEncoder.__init__ -- reuse it instead of re-casting ev per call.
             correction = (
-                r_norm * scale_qjl * (ev.signs.astype(mx.float32) @ self._qjl._S.astype(mx.float32))
+                r_norm * scale_qjl * (ev.signs.astype(mx.float32) @ self._qjl._S_f32)
             )  # (batch, d_s)
             h_s_hat = h_s_hat + correction
 
@@ -292,8 +293,6 @@ class SpectralQuantizer(Quantizer):
         Returns:
             Estimated inner products, shape (batch,), fp16.
         """
-        import mlx.core as mx
-
         q_f32 = q.reshape(-1).astype(mx.float32)
         # Rotate query: q̃ = U^T q = _R @ q
         q_rot = (self._R @ q_f32).reshape(-1)  # (d,)
@@ -308,11 +307,11 @@ class SpectralQuantizer(Quantizer):
 
         sig_scale = ev.norm.astype(mx.float32)  # (batch,)
         noise_scale = ev.final_radius.astype(mx.float32)  # (batch,)
-        indices_np = np.array(ev.indices, dtype=np.int32)
         batch = ev.batch_size
 
-        idx_s = mx.array(indices_np[:, : self._d_s], dtype=mx.uint8)
-        idx_n = mx.array(indices_np[:, self._d_s :], dtype=mx.uint8)
+        # ev.indices is already an mx.array -- see decode()'s identical note.
+        idx_s = ev.indices[:, : self._d_s].astype(mx.uint8)
+        idx_n = ev.indices[:, self._d_s :].astype(mx.uint8)
 
         # MSE IP from signal dims: ĥ_s · q̃_s
         h_s_hat = self._cb_signal.dequantize(idx_s).astype(mx.float32) * sig_scale[:, None]
