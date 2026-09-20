@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import mlx.core as mx
 import numpy as np
 
 from veloxquant_mlx.core.abstractions import Codebook
@@ -48,8 +49,6 @@ class ScalarCodebook(Codebook):
                 f"ScalarCodebook: number of centroids must be a power of 2, got {self._k}"
             )
 
-        import mlx.core as mx
-
         # Centroids must be sorted for searchsorted-based quantize.
         sort_idx = np.argsort(centroids)
         centroids = centroids[sort_idx]
@@ -74,7 +73,7 @@ class ScalarCodebook(Codebook):
         return self._b
 
     def quantize(self, y: Any) -> Any:
-        """Map coordinates to nearest-centroid indices using broadcast argmin.
+        """Map coordinates to nearest-centroid indices via boundary search.
 
         dist_{i,j,k} = |y_{i,j} - c_k| → argmin_k
 
@@ -84,16 +83,13 @@ class ScalarCodebook(Codebook):
         Returns:
             Index array of shape (batch, d), dtype uint8.
         """
-        import mlx.core as mx
-
-        # Boundary-sum quantize: count how many boundaries y exceeds.
-        # That count is exactly the centroid index. Drops the abs() and argmin()
-        # kernels of the prior path; still uses (batch, d, k-1) broadcast but
-        # over k-1 boundaries instead of k centroids, and with cheaper (>) op.
-        # Output is identical to the broadcast argmin in exact arithmetic; fp16
-        # tie-breaking on a boundary may flip to the other side.
-        cmp = y[:, :, None] > self._boundaries_mx[None, None, :]
-        return mx.sum(cmp.astype(mx.uint8), axis=-1).astype(mx.uint8)
+        # mx.searchsorted, side="left": count of boundaries strictly less
+        # than y, i.e. exactly the centroid index. Single kernel, no
+        # (batch, d, k-1) broadcast comparison tensor. side="left" matches
+        # the boundary-count semantics of "y > boundary" exactly (a value
+        # equal to a boundary does not count as exceeding it).
+        idx = mx.searchsorted(self._boundaries_mx, y, side="left")
+        return idx.astype(mx.uint8)
 
     def dequantize(self, idx: Any) -> Any:
         """Retrieve centroid values via gather.
