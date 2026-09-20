@@ -169,6 +169,7 @@ class AgeTieredKVCache(_MLXKVCache):
         self._current_position += S
 
         k_out_b, v_out_b = [], []
+        head0_tiers: list[int] | None = None
         for b in range(B):
             k_out_h, v_out_h = [], []
             for h in range(H):
@@ -192,6 +193,14 @@ class AgeTieredKVCache(_MLXKVCache):
                 # step (i == n - 1) has age 0.
                 ages = [self._current_position - (i + 1) for i in range(n)]
                 tiers = assign_age_tiers(ages, self._age_recent_boundary, self._age_mid_boundary)
+                if idx == 0:
+                    # Every (b, h) head sees the same n_per_head/current_position,
+                    # so this per-head tiering is identical across heads --
+                    # captured once here for _account_bytes below instead of
+                    # _accumulate_tier_counts() redoing this same O(n) pass a
+                    # second time on every decode step (see #397-adjacent
+                    # byte-accounting path).
+                    head0_tiers = tiers
 
                 prev_group_tier = self._group_tier[idx]
                 new_k, new_group_tier = self._requantize(
@@ -211,7 +220,7 @@ class AgeTieredKVCache(_MLXKVCache):
         V_out = mx.stack(v_out_b, axis=0)
 
         self._age_tiered_bytes = age_tiered_bytes(
-            self._accumulate_tier_counts(), self._tiers, self._head_dim
+            self._tier_counts_from_tiers(head0_tiers), self._tiers, self._head_dim
         )
 
         self.keys = None
@@ -225,14 +234,27 @@ class AgeTieredKVCache(_MLXKVCache):
         Re-derives from ``self._keys`` (whose length per head always equals
         the total tokens seen by that head) rather than trying to track a
         running delta, since a token's tier can change between calls as it
-        ages — a delta would double count or drift.
+        ages — a delta would double count or drift. Used by the
+        ``tokens_recent``/``tokens_mid``/``tokens_old`` properties, which are
+        not on the decode hot path and may be queried after any call.
         """
         if not self._keys or self._keys[0] is None:
             return {RECENT: 0, MID: 0, OLD: 0}
         n_per_head = int(self._keys[0].shape[0])
         ages = [self._current_position - (i + 1) for i in range(n_per_head)]
         tiers = assign_age_tiers(ages, self._age_recent_boundary, self._age_mid_boundary)
+        return self._tier_counts_from_tiers(tiers)
+
+    def _tier_counts_from_tiers(self, tiers: list[int] | None) -> dict[int, int]:
+        """Per-head tier counts (identical across heads), scaled by head count.
+
+        Args:
+            tiers: One head's per-token tier assignment, or ``None`` before
+                any tokens have been seen.
+        """
         counts = {RECENT: 0, MID: 0, OLD: 0}
+        if tiers is None or not self._keys:
+            return counts
         for t in tiers:
             counts[t] += 1
         n_heads = len(self._keys)
