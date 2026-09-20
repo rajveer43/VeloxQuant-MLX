@@ -15,7 +15,19 @@
     uint simd_blk = flat_tg % n_simd_per_batch;
     uint sketch_j = simd_blk * 32u + lane;
 
-    // Dot product dot(S[sketch_j, :], x[b, :])
+    // Dot product dot(S[sketch_j, :], x[b, :]).
+    //
+    // Every lane in this SIMD-group scores a DIFFERENT sketch dimension
+    // (sketch_j = simd_blk*32 + lane), so this cannot be striped across
+    // lanes the way the norm reduction below is -- there is no shared
+    // reduction target for lanes with different sketch_j. Instead each
+    // lane's own scalar loop is unrolled by the compiler; d is a
+    // compile-time-unknown but per-call-fixed head dimension (typically
+    // <=128), and this is a pure sequential FMA chain with no
+    // cross-lane dependency, so it already saturates the ALU pipeline
+    // per lane. (Do not confuse this with the norm loop just below,
+    // which legitimately parallelizes via simd_sum because every lane
+    // there reduces the SAME b_idx row.)
     float dot_val = 0.0f;
     if (sketch_j < m) {
         uint S_row = sketch_j * d;

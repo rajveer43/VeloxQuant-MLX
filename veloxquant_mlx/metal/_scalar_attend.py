@@ -145,6 +145,36 @@ def _read_kernel_source(filename: str) -> str:
 
 _cache = KernelCache()
 
+# Tiny [1]-element device buffers for scalar kernel params (group_size,
+# scale). These are cheap in isolation but scalar_fused_decode_attend and
+# its batched/predecoded siblings are called once per decode step per
+# layer in real inference (see docs/NSG_AUTOTUNE_BENCHMARK_REPORT.md's
+# real-model harness) -- group_size and scale are both fixed for the
+# lifetime of a cache/model, so re-allocating and re-uploading these
+# single-element arrays on every call is pure per-call overhead with a
+# trivially cacheable key. Bounded like _cache: keys are plain Python
+# scalars, of which a real process has at most a handful (one group_size
+# per cache config, one scale per head_dim).
+_param_cache: dict[tuple, mx.array] = {}
+
+
+def _u32_param(value: int) -> mx.array:
+    key = ("u32", value)
+    arr = _param_cache.get(key)
+    if arr is None:
+        arr = mx.array([value], dtype=mx.uint32)
+        _param_cache[key] = arr
+    return arr
+
+
+def _f32_param(value: float) -> mx.array:
+    key = ("f32", value)
+    arr = _param_cache.get(key)
+    if arr is None:
+        arr = mx.array([value], dtype=mx.float32)
+        _param_cache[key] = arr
+    return arr
+
 
 # ===========================================================================
 # Metal source — fused affine decode + flash-decoding attend
@@ -439,8 +469,8 @@ def scalar_fused_decode_attend(
             f"or use a smaller H_q/H_kv ratio"
         )
 
-    gsize = mx.array([group_size], dtype=mx.uint32)
-    scale_arr = mx.array([scale], dtype=mx.float32)
+    gsize = _u32_param(group_size)
+    scale_arr = _f32_param(scale)
 
     outputs = _scalar_affine_attend_kernel(D, nsg, heads_per_kv)(
         inputs=[
@@ -584,8 +614,8 @@ def scalar_fused_decode_attend_batched(
         )
 
     n_tg = NL * B * H_kv * S_q
-    gsize = mx.array([group_size], dtype=mx.uint32)
-    scale_arr = mx.array([scale], dtype=mx.float32)
+    gsize = _u32_param(group_size)
+    scale_arr = _f32_param(scale)
 
     outputs = _scalar_affine_attend_batched_kernel(D, nsg, heads_per_kv)(
         inputs=[
@@ -643,7 +673,7 @@ def scalar_decode_once(
 
     B, H_kv, S, D = codes.shape
     N = B * H_kv * S * D
-    gsize = mx.array([group_size], dtype=mx.uint32)
+    gsize = _u32_param(group_size)
 
     outputs = _scalar_affine_decode_kernel(mode)(
         inputs=[
@@ -717,7 +747,7 @@ def scalar_predecoded_attend(
         )
 
     n_tg = B * H * S_q
-    scale_arr = mx.array([scale], dtype=mx.float32)
+    scale_arr = _f32_param(scale)
 
     outputs = _scalar_predecoded_attend_kernel(nsg)(
         inputs=[
