@@ -416,10 +416,19 @@ class A2ATSKVCache(_MLXKVCache):
 
 
 def _nearest_centroid(x: mx.array, codebook: mx.array) -> mx.array:
-    """Plain nearest-centroid assignment (no query awareness). ``[N] int32``."""
+    """Plain nearest-centroid assignment (no query awareness). ``[N] int32``.
+
+    ``codebook`` is always ``self._codebook``, already stored as float32 at
+    construction (see ``A2ATSKVCache.__init__``) — this is called
+    ``B * H * n_sub`` times per decode step (once per head/sub-vector, for
+    both the retrieval-set bulk path and the values path), so re-casting an
+    already-float32 array on every one of those calls would rebuild the same
+    no-op cast node ``B * H * n_sub`` times per step for no benefit; only
+    ``x`` (genuinely per-call data) needs casting here.
+    """
     if x.shape[0] == 0:
         return mx.zeros((0,), dtype=mx.int32)
-    diff = x.astype(mx.float32)[:, None, :] - codebook.astype(mx.float32)[None, :, :]
+    diff = x.astype(mx.float32)[:, None, :] - codebook[None, :, :]
     d2 = mx.sum(diff * diff, axis=-1)
     return mx.argmin(d2, axis=-1).astype(mx.int32)
 
