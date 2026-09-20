@@ -99,6 +99,15 @@ class AnchorKVKVCache(_MLXKVCache):
 
         self._head_dim: int = 0
         self._compressed: bool = False
+        # ResidualCodec.__init__ draws a fresh ±1 Hadamard diagonal (NumPy
+        # RNG over head_dim entries) and wraps it in a HadamardPreconditioner
+        # -- (head_dim, seed, residual_bits) are all fixed for this cache's
+        # lifetime, so building one per (batch, head) pair in _compress_head
+        # (B * H times per prefill call) would redo identical setup work for
+        # every head instead of once. head_dim isn't known until the first
+        # prefill call, so this is built lazily on first use, not in
+        # __init__.
+        self._codec: ResidualCodec | None = None
 
         # Per-(batch*head) compressed state, populated once at prefill.
         self._anchor_positions: list[Any] = []
@@ -166,7 +175,9 @@ class AnchorKVKVCache(_MLXKVCache):
         u_key = u_key + neg_inf_on_anchor
         u_value = u_value + neg_inf_on_anchor
 
-        codec = ResidualCodec(head_dim=D, seed=self._seed, bits=self._residual_bits)
+        if self._codec is None:
+            self._codec = ResidualCodec(head_dim=D, seed=self._seed, bits=self._residual_bits)
+        codec = self._codec
         n_slots = anchorkv_budget_slots(
             seq_len=S,
             head_dim=D,
