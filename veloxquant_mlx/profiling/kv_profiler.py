@@ -26,6 +26,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+import mlx.core as mx
+
 from veloxquant_mlx.core.abstractions import KVCache
 
 
@@ -45,7 +47,10 @@ class LayerProfile:
             Always 0 when ``is_fused`` is True.
         write_ms_total: Cumulative append_value wall time, milliseconds.
             Always 0 when ``is_fused`` is True.
-        peak_memory_bytes: Largest memory_bytes()/nbytes observed after any call.
+        peak_memory_bytes: memory_bytes()/nbytes of the wrapped cache as of the
+            last profile() call. These caches are append-only (monotonically
+            non-decreasing memory, no eviction), so the latest reading is the
+            peak — read lazily at report time rather than after every call.
         tokens_written: Number of append_key (or update_and_fetch) calls,
             a proxy for tokens stored.
         fp16_baseline_bytes: What tokens_written * 2 * head_dim would cost in fp16,
@@ -161,14 +166,12 @@ class KVCacheProfiler(KVCache):
         self._profile.quantize_ms_total += elapsed_ms
         self._profile.tokens_written += 1
         self._profile.fp16_baseline_bytes += 2 * self._head_dim
-        self._update_peak_memory()
 
     def append_value(self, v: Any) -> None:
         t0 = time.perf_counter()
         self._cache.append_value(v)
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
         self._profile.write_ms_total += elapsed_ms
-        self._update_peak_memory()
 
     def attend(self, q: Any) -> Any:
         t0 = time.perf_counter()
@@ -187,7 +190,15 @@ class KVCacheProfiler(KVCache):
             self._profile.peak_memory_bytes = current
 
     def profile(self) -> LayerProfile:
-        """Return the accumulated LayerProfile for this wrapped cache."""
+        """Return the accumulated LayerProfile for this wrapped cache.
+
+        Reads the wrapped cache's memory_bytes() here rather than after every
+        append_key/append_value call: these caches are append-only (memory is
+        monotonically non-decreasing, no eviction), so the latest reading is
+        already the peak, and there is no need to pay for a recompute on
+        every token.
+        """
+        self._update_peak_memory()
         return self._profile
 
     def reset(self) -> None:
@@ -246,22 +257,19 @@ class MLXCacheProfiler:
         self._profile = LayerProfile(layer_id=layer_id, is_fused=True)
 
     def update_and_fetch(self, keys: Any, values: Any) -> Any:
-        import mlx.core as mx
-
         n_tokens = keys.shape[-2] if hasattr(keys, "shape") else 1
         t0 = time.perf_counter()
         out = self._cache.update_and_fetch(keys, values)
         if isinstance(out, tuple):
-            for item in out:
-                if hasattr(item, "shape"):
-                    mx.eval(item)
+            arrays = [item for item in out if hasattr(item, "shape")]
+            if arrays:
+                mx.eval(*arrays)
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
         self._profile.n_quantize_calls += 1
         self._profile.quantize_ms_total += elapsed_ms
         self._profile.tokens_written += n_tokens
         self._profile.fp16_baseline_bytes += n_tokens * 2 * self._head_dim
-        self._update_peak_memory()
         return out
 
     def _update_peak_memory(self) -> None:
@@ -270,7 +278,14 @@ class MLXCacheProfiler:
             self._profile.peak_memory_bytes = current
 
     def profile(self) -> LayerProfile:
-        """Return the accumulated LayerProfile for this wrapped cache."""
+        """Return the accumulated LayerProfile for this wrapped cache.
+
+        Reads the wrapped cache's nbytes here rather than after every
+        update_and_fetch call: nbytes is monotonically non-decreasing across
+        calls, so the latest reading is already the peak, and there is no
+        need to pay for a recompute on every token.
+        """
+        self._update_peak_memory()
         return self._profile
 
     def __bool__(self) -> bool:
