@@ -40,7 +40,6 @@ against measured hit rate before trusting a plan.
 from __future__ import annotations
 
 import math
-from collections import deque
 from dataclasses import dataclass, field
 
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
@@ -145,18 +144,18 @@ class RateEstimator:
     required — any source of ``{owner: rate}`` works, including offline
     aggregate statistics as in the paper's telemetry-derived workload.
 
+    Memory is bounded by the number of distinct owners tracked (one float in
+    ``_counts`` each), not by how many requests have been recorded — an
+    owner's whole contribution to memory is released by :meth:`forget`.
+
     Args:
         half_life: Number of :meth:`record` calls for an owner's rate
             contribution to decay by half. Smaller values track bursts
             faster but are noisier; larger values are stable but slow to
             react to a session going cold or hot.
-        window: Maximum number of timestamps retained per owner, bounding
-            memory for long-lived owners. Older timestamps are dropped once
-            exceeded, which only affects rate estimation, not correctness.
     """
 
     half_life: float = 20.0
-    window: int = 256
     _counts: dict[int, float] = field(default_factory=dict)
     _decay: float = field(init=False)
 
@@ -165,16 +164,17 @@ class RateEstimator:
             raise QuantizerConfigError(
                 f"RateEstimator: half_life must be > 0, got {self.half_life}"
             )
-        if self.window < 1:
-            raise QuantizerConfigError(f"RateEstimator: window must be >= 1, got {self.window}")
         self._decay = math.pow(0.5, 1.0 / self.half_life)
-        self._history: dict[int, deque[int]] = {}
 
     def record(self, owner: int) -> None:
-        """Record one request arrival for ``owner``."""
+        """Record one request arrival for ``owner``.
+
+        This is the hottest call in the module — once per incoming request,
+        for potentially every concurrent session — so it does the minimum
+        work needed for the EWMA: one dict lookup and one float update, no
+        per-request allocation.
+        """
         self._counts[owner] = self._counts.get(owner, 0.0) * self._decay + 1.0
-        hist = self._history.setdefault(owner, deque(maxlen=self.window))
-        hist.append(1)
 
     def rate(self, owner: int) -> float:
         """Current smoothed rate estimate for ``owner`` (0.0 if never seen)."""
@@ -187,7 +187,6 @@ class RateEstimator:
     def forget(self, owner: int) -> None:
         """Drop all tracked state for ``owner`` (e.g. on session close)."""
         self._counts.pop(owner, None)
-        self._history.pop(owner, None)
 
 
 class CacheRoutePlanner:
