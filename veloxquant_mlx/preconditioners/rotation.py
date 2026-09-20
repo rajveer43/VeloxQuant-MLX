@@ -56,7 +56,9 @@ class HadamardPreconditioner(Preconditioner):
 
         dtype = x.dtype
         out = mx.hadamard_transform(x.astype(mx.float32) * self._D.astype(mx.float32))
-        return out.astype(dtype)
+        result = out.astype(dtype)
+        mx.eval(result)
+        return result
 
     def apply_inverse(self, y: Any) -> Any:
         """Inverse: x = D * hadamard_transform(y).
@@ -73,7 +75,9 @@ class HadamardPreconditioner(Preconditioner):
 
         dtype = y.dtype
         out = mx.hadamard_transform(y.astype(mx.float32)) * self._D.astype(mx.float32)
-        return out.astype(dtype)
+        result = out.astype(dtype)
+        mx.eval(result)
+        return result
 
     @property
     def dim(self) -> int:
@@ -106,8 +110,13 @@ class RotationPreconditioner(Preconditioner):
         Returns:
             Rotated array of shape (batch, d).
         """
+        import mlx.core as mx
 
-        return x @ self._Pi.T
+        out_dtype = x.dtype
+        x32 = x.astype(mx.float32)
+        pi32 = self._Pi.astype(mx.float32)
+        result = x32 @ pi32.T
+        return result.astype(out_dtype)
 
     def apply_inverse(self, y: Any) -> Any:
         """Rotate back: x = y @ Π.
@@ -118,8 +127,13 @@ class RotationPreconditioner(Preconditioner):
         Returns:
             Reconstructed array of shape (batch, d).
         """
+        import mlx.core as mx
 
-        return y @ self._Pi
+        out_dtype = y.dtype
+        y32 = y.astype(mx.float32)
+        pi32 = self._Pi.astype(mx.float32)
+        result = y32 @ pi32
+        return result.astype(out_dtype)
 
     @property
     def dim(self) -> int:
