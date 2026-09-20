@@ -525,6 +525,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.90.6 (2026-09-20)
+
+### Performance Improvements
+
+- **quantized-linear**: Cache dequantized weight instead of rebuilding every forward call
+  ([#460](https://github.com/rajveer43/VeloxQuant-MLX/pull/460),
+  [`ef0290a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ef0290a38fa0baba07af63885fdbb728296a8990))
+
+
 ## v0.90.5 (2026-09-20)
 
 ### Performance Improvements
