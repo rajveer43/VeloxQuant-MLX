@@ -113,6 +113,13 @@ class AMCKVCache(_MLXKVCache):
             )
 
         self._head_dim: int = int(getattr(config, "head_dim", 128))
+        # (tier, head_dim) -> AMCTierConfig is invariant for the lifetime of
+        # this cache (head_dim is fixed at construction, tier is one of
+        # HIGH/MID/LOW) but _compress_step calls _tier_config_for_dim once
+        # per token per K/V array -- i.e. 2 * B * H times every decode
+        # step -- so precompute the (small, 3-entry) table once here instead
+        # of re-deriving the same rank/bit-width pair on every call.
+        self._tier_configs = {t: _tier_config_for_dim(t, self._head_dim) for t in (HIGH, MID, LOW)}
 
         self._B: int = 0
         self._H: int = 0
@@ -201,8 +208,8 @@ class AMCKVCache(_MLXKVCache):
 
                 tiers = amc_assign_tiers(saliency, self._k_high, self._k_mid)
 
-                k_compressed = self._compress_step(k_step, tiers, D)
-                v_compressed = self._compress_step(v_step, tiers, D)
+                k_compressed = self._compress_step(k_step, tiers)
+                v_compressed = self._compress_step(v_step, tiers)
 
                 for t in tiers:
                     self._tier_counts[t] += 1
@@ -251,12 +258,12 @@ class AMCKVCache(_MLXKVCache):
         """
         return False
 
-    def _compress_step(self, x: mx.array, tiers: list[int], head_dim: int) -> mx.array:
+    def _compress_step(self, x: mx.array, tiers: list[int]) -> mx.array:
         """Apply per-token rank mask + quantization according to each token's tier."""
         n = x.shape[0]
         out_rows = []
         for i in range(n):
-            cfg = _tier_config_for_dim(tiers[i], head_dim)
+            cfg = self._tier_configs[tiers[i]]
             row = x[i : i + 1]  # [1, D]
             row = amc_apply_rank_mask(row, cfg.rank)
             row = amc_quantize_tier(row, cfg.bits, self._group_size)
