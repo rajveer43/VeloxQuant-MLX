@@ -525,6 +525,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.90.5 (2026-09-20)
+
+### Performance Improvements
+
+- **spectral-quant**: Keep encode/decode/estimate_inner_product on-device
+  ([#459](https://github.com/rajveer43/VeloxQuant-MLX/pull/459),
+  [`e5362f8`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e5362f827140cf0441ff095a3ef1d310a4ab853a))
+
+
 ## v0.90.4 (2026-09-20)
 
 ### Performance Improvements
