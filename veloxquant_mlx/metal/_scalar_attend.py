@@ -503,7 +503,7 @@ def scalar_fused_decode_attend_batched(
     v_zero: mx.array,
     group_size: int,
     scale: float,
-    nsg: int = 4,
+    nsg: int | None = None,
 ) -> mx.array:
     """Cross-layer batched fused group-affine decode + SDP attention (#307 pt. 1).
 
@@ -537,7 +537,13 @@ def scalar_fused_decode_attend_batched(
         v_zero:   ``[NL, B, H_kv, S_kv, GV]`` fp32.
         group_size: quantization group size g.
         scale:    attention scale applied to the raw dot (e.g. 1/sqrt(D)).
-        nsg:      SIMD-groups per threadgroup splitting the kv axis.
+        nsg:      SIMD-groups per threadgroup splitting the kv axis. ``None``
+            (default) autotunes it from the dispatch shape via
+            :func:`_auto_nsg`, same as :func:`scalar_fused_decode_attend` --
+            the ``NL`` axis raises ``n_tg`` but small ``NL*B`` batches (the
+            common case: a handful of concurrent requests, tens of layers)
+            still land under ``_TG_SATURATION`` and benefit from the wider
+            threadgroup. Pass an explicit int to pin it.
 
     Returns:
         ``[NL, B, H_q, S_q, D]`` fp16 attention output.
@@ -556,7 +562,7 @@ def scalar_fused_decode_attend_batched(
         raise ValueError(f"scalar_fused_decode_attend_batched: NL={NL} must be >= 1")
     if D > 256:
         raise ValueError(f"scalar_fused_decode_attend_batched: D={D} must be <= 256")
-    if not (1 <= nsg <= 32):
+    if nsg is not None and not (1 <= nsg <= 32):
         raise ValueError(f"scalar_fused_decode_attend_batched: nsg={nsg} must be in 1..32")
 
     NLk, Bk, H_kv, S_kv, Dk = k_codes.shape
@@ -599,6 +605,10 @@ def scalar_fused_decode_attend_batched(
             f"scalar_fused_decode_attend_batched: heads_per_kv={heads_per_kv} exceeds "
             f"the supported maximum of {_MAX_HEADS_PER_KV}"
         )
+    n_tg = NL * B * H_kv * S_q
+    if nsg is None:
+        nsg = _auto_nsg(D, heads_per_kv, n_tg)
+
     # Threadgroup-memory footprint is per-SIMD-group/per-packed-head, sized
     # identically to the single-layer kernel — the NL axis lives on the grid,
     # not inside one threadgroup's state, so the same budget check applies
@@ -613,7 +623,6 @@ def scalar_fused_decode_attend_batched(
             f"smaller H_q/H_kv ratio"
         )
 
-    n_tg = NL * B * H_kv * S_q
     gsize = _u32_param(group_size)
     scale_arr = _f32_param(scale)
 
@@ -695,7 +704,7 @@ def scalar_predecoded_attend(
     k_hat: mx.array,
     v_hat: mx.array,
     scale: float,
-    nsg: int = 4,
+    nsg: int | None = None,
 ) -> mx.array:
     """Flash-decoding SDPA over already-decoded fp16 k_hat/v_hat.
 
@@ -713,7 +722,11 @@ def scalar_predecoded_attend(
         v_hat: ``[B, H_kv, S_kv, D]`` fp16 decoded values (from
             ``scalar_decode_once(..., mode="V")``).
         scale: attention scale applied to the raw dot (e.g. 1/sqrt(D)).
-        nsg:   SIMD-groups per threadgroup splitting the kv axis.
+        nsg:   SIMD-groups per threadgroup splitting the kv axis. ``None``
+            (default) autotunes it from the dispatch shape via
+            :func:`_auto_nsg` with ``heads_per_kv=1`` (this kernel dispatches
+            one threadgroup per query head, not per kv head, so there is no
+            head-packing dimension). Pass an explicit int to pin it.
 
     Returns:
         ``[B, H_q, S_q, D]`` fp16 attention output.
@@ -728,7 +741,7 @@ def scalar_predecoded_attend(
     B, H, S_q, D = q.shape
     if D > 256:
         raise ValueError(f"scalar_predecoded_attend: D={D} must be <= 256")
-    if not (1 <= nsg <= 32):
+    if nsg is not None and not (1 <= nsg <= 32):
         raise ValueError(f"scalar_predecoded_attend: nsg={nsg} must be in 1..32")
 
     Bk, H_kv, _, Dk = k_hat.shape
@@ -747,6 +760,8 @@ def scalar_predecoded_attend(
         )
 
     n_tg = B * H * S_q
+    if nsg is None:
+        nsg = _auto_nsg(D, 1, n_tg)
     scale_arr = _f32_param(scale)
 
     outputs = _scalar_predecoded_attend_kernel(nsg)(
