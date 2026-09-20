@@ -83,15 +83,29 @@ def eviction_make_mask(
             ``create_attention_mask``.
 
     Returns:
-        ``None`` when ``N == 1`` (mlx_lm's own no-mask-needed fast path for
-        single-token decode — safe here too, since a lone query with no
-        earlier same-step queries needs no intra-step masking and the KV
-        cache itself already excludes evicted/future rows). Otherwise a
-        ``[B, 1, N, T_kv]`` boolean array: ``True`` where key row ``j`` is
-        causally visible to query row ``i`` (``key_positions[b, j] <=
-        query_positions[b, i]``).
+        ``None`` when ``N == 1`` and ``window_size`` is ``None`` (mlx_lm's
+        own no-mask-needed fast path for single-token decode — safe here
+        too, since a lone query with no earlier same-step queries needs no
+        intra-step masking and the KV cache itself already excludes
+        evicted/future rows *when nothing beyond plain causality bounds
+        visibility*). Otherwise a ``[B, 1, N, T_kv]`` boolean array: ``True``
+        where key row ``j`` is causally visible to query row ``i``
+        (``key_positions[b, j] <= query_positions[b, i]``, additionally
+        bounded to a trailing ``window_size`` when given).
+
+        The ``N == 1`` shortcut must NOT fire when ``window_size`` is set:
+        sink+window caches (StreamingLLM) keep permanently-retained sink
+        rows that sit far outside the sliding window's reach, so
+        ``key_positions`` is not simply "everything causally valid" the way
+        a plain growing cache's is -- skipping the mask here would silently
+        drop the window bound every single decode step for any model that
+        calls ``make_mask`` with ``window_size`` set (sliding-window
+        attention models pass it on every layer, including at ``N == 1``;
+        see ``mlx_lm.models.base.create_attention_mask``). Only mlx_lm's
+        cacheless callers get to take the "no window, no cache" ``None``
+        shortcut at ``N == 1``.
     """
-    if N == 1:
+    if N == 1 and window_size is None:
         return None
     # [B, N, 1] >= [B, 1, T_kv] -> [B, N, T_kv]
     visible = query_positions[:, :, None] >= key_positions[:, None, :]
