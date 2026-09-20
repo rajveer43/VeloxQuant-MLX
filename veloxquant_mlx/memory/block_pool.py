@@ -396,9 +396,10 @@ class BlockPoolAllocator:
                 self.stats.n_allocations += 1
                 if is_reuse:
                     self.stats.n_reused += 1
+                if block.n_used < self.config.block_size:
+                    self.stats._fragmented_count += 1
 
             self._owner_blocks.setdefault(owner, []).extend(b.block_id for b in allocated)
-            self._recompute_fragmentation()
             self.stats.peak_blocks_in_use = max(
                 self.stats.peak_blocks_in_use, self.stats.blocks_in_use()
             )
@@ -441,11 +442,12 @@ class BlockPoolAllocator:
                 if not owner_list:
                     del self._owner_blocks[owner]
                     self._active_owners.discard(owner)
+            if block.n_used < self.config.block_size:
+                self.stats._fragmented_count -= 1
             block.owner = None
             block.n_used = 0
             self._free[block.stream].append(block.block_id)
             self.stats.n_frees += 1
-        self._recompute_fragmentation()
 
     def free_all(self, owner: int) -> None:
         """Free every block currently checked out to ``owner``.
@@ -505,20 +507,46 @@ class BlockPoolAllocator:
             retired = 0
             for _ in range(n_to_retire):
                 block_id = free_list.pop()
+                # Only free blocks are eligible for retirement, and a free
+                # block always has owner=None, so it was never counted in
+                # _fragmented_count (which only counts owner is not None
+                # blocks) -- nothing to adjust there.
                 del self._blocks[block_id]
                 retired += 1
             if retired:
                 self.stats.n_blocks = len(self._blocks)
                 self.stats.n_retired += retired
-                self._recompute_fragmentation()
                 self._record_history()
             return retired
 
-    def _recompute_fragmentation(self) -> None:
+    def mark_used(self, block: Block, n_used: int) -> None:
+        """Update ``block.n_used`` and keep fragmentation stats consistent.
+
+        Callers that track a block's fill level themselves (e.g.
+        :class:`~veloxquant_mlx.memory.pooled_cache.PooledKVCache`, which
+        appends token-by-token to an already-checked-out block) must go
+        through this instead of writing ``block.n_used`` directly --
+        ``AllocationStats._fragmented_count`` is maintained incrementally
+        (not recomputed by a full scan every allocate()/free()/shrink()
+        call, which would be O(n_blocks) on every single-block growth step
+        in the decode hot path), so it only stays correct if every write to
+        a block's fill level is observed here.
+
+        Args:
+            block: A block currently checked out from this pool (owner is
+                not None). Blocks that are free are never fragmented by
+                definition, so calling this on one is a no-op for stats
+                (n_used is still updated).
+        """
         full = self.config.block_size
-        self.stats._fragmented_count = sum(
-            1 for b in self._blocks.values() if b.owner is not None and b.n_used < full
-        )
+        with self._lock:
+            was_fragmented = block.owner is not None and block.n_used < full
+            block.n_used = n_used
+            is_fragmented = block.owner is not None and block.n_used < full
+            if is_fragmented and not was_fragmented:
+                self.stats._fragmented_count += 1
+            elif was_fragmented and not is_fragmented:
+                self.stats._fragmented_count -= 1
 
     def __repr__(self) -> str:
         return f"BlockPoolAllocator({self.stats!r})"

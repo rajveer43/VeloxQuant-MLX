@@ -91,7 +91,7 @@ class PooledKVCache(KVCache):
         self._k_used_in_last = self._ensure_capacity(self._k_blocks, self._k_used_in_last, "k")
         self._inner.append_key(k)
         self._k_used_in_last += 1
-        self._k_blocks[-1].n_used = self._k_used_in_last
+        self._pool.mark_used(self._k_blocks[-1], self._k_used_in_last)
 
     def append_value(self, v: Any) -> None:
         """Check out a V block from the pool if needed, then append to the inner cache.
@@ -102,7 +102,7 @@ class PooledKVCache(KVCache):
         self._v_used_in_last = self._ensure_capacity(self._v_blocks, self._v_used_in_last, "v")
         self._inner.append_value(v)
         self._v_used_in_last += 1
-        self._v_blocks[-1].n_used = self._v_used_in_last
+        self._pool.mark_used(self._v_blocks[-1], self._v_used_in_last)
         self._n_tokens += 1
 
     def attend(self, q: Any) -> Any:
