@@ -186,24 +186,27 @@ def dp_allocate_bits(
         choice_row = choice_used[i + 1]
         # Penalty for component i taking bit-width c: lower index and higher
         # c (relative to max_choice) should be preferred on ties, so the
-        # penalty decreases with c and increases with i.
-        for b in range(B_cap + 1):
-            base = row_in[b]
-            if base == INF:
+        # penalty decreases with c and increases with i. It depends only on
+        # (i, c), not on b, so it is added once per choice as a scalar
+        # rather than recomputed inside a per-b loop.
+        #
+        # Vectorized over the budget axis b: for each bit-width choice c,
+        # every b in [0, B_cap - c] can transition to b + c in one shot via
+        # numpy slicing, replacing the innermost `for b in range(B_cap + 1)`
+        # Python loop with array ops. Semantics (including the INF-base
+        # skip and strict "< " tie handling) are preserved exactly.
+        for dist, c in per_choice_distortion[i]:
+            valid_len = B_cap + 1 - c
+            if valid_len <= 0:
                 continue
-            for dist, c in per_choice_distortion[i]:
-                nb = b + c
-                if nb > B_cap:
-                    continue
-                # (n - i) so that an EARLIER component (small i, large n-i)
-                # pays a LARGER penalty for withholding bits (small c) —
-                # i.e. giving the marginal bit to a lower-index component is
-                # always cheaper than giving it to a higher-index one.
-                penalty = eps * (n - i) * (max_choice - c)
-                cand = base + dist + penalty
-                if cand < row_out[nb]:
-                    row_out[nb] = cand
-                    choice_row[nb] = c
+            penalty = eps * (n - i) * (max_choice - c)
+            cand = row_in[:valid_len] + dist + penalty
+            target = row_out[c : c + valid_len]
+            mask = cand < target
+            if not mask.any():
+                continue
+            target[mask] = cand[mask]
+            choice_row[c : c + valid_len][mask] = c
 
     # Best total budget usage <= B_cap (spending less than the cap is fine).
     # The penalty term only disambiguates exact distortion ties (scaled to
