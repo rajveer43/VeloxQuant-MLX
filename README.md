@@ -13,6 +13,7 @@
   <a href="https://veloxquant.dev/"><img src="https://img.shields.io/badge/website-veloxquant.dev-0078d4?style=flat-square&logo=readthedocs&logoColor=white" alt="Website"/></a>
   <a href="https://pypi.org/project/VeloxQuant-MLX/"><img src="https://img.shields.io/pypi/v/VeloxQuant-MLX?style=flat-square&logo=pypi&logoColor=white&color=0078d4" alt="PyPI"/></a>
   <a href="https://pypi.org/project/VeloxQuant-MLX/"><img src="https://img.shields.io/pypi/dm/VeloxQuant-MLX?style=flat-square&logo=pypi&logoColor=white&color=0078d4" alt="PyPI downloads"/></a>
+  <a href="https://pepy.tech/projects/veloxquant-mlx"><img src="https://static.pepy.tech/personalized-badge/veloxquant-mlx?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads" alt="Total downloads"/></a>
   <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/release.yml?branch=master&style=flat-square&label=build&logo=github" alt="Release build status"/></a>
   <!-- The tests and changelog badges are rewritten on every release by
        scripts/sync_release_badges.py, which matches the literal
