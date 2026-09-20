@@ -525,6 +525,19 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.90.7 (2026-09-20)
+
+### Performance Improvements
+
+- **block-pool**: Maintain fragmentation count incrementally instead of O(n_blocks) rescan
+  ([#462](https://github.com/rajveer43/VeloxQuant-MLX/pull/462),
+  [`1967110`](https://github.com/rajveer43/VeloxQuant-MLX/commit/19671109ac5bf16d39d6d30409f1bcff38a14334))
+
+- **quantizers**: Cache RoPE inv_freq in CommVQ instead of rebuilding per decode
+  ([#461](https://github.com/rajveer43/VeloxQuant-MLX/pull/461),
+  [`253dd9a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/253dd9a0305d0153d63e583465f9f53704cf9864))
+
+
 ## v0.90.6 (2026-09-20)
 
 ### Performance Improvements
