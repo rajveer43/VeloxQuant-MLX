@@ -95,21 +95,23 @@ class BitPackBuffer:
     @staticmethod
     def _pack_1bit(idx: np.ndarray) -> np.ndarray:
         n = len(idx)
-        n_bytes = (n + 7) // 8
-        packed = np.zeros(n_bytes, dtype=np.uint8)
+        pad = (8 - n % 8) % 8
+        if pad:
+            idx = np.concatenate([idx, np.zeros(pad, dtype=np.uint8)])
+        g = idx.reshape(-1, 8)
+        out = np.zeros(len(g), dtype=np.uint8)
         for bit in range(8):
-            positions = np.arange(bit, n, 8)
-            packed[: len(positions)] |= (idx[positions] & 1) << bit
-        return packed
+            out |= (g[:, bit] & 1) << bit
+        return out
 
     @staticmethod
     def _unpack_1bit(packed: np.ndarray, n: int) -> np.ndarray:
-        out = np.zeros(n, dtype=np.uint8)
+        n_groups = (n + 7) // 8
+        b = packed[:n_groups]
+        g = np.zeros((n_groups, 8), dtype=np.uint8)
         for bit in range(8):
-            positions = np.arange(bit, n, 8)
-            byte_idx = np.arange(len(positions))
-            out[positions] = (packed[byte_idx] >> bit) & 1
-        return out
+            g[:, bit] = (b >> bit) & 1
+        return g.reshape(-1)[:n]
 
     # ------------------------------------------------------------------
     # 2-bit: 4 values per byte
@@ -118,22 +120,23 @@ class BitPackBuffer:
     @staticmethod
     def _pack_2bit(idx: np.ndarray) -> np.ndarray:
         n = len(idx)
-        n_bytes = (n + 3) // 4
-        packed = np.zeros(n_bytes, dtype=np.uint8)
+        pad = (4 - n % 4) % 4
+        if pad:
+            idx = np.concatenate([idx, np.zeros(pad, dtype=np.uint8)])
+        g = idx.reshape(-1, 4)
+        out = np.zeros(len(g), dtype=np.uint8)
         for slot in range(4):
-            positions = np.arange(slot, n, 4)
-            byte_idx = np.arange(len(positions))
-            packed[byte_idx] |= (idx[positions] & 0x3) << (2 * slot)
-        return packed
+            out |= (g[:, slot] & 0x3) << (2 * slot)
+        return out
 
     @staticmethod
     def _unpack_2bit(packed: np.ndarray, n: int) -> np.ndarray:
-        out = np.zeros(n, dtype=np.uint8)
+        n_groups = (n + 3) // 4
+        b = packed[:n_groups]
+        g = np.zeros((n_groups, 4), dtype=np.uint8)
         for slot in range(4):
-            positions = np.arange(slot, n, 4)
-            byte_idx = np.arange(len(positions))
-            out[positions] = (packed[byte_idx] >> (2 * slot)) & 0x3
-        return out
+            g[:, slot] = (b >> (2 * slot)) & 0x3
+        return g.reshape(-1)[:n]
 
     # ------------------------------------------------------------------
     # 3-bit: 8 values per 3 bytes (exactly)
