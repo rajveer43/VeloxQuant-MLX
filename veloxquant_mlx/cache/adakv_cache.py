@@ -133,7 +133,6 @@ class AdaKVCache(_MLXKVCache):
         norms_b = mx.mean(norms, axis=0)  # [H, S] (avg over batch)
         new_sum = mx.sum(norms_b, axis=-1)  # [H]
         new_sq_sum = mx.sum(norms_b * norms_b, axis=-1)  # [H]
-        mx.eval(new_sum, new_sq_sum)
 
         if self._norm_sum is None:
             self._norm_sum = new_sum
@@ -141,7 +140,13 @@ class AdaKVCache(_MLXKVCache):
         else:
             self._norm_sum = self._norm_sum + new_sum
             self._norm_sq_sum = self._norm_sq_sum + new_sq_sum
-            mx.eval(self._norm_sum, self._norm_sq_sum)
+        # Evaluate once, after folding into the running accumulator — an
+        # intermediate eval() on new_sum/new_sq_sum before the add is a
+        # wasted host sync every decode step, since both are immediately
+        # consumed by the addition (or stored directly) either way; only the
+        # post-fold accumulator needs materializing to keep the graph from
+        # growing across steps.
+        mx.eval(self._norm_sum, self._norm_sq_sum)
 
         self._n_tokens += S
 
