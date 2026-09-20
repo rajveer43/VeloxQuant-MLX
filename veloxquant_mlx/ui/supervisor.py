@@ -10,6 +10,7 @@ actually announce.
 from __future__ import annotations
 
 import contextlib
+import itertools
 import json
 import os
 import signal
@@ -111,14 +112,19 @@ class ServerSupervisor:
     def logs(self, since: int = 0) -> dict[str, Any]:
         """Return log lines captured after index ``since`` (bounded by ``LOG_CAPACITY``).
 
-        The panel polls this repeatedly, passing back the previous
+        The panel polls this every second, passing back the previous
         response's ``total`` as the next call's ``since`` to fetch only new
-        lines.
+        lines. ``deque`` has no slice support, so ``itertools.islice`` is
+        used to walk straight to ``since`` instead of materializing the
+        whole (up to ``LOG_CAPACITY``) deque into a list just to slice it —
+        each poll then costs work proportional to the *new* lines, not the
+        full buffer.
         """
-        lines = list(self._logs)
+        total = len(self._logs)
+        new_lines = itertools.islice(self._logs, since, None)
         return {
-            "lines": [entry.to_dict() for entry in lines[since:]],
-            "total": len(lines),
+            "lines": [entry.to_dict() for entry in new_lines],
+            "total": total,
         }
 
     # --- lifecycle --------------------------------------------------------
