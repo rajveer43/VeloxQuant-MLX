@@ -525,6 +525,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.90.1 (2026-09-20)
+
+### Performance Improvements
+
+- **profiling**: Remove per-token memory reads and batch mx.eval in KV cache profilers
+  ([#448](https://github.com/rajveer43/VeloxQuant-MLX/pull/448),
+  [`3832201`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3832201ed94f04afa7f58cf3d39be12748811ef7))
+
+
 ## v0.90.0 (2026-09-19)
 
 ### Continuous Integration
