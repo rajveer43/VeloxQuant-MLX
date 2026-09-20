@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import mlx.core as mx
 import numpy as np
 
 from veloxquant_mlx.core.abstractions import ArtifactStore
@@ -43,8 +44,6 @@ class InMemoryArtifactStore(ArtifactStore):
             raise ArtifactNotFoundError(
                 f"InMemoryArtifactStore: rotation d={d} seed={seed} not found."
             )
-        import mlx.core as mx
-
         return mx.array(self._rotations[key])
 
     def save_rotation_matrix(self, Pi: Any, d: int, seed: int) -> None:
@@ -62,8 +61,6 @@ class InMemoryArtifactStore(ArtifactStore):
             raise ArtifactNotFoundError(
                 f"InMemoryArtifactStore: codebook dist={distribution} b={b} d={d} not found."
             )
-        import mlx.core as mx
-
         return mx.array(self._codebooks[key])
 
     def save_codebook(self, cb: Any, distribution: str, b: int, d: int) -> None:
@@ -81,8 +78,6 @@ class InMemoryArtifactStore(ArtifactStore):
             raise ArtifactNotFoundError(
                 f"InMemoryArtifactStore: JL d={d} m={m} seed={seed} not found."
             )
-        import mlx.core as mx
-
         return mx.array(self._jls[key])
 
     def save_jl_matrix(self, S: Any, d: int, m: int, seed: int) -> None:

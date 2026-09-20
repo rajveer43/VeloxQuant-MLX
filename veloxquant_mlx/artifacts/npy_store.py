@@ -11,14 +11,25 @@ readers/writers targeting the same artifact never observe a partial file.
 
 from __future__ import annotations
 
-import os
+import threading
 from pathlib import Path
 from typing import Any
 
+import mlx.core as mx
 import numpy as np
 
 from veloxquant_mlx.core.abstractions import ArtifactStore
 from veloxquant_mlx.core.exceptions import ArtifactNotFoundError
+
+_save_lock = threading.Lock()
+_save_id = 0
+
+
+def _get_save_id() -> int:
+    global _save_id
+    with _save_lock:
+        _save_id += 1
+        return _save_id
 
 
 def _atomic_save(path: Path, arr: np.ndarray) -> None:
@@ -28,10 +39,10 @@ def _atomic_save(path: Path, arr: np.ndarray) -> None:
     workers lazily constructing the same quantizer config) from observing a
     partially-written ``.npy`` file: ``np.save`` writes directly to the
     destination and is not atomic, but ``Path.replace`` is atomic on POSIX
-    and Windows. The temp name is PID- and object-id-qualified so concurrent
-    writers never collide with each other's temp files either.
+    and Windows. The temp name uses a monotonic counter to avoid collisions
+    under concurrent multi-process writes.
     """
-    tmp_path = path.with_name(f".{path.name}.tmp{os.getpid()}-{id(arr)}.npy")
+    tmp_path = path.with_name(f".{path.name}.tmp-{_get_save_id()}.npy")
     try:
         np.save(tmp_path, arr)
         tmp_path.replace(path)
@@ -70,9 +81,10 @@ class NpyArtifactStore(ArtifactStore):
                 f"Rotation matrix not found at {path}. "
                 f"Run `python -m veloxquant_mlx precompute --head_dim {d}` first."
             )
-        import mlx.core as mx
-
-        return mx.array(np.load(path).astype(np.float16))
+        arr = np.load(path)
+        if arr.dtype != np.float16:
+            arr = arr.astype(np.float16)
+        return mx.array(arr)
 
     def save_rotation_matrix(self, Pi: Any, d: int, seed: int) -> None:
         path = self._rotation_path(d, seed)
@@ -93,9 +105,10 @@ class NpyArtifactStore(ArtifactStore):
                 f"Codebook not found at {path}. "
                 f"Run `python -m veloxquant_mlx precompute --head_dim {d} --bits {b}` first."
             )
-        import mlx.core as mx
-
-        return mx.array(np.load(path).astype(np.float16))
+        arr = np.load(path)
+        if arr.dtype != np.float16:
+            arr = arr.astype(np.float16)
+        return mx.array(arr)
 
     def save_codebook(self, cb: Any, distribution: str, b: int, d: int) -> None:
         path = self._codebook_path(distribution, b, d)
@@ -116,9 +129,10 @@ class NpyArtifactStore(ArtifactStore):
                 f"JL matrix not found at {path}. "
                 f"Run `python -m veloxquant_mlx precompute --head_dim {d} --jl_dim {m}` first."
             )
-        import mlx.core as mx
-
-        return mx.array(np.load(path).astype(np.float16))
+        arr = np.load(path)
+        if arr.dtype != np.float16:
+            arr = arr.astype(np.float16)
+        return mx.array(arr)
 
     def save_jl_matrix(self, S: Any, d: int, m: int, seed: int) -> None:
         path = self._jl_path(d, m, seed)
