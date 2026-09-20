@@ -205,9 +205,34 @@ def plan_strategy(
 ) -> RecommendationResult:
     """Rank the viable strategies for ``model``/``hardware``/``workload``.
 
-    Fallback: if nothing survives filtering the result ranks empty and sets
+    **Process**:
+    1. Estimate memory for all registered methods (cheap, no weights loaded)
+    2. Filter by attention type, Metal availability, memory budget
+    3. Score survivors on 4 normalized axes: memory, latency, throughput, quality
+    4. Blend scores by objective weights (memory vs latency vs quality trade-offs)
+    5. Mix in measured benchmarks if available (overrides analytical estimates)
+    6. Rank by composite score (deterministic for identical inputs)
+
+    **Fallback**: If nothing survives filtering, returns empty ranked list with
     ``fallback_used=True``; the caller (``AutoOptimizer``) then falls back to
-    the library default method.
+    the library default method (e.g., ``turboquant_rvq``).
+
+    **Arguments**:
+        model: Extracted model architecture (layers, heads, dtype)
+        hardware: Detected Apple Silicon environment (chip, memory, bandwidth)
+        workload: User intent (context length, objective)
+        options: Ranking tunables (objective weights, max results to return)
+        filter_options: Filtering overrides (memory budget, calibration preference)
+
+    **Returns**:
+        RecommendationResult with:
+        - ranked: List of ScoredMethod objects (best first)
+        - candidates: Filter result with viable/excluded methods
+        - fallback_used: True if no viable candidates survived
+        - evidence: Per-method data (memory, latency, confidence)
+
+    **Determinism**: Identical inputs always produce identical output. Candidates
+    are sorted before scoring to ensure consistent ranking even in ties.
     """
     opts = options or PlanningOptions()
     fopts = filter_options or CandidateFilterOptions(
@@ -364,9 +389,29 @@ def recommend_strategy(
 ) -> RecommendationResult:
     """One-call convenience: detect hardware, profile model, then plan.
 
-    Mirrors the RFC's ``AutoOptimizer.recommend_strategy`` shape:
-    ``model_config`` is a HF-style config dict for architecture extraction.
-    Pass a prebuilt :class:`ModelProfile` via ``model`` to skip detection.
+    **Summary**: Wraps the full pipeline for stateless, single-use recommendation.
+    ``AutoOptimizer.recommend_strategy`` adds caching on top of this.
+
+    **Arguments**:
+        model_config: HuggingFace-style config dict for architecture extraction
+            (num_layers, hidden_size, num_attention_heads, etc.). One of
+            ``model_config`` or ``model`` must be given.
+        model: Prebuilt ModelProfile; skips config parsing if provided.
+        hardware: Prebuilt HardwareProfile; if None, auto-detects (one-time cost).
+        workload: WorkloadProfile; defaults to balanced 4K context.
+        **plan_kwargs: Forwarded to :func:`plan_strategy` as PlanningOptions
+            (objective_weights, memory_budget_bytes, prefer_no_calibration, etc.)
+
+    **Returns**:
+        RecommendationResult with recommendation.method, ranked alternatives,
+        and evidence for explainability.
+
+    **Example**:
+        >>> result = recommend_strategy(
+        ...     model_config={"num_layers": 32, "hidden_size": 4096},
+        ...     workload=WorkloadProfile(context_length=32768, objective="latency")
+        ... )
+        >>> print(result.ranked[0].method)  # Top recommendation
     """
     if hardware is None:
         hardware = HardwareProfile.detect()

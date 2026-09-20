@@ -100,8 +100,38 @@ def explain(
 ) -> str:
     """Full plain-text explanation of a recommendation.
 
-    :param include_filtering: Also describe what was filtered out.
-    :param warning_limit: Cap per-method caveats listed in the detail.
+    **Output** (sections separated by blank lines):
+    1. **Hardware & Model**: Chip, memory, MLX/macOS versions, model
+       architecture (layers, heads, attention type)
+    2. **Filtering Summary** (optional): How many methods passed/failed, why
+    3. **Recommendation**: Top 1–3 methods with:
+       - Overall score (0–1)
+       - Memory savings % vs fp16
+       - Per-axis scores (memory, latency, throughput, quality)
+       - Evidence type (measured vs analytical)
+       - Warnings/caveats
+
+    **Arguments**:
+        result: RecommendationResult from plan_strategy() or AutoOptimizer
+        include_filtering: Include filtering summary section (default True)
+        warning_limit: Max caveats shown per method (default 2; extras omitted)
+
+    **Example output**:
+        Hardware: Apple M4 (generation 4), 18 GiB available, MLX 0.19.0, macOS 15.1.
+        Model: Qwen/Qwen2.5-7B (qwen), 32 layers, 28q/4kv heads, head_dim 128, GQA
+        attention, compute dtype float16.
+        Workload: 32768-token context, 1024-token generation, batch 1 x 1 concurrent;
+        objective 'latency'.
+
+        Filtered 43 methods down to 18 viable (25 excluded below).
+        Sample exclusions: ... (reasons)
+
+        RECOMMENDATION
+        1. kivi (overall 0.856) — ~81% memory vs fp16; memory 0.92, latency 0.85,
+           throughput 0.80, quality 0.95; evidence: analytical estimate.
+        2. polar (overall 0.823) — ~88% memory vs fp16; ...
+        3. adakv (overall 0.801) — ~79% memory vs fp16; ...
+           ! adakv: quality caveat for long generations (eviction method)
     """
     sections = [explain_hardware_model(result)]
     if include_filtering:

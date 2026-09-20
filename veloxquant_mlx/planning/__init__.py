@@ -74,11 +74,40 @@ FALLBACK_METHOD = "turboquant_rvq"
 
 
 class AutoOptimizer:
-    """One-stop automatic strategy selector with real-time serve-tier guard.
+    """One-stop automatic KV-cache strategy recommender with caching and live validation.
 
-    Deliberately stateful: ``detect_hardware`` / ``profile_model`` results and
-    the benchmark database are cached on the instance so repeated
-    ``recommend_strategy`` calls do not re-detect or re-probe.
+    **Purpose**: Answers "which of the 43 methods should I use?" by profiling
+    hardware/model, filtering incompatible methods, ranking by objective,
+    and validating top choices against the live serve-tier to prevent crashes.
+
+    **Deliberately stateful**: Hardware detection and benchmark database are
+    cached on the instance, so repeated calls don't re-detect or re-probe.
+    This makes it efficient for interactive CLI use and Jupyter notebooks.
+
+    **Design**:
+    1. **Hardware caching**: First ``detect_hardware()`` call introspects once
+    2. **Model profiling**: Each call profiles the given config (no caching; configs vary)
+    3. **Strategy planning**: Filters, estimates memory, scores by objective
+    4. **Serve-tier validation**: Probes top N candidates to catch crash-tier methods
+    5. **Fallback**: If nothing survives, recommends library default (turboquant_rvq)
+
+    **Usage**:
+        >>> optimizer = AutoOptimizer()
+        >>> result = optimizer.recommend_strategy(model_config=hf_config, objective="latency")
+        >>> print(optimizer.explain(result))
+
+    **With benchmarks** (optional speedup):
+        >>> from pathlib import Path
+        >>> optimizer = AutoOptimizer(options=AutoOptimizerOptions(
+        ...     benchmark_db_dir=str(Path.home() / ".cache" / "veloxquant" / "benchmarks")
+        ... ))
+
+    **Testing** (no probing):
+        >>> optimizer = AutoOptimizer(options=AutoOptimizerOptions(probe_top_n=0))
+        >>> result = optimizer.recommend_strategy(model_config=...)  # Fast, but may recommend crash-prone methods
+
+    **Attributes**:
+        options: AutoOptimizerOptions (benchmark_db_dir, probe_top_n)
     """
 
     def __init__(self, options: AutoOptimizerOptions | None = None) -> None:
@@ -131,14 +160,58 @@ class AutoOptimizer:
         objective: str | None = None,
         **kwargs: Any,
     ) -> RecommendationResult:
-        """Recommend + validate the best KV-cache strategy for a model.
+        """Recommend + validate the best KV-cache strategy for a model + workload.
 
-        :param model_config: HF-style config.json for architecture extraction.
-        :param model: Prebuilt :class:`ModelProfile` (skips config parsing).
-        :param workload: :class:`WorkloadProfile`; defaults to balanced.
-        :param objective: Overrides ``workload.objective`` convenience.
-        :param kwargs: Forwarded to :class:`PlanningOptions`
-            (``memory_budget_bytes``, ``prefer_no_calibration``, ...).
+        **Pipeline**:
+        1. Profile model (from config or prebuilt ModelProfile)
+        2. Detect hardware (cached after first call)
+        3. Look up benchmarks in local DB (if enabled)
+        4. Filter incompatible methods (attention type, memory budget)
+        5. Score survivors on 4 axes (memory, latency, throughput, quality)
+        6. Rank by objective weights (memory vs latency vs quality)
+        7. Probe top N candidates with serve-tier (catch crashes)
+        8. Return recommendation + ranked alternatives + explanation
+
+        **Arguments**:
+            model_config: HuggingFace-style config dict for architecture extraction
+                (num_layers, hidden_size, num_attention_heads, etc.).
+                One of model_config or model must be provided.
+            model: Prebuilt ModelProfile; skips config parsing if given.
+            workload: WorkloadProfile with context_length, batch_size, objective.
+                Defaults to balanced 4K context if not given.
+            objective: Convenience override for workload.objective
+                ("memory", "latency", "quality", or "balanced").
+            **kwargs: Additional PlanningOptions forwarded to the planner:
+                - memory_budget_bytes: Hard cap on KV footprint
+                - prefer_no_calibration: Exclude methods needing setup
+                - require_metal: Exclude CPU-fallback implementations
+
+        **Returns**:
+            RecommendationResult with:
+            - recommendation: Top choice (ScoredMethod)
+            - ranked: Full ranked list (1–3 alternatives)
+            - fallback_used: True if no viable method survived
+            - candidates: Filtered set (viable + excluded)
+            - model/hardware/workload: The inputs (for explanation)
+
+        **Examples**:
+
+            Basic recommendation:
+            >>> result = optimizer.recommend_strategy(
+            ...     model_config={"num_layers": 32, "hidden_size": 4096, "num_attention_heads": 32}
+            ... )
+
+            With objective override:
+            >>> result = optimizer.recommend_strategy(model_config=config, objective="latency")
+
+            With memory budget:
+            >>> result = optimizer.recommend_strategy(
+            ...     model_config=config,
+            ...     memory_budget_bytes=8 * 1024**3  # 8 GiB max
+            ... )
+
+            Get explanation:
+            >>> print(optimizer.explain(result))
         """
         if model is None:
             if model_config is None:

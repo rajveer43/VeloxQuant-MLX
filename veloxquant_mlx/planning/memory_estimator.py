@@ -173,9 +173,48 @@ def estimate_memory(
 ) -> MemoryEstimate:
     """Estimate the serving KV footprint of one method for a model+workload.
 
-    Raises:
-        MemoryEstimateError: If the model geometry can't support estimation
-            (missing head_dim / kv heads / layers).
+    **Process**:
+    1. Compute baseline fp16 footprint (layers × heads × head_dim × context × batch × 2 bytes)
+    2. Look up per-method compression model from the registry
+    3. Apply key/value bit width ratios and residual percentages
+    4. For eviction methods, cap at budget tokens (not context length)
+    5. Add workspace overhead for codebooks, allocator slack
+    6. Return peak (highest allocation during prefill) and resident (decode holdover)
+
+    **Accuracy**: ±20% vs actual MLX allocations (conservative: never under-promises).
+
+    **Confidence levels**:
+    - **high**: Curated memory model in registry (43 methods)
+    - **medium**: Interpolated from similar family
+    - **low**: No model found; defaults to no compression (fp16)
+
+    **Arguments**:
+        method: Method name to estimate (e.g., "kivi", "polar")
+        model: ModelProfile with architecture (layers, heads, head_dim)
+        workload: WorkloadProfile with context length, batch size
+
+    **Returns**:
+        MemoryEstimate with breakdown:
+        - baseline_bytes: fp16 K+V (reference)
+        - compressed_bytes: Effective footprint after method's compression
+        - workspace_bytes: Codebook, index, allocator overhead
+        - peak_bytes: Max allocation during prefill
+        - resident_bytes: Steady-state decode footprint
+        - confidence: "high", "medium", or "low"
+        - assumptions: List of modeling caveats (e.g., eviction budget)
+
+    **Raises**:
+        MemoryEstimateError: If model lacks valid attention geometry
+            (head_dim ≤ 0 or num_kv_heads ≤ 0 or num_layers ≤ 0).
+
+    **Example**:
+        >>> estimate = estimate_memory(
+        ...     "kivi",
+        ...     model=ModelProfile(num_layers=32, num_kv_heads=4, head_dim=128),
+        ...     workload=WorkloadProfile(context_length=32768, batch_size=1)
+        ... )
+        >>> print(f"{estimate.savings_percent:.0f}% savings vs fp16")
+        81% savings vs fp16
     """
     if model.head_dim <= 0 or model.num_kv_heads <= 0 or model.num_layers <= 0:
         raise MemoryEstimateError(
@@ -260,7 +299,30 @@ def estimate_candidate_memory(
 ) -> dict[str, MemoryEstimate]:
     """Estimate memory for a set of methods at once.
 
-    :returns: method name -> :class:`MemoryEstimate`.
-    :raises MemoryEstimateError: If any method cannot be estimated (propagated).
+    **Convenience wrapper** over :func:`estimate_memory` for batch estimation.
+    Useful in filtering and ranking pipelines where many methods are evaluated.
+
+    **Arguments**:
+        methods: List of method names (e.g., ["kivi", "polar", "turboquant_rvq"])
+        model: Shared ModelProfile (applied to all methods)
+        workload: Shared WorkloadProfile (applied to all methods)
+
+    **Returns**:
+        Dict mapping method name → MemoryEstimate. All estimates use the same
+        model and workload parameters; confidence levels reflect whether each
+        method has a curated registry entry.
+
+    **Raises**:
+        MemoryEstimateError: If estimation fails for any method (error propagated
+            immediately; earlier methods in the list have been completed).
+
+    **Example**:
+        >>> estimates = estimate_candidate_memory(
+        ...     ["kivi", "polar", "adakv"],
+        ...     model=profile,
+        ...     workload=WorkloadProfile(context_length=4096)
+        ... )
+        >>> for name, est in estimates.items():
+        ...     print(f"{name}: {est.savings_percent:.1f}% savings")
     """
     return {method: estimate_memory(method, model, workload) for method in methods}

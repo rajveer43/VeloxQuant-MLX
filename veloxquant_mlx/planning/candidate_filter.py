@@ -109,14 +109,49 @@ def filter_candidates(
     options: CandidateFilterOptions | None = None,
     methods: Sequence[str] | None = None,
 ) -> CandidateFilterResult:
-    """Return every method capable of serving ``model`` under ``workload``.
+    """Partition methods into viable and excluded based on hardware/model/workload fit.
 
-    :param estimates: Per-method :class:`MemoryEstimate` from the memory
-        estimator; only its ``compressed_bytes`` is consulted for the budget
-        check.
-    :param methods: Restrict filtering to these method names (defaults to the
-        whole registry). Useful for tests and for post-probe re-ranking, where
-        a probe already dropped the crashed set.
+    **Hard filters** (methods excluded entirely):
+    1. Serve tier: Only methods marked servable pass (crashes/broken filtered out)
+    2. Attention type: Method must support model's MHA/GQA/MQA layout
+    3. Memory budget: Estimated KV footprint must fit in available memory
+    4. Calibration (if prefer_no_calibration=True): Skip methods needing setup
+    5. Metal (if require_metal=True): Skip methods without GPU kernel
+
+    **Soft warnings** (methods kept, but with caveats):
+    - No Metal kernel (falls back to CPU reference implementation)
+    - Calibration needed (setup latency, golden-dataset dependency)
+    - Eviction method (quality loss on long generations)
+    - Short context (compression overhead may exceed savings)
+    - Unsupported bit-width (hard to predict memory gains)
+
+    **Arguments**:
+        model: ModelProfile with architecture (attention type, layers, etc.)
+        hardware: HardwareProfile for memory budget
+        workload: WorkloadProfile for context length, batch, objective
+        estimates: Per-method MemoryEstimate dict from memory_estimator
+        options: CandidateFilterOptions with budget, preferences, lookup function
+        methods: Optional list of method names to filter (defaults: all registry)
+
+    **Returns**:
+        CandidateFilterResult with:
+        - viable: List of method names that passed all hard filters
+        - excluded: Dict mapping rejected method → reason
+        - soft_warnings: Dict mapping viable method → list of caveats
+        - method_info: MethodInfo for every method examined (for explainer)
+
+    **Determinism**: Filtering order is deterministic (no randomization).
+
+    **Example**:
+        >>> result = filter_candidates(
+        ...     model=profile,
+        ...     hardware=hw_profile,
+        ...     workload=WorkloadProfile(context_length=32768),
+        ...     estimates=estimates_dict,
+        ...     options=CandidateFilterOptions(memory_budget_bytes=6e9)
+        ... )
+        >>> print(f"Viable: {result.viable}")  # ["kivi", "polar", ...]
+        >>> print(f"Excluded: {result.excluded}")  # {"method": "reason", ...}
     """
     opts = options or CandidateFilterOptions()
     lookup = opts.registry_lookup

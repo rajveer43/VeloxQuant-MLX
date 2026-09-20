@@ -153,8 +153,39 @@ class HardwareProfile:
 def detect_hardware_profile() -> HardwareProfile:
     """Detect a :class:`HardwareProfile` from MLX + stdlib introspection.
 
-    Never raises. MLX failure only widens the ``chip``/``memory`` fields; the
-    OS/version fields still come from stdlib.
+    **Process**:
+    1. Call :func:`_mlx_device_info()` for chip, memory, active allocation
+    2. Call :func:`_stdlib_chip()` as fallback if MLX unavailable
+    3. Extract chip generation from chip name (M1–M4)
+    4. Calculate available memory (total - active)
+    5. Probe MLX version, macOS version, Metal availability
+    6. Look up nominal peak bandwidth from chip generation table
+
+    **Robustness**:
+    - Never raises (all failures result in "unknown" fallback values)
+    - MLX absence only affects chip/memory detection; OS fields come from stdlib
+    - Metal unavailability doesn't fail; conservative assume True
+    - Missing config fields default to None/0
+
+    **Returns**:
+        HardwareProfile with:
+        - chip: Detected Apple Silicon model (e.g., "Apple M4")
+        - chip_generation: Integer 1–4 (0 if unknown)
+        - total_memory_bytes: GB from MLX (None if unavailable)
+        - available_memory_bytes: total - active usage
+        - mlx_version: MLX package version (None if not installed)
+        - macos_version: macOS version string
+        - metal_available: Whether Metal GPU support is available
+        - peak_memory_bandwidth_gbps: Nominal peak (from table, generation-based)
+
+    **Cost**: ~5–10ms (includes sysctl call for chip brand)
+
+    **Example**:
+        >>> hw = detect_hardware_profile()
+        >>> print(f"{hw.chip} (gen {hw.chip_generation})")
+        Apple M4 (gen 4)
+        >>> print(f"Available: {hw.available_memory_bytes / 1e9:.1f} GiB")
+        Available: 18.2 GiB
     """
     info = _mlx_device_info()
     chip = str(info.get("device_name") or _stdlib_chip())
@@ -186,9 +217,43 @@ def measure_bandwidth_gbps(
 ) -> float | None:
     """Measure approximate peak GPU memory bandwidth via a copy benchmark.
 
-    Copies ``bytes_per_transfer`` of fp16 twice per iteration and divides by
-    wall time. Returns None on any failure (no Metal, no MLX), so callers can
-    fall back to the nominal table.
+    **Benchmark**: Allocates a tensor, performs repeated additions (forcing
+    GPU memory copy), measures wall time, and computes GB/s throughput.
+
+    **Method**: For each of N iterations:
+    1. Allocate src tensor (fp16, ``bytes_per_transfer`` bytes)
+    2. Perform add operation (forces GPU read + write)
+    3. Evaluate result (force completion)
+
+    **Calculation**: Bytes moved = (bytes_per_transfer × 2) × iterations
+                     (factor 2 for read + write)
+    Time = wall clock
+    Bandwidth = bytes_moved / time / 1e9 (convert to GB/s)
+
+    **Arguments**:
+        iterations: Number of copy operations (default 32, ~2 seconds on M4)
+        bytes_per_transfer: Size per copy (default 64 MiB)
+
+    **Returns**:
+        Measured bandwidth in GB/s, or None if:
+        - MLX not installed
+        - Metal GPU unavailable
+        - Operation times out
+        - Any exception occurs
+
+    **Cost**: ~1–2 seconds (default parameters)
+
+    **Accuracy**: Rough proxy; affected by GPU clock throttling, thermal state,
+    competing workloads. Used only to override nominal peak bandwidth table
+    when user explicitly requests measurement.
+
+    **Example**:
+        >>> bw = measure_bandwidth_gbps()
+        >>> if bw:
+        ...     print(f"Measured: {bw:.1f} GB/s")
+        ... else:
+        ...     print("Fallback to nominal peak")
+        Measured: 118.5 GB/s
     """
     try:
         import time

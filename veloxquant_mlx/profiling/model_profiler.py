@@ -145,16 +145,62 @@ def profile_model_from_config(
     hidden_size: int | None = None,
     architecture: str | None = None,
 ) -> ModelProfile:
-    """Build a :class:`ModelProfile` from a HF-style config without weights.
+    """Build a :class:`ModelProfile` from a HF-style config without loading weights.
 
-    ``config`` may be a ``config.json`` dict, an object with attribute access
-    (a loaded ``PretrainedConfig``), or None. Extra keyword arguments override
-    whatever the config reports — this is how callers with only partial
-    knowledge (or only the CLI's ``--model-class``) supply the missing pieces.
+    **Process**:
+    1. Extract num_layers from config (keys: num_hidden_layers, num_layers)
+    2. Extract num_query_heads (keys: num_attention_heads, num_heads)
+    3. Extract head_dim (key: head_dim) OR infer from hidden_size / num_query_heads
+    4. Extract num_kv_heads (key: num_key_value_heads); default to num_query_heads (MHA)
+    5. Detect attention type from head ratio (MHA/GQA/MQA)
+    6. Extract dtype, parameter_count, architecture
+    7. Override all extracted values with keyword arguments (if provided)
 
-    Raises:
-        ValueError: If too little is known to compute the attention geometry
-            (no config and no ``head_dim``/``num_query_heads`` overrides).
+    **Config formats supported**:
+    - ``dict``: HuggingFace ``config.json`` as dictionary
+    - ``object``: Loaded ``PretrainedConfig`` (attribute access)
+    - ``None``: Allowed if all critical kwargs are provided
+
+    **Keyword overrides**: All kwargs override config values (even if config present)
+    Useful for partial configs or CLI inputs (--num-layers, --model-class).
+
+    **Model families**:
+    - Llama, Qwen, Mistral, Mixtral, Phi, Gemma, OLMo, Command-R
+    Auto-detected via architecture name or model_type field
+
+    **Attention types**:
+    - **MHA** (Multi-Head Attention): num_kv_heads == num_query_heads
+    - **GQA** (Grouped Query Attention): 1 < num_kv_heads < num_query_heads
+    - **MQA** (Multi-Query Attention): num_kv_heads == 1
+
+    **Arguments**:
+        config: HF config dict/object (optional; can be None if overrides given)
+        model_id: Model identifier (e.g., "Qwen/Qwen2.5-7B"). Extracted from
+            config._name_or_path if not provided.
+        num_layers: Number of transformer layers (override)
+        num_query_heads: Number of query attention heads (override)
+        num_kv_heads: Number of key/value heads (override)
+        head_dim: Attention head dimension (override)
+        dtype: Compute dtype string (override)
+        parameter_count: Total model parameters (override)
+        hidden_size: Model hidden dimension (override)
+        architecture: Architecture slug (override; auto-detected if not given)
+
+    **Returns**:
+        ModelProfile with all extracted/derived fields.
+
+    **Raises**:
+        ValueError: If critical geometry is missing (num_layers, num_query_heads,
+            head_dim cannot be inferred). Keyword overrides help resolve this.
+
+    **Cost**: ~1ms (pure config parsing, no weights loaded)
+
+    **Example**:
+        >>> config = {"num_hidden_layers": 32, "hidden_size": 4096,
+        ...           "num_attention_heads": 32, "architectures": ["QwenForCausalLM"]}
+        >>> profile = profile_model_from_config(config, model_id="Qwen/Qwen2.5-7B")
+        >>> print(f"Architecture: {profile.architecture}")  # "qwen"
+        >>> print(f"Attention: {profile.attention_type}")  # "gqa" or "mha"
     """
     n_layers = _first_int(num_layers, lambda: _get_attr(config, "num_hidden_layers", "num_layers"))
     n_q = _first_int(num_query_heads, lambda: _get_attr(config, "num_attention_heads", "num_heads"))
