@@ -525,6 +525,19 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.90.4 (2026-09-20)
+
+### Performance Improvements
+
+- **scalar-attend**: Cache tiny param buffers, clarify qjl_encode dot loop
+  ([#457](https://github.com/rajveer43/VeloxQuant-MLX/pull/457),
+  [`52846df`](https://github.com/rajveer43/VeloxQuant-MLX/commit/52846df09c4daaf918a674780c6719762b4c524b))
+
+- **scalar-attend**: Extend nsg autotune to batched + predecoded kernels
+  ([#458](https://github.com/rajveer43/VeloxQuant-MLX/pull/458),
+  [`0333dcd`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0333dcd466fef6dbbad1770eb1f94365f438ed01))
+
+
 ## v0.90.3 (2026-09-20)
 
 ### Performance Improvements
