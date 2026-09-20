@@ -38,16 +38,46 @@ class TestOutlierDetector:
         assert not det.is_calibrated
         assert det.n_observed == 0
 
-    def test_repeated_observations_bound_heap_growth(self) -> None:
-        """Regression test for #66: the underlying heap must not grow
-        unboundedly when the same (or unchanged-mean) vectors are observed
-        repeatedly."""
+    def test_repeated_observations_bound_state_growth(self) -> None:
+        """Regression test for #66, updated for the vectorized top-k rewrite.
+
+        #66 was about an underlying heap growing unboundedly (one entry per
+        observation instead of per distinct channel) when the same vector
+        was observed repeatedly. The detector no longer keeps a heap at all
+        — per-token state is a single running ``_sum_abs`` array — so the
+        actual invariant to pin is that its size tracks the channel count
+        ``d``, never the number of observations."""
         det = OutlierDetector(n_outliers=4, n_calib=1)
         d = 16
         k = np.arange(d, dtype=np.float32)
         for _ in range(20):
             det.observe(k)
-        # Running mean of an identical vector is constant after the first
-        # observation, so re-inserts should be no-ops and the heap should
-        # stay at d entries, not grow to 20 * d.
-        assert len(det._index._heap) == d
+        assert det._sum_abs is not None
+        assert det._sum_abs.shape == (d,)
+        # Correctness carries over too: an identical vector observed
+        # repeatedly must still yield the same top-k as a single observation.
+        assert set(det.get_outlier_channels().tolist()) == {12, 13, 14, 15}
+
+    def test_get_outlier_channels_before_any_observation_is_empty(self) -> None:
+        det = OutlierDetector(n_outliers=4, n_calib=1)
+        channels = det.get_outlier_channels()
+        assert channels.shape == (0,)
+        assert channels.dtype == np.int32
+
+    def test_get_outlier_channels_clamps_to_available_channels(self) -> None:
+        """n_outliers larger than the vector's own channel count must not
+        raise (np.argpartition requires kth < len(arr)) — it should return
+        every channel instead of over-asking for more than exist."""
+        det = OutlierDetector(n_outliers=10, n_calib=1)
+        k = np.array([3.0, 1.0, 2.0], dtype=np.float32)
+        det.observe(k)
+        channels = det.get_outlier_channels()
+        assert set(channels.tolist()) == {0, 1, 2}
+
+    def test_get_outlier_channels_returns_sorted_ascending(self) -> None:
+        det = OutlierDetector(n_outliers=3, n_calib=1)
+        k = np.array([9.0, 1.0, 8.0, 2.0, 7.0], dtype=np.float32)
+        det.observe(k)
+        channels = det.get_outlier_channels().tolist()
+        assert channels == sorted(channels)
+        assert channels == [0, 2, 4]
