@@ -194,26 +194,13 @@ class SortedChannelIndex:
         """
         if k <= 0:
             return []
-        result: list[int] = []
-        seen: set[int] = set()
-
-        # Copy the heap data to a temporary structure to avoid mutation
-        heap_copy: MaxHeap[tuple[int, int]] = MaxHeap()
-        heap_copy._data = list(self._heap._data)
-
-        while len(heap_copy) > 0 and len(result) < k:
-            mag, (ch, version) = heap_copy.pop()
-            # Lazy deletion: skip if this exact (magnitude, version) is no
-            # longer the live entry for the channel. Comparing by version
-            # (not just magnitude) means a re-insert with an unchanged
-            # value can never masquerade as a second, distinct live entry.
-            if ch in seen:
-                continue
-            if self._valid.get(ch) == (mag, version):
-                seen.add(ch)
-                result.append(ch)
-
-        return result
+        # _valid is already the deduplicated, up-to-date source of truth for
+        # every live channel (the heap is write-only scaffolding that makes
+        # insert() O(log n) amortized — lazy-deleted stale entries live only
+        # in _heap, never in _valid). top_k is read-only, so it can be
+        # answered directly from _valid without copying or draining the heap.
+        items = sorted(self._valid.items(), key=lambda kv: kv[1][0], reverse=True)
+        return [ch for ch, _ in items[:k]]
 
     def __len__(self) -> int:
         """Return the number of unique channels tracked."""
