@@ -220,6 +220,7 @@ def _fast_quantized_linear(
     layer._w_norms = mx.ones((entry["out_features"], 1), dtype=mx.float32)
     layer._bias = None
     layer._has_bias = entry["has_bias"]
+    layer._w_hat_cache = None
     return layer
 
 

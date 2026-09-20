@@ -91,6 +91,11 @@ class QuantizedLinear(nn.Module):
         self._bias: mx.array | None = None
         self._has_bias = bias
 
+        # Lazily-materialized dequantized weight cache (see __call__). Set to
+        # None whenever _w_indices/_w_norms change so the next forward call
+        # rebuilds it once.
+        self._w_hat_cache: mx.array | None = None
+
     def quantize_weights(self, weight: mx.array, bias: mx.array | None = None) -> None:
         """Compress a weight matrix into this layer.
 
@@ -117,10 +122,18 @@ class QuantizedLinear(nn.Module):
         if bias is not None:
             self._bias = bias.astype(mx.float16)
 
+        self._w_hat_cache = None  # weights changed: invalidate the dequant cache
         mx.eval(self._w_indices, self._w_norms)
 
     def __call__(self, x: mx.array) -> mx.array:
-        """Forward: dequantize weights, rescale by norms, linear projection.
+        """Forward: dequantize weights (cached), rescale by norms, linear projection.
+
+        _w_indices/_w_norms/preconditioner/centroids are all static after
+        quantize_weights() (or reservoir load) -- only x varies call to call.
+        Re-running the dequantize -> unrotate -> rescale chain on every
+        forward pass would redo O(out*in) work per token for a result that
+        never changes, so it's memoized in _w_hat_cache and only rebuilt when
+        the underlying quantized weights are (re)assigned.
 
         Args:
             x: Input of shape (..., in_features).
@@ -128,15 +141,20 @@ class QuantizedLinear(nn.Module):
         Returns:
             Output of shape (..., out_features).
         """
-        # 1. Dequantize + unrotate → unit-norm rows
-        w_rot_hat = self._centroids[self._w_indices]  # (out, in) fp16
-        w_unit = self._preconditioner.apply_inverse(w_rot_hat.astype(mx.float32))  # (out, in) fp32
+        if self._w_hat_cache is None:
+            # 1. Dequantize + unrotate → unit-norm rows
+            w_rot_hat = self._centroids[self._w_indices]  # (out, in) fp16
+            w_unit = self._preconditioner.apply_inverse(
+                w_rot_hat.astype(mx.float32)
+            )  # (out, in) fp32
 
-        # 2. Rescale rows by their original norms
-        w_hat = (w_unit * self._w_norms).astype(mx.float16)  # (out, in) fp16
+            # 2. Rescale rows by their original norms
+            w_hat = (w_unit * self._w_norms).astype(mx.float16)  # (out, in) fp16
+            mx.eval(w_hat)
+            self._w_hat_cache = w_hat
 
         # 3. Linear projection
-        out = x.astype(mx.float16) @ w_hat.T
+        out = x.astype(mx.float16) @ self._w_hat_cache.T
         if self._bias is not None:
             out = out + self._bias
         return out
