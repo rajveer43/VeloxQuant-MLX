@@ -12,6 +12,7 @@ Every value carries ``source: "measured"``. Anything unavailable is reported as
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 #: psutil ships in the `dev` extra, not the runtime deps, so a normal
@@ -20,6 +21,17 @@ try:
     import psutil as _psutil
 except ImportError:  # pragma: no cover - depends on install extras
     _psutil = None
+
+#: The panel polls ``/api/memory`` every 1s (see static/panel.js). Caching the
+#: RSS read for a fraction of that window collapses bursts — e.g. two panel
+#: tabs open at once, or a client retry — into one ``psutil`` call instead of
+#: one per request, without the number ever going stale by more than this
+#: many seconds. Keyed by pid below so a server restart (new pid) always
+#: misses and reads fresh rather than serving the previous process's number.
+_CACHE_TTL_SECONDS = 0.5
+_cache: dict[str, Any] | None = None
+_cache_pid: int | None = None
+_cache_time: float = 0.0
 
 
 def _mlx_memory() -> dict[str, Any]:
@@ -42,7 +54,13 @@ def _mlx_memory() -> dict[str, Any]:
 
 
 def _process_memory(pid: int | None) -> dict[str, Any]:
-    """RSS of the *server* process, not the panel's own."""
+    """RSS of the *server* process, not the panel's own.
+
+    Reads are cached for :data:`_CACHE_TTL_SECONDS` per ``pid`` — see the
+    module-level comment by the cache variables for why.
+    """
+    global _cache, _cache_pid, _cache_time
+
     if pid is None:
         return {"rss_bytes": None, "unavailable_reason": "no server is running"}
 
@@ -52,13 +70,20 @@ def _process_memory(pid: int | None) -> dict[str, Any]:
             "unavailable_reason": "not available in this install",
         }
 
+    now = time.monotonic()
+    if pid == _cache_pid and _cache is not None and (now - _cache_time) < _CACHE_TTL_SECONDS:
+        return dict(_cache)  # copy: caller must not be able to mutate the cached entry
+
     try:
-        return {
+        result: dict[str, Any] = {
             "rss_bytes": int(_psutil.Process(pid).memory_info().rss),
             "unavailable_reason": None,
         }
     except Exception:
-        return {"rss_bytes": None, "unavailable_reason": "not available right now"}
+        result = {"rss_bytes": None, "unavailable_reason": "not available right now"}
+
+    _cache, _cache_pid, _cache_time = result, pid, now
+    return dict(result)
 
 
 def memory_report(pid: int | None = None) -> dict[str, Any]:

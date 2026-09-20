@@ -186,6 +186,61 @@ def test_overrides_reach_the_command_line():
     assert "kivi_group_size=64" in cmd
 
 
+# --- logs -------------------------------------------------------------
+
+
+def test_logs_since_returns_only_new_lines():
+    """``logs(since=n)`` must return lines *after* index ``n``, not from it.
+
+    Also guards the ``itertools.islice`` rewrite in ``ServerSupervisor.logs``
+    (originally ``list(self._logs)[since:]``): both must agree on the exact
+    same slice semantics.
+    """
+    supervisor = ServerSupervisor()
+    for i in range(5):
+        supervisor._log("panel", f"line {i}")
+
+    first = supervisor.logs(since=0)
+    assert first["total"] == 5
+    assert [line["text"] for line in first["lines"]] == [f"line {i}" for i in range(5)]
+
+    second = supervisor.logs(since=3)
+    assert second["total"] == 5
+    assert [line["text"] for line in second["lines"]] == ["line 3", "line 4"]
+
+
+def test_logs_since_at_or_past_total_returns_empty():
+    supervisor = ServerSupervisor()
+    supervisor._log("panel", "only line")
+
+    caught_up = supervisor.logs(since=1)
+    assert caught_up["lines"] == []
+    assert caught_up["total"] == 1
+
+    past_end = supervisor.logs(since=100)
+    assert past_end["lines"] == []
+    assert past_end["total"] == 1
+
+
+def test_logs_total_matches_capacity_once_the_buffer_wraps():
+    """Once the deque hits ``LOG_CAPACITY`` and evicts old lines, ``total``
+    reflects what's actually *retained* (the deque is bounded, not a lifetime
+    counter) — this pins the ``itertools.islice`` rewrite to the exact same
+    semantics as the original ``list(self._logs)[since:]``.
+    """
+    from veloxquant_mlx.ui.supervisor import LOG_CAPACITY
+
+    supervisor = ServerSupervisor()
+    for i in range(LOG_CAPACITY + 10):
+        supervisor._log("panel", f"line {i}")
+
+    result = supervisor.logs(since=0)
+    assert result["total"] == LOG_CAPACITY  # capped, not a lifetime count
+    assert len(result["lines"]) == LOG_CAPACITY  # only what's retained
+    assert result["lines"][0]["text"] == "line 10"  # oldest 10 evicted
+    assert result["lines"][-1]["text"] == f"line {LOG_CAPACITY + 9}"
+
+
 # --- memory ---------------------------------------------------------------
 
 
@@ -238,6 +293,42 @@ def test_absent_memory_is_none_not_zero():
         report["mlx"]["peak_bytes"],
     ):
         assert value is None
+
+
+def test_memory_report_is_not_aliased_across_calls():
+    """The RSS cache must hand back copies, not the cached dict itself.
+
+    ``/api/memory`` is polled every 1s (see static/panel.js), so reads for a
+    live pid are cached briefly (see ``ui/memory.py``). If two calls returned
+    the *same* dict object, a caller mutating one report (or json-encoding
+    frameworks that don't) could corrupt what the next poll reads back.
+    """
+    import os
+
+    first = memory_report(pid=os.getpid())
+    first["process"]["rss_bytes"] = -1  # poison it if it's the live cache entry
+    second = memory_report(pid=os.getpid())
+    assert second["process"]["rss_bytes"] != -1
+
+
+def test_memory_cache_does_not_bleed_across_pids():
+    """A cached reading for one pid must never be served for a different one.
+
+    Otherwise stopping a server and immediately starting a new one (new pid,
+    reusing the panel process) could show the previous process's memory for
+    up to the cache TTL.
+    """
+    import os
+
+    real_pid = os.getpid()
+    real_rss = memory_report(pid=real_pid)["process"]["rss_bytes"]  # warms the cache
+
+    # A pid psutil can't find must report "unavailable", never the cached
+    # real process's RSS, even though the cache is still fresh.
+    bogus_pid = -1
+    bogus = memory_report(pid=bogus_pid)["process"]
+    assert bogus["rss_bytes"] != real_rss
+    assert bogus["rss_bytes"] is None
 
 
 # --- model picker ---------------------------------------------------------
