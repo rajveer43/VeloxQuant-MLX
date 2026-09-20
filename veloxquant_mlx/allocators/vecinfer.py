@@ -199,13 +199,18 @@ def _kmeans_lloyd(
     chunk = max(1024, min(16384, n_samples))
     prev_inertia = np.inf
     for _ in range(max_iter):
-        # Assign step
+        # Assign step. Uses the expanded squared-distance identity
+        # |x-c|^2 = |x|^2 - 2 x.c + |c|^2 computed via matmul (BLAS) instead
+        # of materializing the full [chunk, n_centroids, sub_dim] broadcast
+        # difference — same assignments, far fewer FLOPs and no giant
+        # temporary array for realistic sub_dim/n_centroids sizes.
+        c_sq = np.einsum("ij,ij->i", centroids, centroids)[None, :]
         labels = np.empty(n_samples, dtype=np.int32)
         for start in range(0, n_samples, chunk):
             stop = min(start + chunk, n_samples)
-            # [chunk, n_centroids] distance
-            diff = x[start:stop, None, :] - centroids[None, :, :]
-            d2 = np.einsum("ijk,ijk->ij", diff, diff)
+            x_chunk = x[start:stop]
+            x_sq = np.einsum("ij,ij->i", x_chunk, x_chunk)[:, None]
+            d2 = x_sq + c_sq - 2.0 * (x_chunk @ centroids.T)
             labels[start:stop] = np.argmin(d2, axis=1)
 
         # Update step
@@ -280,7 +285,7 @@ def quantize_vq(x: mx.array, codebook: mx.array, sub_dim: int) -> mx.array:
     # Chunked argmin to keep memory bounded for large codebooks
     chunk = max(1, 1_000_000 // max(n_centroids, 1))
     n_flat = flat.shape[0]
-    out = mx.zeros((n_flat,), dtype=mx.int32)
+    chunks: list[mx.array] = []
     for start in range(0, n_flat, chunk):
         stop = min(start + chunk, n_flat)
         sub = flat[start:stop]  # [c, sub_dim]
@@ -288,11 +293,8 @@ def quantize_vq(x: mx.array, codebook: mx.array, sub_dim: int) -> mx.array:
         diff = sub[:, None, :] - cb[None, :, :]
         d2 = mx.sum(diff * diff, axis=-1)
         idx = mx.argmin(d2, axis=-1).astype(mx.int32)
-        if start == 0 and stop == n_flat:
-            out = idx
-        else:
-            # Build via concat — small number of chunks expected
-            out = idx if start == 0 else mx.concatenate([out, idx], axis=0)
+        chunks.append(idx)
+    out = chunks[0] if len(chunks) == 1 else mx.concatenate(chunks, axis=0)
     return out.reshape(*leading, n_sub)
 
 
