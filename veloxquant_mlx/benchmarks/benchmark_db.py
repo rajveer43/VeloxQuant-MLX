@@ -102,17 +102,20 @@ class BenchmarkRecord:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> BenchmarkRecord:
+        """Build a record from its JSON-decoded dict form (inverse of :meth:`to_dict`)."""
         rec = cls(**{k: v for k, v in data.items() if k != "workload"})
         rec.workload = workload_from_dict(data.get("workload") or {})
         return rec
 
     def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable dict form of this record, including the workload."""
         data = asdict(self)
         data["workload"] = self.workload.to_dict()
         return data
 
     @property
     def savings_percent(self) -> float:
+        """Memory savings vs the fp16 baseline, as a percentage (0..100)."""
         return max(0.0, (1.0 - self.memory_reduction) * 100.0)
 
     def match_score(self, other: BenchmarkRecord | BenchmarkMatchQuery) -> float:
@@ -162,6 +165,7 @@ def _relative_gap(a: int, b: int) -> float:
 
 def _chip_gap_severity(a: str, b: str) -> float:
     def gen(name: str) -> int:
+        """Extract the Apple-Silicon generation number from a chip name (e.g. ``"M4"`` -> 4)."""
         import re
 
         m = re.search(r"M([1-9])", name.upper())
@@ -260,9 +264,11 @@ class BenchmarkDatabase:
 
     @property
     def records(self) -> dict[str, BenchmarkRecord]:
+        """Shallow copy of all stored records, keyed by record id."""
         return dict(self._records)
 
     def find(self, record_id: str) -> BenchmarkRecord | None:
+        """Look up a single record by id, or ``None`` if it isn't stored."""
         return self._records.get(record_id)
 
     def find_best_match(
@@ -385,6 +391,7 @@ class BenchmarkDatabase:
         return self.upsert(rec)
 
     def remove(self, record_id: str) -> bool:
+        """Delete a record by id and persist. Returns ``False`` if it wasn't found."""
         if record_id not in self._records:
             return False
         del self._records[record_id]
@@ -392,5 +399,6 @@ class BenchmarkDatabase:
         return True
 
     def clear(self) -> None:
+        """Delete all records and persist the now-empty store."""
         self._records = {}
         self.save()

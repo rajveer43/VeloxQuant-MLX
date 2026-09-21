@@ -98,6 +98,14 @@ def run(
     n_calls: int,
     correctness: bool,
 ) -> None:
+    """Sweep ``attend`` latency across seq lengths and optimization configs, printing a table.
+
+    For each ``seq_len`` in ``seq_lens``, builds a cache under each config in
+    ``configs`` (baseline/vectorized/fused/all_opts, minus fused variants for
+    ``turboquant_mse``), measures mean attend latency over ``n_calls`` calls,
+    prints per-config speedup vs baseline and memory footprint, and (when
+    ``correctness`` is set) cross-checks the first two configs' outputs.
+    """
     import mlx.core as mx
 
     rng = np.random.default_rng(seed)
@@ -158,6 +166,7 @@ def run(
 
 
 def main() -> None:
+    """CLI entry point: parse args and run the attend latency sweep."""
     parser = argparse.ArgumentParser(description="TurboQuant attend latency sweep")
     parser.add_argument(
         "--method", default="turboquant_prod", choices=["turboquant_prod", "turboquant_mse"]

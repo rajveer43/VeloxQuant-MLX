@@ -68,6 +68,7 @@ LONG_CTX_LENS = [512, 1024, 2048, 4096, 8192, 16384, 32768]
 
 
 def load_model():
+    """Load ``MODEL_ID`` (Falcon3-7B-Instruct-4bit) via mlx-lm and return (model, tokenizer)."""
     from mlx_lm import load
 
     print(f"Loading {MODEL_ID} ...")
@@ -79,6 +80,7 @@ def load_model():
 
 
 def compute_perplexity(model, tokenizer, text: str, max_tokens: int = 180) -> float:
+    """Compute perplexity of model on text (causal LM, single forward pass, stride=1)."""
     tokens = tokenizer.encode(text)[:max_tokens]
     if len(tokens) < 4:
         return float("nan")
@@ -245,6 +247,12 @@ def bench_throughput(n_iter: int = 20) -> dict:
 
 
 def save_figures(throughput: dict, mem_stats: list, ppl: dict) -> None:
+    """Save the 5 comparison figures (latency, memory, compression, byte breakdown, summary table).
+
+    ``throughput`` maps S_kv to per-method latency, ``mem_stats`` is a list of
+    per-sequence-length memory dicts from :func:`simulate_memory`, and ``ppl``
+    holds the fp16 baseline perplexity. Writes to ``FIGURES_DIR``.
+    """
     S_kvs = list(throughput.keys())
 
     # Fig 1: decode latency comparison
@@ -497,6 +505,7 @@ def run_long_context_experiment(n_iter: int = 15) -> dict:
 
 
 def save_long_context_figures(lc: dict) -> None:
+    """Save the long-context latency/memory figures from :func:`run_long_context_experiment`'s output."""
     seqs = lc["seq_lens"]
     t_fp16 = lc["fp16_ms"]
     t_rbfp = lc["rb_fp16v_ms"]

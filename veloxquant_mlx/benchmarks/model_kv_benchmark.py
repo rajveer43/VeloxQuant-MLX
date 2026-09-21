@@ -65,6 +65,7 @@ compared to naive NumPy implementations running on the CPU cores.
 
 
 def load_model():
+    """Load ``MODEL_ID`` (LLaMA-3.1-8B-Instruct-4bit) via mlx-lm and return (model, tokenizer)."""
     from mlx_lm import load
 
     print(f"Loading {MODEL_ID} ...")
@@ -75,6 +76,7 @@ def load_model():
 
 
 def tokenize(tokenizer, text: str) -> mx.array:
+    """Encode text into an int32 token array of shape ``[1, T]``."""
     ids = tokenizer.encode(text)
     return mx.array(ids, dtype=mx.int32)[None]  # [1, T]
 
@@ -92,6 +94,10 @@ class KVMemoryTracker:
         self._snapshots: list[int] = []
 
     def snapshot(self, model):
+        """Sum ``memory_bytes()`` across every layer's attention KV cache and record it.
+
+        Returns the total bytes for this snapshot and updates ``peak_bytes``.
+        """
         total = 0
         layers = model.model.layers if hasattr(model, "model") else getattr(model, "layers", [])
         for layer in layers:
@@ -287,6 +293,7 @@ class CommVQKVStore:
         return k_new[None]
 
     def memory_bytes(self) -> int:
+        """Estimate stored key bytes: packed uint8 CommVQ indices once trained, else fp16."""
         n_stored = len(self._k_indices)
         if self._trained:
             return n_stored * self._n_heads * self._q._n_cb  # uint8 indices
@@ -441,6 +448,12 @@ def run_comm_vq(model, tokenizer) -> dict:
 
 
 def save_figures(results: dict) -> None:
+    """Save the 4 comparison figures (memory, compression, perplexity, latency) to ``FIGURES_DIR``.
+
+    ``results`` maps each method key in ``METHODS`` to its stat dict (``ppl``,
+    ``kv_mb``, ``compression``, ``latency_ms_per_tok``) as produced by the
+    ``run_*`` functions.
+    """
     methods = list(results.keys())
     labels = [METHODS[m]["label"] for m in methods]
     colors = [METHODS[m]["color"] for m in methods]

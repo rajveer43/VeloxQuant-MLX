@@ -192,6 +192,7 @@ class _StickyHashPool:
         self._arrivals_per_shard = [0] * n_shards
 
     def on_arrival(self, owner: int, t: int) -> tuple[bool, int]:
+        """Route to the owner's fixed hash shard, evicting LRU on capacity. Returns (was_hit, shard_used)."""
         shard = owner % self.n_shards
         self._arrivals_per_shard[shard] += 1
         bucket = self._resident[shard]
@@ -349,6 +350,7 @@ def run_benchmark(
 
 
 def format_summary_table(results: dict[str, PolicyResult], gini: float) -> str:
+    """Render a plain-text table of hit rate, imbalance, and max shard load per policy."""
     header = f"{'Policy':<14}{'Hit rate':>10}{'Imbalance':>12}{'Max shard load':>16}"
     sep = "-" * len(header)
     lines = [f"Workload Gini coefficient: {gini:.3f}", header, sep]
@@ -359,6 +361,7 @@ def format_summary_table(results: dict[str, PolicyResult], gini: float) -> str:
 
 
 def results_to_json(results: dict[str, PolicyResult], gini: float) -> dict[str, Any]:
+    """Build the JSON-serializable results dict: workload Gini plus each policy's stats."""
     return {"gini": gini, "policies": {name: asdict(r) for name, r in results.items()}}
 
 
@@ -368,6 +371,7 @@ def results_to_json(results: dict[str, PolicyResult], gini: float) -> dict[str, 
 
 
 def main() -> None:
+    """CLI entry point: run the CacheRoute benchmark and print/optionally save its results."""
     parser = argparse.ArgumentParser(
         description="CacheRoute semi-synthetic admission/placement benchmark"
     )

@@ -102,6 +102,12 @@ def _numpy_comm_vq_decode(
 
 
 def run_benchmark(n_iter: int = 30) -> dict:
+    """Benchmark CommVQ decode (MLX vs NumPy reference) over KV sequence length.
+
+    Sweeps S_kv over ``[64, 128, 256, 512, 1024, 2048, 4096]`` at fixed D=128,
+    H=8, n_cb=4, b=4. Returns a results dict with per-S_kv MLX/NumPy latency
+    (ms) and the resulting speedup.
+    """
     D = 128
     H = 8
     n_cb = 4
@@ -166,6 +172,7 @@ def run_benchmark(n_iter: int = 30) -> dict:
 
 
 def save_figures(results: dict) -> None:
+    """Save the CommVQ decode latency and speedup figures from :func:`run_benchmark`'s output."""
     S_kvs = results["S_kvs"]
     t_mlx = results["mlx_decode_ms"]
     t_np = results["numpy_decode_ms"]
