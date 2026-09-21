@@ -525,6 +525,27 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.1 (2026-09-21)
+
+### Bug Fixes
+
+- **deps**: Split dev extra to exclude release tooling
+  ([#477](https://github.com/rajveer43/VeloxQuant-MLX/pull/477),
+  [`d014a41`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d014a412e76ba6fc74f7bba794693250f0126bba))
+
+### Continuous Integration
+
+- **copyright-watch**: Guard against a missing RESEND_API_KEY secret
+  ([#479](https://github.com/rajveer43/VeloxQuant-MLX/pull/479),
+  [`ce94bc3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ce94bc3edc3795ccb80518d5526cd9177c2633ee))
+
+### Documentation
+
+- Add typing status section to CONTRIBUTING.md
+  ([#478](https://github.com/rajveer43/VeloxQuant-MLX/pull/478),
+  [`6d01852`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6d018521fec7cdad3f4766ace5d74b47d90953d2))
+
+
 ## v0.91.0 (2026-09-21)
 
 ### Bug Fixes
