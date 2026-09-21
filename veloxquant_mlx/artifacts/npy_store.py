@@ -75,6 +75,7 @@ class NpyArtifactStore(ArtifactStore):
         return self._root / f"rotation_d{d}_seed{seed}.npy"
 
     def load_rotation_matrix(self, d: int, seed: int) -> Any:
+        """Load the rotation matrix at ``rotation_d{d}_seed{seed}.npy``, raising if absent."""
         path = self._rotation_path(d, seed)
         if not path.exists():
             raise ArtifactNotFoundError(
@@ -87,6 +88,7 @@ class NpyArtifactStore(ArtifactStore):
         return mx.array(arr)
 
     def save_rotation_matrix(self, Pi: Any, d: int, seed: int) -> None:
+        """Atomically write ``Pi`` (cast to fp16) to ``rotation_d{d}_seed{seed}.npy``, silently overwriting any prior file."""
         path = self._rotation_path(d, seed)
         arr = np.array(Pi, dtype=np.float16)
         _atomic_save(path, arr)
@@ -99,6 +101,7 @@ class NpyArtifactStore(ArtifactStore):
         return self._root / f"codebook_{distribution}_b{b}_d{d}.npy"
 
     def load_codebook(self, distribution: str, b: int, d: int) -> Any:
+        """Load the codebook at ``codebook_{distribution}_b{b}_d{d}.npy``, raising if absent."""
         path = self._codebook_path(distribution, b, d)
         if not path.exists():
             raise ArtifactNotFoundError(
@@ -111,6 +114,7 @@ class NpyArtifactStore(ArtifactStore):
         return mx.array(arr)
 
     def save_codebook(self, cb: Any, distribution: str, b: int, d: int) -> None:
+        """Atomically write ``cb`` (cast to fp16) to ``codebook_{distribution}_b{b}_d{d}.npy``, silently overwriting any prior file."""
         path = self._codebook_path(distribution, b, d)
         arr = np.array(cb, dtype=np.float16)
         _atomic_save(path, arr)
@@ -123,6 +127,7 @@ class NpyArtifactStore(ArtifactStore):
         return self._root / f"jl_d{d}_m{m}_seed{seed}.npy"
 
     def load_jl_matrix(self, d: int, m: int, seed: int) -> Any:
+        """Load the JL matrix at ``jl_d{d}_m{m}_seed{seed}.npy``, raising if absent."""
         path = self._jl_path(d, m, seed)
         if not path.exists():
             raise ArtifactNotFoundError(
@@ -135,6 +140,7 @@ class NpyArtifactStore(ArtifactStore):
         return mx.array(arr)
 
     def save_jl_matrix(self, S: Any, d: int, m: int, seed: int) -> None:
+        """Atomically write ``S`` (cast to fp16) to ``jl_d{d}_m{m}_seed{seed}.npy``, silently overwriting any prior file."""
         path = self._jl_path(d, m, seed)
         arr = np.array(S, dtype=np.float16)
         _atomic_save(path, arr)
@@ -144,6 +150,13 @@ class NpyArtifactStore(ArtifactStore):
     # ------------------------------------------------------------------
 
     def exists(self, artifact_type: str, **kwargs: Any) -> bool:
+        """Check whether a rotation/codebook/JL artifact file is already on disk.
+
+        ``artifact_type`` must be one of ``"rotation"``, ``"codebook"``, or
+        ``"jl"``; ``kwargs`` must supply that type's identifying parameters
+        (e.g. ``d=``/``seed=`` for a rotation). Returns ``False`` for an
+        unrecognized ``artifact_type`` rather than raising.
+        """
         if artifact_type == "rotation":
             return self._rotation_path(kwargs["d"], kwargs["seed"]).exists()
         if artifact_type == "codebook":
