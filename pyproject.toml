@@ -220,6 +220,40 @@ line-length = 100
 #     these for real would mean breaking interface contracts across the
 #     quantizer/cache factory pattern; enabling the rule would mostly
 #     produce scoped noqas rather than genuine fixes.
+#   - D (pydocstyle): NOT added to this global `select`. #424 asked for a
+#     *scoped* D-rule check covering only __all__-exported and CLI-entry-
+#     point symbols, mirroring the N/ARG rejections above -- but a literal
+#     "every __all__-exported module" reading turned out to cover ~155 of
+#     this package's 256 source files (nearly the whole tree, since
+#     virtually every module here exports one), which would apply D just
+#     as broadly as the repo-wide adoption #424 itself rejects.
+#     `[tool.ruff.lint.per-file-ignores]` also can't express "ignore
+#     everywhere except these paths" the way one might expect: ruff unions
+#     the ignore sets of every pattern that matches a given file, so a
+#     wildcard `"*" = ["D101", ...]` can never be narrowed back by a more
+#     specific pattern with an empty list -- the wildcard's ignores still
+#     apply. Getting the scope right needs the file list on the *select*
+#     side, not on a per-file *ignore*, so it's run as a separate, narrowly-
+#     targeted invocation instead -- see the `docstring-coverage` job in
+#     .github/workflows/lint.yml, which runs
+#     `ruff check --select D101,D102,D103 <the scoped paths>` directly
+#     against exactly the surfaces #424's own Specification named: the CLI
+#     entry point (__main__.py, cli/*.py), the control-panel HTTP/process
+#     surface (ui/*.py), and the artifact-persistence contract
+#     (artifacts/*.py) -- "a new contributor or user hits first" plus the
+#     "what does this promise, not just what does it do" read/write
+#     contract, not every module with a dunder export.
+#
+#     That invocation selects only D101/D102/D103 (missing docstring on a
+#     public class/function/method), not the full D rule family:
+#     D400/D401/D415/D107 etc. enforce docstring *prose* style (imperative
+#     mood, terminal punctuation, __init__ coverage) and fired false
+#     positives even on already-thorough docstrings here (e.g.
+#     cli/benchmark.py's one-line module docstring, or D107 wanting an
+#     __init__ docstring ServerSupervisor's class docstring already
+#     covers) -- exactly the kind of pedantic mismatch that got N rejected
+#     above. D101-103 alone is a direct, low-noise check for "is this
+#     missing", which is what #424 was actually about.
 select = ["E", "F", "I", "W", "UP", "B", "PTH", "RET", "SIM", "C4"]
 # E501 (line too long) stays ignored: checked all 25 lines over 100 chars
 # in veloxquant_mlx/ as of the audit that added the rule groups above --

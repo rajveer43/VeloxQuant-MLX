@@ -57,6 +57,31 @@ jobs:
       - name: Lint the shipped package (blocking)
         run: pipx run ruff check veloxquant_mlx --exclude veloxquant_mlx/tests
 
+  # BLOCKING. Scoped D101/D102/D103 (missing-docstring) check for the surfaces
+  # #424 named by path: the CLI entry point, the control-panel HTTP/process
+  # surface, and the artifact-persistence contract. See the D rejection-and-
+  # scope note in [tool.ruff.lint] (pyproject.toml) for why this runs as its
+  # own invocation instead of living in that global `select`/per-file-ignores:
+  # ruff unions per-file-ignore sets across matching patterns, so a wildcard
+  # ignore can't be narrowed back per-path from there -- the scope has to be
+  # expressed as the paths given to this command instead. Verified clean (0
+  # violations) as of #481/#482/#483/#484, the PRs that backfilled every
+  # docstring #424 flagged; this job exists to keep it that way.
+  docstring-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check docstring coverage on CLI/UI/artifact-store surfaces (blocking)
+        run: |
+          pipx run ruff check --select D101,D102,D103 \
+            veloxquant_mlx/__main__.py \
+            veloxquant_mlx/cli \
+            veloxquant_mlx/ui \
+            veloxquant_mlx/artifacts
+
   # Reporting-only. scripts/ and benchmark_scripts/ are developer tooling,
   # excluded from the wheel -- see #435, which already cleared their 167
   # verified-false-positive B023/E402 hits via documented per-file-ignores.
