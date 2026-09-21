@@ -176,6 +176,7 @@ class SnapKVKVCache(_MLXKVCache):
 
     @offset.setter
     def offset(self, value: int) -> None:
+        """Restore the retained row count (base-class bookkeeping only; see the getter for the true/retained distinction)."""
         self._row_offset = value
 
     # ------------------------------------------------------------------
@@ -324,6 +325,7 @@ class SnapKVKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Prefill: score and evict down to the retention budget (SnapKV window-attention proxy), deferred to after this step's own attention. Decode: pass through unevicted."""
         if self._storage_dtype_name is None:
             self._storage_dtype_name = (
                 "bfloat16"
