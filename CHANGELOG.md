@@ -525,6 +525,46 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.0 (2026-09-21)
+
+### Bug Fixes
+
+- **test**: Make hardware detection test resilient to paravirtual CI environment
+  ([`f02fb38`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f02fb38667c436fc1178c6afd6e2e1ada299ecd1))
+
+- **test**: Make hardware detection test resilient to paravirtual CI environment
+  ([#471](https://github.com/rajveer43/VeloxQuant-MLX/pull/471),
+  [`657869b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/657869be8e70b497b6b64059027e9117cd9a18cf))
+
+### Code Style
+
+- **lint**: Apply ruff formatting to documentation docstrings
+  ([`68a3c7b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/68a3c7b2f40acb8f8de7baf01005021b238fac0c))
+
+### Documentation
+
+- Add comprehensive docstring documentation for automatic strategy selection
+  ([#471](https://github.com/rajveer43/VeloxQuant-MLX/pull/471),
+  [`657869b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/657869be8e70b497b6b64059027e9117cd9a18cf))
+
+- Add comprehensive docstring documentation for automatic strategy selection
+  ([#470](https://github.com/rajveer43/VeloxQuant-MLX/pull/470),
+  [`17187c4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/17187c4cee75c6c71ce81c47ca1797374a80fd20))
+
+- **readme**: Add total PyPI downloads badge
+  ([`b7f6921`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b7f6921a5031d746be268b80ad301fbfab51ef6a))
+
+### Features
+
+- **planning**: Implement automatic KV cache strategy selection (RFC #469)
+  ([#471](https://github.com/rajveer43/VeloxQuant-MLX/pull/471),
+  [`657869b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/657869be8e70b497b6b64059027e9117cd9a18cf))
+
+- **planning**: Implement automatic KV cache strategy selection (RFC #469)
+  ([#470](https://github.com/rajveer43/VeloxQuant-MLX/pull/470),
+  [`17187c4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/17187c4cee75c6c71ce81c47ca1797374a80fd20))
+
+
 ## v0.90.8 (2026-09-20)
 
 ### Bug Fixes

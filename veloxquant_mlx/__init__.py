@@ -131,4 +131,4 @@ __all__ = [
     "SessionRate",
 ]
 
-__version__ = "0.90.8"
+__version__ = "0.91.0"
