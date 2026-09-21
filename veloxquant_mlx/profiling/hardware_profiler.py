@@ -53,9 +53,7 @@ def _stdlib_chip() -> str:
         import subprocess
 
         brand = (
-            subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"])
-            .decode()
-            .strip()
+            subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"]).decode().strip()
         )
         if "'" in brand:  # the tool may print "Apple M4"
             brand = brand.strip("'")
@@ -206,9 +204,7 @@ def detect_hardware_profile() -> HardwareProfile:
         mlx_version=_mlx_version(),
         macos_version=_macos_version(),
         metal_available=has_metal,
-        peak_memory_bandwidth_gbps=(
-            _BASE_BANDWIDTH_GBPS.get(generation) if generation else None
-        ),
+        peak_memory_bandwidth_gbps=(_BASE_BANDWIDTH_GBPS.get(generation) if generation else None),
     )
 
 

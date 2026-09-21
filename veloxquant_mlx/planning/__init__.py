@@ -122,9 +122,7 @@ class AutoOptimizer:
             self._hardware = HardwareProfile.detect()
         return self._hardware
 
-    def profile_model(
-        self, config: dict[str, Any] | None = None, **overrides: Any
-    ) -> ModelProfile:
+    def profile_model(self, config: dict[str, Any] | None = None, **overrides: Any) -> ModelProfile:
         """Profile a model from a HF-style config dict + optional overrides."""
         return profile_model_from_config(config, **overrides)
 
@@ -237,9 +235,7 @@ class AutoOptimizer:
                 if key in PlanningOptions.__dataclass_fields__
             },
         )
-        result = plan_strategy(
-            model, hardware, workload, options=planning
-        )
+        result = plan_strategy(model, hardware, workload, options=planning)
 
         # Validate the top picks with the real serve-tier probe and re-run
         # excluding any that crash at request time.

@@ -80,18 +80,12 @@ class CandidateFilterResult:
         return {
             "viable": list(self.viable),
             "excluded": dict(self.excluded),
-            "soft_warnings": {
-                name: list(reasons) for name, reasons in self.soft_warnings.items()
-            },
-            "methods": {
-                name: info.to_dict() for name, info in self.method_info.items()
-            },
+            "soft_warnings": {name: list(reasons) for name, reasons in self.soft_warnings.items()},
+            "methods": {name: info.to_dict() for name, info in self.method_info.items()},
         }
 
 
-def _memory_budget(
-    options: CandidateFilterOptions, hardware: HardwareProfile
-) -> int | None:
+def _memory_budget(options: CandidateFilterOptions, hardware: HardwareProfile) -> int | None:
     if options.memory_budget_bytes is not None:
         return options.memory_budget_bytes
     avail = hardware.available_memory_bytes
@@ -206,16 +200,12 @@ def filter_candidates(
             warnings.append(note)
 
         if opts.require_metal and not caps.has_metal_kernel:
-            result.excluded[name] = (
-                "no Metal kernel and require-metal is set (reference path only)"
-            )
+            result.excluded[name] = "no Metal kernel and require-metal is set (reference path only)"
             continue
 
         # Soft warnings (never excluding).
         if not caps.has_metal_kernel:
-            warnings.append(
-                "no Metal kernel; uses the reference/fallback implementation path"
-            )
+            warnings.append("no Metal kernel; uses the reference/fallback implementation path")
         if caps.requires_calibration and model.dtype == "float16":
             warnings.append(
                 "calibration is against fp16 activations; low-bit gains may be "
@@ -232,9 +222,7 @@ def filter_candidates(
             WorkloadObjective.MEMORY,
             WorkloadObjective.THROUGHPUT,
         ):
-            warnings.append(
-                "no supported-bit-width declared; memory gains are hard to predict"
-            )
+            warnings.append("no supported-bit-width declared; memory gains are hard to predict")
 
         result.viable.append(name)
         if warnings:

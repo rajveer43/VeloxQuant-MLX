@@ -73,10 +73,7 @@ def explain_filtering(result: RecommendationResult) -> str:
     ]
     if n_excluded:
         top = sorted(cand.excluded.items(), key=lambda kv: kv[0])[:3]
-        lines.append(
-            "Sample exclusions: "
-            + "; ".join(f"{name}: {reason}" for name, reason in top)
-        )
+        lines.append("Sample exclusions: " + "; ".join(f"{name}: {reason}" for name, reason in top))
     warned = {name for name, warns in cand.soft_warnings.items() if warns}
     if warned:
         shown = ", ".join(sorted(warned)[:5])

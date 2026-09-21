@@ -228,7 +228,9 @@ def profile_model_from_config(
             f"query_heads={n_q}, head_dim={d}."
         )
 
-    n_kv = _first_int(num_kv_heads, lambda: _get_attr(config, "num_key_value_heads", "num_kv_heads"))
+    n_kv = _first_int(
+        num_kv_heads, lambda: _get_attr(config, "num_key_value_heads", "num_kv_heads")
+    )
     if n_kv is None:
         n_kv = n_q  # MHA default
 
