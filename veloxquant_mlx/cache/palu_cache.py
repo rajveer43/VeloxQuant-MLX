@@ -170,6 +170,7 @@ class _TensorLowRank:
     # ------------------------------------------------------------------
     @property
     def stored_rank(self) -> int:
+        """Latent rank actually stored (uniform across head groups after truncation)."""
         return self._r
 
     def latent_bytes(self, n_tokens: int, H: int) -> int:
@@ -197,6 +198,7 @@ class _TensorLowRank:
 
     @property
     def assigned_avg_bits(self) -> float:
+        """Effective per-channel bit-width, scaled by rank/head_dim to account for the low-rank projection."""
         D = self._mu[0].shape[0] if self._mu else 0
         if self._r == 0 or D == 0:
             return 16.0
@@ -270,6 +272,7 @@ class PALUKVCache(_MLXKVCache):
     # mlx_lm protocol — true latent storage (parent fp16 buffer bypassed)
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Fit group-head SVD projections on prefill, else project + mixed-bit quantize into the latent buffers; return reconstructed fp16 K/V."""
         B, H, S, D = keys.shape
         self._H = H
 
@@ -308,17 +311,21 @@ class PALUKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def offset(self) -> int:  # type: ignore[override]
+        """Number of tokens accumulated so far (own counter — parent ring buffer is bypassed)."""
         return self._palu_offset
 
     @offset.setter
     def offset(self, v: int) -> None:
+        """Restore the token offset (e.g. from a saved cache state)."""
         self._palu_offset = int(v)
 
     def size(self) -> int:
+        """Number of tokens currently stored."""
         return self._palu_offset
 
     @property
     def state(self):  # type: ignore[override]
+        """Last reconstructed fp16 (keys, values), since the true-latent buffers bypass the parent ring buffer ``mlx_lm`` reads directly."""
         if self._last_state is None:
             empty = mx.zeros((1, self._H, 0, self._D), dtype=mx.float16)
             return empty, empty
@@ -326,14 +333,17 @@ class PALUKVCache(_MLXKVCache):
 
     @state.setter
     def state(self, v) -> None:
+        """Restore ``(keys, values)`` as the last reconstructed state and resync the offset."""
         k, v_ = v
         self._last_state = (k, v_)
         self._palu_offset = int(k.shape[2])
 
     def is_trimmable(self) -> bool:
+        """Whether this cache supports trimming."""
         return True
 
     def trim(self, n: int) -> int:
+        """Drop the ``n`` most-recently-added tokens from the latent buffers; returns the number actually dropped."""
         n = min(self._palu_offset, n)
         if n <= 0:
             return 0
@@ -347,6 +357,7 @@ class PALUKVCache(_MLXKVCache):
 
     @property
     def nbytes(self) -> int:
+        """Total realized stored bytes (compressed key + value latents)."""
         return self._compressed_key_bytes + self._compressed_value_bytes
 
     # ------------------------------------------------------------------
@@ -354,22 +365,27 @@ class PALUKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for the compressed key cache (mixed-bit latents + projection basis, all heads/batches)."""
         return self._compressed_key_bytes
 
     @property
     def compressed_value_bytes(self) -> int:
+        """Realized stored bytes for the compressed value cache (mixed-bit latents + projection basis, all heads/batches)."""
         return self._compressed_value_bytes
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._fp16_key_bytes
 
     @property
     def fp16_value_bytes(self) -> int:
+        """Hypothetical fp16 value cost if nothing were compressed."""
         return self._fp16_value_bytes
 
     @property
     def projection_bytes(self) -> int:
+        """Per-group SVD projection basis (V + mu, fp32) overhead, shared across heads in a group."""
         return self._projection_bytes
 
     @property
