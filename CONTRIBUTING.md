@@ -100,6 +100,40 @@ PR):
 pre-commit run --all-files
 ```
 
+## Typing status
+
+Static typing is enforced in two lanes (`.github/workflows/lint.yml`):
+
+- **`mypy` (whole package)** — reporting-only (`continue-on-error: true`).
+  It carries a real backlog of ~343 errors across the shipped source, tracked
+  in #438. A PR that adds new errors here gets no failing CI check, only a
+  visible (but non-blocking) red job.
+- **`mypy-strict-modules`** — blocking. Scoped to a strictness ladder of
+  modules that are verified clean and pinned in `[[tool.mypy.overrides]]` in
+  `pyproject.toml`:
+  - `veloxquant_mlx/core/abstractions.py`
+  - `veloxquant_mlx/memory/block_pool.py`
+  - `veloxquant_mlx/cache/options.py`
+  - `veloxquant_mlx/cache/registry.py`
+
+  This list is expected to **grow**, not stay frozen at four files — it is
+  the active plan for shrinking the #438 backlog, not an abandoned pilot.
+
+**To promote a module onto the ladder:**
+
+1. Run it (with `--follow-imports=silent`, to avoid pulling in the rest of
+   the still-untyped codebase) under the flags in the override block:
+   `disallow_untyped_defs`, `disallow_incomplete_defs`, `no_implicit_optional`.
+2. Fix its errors until it's clean under those flags.
+3. Add the module's dotted path to **both** places, which must stay in
+   sync — nothing enforces this automatically:
+   - the `module = [...]` list in `[[tool.mypy.overrides]]` in `pyproject.toml`
+   - the module list in the `mypy-strict-modules` job's run command in
+     `.github/workflows/lint.yml`
+
+`cache/base.py` is the next candidate noted in `pyproject.toml` (10 errors,
+all missing annotations rather than real type errors).
+
 ## Running the tests
 
 ```bash
