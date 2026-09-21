@@ -49,6 +49,7 @@ class LloydMaxGaussianStrategy(CodebookStrategy):
         support = (-self._support_sigma_factor * sigma, self._support_sigma_factor * sigma)
 
         def pdf_fn(x):
+            """Gaussian density at x with sigma = 1/sqrt(d)."""
             return gaussian_pdf(x, sigma=sigma)
 
         centroids, _ = lloyd_max(pdf_fn, support, n_levels=2**b)
@@ -82,6 +83,7 @@ class LloydMaxBetaStrategy(CodebookStrategy):
         support = (-1.0 + 1e-6, 1.0 - 1e-6)
 
         def pdf_fn(x):
+            """Beta(d/2, d/2) density at x."""
             return beta_pdf(x, d)
 
         centroids, _ = lloyd_max(pdf_fn, support, n_levels=2**b)
@@ -118,6 +120,7 @@ class PolarAngleSamplingStrategy(CodebookStrategy):
         support = (0.0, 2 * math.pi - 1e-6) if self.level == 1 else (1e-6, math.pi / 2 - 1e-6)
 
         def pdf_fn(x):
+            """Polar angle density at x for the configured recursion level."""
             return polar_angle_pdf(x, self.level)
 
         centroids, _ = lloyd_max(pdf_fn, support, n_levels=2**b)
