@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import mlx.core as mx
 import numpy as np
 import pytest
 
-mx = pytest.importorskip("mlx.core")
-if not mx.metal.is_available():
-    pytest.skip("Metal GPU is required", allow_module_level=True)
+from veloxquant_mlx.metal import metal_available
+
+pytestmark = [
+    pytest.mark.metal,
+    pytest.mark.skipif(not metal_available(), reason="Metal unavailable"),
+]
 
 from veloxquant_mlx.cli.worker import _bit_pack_file, _rope_recode_file  # noqa: E402
 from veloxquant_mlx.transfer.rope import recode_rope  # noqa: E402
