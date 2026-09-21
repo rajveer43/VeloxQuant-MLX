@@ -94,6 +94,13 @@ def _build_quantizer(calib_np: np.ndarray) -> RaBitQQuantizer:
 
 
 def run_benchmark(n_iter: int = 20) -> dict:
+    """Benchmark RaBitQ top-k search vs fp16-exact and NumPy-exact search, and its recall.
+
+    Sweeps corpus size (``S_kv × H`` vectors) over ``S_KVS`` at fixed D, nlist,
+    nprobe. Returns a results dict with per-S_kv latency (ms) for all three
+    search paths, speedup of RaBitQ vs NumPy, and recall@10 vs an L2 ground
+    truth ranking.
+    """
     rng = np.random.default_rng(0)
     calib = rng.standard_normal((4096, D)).astype(np.float16)
     print(f"Building RaBitQ quantizer (D={D}, nlist={NLIST}, nprobe={NPROBE})...")
@@ -172,6 +179,7 @@ def run_benchmark(n_iter: int = 20) -> dict:
 
 
 def save_figures(results: dict) -> None:
+    """Save the RaBitQ search latency, speedup, and recall figures from :func:`run_benchmark`'s output."""
     S_kvs = results["S_kvs"]
     t_rb = results["rabitq_ms"]
     t_fp16 = results["fp16_exact_ms"]
