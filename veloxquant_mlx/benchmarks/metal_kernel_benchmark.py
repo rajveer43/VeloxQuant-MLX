@@ -95,6 +95,12 @@ def _bench_np(fn: Callable, n_warmup: int = 5, n_iter: int = 50) -> float:
 
 
 def bench_bit_pack(n_iter: int):
+    """Benchmark ``turboquant_bit_pack``/``turboquant_bit_unpack`` vs a NumPy loop.
+
+    Sweeps element count N over ``[256, 512, 1024, 4096, 16384, 65536]`` and bit
+    width over ``[1, 2, 4]``. Returns ``(Ns, pack_results, unpack_results)`` where
+    each results dict maps ``bits -> {N: (metal_ms, numpy_ms)}``.
+    """
     Ns = [256, 512, 1024, 4096, 16384, 65536]
     bits = [1, 2, 4]
     rng = np.random.default_rng(0)
@@ -138,6 +144,11 @@ def _np_pack(indices: np.ndarray, b: int) -> np.ndarray:
 
 
 def plot_bit_pack(Ns, pack_results, unpack_results, n_iter: int):
+    """Plot Metal vs NumPy throughput (GB/s) for bit_pack and bit_unpack.
+
+    Saves ``fig1_bit_pack_throughput.png`` (two panels, one per op) and returns
+    the saved path.
+    """
     bits = [1, 2, 4]
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle("Bit-pack / Bit-unpack: Metal vs NumPy", fontsize=14, fontweight="bold")
@@ -198,6 +209,12 @@ def _lloyd_max_centroids(b: int) -> np.ndarray:
 
 
 def bench_scalar_quant(n_iter: int):
+    """Benchmark ``turboquant_scalar_quantize``/``dequantize`` vs an argmin NumPy reference.
+
+    Sweeps element count N over ``[256, 1024, 4096, 16384, 65536, 262144]`` and
+    bit width over ``[1, 2, 4]``. Returns ``(Ns, sq_results, sdq_results)`` where
+    each results dict maps ``bits -> {N: (metal_ms, numpy_ms)}``.
+    """
     Ns = [256, 1024, 4096, 16384, 65536, 262144]
     bits = [1, 2, 4]
     rng = np.random.default_rng(1)
@@ -242,6 +259,11 @@ def _np_scalar_quantize(x: np.ndarray, cents: np.ndarray) -> np.ndarray:
 
 
 def plot_scalar_quant(Ns, sq_results, sdq_results, n_iter: int):
+    """Plot Metal vs NumPy throughput (GB/s) for scalar_quantize and scalar_dequantize.
+
+    Saves ``fig2_scalar_quant_throughput.png`` (two panels, one per op) and
+    returns the saved path.
+    """
     bits = [1, 2, 4]
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle("Scalar Quantize / Dequantize: Metal vs NumPy", fontsize=14, fontweight="bold")
@@ -288,6 +310,13 @@ def plot_scalar_quant(Ns, sq_results, sdq_results, n_iter: int):
 
 
 def bench_hadamard_quantize(n_iter: int):
+    """Benchmark the fused Hadamard-transform-plus-quantize kernel (``b=4``).
+
+    Sweeps head dimension D over ``[64, 128, 256, 512, 1024]`` at fixed batch
+    B=64, then sweeps batch B over ``[1, 8, 32, 64, 128]`` at fixed D=128.
+    Returns ``(Ds, d_results, Bs, b_results, B_fixed, D_fixed)`` where
+    ``d_results``/``b_results`` map the swept value to latency in ms/iter.
+    """
     Ds = [64, 128, 256, 512, 1024]
     Bs = [1, 8, 32, 64, 128]
     rng = np.random.default_rng(2)
@@ -325,6 +354,10 @@ def bench_hadamard_quantize(n_iter: int):
 
 
 def plot_hadamard_quantize(Ds, d_results, Bs, b_results, B_fixed, D_fixed, n_iter: int):
+    """Plot fused Hadamard-quantize latency vs D and throughput (MB/s) vs B.
+
+    Saves ``fig3_hadamard_quantize.png`` (two panels) and returns the saved path.
+    """
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle("Fused Hadamard + Quantize (Metal, b=4)", fontsize=14, fontweight="bold")
 
@@ -365,6 +398,12 @@ def plot_hadamard_quantize(Ds, d_results, Bs, b_results, B_fixed, D_fixed, n_ite
 
 
 def bench_qjl_encode(n_iter: int):
+    """Benchmark ``qjl_encode`` (Metal) vs a NumPy sign-projection reference.
+
+    Sweeps batch size B over ``[1, 8, 32, 64, 128, 256]`` at fixed d=128, m=128.
+    Returns ``(Bs, metal_results, np_results, d, m)`` where the results dicts
+    map B to latency in ms/iter.
+    """
     Bs = [1, 8, 32, 64, 128, 256]
     d = 128
     m = 128
@@ -396,6 +435,11 @@ def _np_qjl_encode(x: np.ndarray, S: np.ndarray):
 
 
 def plot_qjl_encode(Bs, metal_results, np_results, d, m, n_iter: int):
+    """Plot QJL encode latency vs batch size and the Metal speedup over NumPy.
+
+    Saves ``fig4_qjl_encode_throughput.png`` (latency panel plus a per-B
+    speedup bar chart) and returns the saved path.
+    """
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle(f"QJL Encode (Metal vs NumPy)  [d={d}, m={m}]", fontsize=14, fontweight="bold")
 
@@ -438,6 +482,12 @@ def plot_qjl_encode(Bs, metal_results, np_results, d, m, n_iter: int):
 
 
 def bench_qjl_ip(n_iter: int):
+    """Benchmark ``qjl_inner_product`` (Metal) over increasing KV sequence length.
+
+    Sweeps S_kv over ``[64, 128, 256, 512, 1024, 2048, 4096]`` at fixed H=8,
+    m=128, d=128. Returns ``(S_kvs, metal_results, H, m)`` where
+    ``metal_results`` maps S_kv to latency in ms/iter.
+    """
     S_kvs = [64, 128, 256, 512, 1024, 2048, 4096]
     H = 8
     m = 128
@@ -464,6 +514,10 @@ def bench_qjl_ip(n_iter: int):
 
 
 def plot_qjl_ip(S_kvs, metal_results, H, m, n_iter: int):
+    """Plot QJL inner product latency vs S_kv and effective GFLOP/s.
+
+    Saves ``fig5_qjl_ip_throughput.png`` (two panels) and returns the saved path.
+    """
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle(f"QJL Inner Product (Metal)  [H={H}, m={m}]", fontsize=14, fontweight="bold")
 
@@ -500,6 +554,13 @@ def plot_qjl_ip(S_kvs, metal_results, H, m, n_iter: int):
 
 
 def bench_rvq_attend(n_iter: int):
+    """Benchmark the fused RVQ decode+attend Metal kernel over KV sequence length.
+
+    Sweeps S_kv over ``[64, 128, 256, 512, 1024, 2048]`` with 4-bit residual
+    codes (b1=b2=bv=4) at fixed B=1, H=8, D=128. Returns
+    ``(S_kvs, metal_results, B, H, D)`` where ``metal_results`` maps S_kv to
+    latency in ms/iter.
+    """
     S_kvs = [64, 128, 256, 512, 1024, 2048]
     B = 1
     H = 8
@@ -537,6 +598,11 @@ def bench_rvq_attend(n_iter: int):
 
 
 def plot_rvq_attend(S_kvs, metal_results, B, H, D, n_iter: int):
+    """Plot fused RVQ attend latency vs S_kv and per-token cost (ms/KV token).
+
+    Saves ``fig6_rvq_attend_throughput.png`` (two panels) and returns the
+    saved path.
+    """
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle(
         f"Fused RVQ Decode + Attend (Metal)  [B={B}, H={H}, D={D}]", fontsize=14, fontweight="bold"
@@ -578,14 +644,22 @@ def plot_rvq_attend(S_kvs, metal_results, B, H, D, n_iter: int):
 
 
 def plot_memory_savings():
+    """Plot key-cache memory footprint and compression ratio vs fp16, by bit width.
+
+    Sweeps S_kv over ``[128, 256, 512, 1024, 2048, 4096, 8192]`` at fixed H=8,
+    D=128, comparing fp16 baseline bytes against 1/2/4-bit packed bytes.
+    Saves ``fig7_memory_savings.png`` (two panels) and returns the saved path.
+    """
     S_kvs = [128, 256, 512, 1024, 2048, 4096, 8192]
     D = 128
     H = 8
 
     def fp16_bytes(S):
+        """Return the fp16 key-cache size in bytes for sequence length S."""
         return S * H * D * 2  # keys fp16
 
     def bits_quant_bytes(S, b):
+        """Return the byte-packed b-bit key-cache size in bytes for sequence length S."""
         return S * H * D * b // 8  # b bits per element, byte-packed
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
@@ -645,6 +719,11 @@ def plot_memory_savings():
 
 
 def plot_summary(all_speedups: dict):
+    """Plot a bar chart of peak Metal speedup vs NumPy/CPU across all kernels.
+
+    ``all_speedups`` maps a kernel label to its peak speedup multiplier. Saves
+    ``fig8_summary_speedup.png`` and returns the saved path.
+    """
     fig, ax = plt.subplots(figsize=(13, 5))
     fig.suptitle(
         "TurboQuant Metal Kernels — Summary Speedup vs NumPy/CPU", fontsize=14, fontweight="bold"
@@ -688,6 +767,12 @@ def plot_summary(all_speedups: dict):
 
 
 def main():
+    """Run all Metal kernel benchmarks, save figures, and print a speedup summary.
+
+    Parses ``--n_iter``, runs each ``bench_*``/``plot_*`` pair in turn, writes
+    ``results.json`` with the raw timings to ``OUT_DIR``, and prints a table of
+    peak speedups vs the NumPy/CPU baseline for each kernel.
+    """
     parser = argparse.ArgumentParser(description="TurboQuant Metal kernel benchmark")
     parser.add_argument("--n_iter", type=int, default=50, help="Timing iterations per measurement")
     args = parser.parse_args()
