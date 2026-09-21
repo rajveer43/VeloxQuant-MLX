@@ -118,6 +118,7 @@ class AutoOptimizer:
     # -- profiling -----------------------------------------------------------
 
     def detect_hardware(self) -> HardwareProfile:
+        """Detect (and cache) this machine's HardwareProfile."""
         if self._hardware is None:
             self._hardware = HardwareProfile.detect()
         return self._hardware
@@ -284,4 +285,5 @@ class AutoOptimizer:
         return explain(result, **kwargs)
 
     def fallback_method(self) -> str:
+        """Library-default method name used when nothing survives filtering."""
         return FALLBACK_METHOD
