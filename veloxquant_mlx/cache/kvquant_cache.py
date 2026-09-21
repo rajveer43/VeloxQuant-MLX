@@ -250,6 +250,7 @@ class KVQuantKVCache(_MLXKVCache):
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Fit (or reuse frozen) per-channel key / per-token value NUQ levels, isolate outliers, and preserve sink tokens in fp16; return dequantized K/V."""
         B, H, S, D = keys.shape
         n_sink = min(self._n_sink, S) if self._n_tokens == 0 else 0
         k_out, v_out = self._apply(keys, values)
@@ -320,6 +321,7 @@ class KVQuantKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def nuq_bits(self) -> int:
+        """Configured non-uniform quantization bit-width."""
         # Deliberately not named `.bits` — mlx_lm's SDPA checks
         # `hasattr(cache, "bits")` to route to its quantized-matmul kernel,
         # which expects mx.quantize's native tuple layout and a `.group_size`
@@ -330,10 +332,12 @@ class KVQuantKVCache(_MLXKVCache):
 
     @property
     def outlier_fraction(self) -> float:
+        """Configured nominal fraction of elements treated as dense-and-sparse outliers."""
         return self._outlier_fraction
 
     @property
     def outlier_count(self) -> int:
+        """Realized count of elements isolated as outliers (K + V), across all calls so far."""
         return self._outlier_count
 
     @property
@@ -353,26 +357,32 @@ class KVQuantKVCache(_MLXKVCache):
 
     @property
     def key_levels(self):
+        """Frozen per-channel non-uniform quantization levels fit at prefill."""
         return self._key_levels
 
     @property
     def value_levels(self):
+        """Frozen per-token non-uniform quantization levels fit at prefill."""
         return self._value_levels
 
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for the compressed key cache (NUQ codes + per-channel level table + fp16 outlier/sink side-channel, all heads/batches)."""
         return self._compressed_key_bytes
 
     @property
     def compressed_value_bytes(self) -> int:
+        """Realized stored bytes for the compressed value cache (NUQ codes + per-token level table + fp16 outlier/sink side-channel, all heads/batches)."""
         return self._compressed_value_bytes
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._fp16_key_bytes
 
     @property
     def fp16_value_bytes(self) -> int:
+        """Hypothetical fp16 value cost if nothing were compressed."""
         return self._fp16_value_bytes
 
     @property

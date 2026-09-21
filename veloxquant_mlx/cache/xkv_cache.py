@@ -183,6 +183,7 @@ class XKVCache(_MLXKVCache):
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Acquire (or wait on) the group's shared SVD basis, then project + quantize keys into it; values pass through fp16 unchanged."""
         B, H, S, D = keys.shape
 
         if self._V_g is None:
@@ -260,30 +261,37 @@ class XKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def member_idx(self) -> int:
+        """This layer's 0-indexed position within its cross-layer group (0 = leader)."""
         return self._member_idx
 
     @property
     def group_id(self) -> int:
+        """Cross-layer group this layer belongs to."""
         return self._group_id
 
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for this layer's own latent key codes (excludes the shared basis unless this is the group leader)."""
         return self._compressed_key_bytes
 
     @property
     def shared_basis_bytes(self) -> int:
+        """Storage cost of the group's shared SVD basis; nonzero only for the group leader (``member_idx == 0``), to avoid double-counting across layers."""
         return self._shared_basis_bytes
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._fp16_key_bytes
 
     @property
     def value_fp16_bytes(self) -> int:
+        """Actual value cost — values are stored fp16 throughout (keys-only compression)."""
         return self._value_fp16_bytes
 
     @property
     def rank(self) -> int:
+        """Latent rank of the shared (or standalone) SVD basis."""
         return self._r
 
     @property

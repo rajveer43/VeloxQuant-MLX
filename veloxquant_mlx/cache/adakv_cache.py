@@ -203,6 +203,7 @@ class AdaKVCache(_MLXKVCache):
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Re-derive per-head importance (norm or attention-entropy), recompute the per-head bit allocation, and quantize each head's keys at its assigned bit-width; values pass through fp16 unchanged."""
         B, H, S, D = keys.shape
 
         self._update_norm_accumulators(keys)
@@ -257,26 +258,32 @@ class AdaKVCache(_MLXKVCache):
 
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for the compressed key cache (per-head codes at their assigned bit-width + group params, all heads/batches)."""
         return self._compressed_key_bytes
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._fp16_key_bytes
 
     @property
     def value_fp16_bytes(self) -> int:
+        """Actual value cost — values are stored fp16 throughout (key-only method)."""
         return self._value_fp16_bytes
 
     @property
     def target_avg_bits(self) -> float:
+        """Configured target average bit-width the per-head allocation aims for."""
         return self._target_avg_bits
 
     @property
     def allowed_bits(self) -> list[int]:
+        """Configured discrete bit-widths a head's importance can be mapped to."""
         return list(self._allowed_bits)
 
     @property
     def group_size(self) -> int:
+        """Group size used for asymmetric group quantization scale/zero fitting."""
         return self._group_size
 
 

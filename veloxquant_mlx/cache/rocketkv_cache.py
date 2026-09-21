@@ -152,6 +152,7 @@ class RocketKVKVCache(_MLXKVCache):
 
     @offset.setter
     def offset(self, value: int) -> None:
+        """Restore the retained row count (base-class bookkeeping only; see the getter for the true/retained distinction)."""
         self._row_offset = value
 
     # ------------------------------------------------------------------
@@ -224,6 +225,7 @@ class RocketKVKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Prefill: run stage-1 SnapKV eviction per head and build paged HSA summaries. Decode: append tokens exactly and update summaries incrementally."""
         is_prefill = keys.shape[2] > 1
         if is_prefill:
             if not self._prefill_done:
@@ -333,28 +335,34 @@ class RocketKVKVCache(_MLXKVCache):
 
     @property
     def tokens_kept(self) -> int:
+        """Total tokens retained after stage-1 eviction (plus all decode tokens, which are always kept)."""
         return self._tokens_kept
 
     @property
     def tokens_total(self) -> int:
+        """Total tokens seen across prefill and decode, before stage-1 eviction."""
         return self._tokens_total
 
     @property
     def keep_rate(self) -> float:
+        """Fraction of tokens retained after stage-1 eviction (``tokens_kept / tokens_total``)."""
         if self._tokens_total == 0:
             return 1.0
         return self._tokens_kept / self._tokens_total
 
     @property
     def stage1_ratio(self) -> float:
+        """Configured stage-1 (SnapKV) eviction ratio — prefill budget is ``S / stage1_ratio``."""
         return self._stage1_ratio
 
     @property
     def page_size(self) -> int:
+        """Configured HSA page size used to build the paged max/min summaries."""
         return self._page_size
 
     @property
     def head_topk1(self) -> int:
+        """Resolved stage-2 per-head top-k1 count used by HSA approximate scoring."""
         return self._head_topk1
 
 

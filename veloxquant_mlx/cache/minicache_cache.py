@@ -180,6 +180,7 @@ class MiniCacheKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Primary: publish true KV to the coordinator and pass through losslessly. Merge: SLERP-merge against the paired primary and reconstruct from the merge."""
         B, H, S, D = keys.shape
         tok_start = self._token_offset
         self._n_retained_this_call = 0
@@ -213,38 +214,47 @@ class MiniCacheKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def role(self) -> str:
+        """This layer's cross-layer merge role: ``"primary"`` or ``"merge"``."""
         return self._role
 
     @property
     def group_id(self) -> int:
+        """Cross-layer merge group this layer belongs to."""
         return self._group_id
 
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for the compressed key cache (merged-token magnitudes + retained fp16 vectors + shared direction where applicable)."""
         return self._compressed_key_bytes
 
     @property
     def compressed_value_bytes(self) -> int:
+        """Realized stored bytes for the compressed value cache (merged-token magnitudes + retained fp16 vectors + shared direction where applicable)."""
         return self._compressed_value_bytes
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._fp16_key_bytes
 
     @property
     def fp16_value_bytes(self) -> int:
+        """Hypothetical fp16 value cost if nothing were compressed."""
         return self._fp16_value_bytes
 
     @property
     def n_retained(self) -> int:
+        """Number of tokens retained as full fp16 vectors (above the cosine-similarity retention threshold) instead of merged."""
         return self._n_retained
 
     @property
     def n_merged(self) -> int:
+        """Number of tokens SLERP-merged with the paired primary layer."""
         return self._n_merged
 
     @property
     def retention_rate(self) -> float:
+        """Fraction of tokens retained as full fp16 vectors rather than merged."""
         total = self._n_retained + self._n_merged
         return self._n_retained / total if total else 0.0
 

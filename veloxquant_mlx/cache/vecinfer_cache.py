@@ -287,6 +287,7 @@ class VecInferKVCache(_MLXKVCache):
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys, values):
+        """Apply smooth-scale + Hadamard rotation to keys, product-VQ-quantize K/V, and dequantize for downstream SDPA (or stash indices only when memory-bound fused mode is active)."""
         # Three paths:
         #   fused_sdpa=False               -> standard dequant-only path.
         #   fused_sdpa=True, memory_bound=False (default) -> standard path
@@ -429,6 +430,7 @@ class VecInferKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def state(self):  # type: ignore[override]
+        """Standard mode: parent fp16 (keys, values). Fused mode: raw (key_indices, value_indices) ring buffers, since no fp16 K_hat/V_hat is materialized."""
         if not self._fused_enabled:
             return super().state
         if self._stored_k_indices is None:
@@ -445,6 +447,7 @@ class VecInferKVCache(_MLXKVCache):
 
     @state.setter
     def state(self, v):  # type: ignore[override]
+        """Restore standard-mode fp16 state, or fused-mode (key_indices, value_indices) and resync offset/ring-buffer position."""
         if not self._fused_enabled:
             # Reuse parent setter
             _MLXKVCache.state.fset(self, v)  # type: ignore[union-attr]
@@ -457,16 +460,19 @@ class VecInferKVCache(_MLXKVCache):
         self.offset = self._stored_S_kv
 
     def empty(self) -> bool:  # type: ignore[override]
+        """Whether the cache holds no tokens yet (checks the index ring buffer in fused mode, the parent buffer otherwise)."""
         if not self._fused_enabled:
             return super().empty()
         return self._stored_k_indices is None or self._stored_S_kv == 0
 
     def size(self) -> int:  # type: ignore[override]
+        """Number of tokens currently stored."""
         # Both standard and fused tracks self.offset; just defer to it.
         return self.offset
 
     @property
     def nbytes(self) -> int:  # type: ignore[override]
+        """Realized stored bytes: parent fp16 buffer size in standard mode, or the live-portion uint32 index buffers in fused mode."""
         if not self._fused_enabled:
             return super().nbytes
         if self._stored_k_indices is None:
@@ -564,18 +570,22 @@ class VecInferKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for the compressed key cache (product-VQ codes, all heads/batches; excludes amortized codebook)."""
         return self._key_bytes_compressed
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._key_bytes_fp16
 
     @property
     def compressed_value_bytes(self) -> int:
+        """Realized stored bytes for the compressed value cache (product-VQ codes, all heads/batches; excludes amortized codebook)."""
         return self._value_bytes_compressed
 
     @property
     def fp16_value_bytes(self) -> int:
+        """Hypothetical fp16 value cost if nothing were compressed."""
         return self._value_bytes_fp16
 
     @property

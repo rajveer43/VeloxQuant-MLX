@@ -263,10 +263,12 @@ class TOVAKVCache(_MLXKVCache):
 
     @property
     def state(self):
+        """Stored (keys, values); evicted positions are not separately encoded."""
         return self.keys, self.values
 
     @state.setter
     def state(self, value):
+        """Restore ``(keys, values)``; treats the restored row count as the true offset (exact mid-history restore of evicted positions is not supported)."""
         # K/V alone do not encode evicted positions. Preserve the base class's
         # row-count estimate on restore; exact mid-history restoration is not
         # supported without separate absolute-position metadata.

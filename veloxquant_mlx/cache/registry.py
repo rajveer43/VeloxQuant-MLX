@@ -98,6 +98,7 @@ class ServeTier(str, Enum):
 
     @property
     def is_servable(self) -> bool:
+        """Whether ``mlx_lm.server`` can run this method at all (every tier except ``CRASHES``)."""
         return self is not ServeTier.CRASHES
 
     @property
@@ -111,6 +112,7 @@ class ServeTier(str, Enum):
 
     @property
     def label(self) -> str:
+        """Human-readable UI label for this serve tier."""
         return {
             ServeTier.HONEST_BYTES: "available",
             ServeTier.ACCOUNTING_ONLY: "available",
@@ -146,6 +148,7 @@ class TelemetryCoverage(str, Enum):
 
     @property
     def label(self) -> str:
+        """Human-readable UI label for this telemetry coverage level."""
         return {
             TelemetryCoverage.KEYS_AND_VALUES: "full estimate",
             TelemetryCoverage.KEYS_ONLY: "partial estimate",
@@ -181,6 +184,7 @@ class StrategyCapabilities:
     tunable_parameters: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        """Plain-dict serialization of this capability set (for JSON API responses)."""
         return {
             "supported_bits": self.supported_bits,
             "requires_calibration": self.requires_calibration,
@@ -215,6 +219,7 @@ class MethodInfo:
 
     @property
     def docs_url(self) -> str | None:
+        """Full documentation URL for this method, or None if no docs slug is registered."""
         slug = _DOCS_SLUG.get(self.name)
         return f"{DOCS_BASE}/{slug}" if slug is not None else None
 

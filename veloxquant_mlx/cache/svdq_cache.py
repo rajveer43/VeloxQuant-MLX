@@ -246,6 +246,7 @@ class SVDqKVCache(_MLXKVCache):
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Fit per-head SVD on prefill (or project into the existing basis on decode), mixed-bit quantize the latents; values pass through fp16 unchanged."""
         B, H, S, D = keys.shape
 
         if not self._V:
@@ -310,14 +311,17 @@ class SVDqKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for the compressed key cache (per-head mixed-bit latent codes + amortized projection basis, all heads/batches)."""
         return self._compressed_key_bytes
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._fp16_key_bytes
 
     @property
     def value_fp16_bytes(self) -> int:
+        """Actual value cost — values are stored fp16 throughout (key-only method)."""
         return self._value_fp16_bytes
 
     @property

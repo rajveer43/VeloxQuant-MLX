@@ -62,10 +62,12 @@ class ChunkKVIndexReuseCoordinator:
 
     @property
     def reuse_layers(self) -> int:
+        """Configured reuse block size (``Nreuse``)."""
         return self._reuse_layers
 
     @property
     def n_layers(self) -> int:
+        """Number of attention-bearing layers participating in index reuse."""
         return self._n_layers
 
 

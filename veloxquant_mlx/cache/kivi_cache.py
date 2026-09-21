@@ -300,6 +300,7 @@ class KIVIKVCache(_MLXKVCache):
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._key_bytes_fp16
 
     @property
@@ -314,6 +315,7 @@ class KIVIKVCache(_MLXKVCache):
 
     @property
     def fp16_value_bytes(self) -> int:
+        """Hypothetical fp16 value cost if nothing were compressed."""
         return self._value_bytes_fp16
 
     @property

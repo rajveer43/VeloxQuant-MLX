@@ -142,6 +142,7 @@ class XQuantCoordinator:
 
     @property
     def max_ctx(self) -> int:
+        """Configured per-group token budget."""
         return self._max_ctx
 
 

@@ -256,18 +256,22 @@ class SKVQKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for the quantized (behind-the-flush-frontier) key region, excluding the fp16 sliding-window tail and sinks."""
         return self._compressed_key_bytes
 
     @property
     def compressed_value_bytes(self) -> int:
+        """Realized stored bytes for the quantized (behind-the-flush-frontier) value region, excluding the fp16 sliding-window tail and sinks."""
         return self._compressed_value_bytes
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._fp16_key_bytes
 
     @property
     def fp16_value_bytes(self) -> int:
+        """Hypothetical fp16 value cost if nothing were compressed."""
         return self._fp16_value_bytes
 
     @property
@@ -294,6 +298,7 @@ class SKVQKVCache(_MLXKVCache):
 
     @property
     def tokens_seen(self) -> int:
+        """Total tokens processed through ``update_and_fetch`` so far."""
         return self._tokens_seen
 
     @property
@@ -304,6 +309,7 @@ class SKVQKVCache(_MLXKVCache):
 
     @property
     def value_perms(self) -> mx.array | None:
+        """Frozen per-head value channel permutations ``[H, D]`` (None before the first flush or when ``skvq_reorder=False``)."""
         return self._perm_v
 
     @property
