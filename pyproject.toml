@@ -58,18 +58,27 @@ dependencies = [
 plots = [
     "matplotlib>=3.8",
 ]
-dev = [
+test = [
     "pytest>=8.0",
     "pytest-xdist",
     "pytest-cov>=5.0",
     "psutil>=5.9",
+]
+dev = [
+    "VeloxQuant-MLX[test]",
+    "pre-commit>=3.7",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+# Only the release workflow (.github/workflows/release.yml) needs this group --
+# it bumps the version, builds the sdist/wheel, and drives semantic-release's
+# commit parsing. Kept out of `dev` so contributors and the lint/test CI jobs
+# don't install the release toolchain just to run pytest or ruff. See #472.
+release = [
     "build>=1.2",
     "twine>=5.0",
     "python-semantic-release>=9.15",
     "GitPython<3.1.60",
-    "pre-commit>=3.7",
-    "ruff>=0.6",
-    "mypy>=1.11",
 ]
 
 [project.urls]
