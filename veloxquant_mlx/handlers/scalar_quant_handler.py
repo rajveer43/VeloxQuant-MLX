@@ -51,6 +51,7 @@ class ScalarQuantizerHandler(QuantizationHandler):
 
     @property
     def handler_name(self) -> str:
+        """Registry name for this handler ('scalar_quant')."""
         return "scalar_quant"
 
     def __repr__(self) -> str:

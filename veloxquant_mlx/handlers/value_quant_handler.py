@@ -59,6 +59,7 @@ class ValueQuantizerHandler(QuantizationHandler):
 
     @property
     def handler_name(self) -> str:
+        """Registry name for this handler ('value_quant')."""
         return "value_quant"
 
     def __repr__(self) -> str:

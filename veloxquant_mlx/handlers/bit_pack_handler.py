@@ -67,6 +67,7 @@ class BitPackingHandler(QuantizationHandler):
 
     @property
     def handler_name(self) -> str:
+        """Registry name for this handler ('bit_packing')."""
         return "bit_packing"
 
     def __repr__(self) -> str:

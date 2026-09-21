@@ -66,6 +66,7 @@ class PolarTransformHandler(QuantizationHandler):
 
     @property
     def handler_name(self) -> str:
+        """Registry name for this handler ('polar_transform')."""
         return "polar_transform"
 
     def __repr__(self) -> str:

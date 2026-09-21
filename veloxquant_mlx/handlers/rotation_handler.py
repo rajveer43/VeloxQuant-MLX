@@ -47,6 +47,7 @@ class RotationHandler(QuantizationHandler):
 
     @property
     def handler_name(self) -> str:
+        """Registry name for this handler ('rotation')."""
         return "rotation"
 
     def __repr__(self) -> str:

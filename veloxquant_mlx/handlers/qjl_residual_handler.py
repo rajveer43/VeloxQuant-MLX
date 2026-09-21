@@ -70,6 +70,7 @@ class QJLResidualHandler(QuantizationHandler):
 
     @property
     def handler_name(self) -> str:
+        """Registry name for this handler ('qjl_residual')."""
         return "qjl_residual"
 
     def __repr__(self) -> str:

@@ -74,6 +74,7 @@ class OutlierSplitHandler(QuantizationHandler):
 
     @property
     def handler_name(self) -> str:
+        """Registry name for this handler ('outlier_split')."""
         return "outlier_split"
 
     def __repr__(self) -> str:
