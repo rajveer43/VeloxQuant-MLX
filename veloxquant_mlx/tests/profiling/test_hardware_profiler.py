@@ -37,15 +37,8 @@ def test_detect_hardware_profile_never_raises():
 
 
 def test_detect_reports_apple_silicon():
-    # In virtualized CI environments (paravirtual device), chip detection
-    # may not find the M-series name, but we still get a string chip name,
-    # memory bytes, and other fields. Real hardware will have "M" in chip name.
     profile = detect_hardware_profile()
-    assert isinstance(profile.chip, str) and profile.chip
-    # Either the chip name contains "M" (real hardware) or we have memory info
-    has_m_series = "M" in profile.chip.upper()
-    has_memory = profile.total_memory_bytes and profile.total_memory_bytes > 0
-    assert has_m_series or has_memory or platform.system() == "Darwin"
+    assert "M" in profile.chip.upper() or profile.chip_generation > 0
 
 
 def test_detect_version_fields_are_strings_or_none():
