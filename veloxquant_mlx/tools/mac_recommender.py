@@ -36,6 +36,19 @@ MODEL_WEIGHT_GB_4BIT = {
 
 @dataclass(frozen=True)
 class RecommendRequest:
+    """Inputs describing the Mac and the model the user wants to run.
+
+    Attributes:
+        chip: Apple Silicon chip family.
+        ram_gb: Total unified memory in GB (must be one of ALLOWED_RAM_GB).
+        model_class: Approximate parameter-count bucket of the model.
+        goal: Which recommendation heuristic to apply.
+        seq_len: Target sequence length used for the KV-cache size estimate.
+        n_layers: Number of attention layers.
+        n_kv_heads: Key/value head count.
+        head_dim: Attention head dimension.
+    """
+
     chip: ChipFamily
     ram_gb: int
     model_class: ModelClass
@@ -48,6 +61,20 @@ class RecommendRequest:
 
 @dataclass(frozen=True)
 class RecommendResult:
+    """A transparent method recommendation with its rationale and warnings.
+
+    Attributes:
+        method: Recommended KV-cache method name.
+        knobs: Suggested configuration for that method.
+        key_accounting_ratio: Estimated key-cache compression ratio.
+        resident_savings_likely: Whether the method is expected to actually
+            free RAM (vs. only reporting a smaller accounted size).
+        kv_fp16_mb: Uncompressed fp16 KV-cache size, in MB.
+        kv_compressed_mb_estimate: Estimated compressed KV-cache size, in MB.
+        warnings: Human-readable caveats about fit or behavior.
+        rationale: Human-readable explanation for the pick.
+    """
+
     method: str
     knobs: dict[str, Any]
     key_accounting_ratio: float
@@ -58,6 +85,7 @@ class RecommendResult:
     rationale: str
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize all fields to a plain dict."""
         return asdict(self)
 
 

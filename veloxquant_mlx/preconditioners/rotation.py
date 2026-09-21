@@ -81,6 +81,7 @@ class HadamardPreconditioner(Preconditioner):
 
     @property
     def dim(self) -> int:
+        """Vector dimension d this preconditioner operates on."""
         return self._d
 
     def __repr__(self) -> str:

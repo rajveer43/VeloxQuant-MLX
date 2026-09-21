@@ -168,9 +168,11 @@ class QuantizedLinear(nn.Module):
 
     @property
     def fp16_bytes(self) -> int:
+        """Uncompressed fp16 weight matrix size, in bytes."""
         return self._out * self._in * 2
 
     def compression_ratio(self) -> float:
+        """fp16 bytes divided by compressed memory_bytes."""
         return self.fp16_bytes / self.memory_bytes
 
     def __repr__(self) -> str:

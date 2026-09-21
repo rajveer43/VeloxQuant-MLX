@@ -184,6 +184,7 @@ class LayerMap:
 
     @property
     def is_loaded(self) -> bool:
+        """True when both key and value weights are resident."""
         return self.w_k is not None and self.w_v is not None
 
     def unload(self) -> None:
@@ -216,6 +217,7 @@ class CrossModelMapper:
         return per_layer * len(self.layers)
 
     def describe(self) -> str:
+        """One-line summary of source/target models, k, parameter count, and size."""
         gb = self.n_parameters * (2 if self.config.dtype == "float16" else 4) / 1e9
         return (
             f"CrossModelMapper({self.source.model_type} L{self.source.n_layers} → "

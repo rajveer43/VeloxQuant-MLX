@@ -161,6 +161,7 @@ def collect_kv_vectors_mlx(
             self.is_empty = True
 
         def update_and_fetch(self, keys: Any, values: Any) -> tuple[Any, Any]:
+            """Record raw keys/values for calibration, then delegate to the inner cache."""
             # Cast to float32 first — bfloat16 PEP 3118 buffer is incompatible with numpy
             k_np = np.array(keys.astype(mx.float32))
             v_np = np.array(values.astype(mx.float32))
