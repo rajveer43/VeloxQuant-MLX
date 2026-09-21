@@ -191,18 +191,22 @@ class NSNQuantKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for the compressed key cache (double-normalized VQ codes + fp16 scale metadata, flushed chunks only)."""
         return self._compressed_key_bytes
 
     @property
     def compressed_value_bytes(self) -> int:
+        """Realized stored bytes for the compressed value cache (double-normalized VQ codes + fp16 scale metadata, flushed chunks only)."""
         return self._compressed_value_bytes
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._fp16_key_bytes
 
     @property
     def fp16_value_bytes(self) -> int:
+        """Hypothetical fp16 value cost if nothing were compressed."""
         return self._fp16_value_bytes
 
     @property
