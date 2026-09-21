@@ -215,6 +215,7 @@ class TurboQuantRVQKVCache(_MLXKVCache):
             self._packed1, self._packed2, self._norms = new_p1, new_p2, new_norms
 
     def update_and_fetch(self, keys: Any, values: Any) -> Any:
+        """Normalize keys to unit vectors + norm, residual-VQ-encode and pack the direction, store values in fp16; return dequantized K and raw V."""
         B, H, S, D = keys.shape
         kdtype = keys.dtype
         prev = self.offset
@@ -303,6 +304,7 @@ class TurboQuantRVQKVCache(_MLXKVCache):
 
     @property
     def state(self) -> Any:
+        """Packed key streams ``(packed1, packed2, norms, values)`` — the raw stored (not reconstructed) state, live portion only."""
         if self._packed1 is None:
             return (None, None, None, None)
         if self.offset == self._packed1.shape[2]:
@@ -316,30 +318,37 @@ class TurboQuantRVQKVCache(_MLXKVCache):
 
     @state.setter
     def state(self, v: Any) -> None:
+        """Restore ``(packed1, packed2, norms, values)`` and resync the offset."""
         self._packed1, self._packed2, self._norms, self.values = v
         self.offset = 0 if self._packed1 is None else self._packed1.shape[2]
 
     @property
     def meta_state(self) -> Any:
+        """Config fields needed to rebuild derived state after a restore: ``(head_dim, bits, seed, offset)`` as strings."""
         return tuple(map(str, (self._head_dim, self._bits, self._seed, self.offset)))
 
     @meta_state.setter
     def meta_state(self, v: Any) -> None:
+        """Restore config fields and re-derive dependent state (quantizer, packing widths)."""
         self._head_dim, self._bits, self._seed, self.offset = map(int, v)
         self._build_derived_state()
 
     def is_trimmable(self) -> bool:
+        """Whether this cache supports trimming."""
         return True
 
     def trim(self, n: int) -> int:
+        """Drop the ``n`` most-recently-added tokens; returns the number actually dropped."""
         n = min(self.offset, n)
         self.offset -= n
         return n
 
     def make_mask(self, *args: Any, **kwargs: Any) -> Any:
+        """Build the attention mask for the current offset, delegating to ``create_attention_mask``."""
         return create_attention_mask(*args, offset=self.offset, **kwargs)
 
     def empty(self) -> bool:
+        """Whether the cache holds no tokens yet."""
         return self._packed1 is None
 
     @property
