@@ -276,7 +276,7 @@ python benchmark_scripts/test_2bit_improvements.py
 python scripts/plot_optimization_journey.py
 ```
 
-Contributions welcome. Open an issue first for anything beyond a small bugfix. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [CHANGELOG.md](CHANGELOG.md) for release history.
+Contributions welcome. Open an issue first for anything beyond a small bugfix. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, [RELEASE_NOTES.md](RELEASE_NOTES.md) for a terse per-version summary, and [CHANGELOG.md](CHANGELOG.md) for full release history.
 
 ---
 

@@ -1,6 +1,8 @@
 # Changelog
 
-All notable changes to **VeloxQuant-MLX** are documented here.
+All notable changes to **VeloxQuant-MLX** are documented here. For a terse,
+one-line-per-entry summary instead, see [RELEASE_NOTES.md](RELEASE_NOTES.md)
+(generated from this file via `scripts/generate_release_notes.py`).
 
 ## [Unreleased]
 
