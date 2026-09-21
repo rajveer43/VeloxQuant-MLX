@@ -371,6 +371,7 @@ def results_to_json(results: dict[str, dict[str, WorkloadResult]]) -> dict[str, 
 
 
 def main() -> None:
+    """CLI entry point: run the workload-replay benchmark suite and print/save results."""
     parser = argparse.ArgumentParser(description="KV-cache workload replay benchmark")
     parser.add_argument("--methods", nargs="*", default=DEFAULT_METHODS)
     parser.add_argument(
