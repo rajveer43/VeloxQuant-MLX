@@ -147,6 +147,7 @@ class KittyKVCache(_MLXKVCache):
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Rank key channels by running variance, mixed-bit quantize the top-hi_fraction at hi_bit and the rest at lo_bit; values pass through fp16 unchanged."""
         B, H, S, D = keys.shape
 
         # Quantize using current statistics (prefill: _n_keys == 0 → batch variance)
@@ -180,14 +181,17 @@ class KittyKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for the compressed key cache (mixed-bit hi/lo channel codes + group params, all heads/batches)."""
         return self._compressed_key_bytes
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._fp16_key_bytes
 
     @property
     def value_fp16_bytes(self) -> int:
+        """Actual value cost — values are stored fp16 throughout (key-only method)."""
         return self._value_fp16_bytes
 
     @property
@@ -199,18 +203,22 @@ class KittyKVCache(_MLXKVCache):
 
     @property
     def hi_fraction(self) -> float:
+        """Configured fraction of channels (ranked by variance) routed to ``hi_bit``."""
         return self._hi_fraction
 
     @property
     def hi_bit(self) -> int:
+        """Bit-width assigned to the top-``hi_fraction`` highest-variance channels."""
         return self._hi_bit
 
     @property
     def lo_bit(self) -> int:
+        """Bit-width assigned to the remaining lower-variance channels."""
         return self._lo_bit
 
     @property
     def group_size(self) -> int:
+        """Group size used for asymmetric group quantization scale/zero fitting."""
         return self._group_size
 
 

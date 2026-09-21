@@ -139,6 +139,7 @@ class XQuantKVCache(_MLXKVCache):
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Anchor: group-quantize K/V and publish codes to the coordinator. Reuse: fetch the paired anchor's codes and fit this layer's own scale/zero (+ optional residual)."""
         B, H, S, D = keys.shape
         tok_start = self._token_offset
 
@@ -208,30 +209,37 @@ class XQuantKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def role(self) -> str:
+        """This layer's cross-layer reuse role: ``"anchor"`` or ``"reuse"``."""
         return self._role
 
     @property
     def group_id(self) -> int:
+        """Cross-layer group this layer belongs to."""
         return self._group_id
 
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for the compressed key cache: full codes+params for an anchor, params-only (+residual) for a reuse layer."""
         return self._compressed_key_bytes
 
     @property
     def compressed_value_bytes(self) -> int:
+        """Realized stored bytes for the compressed value cache (anchor codes+params; reuse layers do not separately compress values here)."""
         return self._compressed_value_bytes
 
     @property
     def reuse_param_bytes(self) -> int:
+        """Bytes charged to a reuse layer for its own fitted scale/zero params (+ optional residual) — 0 for an anchor."""
         return self._reuse_param_bytes
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._fp16_key_bytes
 
     @property
     def fp16_value_bytes(self) -> int:
+        """Hypothetical fp16 value cost if nothing were compressed."""
         return self._fp16_value_bytes
 
     @property
