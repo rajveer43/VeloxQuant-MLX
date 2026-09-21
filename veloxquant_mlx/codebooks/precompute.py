@@ -95,6 +95,7 @@ def precompute(
 
 
 def main() -> None:
+    """Parse CLI args (head_dim, bits, jl_dim, seed, output_dir) and run precompute()."""
     parser = argparse.ArgumentParser(
         description="Precompute codebooks, rotation matrices, and JL matrices."
     )

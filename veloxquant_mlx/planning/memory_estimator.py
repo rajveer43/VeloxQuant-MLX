@@ -135,9 +135,11 @@ class MemoryEstimate:
 
     @property
     def savings_percent(self) -> float:
+        """Percent of baseline bytes saved (0..100)."""
         return max(0.0, (1.0 - self.reduction_ratio) * 100.0)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize all fields (plus derived ratio/percent) to a plain dict."""
         return {
             "method": self.method,
             "baseline_bytes": self.baseline_bytes,

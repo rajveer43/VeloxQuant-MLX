@@ -65,6 +65,7 @@ ACCOUNTING_WARNING = (
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the argparse parser for ``veloxquant serve`` (model, method, bits, host/port, --set)."""
     parser = argparse.ArgumentParser(
         prog="veloxquant serve",
         description="Serve an MLX model over an OpenAI-compatible API with a "
@@ -237,6 +238,7 @@ def _warn(message: str) -> None:
 
 
 def build_config(args: argparse.Namespace) -> Any:
+    """Build a KVCacheConfig from --method/--bits/--seed plus parsed --set overrides."""
     from veloxquant_mlx.cache import KVCacheConfig
 
     overrides = parse_overrides(getattr(args, "set", []) or [], method=args.method)
@@ -459,6 +461,12 @@ def run_server(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse CLI args and launch the OpenAI-compatible server with a VeloxQuant KV cache.
+
+    Validates --method fails fast before the model loads, prints the
+    unconditional accounting-only warning, and hands off to mlx_lm.server
+    (via run_server) with the cache wired in through attach_cache.
+    """
     args = build_parser().parse_args(argv)
 
     validate_method(args.method)

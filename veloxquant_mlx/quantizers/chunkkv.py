@@ -293,14 +293,18 @@ def chunkkv_update(
     new_keys: mx.array,
     new_values: mx.array,
     record_kept_positions: Literal[False] = False,
-) -> ChunkKVState: ...
+) -> ChunkKVState:
+    """Overload signature: without position recording, returns only the updated state."""
+    ...
 @overload
 def chunkkv_update(
     state: ChunkKVState,
     new_keys: mx.array,
     new_values: mx.array,
     record_kept_positions: Literal[True],
-) -> tuple[ChunkKVState, list[list[int]]]: ...
+) -> tuple[ChunkKVState, list[list[int]]]:
+    """Overload signature: with position recording, also returns kept-position lists."""
+    ...
 def chunkkv_update(
     state: ChunkKVState,
     new_keys: mx.array,  # [S, D] fp16

@@ -61,6 +61,7 @@ class KeyNormObserver(QuantizationObserver):
         self._n_tokens = 0
 
     def on_event(self, event: QuantizationEvent) -> None:
+        """Accumulate key_l2_norm_sq from the event's metadata, if present."""
         norm_sq = event.metadata.get("key_l2_norm_sq")
         if norm_sq is None:
             return
@@ -80,6 +81,7 @@ class KeyNormObserver(QuantizationObserver):
                 self._max_sq = v
 
     def report(self) -> KeyNormReport:
+        """Build a KeyNormReport from the norms accumulated so far."""
         if self._n_tokens == 0:
             return KeyNormReport(0, 0.0, 0.0, 0.0)
         return KeyNormReport(
@@ -90,6 +92,7 @@ class KeyNormObserver(QuantizationObserver):
         )
 
     def reset(self) -> None:
+        """Clear all accumulated norm statistics."""
         self._sum_sq = 0.0
         self._min_sq = float("inf")
         self._max_sq = 0.0

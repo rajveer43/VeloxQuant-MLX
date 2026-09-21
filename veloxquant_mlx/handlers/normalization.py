@@ -55,6 +55,7 @@ class NormalizationHandler(QuantizationHandler):
 
     @property
     def handler_name(self) -> str:
+        """Registry name for this handler ('normalization')."""
         return "normalization"
 
     def __repr__(self) -> str:

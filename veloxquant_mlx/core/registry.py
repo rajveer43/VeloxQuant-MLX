@@ -43,6 +43,7 @@ class _BaseRegistry:
         """
 
         def decorator(target_cls: type) -> type:
+            """Register target_cls under name and return it unchanged."""
             with cls._lock:
                 if name in cls._registry:
                     raise KeyError(

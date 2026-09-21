@@ -40,6 +40,7 @@ def _laplacian_pdf(scale: float):
     inv_scale = 1.0 / scale
 
     def pdf(x: np.ndarray) -> np.ndarray:
+        """Laplacian density at x for the enclosing scale."""
         return inv * np.exp(-np.abs(x) * inv_scale)
 
     return pdf

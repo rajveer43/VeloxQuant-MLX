@@ -155,6 +155,7 @@ class ScoredMethod:
     warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize score, objective_scores, memory, evidence, and warnings to a plain dict."""
         return {
             "method": self.method,
             "score": round(self.score, 4),
@@ -180,9 +181,11 @@ class RecommendationResult:
 
     @property
     def best(self) -> ScoredMethod | None:
+        """Top-ranked method, or None if nothing survived filtering."""
         return self.ranked[0] if self.ranked else None
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the full result (ranked list, candidates, inputs) to a plain dict."""
         return {
             "objective": self.objective,
             "ranked": [item.to_dict() for item in self.ranked],

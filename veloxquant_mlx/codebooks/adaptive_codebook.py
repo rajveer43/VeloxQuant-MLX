@@ -73,14 +73,17 @@ class AdaptiveScalarCodebook:
 
     @property
     def is_calibrated(self) -> bool:
+        """True once the buffer has been fit into a data-driven codebook."""
         return self._is_calibrated
 
     @property
     def k(self) -> int:
+        """Number of codebook levels (2^b)."""
         return self._k
 
     @property
     def b(self) -> int:
+        """Bit-width of the codebook."""
         return self._b
 
     def get_codebook(self) -> tuple[np.ndarray, np.ndarray]:
@@ -136,6 +139,7 @@ class AdaptiveScalarCodebook:
         bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
 
         def pdf_fn(x: np.ndarray) -> np.ndarray:
+            """Interpolate the empirical histogram density at x."""
             return np.interp(x, bin_centers, hist, left=0.0, right=0.0)
 
         centroids, _ = lloyd_max(pdf_fn, support=(lo, hi), n_levels=self._k)
@@ -144,15 +148,19 @@ class AdaptiveScalarCodebook:
         self._buffer = []  # release memory
 
     def quantize(self, y: Any) -> Any:
+        """Quantize y with the current (proxy or fitted) codebook."""
         return self._codebook.quantize(y)
 
     def dequantize(self, idx: Any) -> Any:
+        """Dequantize indices with the current (proxy or fitted) codebook."""
         return self._codebook.dequantize(idx)
 
     def centroids_numpy(self) -> np.ndarray:
+        """Return the current codebook's centroids as a numpy array."""
         return self._codebook.centroids_numpy()
 
     def centroids_mx(self) -> Any:
+        """Return the current codebook's centroids as an mx array."""
         return self._codebook.centroids_mx()
 
     def __repr__(self) -> str:

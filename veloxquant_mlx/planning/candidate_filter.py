@@ -77,6 +77,7 @@ class CandidateFilterResult:
     method_info: dict[str, MethodInfo] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize viable/excluded/soft_warnings/method_info to a plain dict."""
         return {
             "viable": list(self.viable),
             "excluded": dict(self.excluded),

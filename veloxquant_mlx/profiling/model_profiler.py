@@ -107,6 +107,7 @@ class ModelProfile:
         return self.baseline_kv_bytes_per_token * (num_layers or self.num_layers) * batch
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize all fields to a plain dict."""
         return {
             "model_id": self.model_id,
             "architecture": self.architecture,

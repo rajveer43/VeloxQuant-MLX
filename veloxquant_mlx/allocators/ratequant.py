@@ -49,6 +49,7 @@ class _SensitivityProbeCache(_MLXKVCache):
         self._n_tokens = 0
 
     def update_and_fetch(self, keys, values):
+        """Accumulate mean-squared key norm from this step, then delegate to the base cache."""
         k_flat = keys.reshape(-1, keys.shape[-1]).astype(mx.float32)
         norms_sq = mx.sum(k_flat * k_flat, axis=-1)
         self._norm_sq_sum += float(mx.sum(norms_sq))
@@ -57,6 +58,7 @@ class _SensitivityProbeCache(_MLXKVCache):
 
     @property
     def sensitivity(self) -> float:
+        """Mean squared key L2 norm observed so far (defaults to 1.0 with no tokens)."""
         return (self._norm_sq_sum / self._n_tokens) if self._n_tokens else 1.0
 
 

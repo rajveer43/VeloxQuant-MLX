@@ -130,10 +130,12 @@ class PoolBackedKVCache:
         self.pool.free_all(owner=self.owner)
 
     def size(self) -> int:
+        """Number of tokens currently stored (the cache's offset)."""
         return self.offset
 
     @property
     def state(self):
+        """(keys, values) trimmed to the current offset."""
         if self.keys is None:
             return self.keys, self.values
         if self.offset == self.keys.shape[2]:
@@ -145,36 +147,44 @@ class PoolBackedKVCache:
 
     @state.setter
     def state(self, v) -> None:
+        """Replace keys/values and reset offset to the new sequence length."""
         self.keys, self.values = v
         self.offset = self.keys.shape[2] if self.keys is not None else 0
 
     @property
     def meta_state(self):
+        """No extra metadata for this cache type; always empty."""
         return ""
 
     @meta_state.setter
     def meta_state(self, v) -> None:
+        """Reject any non-empty meta_state, since this cache never produces one."""
         if v is not None and v:
             raise ValueError("PoolBackedKVCache has no meta_state but a meta_state was set.")
 
     def is_trimmable(self) -> bool:
+        """Always True: offset can be rewound via trim()."""
         return True
 
     def trim(self, n: int) -> int:
+        """Rewind the offset by up to n tokens; returns the amount actually trimmed."""
         n = min(self.offset, n)
         self.offset -= n
         return n
 
     def make_mask(self, *args, **kwargs):
+        """Build an attention mask for the current offset via mlx_lm's create_attention_mask."""
         from mlx_lm.models.cache import create_attention_mask
 
         return create_attention_mask(*args, offset=self.offset, **kwargs)
 
     def empty(self) -> bool:
+        """True if no keys/values have been written yet."""
         return self.keys is None
 
     @property
     def nbytes(self) -> int:
+        """Combined byte size of the backing keys and values buffers."""
         if self.keys is None:
             return 0
         return self.keys.nbytes + self.values.nbytes

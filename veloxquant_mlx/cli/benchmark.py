@@ -39,6 +39,12 @@ def _time_attend(cache, q, n_calls: int = 10) -> float:
 
 
 def main() -> None:
+    """Parse CLI args and benchmark KV-cache attend() latency across sequence lengths.
+
+    Builds a cache for --method at each --seq_lens (or --seq_len), times
+    attend() calls, and optionally (--compare_optimized) compares against a
+    vectorized/fused/outlier-two-stream variant of the same cache.
+    """
     parser = argparse.ArgumentParser(
         prog="veloxquant_mlx benchmark",
         description="Benchmark KV cache encode/decode latency and memory.",

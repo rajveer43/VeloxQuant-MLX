@@ -55,6 +55,7 @@ class WorkloadProfile:
     max_latency_ms: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize all fields to a plain dict."""
         return {
             "context_length": self.context_length,
             "generation_length": self.generation_length,
