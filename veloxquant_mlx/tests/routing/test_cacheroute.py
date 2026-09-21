@@ -436,3 +436,65 @@ def test_end_to_end_skewed_workload_favors_hot_keys_and_balances_shards():
     assert table.admitted_rate_total + table.unadmitted_rate_total == pytest.approx(
         sum(r.rate for r in rates)
     )
+
+
+# ============================================================================
+# RateEstimator memory bound (issue #495)
+# ============================================================================
+
+
+def test_rate_estimator_max_owners_none_is_unbounded_by_default():
+    estimator = RateEstimator()
+    for owner in range(500):
+        estimator.record(owner)
+    assert len(estimator._counts) == 500
+
+
+def test_rate_estimator_rejects_non_positive_max_owners():
+    with pytest.raises(QuantizerConfigError):
+        RateEstimator(max_owners=0)
+    with pytest.raises(QuantizerConfigError):
+        RateEstimator(max_owners=-1)
+
+
+def test_rate_estimator_stays_at_cap_under_sustained_new_owners():
+    estimator = RateEstimator(max_owners=10)
+    for owner in range(1000):
+        estimator.record(owner)
+    assert len(estimator._counts) == 10
+
+
+def test_rate_estimator_eviction_drops_the_lowest_rate_owner():
+    estimator = RateEstimator(half_life=5.0, max_owners=3)
+    # Owner 0 records many times (high rate), 1 and 2 record once each.
+    for _ in range(20):
+        estimator.record(0)
+    estimator.record(1)
+    estimator.record(2)
+    assert set(estimator._counts) == {0, 1, 2}
+
+    # A brand-new owner should evict the coldest tracked owner, not owner 0.
+    estimator.record(3)
+    assert 0 in estimator._counts
+    assert 3 in estimator._counts
+    assert len(estimator._counts) == 3
+
+
+def test_rate_estimator_recording_an_already_tracked_owner_never_evicts():
+    estimator = RateEstimator(max_owners=2)
+    estimator.record(0)
+    estimator.record(1)
+    # Re-recording an owner already at the cap must not trigger eviction.
+    estimator.record(0)
+    assert set(estimator._counts) == {0, 1}
+
+
+def test_rate_estimator_forget_still_frees_memory_under_a_cap():
+    estimator = RateEstimator(max_owners=5)
+    for owner in range(5):
+        estimator.record(owner)
+    estimator.forget(2)
+    assert len(estimator._counts) == 4
+    # Room is now available without needing to evict anyone else.
+    estimator.record(99)
+    assert set(estimator._counts) == {0, 1, 3, 4, 99}

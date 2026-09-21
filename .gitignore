@@ -30,7 +30,7 @@ htmlcov/
 # Old turboquant-mlx directory
 turboquant-mlx/
 
-.bench_tmp/.claude/
+.bench_tmp/
 .env
 
 .brag/

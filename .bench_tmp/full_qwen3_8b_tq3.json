@@ -1,1 +1,0 @@
-{"model_key": "qwen3_8b", "model_id": "mlx-community/Qwen3-8B-4bit", "config": "tq3", "config_label": "TurboQuant 3-bit", "head_dim": 128, "n_kv_heads": 8, "n_layers": 36, "tps": 3.6089954167473595, "toks": 2, "elapsed": 0.5541708339997058, "ratio_str": "5.82\u00d7", "ratio_num": 5.818181818181818, "fp16_key_bytes": 2359296, "compressed_key_bytes": 405504, "response": "Okay\n\n"}

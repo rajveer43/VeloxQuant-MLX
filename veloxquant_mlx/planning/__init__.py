@@ -1,5 +1,18 @@
 """Automatic KV-cache strategy selection (RFC ``method="auto"``).
 
+.. warning::
+    **Preview API — subject to change without a major version bump.**
+    This module implements RFC #469's hardware-aware strategy selector.
+    Its numeric output is an *analytical proxy*, not a measurement:
+    :class:`MemoryEstimate` documents a roughly ±20% error band against
+    actual MLX allocations, and hardware bandwidth is currently estimated
+    from a per-chip-generation table rather than always measured on the
+    live device. Treat :meth:`AutoOptimizer.recommend_strategy`'s
+    ``savings_percent``/latency numbers as a starting point for
+    comparison across candidates, not a guarantee — validate against a
+    real benchmark (e.g. via ``AutoOptimizerOptions.benchmark_db_dir`` or
+    ``probe_top_n``) before trusting a recommendation in production.
+
 The public surface is :class:`AutoOptimizer`:
 
     from veloxquant_mlx.planning import AutoOptimizer
@@ -75,6 +88,11 @@ FALLBACK_METHOD = "turboquant_rvq"
 
 class AutoOptimizer:
     """One-stop automatic KV-cache strategy recommender with caching and live validation.
+
+    **Preview API**: see the module-level warning above — recommendations
+    are an analytical proxy (±20% memory error band, table-estimated
+    hardware bandwidth), not a measured guarantee. Prefer a low
+    ``probe_top_n`` or a real benchmark database before production use.
 
     **Purpose**: Answers "which of the 43 methods should I use?" by profiling
     hardware/model, filtering incompatible methods, ranking by objective,

@@ -1,5 +1,15 @@
 """CacheRoute: rate-aware session admission and shard placement (issue #278).
 
+.. warning::
+    **Preview API — subject to change without a major version bump.**
+    This module adapts an external paper's routing algorithm and, as
+    documented below, deliberately has no analytic residency guarantee —
+    the paper's own Appendix H found that prediction unreliable and
+    recommends measuring instead. Treat :class:`RoutingTable`'s
+    ``expected_load`` numbers as planning input to compare against, not
+    a promise; validate against measured hit rate before relying on a
+    plan in production.
+
 Adapts the routing plan from Cheng, "CacheRoute: Planned Prefix-Affinity
 Routing for Large-Scale LLM Serving" (Meta, Aug 2026, arXiv:2608.19677) to a
 single-process, single-GPU server. The paper plans which *server* in a
@@ -146,16 +156,30 @@ class RateEstimator:
 
     Memory is bounded by the number of distinct owners tracked (one float in
     ``_counts`` each), not by how many requests have been recorded — an
-    owner's whole contribution to memory is released by :meth:`forget`.
+    owner's whole contribution to memory is released by :meth:`forget`. That
+    bound is only enforced if the *caller* calls :meth:`forget` on session
+    close; nothing here does it automatically. A caller that can't guarantee
+    that — e.g. a long-running server seeing many short-lived session IDs —
+    should set ``max_owners`` so ``_counts`` self-bounds instead of growing
+    without limit.
 
     Args:
         half_life: Number of :meth:`record` calls for an owner's rate
             contribution to decay by half. Smaller values track bursts
             faster but are noisier; larger values are stable but slow to
             react to a session going cold or hot.
+        max_owners: Maximum distinct owners to track at once. ``None`` (the
+            default) preserves the original unbounded behavior. When set,
+            recording a request from a not-yet-tracked owner that would push
+            the owner count past this cap first evicts the single
+            currently-lowest-rate owner (an approximation of "the coldest
+            session," not a full LRU) to make room. Does not add a branch to
+            the already-tracked-owner path, so the hot case (an owner
+            already in ``_counts``) is unaffected.
     """
 
     half_life: float = 20.0
+    max_owners: int | None = None
     _counts: dict[int, float] = field(default_factory=dict)
     _decay: float = field(init=False)
 
@@ -163,6 +187,10 @@ class RateEstimator:
         if self.half_life <= 0:
             raise QuantizerConfigError(
                 f"RateEstimator: half_life must be > 0, got {self.half_life}"
+            )
+        if self.max_owners is not None and self.max_owners <= 0:
+            raise QuantizerConfigError(
+                f"RateEstimator: max_owners must be > 0 or None, got {self.max_owners}"
             )
         self._decay = math.pow(0.5, 1.0 / self.half_life)
 
@@ -172,8 +200,17 @@ class RateEstimator:
         This is the hottest call in the module — once per incoming request,
         for potentially every concurrent session — so it does the minimum
         work needed for the EWMA: one dict lookup and one float update, no
-        per-request allocation.
+        per-request allocation, for any owner already being tracked. The
+        eviction check below only runs for a new owner when ``max_owners``
+        is set, so it costs nothing on the common path.
         """
+        if (
+            self.max_owners is not None
+            and owner not in self._counts
+            and len(self._counts) >= self.max_owners
+        ):
+            coldest = min(self._counts, key=lambda o: self._counts[o])
+            del self._counts[coldest]
         self._counts[owner] = self._counts.get(owner, 0.0) * self._decay + 1.0
 
     def rate(self, owner: int) -> float:
