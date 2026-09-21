@@ -140,6 +140,7 @@ class ZipCacheKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Sort key tokens by L2-norm saliency, quantize the top hi_fraction at hi_bits and the rest at lo_bits (values uniformly at hi_bits); return reconstructed fp16 K/V."""
         k_out = self._compress_and_account(keys, is_key=True)
         if self._quant_values:
             v_out = self._compress_and_account(values, is_key=False)
@@ -154,10 +155,12 @@ class ZipCacheKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for the compressed key cache (mixed hi/lo-bit saliency-routed codes, all heads/batches)."""
         return self._compressed_key_bytes
 
     @property
     def compressed_value_bytes(self) -> int:
+        """Realized stored bytes for the compressed value cache (uniform hi_bits codes, all heads/batches)."""
         return self._compressed_value_bytes
 
     @property
@@ -167,14 +170,17 @@ class ZipCacheKVCache(_MLXKVCache):
 
     @property
     def baseline_value_bytes(self) -> int:
+        """Uniform lo-bit baseline for comparison (no saliency routing)."""
         return self._baseline_value_bytes
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._fp16_key_bytes
 
     @property
     def fp16_value_bytes(self) -> int:
+        """Hypothetical fp16 value cost if nothing were compressed."""
         return self._fp16_value_bytes
 
     @property
