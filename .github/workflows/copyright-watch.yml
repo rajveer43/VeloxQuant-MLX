@@ -50,6 +50,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify RESEND_API_KEY is configured
+        # Fail fast, before burning the ~45-query / up-to-90-minute search
+        # budget below, if the secret this workflow depends on for its only
+        # notification channel (see the module comment) isn't set. A search
+        # that finds a hit but then can't send the alert email fails opaquely
+        # at the "Email alert via Resend" step with a bare `curl` 401 -- this
+        # step instead fails immediately with a message that says exactly
+        # what's missing and where to fix it. #476
+        run: |
+          if [ -z "${{ secrets.RESEND_API_KEY }}" ]; then
+            echo "::error::RESEND_API_KEY secret is not set — skipping copyright watch this run. See .github/workflows/copyright-watch.yml for setup (Settings > Secrets and variables > Actions > RESEND_API_KEY)."
+            exit 1
+          fi
+
       - name: Search for unauthorized copies
         uses: actions/github-script@v7
         with:
