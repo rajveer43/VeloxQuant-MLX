@@ -361,26 +361,32 @@ class A2ATSKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for the compressed key cache (retrieval-aware VQ codes, all heads/batches; excludes amortized codebook)."""
         return self._key_bytes_compressed
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._key_bytes_fp16
 
     @property
     def compressed_value_bytes(self) -> int:
+        """Realized stored bytes for the compressed value cache (retrieval-aware VQ codes, all heads/batches; excludes amortized codebook)."""
         return self._value_bytes_compressed
 
     @property
     def fp16_value_bytes(self) -> int:
+        """Hypothetical fp16 value cost if nothing were compressed."""
         return self._value_bytes_fp16
 
     @property
     def codebook_bytes(self) -> int:
+        """Static codebook overhead in bytes (fp16 storage), amortized across all tokens."""
         return (2**self._bits) * self._sub_dim * 2  # fp16 storage
 
     @property
     def compression_ratio(self) -> float:
+        """``fp16_bytes / compressed_bytes`` (K + V combined); > 1 means memory savings over fp16."""
         total_compressed = self._key_bytes_compressed + self._value_bytes_compressed
         total_fp16 = self._key_bytes_fp16 + self._value_bytes_fp16
         if total_compressed == 0:
@@ -389,14 +395,17 @@ class A2ATSKVCache(_MLXKVCache):
 
     @property
     def assigned_avg_bits(self) -> float:
+        """Effective bits/element from the sub-vector codebook, scaled by sub_dim/head_dim."""
         return (self._n_sub * self._bits) / self._head_dim
 
     @property
     def tokens_seen(self) -> int:
+        """Total tokens processed through ``update_and_fetch`` so far."""
         return self._tokens_seen
 
     @property
     def tokens_retrieved(self) -> int:
+        """Total tokens assigned to the query-aware retrieval-set codebook path rather than plain nearest-centroid."""
         return self._tokens_retrieved
 
     # Without this, A2ATSKVCache inherits the base mlx_lm KVCache.merge()
