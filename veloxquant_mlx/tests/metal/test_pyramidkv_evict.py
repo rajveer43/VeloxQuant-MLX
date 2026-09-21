@@ -5,8 +5,14 @@ from __future__ import annotations
 import mlx.core as mx
 import pytest
 
+from veloxquant_mlx.metal import metal_available
 from veloxquant_mlx.metal._pyramidkv_evict import pyramidkv_fused_evict
 from veloxquant_mlx.quantizers.pyramidkv import init_pyramid_state, pyramid_update
+
+pytestmark = [
+    pytest.mark.metal,
+    pytest.mark.skipif(not metal_available(), reason="Metal unavailable"),
+]
 
 
 @pytest.mark.parametrize("shape", [(1, 2, 1), (3, 35, 31), (8, 513, 128)])
