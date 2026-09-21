@@ -37,6 +37,7 @@ ACCOUNTING_NOTE = (
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the argparse parser for ``veloxquant profile`` (model, method, bits, prompt, --set)."""
     parser = argparse.ArgumentParser(
         prog="veloxquant profile",
         description=(
@@ -154,6 +155,7 @@ def parse_overrides(pairs: list[str]) -> dict:
 
 
 def build_config(args: argparse.Namespace) -> Any:
+    """Build a KVCacheConfig from --method/--bits/--seed plus parsed --set overrides."""
     from veloxquant_mlx.cache import KVCacheConfig
 
     overrides = parse_overrides(getattr(args, "set", []) or [])
@@ -226,6 +228,13 @@ def run_profile(args: argparse.Namespace) -> dict:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse CLI args, run a live-model profiling pass, and print the JSON report.
+
+    Loads --model, builds one KVCacheProfiler per layer for --method, runs
+    mlx_lm.generate over --prompt/--max-tokens, and prints the per-layer and
+    summary latency/memory/compression JSON payload (issue #45 control-panel
+    contract), including the unconditional accounting-only warning.
+    """
     args = build_parser().parse_args(argv)
     validate_method(args.method)
     payload = run_profile(args)

@@ -49,6 +49,14 @@ def _read_model_config(path: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse CLI args and print a KV-cache method recommendation.
+
+    Dispatches to the hardware-aware auto-selector (``_main_auto``) when
+    --auto or --model-config is given, otherwise runs the legacy
+    --chip/--ram-gb/--model-class/--goal heuristic (mac_recommender.recommend),
+    printing text or JSON (--json). --dump-ruleset prints the static ruleset
+    and exits before either path runs.
+    """
     parser = argparse.ArgumentParser(
         prog="veloxquant recommend",
         description=(

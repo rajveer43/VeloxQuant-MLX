@@ -20,6 +20,12 @@ def _reply(request_id: str, *, result: Any = None, error: Any = None) -> None:
 
 
 def main() -> None:
+    """Read JSON-lines requests from stdin and reply with JSON-lines results.
+
+    Dispatches each line's ``op`` (ping, capabilities, metal_probe, bit_pack,
+    bit_pack_file, rope_recode_file, shutdown) to its handler and writes one
+    JSON reply per request; ``shutdown`` replies then returns, ending the loop.
+    """
     from veloxquant_mlx import __version__
 
     for line in sys.stdin:

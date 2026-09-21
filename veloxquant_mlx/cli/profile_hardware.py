@@ -13,6 +13,12 @@ from veloxquant_mlx.profiling.hardware_profiler import (
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Print the detected HardwareProfile, optionally with a measured bandwidth benchmark.
+
+    Prints chip, memory, MLX/macOS versions, and Metal availability as text
+    or JSON (--json); --measure-bandwidth additionally runs a short MLX copy
+    benchmark and reports measured GB/s.
+    """
     parser = argparse.ArgumentParser(
         prog="veloxquant profile-hardware",
         description=(
