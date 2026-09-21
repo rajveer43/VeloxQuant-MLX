@@ -3,6 +3,14 @@
 **RFC**: [#469](https://github.com/rajveer43/VeloxQuant-MLX/issues/469)  
 **Implementation PR**: [#470](https://github.com/rajveer43/VeloxQuant-MLX/pull/470)
 
+> **Preview API.** `AutoOptimizer` is subject to change without a major
+> version bump. Its recommendations are an analytical proxy — `MemoryEstimate`
+> carries a documented ~±20% error band against actual MLX allocations, and
+> hardware bandwidth is currently estimated from a per-chip-generation table
+> rather than always measured on the live device. Use `probe_top_n` or a real
+> benchmark database (`AutoOptimizerOptions.benchmark_db_dir`) to validate a
+> recommendation before relying on it in production.
+
 ## Overview
 
 The automatic strategy selection system answers a fundamental VeloxQuant user question:

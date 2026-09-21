@@ -1,5 +1,15 @@
 """CacheRoute: rate-aware session admission and shard placement (issue #278).
 
+.. warning::
+    **Preview API — subject to change without a major version bump.**
+    This module adapts an external paper's routing algorithm and, as
+    documented below, deliberately has no analytic residency guarantee —
+    the paper's own Appendix H found that prediction unreliable and
+    recommends measuring instead. Treat :class:`RoutingTable`'s
+    ``expected_load`` numbers as planning input to compare against, not
+    a promise; validate against measured hit rate before relying on a
+    plan in production.
+
 Adapts the routing plan from Cheng, "CacheRoute: Planned Prefix-Affinity
 Routing for Large-Scale LLM Serving" (Meta, Aug 2026, arXiv:2608.19677) to a
 single-process, single-GPU server. The paper plans which *server* in a

@@ -2,6 +2,14 @@
 
 Implements TurboQuant, TurboQuantRVQ, PolarQuant, and QJL plus the
 RateQuant per-layer bit allocator for production LLM inference.
+
+Preview APIs: :class:`~veloxquant_mlx.planning.AutoOptimizer` (automatic
+hardware-aware strategy selection, RFC #469) and
+:class:`~veloxquant_mlx.routing.CacheRoutePlanner` (rate-aware session
+routing) are exported here for convenience but are subject to change
+without a major version bump — see their module docstrings
+(:mod:`veloxquant_mlx.planning`, :mod:`veloxquant_mlx.routing.cacheroute`)
+for what "preview" means for each.
 """
 
 from __future__ import annotations
@@ -115,7 +123,8 @@ __all__ = [
     "WorkloadSpec",
     "detect_hardware_info",
     "select_kv_cache_config",
-    # Automatic strategy selection (RFC method="auto")
+    # Automatic strategy selection (RFC method="auto") -- PREVIEW API, see
+    # veloxquant_mlx.planning's module docstring.
     "AutoOptimizer",
     "AutoOptimizerOptions",
     "HardwareProfile",
@@ -125,6 +134,7 @@ __all__ = [
     "RecommendationResult",
     "MemoryEstimate",
     # CacheRoute: rate-aware session admission and shard placement (issue #278)
+    # -- PREVIEW API, see veloxquant_mlx.routing.cacheroute's module docstring.
     "CacheRoutePlanner",
     "RateEstimator",
     "RoutingTable",
