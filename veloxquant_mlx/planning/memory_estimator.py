@@ -233,9 +233,7 @@ def estimate_memory(
     if model_row is None:
         model_row = {"key_bits": _BITS_PER_FP16}
         confidence = "low"
-        assumptions.append(
-            f"{method} has no curated memory model; assuming no compression (fp16)"
-        )
+        assumptions.append(f"{method} has no curated memory model; assuming no compression (fp16)")
     else:
         confidence = "high"
 
@@ -271,9 +269,7 @@ def estimate_memory(
     resident = max(compressed, workspace)
 
     if model_row.get("key_bits", _BITS_PER_FP16) == _BITS_PER_FP16 and not eviction:
-        assumptions.append(
-            "keys estimated at fp16 (16-bit); request lower-bit config for savings"
-        )
+        assumptions.append("keys estimated at fp16 (16-bit); request lower-bit config for savings")
     if model_row.get("value_bits"):
         assumptions.append(
             f"values quantized to {model_row['value_bits']}-bit — most methods "

@@ -44,9 +44,19 @@ EvidenceSource = Literal["analytic", "empirical", "hybrid", "fallback"]
 DEFAULT_OBJECTIVE_WEIGHTS: dict[str, dict[str, float]] = {
     WorkloadObjective.MEMORY: {"memory": 0.8, "latency": 0.1, "throughput": 0.1, "quality": 0.2},
     WorkloadObjective.LATENCY: {"memory": 0.1, "latency": 0.6, "throughput": 0.3, "quality": 0.0},
-    WorkloadObjective.THROUGHPUT: {"memory": 0.05, "latency": 0.15, "throughput": 0.8, "quality": 0.0},
+    WorkloadObjective.THROUGHPUT: {
+        "memory": 0.05,
+        "latency": 0.15,
+        "throughput": 0.8,
+        "quality": 0.0,
+    },
     WorkloadObjective.QUALITY: {"memory": 0.15, "latency": 0.1, "throughput": 0.0, "quality": 0.75},
-    WorkloadObjective.BALANCED: {"memory": 0.4, "latency": 0.25, "throughput": 0.25, "quality": 0.1},
+    WorkloadObjective.BALANCED: {
+        "memory": 0.4,
+        "latency": 0.25,
+        "throughput": 0.25,
+        "quality": 0.1,
+    },
 }
 
 #: Class-based latency multiplier: quantized caches pay per-byte decode+dequant,
@@ -98,9 +108,7 @@ def _retention(
     _, _, evicts = method_quant_bits(method)
     if not evicts:
         return 1.0
-    per_token = (
-        model.baseline_kv_bytes_per_token * model.num_layers * workload.effective_batch
-    )
+    per_token = model.baseline_kv_bytes_per_token * model.num_layers * workload.effective_batch
     budget_tokens = max(1, estimate.compressed_bytes // max(1, per_token))
     return min(1.0, budget_tokens / max(1, workload.total_tokens_per_request))
 
@@ -190,7 +198,9 @@ class RecommendationResult:
 def _weights_for(objective: str, override: dict[str, float] | None) -> dict[str, float]:
     if override is not None and override:
         return {k: float(v) for k, v in override.items() if float(v)}
-    base = DEFAULT_OBJECTIVE_WEIGHTS.get(objective, DEFAULT_OBJECTIVE_WEIGHTS[WorkloadObjective.BALANCED])
+    base = DEFAULT_OBJECTIVE_WEIGHTS.get(
+        objective, DEFAULT_OBJECTIVE_WEIGHTS[WorkloadObjective.BALANCED]
+    )
     total = sum(base.values())
     return {k: v / total for k, v in base.items()}
 
@@ -246,9 +256,7 @@ def plan_strategy(
     # the filter needs an estimate to vet the whole registry.
     from veloxquant_mlx.cache.registry import all_method_names
 
-    estimates = estimate_candidate_memory(
-        list(all_method_names()), model, workload
-    )
+    estimates = estimate_candidate_memory(list(all_method_names()), model, workload)
     candidates = filter_candidates(model, hardware, workload, estimates, options=fopts)
     if opts.additional_exclusions:
         for name in opts.additional_exclusions:
@@ -279,8 +287,9 @@ def plan_strategy(
     latency_ms: dict[str, float] = {}
     throughput_s: dict[str, float] = {}
     for name in candidates.viable:
-        per_token = max(1, estimates[name].compressed_bytes //
-                        max(1, workload.total_tokens_per_request))
+        per_token = max(
+            1, estimates[name].compressed_bytes // max(1, workload.total_tokens_per_request)
+        )
         factor = _METHOD_CLASS_FACTOR[_class_for(candidates.method_info[name])]
         latency_ms[name] = (per_token / bandwidth) * factor
         throughput_s[name] = 1.0 / latency_ms[name]
@@ -323,13 +332,15 @@ def plan_strategy(
 
     scores: dict[str, float] = {
         n: round(
-            sum(weights.get(axis, 0.0) * score
+            sum(
+                weights.get(axis, 0.0) * score
                 for axis, score in {
                     "memory": memory_norm[n],
                     "latency": latency_norm[n],
                     "throughput": throughput_norm[n],
                     "quality": quality_norm[n],
-                }.items()),
+                }.items()
+            ),
             4,
         )
         for n in candidates.viable
@@ -349,9 +360,9 @@ def plan_strategy(
             evidence=evidence_kind[name],
             warnings=candidates.soft_warnings.get(name, []) + evidence_notes[name],
         )
-        for name in sorted(
-            candidates.viable, key=lambda n: (scores[n], n), reverse=True
-        )[: opts.max_results]
+        for name in sorted(candidates.viable, key=lambda n: (scores[n], n), reverse=True)[
+            : opts.max_results
+        ]
     ]
     return RecommendationResult(
         objective=workload.objective,
