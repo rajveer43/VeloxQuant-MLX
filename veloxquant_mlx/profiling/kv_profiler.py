@@ -72,10 +72,12 @@ class LayerProfile:
 
     @property
     def quantize_ms_mean(self) -> float:
+        """Average append_key (or update_and_fetch) latency in milliseconds."""
         return self.quantize_ms_total / self.n_quantize_calls if self.n_quantize_calls else 0.0
 
     @property
     def dequantize_ms_mean(self) -> float:
+        """Average attend latency in milliseconds (always 0 when is_fused is True)."""
         return (
             self.dequantize_ms_total / self.n_dequantize_calls if self.n_dequantize_calls else 0.0
         )
@@ -102,20 +104,24 @@ class ProfileReport:
 
     @property
     def total_bytes_written(self) -> int:
+        """Sum of peak memory across all profiled layers."""
         return sum(layer.peak_memory_bytes for layer in self.layers)
 
     @property
     def total_tokens(self) -> int:
+        """Sum of tokens written across all profiled layers."""
         return sum(layer.tokens_written for layer in self.layers)
 
     @property
     def tokens_per_sec(self) -> float:
+        """Total tokens divided by elapsed_s (0.0 if elapsed_s is unset)."""
         if self.elapsed_s <= 0:
             return 0.0
         return self.total_tokens / self.elapsed_s
 
     @property
     def overall_compression_ratio(self) -> float:
+        """Combined fp16-baseline-bytes over actual bytes across all layers."""
         fp16_total = sum(layer.fp16_baseline_bytes for layer in self.layers)
         actual_total = self.total_bytes_written
         if actual_total <= 0:
@@ -159,6 +165,7 @@ class KVCacheProfiler(KVCache):
         self._profile = LayerProfile(layer_id=layer_id)
 
     def append_key(self, k: Any) -> None:
+        """Append a key to the wrapped cache, timing it as a quantize call."""
         t0 = time.perf_counter()
         self._cache.append_key(k)
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
@@ -168,12 +175,14 @@ class KVCacheProfiler(KVCache):
         self._profile.fp16_baseline_bytes += 2 * self._head_dim
 
     def append_value(self, v: Any) -> None:
+        """Append a value to the wrapped cache, timing it as a write call."""
         t0 = time.perf_counter()
         self._cache.append_value(v)
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
         self._profile.write_ms_total += elapsed_ms
 
     def attend(self, q: Any) -> Any:
+        """Run attention on the wrapped cache, timing it as a dequantize call."""
         t0 = time.perf_counter()
         out = self._cache.attend(q)
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
@@ -182,6 +191,7 @@ class KVCacheProfiler(KVCache):
         return out
 
     def memory_bytes(self) -> int:
+        """Return the wrapped cache's current memory_bytes() reading."""
         return self._cache.memory_bytes()
 
     def _update_peak_memory(self) -> None:
@@ -257,6 +267,7 @@ class MLXCacheProfiler:
         self._profile = LayerProfile(layer_id=layer_id, is_fused=True)
 
     def update_and_fetch(self, keys: Any, values: Any) -> Any:
+        """Forward to the wrapped cache's update_and_fetch, timing it as one fused call."""
         n_tokens = keys.shape[-2] if hasattr(keys, "shape") else 1
         t0 = time.perf_counter()
         out = self._cache.update_and_fetch(keys, values)

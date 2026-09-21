@@ -123,6 +123,7 @@ class HardwareProfile:
 
     @classmethod
     def detect(cls) -> HardwareProfile:
+        """Build a HardwareProfile for the current machine (see detect_hardware_profile)."""
         return detect_hardware_profile()
 
     @property
@@ -135,6 +136,7 @@ class HardwareProfile:
         return None
 
     def to_dict(self) -> dict:
+        """Serialize all fields to a plain dict."""
         return {
             "chip": self.chip,
             "chip_generation": self.chip_generation,
