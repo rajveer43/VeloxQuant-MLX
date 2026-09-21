@@ -98,9 +98,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install package + dev/release dependencies
+      - name: Install package + test/release dependencies
         run: |
-          pip install -e ".[dev]"
+          pip install -e ".[test,release]"
 
       - name: Run test suite (release gate)
         run: python -m pytest veloxquant_mlx/tests -q

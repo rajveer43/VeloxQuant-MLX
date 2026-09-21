@@ -74,6 +74,11 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
+`.[dev]` installs everything needed to write code and run the test/lint/type
+suites (pytest, ruff, mypy, pre-commit). There is a separate `.[release]`
+extra (build, twine, python-semantic-release, GitPython) used only by the
+release workflow -- you will not need it for ordinary contributions.
+
 Fork first if you do not have write access, then add
 `upstream` pointing at `rajveer43/VeloxQuant-MLX`.
 
