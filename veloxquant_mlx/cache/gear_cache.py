@@ -147,6 +147,7 @@ class GEARKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Compress K (and V, unless disabled) with GEAR's base group quant + low-rank residual + sparse outlier correction; return reconstructed fp16 K/V."""
         k_out = self._compress_and_account(keys, is_key=True)
         if self._quant_values:
             v_out = self._compress_and_account(values, is_key=False)
@@ -161,26 +162,32 @@ class GEARKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for the compressed key cache (GEAR three-part: base codes + low-rank factors + sparse triples, all heads/batches)."""
         return self._compressed_key_bytes
 
     @property
     def compressed_value_bytes(self) -> int:
+        """Realized stored bytes for the compressed value cache (GEAR three-part: base codes + low-rank factors + sparse triples, all heads/batches)."""
         return self._compressed_value_bytes
 
     @property
     def base_only_key_bytes(self) -> int:
+        """Base-layer-only key bytes (group quant codes alone, no error-feedback), the baseline GEAR compares against."""
         return self._base_only_key_bytes
 
     @property
     def base_only_value_bytes(self) -> int:
+        """Base-layer-only value bytes (group quant codes alone, no error-feedback), the baseline GEAR compares against."""
         return self._base_only_value_bytes
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._fp16_key_bytes
 
     @property
     def fp16_value_bytes(self) -> int:
+        """Hypothetical fp16 value cost if nothing were compressed."""
         return self._fp16_value_bytes
 
     @property

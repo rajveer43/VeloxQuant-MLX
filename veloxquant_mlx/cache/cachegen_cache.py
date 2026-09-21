@@ -104,6 +104,7 @@ class CacheGenKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Group-quantize K/V (KIVI-style), reporting entropy-coded byte estimates in addition to the fixed-width baseline; return dequantized K/V."""
         k_out = self._quant_and_account(keys, is_key=True)
         v_out = self._quant_and_account(values, is_key=False)
         return super().update_and_fetch(k_out, v_out)
@@ -113,26 +114,32 @@ class CacheGenKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def compressed_key_bytes(self) -> int:
+        """Entropy-coded (ideal arithmetic-coder) estimate for the key cache, modelling Shannon entropy of the token-delta code stream."""
         return self._compressed_key_bytes
 
     @property
     def compressed_value_bytes(self) -> int:
+        """Entropy-coded (ideal arithmetic-coder) estimate for the value cache, modelling Shannon entropy of the token-delta code stream."""
         return self._compressed_value_bytes
 
     @property
     def fixed_width_key_bytes(self) -> int:
+        """Naive fixed-width packed baseline for the key cache (no entropy coding)."""
         return self._fixed_width_key_bytes
 
     @property
     def fixed_width_value_bytes(self) -> int:
+        """Naive fixed-width packed baseline for the value cache (no entropy coding)."""
         return self._fixed_width_value_bytes
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._fp16_key_bytes
 
     @property
     def fp16_value_bytes(self) -> int:
+        """Hypothetical fp16 value cost if nothing were compressed."""
         return self._fp16_value_bytes
 
     @property
