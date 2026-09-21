@@ -191,18 +191,21 @@ class _TensorKVTC:
     # ------------------------------------------------------------------
     @property
     def stored_bytes(self) -> int:
+        """Realized entropy-coded storage size for this tensor's fitted artifact."""
         if self._artifact is None:
             return 0
         return kvtc_fp16_bytes(self._artifact)
 
     @property
     def pre_entropy_bytes(self) -> int:
+        """Fixed-width (pre-entropy-coding) storage size for this tensor's fitted artifact."""
         if self._artifact is None:
             return 0
         return kvtc_pre_entropy_bytes(self._artifact)
 
     @property
     def n_survived(self) -> int:
+        """Number of principal components that survived DP allocation (nonzero bits assigned)."""
         return 0 if self._artifact is None else self._artifact.n_survived
 
 
@@ -300,6 +303,7 @@ class KVTCKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Fit the local PCA basis + DP bit allocation on prefill, else append through the frozen basis; return reconstructed fp16 K/V."""
         B, H, S, D = keys.shape
         self._ensure_states(B, H)
 
@@ -339,17 +343,21 @@ class KVTCKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def offset(self) -> int:  # type: ignore[override]
+        """Number of tokens accumulated so far (own counter — parent ring buffer is bypassed)."""
         return self._kvtc_offset
 
     @offset.setter
     def offset(self, v: int) -> None:
+        """Restore the token offset (e.g. from a saved cache state)."""
         self._kvtc_offset = int(v)
 
     def size(self) -> int:
+        """Number of tokens currently stored."""
         return self._kvtc_offset
 
     @property
     def state(self):  # type: ignore[override]
+        """Last reconstructed fp16 (keys, values), since the true-latent buffers bypass the parent ring buffer ``mlx_lm`` reads directly."""
         if self._last_state is None:
             empty = mx.zeros((1, self._H, 0, self._D), dtype=mx.float16)
             return empty, empty
@@ -357,14 +365,17 @@ class KVTCKVCache(_MLXKVCache):
 
     @state.setter
     def state(self, v) -> None:
+        """Restore ``(keys, values)`` as the last reconstructed state and resync the offset."""
         k, v_ = v
         self._last_state = (k, v_)
         self._kvtc_offset = int(k.shape[2])
 
     def is_trimmable(self) -> bool:
+        """Whether this cache supports trimming."""
         return True
 
     def trim(self, n: int) -> int:
+        """Drop the ``n`` most-recently-added tokens, re-quantizing through the frozen basis; returns the number actually dropped."""
         n = min(self._kvtc_offset, n)
         if n <= 0:
             return 0
@@ -406,18 +417,22 @@ class KVTCKVCache(_MLXKVCache):
     # needed — these just expose the existing split.
     @property
     def compressed_key_bytes(self) -> int:
+        """Realized stored bytes for the compressed key cache (entropy-coded payload + table + basis, all heads/batches)."""
         return sum(s.stored_bytes for s in self._keys_states)
 
     @property
     def compressed_value_bytes(self) -> int:
+        """Realized stored bytes for the compressed value cache (entropy-coded payload + table + basis, all heads/batches)."""
         return sum(s.stored_bytes for s in self._vals_states)
 
     @property
     def fp16_key_bytes(self) -> int:
+        """Hypothetical fp16 key cost if nothing were compressed."""
         return self._full_seq_bytes // 2
 
     @property
     def fp16_value_bytes(self) -> int:
+        """Hypothetical fp16 value cost if nothing were compressed."""
         return self._full_seq_bytes // 2
 
     @property
@@ -460,6 +475,7 @@ class KVTCKVCache(_MLXKVCache):
 
     @property
     def bit_budget(self) -> int:
+        """Configured total bits per token across all principal components (K and V independently)."""
         return self._bit_budget
 
 
