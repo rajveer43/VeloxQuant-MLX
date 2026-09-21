@@ -162,6 +162,7 @@ class RaBitQQuantizer(Quantizer):
 
     @property
     def trained(self) -> bool:
+        """True once the codebook has been fit via calibration."""
         return self._trained
 
     @property

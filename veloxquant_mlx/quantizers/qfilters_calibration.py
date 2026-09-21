@@ -264,7 +264,10 @@ def collect_query_activations(
         originals.append((attn, q_proj))
 
         def make_hook(inner, store):
+            """Wrap inner (a q_proj) to record its output into store before returning it."""
+
             def hooked(x):
+                """Call the wrapped projection, capture its output, and return it unchanged."""
                 out = inner(x)
                 store.append(np.array(out.astype(mx.float32), copy=True))
                 return out
