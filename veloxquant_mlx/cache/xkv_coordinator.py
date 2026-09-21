@@ -69,6 +69,7 @@ class XKVCoordinator:
         self._published_tokens: dict[int, int] = {}
 
     def reset(self) -> None:
+        """Clear all pending groups and published-token counts (start of a fresh generation)."""
         self._store.clear()
         self._published_tokens.clear()
 
@@ -140,10 +141,12 @@ class XKVCoordinator:
         return pending.basis
 
     def published_tokens(self, group_id: int) -> int:
+        """Total tokens the leader member of ``group_id`` has published."""
         return self._published_tokens.get(group_id, 0)
 
     @property
     def max_ctx(self) -> int:
+        """Configured per-group token budget."""
         return self._max_ctx
 
 

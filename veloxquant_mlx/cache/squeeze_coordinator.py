@@ -116,14 +116,17 @@ class SqueezeCoordinator:
 
     @property
     def n_layers(self) -> int:
+        """Number of layers expected to report before the schedule is finalized."""
         return self._n_layers
 
     @property
     def avg_budget(self) -> int:
+        """Average per-layer eviction budget the resolved schedule targets."""
         return self._avg_budget
 
     @property
     def strength(self) -> float:
+        """Configured re-budgeting strength (how aggressively budgets skew from the average)."""
         return self._strength
 
 

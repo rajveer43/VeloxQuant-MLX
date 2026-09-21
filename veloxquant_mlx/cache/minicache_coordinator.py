@@ -70,6 +70,7 @@ class MiniCacheCoordinator:
         self._published_tokens: dict[int, int] = {}
 
     def reset(self) -> None:
+        """Clear all pending primary writes and published-token counts (start of a fresh generation)."""
         self._store.clear()
         self._published_tokens.clear()
 
@@ -132,10 +133,12 @@ class MiniCacheCoordinator:
         return entry
 
     def published_tokens(self, group_id: int) -> int:
+        """Total tokens the primary of ``group_id`` currently has live (unreclaimed) in the store."""
         return self._published_tokens.get(group_id, 0)
 
     @property
     def max_ctx(self) -> int:
+        """Configured per-group token budget."""
         return self._max_ctx
 
 
