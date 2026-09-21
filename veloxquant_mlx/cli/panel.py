@@ -6,6 +6,7 @@ import argparse
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the argparse parser for ``veloxquant panel`` (--port, --no-browser)."""
     parser = argparse.ArgumentParser(
         prog="veloxquant panel",
         description="Start the VeloxQuant control panel in your browser.",
@@ -26,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Launch the local VeloxQuant control panel web server, bound to 127.0.0.1."""
     args = build_parser().parse_args()
 
     from veloxquant_mlx.ui.server import serve_panel

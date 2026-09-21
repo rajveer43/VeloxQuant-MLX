@@ -8,6 +8,7 @@ from veloxquant_mlx.codebooks.precompute import precompute
 
 
 def main() -> None:
+    """Parse CLI args (head_dim, bits, jl_dim, seed, output_dir) and run precompute()."""
     parser = argparse.ArgumentParser(
         prog="veloxquant_mlx precompute",
         description="Precompute rotation matrices, JL matrices, and codebooks.",

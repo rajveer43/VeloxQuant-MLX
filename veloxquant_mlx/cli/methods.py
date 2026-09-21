@@ -20,6 +20,7 @@ from veloxquant_mlx.cache.registry import (
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the argparse parser for ``veloxquant methods`` (--json, --servable-only, --family)."""
     parser = argparse.ArgumentParser(
         prog="veloxquant methods",
         description="List KV-cache methods with their serving support tier.",
@@ -44,6 +45,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """List registered KV-cache methods with serve tier and telemetry coverage.
+
+    Prints each method's family, serve tier, and coverage as text, or as the
+    JSON contract the macOS control panel decodes (--json), optionally
+    filtered to servable-only (--servable-only) or one family (--family).
+    """
     args = build_parser().parse_args()
     family = MethodFamily(args.family) if args.family else None
     infos = list_methods(servable_only=args.servable_only, family=family)

@@ -18,6 +18,14 @@ def _fmt_bytes(n: int) -> str:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse model/workload CLI args and print analytic per-method KV-memory estimates.
+
+    Builds a ModelProfile and WorkloadProfile from the given flags (or a
+    --model-config JSON file), estimates every registered method's KV
+    footprint, optionally overrides with measured benchmark-database records
+    (--benchmark-dir), and prints the smallest-footprint --top methods as
+    text or JSON (--json).
+    """
     parser = argparse.ArgumentParser(
         prog="veloxquant estimate-memory",
         description=(

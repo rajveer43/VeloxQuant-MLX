@@ -35,6 +35,13 @@ def _config_to_dict(config: object) -> dict:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse workload/hardware CLI args and print the selected KV-cache config.
+
+    Selects a method/bit-width/group-size from a small servable pool
+    (turboquant_rvq, kivi, kvquant, gear) via select_kv_cache_config, using
+    detected or overridden hardware memory pressure, and prints the result
+    as text or JSON (--json).
+    """
     parser = argparse.ArgumentParser(
         prog="veloxquant auto-config",
         description=(
