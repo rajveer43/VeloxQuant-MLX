@@ -147,44 +147,51 @@ def test_deterministic() -> None:
 
 
 def test_cache_uses_kcvt_axes_for_keys_and_values() -> None:
-    """The wrapper compresses keys with base_axis='channel' and values with
-    base_axis='token', per the paper's KCVT backbone — not the same axis for
-    both, which was this wrapper's behavior before KCVT was wired in."""
-    from veloxquant_mlx.quantizers import gear as gear_mod
+    """The wrapper's base layer groups keys along the channel axis and
+    values along the token axis, per the paper's KCVT backbone — not the
+    same axis for both, which was this wrapper's behavior before KCVT was
+    wired in.
 
-    seen_axes = {"key": None, "value": None}
-    orig = gear_mod.gear_compress
+    VeloxQuant-MLX#504's batched-SVD/batched-base-quant rewrite replaced
+    the per-head ``quantize_base(..., axis=...)`` calls with one batched
+    ``_group_quant_codes_batched`` call plus an explicit transpose for the
+    "channel" case (see ``_compress_and_account``'s docstring) — there is
+    no longer a single named ``axis`` parameter to spy on. Verified
+    behaviorally instead: with rank=0 and sparse_fraction=0 (pure base
+    layer, no error-feedback terms to obscure the comparison), the cache's
+    key output must match ``quantize_base(..., axis="channel")`` applied
+    directly, and its value output must match ``axis="token"`` — proving
+    the axis choice is actually still correct, not just that some
+    parameter was passed through unchanged.
+    """
+    from veloxquant_mlx.quantizers.gear import quantize_base
 
-    def _spy(mat, *, bits, rank, sparse_frac, group_size, energy_threshold, base_axis):
-        # First call per update_and_fetch is keys (is_key=True → channel),
-        # tag by axis value directly since that's what we're verifying.
-        if seen_axes["key"] is None:
-            seen_axes["key"] = base_axis
-        else:
-            seen_axes["value"] = base_axis
-        return orig(
-            mat,
-            bits=bits,
-            rank=rank,
-            sparse_frac=sparse_frac,
-            group_size=group_size,
-            energy_threshold=energy_threshold,
-            base_axis=base_axis,
-        )
+    cfg = {
+        "method": "gear",
+        "head_dim": 32,
+        "gear_bits": 2,
+        "gear_rank": 0,
+        "gear_sparse_fraction": 0.0,
+        "gear_group_size": 8,
+    }
+    c = KVCacheFactory.create(KVCacheConfig(**cfg))
+    rng = np.random.default_rng(21)
+    k = mx.array(rng.standard_normal((1, 1, 24, 32)).astype(np.float16))
+    v = mx.array(rng.standard_normal((1, 1, 24, 32)).astype(np.float16))
+    k_out, v_out = c.update_and_fetch(k, v)
 
-    import veloxquant_mlx.cache.gear_cache as gear_cache_mod
+    _, k_channel_ref = quantize_base(k[0, 0].astype(mx.float32), 2, 8, axis="channel")
+    _, k_token_ref = quantize_base(k[0, 0].astype(mx.float32), 2, 8, axis="token")
+    _, v_token_ref = quantize_base(v[0, 0].astype(mx.float32), 2, 8, axis="token")
 
-    monkey_target = gear_cache_mod.gear_compress
-    gear_cache_mod.gear_compress = _spy
-    try:
-        c = _make()
-        k, v = _lowrank_kv(H=1)
-        c.update_and_fetch(k, v)
-    finally:
-        gear_cache_mod.gear_compress = monkey_target
+    k_actual = np.array(k_out[0, 0].astype(mx.float32))
+    v_actual = np.array(v_out[0, 0].astype(mx.float32))
 
-    assert seen_axes["key"] == "channel"
-    assert seen_axes["value"] == "token"
+    np.testing.assert_allclose(k_actual, np.array(k_channel_ref), atol=1e-3)
+    np.testing.assert_allclose(v_actual, np.array(v_token_ref), atol=1e-3)
+    # Sanity: channel-axis and token-axis grouping genuinely differ on this
+    # data (otherwise the test above couldn't distinguish a wrong axis).
+    assert not np.allclose(np.array(k_channel_ref), np.array(k_token_ref), atol=1e-3)
 
 
 def test_build_via_for_model_propagates_config() -> None:
@@ -207,3 +214,176 @@ def test_build_via_for_model_propagates_config() -> None:
     assert all(isinstance(c, GEARKVCache) for c in caches)
     assert caches[0]._rank == 8
     assert caches[0]._sparse_frac == pytest.approx(0.005)
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for issue #504 (unbatched B*H loop over a per-matrix,
+# CPU-stream SVD call measured a real 92% mlx_lm.generate() decode
+# regression — 72 -> 5.8 tok/s on this M4; fixed to a 3.2x recovery via
+# batched SVD + batched base group-quant, ~18.6 tok/s)
+# ---------------------------------------------------------------------------
+def test_truncated_svd_batched_matches_per_row_loop_energy_threshold():
+    """_truncated_svd_batched (energy-threshold rank selection) must match
+    looping the scalar _truncated_svd once per row, including the case
+    where different rows genuinely pick different ranks — the case the
+    padded-to-max-rank batched representation must handle correctly (each
+    row's own rank, not the batch max, is what accounting must charge)."""
+    from veloxquant_mlx.quantizers._quant_utils import _truncated_svd, _truncated_svd_batched
+
+    rng = np.random.default_rng(70)
+    N, D = 20, 16
+    mats = []
+    u, _, vt = np.linalg.svd(rng.standard_normal((N, D)).astype(np.float32), full_matrices=False)
+    mats.append(
+        u @ np.diag(np.array([10.0, 8.0] + [0.01] * (min(N, D) - 2), dtype=np.float32)) @ vt
+    )
+    u2, _, vt2 = np.linalg.svd(rng.standard_normal((N, D)).astype(np.float32), full_matrices=False)
+    mats.append(u2 @ np.diag(np.ones(min(N, D), dtype=np.float32) * 3.0) @ vt2)
+    E = mx.array(np.stack(mats).astype(np.float32))
+
+    ref = []
+    for i in range(2):
+        U, s, Vt = _truncated_svd(E[i], rank=None, energy_threshold=0.9)
+        ref.append((np.array(U * s[None, :]), np.array(Vt), U.shape[1]))
+
+    L, R, ranks = _truncated_svd_batched(E, rank=None, energy_threshold=0.9)
+    assert ranks[0] != ranks[1], "test fixture must produce genuinely different ranks per row"
+    for i in range(2):
+        ref_L, ref_Vt, ref_rank = ref[i]
+        assert ranks[i] == ref_rank
+        recon_ref = ref_L @ ref_Vt
+        recon_new = np.array(L[i, :, : ranks[i]]) @ np.array(R[i, : ranks[i], :])
+        np.testing.assert_allclose(recon_ref, recon_new, atol=1e-3)
+
+
+def test_truncated_svd_batched_zero_matrix_matches_scalar_fallback():
+    """A zero (or near-zero) residual must get rank=1, matching the scalar
+    version's explicit `total < 1e-12` special case — an earlier draft of
+    the batched version silently gave the full rank instead."""
+    from veloxquant_mlx.quantizers._quant_utils import _truncated_svd_batched
+
+    E = mx.zeros((3, 10, 8), dtype=mx.float32)
+    _, _, ranks = _truncated_svd_batched(E, rank=None, energy_threshold=0.9)
+    assert ranks == [1, 1, 1]
+
+
+def test_truncated_svd_batched_explicit_rank_shared_across_rows():
+    from veloxquant_mlx.quantizers._quant_utils import _truncated_svd, _truncated_svd_batched
+
+    rng = np.random.default_rng(71)
+    E = mx.array(rng.standard_normal((4, 20, 16)).astype(np.float32))
+    L, R, ranks = _truncated_svd_batched(E, rank=5, energy_threshold=0.9)
+    assert ranks == [5, 5, 5, 5]
+    for i in range(4):
+        U, s, Vt = _truncated_svd(E[i], rank=5, energy_threshold=0.9)
+        recon_ref = np.array(U * s[None, :]) @ np.array(Vt)
+        recon_new = np.array(L[i]) @ np.array(R[i])
+        np.testing.assert_allclose(recon_ref, recon_new, atol=1e-3)
+
+
+def test_group_quant_codes_batched_matches_per_row_loop():
+    from veloxquant_mlx.quantizers._quant_utils import (
+        _group_dequant_codes,
+        _group_dequant_codes_batched,
+        _group_quant_codes,
+        _group_quant_codes_batched,
+    )
+
+    rng = np.random.default_rng(72)
+    N, S, D, bits, gs = 5, 24, 16, 2, 8
+    x = mx.array(rng.laplace(0, 1, (N, S, D)).astype(np.float32))
+
+    ref_codes, ref_scale, ref_zero = [], [], []
+    for i in range(N):
+        c, s, z = _group_quant_codes(x[i], bits, gs)
+        ref_codes.append(c)
+        ref_scale.append(s)
+        ref_zero.append(z)
+    new_codes, new_scale, new_zero = _group_quant_codes_batched(x, bits, gs)
+    for i in range(N):
+        np.testing.assert_array_equal(np.array(ref_codes[i]), np.array(new_codes[i]))
+
+    ref_recon = mx.stack(
+        [_group_dequant_codes(ref_codes[i], ref_scale[i], ref_zero[i], S, gs) for i in range(N)]
+    )
+    new_recon = _group_dequant_codes_batched(new_codes, new_scale, new_zero, S, gs)
+    np.testing.assert_allclose(np.array(ref_recon), np.array(new_recon), atol=1e-5)
+
+
+def test_batched_cache_matches_per_head_reference_for_b_gt_1():
+    """End-to-end pin: the batched cache path (SVD + base-quant, both now
+    batched across B*H) must reproduce the exact byte accounting and
+    reconstructed output of the original per-head loop at B > 1, including
+    the fp16-truncation contract quantize_base's own reconstruction has
+    (an earlier draft of this fix skipped that truncation, silently
+    shifting the residual fed into the SVD by up to ~0.18 on synthetic
+    data — a real, if small, precision divergence from the original
+    per-head implementation, caught by this exact comparison)."""
+    rng = np.random.default_rng(73)
+    B, H, S, D = 2, 3, 24, 16
+
+    cfg = _make(
+        head_dim=D,
+        gear_bits=2,
+        gear_rank=None,
+        gear_energy_threshold=0.9,
+        gear_sparse_fraction=0.02,
+        gear_group_size=8,
+        gear_quantize_values=True,
+    )
+    keys = mx.array(rng.laplace(0, 1, (B, H, S, D)).astype(np.float32))
+    values = mx.array(rng.laplace(0, 1, (B, H, S, D)).astype(np.float32))
+    k_out, v_out = cfg.update_and_fetch(keys, values)
+
+    # Reference: literal per-head loop using the ORIGINAL (unbatched)
+    # numerics this class used before #504 — quantize_base + residual +
+    # per-matrix SVD + sparse_outliers + gear_reconstruct, one call per
+    # (b, h), exactly as the pre-fix implementation did.
+    from veloxquant_mlx.quantizers._quant_utils import _truncated_svd
+    from veloxquant_mlx.quantizers.gear import (
+        GEARState,
+        gear_reconstruct,
+        quantize_base,
+        sparse_outliers,
+    )
+    from veloxquant_mlx.quantizers.gear import (
+        residual as gear_residual,
+    )
+
+    def ref_compress_and_account(t, is_key):
+        base_axis = "channel" if is_key else "token"
+        recon_b = []
+        for b in range(B):
+            recon_h = []
+            for h in range(H):
+                mat = t[b, h]
+                stream, base_recon = quantize_base(mat, 2, 8, axis=base_axis)
+                E = gear_residual(mat, base_recon)
+                U, s, Vt = _truncated_svd(E, rank=None, energy_threshold=0.9)
+                L = U * s[None, :]
+                E_after = E - (L @ Vt)
+                sp_idx, sp_val = sparse_outliers(E_after, 0.02)
+                n, d = int(mat.shape[0]), int(mat.shape[1])
+                state = GEARState(
+                    codes=stream.codes,
+                    scale=stream.scale,
+                    zero=stream.zero,
+                    L=L,
+                    R=Vt,
+                    sp_idx=sp_idx,
+                    sp_val=sp_val,
+                    n_rows=n,
+                    bits=2,
+                    rank=int(L.shape[1]),
+                    axis=base_axis,
+                    d_cols=d,
+                )
+                recon_h.append(gear_reconstruct(state))
+            recon_b.append(mx.stack(recon_h, axis=0))
+        return mx.stack(recon_b, axis=0)
+
+    ref_k = ref_compress_and_account(keys, is_key=True)
+    ref_v = ref_compress_and_account(values, is_key=False)
+
+    np.testing.assert_allclose(np.array(ref_k), np.array(k_out), atol=1e-3)
+    np.testing.assert_allclose(np.array(ref_v), np.array(v_out), atol=1e-3)
