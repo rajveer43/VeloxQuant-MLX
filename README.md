@@ -15,6 +15,8 @@
   <a href="https://pypi.org/project/VeloxQuant-MLX/"><img src="https://img.shields.io/pypi/dm/VeloxQuant-MLX?style=flat-square&logo=pypi&logoColor=white&color=0078d4" alt="PyPI downloads"/></a>
   <a href="https://pepy.tech/projects/veloxquant-mlx"><img src="https://static.pepy.tech/personalized-badge/veloxquant-mlx?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads" alt="Total downloads"/></a>
   <a href="https://github.com/rajveer43/VeloxQuant-MLX/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/rajveer43/VeloxQuant-MLX/release.yml?branch=master&style=flat-square&label=build&logo=github" alt="Release build status"/></a>
+  <img src="https://img.shields.io/badge/python-3.10%2B-0078d4?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"/>
+  <img src="https://img.shields.io/badge/platform-Apple%20Silicon-0078d4?style=flat-square&logo=apple&logoColor=white" alt="Apple Silicon platform"/>
   <!-- The tests and changelog badges are rewritten on every release by
        scripts/sync_release_badges.py, which matches the literal
        "badge/tests-<n>%20passing-" and "badge/changelog-<version>-" patterns.
@@ -24,7 +26,6 @@
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.91.2-64748b?style=flat-square" alt="Changelog"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License"/></a>
   <a href="https://doi.org/10.5281/zenodo.20647294"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20647294-1f6feb?style=flat-square" alt="DOI"/></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.91.2-64748b?style=flat-square" alt="Changelog"/></a>
   <a href="SECURITY.md"><img src="https://img.shields.io/badge/security-policy-1f6feb?style=flat-square" alt="Security policy"/></a>
   <!-- Hit counter keyed on page_id; the count belongs to that key, so renaming
        it restarts from zero. -->
@@ -53,9 +54,7 @@ Inside are 43 compression methods, each adapted from a published paper, spanning
 
 <div align="center">
 
-[![Watch the demo](https://cdn.loom.com/sessions/thumbnails/b8d14f283a494682b6917a64475e0dbd-c8ae283c543f1997.gif)](https://www.loom.com/share/b8d14f283a494682b6917a64475e0dbd)
-
-[![Watch the demo](https://img.youtube.com/vi/lwgsO0n_1VU/maxresdefault.jpg)](https://youtu.be/lwgsO0n_1VU)
+[![Demo video: VeloxQuant-MLX quantizing a KV cache and running mlx_lm.generate](https://img.youtube.com/vi/lwgsO0n_1VU/maxresdefault.jpg)](https://youtu.be/lwgsO0n_1VU)
 
 </div>
 
@@ -89,6 +88,8 @@ methodology: [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md).
 [Development](#development) ·
 [Governance](#project--governance) ·
 [Ecosystem](#ecosystem) ·
+[Cross-model KV transfer](#beyond-compression-cross-model-kv-transfer) ·
+[References](#references) ·
 [Docs](#documentation--blog-posts) ·
 [Support](#support)
 
@@ -247,7 +248,7 @@ python -m veloxquant_mlx auto-config \
 
 # Synthetic benchmark — single config
 python -m veloxquant_mlx benchmark \
-    --method turboquant_rvq --head_dim 128 --bits 2 --seq_len 1000
+    --method turboquant_prod --head_dim 128 --bits 2 --seq_len 1000
 
 # Precompute rotation matrices, JL matrices, codebooks
 python -m veloxquant_mlx precompute \
@@ -390,11 +391,11 @@ it buys maintenance time.
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=rajveer43%2Fveloxquant-mlx&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=rajveer43%2FVeloxQuant-MLX&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=rajveer43/veloxquant-mlx&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=rajveer43/veloxquant-mlx&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=rajveer43/veloxquant-mlx&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=rajveer43/VeloxQuant-MLX&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=rajveer43/VeloxQuant-MLX&type=date&legend=top-left" />
+   <img alt="GitHub star history chart for rajveer43/VeloxQuant-MLX over time" src="https://api.star-history.com/chart?repos=rajveer43/VeloxQuant-MLX&type=date&legend=top-left" />
  </picture>
 </a>
 
@@ -402,7 +403,9 @@ it buys maintenance time.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). This covers the code in this repository; it does not
+grant rights to the papers each method is adapted from. See [CITATIONS.md](CITATIONS.md)
+for per-method provenance.
 
 ---
 
