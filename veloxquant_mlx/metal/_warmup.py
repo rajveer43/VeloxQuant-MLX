@@ -17,6 +17,12 @@ This module only warms kernels with calling conventions fully derivable from
 ``KVCacheConfig`` alone. Kernels whose shapes also depend on runtime
 artifacts (e.g. VecInfer's codebook-derived ``sub_dim``/``n_centroids``) are
 left to compile lazily on first real use, same as today.
+
+``turboquant_rvq`` (VeloxQuant-MLX#507) is this repo's default serve method
+(``registry.DEFAULT_SERVE_METHOD``) and, for power-of-two head_dim <= 1024,
+dispatches to a real fused ``mx.fast.metal_kernel`` (``rvq_quant_pack``) on
+every decode step — the same first-call JIT-compile stall category as KIVI,
+just previously unwarmed since it has no entry in ``_WARMERS``.
 """
 
 from __future__ import annotations
@@ -62,6 +68,27 @@ def _warm_kivi(config: Any) -> None:
 
 register_warmer("kivi", _warm_kivi)
 register_warmer("kivi_sink", _warm_kivi)
+
+
+def _warm_turboquant_rvq(config: Any) -> None:
+    from veloxquant_mlx.quantizers.turboquant_rvq import TurboQuantRVQ
+
+    b = config.bit_width_inlier
+    if isinstance(b, list):
+        return
+    d = int(config.head_dim)
+    # Fused encode_pack only compiles for power-of-two D <= 1024 (see
+    # TurboQuantRVQKVCache._build_derived_state's _use_metal_pack gate);
+    # non-power-of-two/oversized head_dim always takes the MLX fallback
+    # path, which has no Metal kernel to warm.
+    if d <= 0 or (d & (d - 1)) != 0 or d > 1024:
+        return
+    quantizer = TurboQuantRVQ(d=d, b=int(b), seed=int(config.seed), use_hadamard=True)
+    dummy = mx.zeros((1, d), dtype=mx.float16)
+    quantizer.encode_pack(dummy)
+
+
+register_warmer("turboquant_rvq", _warm_turboquant_rvq)
 
 
 def warmup_for_config(config: Any) -> None:
