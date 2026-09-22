@@ -39,6 +39,7 @@ from veloxquant_mlx.quantizers.adakv import (
     compute_head_attention_entropy,
     compute_head_norm_variance,
     quantize_head,
+    quantize_heads_batched,
 )
 
 
@@ -530,3 +531,126 @@ def test_invalid_importance_mode_rejected():
 
     with pytest.raises(ValueError, match="adakv_importance"):
         AdaKVCache(_make_cfg(adakv_importance="nonsense"))
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for issue #504 (unbatched B*H loop + per-step forced
+# host syncs cost 61.6% of real mlx_lm.generate() decode throughput)
+# ---------------------------------------------------------------------------
+def test_quantize_heads_batched_matches_per_head_loop():
+    """quantize_heads_batched must be numerically identical to looping
+    quantize_head over every (b, h) pair — it is a vectorization of that
+    loop, not a new algorithm (see VeloxQuant-MLX#504)."""
+    rng = np.random.default_rng(7)
+    B, H, S, D, group_size = 2, 6, 40, 32, 8
+    keys = mx.array((rng.standard_normal((B, H, S, D)) * 3.0).astype(np.float32))
+    head_bits = [2, 3, 4, 2, 3, 4]
+
+    ref_batches = []
+    for b in range(B):
+        ref_heads = [quantize_head(keys[b, h], head_bits[h], group_size) for h in range(H)]
+        ref_batches.append(mx.stack(ref_heads, axis=0))
+    ref = mx.stack(ref_batches, axis=0)
+
+    out = quantize_heads_batched(keys, head_bits, group_size)
+
+    assert out.shape == ref.shape
+    np.testing.assert_array_equal(np.array(ref), np.array(out))
+
+
+def test_quantize_heads_batched_uniform_bits():
+    """Edge case: every head assigned the same bit-width (single group)."""
+    rng = np.random.default_rng(8)
+    B, H, S, D, group_size = 1, 5, 24, 32, 8
+    keys = mx.array((rng.standard_normal((B, H, S, D)) * 2.0).astype(np.float32))
+    head_bits = [3] * H
+
+    ref = mx.stack(
+        [mx.stack([quantize_head(keys[0, h], 3, group_size) for h in range(H)], axis=0)], axis=0
+    )
+    out = quantize_heads_batched(keys, head_bits, group_size)
+    np.testing.assert_array_equal(np.array(ref), np.array(out))
+
+
+def test_quantize_heads_batched_non_divisible_sequence_length():
+    """S not divisible by group_size must still match the per-head reference
+    (padding/truncation boundary — the likeliest place a batching bug hides)."""
+    rng = np.random.default_rng(9)
+    B, H, S, D, group_size = 1, 4, 37, 16, 8
+    keys = mx.array((rng.standard_normal((B, H, S, D)) * 2.0).astype(np.float32))
+    head_bits = [2, 4, 3, 2]
+
+    ref = mx.stack(
+        [mx.stack([quantize_head(keys[0, h], head_bits[h], group_size) for h in range(H)], axis=0)],
+        axis=0,
+    )
+    out = quantize_heads_batched(keys, head_bits, group_size)
+    np.testing.assert_array_equal(np.array(ref), np.array(out))
+
+
+def test_default_update_interval_recomputes_every_step():
+    """adakv_update_interval defaults to 1 — exact prior (every-step) behaviour."""
+    cfg = _make_cfg(adakv_update_interval=1)
+    cache = AdaKVCache(cfg)
+    for step in range(4):
+        k = _keys(B=1, H=4, S=1, D=64, seed=100 + step)
+        v = _values(B=1, H=4, S=1, D=64, seed=200 + step)
+        cache.update_and_fetch(k, v)
+        assert cache._steps_since_recompute == 0, (
+            "default adakv_update_interval=1 must recompute every single step"
+        )
+
+
+def test_update_interval_gates_recomputation():
+    """adakv_update_interval > 1 recomputes the bit assignment only every
+    N steps, not every step — the fix for VeloxQuant-MLX#504's dominant real
+    end-to-end cost (a forced host sync in allocate_head_bits/the norm
+    accumulator, previously paid on every layer, every decode step)."""
+    interval = 4
+    cfg = _make_cfg(adakv_update_interval=interval, adakv_target_avg_bits=3.0)
+    cache = AdaKVCache(cfg)
+
+    distinct_assignments = []
+    prev_bits = None
+    for step in range(12):
+        # Heterogeneous, drifting importance so the assignment has a real
+        # chance to change if recomputed.
+        k = _heterogeneous_keys(B=1, H=6, S=1, D=64, seed=300 + step)
+        v = _values(B=1, H=6, S=1, D=64, seed=400 + step)
+        cache.update_and_fetch(k, v)
+        if cache.head_bits != prev_bits:
+            distinct_assignments.append(step)
+            prev_bits = list(cache.head_bits)
+
+    # With interval=4 over 12 steps, recomputation can happen at most at
+    # steps 0, 4, 8 -> at most 3 distinct assignments, never one per step.
+    assert len(distinct_assignments) <= 3
+    assert cache._steps_since_recompute < interval
+
+
+def test_update_interval_preserves_shape_and_byte_accounting():
+    """Gating recomputation must not change output shape or the byte-
+    accounting bookkeeping's basic invariants — only how often the
+    allocation refreshes. Uses a large single block (like
+    ``test_byte_accounting_compressed_less_than_fp16``) so per-group
+    scale/zero overhead is amortized enough for the compressed-vs-fp16
+    comparison to be meaningful (a single S=1 decode step's one-token
+    group can legitimately cost more than fp16 due to fixed per-group
+    parameter overhead — a property of the quantization scheme itself,
+    unrelated to this fix)."""
+    cfg = _make_cfg(adakv_update_interval=3)
+    cache = AdaKVCache(cfg)
+    k_out, v_out = cache.update_and_fetch(
+        _keys(B=1, H=4, S=64, D=64), _values(B=1, H=4, S=64, D=64)
+    )
+    assert k_out.shape == (1, 4, 64, 64)
+    assert v_out.shape == (1, 4, 64, 64)
+    assert cache.compressed_key_bytes < cache.fp16_key_bytes
+    assert len(cache.head_bits) == 4
+
+    # A further decode step must still preserve shape and grow the window.
+    k2, v2 = cache.update_and_fetch(
+        _keys(B=1, H=4, S=1, D=64, seed=9), _values(B=1, H=4, S=1, D=64, seed=10)
+    )
+    assert k2.shape == (1, 4, 65, 64)
+    assert v2.shape == (1, 4, 65, 64)

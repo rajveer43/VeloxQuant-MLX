@@ -70,7 +70,10 @@ from collections.abc import Sequence
 
 import mlx.core as mx
 
-from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
+from veloxquant_mlx.quantizers._quant_utils import (
+    _group_quant_dequant,
+    _group_quant_dequant_batched,
+)
 
 
 def compute_head_norm_variance(keys: mx.array) -> mx.array:
@@ -370,9 +373,57 @@ def quantize_head(keys_h: mx.array, b: int, group_size: int = 32) -> mx.array:
     return _group_quant_dequant(keys_h, b, group_size).astype(mx.float16)
 
 
+def quantize_heads_batched(
+    keys: mx.array, head_bits: Sequence[int], group_size: int = 32
+) -> mx.array:
+    """Quantize every head of ``keys`` at its assigned bit-width, batched.
+
+    Replaces a Python ``for b in range(B): for h in range(H):`` loop calling
+    :func:`quantize_head` once per ``(b, h)`` pair — the measured O(B*H)
+    Python-dispatch bottleneck this function exists to remove (see
+    VeloxQuant-MLX#504: real ``mlx_lm.generate()`` measured 132.1 -> 50.8
+    tok/s, a 61.6% decode-throughput regression, traced to this exact loop
+    shape). Heads are grouped by their assigned bit-width — typically only
+    ``len(allowed_bits)`` distinct values (2-3 in practice) regardless of how
+    many heads there are — and each group is quantized with one vectorized
+    :func:`_group_quant_dequant_batched` call instead of one call per head.
+    Numerically identical to the per-head loop it replaces: same formula,
+    same group boundaries per head, just computed as ``len(set(head_bits))``
+    batched calls instead of ``B*H`` sequential ones.
+
+    Args:
+        keys: ``[B, H, S, D]`` fp16 or fp32.
+        head_bits: ``[H]`` bit-width assigned to each head (from
+            :func:`allocate_head_bits`).
+        group_size: Group size along the token axis, shared by all heads.
+
+    Returns:
+        Reconstructed keys ``[B, H, S, D]`` fp16.
+    """
+    B, H, S, D = keys.shape
+    assert len(head_bits) == H
+    flat = keys.reshape(B * H, S, D)
+    # Map each flat (b,h) row to its head's bit-width, tiled across B.
+    row_bits = list(head_bits) * B
+    quantized_parts: list[mx.array] = []
+    source_rows: list[int] = []
+    for bit_value in sorted(set(head_bits)):
+        idx = [i for i, rb in enumerate(row_bits) if rb == bit_value]
+        group = mx.take(flat, mx.array(idx), axis=0)  # [n_rows, S, D]
+        quantized_parts.append(_group_quant_dequant_batched(group, bit_value, group_size))
+        source_rows.extend(idx)
+    # Concatenate the per-bit-width groups back, then permute rows to their
+    # original (b,h) order via one gather instead of a Python scatter loop.
+    concatenated = mx.concatenate(quantized_parts, axis=0)  # [B*H, S, D], grouped by bit-width
+    inverse_order = mx.array(sorted(range(B * H), key=lambda i: source_rows[i]))
+    out = mx.take(concatenated, inverse_order, axis=0)
+    return out.reshape(B, H, S, D)
+
+
 __all__ = [
     "compute_head_norm_variance",
     "compute_head_attention_entropy",
     "allocate_head_bits",
     "quantize_head",
+    "quantize_heads_batched",
 ]

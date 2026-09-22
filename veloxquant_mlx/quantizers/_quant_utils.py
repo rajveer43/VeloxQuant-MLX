@@ -93,6 +93,46 @@ def _group_quant_dequant(x: mx.array, b: int, group_size: int = 32) -> mx.array:
     return recon.astype(mx.float16)
 
 
+def _group_quant_dequant_batched(x: mx.array, b: int, group_size: int = 32) -> mx.array:
+    """Batched-leading-axis equivalent of :func:`_group_quant_dequant`.
+
+    Groups are formed along axis 1 (the per-row token/sequence axis); axis 0
+    is an independent leading batch axis (e.g. flattened ``B*H`` rows) that
+    is never mixed across when forming groups — each ``[S, D]`` slice is
+    quantized exactly as :func:`_group_quant_dequant` would quantize it on
+    its own, just computed as one vectorized call instead of ``N`` separate
+    Python-level calls into it. Verified bit-for-bit equivalent to looping
+    :func:`_group_quant_dequant` over axis 0 (fp32-rounding-only difference).
+
+    Args:
+        x: ``[N, S, D]`` fp16 or fp32 — ``N`` independent rows, each with its
+            own ``S``-length token axis to group along.
+        b: Bit width (1-8), shared by every row in this call (callers with
+            per-row bit-widths call this once per distinct bit-width and
+            gather the results — see e.g. ``AdaKVCache._quantize_per_head``).
+        group_size: Number of rows (tokens) per quantization group.
+
+    Returns:
+        Quantized-then-dequantized array ``[N, S, D]`` fp16.
+    """
+    n, s, d = x.shape
+    gs = group_size
+    n_groups = (s + gs - 1) // gs
+    pad = n_groups * gs - s
+    x32 = x.astype(mx.float32)
+    if pad:
+        x32 = mx.concatenate([x32, mx.broadcast_to(x32[:, -1:], (n, pad, d))], axis=1)
+    xg = x32.reshape(n, n_groups, gs, d)
+    gmin = mx.min(xg, axis=2, keepdims=True)
+    gmax = mx.max(xg, axis=2, keepdims=True)
+    levels = (1 << b) - 1
+    eps = 1e-8
+    scale = mx.maximum((gmax - gmin) / levels, eps)
+    codes = mx.clip(mx.round((xg - gmin) / scale), 0, levels)
+    recon = codes * scale + gmin
+    return recon.reshape(n, n_groups * gs, d)[:, :s].astype(mx.float16)
+
+
 def _truncated_svd(
     x: mx.array,
     rank: int | None = None,
@@ -145,5 +185,6 @@ __all__ = [
     "_group_quant_codes",
     "_group_dequant_codes",
     "_group_quant_dequant",
+    "_group_quant_dequant_batched",
     "_truncated_svd",
 ]
