@@ -13,6 +13,7 @@ to single-pass quantization at roughly double the bit-width.
 from __future__ import annotations
 
 import math
+from functools import cache
 from typing import Any, Literal
 
 import numpy as np
@@ -46,6 +47,28 @@ def _laplacian_pdf(scale: float):
     return pdf
 
 
+@cache
+def _stage2_codebook(b: int, residual_scale: float) -> ScalarCodebook:
+    """Build (and memoize) the stage-2 Laplacian-fit Lloyd-Max codebook.
+
+    Unlike stage-1 (routed through the already-memoized
+    :class:`~veloxquant_mlx.codebooks.base.CodebookFactory`), this is built
+    inline since ``ScalarCodebook`` has no "laplacian" distribution
+    registered with the factory. It's a pure, deterministic function of
+    ``(b, residual_scale)`` — no seed dependency — and dominates
+    ``TurboQuantRVQ.__init__``'s cost (VeloxQuant-MLX#508): every layer of
+    a model shares the same ``(d, b)`` and therefore the same
+    ``residual_scale``, so this collapses N per-layer Lloyd-Max fits to one.
+    """
+    support_hi = 8.0 * residual_scale
+    centroids2_np, _ = lloyd_max(
+        _laplacian_pdf(residual_scale),
+        support=(-support_hi, support_hi),
+        n_levels=2**b,
+    )
+    return ScalarCodebook(centroids2_np.astype(np.float32))
+
+
 @QuantizerRegistry.register("turboquant_rvq")
 class TurboQuantRVQ(Quantizer):
     """Two-pass Residual Vector Quantization on top of TurboQuant rotation.
@@ -76,6 +99,14 @@ class TurboQuantRVQ(Quantizer):
         residual_scale: Laplacian scale parameter for the residual codebook.
             Defaults to 1 / (2 ** b) which roughly matches the std of the
             stage-1 quantization error on a unit-variance Gaussian source.
+
+    Performance (VeloxQuant-MLX#508): both codebooks (stage-1 via
+    ``CodebookFactory``, stage-2 via the module-level ``_stage2_codebook``)
+    are memoized on their deterministic args. Constructing N layers' worth
+    of quantizers for the same ``(d, b)`` — the common case, since a
+    model's ``head_dim``/bit-width don't vary by layer, only ``seed`` does
+    — now does the real Lloyd-Max codebook fit once instead of N times.
+    Only the seed-dependent rotation is still built fresh per layer.
     """
 
     def __init__(
@@ -125,13 +156,7 @@ class TurboQuantRVQ(Quantizer):
             sigma_q = math.sqrt(1.0 / d) * (math.sqrt(3.0 * math.pi) / 2.0) * (4.0**-b)
             residual_scale = max(sigma_q / math.sqrt(2.0), 1e-6)
         self._residual_scale = float(residual_scale)
-        support_hi = 8.0 * self._residual_scale
-        centroids2_np, _ = lloyd_max(
-            _laplacian_pdf(self._residual_scale),
-            support=(-support_hi, support_hi),
-            n_levels=2**b,
-        )
-        self._codebook2 = ScalarCodebook(centroids2_np.astype(np.float32))
+        self._codebook2 = _stage2_codebook(b, self._residual_scale)
 
     def encode(self, x: Any) -> EncodedVector:
         """Two-stage RVQ encode.

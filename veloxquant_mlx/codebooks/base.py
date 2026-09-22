@@ -12,6 +12,7 @@ rather than constructing strategies directly.
 
 from __future__ import annotations
 
+from functools import cache
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -53,11 +54,25 @@ class CodebookFactory:
             polar_level: Polar recursion level (only used when distribution="polar_level").
 
         Returns:
-            Configured ScalarCodebook instance.
+            Configured ScalarCodebook instance, memoized by
+            ``(distribution, b, d, polar_level)`` (VeloxQuant-MLX#508) —
+            centroid construction is a pure, deterministic function of
+            these args, and ``ScalarCodebook`` is read-only after
+            construction, so it's safe to share across callers.
 
         Raises:
             QuantizerConfigError: If parameters are invalid.
         """
+        return CodebookFactory._create_cached(distribution, b, d, polar_level)
+
+    @staticmethod
+    @cache
+    def _create_cached(
+        distribution: Literal["gaussian", "beta", "polar_level", "uniform"],
+        b: int,
+        d: int,
+        polar_level: int,
+    ) -> ScalarCodebook:
         from veloxquant_mlx.codebooks.scalar_codebook import ScalarCodebook
 
         if b < 1 or b > 8:
