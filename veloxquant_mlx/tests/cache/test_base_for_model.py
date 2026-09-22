@@ -132,11 +132,11 @@ def test_native_make_cache_failure_warns_and_falls_back() -> None:
     two documented hybrid-attention TypeError cases.
     """
 
-    def _broken_make_cache():
-        raise KeyError("boom")
+    class _BrokenCacheModel(SimpleNamespace):
+        def make_cache(self):
+            raise KeyError("boom")
 
-    model = _make_fake_model()
-    model.make_cache = _broken_make_cache
+    model = _BrokenCacheModel(**vars(_make_fake_model()))
     config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)
 
     with pytest.warns(UserWarning, match="make_cache.* raised KeyError"):
@@ -147,14 +147,48 @@ def test_native_make_cache_failure_warns_and_falls_back() -> None:
 
 
 def test_native_make_cache_success_does_not_warn() -> None:
-    model = _make_fake_model()
-    model.make_cache = lambda: []  # wrong length -> ignored, not an error
+    class _NativeCacheModel(SimpleNamespace):
+        def make_cache(self):
+            return []  # wrong length -> ignored, not an error
+
+    model = _NativeCacheModel(**vars(_make_fake_model()))
     config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         caches = KVCacheBuilder.for_model(model, config)
 
+    assert len(caches) == 2
+
+
+def test_for_model_ignores_instance_attribute_make_cache() -> None:
+    """#505: patch_model_kv_cache/patch_vlm_kv_cache install their own
+    make_cache as an *instance* attribute on an already-patched model. If
+    for_model's probe used getattr(model, "make_cache", ...) it would find
+    and call that hook, which itself calls back into for_model() --
+    recursing until Python's recursion limit is hit (silently swallowed by
+    the broad except below, but only after ~300-670 wasted frames of setup
+    work, costing 0.9-1.6s per generate() call). The probe must only ever
+    see a class-defined make_cache (the model architecture's own native
+    cache, e.g. qwen3_next.py's), never an instance-attribute override.
+    """
+    call_count = 0
+
+    def _self_referential_make_cache():
+        nonlocal call_count
+        call_count += 1
+        config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)
+        return KVCacheBuilder.for_model(model, config)
+
+    model = _make_fake_model()
+    model.make_cache = _self_referential_make_cache
+    config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        caches = KVCacheBuilder.for_model(model, config)
+
+    assert call_count == 0
     assert len(caches) == 2
 
 

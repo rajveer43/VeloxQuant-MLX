@@ -1200,8 +1200,23 @@ class KVCacheBuilder:
         # model what it wants for each slot and reuse that for anything we do
         # not quantize; fall back to a plain KVCache only when the model offers
         # no usable make_cache.
+        # Look up make_cache on the class (walking the MRO), not the instance:
+        # patch_model_kv_cache/patch_vlm_kv_cache install their own make_cache
+        # as an *instance* attribute on an already-patched model, and an
+        # instance-attribute getattr would find that hook and call back into
+        # this same for_model(), recursing until Python's recursion limit is
+        # hit (VeloxQuant-MLX#505). The probe's purpose is to discover the
+        # model architecture's own native cache (e.g. qwen3_next.py's,
+        # mamba2.py's), never whatever was most recently monkeypatched onto
+        # the instance, so skipping instance attributes is also correct, not
+        # just a recursion workaround.
         _native: list = []
-        _native_fn = getattr(model, "make_cache", None)
+        _native_fn = None
+        for _klass in type(model).__mro__:
+            _candidate = _klass.__dict__.get("make_cache")
+            if _candidate is not None:
+                _native_fn = _candidate.__get__(model, type(model))
+                break
         if callable(_native_fn):
             try:
                 built = _native_fn()
