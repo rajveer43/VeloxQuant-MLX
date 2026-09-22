@@ -161,6 +161,121 @@ def dequant_nuq(codes: mx.array, levels: mx.array) -> mx.array:
     return lev.astype(mx.float16)
 
 
+def split_dense_sparse_batched(x: mx.array, outlier_fraction: float) -> DenseSparse:
+    """Batched-leading-axis equivalent of :func:`split_dense_sparse`.
+
+    Args:
+        x: [BH, N, D] fp16 or fp32 — ``BH`` independent rows, each with its
+            own column-wise (axis 1, the "N" sample axis) outlier split.
+        outlier_fraction: Fraction in [0, 1). 0 -> no outliers (pure NUQ).
+
+    Returns:
+        DenseSparse, each field shaped ``[BH, N, D]``. Numerically identical
+        to calling :func:`split_dense_sparse` once per row of the leading
+        axis (verified in ``veloxquant_mlx/tests/cache/test_kvquant_cache.py``).
+    """
+    x32 = x.astype(mx.float32)
+    bh, n, d = x32.shape
+    if outlier_fraction <= 0.0 or n < 2:
+        zeros = mx.zeros_like(x32)
+        return DenseSparse(x32, zeros.astype(mx.bool_), zeros)
+
+    k = max(1, int(round(n * outlier_fraction)))
+    k = min(k, n - 1)
+    mag = mx.abs(x32)
+    order = mx.argsort(-mag, axis=1)  # [BH, N, D]
+    rank = mx.put_along_axis(
+        mx.zeros_like(order),
+        order,
+        mx.broadcast_to(mx.arange(n, dtype=order.dtype)[None, :, None], order.shape),
+        axis=1,
+    )
+    mask = rank < k  # [BH, N, D]
+    col_mean = mx.mean(x32, axis=1, keepdims=True)  # [BH, 1, D]
+    inliers = mx.where(mask, mx.broadcast_to(col_mean, x32.shape), x32)
+    outlier_vals = mx.where(mask, x32, mx.zeros_like(x32))
+    return DenseSparse(inliers, mask, outlier_vals)
+
+
+def fit_nuq_levels_batched(x: mx.array, bits: int, n_iters: int = 8) -> mx.array:
+    """Batched-leading-axis equivalent of :func:`fit_nuq_levels`.
+
+    Replaces a Python loop calling :func:`fit_nuq_levels` once per ``(b, h)``
+    pair — the measured O(B*H) Python-dispatch bottleneck this function
+    exists to remove (see VeloxQuant-MLX#504: real ``mlx_lm.generate()``
+    measured 94.6 -> 2.8 tok/s, a 59x real-model decode slowdown, traced
+    jointly to this loop shape and the per-iteration forced ``mx.eval()``
+    below). Also removes that per-iteration eval: unlike H2O's decode-loop
+    accumulator (which grows unboundedly across *calls*, requiring a
+    periodic flush to avoid exhausting Metal's resource tracking — see
+    ``quantizers/h2o.py``), this fit is a fixed ``n_iters``-sweep loop
+    entirely local to one call, so the whole graph can be built lazily and
+    evaluated once at the end with no graph-growth-across-calls risk.
+
+    Args:
+        x: ``[BH, N, D]`` fp32 (inliers only — outliers should be excluded
+            first), ``BH`` independent rows sharing one call.
+        bits: Bit-width; produces ``L = 2^bits`` levels per row.
+        n_iters: Lloyd-Max iterations.
+
+    Returns:
+        ``[BH, L, D]`` fp32 ascending signpost levels per row per column.
+        Numerically identical to calling :func:`fit_nuq_levels` once per row
+        of the leading axis (verified in
+        ``veloxquant_mlx/tests/cache/test_kvquant_cache.py``).
+    """
+    x32 = x.astype(mx.float32)
+    bh, n, d = x32.shape
+    L = 1 << bits
+
+    xs = mx.sort(x32, axis=1)  # [BH, N, D] ascending
+    qpos = (mx.arange(L, dtype=mx.float32) + 0.5) / L  # [L]
+    idx = mx.clip(mx.round(qpos * (n - 1)), 0, n - 1).astype(mx.int32)  # [L]
+    levels = mx.take(xs, idx, axis=1)  # [BH, L, D]
+
+    for _ in range(max(1, n_iters)):
+        diff = mx.abs(x32[:, :, None, :] - levels[:, None, :, :])  # [BH, N, L, D]
+        assign = mx.argmin(diff, axis=2)  # [BH, N, D]
+
+        lr = mx.arange(L)[None, None, :, None]  # [1, 1, L, 1]
+        one_hot = (assign[:, :, None, :] == lr).astype(mx.float32)  # [BH, N, L, D]
+        counts = mx.sum(one_hot, axis=1)  # [BH, L, D]
+        sums = mx.sum(one_hot * x32[:, :, None, :], axis=1)  # [BH, L, D]
+        new_levels = sums / mx.maximum(counts, 1.0)  # [BH, L, D]
+        levels = mx.where(counts > 0, new_levels, levels)
+
+    return mx.sort(levels, axis=1)
+
+
+def quantize_nuq_batched(x: mx.array, levels: mx.array) -> mx.array:
+    """Batched-leading-axis equivalent of :func:`quantize_nuq`.
+
+    Args:
+        x: ``[BH, N, D]`` fp16 or fp32.
+        levels: ``[BH, L, D]`` fp32 ascending levels per row per column.
+
+    Returns:
+        ``[BH, N, D]`` int32 indices into ``levels`` (row- and column-wise).
+    """
+    x32 = x.astype(mx.float32)
+    diff = mx.abs(x32[:, :, None, :] - levels[:, None, :, :])  # [BH, N, L, D]
+    return mx.argmin(diff, axis=2).astype(mx.int32)  # [BH, N, D]
+
+
+def dequant_nuq_batched(codes: mx.array, levels: mx.array) -> mx.array:
+    """Batched-leading-axis equivalent of :func:`dequant_nuq`.
+
+    Args:
+        codes: ``[BH, N, D]`` int32 level indices.
+        levels: ``[BH, L, D]`` fp32 ascending levels per row per column.
+
+    Returns:
+        ``[BH, N, D]`` fp16 reconstruction.
+    """
+    lev = mx.take_along_axis(levels, codes.astype(mx.int32), axis=1)  # [BH, N, D]
+    return lev.astype(mx.float16)
+
+
 def nuq_quant_dequant(
     x: mx.array,
     bits: int,
@@ -198,9 +313,13 @@ def nuq_distortion(x: mx.array, levels: mx.array) -> float:
 __all__ = [
     "DenseSparse",
     "split_dense_sparse",
+    "split_dense_sparse_batched",
     "fit_nuq_levels",
+    "fit_nuq_levels_batched",
     "quantize_nuq",
+    "quantize_nuq_batched",
     "dequant_nuq",
+    "dequant_nuq_batched",
     "nuq_quant_dequant",
     "nuq_distortion",
 ]

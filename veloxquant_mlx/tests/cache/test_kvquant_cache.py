@@ -35,10 +35,16 @@ from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.kvquant_cache import KVQuantKVCache
 from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
 from veloxquant_mlx.quantizers.kvquant import (
+    dequant_nuq,
+    dequant_nuq_batched,
     fit_nuq_levels,
+    fit_nuq_levels_batched,
     nuq_distortion,
     nuq_quant_dequant,
+    quantize_nuq,
+    quantize_nuq_batched,
     split_dense_sparse,
+    split_dense_sparse_batched,
 )
 
 
@@ -403,3 +409,130 @@ def test_not_batchable_via_mlx_lm_server_probe() -> None:
     assert not hasattr(cache, "merge")
     with pytest.raises(AttributeError):
         cache.merge
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for issue #504 (unbatched B*H loop + per-Lloyd-Max-
+# iteration forced host sync measured a 59x real mlx_lm.generate() decode
+# slowdown; fixed to 9.6x recovery via batched primitives — see
+# quantizers/kvquant.py's *_batched functions and cache/kvquant_cache.py's
+# module docstring for the full before/after numbers)
+# ---------------------------------------------------------------------------
+def test_split_dense_sparse_batched_matches_per_row_loop():
+    rng = np.random.default_rng(40)
+    BH, N, D = 5, 32, 16
+    x = mx.array(rng.laplace(0, 1, (BH, N, D)).astype(np.float32))
+
+    ref_inliers, ref_mask, ref_vals = [], [], []
+    for i in range(BH):
+        ds = split_dense_sparse(x[i], 0.1)
+        ref_inliers.append(ds.inliers)
+        ref_mask.append(ds.outlier_mask)
+        ref_vals.append(ds.outlier_vals)
+    ref_inliers = mx.stack(ref_inliers)
+    ref_mask = mx.stack(ref_mask)
+    ref_vals = mx.stack(ref_vals)
+
+    out = split_dense_sparse_batched(x, 0.1)
+    np.testing.assert_array_equal(np.array(ref_mask), np.array(out.outlier_mask))
+    np.testing.assert_allclose(np.array(ref_inliers), np.array(out.inliers), atol=1e-5)
+    np.testing.assert_allclose(np.array(ref_vals), np.array(out.outlier_vals), atol=1e-5)
+
+
+def test_split_dense_sparse_batched_handles_decode_shape():
+    """N=1 (a single decode-step token per row) must not crash or diverge
+    from the per-row reference — the shape every real decode step hits."""
+    rng = np.random.default_rng(41)
+    BH, D = 4, 16
+    x = mx.array(rng.laplace(0, 1, (BH, 1, D)).astype(np.float32))
+    out = split_dense_sparse_batched(x, 0.1)
+    ref = mx.stack([split_dense_sparse(x[i], 0.1).inliers for i in range(BH)])
+    np.testing.assert_allclose(np.array(ref), np.array(out.inliers), atol=1e-5)
+
+
+def test_fit_nuq_levels_batched_matches_per_row_loop():
+    rng = np.random.default_rng(42)
+    BH, N, D, bits = 5, 32, 16, 3
+    x = mx.array(rng.laplace(0, 1, (BH, N, D)).astype(np.float32))
+
+    ref = mx.stack([fit_nuq_levels(x[i], bits, 8) for i in range(BH)])
+    out = fit_nuq_levels_batched(x, bits, 8)
+    np.testing.assert_allclose(np.array(ref), np.array(out), atol=1e-3)
+
+
+def test_quantize_and_dequant_nuq_batched_match_per_row_loop():
+    rng = np.random.default_rng(43)
+    BH, N, D, bits = 5, 32, 16, 3
+    x = mx.array(rng.laplace(0, 1, (BH, N, D)).astype(np.float32))
+    levels = fit_nuq_levels_batched(x, bits, 4)
+
+    ref_codes = mx.stack([quantize_nuq(x[i], levels[i]) for i in range(BH)])
+    out_codes = quantize_nuq_batched(x, levels)
+    np.testing.assert_array_equal(np.array(ref_codes), np.array(out_codes))
+
+    ref_recon = mx.stack([dequant_nuq(ref_codes[i], levels[i]) for i in range(BH)])
+    out_recon = dequant_nuq_batched(out_codes, levels)
+    np.testing.assert_array_equal(np.array(ref_recon), np.array(out_recon))
+
+
+def test_batched_cache_matches_per_head_reference_for_b_gt_1():
+    """The trickiest correctness detail in the #504 batching rewrite: the
+    ORIGINAL per-head loop fit key levels only from batch element 0's data
+    (`keys[0]`) and shared that single fit across every batch element,
+    rather than fitting independently per (b, h). The batched rewrite must
+    reproduce this exactly for B > 1 — fitting independently per BH row
+    would be a silent behavior change, not just a speed optimization. This
+    test pins that by comparing prefill+decode output at B=2 against a
+    literal reimplementation of the original per-(b,h) loop.
+    """
+    rng = np.random.default_rng(44)
+    B, H, S, D, bits = 2, 3, 20, 16, 3
+    keys = rng.laplace(0, 1, (B, H, S, D)).astype(np.float32)
+
+    # Literal old-style per-head loop: fit ONCE on b==0, reuse for b==1.
+    new_klev = [None] * H
+    ref_recon = np.zeros_like(keys)
+    for b in range(B):
+        for h in range(H):
+            kl = new_klev[h] if b > 0 else None
+            if kl is None:
+                ds = split_dense_sparse(mx.array(keys[b, h]), 0.0)
+                kl = fit_nuq_levels(ds.inliers, bits, 4)
+                new_klev[h] = kl
+            codes = quantize_nuq(mx.array(keys[b, h]), kl)
+            ref_recon[b, h] = np.array(dequant_nuq(codes, kl))
+
+    # New cache path.
+    cfg = _cfg(
+        kvquant_bits=bits, kvquant_lloyd_iters=4, kvquant_outlier_fraction=0.0, kvquant_n_sink=0
+    )
+    cache = KVQuantKVCache(cfg)
+    k_out, _ = cache.update_and_fetch(mx.array(keys), mx.array(keys))
+    np.testing.assert_allclose(np.array(k_out), ref_recon, atol=1e-3)
+
+
+def test_key_levels_frozen_across_decode_default_refit_interval():
+    """kvquant_refit_interval=0 (default) must freeze KEY levels after
+    prefill — the value path is, by design, always fit fresh (see class
+    docstring) and is unaffected by this field."""
+    cache = KVQuantKVCache(_cfg(kvquant_refit_interval=0))
+    cache.update_and_fetch(_laplace(1, 2, 32, 64, seed=50), _laplace(1, 2, 32, 64, seed=51))
+    frozen = np.array(cache.key_levels[0].tolist())
+    cache.update_and_fetch(_laplace(1, 2, 1, 64, seed=52), _laplace(1, 2, 1, 64, seed=53))
+    still_frozen = np.array(cache.key_levels[0].tolist())
+    np.testing.assert_array_equal(frozen, still_frozen)
+
+
+def test_outlier_count_matches_between_batched_and_manual_sum():
+    """Batched outlier accounting sums the mask once per call instead of
+    once per (b, h) — must produce the same total as manually summing a
+    per-head mask."""
+    cache = KVQuantKVCache(_cfg(kvquant_outlier_fraction=0.05))
+    k = _laplace(1, 4, 64, 64, seed=60)
+    v = _laplace(1, 4, 64, 64, seed=61)
+    cache.update_and_fetch(k, v)
+    assert cache.outlier_count > 0
+    # Sanity bound: outlier_count should scale with B*H*S*D*outlier_fraction*2
+    # (keys + values), not blow up or vanish from a batching indexing bug.
+    expected_order = 1 * 4 * 64 * 64 * 0.05 * 2
+    assert 0.1 * expected_order < cache.outlier_count < 10 * expected_order
