@@ -22,7 +22,8 @@ import pytest
 
 from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig
 from veloxquant_mlx.cache.kivi_cache import KIVIKVCache
-from veloxquant_mlx.metal import _kivi_quant, metal_available
+from veloxquant_mlx.cache.turboquant_rvq_cache import TurboQuantRVQKVCache
+from veloxquant_mlx.metal import _kivi_quant, _rvq_quant_pack, metal_available
 from veloxquant_mlx.metal._warmup import register_warmer, warmup_for_config
 
 pytestmark = [
@@ -56,6 +57,29 @@ def test_warmup_matches_real_call_cache_key():
     cache._quant_dequant_along(x, axis=-1)
 
     assert set(_kivi_quant._cache.keys()) == warm_keys
+
+
+def test_warmup_matches_real_call_cache_key_for_turboquant_rvq():
+    _rvq_quant_pack._cache.clear()
+    cfg = KVCacheConfig(method="turboquant_rvq", head_dim=128, bit_width_inlier=2, seed=42)
+    warmup_for_config(cfg)
+    warm_keys = set(_rvq_quant_pack._cache.keys())
+    assert warm_keys, "warmup did not compile the turboquant_rvq kernel"
+    assert ("rvq_quant_pack", 128, 2) in warm_keys
+
+    cache = TurboQuantRVQKVCache(cfg)
+    keys = mx.random.normal((1, 1, 1, 128)).astype(mx.float16)
+    values = mx.random.normal((1, 1, 1, 128)).astype(mx.float16)
+    cache.update_and_fetch(keys, values)
+
+    assert set(_rvq_quant_pack._cache.keys()) == warm_keys
+
+
+def test_warmup_noop_for_non_power_of_two_head_dim_turboquant_rvq():
+    _rvq_quant_pack._cache.clear()
+    cfg = KVCacheConfig(method="turboquant_rvq", head_dim=100, bit_width_inlier=2, seed=42)
+    warmup_for_config(cfg)  # must not raise; no Metal kernel exists for this shape
+    assert not _rvq_quant_pack._cache.keys()
 
 
 def test_warmup_noop_for_unregistered_method():
