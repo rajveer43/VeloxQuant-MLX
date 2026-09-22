@@ -18,6 +18,29 @@ Level lifecycle:
     (``kvquant_refit_interval == 0``, the default — mirrors SVDq's frozen-V).
     Decode tokens quantize against the frozen levels. With a positive refit
     interval, levels are re-fit every N decode steps from the most recent token.
+    Value levels are per-token (one signpost table per token, sample axis =
+    channels) and are, by design, always fit fresh every call — never frozen,
+    regardless of ``kvquant_refit_interval`` (that field only gates the *key*
+    path). This is inherent to the per-token scheme, not a bug.
+
+Performance (VeloxQuant-MLX#504): the per-head application was originally a
+Python ``for b in range(B): for h in range(H):`` loop, and the Lloyd-Max fit
+inside it forced a host sync (``mx.eval``) every iteration — together
+measured a real 59x `mlx_lm.generate()` decode slowdown (94.6 -> 2.8 tok/s,
+Llama-3.2-1B, Apple M4). Both are fixed: application is now batched over the
+flattened ``B*H`` axis (:func:`~veloxquant_mlx.quantizers.kvquant.split_dense_sparse_batched`,
+:func:`~veloxquant_mlx.quantizers.kvquant.fit_nuq_levels_batched`, etc.),
+and the Lloyd-Max loop no longer evaluates per iteration — measured 9.6x
+real end-to-end recovery (2.8 -> 27 tok/s on the same benchmark). **This
+does not close the full gap to fp16 speed.** Unlike AdaKV's equivalent fix
+(VeloxQuant-MLX#512), the remaining cost here is not dispatch overhead —
+it's the Lloyd-Max fit's own O(``n_iters`` x N x L x D) arithmetic, paid
+fresh for values on *every* decode step by the algorithm's own per-token-
+levels design. ``kvquant_lloyd_iters`` (default 8) is the existing,
+already-correctly-wired lever for trading fit quality for speed — lower
+values measured a further 27 -> 41 tok/s at ``lloyd_iters=1`` on the same
+benchmark, still well short of fp16 parity. There is no further "fix" to
+apply here without changing the algorithm's per-token-value-levels design.
 
 Byte accounting:
     compressed_*  — NUQ codes + per-(channel/token) level table + fp16 outlier
@@ -49,10 +72,10 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.kvquant import (
-    dequant_nuq,
-    fit_nuq_levels,
-    quantize_nuq,
-    split_dense_sparse,
+    dequant_nuq_batched,
+    fit_nuq_levels_batched,
+    quantize_nuq_batched,
+    split_dense_sparse_batched,
 )
 
 
@@ -93,7 +116,13 @@ class KVQuantKVCache(_MLXKVCache):
 
         # Frozen levels fit at prefill: keys per-channel [H, L, D],
         # values per-token use levels [H, L, D] in transposed space.
-        self._key_levels: list | None = None  # list over heads of [L, D]
+        # _key_levels is a stacked [H, L, D] array (not a Python list) since
+        # #504's batching rewrite — indexing/iterating it behaves the same
+        # as the old list-of-per-head-arrays for every existing caller
+        # (cache.key_levels[0], `for level in cache.key_levels`), but it can
+        # now be passed straight to mx.tile when sharing frozen levels
+        # across the batch axis.
+        self._key_levels: mx.array | None = None  # [H, L, D]
         self._value_levels: list | None = None  # list over heads of [L, D] (channel-as-sample)
         self._n_tokens: int = 0
         self._outlier_count: int = 0
@@ -106,10 +135,18 @@ class KVQuantKVCache(_MLXKVCache):
         self._fp16_value_bytes: int = 0
 
     # ------------------------------------------------------------------
-    # Per-head NUQ application
+    # Batched (over B*H) NUQ application
     # ------------------------------------------------------------------
-    def _quant_keys_head(self, k_sd: mx.array, levels: mx.array | None):
-        """Keys: per-channel NUQ on [S, D]. Returns (recon_fp16, levels_used).
+    def _quant_keys_batched(self, k_bh: mx.array, levels: mx.array | None):
+        """Keys: per-channel NUQ, batched over BH. ``k_bh``: [BH, S, D].
+
+        Returns (recon_fp16 [BH, S, D], levels_used [BH, L, D]).
+
+        Batched over the flattened (batch, head) axis instead of a Python
+        ``for b: for h:`` loop — the O(B*H) dispatch pattern measured
+        costing the majority of a 59x real ``mlx_lm.generate()`` decode
+        slowdown on this class (VeloxQuant-MLX#504). Numerically identical
+        to calling the old per-head path once per row of that axis.
 
         At decode (S == 1) a per-channel column holds a single sample, so the
         rank-based outlier split degenerates (it cannot keep >=1 inlier and
@@ -117,41 +154,47 @@ class KVQuantKVCache(_MLXKVCache):
         over from the frozen prefill statistics, so decode keys keep the same
         outlier protection the prefill keys got.
         """
-        ds = split_dense_sparse(k_sd, self._outlier_fraction)
+        ds = split_dense_sparse_batched(k_bh, self._outlier_fraction)
         if levels is None:
-            levels = fit_nuq_levels(ds.inliers, self._bits, self._lloyd_iters)
-        codes = quantize_nuq(ds.inliers, levels)
-        recon = dequant_nuq(codes, levels).astype(mx.float32)
+            levels = fit_nuq_levels_batched(ds.inliers, self._bits, self._lloyd_iters)
+        codes = quantize_nuq_batched(ds.inliers, levels)
+        recon = dequant_nuq_batched(codes, levels).astype(mx.float32)
         mask = ds.outlier_mask
         vals = ds.outlier_vals
         if (
-            k_sd.shape[0] < 2
+            k_bh.shape[1] < 2
             and self._outlier_fraction > 0.0
             and self._key_outlier_thresh is not None
         ):
             # Decode: reuse the frozen per-channel threshold from prefill.
-            k32 = k_sd.astype(mx.float32)
-            mask = mx.abs(k32) >= self._key_outlier_thresh
+            # _key_outlier_thresh is [1, D]; broadcasts against [BH, 1, D].
+            k32 = k_bh.astype(mx.float32)
+            mask = mx.abs(k32) >= self._key_outlier_thresh[None, :, :]
             vals = mx.where(mask, k32, mx.zeros_like(k32))
         recon = mx.where(mask, vals, recon)
         self._outlier_count += int(mx.sum(mask).item())
         return recon.astype(mx.float16), levels
 
-    def _quant_values_head(self, v_sd: mx.array, levels: mx.array | None):
-        """Values: per-token NUQ on [S, D] → transpose so tokens are columns.
+    def _quant_values_batched(self, v_bh: mx.array):
+        """Values: per-token NUQ, batched over BH. ``v_bh``: [BH, S, D].
 
-        Values are unaffected by the decode degeneracy: a per-token column has
-        D samples regardless of S, so the rank-based split is always well posed.
+        Transposes S<->D per row so tokens are columns (per-token levels),
+        the same axis swap the old per-head path did, just batched. Values
+        are unaffected by the decode degeneracy: a per-token column has D
+        samples regardless of S, so the rank-based split is always well
+        posed — always re-fit fresh (never frozen), matching prior behaviour.
+
+        Returns (recon_fp16 [BH, S, D], levels_used [BH, L, S] — for
+        introspection only; not reused across calls).
         """
-        v_ds = v_sd.T  # [D, S]: now each column is one token
-        ds = split_dense_sparse(v_ds, self._outlier_fraction)
-        if levels is None:
-            levels = fit_nuq_levels(ds.inliers, self._bits, self._lloyd_iters)
-        codes = quantize_nuq(ds.inliers, levels)
-        recon = dequant_nuq(codes, levels).astype(mx.float32)
+        v_ds = mx.swapaxes(v_bh, 1, 2)  # [BH, D, S]: each column is one token
+        ds = split_dense_sparse_batched(v_ds, self._outlier_fraction)
+        levels = fit_nuq_levels_batched(ds.inliers, self._bits, self._lloyd_iters)
+        codes = quantize_nuq_batched(ds.inliers, levels)
+        recon = dequant_nuq_batched(codes, levels).astype(mx.float32)
         recon = mx.where(ds.outlier_mask, ds.outlier_vals, recon)
         self._outlier_count += int(mx.sum(ds.outlier_mask).item())
-        return recon.astype(mx.float16).T, levels  # back to [S, D]
+        return mx.swapaxes(recon.astype(mx.float16), 1, 2), levels  # back to [BH, S, D]
 
     def _capture_key_thresholds(self, keys: mx.array) -> None:
         """Freeze the per-channel outlier threshold from the prefill keys.
@@ -187,7 +230,6 @@ class KVQuantKVCache(_MLXKVCache):
             and self._n_tokens > 0
             and (self._n_tokens % self._refit_interval == 0)
         )
-        key_levels = None if refit_keys else self._key_levels  # list[H] of [L, D] or None
 
         # Sink tokens are restored to fp16 below, so — following the paper — they
         # are also excluded from the level fit and from the outlier thresholds.
@@ -198,36 +240,50 @@ class KVQuantKVCache(_MLXKVCache):
         if refit_keys:
             self._capture_key_thresholds(keys[:, :, fit_slice, :])
 
-        k_out_b, v_out_b = [], []
-        new_klev = [None] * H
-        for b in range(B):
-            k_h, v_h = [], []
-            for h in range(H):
-                # Share frozen key levels across batch; fit once on (b==0) when refitting.
-                kl = key_levels[h] if key_levels is not None else (new_klev[h] if b > 0 else None)
-                if kl is None:
-                    # Fit levels on non-sink tokens, then quantize the full block
-                    # against them.
-                    kl = fit_nuq_levels(
-                        split_dense_sparse(keys[b, h][fit_slice], self._outlier_fraction).inliers,
-                        self._bits,
-                        self._lloyd_iters,
-                    )
-                kq, klev = self._quant_keys_head(keys[b, h], kl)
-                vq, vlev = self._quant_values_head(values[b, h], None)  # values: always fresh
-                new_klev[h] = klev
-                last_vlev = vlev
-                k_h.append(kq)
-                v_h.append(vq)
-            k_out_b.append(mx.stack(k_h, axis=0))
-            v_out_b.append(mx.stack(v_h, axis=0))
+        # Flatten (B, H) into one leading axis — every batched primitive
+        # below operates on this axis instead of a Python for-b/for-h loop
+        # (see VeloxQuant-MLX#504: that loop, plus a per-Lloyd-Max-iteration
+        # forced host sync, measured a 59x real end-to-end decode slowdown).
+        keys_bh = keys.reshape(B * H, S, D)
+        values_bh = values.reshape(B * H, S, D)
 
         if refit_keys:
-            self._key_levels = new_klev
-        self._value_levels = [last_vlev]  # most-recent per-token levels (introspection)
+            # Matches prior behaviour exactly: key levels are fit ONLY from
+            # batch element 0's data (keys[0]), then shared across every
+            # batch element — never fit independently per b, even though
+            # each (b, h) pair is otherwise processed independently. This
+            # mirrors the old per-head loop, which fit `new_klev[h]` once
+            # at b==0 and reused it (unchanged) for b==1..B-1 (see #504
+            # investigation notes — verified against the pre-batching code).
+            keys_h0 = keys[0].reshape(H, S, D)  # [H, S, D], batch element 0 only
+            fit_inliers = split_dense_sparse_batched(
+                keys_h0[:, fit_slice, :], self._outlier_fraction
+            ).inliers
+            key_levels_h = fit_nuq_levels_batched(
+                fit_inliers, self._bits, self._lloyd_iters
+            )  # [H, L, D]
+            key_levels = mx.tile(key_levels_h, (B, 1, 1))  # [B*H, L, D]
+        else:
+            # Frozen levels are stored per-head [H, L, D]; tile across B to
+            # match the flattened BH axis (shared across the batch, as
+            # before — frozen keys are fit once and reused for every batch
+            # element). `not refit_keys` implies `not is_prefill`, so
+            # self._key_levels is guaranteed set here (assert makes that
+            # explicit for readers and satisfies static typing).
+            assert self._key_levels is not None
+            key_levels = mx.tile(self._key_levels, (B, 1, 1))
 
-        k_out = mx.stack(k_out_b, axis=0)
-        v_out = mx.stack(v_out_b, axis=0)
+        k_out_bh, klev_used = self._quant_keys_batched(keys_bh, key_levels)
+        v_out_bh, vlev_used = self._quant_values_batched(values_bh)
+
+        if refit_keys:
+            # Store per-head levels (first B-tile is representative — frozen
+            # levels are shared across the batch by construction above).
+            self._key_levels = klev_used[:H]
+        self._value_levels = [vlev_used[0]]  # most-recent per-token levels (introspection)
+
+        k_out = k_out_bh.reshape(B, H, S, D)
+        v_out = v_out_bh.reshape(B, H, S, D)
 
         # Attention Sink-Aware quantization (paper §3.5): the model allocates a
         # disproportionate attention score to the first few tokens and is
