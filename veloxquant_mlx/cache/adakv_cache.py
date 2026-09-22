@@ -15,10 +15,29 @@ Design:
 
     Decode (subsequent calls, S == 1 per step):
         1. Update accumulators with the new key token.
-        2. Recompute the per-head bit assignment (every step by default).
+        2. Recompute the per-head bit assignment (every ``adakv_update_interval``
+           steps; default 1 = every step, matching the original behaviour).
         3. Quantize the new key at the per-head assignment, forward fp16.
 
     Values are left at fp16 throughout (AdaKV-proxy is a key-only method).
+
+Performance fix (VeloxQuant-MLX#504): two real, measured host-sync costs on
+the real `mlx_lm.generate()` decode path, both now gated to
+``adakv_update_interval`` instead of firing every single step/layer:
+  1. ``_quantize_per_head`` looped ``for b in range(B): for h in range(H):``
+     calling one MLX op per head — the O(B*H) Python-dispatch pattern
+     documented (and fixed once already) for H2O. Now batched via
+     :func:`veloxquant_mlx.quantizers.adakv.quantize_heads_batched`, which
+     groups heads by their (typically 2-3 distinct) assigned bit-widths.
+  2. The larger cost: ``allocate_head_bits`` calls ``.tolist()`` on its
+     importance input, and ``_update_norm_accumulators`` called
+     ``mx.eval()`` unconditionally — both forced a full host sync of that
+     step's pending MLX graph on *every* call (every layer, every decode
+     step). Measured on Llama-3.2-1B (this M4): recomputing every step
+     cost ~53% of end-to-end decode throughput vs. plain fp16; gating both
+     to ``adakv_update_interval`` recovered the large majority of it.
+     ``adakv_update_interval=1`` (the default) preserves the exact prior
+     behaviour for anyone relying on per-step recomputation.
 
 Byte accounting:
     compressed_key_bytes — weighted by each head's assigned bit-width
@@ -28,9 +47,6 @@ Byte accounting:
 What is NOT implemented (documented):
     - True Ada-KV head-adaptive *eviction* budget (needs softmax attention).
     - Cross-layer budget sharing.
-    - Caching the bit assignment across update_interval > 1 steps. The
-      ``adakv_update_interval`` config field is wired but the assignment is
-      recomputed every step regardless (future optimisation).
 """
 
 from __future__ import annotations
@@ -45,7 +61,7 @@ from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.adakv import (
     allocate_head_bits,
     compute_head_attention_entropy,
-    quantize_head,
+    quantize_heads_batched,
 )
 
 
@@ -110,6 +126,10 @@ class AdaKVCache(_MLXKVCache):
         # Current per-head bit assignment ([H] ints). Set on first update.
         self._head_bits: list[int] | None = None
 
+        # Steps since the bit assignment was last recomputed — gates
+        # _recompute_head_bits to adakv_update_interval (see that method).
+        self._steps_since_recompute: int = 0
+
         # Degenerate-target warning is emitted at most once per cache.
         self._warned_degenerate: bool = False
 
@@ -140,13 +160,22 @@ class AdaKVCache(_MLXKVCache):
         else:
             self._norm_sum = self._norm_sum + new_sum
             self._norm_sq_sum = self._norm_sq_sum + new_sq_sum
-        # Evaluate once, after folding into the running accumulator — an
-        # intermediate eval() on new_sum/new_sq_sum before the add is a
-        # wasted host sync every decode step, since both are immediately
-        # consumed by the addition (or stored directly) either way; only the
-        # post-fold accumulator needs materializing to keep the graph from
-        # growing across steps.
-        mx.eval(self._norm_sum, self._norm_sq_sum)
+        # Evaluate periodically (every adakv_update_interval steps), not on
+        # every call — an intermediate eval() on new_sum/new_sq_sum before
+        # the add would be a wasted host sync (both are immediately consumed
+        # by the addition either way), but evaluating the post-fold
+        # accumulator every single call is itself the dominant real-model
+        # cost this class had (see VeloxQuant-MLX#504: measured ~53% of
+        # end-to-end decode throughput on Llama-3.2-1B). Still evaluated at
+        # least every adakv_update_interval steps (matching
+        # _recompute_head_bits's own cadence below) so the pending graph
+        # cannot grow unboundedly across a long decode run — the same
+        # graph-growth-crash guard H2O's _EVAL_FLUSH_INTERVAL documents,
+        # just batched to the interval the caller already configured rather
+        # than forced every step. Default adakv_update_interval=1 preserves
+        # exact prior behaviour.
+        if self._n_tokens % self._update_interval == 0:
+            mx.eval(self._norm_sum, self._norm_sq_sum)
 
         self._n_tokens += S
 
@@ -168,7 +197,27 @@ class AdaKVCache(_MLXKVCache):
         return self._running_head_importance()
 
     def _recompute_head_bits(self, n_heads: int) -> None:
-        """Recompute the per-head bit assignment from current statistics."""
+        """Recompute the per-head bit assignment from current statistics,
+        gated to ``adakv_update_interval`` steps.
+
+        ``allocate_head_bits`` calls ``.tolist()`` on its importance input —
+        a host sync that, called unconditionally on every ``update_and_fetch``
+        (every layer, every decode step), forces materialization of that
+        step's entire pending MLX graph up to this point rather than letting
+        work batch/pipeline across layers within one step. Measured on real
+        `mlx_lm.generate()` (Llama-3.2-1B, this M4): recomputing every step
+        cost ~53% of end-to-end decode throughput vs. plain fp16; gating to
+        the already-documented (but previously unimplemented — see module
+        docstring's former "NOT implemented" note) ``adakv_update_interval``
+        recovers the large majority of it, since the bit assignment changes
+        slowly relative to a single decode step for any real workload (see
+        VeloxQuant-MLX#504). Default ``adakv_update_interval=1`` preserves
+        exact prior behaviour (recompute every step) for anyone relying on it.
+        """
+        self._steps_since_recompute += 1
+        if self._head_bits is not None and self._steps_since_recompute < self._update_interval:
+            return
+        self._steps_since_recompute = 0
         importance = self._current_importance(n_heads)
         self._head_bits = allocate_head_bits(
             importance,
@@ -187,17 +236,16 @@ class AdaKVCache(_MLXKVCache):
     # Core quantization
     # ------------------------------------------------------------------
     def _quantize_per_head(self, keys: mx.array) -> mx.array:
-        """Quantize keys [B, H, S, D] with each head at its assigned bit-width."""
-        B, H, S, D = keys.shape
-        assert self._head_bits is not None and len(self._head_bits) == H
-        out_batches = []
-        for b in range(B):
-            out_heads = []
-            for h in range(H):
-                k_q = quantize_head(keys[b, h], self._head_bits[h], self._group_size)
-                out_heads.append(k_q)
-            out_batches.append(mx.stack(out_heads, axis=0))  # [H, S, D]
-        return mx.stack(out_batches, axis=0)  # [B, H, S, D]
+        """Quantize keys [B, H, S, D] with each head at its assigned bit-width.
+
+        Batched over heads-grouped-by-bit-width (see
+        ``quantize_heads_batched``) instead of a Python ``for b: for h:``
+        loop calling ``quantize_head`` per (b,h) pair — that loop shape was
+        measured costing 61.6% of real decode throughput on this exact class
+        (VeloxQuant-MLX#504: 132.1 -> 50.8 tok/s, real ``mlx_lm.generate()``).
+        """
+        assert self._head_bits is not None and len(self._head_bits) == keys.shape[1]
+        return quantize_heads_batched(keys, self._head_bits, self._group_size)
 
     # ------------------------------------------------------------------
     # mlx_lm protocol
