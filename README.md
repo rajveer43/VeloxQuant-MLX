@@ -55,7 +55,7 @@ Inside are 43 compression methods, each adapted from a published paper, spanning
 
 [![Watch the demo](https://cdn.loom.com/sessions/thumbnails/b8d14f283a494682b6917a64475e0dbd-c8ae283c543f1997.gif)](https://www.loom.com/share/b8d14f283a494682b6917a64475e0dbd)
 
-[📹 Local demo video](assets/video/veloxquant_demo.mp4)
+[![Local demo video](assets/video/veloxquant_demo_thumb.jpg)](assets/video/veloxquant_demo.mp4)
 
 </div>
 
