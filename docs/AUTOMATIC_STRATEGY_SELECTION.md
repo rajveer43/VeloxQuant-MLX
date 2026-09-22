@@ -148,7 +148,7 @@ print(f"Chip: {profile.chip}")                    # "Apple M4"
 print(f"Generation: {profile.chip_generation}")  # 4
 print(f"Memory: {profile.total_memory_bytes}")   # 25769803776 (24 GiB)
 print(f"Available: {profile.available_memory_bytes}")
-print(f"Bandwidth: {profile.bandwidth_gbps} GB/s")  # 120.0 (nominal)
+print(f"Bandwidth: {profile.bandwidth_gbps} GB/s")  # 90.0 (nominal, self-calibrated)
 print(f"Metal: {profile.metal_available}")       # True
 ```
 
