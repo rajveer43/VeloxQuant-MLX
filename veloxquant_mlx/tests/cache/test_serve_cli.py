@@ -7,11 +7,29 @@ model weights, so that path is exercised manually rather than in CI.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
+from veloxquant_mlx.cache.base import KVCacheConfig
 from veloxquant_mlx.cache.registry import DEFAULT_SERVE_METHOD, ServeTier, probe_serve_tier
 from veloxquant_mlx.cli import serve as serve_cli
+
+
+def _make_fake_model(n_layers: int = 4, n_heads: int = 4, head_dim: int = 32) -> SimpleNamespace:
+    """A minimal object shaped like the mlx_lm attributes KVCacheBuilder.for_model reads.
+
+    Matches the real convention: model.layers[i].self_attn.head_dim,
+    model.args.hidden_size / num_attention_heads for the fallback path.
+    Deliberately has no ``make_cache`` attribute of its own, matching a
+    real never-yet-patched mlx_lm model.
+    """
+    hidden_size = n_heads * head_dim
+    layers = [
+        SimpleNamespace(self_attn=SimpleNamespace(head_dim=head_dim)) for _ in range(n_layers)
+    ]
+    args = SimpleNamespace(hidden_size=hidden_size, num_attention_heads=n_heads)
+    return SimpleNamespace(layers=layers, args=args)
 
 
 def test_default_method_is_the_servable_one():
@@ -218,3 +236,43 @@ def test_set_array_field_parses_comma_separated_ints():
 def test_set_array_field_rejects_non_integer_element():
     with pytest.raises(SystemExit, match="svdq_bit_schedule.*expects array"):
         serve_cli.parse_overrides(["svdq_bit_schedule=8,4,x,1"], method="svdq")
+
+
+def test_attach_cache_returns_batchability_without_a_second_probe():
+    """VeloxQuant-MLX#506: attach_cache must derive is_batchable from its own
+    probe list, not by calling make_prompt_cache(model) again after patching
+    model.make_cache -- that second call would invoke the now-self-referential
+    make_cache and recurse into KVCacheBuilder.for_model until the recursion
+    limit is hit (confirmed 333 full re-executions in the real bug, masked by
+    a broad except Exception elsewhere, costing 30-70s per real cold start).
+    """
+    model = _make_fake_model(n_layers=4)
+    config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)
+
+    n_layers, is_batchable = serve_cli.attach_cache(model, config)
+
+    assert n_layers == 4
+    assert is_batchable is False  # turboquant_rvq caches have no merge()
+    assert hasattr(model, "make_cache")
+
+
+def test_attach_cache_reports_batchable_method():
+    model = _make_fake_model(n_layers=2)
+    config = KVCacheConfig(method="h2o", bit_width_inlier=1, seed=42)
+
+    _n_layers, is_batchable = serve_cli.attach_cache(model, config)
+
+    assert is_batchable is True  # h2o caches implement merge()
+
+
+def test_attach_cache_patched_make_cache_does_not_recurse():
+    """The patched model.make_cache (what a real generate() call invokes)
+    must build a fresh cache list directly, not loop back through
+    attach_cache or re-trigger the recursion this issue fixes."""
+    model = _make_fake_model(n_layers=3)
+    config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)
+
+    serve_cli.attach_cache(model, config)
+    caches = model.make_cache()
+
+    assert len(caches) == 3

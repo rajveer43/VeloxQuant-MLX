@@ -254,7 +254,7 @@ def build_config(args: argparse.Namespace) -> Any:
     )
 
 
-def attach_cache(model: Any, config: Any) -> int:
+def attach_cache(model: Any, config: Any) -> tuple[int, bool]:
     """Point ``model.make_cache`` at a freshly built VeloxQuant cache list.
 
     Not ``patch_model_kv_cache``: that helper builds one list eagerly and pins
@@ -262,15 +262,26 @@ def attach_cache(model: Any, config: Any) -> int:
     share one cache. Building per call gives each request its own.
 
     Must run on the thread that will generate — see ``_Provider._load``.
+
+    Returns ``(n_layers, is_batchable)``. ``is_batchable`` is derived from
+    this same probe list rather than by calling ``make_prompt_cache(model)``
+    again after the patch below is applied: that second call would invoke
+    the now-self-referential ``model.make_cache``, which recurses into
+    ``KVCacheBuilder.for_model`` until Python's recursion limit is hit
+    (VeloxQuant-MLX#506; confirmed 333 full re-executions, masked by a
+    broad ``except Exception`` further down the call stack, costing 30-70s
+    per real server cold start). Reusing the probe list is strictly
+    cheaper than the old second call, not just recursion-free.
     """
     from veloxquant_mlx.cache.base import KVCacheBuilder
 
     probe = KVCacheBuilder.for_model(model, config)
     n_layers = len(probe)
+    is_batchable = all(hasattr(c, "merge") for c in probe)
     del probe
 
     model.make_cache = lambda *_a, **_kw: KVCacheBuilder.for_model(model, config)
-    return n_layers
+    return n_layers, is_batchable
 
 
 def emit_ready(args: argparse.Namespace, n_caches: int) -> None:
@@ -420,15 +431,13 @@ def run_server(args: argparse.Namespace) -> None:
             _warn(f"loading model {args.model!r} ...")
             super()._load(args.model, args.adapter_path, None)
 
-            n_layers = attach_cache(self.model, config)
+            n_layers, self.is_batchable = attach_cache(self.model, config)
 
-            # Recompute after re-patching make_cache: upstream derived this from
-            # the stock cache, and our caches decide batchability themselves.
-            # Left stale/False, requests take the unbatched _serve_single path,
-            # which generates on the HTTP thread with no stream scope.
-            from mlx_lm.models.cache import make_prompt_cache
-
-            self.is_batchable = all(hasattr(c, "merge") for c in make_prompt_cache(self.model))
+            # is_batchable comes from attach_cache's own probe list: upstream
+            # derived this from the stock cache, and our caches decide
+            # batchability themselves. Left stale/False, requests take the
+            # unbatched _serve_single path, which generates on the HTTP
+            # thread with no stream scope.
             if not self.is_batchable:
                 _warn(
                     f"method {args.method!r} has no merge(); serving unbatched "
