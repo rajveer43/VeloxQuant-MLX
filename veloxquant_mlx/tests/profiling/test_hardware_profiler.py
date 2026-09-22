@@ -11,6 +11,7 @@ from veloxquant_mlx.profiling.hardware_profiler import (
     _stdlib_chip,
     chip_generation,
     detect_hardware_profile,
+    measure_bandwidth_gbps,
 )
 
 
@@ -62,7 +63,7 @@ def test_detect_memory_positive_when_known():
 
 def test_bandwidth_property_uses_nominal_table():
     profile = HardwareProfile(chip="M4", chip_generation=4)
-    assert profile.bandwidth_gbps == 120.0
+    assert profile.bandwidth_gbps == 90.0
     profile = HardwareProfile(chip="M1", chip_generation=1)
     assert profile.bandwidth_gbps == 68.3
 
@@ -113,3 +114,13 @@ def test_macos_version_detection():
 def test_available_memory_never_negative_when_total_known():
     profile = HardwareProfile(chip="M1", chip_generation=1, total_memory_bytes=8 * 1024**3)
     assert profile.available_memory_bytes >= 0
+
+
+def test_measure_bandwidth_gbps_returns_plausible_value_or_none():
+    """VeloxQuant-MLX#509: warmup iterations were added before the timed
+    loop, since a cold first call in a fresh process previously undershot
+    this function's own warm-process mean by ~2x.
+    """
+    bw = measure_bandwidth_gbps(iterations=4, bytes_per_transfer=4 * 1024**2)
+    if bw is not None:
+        assert 0.0 < bw < 2000.0

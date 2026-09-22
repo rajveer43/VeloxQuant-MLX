@@ -273,3 +273,26 @@ def test_fallback_result_explains_best_is_none():
     result = plan_strategy(_model(), tiny, _workload())
     assert result.fallback_used
     assert result.best is None
+
+
+@pytest.mark.parametrize("bandwidth_gbps", [20.0, 90.0, 120.0, 400.0])
+def test_recommendation_currently_invariant_to_bandwidth(bandwidth_gbps):
+    """VeloxQuant-MLX#509: bandwidth is a shared scalar across every
+    candidate's latency_ms, and _normalize_axis()'s min-max normalization
+    is invariant to a uniform positive scalar -- so today, bandwidth's
+    absolute accuracy does not change any recommendation. This pins that
+    invariance so a future change to the scoring formula (e.g. bandwidth
+    entering a hard filter or absolute SLA gate) is caught rather than
+    silently making a previously-inert table value load-bearing.
+    """
+    hw = HardwareProfile(
+        chip="M4", chip_generation=4,
+        available_memory_bytes=64 * 1024**3, mlx_version="0.32.2",
+        peak_memory_bandwidth_gbps=bandwidth_gbps,
+    )
+    baseline = plan_strategy(_model(), _hw(), _workload())
+    result = plan_strategy(_model(), hw, _workload())
+
+    assert [s.method for s in result.ranked] == [s.method for s in baseline.ranked]
+    for a, b in zip(result.ranked, baseline.ranked, strict=True):
+        assert a.score == pytest.approx(b.score, abs=1e-9)

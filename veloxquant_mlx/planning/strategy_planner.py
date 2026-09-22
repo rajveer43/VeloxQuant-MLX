@@ -284,6 +284,18 @@ def plan_strategy(
         )
 
     weights = _weights_for(workload.objective, opts.objective_weights)
+    # NOTE (VeloxQuant-MLX#509): bandwidth is a single scalar shared by every
+    # candidate below, so it divides every candidate's latency_ms by the
+    # identical constant. _normalize_axis()'s min-max normalization is
+    # algebraically invariant to a uniform positive scalar applied to every
+    # input, so bandwidth currently cancels out of the ranking entirely --
+    # verified: substituting values from 20 to 400 GB/s produces zero
+    # recommendation flips. This means hardware.bandwidth_gbps's accuracy is
+    # NOT currently load-bearing. If this formula ever changes to use
+    # bandwidth non-relatively (e.g. an absolute ms/token SLA gate, or
+    # bandwidth entering a hard filter instead of this shared normalized
+    # scalar), that inertness breaks immediately -- re-verify the invariance
+    # assumption before relying on bandwidth's absolute accuracy elsewhere.
     bandwidth = hardware.bandwidth_gbps or 100.0
 
     # --- Analytical per-axis values, pre-normalization --------------------

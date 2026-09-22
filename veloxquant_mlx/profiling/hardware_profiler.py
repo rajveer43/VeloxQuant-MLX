@@ -19,11 +19,19 @@ from dataclasses import dataclass
 #: only when no per-Mac measurement exists. Pro/Max/Ultra variants are faster
 #: (approximately 2x/4x/8x the base); the planner treats this as a soft proxy
 #: for "how fast can we stream KV bytes through the GPU", not a hard spec.
+#:
+#: The M4 entry was 120.0 (VeloxQuant-MLX#509) -- 22-46% above two
+#: independent self-calibrated measurements on real M4 hardware (base,
+#: 10-core GPU): ~98 GB/s (docs/KV_KERNEL_ROOFLINE_FINDINGS.md's own
+#: methodology) and 82.3 GB/s mean (this module's own
+#: measure_bandwidth_gbps(), 5 warm runs). Lowered to 90.0, roughly
+#: midway between the two, consistent with the module's own guidance to
+#: self-calibrate rather than trust a spec-sheet number.
 _BASE_BANDWIDTH_GBPS: dict[int, float] = {
     1: 68.3,  # M1
     2: 100.0,  # M2
     3: 100.0,  # M3
-    4: 120.0,  # M4
+    4: 90.0,  # M4 (self-calibrated; see #509)
 }
 
 #: Minimum base bandwidth assumed for an unknown chip generation.
@@ -218,7 +226,10 @@ def measure_bandwidth_gbps(
     **Benchmark**: Allocates a tensor, performs repeated additions (forcing
     GPU memory copy), measures wall time, and computes GB/s throughput.
 
-    **Method**: For each of N iterations:
+    **Method**: 3 untimed warmup iterations first (VeloxQuant-MLX#509 --
+    a cold first call in a fresh process measured ~2x under this
+    function's own warm-process mean, since the timed loop otherwise pays
+    JIT/allocator warmup itself), then for each of N timed iterations:
     1. Allocate src tensor (fp16, ``bytes_per_transfer`` bytes)
     2. Perform add operation (forces GPU read + write)
     3. Evaluate result (force completion)
@@ -260,6 +271,10 @@ def measure_bandwidth_gbps(
 
         src = mx.random.normal((bytes_per_transfer // 2,), dtype=mx.float16)
         mx.eval(src)
+
+        n_warmup = 3
+        for _ in range(n_warmup):
+            mx.eval(mx.add(src, 1))
 
         start = time.perf_counter()
         for _ in range(iterations):
