@@ -24,6 +24,17 @@ from veloxquant_mlx.memory.block_pool import BlockPoolAllocator
 # Reserved for caches that have not been given an explicit owner id.
 _DEFAULT_OWNER: int = -1
 
+#: Default backing-buffer growth chunk, in tokens. Matches stock
+#: ``mlx_lm.models.cache.KVCache``'s hardcoded ``step=256`` (VeloxQuant-MLX#510).
+#: Deliberately independent of ``PoolConfig.block_size`` (default 16): that
+#: value controls accounting/reuse granularity, not physical buffer-growth
+#: cadence -- ``pool.allocate(n_tokens=...)`` already accepts an arbitrary
+#: token count, so growing in 256-token chunks while accounting in
+#: 16-token blocks is fine. Tying growth step to block_size instead made
+#: every real decode step pay 16x more mx.concatenate calls than stock,
+#: costing 8.6-10.2% measured decode throughput.
+_DEFAULT_GROWTH_STEP: int = 256
+
 
 class PoolBackedKVCache:
     """Drop-in replacement for ``mlx_lm.models.cache.KVCache`` whose growth
@@ -40,8 +51,13 @@ class PoolBackedKVCache:
     routes every growth step through ``pool.allocate()`` so it shows up in
     the pool's :class:`~veloxquant_mlx.memory.block_pool.AllocationStats`
     (allocation count, reuse, fragmentation) the same way any other pool
-    consumer's growth does, and the growth chunk size becomes the pool's
-    configured ``block_size`` instead of a hardcoded constant.
+    consumer's growth does. The growth chunk size itself defaults to
+    stock's 256-token cadence (VeloxQuant-MLX#510), independent of the
+    pool's (typically much finer) accounting ``block_size`` -- growing in
+    16-token chunks to match a default ``block_size=16`` pool cost
+    8.6-10.2% measured decode throughput vs. stock, since MLX
+    dispatch/graph-construction overhead tracks ``mx.concatenate`` call
+    count, not bytes moved.
 
     This is the piece that puts :class:`BlockPoolAllocator` in a real
     model's decode hot path: unlike
@@ -59,10 +75,11 @@ class PoolBackedKVCache:
             concurrent ``PoolBackedKVCache`` instances must use different
             owners so :meth:`release` only reclaims their own blocks.
         step: Token-chunk size to grow the backing buffer by. Defaults to
-            ``pool.config.block_size`` so the pool's own block sizing is
-            what determines growth granularity; pass an explicit value to
-            decouple them (e.g. a larger step for a KV-heavy model while
-            keeping a small pool block_size for finer-grained accounting).
+            ``max(pool.config.block_size, 256)``, matching stock
+            ``KVCache``'s hardcoded 256-token growth cadence (see
+            :data:`_DEFAULT_GROWTH_STEP`) regardless of the pool's
+            (typically much smaller) accounting block size. Pass an
+            explicit value to override either direction.
     """
 
     def __init__(
@@ -73,7 +90,7 @@ class PoolBackedKVCache:
     ) -> None:
         self.pool = pool
         self.owner = owner
-        self.step = step if step is not None else pool.config.block_size
+        self.step = step if step is not None else max(pool.config.block_size, _DEFAULT_GROWTH_STEP)
         self.keys: Any = None
         self.values: Any = None
         self.offset = 0
@@ -211,7 +228,7 @@ def build_pooled_caches(
         owner: Opaque id (e.g. request id) shared by every layer's cache
             for this request.
         step: Growth chunk size in tokens; defaults to
-            ``pool.config.block_size`` (see PoolBackedKVCache).
+            ``max(pool.config.block_size, 256)`` (see PoolBackedKVCache).
 
     Returns:
         List of PoolBackedKVCache instances, one per language-model layer.

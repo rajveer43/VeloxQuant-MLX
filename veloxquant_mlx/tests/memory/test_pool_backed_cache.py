@@ -142,16 +142,26 @@ def test_is_trimmable():
     assert cache.is_trimmable() is True
 
 
-def test_default_step_comes_from_pool_block_size():
+def test_default_step_matches_stock_256_regardless_of_small_block_size():
+    """VeloxQuant-MLX#510: growth step must not be tied to a small
+    accounting block_size -- that cost 8.6-10.2% measured decode
+    throughput vs. stock's hardcoded step=256.
+    """
     pool = _pool(block_size=32)
     cache = PoolBackedKVCache(pool, owner=1)
-    assert cache.step == 32
+    assert cache.step == 256
+
+
+def test_default_step_respects_larger_pool_block_size():
+    pool = _pool(block_size=512)
+    cache = PoolBackedKVCache(pool, owner=1)
+    assert cache.step == 512
 
 
 def test_explicit_step_overrides_pool_block_size():
     pool = _pool(block_size=32)
-    cache = PoolBackedKVCache(pool, owner=1, step=256)
-    assert cache.step == 256
+    cache = PoolBackedKVCache(pool, owner=1, step=64)
+    assert cache.step == 64
 
 
 def test_build_pooled_caches_one_per_layer():
