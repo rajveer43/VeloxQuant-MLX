@@ -454,11 +454,27 @@ class BlockPoolAllocator:
 
         Args:
             owner: Opaque id passed to a prior :meth:`allocate` call.
+
+        Unlike :meth:`free`, which frees an arbitrary caller-supplied
+        subset and must locate+remove each block id from the owner's
+        list, this already has the owner's complete, correct block-id
+        list -- so it pops that list once (O(1)) instead of doing N
+        membership checks + N ``list.remove()`` calls (VeloxQuant-MLX#510;
+        was 13.4ms at 256K tokens / 16K blocks, confirmed superlinear:
+        2x blocks -> 2.0-3.4x time).
         """
         with self._lock:
-            block_ids = self._owner_blocks.get(owner, [])
-            blocks = [self._blocks[bid] for bid in list(block_ids)]
-            self._free_locked(blocks)
+            block_ids = self._owner_blocks.pop(owner, [])
+            blocks = [self._blocks[bid] for bid in block_ids]
+            for block in blocks:
+                if block.owner is None:
+                    continue  # already free; idempotent
+                if block.n_used < self.config.block_size:
+                    self.stats._fragmented_count -= 1
+                block.owner = None
+                block.n_used = 0
+                self._free[block.stream].append(block.block_id)
+                self.stats.n_frees += 1
             self._active_owners.discard(owner)
             self._record_history()
 
