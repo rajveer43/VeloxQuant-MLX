@@ -527,6 +527,156 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.2 (2026-09-22)
+
+### Bug Fixes
+
+- Bound RateEstimator memory growth via optional max_owners cap
+  ([#502](https://github.com/rajveer43/VeloxQuant-MLX/pull/502),
+  [`37a36e0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/37a36e0aff4456101a4c6bcf5216177eb4b5a6f5))
+
+- Eliminate self-recursive make_cache probe in KVCacheBuilder.for_model
+  ([#505](https://github.com/rajveer43/VeloxQuant-MLX/pull/505),
+  [`1aa20d6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1aa20d64b2b2265d3f1148a38c97fa3e6b866423))
+
+- Eliminate serve.py cold-start recursive cache rebuild (#506)
+  ([#520](https://github.com/rajveer43/VeloxQuant-MLX/pull/520),
+  [`4983d8e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4983d8eec43a3ae406313b23bb18c0010afceeaf))
+
+- Untrack .bench_tmp/ scratch output and fix gitignore glob
+  ([#499](https://github.com/rajveer43/VeloxQuant-MLX/pull/499),
+  [`1d193f9`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1d193f96efb3f0387d8da85b6cf0f02ddf33ab28))
+
+### Continuous Integration
+
+- Add scoped ruff D-rule check for CLI/UI/artifact-store docstrings
+  ([#490](https://github.com/rajveer43/VeloxQuant-MLX/pull/490),
+  [`eafec04`](https://github.com/rajveer43/VeloxQuant-MLX/commit/eafec048c26759f4adfd689f1d6009285823912e))
+
+### Documentation
+
+- Add local demo video to README ([#521](https://github.com/rajveer43/VeloxQuant-MLX/pull/521),
+  [`7a96128`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7a96128aa5b901cceedd9b9f8fdae925deea6d24))
+
+- Add terse per-version RELEASE_NOTES.md generated from CHANGELOG.md
+  ([#480](https://github.com/rajveer43/VeloxQuant-MLX/pull/480),
+  [`3d20574`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3d20574f481cec1871a9437766fedf1fffc26ced))
+
+- Backfill docstrings in cachegen_cache.py, adakv_cache.py, gear_cache.py
+  ([#487](https://github.com/rajveer43/VeloxQuant-MLX/pull/487),
+  [`fcc4866`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fcc4866744976665f2f4beb9f094577c7edb5051))
+
+- Backfill docstrings in coordinator files (chunkkv, xkv, squeeze, minicache, xquant)
+  ([#487](https://github.com/rajveer43/VeloxQuant-MLX/pull/487),
+  [`fcc4866`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fcc4866744976665f2f4beb9f094577c7edb5051))
+
+- Backfill docstrings in kivi_cache.py, tova_cache.py, snapkv_cache.py
+  ([#487](https://github.com/rajveer43/VeloxQuant-MLX/pull/487),
+  [`fcc4866`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fcc4866744976665f2f4beb9f094577c7edb5051))
+
+- Backfill docstrings in kvquant_cache.py, a2ats_cache.py
+  ([#487](https://github.com/rajveer43/VeloxQuant-MLX/pull/487),
+  [`fcc4866`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fcc4866744976665f2f4beb9f094577c7edb5051))
+
+- Backfill docstrings in kvtc_cache.py
+  ([#487](https://github.com/rajveer43/VeloxQuant-MLX/pull/487),
+  [`fcc4866`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fcc4866744976665f2f4beb9f094577c7edb5051))
+
+- Backfill docstrings in minicache_cache.py, vecinfer_cache.py
+  ([#487](https://github.com/rajveer43/VeloxQuant-MLX/pull/487),
+  [`fcc4866`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fcc4866744976665f2f4beb9f094577c7edb5051))
+
+- Backfill docstrings in palu_cache.py
+  ([#487](https://github.com/rajveer43/VeloxQuant-MLX/pull/487),
+  [`fcc4866`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fcc4866744976665f2f4beb9f094577c7edb5051))
+
+- Backfill docstrings in registry.py, nsnquant_cache.py, svdq_cache.py
+  ([#487](https://github.com/rajveer43/VeloxQuant-MLX/pull/487),
+  [`fcc4866`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fcc4866744976665f2f4beb9f094577c7edb5051))
+
+- Backfill docstrings in turboquant_rvq_cache.py, xkv_cache.py
+  ([#487](https://github.com/rajveer43/VeloxQuant-MLX/pull/487),
+  [`fcc4866`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fcc4866744976665f2f4beb9f094577c7edb5051))
+
+- Backfill docstrings in xquant_cache.py, rocketkv_cache.py, kitty_cache.py
+  ([#487](https://github.com/rajveer43/VeloxQuant-MLX/pull/487),
+  [`fcc4866`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fcc4866744976665f2f4beb9f094577c7edb5051))
+
+- Backfill docstrings in zipcache_cache.py, skvq_cache.py
+  ([#487](https://github.com/rajveer43/VeloxQuant-MLX/pull/487),
+  [`fcc4866`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fcc4866744976665f2f4beb9f094577c7edb5051))
+
+- Backfill docstrings on benchmarks/*.py (#483)
+  ([#488](https://github.com/rajveer43/VeloxQuant-MLX/pull/488),
+  [`47c2607`](https://github.com/rajveer43/VeloxQuant-MLX/commit/47c260719dcad707f3c27575041bbac8a6eaf4cc))
+
+- Backfill docstrings on cache/*.py accounting properties
+  ([#487](https://github.com/rajveer43/VeloxQuant-MLX/pull/487),
+  [`fcc4866`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fcc4866744976665f2f4beb9f094577c7edb5051))
+
+- Backfill docstrings on cache/*.py accounting properties (#482)
+  ([#487](https://github.com/rajveer43/VeloxQuant-MLX/pull/487),
+  [`fcc4866`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fcc4866744976665f2f4beb9f094577c7edb5051))
+
+- Backfill NpyArtifactStore docstrings (#481)
+  ([#486](https://github.com/rajveer43/VeloxQuant-MLX/pull/486),
+  [`008ebd3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/008ebd3b6b4ffc92d4a46cb4c527f14570418c85))
+
+- Backfill remaining docstrings (profiling, memory, codebooks, planning, cli, quantizers, handlers)
+  (#484) ([#489](https://github.com/rajveer43/VeloxQuant-MLX/pull/489),
+  [`195a057`](https://github.com/rajveer43/VeloxQuant-MLX/commit/195a057df6da5147dd9f6d1fe3ed679c0b42f2fa))
+
+- Label AutoOptimizer/CacheRoutePlanner as preview APIs
+  ([#503](https://github.com/rajveer43/VeloxQuant-MLX/pull/503),
+  [`22fc0db`](https://github.com/rajveer43/VeloxQuant-MLX/commit/22fc0db6c7f3358bade9b7e1be659dd16bcaae08))
+
+- Replace local demo video with YouTube embed link
+  ([`8b463d7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8b463d72544ad2240ae0a7e1cc6025a6cdbba8cd))
+
+- Use a clickable thumbnail for the local demo video
+  ([`01cceed`](https://github.com/rajveer43/VeloxQuant-MLX/commit/01cceed167ab9e3ed5aea30a9b00f734b56a5270))
+
+### Performance Improvements
+
+- Batch AdaKV's B×H loop and gate per-step recomputation (#504)
+  ([#512](https://github.com/rajveer43/VeloxQuant-MLX/pull/512),
+  [`d8ce176`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d8ce17699f3059e278a94d1beeffb78be90d89ac))
+
+- Batch GEAR's SVD and base group-quant across B×H (#504)
+  ([#515](https://github.com/rajveer43/VeloxQuant-MLX/pull/515),
+  [`8a0e9d1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8a0e9d16a6ea28686f7453192a8e4e00e33bbe93))
+
+- Batch KVQuant's B×H loop and remove per-Lloyd-Max-iteration eval (#504)
+  ([#514](https://github.com/rajveer43/VeloxQuant-MLX/pull/514),
+  [`b0263c1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b0263c12c6dd4781acd22f53733af9ce637e30ca))
+
+- Correct M4 bandwidth table entry, warm up measure_bandwidth_gbps (#509)
+  ([#518](https://github.com/rajveer43/VeloxQuant-MLX/pull/518),
+  [`3f25230`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3f25230b081b1fef5dd322cf899ce79f34874883))
+
+- Fix PoolBackedKVCache default growth step + superlinear free_all (#510)
+  ([#519](https://github.com/rajveer43/VeloxQuant-MLX/pull/519),
+  [`a4bbcac`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a4bbcac33e1a3388d9ce85004d3a9613f9b25f79))
+
+- Memoize TurboQuantRVQ's codebook construction (#508)
+  ([#517](https://github.com/rajveer43/VeloxQuant-MLX/pull/517),
+  [`8e7b86f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8e7b86fdc58160bee90480ba4d320b9a0e390b25))
+
+- Register ahead-of-time warmer for turboquant_rvq's fused Metal kernel (#507)
+  ([#516](https://github.com/rajveer43/VeloxQuant-MLX/pull/516),
+  [`f7362b7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f7362b7dfa2264382b0068c3d38019b509972368))
+
+### Testing
+
+- Add end-to-end contract tests for Quantizer/KVCache/ArtifactStore
+  ([#501](https://github.com/rajveer43/VeloxQuant-MLX/pull/501),
+  [`9a35ac4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9a35ac4f9afb6dd67488426bb3971573d42329a6))
+
+- Add missing Metal skip guard to test_pyramidkv_evict.py
+  ([#500](https://github.com/rajveer43/VeloxQuant-MLX/pull/500),
+  [`872d811`](https://github.com/rajveer43/VeloxQuant-MLX/commit/872d8110733925c20167a4f8995fcbb276f47cce))
+
+
 ## v0.91.1 (2026-09-21)
 
 ### Bug Fixes
