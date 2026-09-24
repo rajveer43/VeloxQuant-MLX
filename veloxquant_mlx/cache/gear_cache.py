@@ -47,11 +47,19 @@ batched across the flattened ``B*H`` axis instead of a Python loop:
      finding.
 Combined real measurement: 5.8 -> ~18.6 tok/s (3.2x recovery, ~26% of fp16
 baseline). **This does not close the full gap.** Profiling after both fixes
-shows ``gear_reconstruct`` (still per-head — sparse-outlier scatter +
-low-rank add + base dequant, called once per head per step) is now the
+showed ``gear_reconstruct`` (still per-head — sparse-outlier scatter +
+low-rank add + base dequant, called once per head per step) as the
 largest remaining single cost (~50% of wall time in isolated profiling).
-Batching it was not attempted in this pass — documented honestly as the
-next lever rather than left unstated.
+
+Follow-up (VeloxQuant-MLX#526-series): that per-head base dequant inside
+``gear_reconstruct`` was redundant — Pass 1 above already computes it once,
+batched across all ``B*H`` heads, as ``bases[idx]``, only for Pass 3 to throw
+it away and have ``gear_reconstruct`` recompute the identical
+``_dequant_axis`` math per head. ``gear_reconstruct`` now takes an optional
+precomputed ``base`` and this call site passes ``bases[idx]`` through,
+removing that duplicate work. The remaining per-head cost (low-rank add +
+sparse scatter-add + fp16 cast) is still unbatched — documented honestly as
+the next lever rather than left unstated.
 
 Overhead caveat: the low-rank factors cost ``(N + D) * r * 2`` bytes and the
 sparse triples ``nnz * 6`` bytes. For these to stay below the fp16 budget the
@@ -272,7 +280,12 @@ class GEARKVCache(_MLXKVCache):
                 axis=base_axis,
                 d_cols=d,
             )
-            rec = gear_reconstruct(state)
+            # base_recon (== bases[idx]) is Pass 1's already-batched base
+            # dequant for this exact head — pass it through so
+            # gear_reconstruct doesn't redo that dequant math per head (the
+            # remaining bottleneck this class's own docstring calls out;
+            # this closes part of that gap without a full batching rewrite).
+            rec = gear_reconstruct(state, base=base_recon)
             recon_flat.append(rec)
             comp += gear_bytes(state)
             base += base_only_bytes(state)
