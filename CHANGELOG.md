@@ -527,6 +527,33 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.3 (2026-09-24)
+
+### Chores
+
+- **landing**: Update Plausible analytics site ID
+  ([`ee06b14`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ee06b14f62d10dc9993568aa4ab11eb2c38abb7f))
+
+### Documentation
+
+- Fix README badge/link issues and a broken benchmark CLI example
+  ([`325c5eb`](https://github.com/rajveer43/VeloxQuant-MLX/commit/325c5ebc54dc9fb3178ff8318ac49a91b6450c58))
+
+### Performance Improvements
+
+- **cache**: Cut redundant numpy round-trip + dtype casts in CurDKV hot path
+  ([#526](https://github.com/rajveer43/VeloxQuant-MLX/pull/526),
+  [`bc6548a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bc6548a35ac4b8a82b96d4387b5e51cc4f216d93))
+
+- **cache**: Reuse precomputed base dequant in GEAR's per-head reconstruct
+  ([#527](https://github.com/rajveer43/VeloxQuant-MLX/pull/527),
+  [`768f17a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/768f17ac0438593254d0a519893faea0966bea29))
+
+- **cache**: Vectorize ChunkKV chunk-score pooling, cut redundant dtype casts
+  ([#525](https://github.com/rajveer43/VeloxQuant-MLX/pull/525),
+  [`0c459ae`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0c459ae434757c54c9c479b6496200a936f1b40b))
+
+
 ## v0.91.2 (2026-09-22)
 
 ### Bug Fixes
