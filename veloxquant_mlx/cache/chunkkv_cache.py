@@ -256,10 +256,20 @@ class ChunkKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
 
+        # Cast the whole [B, H, S, D] tensor once up front (a no-op when
+        # already fp16, which is the common case on this MLX/Metal target)
+        # instead of re-issuing `.astype(mx.float16)` per (b, h) slice below
+        # — avoids B*H redundant cast ops per call for input that's already
+        # the target dtype.
+        if keys.dtype != mx.float16:
+            keys = keys.astype(mx.float16)
+        if values.dtype != mx.float16:
+            values = values.astype(mx.float16)
+
         if S == 0:
             if self._last_returned is not None:
                 return self._last_returned
-            return keys.astype(mx.float16), values.astype(mx.float16)
+            return keys, values
 
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
@@ -279,8 +289,8 @@ class ChunkKVCache(_MLXKVCache):
                 if self._is_leader:
                     self._states[idx], kept = chunkkv_update(
                         self._states[idx],
-                        keys[b, h].astype(mx.float16),
-                        values[b, h].astype(mx.float16),
+                        keys[b, h],
+                        values[b, h],
                         record_kept_positions=True,
                     )
                     if self._coordinator is not None and self._layer_id is not None:
@@ -299,8 +309,8 @@ class ChunkKVCache(_MLXKVCache):
                         )
                     self._states[idx] = chunkkv_apply_reuse_indices(
                         self._states[idx],
-                        keys[b, h].astype(mx.float16),
-                        values[b, h].astype(mx.float16),
+                        keys[b, h],
+                        values[b, h],
                         fetched,
                     )
                     kept = fetched
@@ -349,8 +359,8 @@ class ChunkKVCache(_MLXKVCache):
                 k_h, v_h = chunkkv_get_kv(self._states[idx])
                 k_out_h.append(k_h)  # [min_kept, D]
                 v_out_h.append(v_h)
-                new_k_bh = keys[b, h].astype(mx.float16)
-                new_v_bh = values[b, h].astype(mx.float16)
+                new_k_bh = keys[b, h]
+                new_v_bh = values[b, h]
                 if previous_k[idx] is None:
                     k_full_h.append(new_k_bh)
                     v_full_h.append(new_v_bh)

@@ -138,8 +138,35 @@ def chunk_scores(token_scores: mx.array, body_chunks: list[tuple[int, int]]) -> 
     if not body_chunks:
         return mx.zeros((0,), dtype=mx.float32)
     s = token_scores.astype(mx.float32)
-    means = [mx.mean(s[a:b]) for (a, b) in body_chunks]
-    return mx.stack(means, axis=0)
+
+    # chunk_partition guarantees every body chunk is exactly `chunk_size`
+    # wide except possibly the last (ragged tail). Exploit that: reshape the
+    # uniform-width prefix into [n_full, chunk_size] and mean-reduce it in
+    # one vectorized op instead of one Python-level mx.mean() call per
+    # chunk — this is the pooling step inside the per-token eviction hot
+    # loop (_lowest_scoring_chunk), so cutting it from O(n_chunks) graph
+    # nodes to O(1) matters at small chunk_size / long context.
+    widths = [b - a for (a, b) in body_chunks]
+    chunk_size = widths[0] if widths else 0
+    n_full = len(body_chunks) - (1 if widths and widths[-1] != chunk_size else 0)
+
+    if n_full == len(body_chunks):
+        # No ragged tail — the whole thing reshapes cleanly.
+        start = body_chunks[0][0]
+        stop = body_chunks[-1][1]
+        return mx.mean(s[start:stop].reshape(len(body_chunks), chunk_size), axis=1)
+
+    if n_full > 0:
+        start = body_chunks[0][0]
+        full_stop = body_chunks[n_full - 1][1]
+        full_means = mx.mean(s[start:full_stop].reshape(n_full, chunk_size), axis=1)
+        tail_a, tail_b = body_chunks[-1]
+        tail_mean = mx.mean(s[tail_a:tail_b])[None]
+        return mx.concatenate([full_means, tail_mean], axis=0)
+
+    # Single (ragged) chunk only.
+    a, b = body_chunks[0]
+    return mx.mean(s[a:b])[None]
 
 
 def chunkkv_keep_mask(
@@ -175,9 +202,13 @@ def chunkkv_keep_mask(
     remaining = budget - len(sink_indices)
     if remaining > 0 and body_chunks:
         scores = chunk_scores(token_scores, body_chunks)
+        # Materialize all chunk scores in one sync (`.tolist()`) instead of
+        # calling `.item()` once per chunk inside the sort key below — same
+        # values, one GPU->CPU round trip instead of len(body_chunks).
+        scores_list = scores.tolist()
         order = list(range(len(body_chunks)))
         # Highest score first; ties → later (higher start) chunk first (recency).
-        order.sort(key=lambda c: (float(scores[c].item()), body_chunks[c][0]), reverse=True)
+        order.sort(key=lambda c: (scores_list[c], body_chunks[c][0]), reverse=True)
         for c in order:
             a, b = body_chunks[c]
             width = b - a
