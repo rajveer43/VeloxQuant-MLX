@@ -203,6 +203,21 @@ def _check_subvector_dim(d: int, subvector_dim: int) -> None:
         )
 
 
+def _nearest_centroid(sub: mx.array, cb: mx.array) -> mx.array:
+    """uint8 argmax of ``sub @ cb.T`` over the codebook axis.
+
+    ``sub`` is ``(..., n_sub, sub_d)``. Multiplying it directly by
+    ``cb.T`` broadcasts into a batched matmul of tiny ``(n_sub, sub_d)``
+    matrices, which MLX runs ~6x slower than the same products issued as
+    one flat ``(N, sub_d) @ (sub_d, K)`` GEMM. Flattening the leading axes
+    gives bitwise-identical scores (each is one ``sub_d``-term dot product
+    either way), so the indices are unchanged.
+    """
+    lead = sub.shape[:-1]
+    scores = sub.reshape(-1, sub.shape[-1]) @ cb.T
+    return mx.argmax(scores, axis=-1).astype(mx.uint8).reshape(lead)
+
+
 def vq_encode(
     x_nsn: mx.array,
     codebook: np.ndarray,
@@ -236,14 +251,14 @@ def vq_encode(
         # the dot with unit centroids is scale-invariant, so no normalization
         # of the query is needed).
         mags = mx.abs(sub)
-        idx = mx.argmax(mags @ cb.T, axis=-1).astype(mx.uint8)
+        idx = _nearest_centroid(mags, cb)
         pow2 = mx.array((1 << np.arange(sub_d, dtype=np.uint32)).astype(np.uint32))
         signs = mx.sum((sub >= 0).astype(mx.uint32) * pow2, axis=-1).astype(
             mx.uint8 if sub_d <= 8 else mx.uint32
         )
         return {"idx": idx, "signs": signs, "d": d, "sub_d": sub_d, "bits": 2}
 
-    idx = mx.argmax(sub @ cb.T, axis=-1).astype(mx.uint8)
+    idx = _nearest_centroid(sub, cb)
     return {"idx": idx, "signs": None, "d": d, "sub_d": sub_d, "bits": 1}
 
 
