@@ -254,11 +254,28 @@ def gear_compress(
     )
 
 
-def gear_reconstruct(state: GEARState) -> mx.array:
-    """Reconstruct fp16 ``[n_rows, D]`` from a GEARState (base + low-rank + sparse)."""
-    stream_rows = state.d_cols if state.axis == "channel" else state.n_rows
-    stream = _CodeStreamView(state.codes, state.scale, state.zero, stream_rows, state.bits)
-    base = _dequant_axis(stream, state.axis).astype(mx.float32)
+def gear_reconstruct(state: GEARState, base: mx.array | None = None) -> mx.array:
+    """Reconstruct fp16 ``[n_rows, D]`` from a GEARState (base + low-rank + sparse).
+
+    Args:
+        state: The compressed tensor.
+        base: Optional precomputed base-layer dequant (fp32, ``[n_rows, D]``),
+            i.e. ``dequant(Quant_b(x))`` for this exact ``state``. Callers that
+            already computed this (e.g. ``GEARKVCache._compress_and_account``,
+            whose Pass 1 batches the base dequant across all ``B*H`` heads
+            before Pass 3 calls this function once per head) should pass it
+            through here instead of leaving it to be recomputed — this
+            function otherwise redoes the identical per-head
+            ``_dequant_axis`` math a second time for no reason. Recomputed
+            from ``state`` when omitted, preserving the original behavior for
+            standalone callers (e.g. :func:`gear_quant_dequant`).
+    """
+    if base is None:
+        stream_rows = state.d_cols if state.axis == "channel" else state.n_rows
+        stream = _CodeStreamView(state.codes, state.scale, state.zero, stream_rows, state.bits)
+        base = _dequant_axis(stream, state.axis).astype(mx.float32)
+    else:
+        base = base.astype(mx.float32)
     out = base
     if state.L is not None and state.R is not None:
         out = out + (state.L @ state.R)
