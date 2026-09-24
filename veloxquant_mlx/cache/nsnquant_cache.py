@@ -155,14 +155,22 @@ class NSNQuantKVCache(_MLXKVCache):
         super().update_and_fetch(keys, values)
 
         r = self._residual_length
-        while self.offset - self._q_end >= r:
-            s, e = self._q_end, self._q_end + r
-            k_chunk = self.keys[..., s:e, :]
-            v_chunk = self.values[..., s:e, :]
-            self.keys[..., s:e, :] = self._round_trip(k_chunk)
-            self.values[..., s:e, :] = self._round_trip(v_chunk)
+        n_chunks = (self.offset - self._q_end) // r
+        if n_chunks > 0:
+            # Round-trip each chunk on its own (keeps the (N, codebook_size)
+            # VQ score intermediate at one chunk's size), but write all of
+            # them back with ONE slice-update per tensor. Interleaving a
+            # read of self.keys with a write per chunk makes every write
+            # copy the whole buffer, so a long prefill cost O(n_chunks *
+            # context) in copies; batching the round-trip itself over
+            # several chunks was measured slower and heavier than this.
+            s, e = self._q_end, self._q_end + n_chunks * r
+            k_rt = [self._round_trip(self.keys[..., c : c + r, :]) for c in range(s, e, r)]
+            v_rt = [self._round_trip(self.values[..., c : c + r, :]) for c in range(s, e, r)]
+            self.keys[..., s:e, :] = mx.concatenate(k_rt, axis=2) if n_chunks > 1 else k_rt[0]
+            self.values[..., s:e, :] = mx.concatenate(v_rt, axis=2) if n_chunks > 1 else v_rt[0]
             self._q_end = e
-            self._account_chunk_bytes(B, H, r, D)
+            self._account_chunk_bytes(B, H, r, D, n_chunks)
 
         self._fp16_key_bytes += B * H * S * D * 2
         self._fp16_value_bytes += B * H * S * D * 2
@@ -175,14 +183,14 @@ class NSNQuantKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     # Byte accounting
     # ------------------------------------------------------------------
-    def _account_chunk_bytes(self, B: int, H: int, r: int, D: int) -> None:
+    def _account_chunk_bytes(self, B: int, H: int, r: int, D: int, n_chunks: int = 1) -> None:
         n_sub = D // self._sub_d
         # Payload: 2-bit = sign mask + index (2 uint8 per subvector);
         #          1-bit = index only (1 uint8 per subvector).
         payload = r * n_sub * (2 if self._bits == 2 else 1)
         # Metadata, fp16: s1 + s2 per token, o (channel mean) per chunk.
         metadata = r * 2 * 2 + D * 2
-        per_tensor = (payload + metadata) * B * H
+        per_tensor = (payload + metadata) * B * H * n_chunks
         self._compressed_key_bytes += per_tensor
         self._compressed_value_bytes += per_tensor
 
