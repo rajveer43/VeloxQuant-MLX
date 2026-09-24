@@ -527,6 +527,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.4 (2026-09-24)
+
+### Performance Improvements
+
+- **cache**: Batch XQuant anchor/reuse quantization across B*H
+  ([#529](https://github.com/rajveer43/VeloxQuant-MLX/pull/529),
+  [`86a2ec8`](https://github.com/rajveer43/VeloxQuant-MLX/commit/86a2ec8920c5c6ed6b4faad646849a3af7c69bd8))
+
+
 ## v0.91.3 (2026-09-24)
 
 ### Chores

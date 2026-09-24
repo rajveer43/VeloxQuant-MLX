@@ -53,6 +53,20 @@ Limitations (stated plainly):
     inherited from SnapKV-adapted, not a new approximation.
   - No fused kernel: HSA gather/attend happens in eager MLX ops each step.
   - No RocketKV-MT (multi-turn) variant — see issue #239.
+
+Performance: ``_process_prefill``'s single-shot path originally looped
+``for b in range(B): for h in range(H):``, calling ``snapkv_compress`` once
+per head — the same unbatched-per-head-loop cost pattern that dominated
+ChunkKV/CurDKV/GEAR before their own fixes (#525/#526/#527). Here it reused
+``_snapkv_compress_batched``, the batched primitive ``SnapKVKVCache``
+already relies on in production (stage 1 *is* SnapKV verbatim, per this
+module's own docstring — this was reinventing its per-head loop rather
+than reusing the batched call). Verified bit-identical to the old loop.
+Isolated stage-1 benchmark (B=1, H=32, S=1024, D=128, budget=128): ~4.53ms
+(old per-head loop) -> ~1.50ms (batched), ~3x faster and markedly more
+stable run-to-run. The chunked-prefill re-run path and per-head
+``build_paged_summary`` remain unbatched (ragged per-head kept-token counts
+after eviction complicate batching that one) — left as a follow-up.
 """
 
 from __future__ import annotations
@@ -72,7 +86,11 @@ from veloxquant_mlx.quantizers.rocketkv import (
     split_compression_ratio,
     split_hsa_dims,
 )
-from veloxquant_mlx.quantizers.snapkv import full_fp16_bytes, snapkv_compress
+from veloxquant_mlx.quantizers.snapkv import (
+    _snapkv_compress_batched,
+    full_fp16_bytes,
+    snapkv_compress,
+)
 
 
 class RocketKVKVCache(_MLXKVCache):
@@ -162,7 +180,13 @@ class RocketKVKVCache(_MLXKVCache):
         return max(1, int(round(head_dim / self._head_dim_ratio)))
 
     def _stage1_head(self, keys: mx.array, values: mx.array) -> tuple[mx.array, mx.array, int]:
-        """Stage-1 eviction for one head's ``[S, D]`` K/V via SnapKV reuse."""
+        """Stage-1 eviction for one head's ``[S, D]`` K/V via SnapKV reuse.
+
+        Only used by the chunked-prefill re-run path below, where the
+        accumulated kept set's length can genuinely differ from call to
+        call. The single-shot prefill path (:meth:`_process_prefill`) uses
+        the batched helper instead — see its docstring.
+        """
         S = int(keys.shape[0])
         budget = max(1, int(round(S / self._stage1_ratio)))
         state = snapkv_compress(
@@ -171,31 +195,53 @@ class RocketKVKVCache(_MLXKVCache):
         return state.kept_keys, state.kept_values, state.n_kept
 
     def _process_prefill(self, keys: mx.array, values: mx.array):
+        """Stage-1 eviction for every (batch, head) in one batched call.
+
+        Was a Python ``for b: for h:`` loop calling ``snapkv_compress`` once
+        per head — the same unbatched-per-head-loop cost pattern that
+        dominated ChunkKV/CurDKV/GEAR's decode paths before their own fixes
+        (VeloxQuant-MLX#525/#526/#527). Here the fix is lower-risk than
+        those: ``_snapkv_compress_batched`` already exists and is already
+        the production path for ``SnapKVKVCache`` itself (whose stage-1
+        eviction this class reuses verbatim per its own docstring) — this
+        was reinventing the per-head loop instead of reusing the batched
+        call its sibling cache already relies on.
+
+        ``budget`` is derived from ``S`` alone (``S / stage1_ratio``), and
+        every (batch, head) in a single ``update_and_fetch`` call shares the
+        same ``S`` — so it is safe to compute once for the whole batch
+        instead of once per head (identical value either way).
+        """
         B, H, S, D = keys.shape
         self._B, self._H, self._head_dim = B, H, D
         self._head_topk1 = self._resolve_head_topk1(D)
 
-        k_out_b, v_out_b = [], []
+        budget = max(1, int(round(S / self._stage1_ratio)))
+        k_out, v_out, _indices = _snapkv_compress_batched(
+            keys,
+            values,
+            budget,
+            self._obs_window,
+            self._n_sink,
+            return_indices=True,
+        )
+        n_kept = int(k_out.shape[2])
+
         self._summaries = [[None] * H for _ in range(B)]  # type: ignore[list-item]
         for b in range(B):
-            k_out_h, v_out_h = [], []
             for h in range(H):
-                k_h, v_h, n_kept = self._stage1_head(keys[b, h], values[b, h])
-                k_out_h.append(k_h)
-                v_out_h.append(v_h)
-                self._summaries[b][h] = build_paged_summary(k_h, self._page_size)
-
-                self._stage1_bytes += n_kept * D * 2 * 2  # K + V, fp16
+                self._summaries[b][h] = build_paged_summary(k_out[b, h], self._page_size)
                 self._stage2_aux_bytes += hsa_fp32_bytes(
                     self._summaries[b][h].page_max, self._summaries[b][h].page_min
                 )
-                self._full_fp16_bytes += full_fp16_bytes(S, D)
-                self._tokens_kept += n_kept
-                self._tokens_total += S
-            k_out_b.append(mx.stack(k_out_h, axis=0))
-            v_out_b.append(mx.stack(v_out_h, axis=0))
+
+        self._stage1_bytes += n_kept * D * 2 * 2 * B * H  # K + V, fp16, all heads
+        self._full_fp16_bytes += full_fp16_bytes(S, D) * B * H
+        self._tokens_kept += n_kept * B * H
+        self._tokens_total += S * B * H
+
         self._prefill_done = True
-        return mx.stack(k_out_b, axis=0), mx.stack(v_out_b, axis=0)
+        return k_out, v_out
 
     def _process_decode(self, keys: mx.array, values: mx.array):
         """Append decode tokens exactly; update HSA paged summaries incrementally.
