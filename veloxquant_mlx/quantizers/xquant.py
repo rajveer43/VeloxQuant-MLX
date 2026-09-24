@@ -190,6 +190,119 @@ def quantize_residual(x: mx.array, recon: mx.array, bits: int, group_size: int =
     return recon_res.astype(mx.float16)
 
 
+def _pad_to_groups_batched(x32: mx.array, group_size: int) -> tuple[mx.array, int, int]:
+    """Batched ``_pad_to_groups``: pad [..., N, D] along axis -2 to a whole
+    number of groups. Returns (padded, n_groups, n)."""
+    n, d = x32.shape[-2], x32.shape[-1]
+    n_groups = (n + group_size - 1) // group_size
+    pad = n_groups * group_size - n
+    if pad:
+        pad_block = mx.broadcast_to(x32[..., -1:, :], (*x32.shape[:-2], pad, d))
+        x32 = mx.concatenate([x32, pad_block], axis=-2)
+    return x32, n_groups, n
+
+
+def quantize_codes_batched(
+    x: mx.array, bits: int, group_size: int = 32
+) -> tuple[mx.array, GroupParams]:
+    """Batched :func:`quantize_codes` over an arbitrary leading batch shape.
+
+    Args:
+        x: ``[..., N, D]`` fp16 or fp32 (e.g. ``[B, H, S, D]``).
+        bits: Bit-width.
+        group_size: Tokens per group along axis -2.
+
+    Returns:
+        codes: ``[..., n_groups, group_size, D]`` fp32 integer codes.
+        params: GroupParams (scale/zero shaped ``[..., n_groups, 1, D]``).
+
+    Bit-identical to calling :func:`quantize_codes` once per leading index and
+    stacking the results — the reshape/min/max/round path already vectorizes
+    over any number of leading axes.
+    """
+    x32 = x.astype(mx.float32)
+    x32, n_groups, n = _pad_to_groups_batched(x32, group_size)
+    lead, d = x32.shape[:-2], x32.shape[-1]
+    xg = x32.reshape(*lead, n_groups, group_size, d)
+    gmin = mx.min(xg, axis=-2, keepdims=True)
+    gmax = mx.max(xg, axis=-2, keepdims=True)
+    levels = (1 << bits) - 1
+    eps = 1e-8
+    scale = mx.maximum((gmax - gmin) / levels, eps)
+    codes = mx.clip(mx.round((xg - gmin) / scale), 0, levels)
+    return codes, GroupParams(scale=scale, zero=gmin, n_rows=n, bits=bits)
+
+
+def compute_reuse_params_batched(
+    x: mx.array, codes: mx.array, bits: int, group_size: int = 32
+) -> GroupParams:
+    """Batched :func:`compute_reuse_params` over an arbitrary leading batch shape.
+
+    Args:
+        x: ``[..., N, D]`` this layer's fp16/fp32 keys or values.
+        codes: ``[..., n_groups, group_size, D]`` anchor codes (shape only).
+        bits: Bit-width the codes were produced at.
+        group_size: Tokens per group.
+
+    Returns:
+        GroupParams calibrated to ``x``, shaped ``[..., n_groups, 1, D]``.
+    """
+    x32 = x.astype(mx.float32)
+    x32, n_groups, n = _pad_to_groups_batched(x32, group_size)
+    lead, d = x32.shape[:-2], x32.shape[-1]
+    xg = x32.reshape(*lead, n_groups, group_size, d)
+    gmin = mx.min(xg, axis=-2, keepdims=True)
+    gmax = mx.max(xg, axis=-2, keepdims=True)
+    levels = (1 << bits) - 1
+    eps = 1e-8
+    scale = mx.maximum((gmax - gmin) / levels, eps)
+    return GroupParams(scale=scale, zero=gmin, n_rows=n, bits=bits)
+
+
+def dequant_with_params_batched(codes: mx.array, params: GroupParams) -> mx.array:
+    """Batched :func:`dequant_with_params` over an arbitrary leading batch shape.
+
+    Args:
+        codes: ``[..., n_groups, group_size, D]`` fp32 integer codes.
+        params: GroupParams (scale, zero, n_rows), broadcastable to ``codes``.
+
+    Returns:
+        Reconstructed ``[..., n_rows, D]`` fp16.
+    """
+    recon = codes * params.scale + params.zero
+    lead = recon.shape[:-3]
+    n_groups, gs, d = recon.shape[-3:]
+    return recon.reshape(*lead, n_groups * gs, d)[..., : params.n_rows, :].astype(mx.float16)
+
+
+def quantize_residual_batched(
+    x: mx.array, recon: mx.array, bits: int, group_size: int = 32
+) -> mx.array:
+    """Batched :func:`quantize_residual` over an arbitrary leading batch shape.
+
+    Args:
+        x: ``[..., N, D]`` this layer's true keys/values.
+        recon: ``[..., N, D]`` the shared-code reconstruction before correction.
+        bits: Residual bit-width (>= 1).
+        group_size: Tokens per group.
+
+    Returns:
+        ``[..., N, D]`` fp16 quantized residual to add back to ``recon``.
+    """
+    res = x.astype(mx.float32) - recon.astype(mx.float32)
+    res32, n_groups, n = _pad_to_groups_batched(res, group_size)
+    lead, d = res32.shape[:-2], res32.shape[-1]
+    rg = res32.reshape(*lead, n_groups, group_size, d)
+    gmin = mx.min(rg, axis=-2, keepdims=True)
+    gmax = mx.max(rg, axis=-2, keepdims=True)
+    levels = (1 << bits) - 1
+    eps = 1e-8
+    scale = mx.maximum((gmax - gmin) / levels, eps)
+    codes = mx.clip(mx.round((rg - gmin) / scale), 0, levels)
+    recon_res = (codes * scale + gmin).reshape(*lead, n_groups * group_size, d)[..., :n, :]
+    return recon_res.astype(mx.float16)
+
+
 def cross_layer_similarity(a: mx.array, b: mx.array) -> dict:
     """Diagnostic: MSE and mean cosine similarity between two layers' tensors.
 
@@ -216,5 +329,9 @@ __all__ = [
     "compute_reuse_params",
     "dequant_with_params",
     "quantize_residual",
+    "quantize_codes_batched",
+    "compute_reuse_params_batched",
+    "dequant_with_params_batched",
+    "quantize_residual_batched",
     "cross_layer_similarity",
 ]
