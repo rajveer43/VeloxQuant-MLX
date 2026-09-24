@@ -211,6 +211,13 @@ class CurDKVKVCache(_MLXKVCache):
         self._tokens_seen_total += B * H * S
 
         keys_fixed = self._fix_incoming_rope(keys.astype(mx.float16), offset_before, next_pos)
+        # Cast the whole [B, H, S, D] values tensor once up front (a no-op
+        # when already fp16, the common case) instead of re-issuing
+        # `.astype(mx.float16)` per (b, h) slice below — avoids B*H
+        # redundant cast ops per call for input that's already the target
+        # dtype (same pattern as the ChunkKV cache fix, PR #525).
+        if values.dtype != mx.float16:
+            values = values.astype(mx.float16)
 
         k_out_b, v_out_b = [], []
         for b in range(B):
@@ -221,7 +228,7 @@ class CurDKVKVCache(_MLXKVCache):
                 st = curdkv_update(
                     st,
                     keys_fixed[b, h],
-                    values[b, h].astype(mx.float16),
+                    values[b, h],
                 )
                 self._states[idx] = st
                 k_h, v_h = curdkv_get_kv(st)
