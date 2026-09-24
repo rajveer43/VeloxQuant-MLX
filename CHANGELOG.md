@@ -527,6 +527,23 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.5 (2026-09-24)
+
+### Performance Improvements
+
+- **cache**: Batch RocketKV stage-1 SnapKV eviction across B*H
+  ([#528](https://github.com/rajveer43/VeloxQuant-MLX/pull/528),
+  [`8669e4c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8669e4ca8302f49fa6c189363e9ed1ee8ba6b35d))
+
+- **cache**: Coalesce NSNQuant chunk flushes into one write per tensor
+  ([#530](https://github.com/rajveer43/VeloxQuant-MLX/pull/530),
+  [`4ebeb27`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4ebeb2719ae761c6b1fd9e4c2c4d7b05718bd66a))
+
+- **cache**: Run NSNQuant VQ nearest-centroid search as one flat GEMM
+  ([#530](https://github.com/rajveer43/VeloxQuant-MLX/pull/530),
+  [`4ebeb27`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4ebeb2719ae761c6b1fd9e4c2c4d7b05718bd66a))
+
+
 ## v0.91.4 (2026-09-24)
 
 ### Performance Improvements
