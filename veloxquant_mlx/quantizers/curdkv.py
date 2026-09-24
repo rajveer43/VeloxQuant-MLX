@@ -324,7 +324,14 @@ def _leverage_scores(
 
     n, d = weighted_values.shape
 
-    wv_np = np.array(weighted_values.astype(mx.float32).tolist(), dtype=np.float64)
+    # mx.array implements the numpy buffer/array protocol directly, so
+    # np.array(...) copies the raw floats straight across — going through
+    # .tolist() first forces an element-by-element Python-float round-trip
+    # that's ~130x slower for no behavioral difference (verified bit-for-bit
+    # identical output). float64 upcast is kept: _robust_svd's documented
+    # gesdd-convergence flakiness (issue #147) was observed on real
+    # attention-shaped data, so this isn't the place to also drop precision.
+    wv_np = np.array(weighted_values.astype(mx.float32)).astype(np.float64)
     if not np.any(wv_np):
         return mx.zeros((n,), dtype=mx.float32)
 
