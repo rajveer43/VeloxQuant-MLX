@@ -114,9 +114,12 @@ def saliency_mask(norms: mx.array, hi_fraction: float) -> mx.array:
         return mx.ones((S,), dtype=mx.bool_)
     # argsort ascending; the top n_hi by norm are at the tail
     order = mx.argsort(norms)  # ascending
-    hi_indices = order[S - n_hi :]  # largest n_hi norms
-    mask = mx.zeros((S,), dtype=mx.float32)
-    mask = mask.at[hi_indices].add(1.0)
+    # Pure mx.array scatter (no .tolist() sync): a rank threshold is
+    # equivalent to "index is in the top-n_hi tail of the ascending argsort",
+    # i.e. its rank (position within order) is >= S - n_hi. mx.argsort of
+    # `order` recovers each original index's rank without a Python round trip.
+    rank = mx.argsort(order)
+    mask = rank >= (S - n_hi)
     return mask.astype(mx.bool_)
 
 
