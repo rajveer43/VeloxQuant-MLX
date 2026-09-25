@@ -213,18 +213,24 @@ def zipcache_compress(
     norms = token_key_norms(x32)
     mask = saliency_mask(norms, hi_fraction)
 
-    # Split rows by saliency mask
-    mask_np = [bool(v) for v in mask.tolist()]
-    hi_rows = [i for i, m in enumerate(mask_np) if m]
-    lo_rows = [i for i, m in enumerate(mask_np) if not m]
+    # Split rows by saliency mask via vectorized fancy indexing (no Python
+    # loop over S, no .tolist() sync). mx.argsort(mask) puts False rows first
+    # then True rows, each block internally stable (ascending sort is stable
+    # in MLX), so within-block order matches a stable Python filter over the
+    # original row order -- array_equal to the old row-by-row gather.
+    n_hi = int(mask.astype(mx.int32).sum().item())
+    n_lo = S - n_hi
+    order = mx.argsort(mask.astype(mx.int32))  # False(0) block, then True(1) block
+    lo_indices = order[:n_lo]
+    hi_indices = order[n_lo:]
 
-    def _gather(rows):
-        if not rows:
+    def _gather(indices, n):
+        if n == 0:
             return mx.zeros((0, D), dtype=mx.float32)
-        return mx.stack([x32[i] for i in rows], axis=0)
+        return x32[indices]
 
-    x_hi = _gather(hi_rows)  # [n_hi, D]
-    x_lo = _gather(lo_rows)  # [n_lo, D]
+    x_hi = _gather(hi_indices, n_hi)  # [n_hi, D]
+    x_lo = _gather(lo_indices, n_lo)  # [n_lo, D]
 
     hi_codes, hi_scales, hi_zeros = channel_quant(x_hi, hi_bits, group_size)
     lo_codes, lo_scales, lo_zeros = channel_quant(x_lo, lo_bits, group_size)
