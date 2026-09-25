@@ -262,19 +262,24 @@ def zipcache_reconstruct(state: ZipCacheState) -> mx.array:
     hi_recon = channel_dequant(state.hi_codes, state.hi_scales, state.hi_zeros, gs)
     lo_recon = channel_dequant(state.lo_codes, state.lo_scales, state.lo_zeros, gs)
 
-    # Scatter back: build output row by row using the mask
-    mask_list = [bool(v) for v in state.hi_mask.tolist()]
-    hi_ptr = 0
-    lo_ptr = 0
-    rows = []
-    for is_hi in mask_list:
-        if is_hi:
-            rows.append(hi_recon[hi_ptr])
-            hi_ptr += 1
-        else:
-            rows.append(lo_recon[lo_ptr])
-            lo_ptr += 1
-    out = mx.stack(rows, axis=0)  # [S, D]
+    # Scatter back with two vectorized writes (no Python loop over S). Must
+    # recover the same lo/hi row order zipcache_compress used to gather:
+    # argsort(mask) puts the False (lo) block first, then the True (hi)
+    # block, each stable -- so lo_recon[k] belongs at lo_indices[k] and
+    # hi_recon[k] at hi_indices[k].
+    S = state.seq_len
+    D = state.head_dim
+    mask_i = state.hi_mask.astype(mx.int32)
+    n_lo = S - int(mask_i.sum().item())
+    order = mx.argsort(mask_i)
+    lo_indices = order[:n_lo]
+    hi_indices = order[n_lo:]
+
+    out = mx.zeros((S, D), dtype=mx.float32)
+    if n_lo:
+        out[lo_indices] = lo_recon
+    if n_lo < S:
+        out[hi_indices] = hi_recon
     return out.astype(mx.float16)
 
 
