@@ -527,6 +527,37 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.6 (2026-09-25)
+
+### Chores
+
+- Untrack paper/ (keep locally, ignore going forward)
+  ([#532](https://github.com/rajveer43/VeloxQuant-MLX/pull/532),
+  [`547ea41`](https://github.com/rajveer43/VeloxQuant-MLX/commit/547ea41cf31f7593f1a53cffc240de79ec5bd942))
+
+### Performance Improvements
+
+- **cache**: #1 replace ZipCache saliency_mask .tolist() sync with array scatter
+  ([#533](https://github.com/rajveer43/VeloxQuant-MLX/pull/533),
+  [`c3cecf5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c3cecf5321676a231826d898e99dc2754527d176))
+
+- **cache**: #2 vectorize ZipCache compress row gather via fancy indexing
+  ([#533](https://github.com/rajveer43/VeloxQuant-MLX/pull/533),
+  [`c3cecf5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c3cecf5321676a231826d898e99dc2754527d176))
+
+- **cache**: #3 vectorize ZipCache reconstruct scatter via fancy indexing
+  ([#533](https://github.com/rajveer43/VeloxQuant-MLX/pull/533),
+  [`c3cecf5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c3cecf5321676a231826d898e99dc2754527d176))
+
+- **cache**: #4 batch ZipCache compress/reconstruct across B*H
+  ([#533](https://github.com/rajveer43/VeloxQuant-MLX/pull/533),
+  [`c3cecf5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c3cecf5321676a231826d898e99dc2754527d176))
+
+- **cache**: Vectorize ZipCache saliency routing and batch B*H compress/reconstruct
+  ([#533](https://github.com/rajveer43/VeloxQuant-MLX/pull/533),
+  [`c3cecf5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c3cecf5321676a231826d898e99dc2754527d176))
+
+
 ## v0.91.5 (2026-09-24)
 
 ### Performance Improvements

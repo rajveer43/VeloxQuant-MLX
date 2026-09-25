@@ -114,9 +114,12 @@ def saliency_mask(norms: mx.array, hi_fraction: float) -> mx.array:
         return mx.ones((S,), dtype=mx.bool_)
     # argsort ascending; the top n_hi by norm are at the tail
     order = mx.argsort(norms)  # ascending
-    hi_indices = order[S - n_hi :]  # largest n_hi norms
-    mask = mx.zeros((S,), dtype=mx.float32)
-    mask = mask.at[hi_indices].add(1.0)
+    # Pure mx.array scatter (no .tolist() sync): a rank threshold is
+    # equivalent to "index is in the top-n_hi tail of the ascending argsort",
+    # i.e. its rank (position within order) is >= S - n_hi. mx.argsort of
+    # `order` recovers each original index's rank without a Python round trip.
+    rank = mx.argsort(order)
+    mask = rank >= (S - n_hi)
     return mask.astype(mx.bool_)
 
 
@@ -210,18 +213,24 @@ def zipcache_compress(
     norms = token_key_norms(x32)
     mask = saliency_mask(norms, hi_fraction)
 
-    # Split rows by saliency mask
-    mask_np = [bool(v) for v in mask.tolist()]
-    hi_rows = [i for i, m in enumerate(mask_np) if m]
-    lo_rows = [i for i, m in enumerate(mask_np) if not m]
+    # Split rows by saliency mask via vectorized fancy indexing (no Python
+    # loop over S, no .tolist() sync). mx.argsort(mask) puts False rows first
+    # then True rows, each block internally stable (ascending sort is stable
+    # in MLX), so within-block order matches a stable Python filter over the
+    # original row order -- array_equal to the old row-by-row gather.
+    n_hi = int(mask.astype(mx.int32).sum().item())
+    n_lo = S - n_hi
+    order = mx.argsort(mask.astype(mx.int32))  # False(0) block, then True(1) block
+    lo_indices = order[:n_lo]
+    hi_indices = order[n_lo:]
 
-    def _gather(rows):
-        if not rows:
+    def _gather(indices, n):
+        if n == 0:
             return mx.zeros((0, D), dtype=mx.float32)
-        return mx.stack([x32[i] for i in rows], axis=0)
+        return x32[indices]
 
-    x_hi = _gather(hi_rows)  # [n_hi, D]
-    x_lo = _gather(lo_rows)  # [n_lo, D]
+    x_hi = _gather(hi_indices, n_hi)  # [n_hi, D]
+    x_lo = _gather(lo_indices, n_lo)  # [n_lo, D]
 
     hi_codes, hi_scales, hi_zeros = channel_quant(x_hi, hi_bits, group_size)
     lo_codes, lo_scales, lo_zeros = channel_quant(x_lo, lo_bits, group_size)
@@ -253,19 +262,24 @@ def zipcache_reconstruct(state: ZipCacheState) -> mx.array:
     hi_recon = channel_dequant(state.hi_codes, state.hi_scales, state.hi_zeros, gs)
     lo_recon = channel_dequant(state.lo_codes, state.lo_scales, state.lo_zeros, gs)
 
-    # Scatter back: build output row by row using the mask
-    mask_list = [bool(v) for v in state.hi_mask.tolist()]
-    hi_ptr = 0
-    lo_ptr = 0
-    rows = []
-    for is_hi in mask_list:
-        if is_hi:
-            rows.append(hi_recon[hi_ptr])
-            hi_ptr += 1
-        else:
-            rows.append(lo_recon[lo_ptr])
-            lo_ptr += 1
-    out = mx.stack(rows, axis=0)  # [S, D]
+    # Scatter back with two vectorized writes (no Python loop over S). Must
+    # recover the same lo/hi row order zipcache_compress used to gather:
+    # argsort(mask) puts the False (lo) block first, then the True (hi)
+    # block, each stable -- so lo_recon[k] belongs at lo_indices[k] and
+    # hi_recon[k] at hi_indices[k].
+    S = state.seq_len
+    D = state.head_dim
+    mask_i = state.hi_mask.astype(mx.int32)
+    n_lo = S - int(mask_i.sum().item())
+    order = mx.argsort(mask_i)
+    lo_indices = order[:n_lo]
+    hi_indices = order[n_lo:]
+
+    out = mx.zeros((S, D), dtype=mx.float32)
+    if n_lo:
+        out[lo_indices] = lo_recon
+    if n_lo < S:
+        out[hi_indices] = hi_recon
     return out.astype(mx.float16)
 
 
