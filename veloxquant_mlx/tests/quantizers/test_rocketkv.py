@@ -19,7 +19,9 @@ import pytest
 
 from veloxquant_mlx.quantizers.rocketkv import (
     append_paged_summary,
+    append_paged_summary_batched,
     build_paged_summary,
+    build_paged_summary_batched,
     gather_page_tokens,
     head_dim_topk_mask,
     hsa_approx_scores,
@@ -105,6 +107,97 @@ def test_append_single_token_at_a_time_matches_rebuild() -> None:
     assert np.allclose(np.array(direct.page_max), np.array(summary.page_max))
     assert np.allclose(np.array(direct.page_min), np.array(summary.page_min))
     assert summary.n_tokens == 15
+
+
+# ---------------------------------------------------------------------------
+# build_paged_summary_batched / append_paged_summary_batched — must exactly
+# match looping the unbatched functions over axis 0, for N > 1 (B*H > 1)
+# ---------------------------------------------------------------------------
+
+
+def _rand_keys_batch(N: int, S: int, D: int = 8, seed: int = 0):
+    rng = np.random.default_rng(seed)
+    return mx.array(rng.standard_normal((N, S, D)).astype(np.float32))
+
+
+def test_build_batched_matches_loop_N_gt1() -> None:
+    N, S, D, page_size = 5, 17, 8, 4
+    keys = _rand_keys_batch(N, S, D, seed=10)
+
+    expected_max, expected_min = [], []
+    for i in range(N):
+        summ = build_paged_summary(keys[i], page_size)
+        expected_max.append(summ.page_max)
+        expected_min.append(summ.page_min)
+    expected_max = mx.stack(expected_max, axis=0)
+    expected_min = mx.stack(expected_min, axis=0)
+
+    actual_max, actual_min = build_paged_summary_batched(keys, page_size)
+    np.testing.assert_array_equal(np.array(actual_max.tolist()), np.array(expected_max.tolist()))
+    np.testing.assert_array_equal(np.array(actual_min.tolist()), np.array(expected_min.tolist()))
+
+
+@pytest.mark.parametrize("page_size", [1, 3, 4, 7])
+@pytest.mark.parametrize("n_prior,s_new", [(12, 8), (13, 7), (15, 1), (4, 20)])
+def test_append_batched_matches_loop_N_gt1(page_size: int, n_prior: int, s_new: int) -> None:
+    """Covers exact-page, partial-trailing-page, single-token-decode, and
+    multi-page-jump cases, each with N=4 (B*H > 1) rows at once."""
+    N, D = 4, 8
+    prior_keys = _rand_keys_batch(N, n_prior, D, seed=20)
+    new_keys = _rand_keys_batch(N, s_new, D, seed=21)
+
+    expected_max, expected_min = [], []
+    for i in range(N):
+        summ = build_paged_summary(prior_keys[i], page_size)
+        summ2 = append_paged_summary(summ, new_keys[i])
+        expected_max.append(summ2.page_max)
+        expected_min.append(summ2.page_min)
+    expected_n = summ2.n_tokens
+    expected_max = mx.stack(expected_max, axis=0)
+    expected_min = mx.stack(expected_min, axis=0)
+
+    page_max0, page_min0 = build_paged_summary_batched(prior_keys, page_size)
+    actual_max, actual_min, actual_n = append_paged_summary_batched(
+        page_max0, page_min0, n_prior, page_size, new_keys
+    )
+
+    assert actual_n == expected_n
+    assert actual_max.shape == expected_max.shape
+    np.testing.assert_array_equal(np.array(actual_max.tolist()), np.array(expected_max.tolist()))
+    np.testing.assert_array_equal(np.array(actual_min.tolist()), np.array(expected_min.tolist()))
+
+
+def test_append_batched_multi_step_matches_loop_N_gt1() -> None:
+    """Simulates several decode steps in a row (the real RocketKV call
+    pattern), asserting the batched running state matches the unbatched
+    per-row loop at every step, not just after one call."""
+    N, D, page_size = 3, 8, 4
+    prior_keys = _rand_keys_batch(N, 10, D, seed=30)
+
+    scalar_summaries = [build_paged_summary(prior_keys[i], page_size) for i in range(N)]
+    page_max, page_min = build_paged_summary_batched(prior_keys, page_size)
+    n_tokens = 10
+
+    rng = np.random.default_rng(31)
+    for _step in range(6):
+        step_keys_np = rng.standard_normal((N, 1, D)).astype(np.float32)
+        step_keys = mx.array(step_keys_np)
+        for i in range(N):
+            scalar_summaries[i] = append_paged_summary(scalar_summaries[i], step_keys[i])
+        page_max, page_min, n_tokens = append_paged_summary_batched(
+            page_max, page_min, n_tokens, page_size, step_keys
+        )
+        mx.eval(page_max, page_min)
+
+        expected_max = mx.stack([s.page_max for s in scalar_summaries], axis=0)
+        expected_min = mx.stack([s.page_min for s in scalar_summaries], axis=0)
+        np.testing.assert_array_equal(
+            np.array(page_max.tolist()), np.array(expected_max.tolist())
+        )
+        np.testing.assert_array_equal(
+            np.array(page_min.tolist()), np.array(expected_min.tolist())
+        )
+        assert n_tokens == scalar_summaries[0].n_tokens
 
 
 # ---------------------------------------------------------------------------

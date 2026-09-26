@@ -21,7 +21,7 @@ Design (paper §3.2-3.6):
 
     Decode (subsequent calls, S == 1 per step):
         1. Append the new key's contribution to the paged summary
-           incrementally (:func:`~veloxquant_mlx.quantizers.rocketkv.append_paged_summary`).
+           incrementally (:func:`~veloxquant_mlx.quantizers.rocketkv.append_paged_summary_batched`).
         2. Using the incoming key as a proxy query (same convention as
            SnapKV-adapted / A2ATS-adapted / every other query-aware method in
            this repo — the cache wrapper never sees the true query), run HSA:
@@ -64,9 +64,35 @@ module's own docstring — this was reinventing its per-head loop rather
 than reusing the batched call). Verified bit-identical to the old loop.
 Isolated stage-1 benchmark (B=1, H=32, S=1024, D=128, budget=128): ~4.53ms
 (old per-head loop) -> ~1.50ms (batched), ~3x faster and markedly more
-stable run-to-run. The chunked-prefill re-run path and per-head
-``build_paged_summary`` remain unbatched (ragged per-head kept-token counts
-after eviction complicate batching that one) — left as a follow-up.
+stable run-to-run.
+
+``_process_decode`` had the same unbatched-per-(b,h)-loop pattern, and was
+the hotter of the two (runs once per generated token, not once per prefill):
+it called :func:`~veloxquant_mlx.quantizers.rocketkv.append_paged_summary`
+once per head, itself an inner Python loop over pages. Batched via
+:func:`~veloxquant_mlx.quantizers.rocketkv.append_paged_summary_batched`,
+legal here because every (b, h) row's paged summary provably shares the same
+``n_tokens``/page count at every point in ``_process_decode``'s call pattern
+(every row is seeded with the same ``n_kept`` at prefill via
+``_snapkv_compress_batched``'s one shared budget, and every decode step
+appends the same ``S`` new tokens to every row — verified by grepping every
+write site of the paged-summary state, not assumed). Verified bit-for-bit
+identical to the old per-(b,h) loop against 1536 randomized single-step
+trials plus 18 five-step decode sequences (varying page_size, prior token
+count, new-token count, head_dim, batch size). Isolated decode-step
+benchmark (D=128, page_size=8, n_kept=256, 50 steps): H=8: ~2.58ms ->
+~0.33ms/step (~7.9x); H=32: ~11.54ms -> ~0.41ms/step (~28x) — speedup grows
+with B*H, as expected for removing B*H separate Python-dispatched op graphs
+(each itself looping over pages).
+
+The chunked-prefill re-run path remains an explicit Python loop — unlike
+``_process_decode``, per-head kept-token counts here are REDERIVED per call
+via each head's own ``_stage1_head`` (SnapKV) call, so this path was
+verified (not merely assumed) to keep every row's ``n_kept`` — and hence
+page count — in sync via the shared ``budget``/``S`` formula, but the loop
+itself was left unbatched since only chunked prompts hit it (rare, unlike
+every-decode-step). See :func:`~veloxquant_mlx.quantizers.rocketkv.append_paged_summary_batched`'s
+precondition note for why it isn't reused there.
 """
 
 from __future__ import annotations
@@ -77,11 +103,10 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.rocketkv import (
-    PagedKeySummary,
-    append_paged_summary,
+    append_paged_summary_batched,
     build_paged_summary,
+    build_paged_summary_batched,
     hsa_approx_scores,
-    hsa_fp32_bytes,
     select_topk_pages,
     split_compression_ratio,
     split_hsa_dims,
@@ -91,6 +116,64 @@ from veloxquant_mlx.quantizers.snapkv import (
     full_fp16_bytes,
     snapkv_compress,
 )
+
+
+class _SummaryRow:
+    """Per-head read-only view materializing one row of the batched paged
+    summary as a :class:`PagedKeySummary` (page_size/n_tokens are shared
+    scalars across the whole batch, not stored per row)."""
+
+    __slots__ = ("_cache", "_row")
+
+    def __init__(self, cache: RocketKVKVCache, row: int) -> None:
+        self._cache = cache
+        self._row = row
+
+    @property
+    def page_max(self) -> mx.array:
+        return self._cache._page_max[self._row]
+
+    @property
+    def page_min(self) -> mx.array:
+        return self._cache._page_min[self._row]
+
+    @property
+    def page_size(self) -> int:
+        return self._cache._page_size
+
+    @property
+    def n_tokens(self) -> int:
+        return self._cache._summary_n_tokens
+
+
+class _SummaryRowList:
+    """One batch index's ``[h] -> _SummaryRow`` row, for ``_summaries[b][h]``."""
+
+    __slots__ = ("_cache", "_b")
+
+    def __init__(self, cache: RocketKVKVCache, b: int) -> None:
+        self._cache = cache
+        self._b = b
+
+    def __getitem__(self, h: int) -> _SummaryRow:
+        return _SummaryRow(self._cache, self._cache._head_idx(self._b, h))
+
+
+class _SummaryView:
+    """``self._summaries`` — a ``[b][h] -> PagedKeySummary``-shaped read-only
+    view over ``RocketKVKVCache``'s batched ``_page_max``/``_page_min``
+    storage. Exists so external callers (``select_indices``, tests) keep the
+    per-(b, h) ``PagedKeySummary`` access they had before batching, without
+    a second, desynchronizable copy of the state living in a Python
+    list-of-lists."""
+
+    __slots__ = ("_cache",)
+
+    def __init__(self, cache: RocketKVKVCache) -> None:
+        self._cache = cache
+
+    def __getitem__(self, b: int) -> _SummaryRowList:
+        return _SummaryRowList(self._cache, b)
 
 
 class RocketKVKVCache(_MLXKVCache):
@@ -143,7 +226,15 @@ class RocketKVKVCache(_MLXKVCache):
         self._head_topk1: int = 0
 
         self._prefill_done = False
-        self._summaries: list[list[PagedKeySummary]] = []  # [B][H]
+        # Batched paged-summary storage: page_max/page_min are [B*H, n_pages, D]
+        # fp32, one flattened row per (b, h) — see _process_decode's docstring
+        # for why every row is guaranteed to share the same n_tokens/page
+        # count, which is what makes this batching legal. self._summaries
+        # (below) is a read-only view over these for callers/tests that still
+        # want per-(b,h) PagedKeySummary access (select_indices, tests).
+        self._page_max: mx.array | None = None
+        self._page_min: mx.array | None = None
+        self._summary_n_tokens: int = 0
 
         self._B = 0
         self._H = 0
@@ -172,6 +263,18 @@ class RocketKVKVCache(_MLXKVCache):
     def offset(self, value: int) -> None:
         """Restore the retained row count (base-class bookkeeping only; see the getter for the true/retained distinction)."""
         self._row_offset = value
+
+    def _head_idx(self, b: int, h: int) -> int:
+        """Flatten a (batch, head) pair into this cache's [B*H, ...] row index."""
+        return b * self._H + h
+
+    @property
+    def _summaries(self) -> _SummaryView:
+        """Read-only ``[b][h] -> PagedKeySummary`` view over the batched
+        ``self._page_max``/``self._page_min`` storage, for callers
+        (``select_indices``, tests) that want per-(b, h) access without a
+        second copy of the state living in a Python list-of-lists."""
+        return _SummaryView(self)
 
     # ------------------------------------------------------------------
     def _resolve_head_topk1(self, head_dim: int) -> int:
@@ -227,13 +330,17 @@ class RocketKVKVCache(_MLXKVCache):
         )
         n_kept = int(k_out.shape[2])
 
-        self._summaries = [[None] * H for _ in range(B)]  # type: ignore[list-item]
-        for b in range(B):
-            for h in range(H):
-                self._summaries[b][h] = build_paged_summary(k_out[b, h], self._page_size)
-                self._stage2_aux_bytes += hsa_fp32_bytes(
-                    self._summaries[b][h].page_max, self._summaries[b][h].page_min
-                )
+        # Batched paged-summary build: reshape [B,H,n_kept,D] -> [B*H,n_kept,D]
+        # and run one vectorized max/min-over-pages reduction for the whole
+        # batch instead of looping build_paged_summary per (b, h). Safe
+        # because every (b, h) shares the same n_kept here (a single scalar
+        # budget from _snapkv_compress_batched, not a per-head list — see
+        # this method's own docstring).
+        k_flat = k_out.reshape(B * H, n_kept, D)
+        self._page_max, self._page_min = build_paged_summary_batched(k_flat, self._page_size)
+        self._summary_n_tokens = n_kept
+        n_pages = int(self._page_max.shape[1])
+        self._stage2_aux_bytes += n_pages * D * 2 * 2 * B * H  # max + min, fp16, all rows
 
         self._stage1_bytes += n_kept * D * 2 * 2 * B * H  # K + V, fp16, all heads
         self._full_fp16_bytes += full_fp16_bytes(S, D) * B * H
@@ -252,15 +359,25 @@ class RocketKVKVCache(_MLXKVCache):
         narrow what gets stored.
         """
         B, H, S, D = keys.shape
-        for b in range(B):
-            for h in range(H):
-                prior_n_pages = int(self._summaries[b][h].page_max.shape[0])
-                self._summaries[b][h] = append_paged_summary(self._summaries[b][h], keys[b, h])
-                new_n_pages = int(self._summaries[b][h].page_max.shape[0])
-                # Only the newly created pages (if any) add auxiliary storage —
-                # folding new tokens into an existing partial page is free.
-                if new_n_pages > prior_n_pages:
-                    self._stage2_aux_bytes += (new_n_pages - prior_n_pages) * D * 2 * 2
+        # Batched paged-summary append: every (b, h) row is guaranteed to
+        # share the same n_tokens/page count at this point (every row was
+        # seeded with the same n_kept at prefill and every decode step
+        # appends the same S new tokens to every row — see the module
+        # docstring and append_paged_summary_batched's own precondition
+        # note), so one call handles the whole B*H batch instead of a
+        # Python loop calling append_paged_summary once per (b, h).
+        prior_n_pages = int(self._page_max.shape[1])
+        keys_flat = keys.reshape(B * H, S, D)
+        self._page_max, self._page_min, self._summary_n_tokens = append_paged_summary_batched(
+            self._page_max, self._page_min, self._summary_n_tokens, self._page_size, keys_flat
+        )
+        new_n_pages = int(self._page_max.shape[1])
+        # Only the newly created pages (if any) add auxiliary storage —
+        # folding new tokens into an existing partial page is free. New page
+        # counts are synchronized across the whole batch (see above), so one
+        # scalar delta applies to every (b, h) row alike.
+        if new_n_pages > prior_n_pages:
+            self._stage2_aux_bytes += (new_n_pages - prior_n_pages) * D * 2 * 2 * B * H
 
         fp16_cost = B * H * S * D * 2
         self._stage1_bytes += fp16_cost
@@ -282,9 +399,24 @@ class RocketKVKVCache(_MLXKVCache):
                 # stage 1 over the accumulated kept set (SnapKVKVCache
                 # convention) — RocketKV inherits this because stage 1 IS
                 # SnapKV.
+                # NOTE: intentionally NOT batched, unlike _process_decode and
+                # _process_prefill. Each head reruns SnapKV independently
+                # over its own accumulated kept set here, so per-head kept
+                # counts (n_kept) — and hence each head's own page count —
+                # can genuinely differ across heads (true raggedness, not
+                # just a theoretical one). Batching would require padding
+                # every row's summary to a shared max page count and
+                # tracking per-row real counts separately, which is exactly
+                # the complexity append_paged_summary_batched's precondition
+                # note says this path doesn't satisfy. Left as a Python loop
+                # (rare: only chunked prompts hit this branch, unlike
+                # _process_decode which runs every generated token).
                 B, H, S, D = keys.shape
                 prev_kept = self._row_offset
                 k_out_b, v_out_b = [], []
+                page_max_rows: list[mx.array] = []
+                page_min_rows: list[mx.array] = []
+                max_n_pages = 0
                 for b in range(B):
                     k_out_h, v_out_h = [], []
                     for h in range(H):
@@ -295,11 +427,32 @@ class RocketKVKVCache(_MLXKVCache):
                         k_h, v_h, n_kept = self._stage1_head(cat_k, cat_v)
                         k_out_h.append(k_h)
                         v_out_h.append(v_h)
-                        self._summaries[b][h] = build_paged_summary(k_h, self._page_size)
+                        row_summary = build_paged_summary(k_h, self._page_size)
+                        page_max_rows.append(row_summary.page_max)
+                        page_min_rows.append(row_summary.page_min)
+                        max_n_pages = max(max_n_pages, int(row_summary.page_max.shape[0]))
                     k_out_b.append(mx.stack(k_out_h, axis=0))
                     v_out_b.append(mx.stack(v_out_h, axis=0))
                 k_out = mx.stack(k_out_b, axis=0)
                 v_out = mx.stack(v_out_b, axis=0)
+
+                # Every row's own _stage1_head call uses the SAME formula
+                # (budget = round(S / stage1_ratio), n_kept = min(budget, S))
+                # over the SAME S (this call's shared cat_k length for every
+                # head) -- n_kept, and hence each row's page count, is
+                # therefore provably identical across every (b, h) in this
+                # branch, not merely typically so. Padding is consequently a
+                # structural no-op here (max_n_pages tracked above only as a
+                # defensive check, since mx.stack below would raise on a
+                # real mismatch rather than silently truncate/misalign).
+                assert all(int(pm.shape[0]) == max_n_pages for pm in page_max_rows), (
+                    "RocketKVKVCache: chunked-prefill re-run produced divergent "
+                    "per-head page counts -- the shared-n_tokens invariant this "
+                    "branch relies on no longer holds; see this branch's comment."
+                )
+                self._page_max = mx.stack(page_max_rows, axis=0)
+                self._page_min = mx.stack(page_min_rows, axis=0)
+                self._summary_n_tokens = int(n_kept)
                 self._full_fp16_bytes += full_fp16_bytes(S, D) * B * H
                 self._tokens_total += B * H * S
                 self.offset = 0

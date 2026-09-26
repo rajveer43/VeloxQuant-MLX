@@ -178,6 +178,154 @@ def append_paged_summary(summary: PagedKeySummary, new_keys: mx.array) -> PagedK
     )
 
 
+def build_paged_summary_batched(keys: mx.array, page_size: int) -> tuple[mx.array, mx.array]:
+    """Batched-leading-axis equivalent of :func:`build_paged_summary`.
+
+    Args:
+        keys: ``[N, S, D]`` fp16 or fp32 — N independent rows (flattened
+            B*H), each with its own S-length token axis to page over.
+        page_size: Tokens per page, shared by every row. Clamped to ``>= 1``.
+
+    Returns:
+        ``(page_max, page_min)``, each ``[N, n_pages, D]`` fp32,
+        ``n_pages = ceil(S / page_size)``. Verified bit-for-bit equivalent
+        to looping :func:`build_paged_summary` over axis 0.
+    """
+    N, S, D = keys.shape
+    page_size = max(1, page_size)
+    k32 = keys.astype(mx.float32)
+
+    n_pages = math.ceil(S / page_size)
+    pad = n_pages * page_size - S
+    if pad > 0:
+        pad_max = mx.broadcast_to(mx.full((1, 1, D), -mx.inf), (N, pad, D))
+        pad_min = mx.broadcast_to(mx.full((1, 1, D), mx.inf), (N, pad, D))
+        k_for_max = mx.concatenate([k32, pad_max], axis=1)
+        k_for_min = mx.concatenate([k32, pad_min], axis=1)
+    else:
+        k_for_max = k32
+        k_for_min = k32
+
+    page_max = mx.max(k_for_max.reshape(N, n_pages, page_size, D), axis=2)
+    page_min = mx.min(k_for_min.reshape(N, n_pages, page_size, D), axis=2)
+    return page_max, page_min
+
+
+def append_paged_summary_batched(
+    page_max: mx.array,
+    page_min: mx.array,
+    n_tokens: int,
+    page_size: int,
+    new_keys: mx.array,
+) -> tuple[mx.array, mx.array, int]:
+    """Batched-leading-axis equivalent of :func:`append_paged_summary`.
+
+    Replaces a Python loop calling :func:`append_paged_summary` once per
+    ``(b, h)`` row — the exact shape of loop RocketKVKVCache's own docstring
+    flags as a deferred follow-up (see ``_process_decode``'s ``for b: for
+    h:``), and the hottest one in that file since it runs once per decode
+    step (once per generated token) rather than once per prefill.
+
+    Precondition (caller's responsibility to guarantee, not re-derived here):
+    every row shares the SAME ``n_tokens`` and ``page_size`` — i.e. every
+    ``(b, h)``'s paged summary is at the identical point in its incremental
+    history. This holds for ``RocketKVKVCache._process_decode``'s call
+    pattern (every row is seeded with the same ``n_kept`` at prefill via
+    ``_snapkv_compress_batched``'s single shared budget, and every decode
+    step appends the same ``S`` new tokens to every row), but does NOT hold
+    for the chunked-prefill re-run path (a second SnapKV pass can retain a
+    different count per head) — that path is intentionally left as
+    per-row ``append_paged_summary``/``build_paged_summary`` calls, not
+    routed through this function.
+
+    Args:
+        page_max: ``[N, n_pages, D]`` fp32 — prior per-page maxes, N = B*H
+            flattened rows.
+        page_min: ``[N, n_pages, D]`` fp32 — prior per-page mins.
+        n_tokens: Token count summarized so far, shared by every row.
+        page_size: Tokens per page, shared by every row.
+        new_keys: ``[N, S_new, D]`` fp16 or fp32 — newly appended key rows,
+            one ``S_new``-length run per row.
+
+    Returns:
+        ``(page_max, page_min, new_n_tokens)``: updated ``[N, n_pages', D]``
+        arrays (``n_pages'`` may exceed the input's page count if new full
+        pages were created) and the new shared token count. Verified
+        bit-for-bit equivalent to looping :func:`append_paged_summary` over
+        axis 0.
+    """
+    N, n_pages_prior, D = page_max.shape
+    n_full_pages_prior = n_tokens // page_size
+    trailing = n_tokens - n_full_pages_prior * page_size
+
+    kept_max = page_max[:, :n_full_pages_prior, :]
+    kept_min = page_min[:, :n_full_pages_prior, :]
+
+    new32 = new_keys.astype(mx.float32)
+    S_new = new32.shape[1]
+
+    # Left-pad new32 with `trailing` sentinel (+-inf) columns so that after
+    # reshaping into page-sized groups, group 0's leading `trailing` slots
+    # are inert (contribute nothing to max/min) and its remaining
+    # `page_size - trailing` slots line up with new32[0:page_size-trailing]
+    # exactly as the scalar loop's first chunk does. The *real* trailing-page
+    # max/min is then folded into group 0 by elementwise max/min against the
+    # padded reduction, exactly mirroring the scalar loop's
+    # `cur_max = mx.maximum(cur_max, chunk_max)` step — the sentinel padding
+    # guarantees the pad slots never win that max/min.
+    combined_n = trailing + S_new
+    n_groups = math.ceil(combined_n / page_size)
+    total_slots = n_groups * page_size
+    pad = total_slots - combined_n
+
+    front_pad_max = mx.broadcast_to(mx.full((1, 1, D), -mx.inf), (N, trailing, D))
+    front_pad_min = mx.broadcast_to(mx.full((1, 1, D), mx.inf), (N, trailing, D))
+    parts_max = [front_pad_max, new32]
+    parts_min = [front_pad_min, new32]
+    if pad > 0:
+        parts_max.append(mx.broadcast_to(mx.full((1, 1, D), -mx.inf), (N, pad, D)))
+        parts_min.append(mx.broadcast_to(mx.full((1, 1, D), mx.inf), (N, pad, D)))
+    padded_max = mx.concatenate(parts_max, axis=1)
+    padded_min = mx.concatenate(parts_min, axis=1)
+
+    grouped_max = mx.max(padded_max.reshape(N, n_groups, page_size, D), axis=2)
+    grouped_min = mx.min(padded_min.reshape(N, n_groups, page_size, D), axis=2)
+
+    if trailing:
+        trailing_max = page_max[:, n_full_pages_prior, :]  # [N, D]
+        trailing_min = page_min[:, n_full_pages_prior, :]
+        first_group_max = mx.maximum(grouped_max[:, 0, :], trailing_max)
+        first_group_min = mx.minimum(grouped_min[:, 0, :], trailing_min)
+        if n_groups > 1:
+            grouped_max = mx.concatenate(
+                [first_group_max[:, None, :], grouped_max[:, 1:, :]], axis=1
+            )
+            grouped_min = mx.concatenate(
+                [first_group_min[:, None, :], grouped_min[:, 1:, :]], axis=1
+            )
+        else:
+            grouped_max = first_group_max[:, None, :]
+            grouped_min = first_group_min[:, None, :]
+
+    last_group_count = combined_n - (n_groups - 1) * page_size
+    new_full_groups = n_groups if last_group_count == page_size else n_groups - 1
+
+    full_new_max = grouped_max[:, :new_full_groups, :]
+    full_new_min = grouped_min[:, :new_full_groups, :]
+    out_max = mx.concatenate([kept_max, full_new_max], axis=1)
+    out_min = mx.concatenate([kept_min, full_new_min], axis=1)
+
+    if new_full_groups < n_groups:
+        # One partial trailing page remains open — append it too, matching
+        # the scalar version's final `if cur_count > 0:` append.
+        partial_max = grouped_max[:, new_full_groups : new_full_groups + 1, :]
+        partial_min = grouped_min[:, new_full_groups : new_full_groups + 1, :]
+        out_max = mx.concatenate([out_max, partial_max], axis=1)
+        out_min = mx.concatenate([out_min, partial_min], axis=1)
+
+    return out_max, out_min, n_tokens + S_new
+
+
 def head_dim_topk_mask(query: mx.array, k1: int) -> mx.array:
     """Select the top-``k1`` head-dimension channels by ``|query|`` magnitude.
 
@@ -339,4 +487,6 @@ __all__ = [
     "split_compression_ratio",
     "split_hsa_dims",
     "hsa_fp32_bytes",
+    "build_paged_summary_batched",
+    "append_paged_summary_batched",
 ]
