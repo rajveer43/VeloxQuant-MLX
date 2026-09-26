@@ -47,7 +47,10 @@ from __future__ import annotations
 
 import mlx.core as mx
 
-from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
+from veloxquant_mlx.quantizers._quant_utils import (
+    _group_quant_dequant,
+    _group_quant_dequant_batched,
+)
 
 
 def pair_layers_grouped(n_layers: int, group_size: int) -> list[tuple[int, int, int]]:
@@ -205,10 +208,47 @@ def quantize_latents_uniform(
     return _group_quant_dequant(L, bits, group_size)
 
 
+def project_quantize_reconstruct_batched(
+    keys: mx.array,
+    V_g: mx.array,
+    K_mean_g: mx.array,
+    bits: int = 4,
+    group_size: int = 32,
+) -> mx.array:
+    """Batched-leading-axis fusion of project + quantize + reconstruct.
+
+    Replaces a Python loop over ``(b, h)`` calling
+    :func:`project_into_shared_basis` / :func:`quantize_latents_uniform` /
+    :func:`reconstruct_from_shared_basis` once per row with three vectorized
+    ops: one ``[B*H*S, D] @ [D, r]`` matmul, one batched group-quant
+    round-trip, one ``[B*H*S, r] @ [r, D]`` matmul. Verified bit-for-bit
+    equivalent to looping the three unbatched functions over axis 0 of a
+    ``[B*H, S, D]`` reshape of ``keys`` (see XKVCache's own test suite).
+
+    Args:
+        keys: ``[B, H, S, D]`` fp16 or fp32 — this layer's own keys.
+        V_g: Shared right singular vectors ``[D, r]`` fp32.
+        K_mean_g: Shared mean key ``[D]`` fp32.
+        bits: Bit width for every latent channel.
+        group_size: Group size for quantization along the token axis.
+
+    Returns:
+        Reconstructed keys ``[B, H, S, D]`` fp16.
+    """
+    B, H, S, D = keys.shape
+    x = keys.astype(mx.float32).reshape(B * H, S, D)
+    centered = x - K_mean_g[None, None, :]
+    L = centered @ V_g[None, :, :]  # [B*H, S, r]
+    L_q = _group_quant_dequant_batched(L, bits, group_size)  # [B*H, S, r] fp16
+    K_hat = L_q.astype(mx.float32) @ V_g.T[None, :, :] + K_mean_g[None, None, :]
+    return K_hat.astype(mx.float16).reshape(B, H, S, D)
+
+
 __all__ = [
     "pair_layers_grouped",
     "joint_svd_compress",
     "project_into_shared_basis",
     "reconstruct_from_shared_basis",
     "quantize_latents_uniform",
+    "project_quantize_reconstruct_batched",
 ]

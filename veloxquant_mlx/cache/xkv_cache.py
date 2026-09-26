@@ -41,9 +41,7 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 from veloxquant_mlx.cache.xkv_coordinator import XKVCoordinator
 from veloxquant_mlx.quantizers.xkv import (
     joint_svd_compress,
-    project_into_shared_basis,
-    quantize_latents_uniform,
-    reconstruct_from_shared_basis,
+    project_quantize_reconstruct_batched,
 )
 
 
@@ -161,23 +159,18 @@ class XKVCache(_MLXKVCache):
             )
         self._try_acquire_shared_basis()
 
-    def _project_quantize_reconstruct(self, keys: mx.array) -> mx.array:
-        B, H, S, D = keys.shape
-        V_g, K_mean_g = self._V_g, self._K_mean_g
-
-        out_heads = []
-        for b in range(B):
-            out_batch = []
-            for h in range(H):
-                k_bh = keys[b, h].astype(mx.float32)
-                L = project_into_shared_basis(k_bh, V_g, K_mean_g)
-                L_q = quantize_latents_uniform(
-                    L, bits=self._latent_bits, group_size=self._group_quant_size
-                )
-                k_hat = reconstruct_from_shared_basis(L_q, V_g, K_mean_g)
-                out_batch.append(k_hat)
-            out_heads.append(mx.stack(out_batch, axis=0))
-        return mx.stack(out_heads, axis=0)
+    def _project_quantize_reconstruct(
+        self, keys: mx.array, V_g: mx.array | None = None, K_mean_g: mx.array | None = None
+    ) -> mx.array:
+        """Project + quantize + reconstruct this layer's own keys against a
+        shared (or ad-hoc, if explicitly passed) basis, batched across B*H in
+        three vectorized ops instead of a Python loop per (b, h) — see
+        :func:`project_quantize_reconstruct_batched`."""
+        if V_g is None:
+            V_g, K_mean_g = self._V_g, self._K_mean_g
+        return project_quantize_reconstruct_batched(
+            keys, V_g, K_mean_g, bits=self._latent_bits, group_size=self._group_quant_size
+        )
 
     # ------------------------------------------------------------------
     # mlx_lm protocol
@@ -204,7 +197,7 @@ class XKVCache(_MLXKVCache):
             # against shared_basis_bytes since it is never adopted).
             k0 = keys[0, 0].astype(mx.float32)
             V_g, K_mean_g, s_g = self._standalone_basis(k0)
-            k_out = self._project_with(keys, V_g, K_mean_g)
+            k_out = self._project_quantize_reconstruct(keys, V_g, K_mean_g)
             r = int(V_g.shape[1])
             code_bytes = math.ceil(S * r * self._latent_bits / 8)
             n_groups = math.ceil(S / self._group_quant_size)
@@ -219,22 +212,6 @@ class XKVCache(_MLXKVCache):
         self._account_key_bytes(B, H, S, D)
         self._token_offset += S
         return super().update_and_fetch(k_out, values)
-
-    def _project_with(self, keys: mx.array, V_g: mx.array, K_mean_g: mx.array) -> mx.array:
-        B, H, S, D = keys.shape
-        out_heads = []
-        for b in range(B):
-            out_batch = []
-            for h in range(H):
-                k_bh = keys[b, h].astype(mx.float32)
-                L = project_into_shared_basis(k_bh, V_g, K_mean_g)
-                L_q = quantize_latents_uniform(
-                    L, bits=self._latent_bits, group_size=self._group_quant_size
-                )
-                k_hat = reconstruct_from_shared_basis(L_q, V_g, K_mean_g)
-                out_batch.append(k_hat)
-            out_heads.append(mx.stack(out_batch, axis=0))
-        return mx.stack(out_heads, axis=0)
 
     # ------------------------------------------------------------------
     # Byte accounting

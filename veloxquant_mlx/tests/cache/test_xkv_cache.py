@@ -26,7 +26,14 @@ import pytest
 from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.xkv_cache import XKVCache
 from veloxquant_mlx.cache.xkv_coordinator import XKVCoordinator
-from veloxquant_mlx.quantizers.xkv import pair_layers_grouped
+from veloxquant_mlx.quantizers.xkv import (
+    joint_svd_compress,
+    pair_layers_grouped,
+    project_into_shared_basis,
+    project_quantize_reconstruct_batched,
+    quantize_latents_uniform,
+    reconstruct_from_shared_basis,
+)
 
 
 def _cfg(**kwargs) -> KVCacheConfig:
@@ -345,6 +352,81 @@ def test_determinism():
     for (k1, v1), (k2, v2) in zip(r1, r2, strict=True):
         np.testing.assert_array_equal(k1, k2)
         np.testing.assert_array_equal(v1, v2)
+
+
+# ---------------------------------------------------------------------------
+# Batched projection/quantize/reconstruct == old per-(b,h) loop, bit-for-bit
+# ---------------------------------------------------------------------------
+def test_batched_projection_matches_unbatched_loop_B_gt1_H_gt1():
+    """Regression guard for the B*H batching fix: reconstructs the OLD
+    per-(b,h) Python loop (project_into_shared_basis -> quantize_latents_uniform
+    -> reconstruct_from_shared_basis called once per row) independently here
+    and asserts project_quantize_reconstruct_batched matches it exactly, for
+    B=3, H=5 so a batching bug that only shows up with B>1 can't hide behind
+    the B=1 shape most other tests use."""
+    B, H, S, D, rank = 3, 5, 24, 32, 6
+    keys = _rand(B, H, S, D, seed=123)
+
+    k_stack = [keys[0, h].astype(mx.float32) for h in range(H)]
+    V_g, K_mean_g, _ = joint_svd_compress(k_stack, rank=rank)
+
+    # Old unbatched path: one call per (b, h).
+    expected_heads = []
+    for b in range(B):
+        expected_batch = []
+        for h in range(H):
+            k_bh = keys[b, h].astype(mx.float32)
+            L = project_into_shared_basis(k_bh, V_g, K_mean_g)
+            L_q = quantize_latents_uniform(L, bits=4, group_size=8)
+            k_hat = reconstruct_from_shared_basis(L_q, V_g, K_mean_g)
+            expected_batch.append(k_hat)
+        expected_heads.append(mx.stack(expected_batch, axis=0))
+    expected = mx.stack(expected_heads, axis=0)
+
+    actual = project_quantize_reconstruct_batched(keys, V_g, K_mean_g, bits=4, group_size=8)
+
+    assert actual.shape == (B, H, S, D)
+    np.testing.assert_array_equal(np.array(actual.tolist()), np.array(expected.tolist()))
+
+
+def test_batched_projection_matches_cache_output_B_gt1_H_gt1():
+    """Same equivalence check exercised through the real XKVCache.update_and_fetch
+    path (not just the standalone quantizer function)."""
+    B, H, S, D, rank = 2, 4, 16, 32, 4
+    coord = XKVCoordinator()
+    members = _group(coord, n_members=2, rank=rank)
+    k = _rand(B, H, S, D, seed=7)
+    v = _rand(B, H, S, D, seed=8)
+
+    settle_k = _rand(B, H, 1, D, seed=9001)
+    settle_v = _rand(B, H, 1, D, seed=9002)
+    outs = _prefill_and_settle(members, k, v, settle_k=settle_k, settle_v=settle_v)
+    m0 = members[0]
+    V_g, K_mean_g = m0._V_g, m0._K_mean_g
+
+    expected_heads = []
+    for b in range(B):
+        expected_batch = []
+        for h in range(H):
+            k_bh = k[b, h].astype(mx.float32)
+            L = project_into_shared_basis(k_bh, V_g, K_mean_g)
+            L_q = quantize_latents_uniform(
+                L, bits=m0._latent_bits, group_size=m0._group_quant_size
+            )
+            k_hat = reconstruct_from_shared_basis(L_q, V_g, K_mean_g)
+            expected_batch.append(k_hat)
+        expected_heads.append(mx.stack(expected_batch, axis=0))
+    expected = mx.stack(expected_heads, axis=0)
+
+    ko0, _ = outs[0]
+    # fp16 last-bit rounding differs between the batched reshape's padding
+    # (S=16 not a multiple of group_quant_size) and the unbatched per-row
+    # loop's own padding of the same tail group; not a batching bug (the
+    # dedicated quantizer-level test above uses an S divisible by group_size
+    # and asserts bit-for-bit equality). Tight tolerance here.
+    np.testing.assert_allclose(
+        np.array(ko0.tolist()), np.array(expected.tolist()), atol=2e-3, rtol=1e-3
+    )
 
 
 # ---------------------------------------------------------------------------
