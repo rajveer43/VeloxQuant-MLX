@@ -18,6 +18,7 @@ import pytest
 
 from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.rocketkv_cache import RocketKVKVCache
+from veloxquant_mlx.quantizers.rocketkv import append_paged_summary
 
 
 def _make(**cfg):
@@ -219,6 +220,67 @@ def test_select_indices_keep_recent_always_included() -> None:
     q = mx.random.normal((32,)).astype(mx.float32)
     idx = set(c.select_indices(q, b=0, h=0, keep_recent=3).tolist())
     assert set(range(n_kept - 3, n_kept)).issubset(idx)
+
+
+# ---------------------------------------------------------------------------
+# Batched decode-summary path == old per-(b,h) loop, bit-for-bit (B>1, H>1)
+# ---------------------------------------------------------------------------
+
+
+def test_decode_summary_matches_unbatched_loop_B_gt1_H_gt1_multi_step() -> None:
+    """Regression guard for the _process_decode batching fix: reconstructs
+    the OLD per-(b,h) append_paged_summary loop independently and asserts
+    the cache's actual (batched) page_max/page_min match it exactly, for
+    B=2, H=3 across several decode steps so a batching bug that only shows
+    up with B>1 or after several steps can't hide behind this file's other
+    tests (which use B=1 and few/no decode steps for this assertion)."""
+    B, H, D = 2, 3, 32
+    rng = np.random.default_rng(11)
+
+    def rand_kv(S, seed):
+        k = mx.array(rng.standard_normal((B, H, S, D)).astype(np.float16))
+        v = mx.array(rng.standard_normal((B, H, S, D)).astype(np.float16))
+        return k, v
+
+    c = _make(rocketkv_compression_ratio=4.0, rocketkv_page_size=4)
+    k, v = rand_kv(48, seed=0)
+    c.update_and_fetch(k, v)
+
+    # Independent scalar reference: one PagedKeySummary per (b, h), built
+    # from the cache's own post-prefill state (same starting point).
+    n_kept = c._summary_n_tokens
+    from veloxquant_mlx.quantizers.rocketkv import PagedKeySummary
+
+    ref = [
+        [
+            PagedKeySummary(
+                page_max=c._page_max[c._head_idx(b, h)],
+                page_min=c._page_min[c._head_idx(b, h)],
+                page_size=c._page_size,
+                n_tokens=n_kept,
+            )
+            for h in range(H)
+        ]
+        for b in range(B)
+    ]
+
+    for step in range(4):
+        kd, vd = rand_kv(1, seed=100 + step)
+        c.update_and_fetch(kd, vd)
+        for b in range(B):
+            for h in range(H):
+                ref[b][h] = append_paged_summary(ref[b][h], kd[b, h])
+
+    for b in range(B):
+        for h in range(H):
+            actual = c._summaries[b][h]
+            assert actual.n_tokens == ref[b][h].n_tokens
+            np.testing.assert_array_equal(
+                np.array(actual.page_max.tolist()), np.array(ref[b][h].page_max.tolist())
+            )
+            np.testing.assert_array_equal(
+                np.array(actual.page_min.tolist()), np.array(ref[b][h].page_min.tolist())
+            )
 
 
 # ---------------------------------------------------------------------------
