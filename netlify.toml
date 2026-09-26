@@ -1,5 +1,15 @@
 [build]
   base    = "/"
+  # Only build/deploy when a PR or push actually touches the landing page or
+  # docs site. Without this, Netlify runs its (multi-minute, npm-install-heavy)
+  # build on every PR, including ones that only touch veloxquant_mlx/ Python
+  # source with nothing under landing/ or docs-site/ changed.
+  #
+  # Netlify's convention for `ignore`: exit 0 => SKIP the build, exit 1 =>
+  # proceed. `git diff --quiet` itself exits 1 when there IS a diff and 0
+  # when there ISN'T, so it's inverted with `!` to match what we want here:
+  # skip (exit 0) when nothing relevant changed, build (exit 1) when it did.
+  ignore = "! git diff --quiet HEAD^ HEAD -- landing docs-site netlify.toml"
   command = """
     cd docs-site && npm install && npm run build && cd .. &&
     mkdir -p dist/docs &&
