@@ -527,6 +527,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.8 (2026-09-26)
+
+### Performance Improvements
+
+- **cache**: #6 batch RocketKVKVCache decode-step paged-summary updates
+  ([#537](https://github.com/rajveer43/VeloxQuant-MLX/pull/537),
+  [`b72f073`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b72f0739b41a4cb3d98e4ab23989a4566ae003cd))
+
+
 ## v0.91.7 (2026-09-26)
 
 ### Chores
