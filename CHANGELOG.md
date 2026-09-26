@@ -527,6 +527,27 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.7 (2026-09-26)
+
+### Chores
+
+- **deps**: Bump image-size from 2.0.2 to 2.0.4 in /docs-site
+  ([#531](https://github.com/rajveer43/VeloxQuant-MLX/pull/531),
+  [`96280b7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/96280b7e112f13a975f46625c2a64b17e3fea0be))
+
+### Continuous Integration
+
+- **netlify**: Skip build unless landing/ or docs-site/ changed
+  ([#536](https://github.com/rajveer43/VeloxQuant-MLX/pull/536),
+  [`c7cd91b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c7cd91b10a2670f818c1c1357bae1bb39122398c))
+
+### Performance Improvements
+
+- **cache**: #5 batch XKVCache project/quantize/reconstruct across B*H
+  ([#534](https://github.com/rajveer43/VeloxQuant-MLX/pull/534),
+  [`9af25c0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9af25c0e9f6f570cb8a65e1e2b083ebbcfff99ff))
+
+
 ## v0.91.6 (2026-09-25)
 
 ### Chores
