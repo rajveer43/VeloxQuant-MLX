@@ -411,7 +411,7 @@ the project using the DOI below.
 @software{veloxquant_mlx,
   author  = {Rathod, Rajveer},
   title   = {VeloxQuant-MLX: KV-Cache Compression for LLM Inference on Apple Silicon},
-  year    = {2025},
+  year    = {2026},
   publisher = {Zenodo},
   doi     = {10.5281/zenodo.20647294},
   url     = {https://doi.org/10.5281/zenodo.20647294}
