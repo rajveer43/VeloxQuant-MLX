@@ -5,6 +5,13 @@ quantization library for `mlx_lm` on Apple Silicon, and contributions of all
 kinds are welcome: bug reports, new quantization methods, benchmarks on
 additional models, documentation, and performance work.
 
+If you're planning a substantial research or implementation contribution
+(a new compression method, a nontrivial correctness fix, cross-hardware
+benchmark infrastructure) and care how that translates into acknowledgement
+or authorship down the line, see
+[GOVERNANCE.md's Authorship & Acknowledgement Policy](GOVERNANCE.md#authorship--acknowledgement-policy)
+before you start.
+
 ## Issue-first workflow
 
 For anything beyond a tiny typo fix, **open an issue first** using one of the
