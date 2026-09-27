@@ -17,11 +17,13 @@ import numpy as np
 import pytest
 
 from veloxquant_mlx.quantizers.knorm import (
+    KnormState,
     full_knorm_fp16_bytes,
     init_knorm_state,
     knorm_fp16_bytes,
     knorm_get_kv,
     knorm_update,
+    knorm_update_batched,
 )
 
 
@@ -158,3 +160,68 @@ def test_empty_state_placeholder() -> None:
     st = init_knorm_state(n_sink=0, budget=8, head_dim=8)
     ko, vo = knorm_get_kv(st)
     assert ko.shape == (0, 1) and vo.shape == (0, 1)
+
+
+# ------------------------------------------------------------------
+# Batched (N = B*H) equivalence against the per-row scalar loop
+# ------------------------------------------------------------------
+
+
+def _rand_kv_batch(N, S, D, seed):
+    rng = np.random.default_rng(seed)
+    k = rng.standard_normal((N, S, D)).astype(np.float16)
+    v = rng.standard_normal((N, S, D)).astype(np.float16)
+    return mx.array(k), mx.array(v)
+
+
+@pytest.mark.parametrize("budget", [4, 8])
+@pytest.mark.parametrize("n_sink,recent", [(0, 0), (1, 0), (0, 2), (1, 1)])
+@pytest.mark.parametrize("keep", ["low", "high"])
+@pytest.mark.parametrize("n_prior,s_new", [(0, 5), (3, 4), (7, 1), (0, 12)])
+def test_batched_matches_loop_N_gt1(budget, n_sink, recent, keep, n_prior, s_new) -> None:
+    if n_sink + recent >= budget:
+        pytest.skip("invalid guard combination")
+    N, D = 3, 6
+    seed = hash((budget, n_sink, recent, keep, n_prior, s_new)) % (2**31)
+
+    prior_k, prior_v = _rand_kv_batch(N, n_prior, D, seed)
+    new_k, new_v = _rand_kv_batch(N, s_new, D, seed + 1)
+    prior_norms = mx.sqrt(mx.sum(prior_k.astype(mx.float32) ** 2, axis=-1))
+
+    out_k, out_v, out_n = knorm_update_batched(
+        prior_k, prior_v, prior_norms, new_k, new_v, budget, n_sink, recent, keep
+    )
+
+    for i in range(N):
+        st = KnormState(
+            keys=prior_k[i] if n_prior else None,
+            values=prior_v[i] if n_prior else None,
+            norms=prior_norms[i] if n_prior else None,
+            n_sink=n_sink,
+            budget=budget,
+            recent=recent,
+            keep=keep,
+        )
+        st = knorm_update(st, new_k[i], new_v[i])
+        np.testing.assert_array_equal(np.array(out_k[i]), np.array(st.keys))
+        np.testing.assert_array_equal(np.array(out_v[i]), np.array(st.values))
+        np.testing.assert_array_equal(np.array(out_n[i]), np.array(st.norms))
+
+
+def test_batched_multi_step_matches_loop_N_gt1() -> None:
+    N, D, budget, n_sink, recent, keep = 2, 5, 6, 1, 1, "low"
+    prior_k = mx.zeros((N, 0, D), dtype=mx.float16)
+    prior_v = mx.zeros((N, 0, D), dtype=mx.float16)
+    prior_n = mx.zeros((N, 0), dtype=mx.float32)
+    states = [init_knorm_state(n_sink, budget, D, recent=recent, keep=keep) for _ in range(N)]
+
+    for step, s in enumerate([2, 3, 1, 4, 2]):
+        new_k, new_v = _rand_kv_batch(N, s, D, seed=100 + step)
+        prior_k, prior_v, prior_n = knorm_update_batched(
+            prior_k, prior_v, prior_n, new_k, new_v, budget, n_sink, recent, keep
+        )
+        for i in range(N):
+            states[i] = knorm_update(states[i], new_k[i], new_v[i])
+            np.testing.assert_array_equal(np.array(prior_k[i]), np.array(states[i].keys))
+            np.testing.assert_array_equal(np.array(prior_v[i]), np.array(states[i].values))
+            np.testing.assert_array_equal(np.array(prior_n[i]), np.array(states[i].norms))

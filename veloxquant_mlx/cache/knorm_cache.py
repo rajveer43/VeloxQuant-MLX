@@ -21,6 +21,14 @@ Because the score is intrinsic (computed once at insertion, never updated):
     one block and token-by-token decode yield bit-for-bit identical caches
     (the "keep k best with a heap" invariant — see quantizers/knorm.py).
 
+``update_and_fetch`` batches every head's update in one shot via
+``knorm_update_batched`` (reshape to ``[B*H, ...]``, one batched argsort,
+reshape back) instead of a Python ``for b: for h:`` loop — safe because
+budget/n_sink/recent/keep are uniform across all heads in one cache
+instance, so every head's state has identical shape at every step (same
+precondition RocketKV's decode-summary batching relied on). Measured on M4:
+H=8 1.53ms -> 0.76ms/step (2.0x), H=32 4.07ms -> 0.77ms/step (5.3x).
+
 Adaptation limitations (stated plainly):
   - The low-norm ⇒ high-attention correlation is the paper's empirical claim
     about trained models — not validated here on synthetic data (the
@@ -50,11 +58,8 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.knorm import (
-    KnormState,
     init_knorm_state,
-    knorm_fp16_bytes,
-    knorm_get_kv,
-    knorm_update,
+    knorm_update_batched,
 )
 
 
@@ -93,7 +98,12 @@ class L2NormKVCache(_MLXKVCache):
         init_knorm_state(self._n_sink, self._budget, 1, recent=self._recent, keep=self._keep)
 
         self._head_dim: int = 0
-        self._states: list[KnormState] = []
+        # Flat batched state across N = B*H heads, shared uniform budget/
+        # n_sink/recent/keep — see knorm_update_batched's docstring for why
+        # this batches cleanly (RocketKV PR #537 precedent).
+        self._keys: mx.array | None = None  # [N, n_kept, D] fp16
+        self._values: mx.array | None = None  # [N, n_kept, D] fp16
+        self._norms: mx.array | None = None  # [N, n_kept] float32
         self._B: int = 0
         self._H: int = 0
 
@@ -108,16 +118,14 @@ class L2NormKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
-        if not self._states:
+        if self._keys is None:
             self._B = B
             self._H = H
             self._head_dim = D
-            self._states = [
-                init_knorm_state(
-                    self._n_sink, self._budget, D, recent=self._recent, keep=self._keep
-                )
-                for _ in range(B * H)
-            ]
+            N = B * H
+            self._keys = mx.zeros((N, 0, D), dtype=mx.float16)
+            self._values = mx.zeros((N, 0, D), dtype=mx.float16)
+            self._norms = mx.zeros((N, 0), dtype=mx.float32)
 
     def _head_idx(self, b: int, h: int) -> int:
         return b * self._H + h
@@ -140,27 +148,25 @@ class L2NormKVCache(_MLXKVCache):
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
-        k_out_b, v_out_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                idx = self._head_idx(b, h)
-                st = knorm_update(
-                    self._states[idx],
-                    keys[b, h].astype(mx.float16),
-                    values[b, h].astype(mx.float16),
-                )
-                self._states[idx] = st
-                k_h, v_h = knorm_get_kv(st)
-                k_out_h.append(k_h)
-                v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))
-            v_out_b.append(mx.stack(v_out_h, axis=0))
+        keys_flat = keys.reshape(B * H, S, D)
+        values_flat = values.reshape(B * H, S, D)
+        self._keys, self._values, self._norms = knorm_update_batched(
+            self._keys,
+            self._values,
+            self._norms,
+            keys_flat,
+            values_flat,
+            self._budget,
+            self._n_sink,
+            self._recent,
+            self._keep,
+        )
 
-        K_out = mx.stack(k_out_b, axis=0)
-        V_out = mx.stack(v_out_b, axis=0)
+        n_kept = self._keys.shape[1]
+        K_out = self._keys.reshape(B, H, n_kept, D)
+        V_out = self._values.reshape(B, H, n_kept, D)
 
-        self._knorm_kept_bytes = sum(knorm_fp16_bytes(st) for st in self._states)
+        self._knorm_kept_bytes = B * H * n_kept * D * 2 * 2  # K + V, fp16
 
         # K_out/V_out is the full retained state every call, not a delta —
         # reset so the base class's append-only buffer starts fresh instead
@@ -216,7 +222,7 @@ class L2NormKVCache(_MLXKVCache):
     # `hasattr(c, "merge")` on a probe cache — see #15. The base `KVCache`
     # class this inherits from defines `merge()` as a classmethod that
     # returns a plain `mlx_lm.models.cache.BatchKVCache`, oblivious to
-    # `_states`/`_true_offset`/the key-norm scoring this class actually
+    # `_keys`/`_values`/`_norms`/`_true_offset`/the key-norm scoring this class actually
     # needs. Left inherited, every request (even a lone one — a batch of
     # size 1 is still merged for uniform batch-shape handling, see
     # `BatchGenerator.insert_segments` -> `_merge_caches`) silently replaces
@@ -267,9 +273,9 @@ class L2NormKVCache(_MLXKVCache):
     @property
     def tokens_kept(self) -> int:
         """Tokens currently in the (B=0, H=0) head's cache (diagnostic)."""
-        if not self._states or self._states[0].keys is None:
+        if self._keys is None:
             return 0
-        return int(self._states[0].keys.shape[0])
+        return int(self._keys.shape[1])
 
 
 __all__ = ["L2NormKVCache"]

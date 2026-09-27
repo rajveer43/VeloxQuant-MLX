@@ -169,6 +169,72 @@ def knorm_update(
     )
 
 
+def knorm_update_batched(
+    prior_keys: mx.array,  # [N, n_prior, D] fp16 (n_prior may be 0)
+    prior_values: mx.array,  # [N, n_prior, D] fp16
+    prior_norms: mx.array,  # [N, n_prior] float32
+    new_keys: mx.array,  # [N, S, D] any dtype
+    new_values: mx.array,  # [N, S, D]
+    budget: int,
+    n_sink: int,
+    recent: int,
+    keep: str,
+) -> tuple[mx.array, mx.array, mx.array]:
+    """Batched ``knorm_update`` across N = B*H independent rows.
+
+    Requires ``budget``/``n_sink``/``recent``/``keep`` to be uniform across
+    all N rows (true for every ``L2NormKVCache`` instance — one config per
+    cache, not per head), so every row's ``n_total`` after concatenation is
+    identical and the top-k selection is a single batched ``argsort`` along
+    the token axis instead of N independent Python-level calls.
+
+    ``prior_keys``/``prior_values``/``prior_norms`` must be pre-materialized
+    with a uniform ``n_prior`` (0 before any tokens have arrived — the
+    caller passes empty ``[N, 0, D]``/``[N, 0]`` arrays rather than ``None``,
+    since batching needs uniform shapes; unlike ``append_paged_summary``
+    there is no partial-page carry to fold in, just concatenation followed
+    by an ordinary top-k).
+
+    Returns ``(keys, values, norms)``, each ``[N, min(n_total, budget), D]``
+    / ``[N, min(n_total, budget)]``, kept rows in original temporal order —
+    bit-for-bit identical to running ``knorm_update`` per row in a loop
+    (exact reindex, no lossy floating-point reduction involved).
+    """
+    new_norms = mx.sqrt(mx.sum(new_keys.astype(mx.float32) ** 2, axis=-1))  # [N, S]
+
+    keys_cat = mx.concatenate([prior_keys, new_keys.astype(mx.float16)], axis=1)
+    values_cat = mx.concatenate([prior_values, new_values.astype(mx.float16)], axis=1)
+    norms_cat = mx.concatenate([prior_norms, new_norms], axis=1)
+
+    n_total = int(keys_cat.shape[1])
+    if n_total <= budget:
+        return keys_cat, values_cat, norms_cat
+
+    N = keys_cat.shape[0]
+    scores = norms_cat
+    if keep == "high":
+        scores = -scores
+
+    n_sink_eff = min(n_sink, n_total)
+    protect = mx.zeros((n_total,), dtype=mx.float32)
+    if n_sink_eff > 0:
+        protect[:n_sink_eff] = float("-inf")
+    if recent > 0:
+        r_eff = min(recent, n_total - n_sink_eff)
+        if r_eff > 0:
+            protect[n_total - r_eff :] = float("-inf")
+    scores = scores + protect[None, :]  # broadcast [N, n_total]
+
+    order = mx.argsort(scores, axis=1)  # ascending; protected first, per row
+    keep_idx = mx.sort(order[:, :budget], axis=1)  # restore temporal order
+
+    row_idx = mx.arange(N)[:, None]
+    keys_out = keys_cat[row_idx, keep_idx]
+    values_out = values_cat[row_idx, keep_idx]
+    norms_out = norms_cat[row_idx, keep_idx]
+    return keys_out, values_out, norms_out
+
+
 def knorm_get_kv(state: KnormState) -> tuple[mx.array, mx.array]:
     """Return ``(keys, values)`` arrays from state.
 
@@ -198,6 +264,7 @@ __all__ = [
     "KnormState",
     "init_knorm_state",
     "knorm_update",
+    "knorm_update_batched",
     "knorm_get_kv",
     "knorm_fp16_bytes",
     "full_knorm_fp16_bytes",

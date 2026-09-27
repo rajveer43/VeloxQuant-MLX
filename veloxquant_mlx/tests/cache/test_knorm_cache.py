@@ -317,3 +317,44 @@ def test_offset_survives_prefill_then_decode_mix() -> None:
         cache.update_and_fetch(kd, vd)
         assert cache.offset == S + t + 1
     assert cache.tokens_kept <= budget
+
+
+# ------------------------------------------------------------------
+# Batched (B*H) update matches an independent per-head scalar-loop
+# reconstruction, bit-for-bit, across a multi-step decode sequence.
+# ------------------------------------------------------------------
+
+
+def test_batched_update_matches_unbatched_loop_B_gt1_H_gt1_multi_step() -> None:
+    from veloxquant_mlx.quantizers.knorm import init_knorm_state, knorm_update
+
+    B, H, S0, D, budget, n_sink = 2, 3, 20, 8, 10, 2
+    cache = _make(head_dim=D, knorm_budget=budget, knorm_n_sink=n_sink)
+
+    k0, v0 = _kv(B, H, S0, D, seed=42)
+    cache.update_and_fetch(k0, v0)
+
+    ref_states = [init_knorm_state(n_sink, budget, D) for _ in range(B * H)]
+    for b in range(B):
+        for h in range(H):
+            idx = b * H + h
+            ref_states[idx] = knorm_update(ref_states[idx], k0[b, h], v0[b, h])
+
+    for step in range(5):
+        kd, vd = _kv(B, H, 1, D, seed=500 + step)
+        cache.update_and_fetch(kd, vd)
+        for b in range(B):
+            for h in range(H):
+                idx = b * H + h
+                ref_states[idx] = knorm_update(ref_states[idx], kd[b, h], vd[b, h])
+
+    n_kept = cache._keys.shape[1]
+    for b in range(B):
+        for h in range(H):
+            idx = b * H + h
+            assert n_kept == ref_states[idx].keys.shape[0]
+            np.testing.assert_array_equal(np.array(cache._keys[idx]), np.array(ref_states[idx].keys))
+            np.testing.assert_array_equal(
+                np.array(cache._values[idx]), np.array(ref_states[idx].values)
+            )
+            np.testing.assert_array_equal(np.array(cache._norms[idx]), np.array(ref_states[idx].norms))
