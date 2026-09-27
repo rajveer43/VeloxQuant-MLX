@@ -91,7 +91,8 @@ methodology: [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md).
 [Cross-model KV transfer](#beyond-compression-cross-model-kv-transfer) ·
 [References](#references) ·
 [Docs](#documentation--blog-posts) ·
-[Support](#support)
+[Support](#support) ·
+[Citation](#citation)
 
 ---
 
@@ -398,6 +399,27 @@ it buys maintenance time.
    <img alt="GitHub star history chart for rajveer43/VeloxQuant-MLX over time" src="https://api.star-history.com/chart?repos=rajveer43/VeloxQuant-MLX&type=date&legend=top-left" />
  </picture>
 </a>
+
+---
+
+## Citation
+
+If you use VeloxQuant-MLX in your research, benchmarks, or applications, please cite
+the project using the DOI below.
+
+```bibtex
+@software{veloxquant_mlx,
+  author  = {Rathod, Rajveer},
+  title   = {VeloxQuant-MLX: KV-Cache Compression for LLM Inference on Apple Silicon},
+  year    = {2025},
+  publisher = {Zenodo},
+  doi     = {10.5281/zenodo.20647294},
+  url     = {https://doi.org/10.5281/zenodo.20647294}
+}
+```
+
+Per-method attributions and the full bibliography for all 43 adapted papers live in
+[CITATIONS.md](CITATIONS.md).
 
 ---
 
