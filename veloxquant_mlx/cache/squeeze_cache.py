@@ -61,12 +61,9 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.cache.squeeze_coordinator import SqueezeCoordinator
 from veloxquant_mlx.quantizers.squeeze import (
-    SqueezeState,
     concentration_score,
-    init_squeeze_state,
-    squeeze_fp16_bytes,
-    squeeze_get_kv,
-    squeeze_update,
+    squeeze_trim_batched,
+    squeeze_update_batched,
 )
 
 
@@ -116,9 +113,19 @@ class SqueezeAttentionCache(_MLXKVCache):
         self._concentration: float = 0.0
 
         self._head_dim: int = 0
-        self._states: list[SqueezeState] = []
         self._B: int = 0
         self._H: int = 0
+        self._initialised: bool = False
+
+        # Flat [BH, n, D] / [BH, n] state — replaces the old per-(b,h)
+        # SqueezeState list. Batching every head into one call (instead of
+        # a Python loop calling squeeze_update once per (b,h) pair) removes
+        # the O(B*H) Python-dispatch bottleneck on the decode hot path —
+        # same fix, same template, as H2OKVCache's _bh_* state (squeeze_update
+        # is documented as "identical mechanics to h2o_update").
+        self._bh_keys: mx.array | None = None
+        self._bh_values: mx.array | None = None
+        self._bh_scores: mx.array | None = None
 
         self._squeeze_kept_bytes: int = 0
         self._full_seq_bytes: int = 0
@@ -126,15 +133,13 @@ class SqueezeAttentionCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
-        """Lazily initialise per-head SqueezeState list on first call."""
-        if not self._states:
+        """Lazily record shape on first call (guards were already validated
+        at construction; see __init__)."""
+        if not self._initialised:
             self._B = B
             self._H = H
             self._head_dim = D
-            self._states = [init_squeeze_state(self._n_sink, self._budget, D) for _ in range(B * H)]
-
-    def _head_idx(self, b: int, h: int) -> int:
-        return b * self._H + h
+            self._initialised = True
 
     def _apply_budget(self, budget: int) -> None:
         """Re-stamp ``budget`` onto every head's state, trimming any over-budget head.
@@ -147,42 +152,8 @@ class SqueezeAttentionCache(_MLXKVCache):
         data-driven budget exactly.
         """
         self._budget = int(budget)
-        for idx, st in enumerate(self._states):
-            self._states[idx] = self._trim_state(st, self._budget)
-
-    @staticmethod
-    def _trim_state(st: SqueezeState, budget: int) -> SqueezeState:
-        """Return ``st`` re-stamped with ``budget``, trimmed to it if over budget.
-
-        Drops the lowest-score non-sink tokens (sinks always kept) until the head
-        holds at most ``budget`` tokens. A no-op when the head is already within
-        budget or empty.
-        """
-        if st.keys is None:
-            return SqueezeState(None, None, None, st.n_sink, budget)
-
-        n = st.keys.shape[0]
-        if n <= budget:
-            return SqueezeState(st.keys, st.values, st.scores, st.n_sink, budget)
-
-        # Protect sinks with +inf, then keep the top-`budget` by score.
-        n_sink_eff = min(st.n_sink, n)
-        if n_sink_eff > 0:
-            inf_block = mx.full((n_sink_eff,), float("inf"), dtype=mx.float32)
-            protected = mx.concatenate([inf_block, st.scores[n_sink_eff:]], axis=0)
-        else:
-            protected = st.scores
-
-        order = mx.argsort(protected)  # ascending: lowest score first
-        keep = order[n - budget :]  # top-`budget` scores
-        keep_sorted = mx.sort(keep)  # preserve positional order
-        keep_idx = [int(x.item()) for x in keep_sorted]
-        return SqueezeState(
-            keys=st.keys[keep_idx],
-            values=st.values[keep_idx],
-            scores=st.scores[keep_idx],
-            n_sink=st.n_sink,
-            budget=budget,
+        self._bh_keys, self._bh_values, self._bh_scores = squeeze_trim_batched(
+            self._bh_keys, self._bh_values, self._bh_scores, self._n_sink, self._budget
         )
 
     def _report_and_rebudget(self, keys: mx.array) -> None:
@@ -234,29 +205,25 @@ class SqueezeAttentionCache(_MLXKVCache):
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
-        k_out_b, v_out_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                idx = self._head_idx(b, h)
-                st = self._states[idx]
-                st = squeeze_update(
-                    st,
-                    keys[b, h].astype(mx.float16),
-                    values[b, h].astype(mx.float16),
-                )
-                self._states[idx] = st
-                k_h, v_h = squeeze_get_kv(st)
-                k_out_h.append(k_h)  # [n_kept, D]
-                v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))  # [H, n_kept, D]
-            v_out_b.append(mx.stack(v_out_h, axis=0))
+        new_keys_flat = keys.astype(mx.float16).reshape(B * H, S, D)
+        new_values_flat = values.astype(mx.float16).reshape(B * H, S, D)
 
-        K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_kept, D]
-        V_out = mx.stack(v_out_b, axis=0)
+        self._bh_keys, self._bh_values, self._bh_scores = squeeze_update_batched(
+            self._bh_keys,
+            self._bh_values,
+            self._bh_scores,
+            new_keys_flat,
+            new_values_flat,
+            self._n_sink,
+            self._budget,
+        )
 
-        # Byte accounting: sum across all head states.
-        self._squeeze_kept_bytes = sum(squeeze_fp16_bytes(st) for st in self._states)
+        n_kept = self._bh_keys.shape[1]
+        K_out = self._bh_keys.reshape(B, H, n_kept, D)
+        V_out = self._bh_values.reshape(B, H, n_kept, D)
+
+        # Byte accounting: bytes currently retained across all (b,h) rows.
+        self._squeeze_kept_bytes = B * H * n_kept * D * 2 * 2
 
         # K_out/V_out is the full retained state every call, not a delta —
         # reset so the base class's append-only buffer starts fresh instead
@@ -313,9 +280,9 @@ class SqueezeAttentionCache(_MLXKVCache):
     @property
     def tokens_kept(self) -> int:
         """Tokens currently in the (B=0, H=0) head's cache (diagnostic)."""
-        if not self._states or self._states[0].keys is None:
+        if self._bh_keys is None:
             return 0
-        return int(self._states[0].keys.shape[0])
+        return int(self._bh_keys.shape[1])
 
     # ------------------------------------------------------------------
     # Batching guard (see VeloxQuant-MLX#358)
@@ -336,7 +303,9 @@ class SqueezeAttentionCache(_MLXKVCache):
     # sees it as absent.
     merge = property(
         lambda self: (_ for _ in ()).throw(
-            AttributeError("SqueezeAttentionCache does not support merge() — see VeloxQuant-MLX#358")
+            AttributeError(
+                "SqueezeAttentionCache does not support merge() — see VeloxQuant-MLX#358"
+            )
         )
     )
 

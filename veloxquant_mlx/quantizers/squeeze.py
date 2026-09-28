@@ -57,6 +57,7 @@ full_squeeze_fp16_bytes — hypothetical cost without eviction
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import mlx.core as mx
@@ -293,6 +294,181 @@ def squeeze_update(
     return state
 
 
+_EVAL_FLUSH_INTERVAL = 32
+
+
+def _attention_scores_batched(query_proxy: mx.array, keys: mx.array) -> mx.array:
+    """Softmax attention weights, batched over a leading ``[BH]`` axis.
+
+    Identical formula to :func:`h2o._attention_scores_batched` (not
+    imported directly to avoid a private cross-module dependency).
+
+    Args:
+        query_proxy: ``[BH, D]``.
+        keys:        ``[BH, n, D]``.
+
+    Returns:
+        ``[BH, n]`` softmax weights, each row summing to ~1.
+    """
+    scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
+    logits = (keys @ query_proxy[..., None])[..., 0] * scale  # [BH, n]
+    return mx.softmax(logits, axis=-1)
+
+
+def _evict_via_mlx_batched(
+    keys_cat: mx.array,
+    values_cat: mx.array,
+    scores_cat: mx.array,
+    n_sink: int,
+) -> tuple[mx.array, mx.array, mx.array]:
+    """Batched-``[BH,·]`` equivalent of the per-row argmin/evict in
+    :func:`squeeze_update`.
+
+    Each ``bh`` row's argmin/evict is independent of every other row — a
+    like-for-like vectorization of the per-head loop's eviction branch over
+    a leading ``BH`` axis, not a new eviction policy. No RoPE remap here —
+    SqueezeAttention-adapted, unlike H2O-adapted, does not track/re-rotate
+    absolute positions after eviction (a documented adaptation limitation;
+    see this module's docstring), so there is nothing to remap.
+    """
+    bh, n_total = scores_cat.shape
+    n_sink_eff = min(n_sink, n_total)
+    protected = scores_cat
+    if n_sink_eff > 0:
+        sink_inf = mx.full((bh, n_sink_eff), float("inf"), dtype=mx.float32)
+        protected = mx.concatenate([sink_inf, protected[:, n_sink_eff:]], axis=1)
+
+    evict_idx = mx.argmin(protected, axis=-1, keepdims=True)  # [BH, 1]
+    rows = mx.arange(n_total - 1)[None]  # [1, n_total-1]
+    source = rows + (rows >= evict_idx)  # [BH, n_total-1]
+
+    keys_kept = mx.take_along_axis(keys_cat, source[..., None], axis=1)
+    values_kept = mx.take_along_axis(values_cat, source[..., None], axis=1)
+    scores_kept = mx.take_along_axis(scores_cat, source, axis=1)
+    return keys_kept, values_kept, scores_kept
+
+
+def squeeze_update_batched(
+    keys: mx.array | None,  # [BH, n, D] fp16 or None
+    values: mx.array | None,  # [BH, n, D] fp16 or None
+    scores: mx.array | None,  # [BH, n] fp32 or None
+    new_keys: mx.array,  # [BH, S, D]
+    new_values: mx.array,  # [BH, S, D]
+    n_sink: int,
+    budget: int,
+) -> tuple[mx.array, mx.array, mx.array]:
+    """Vectorized-over-``BH`` equivalent of calling :func:`squeeze_update`
+    once per ``(batch, head)`` pair with identical per-row ``n_sink``/
+    ``budget`` (true for every real caller: :class:`SqueezeAttentionCache`
+    applies one resolved budget to every head in a layer).
+
+    Same template as :func:`veloxquant_mlx.quantizers.h2o.h2o_update_batched`
+    — ``squeeze_update`` is documented as "identical mechanics to
+    ``h2o_update``" minus RoPE remap and the grace/decay extensions, so this
+    is a direct, simplified port of that batching approach rather than a new
+    design.
+
+    Numerically identical to the per-head loop it replaces: every op below
+    is the same formula as :func:`squeeze_update`'s bootstrap/score-update/
+    evict branches, applied over a leading ``BH`` axis instead of a Python
+    loop.
+
+    Returns:
+        ``(keys, values, scores)`` — ``[BH, n_kept, D]`` / ``[BH, n_kept, D]``
+        / ``[BH, n_kept]``.
+    """
+    bh, s, d = new_keys.shape
+    if s == 0:
+        return keys, values, scores
+    if n_sink >= budget:
+        raise ValueError("squeeze: n_sink must be < budget — no evictable positions remain")
+
+    for i in range(s):
+        k_i = new_keys[:, i].astype(mx.float32)  # [BH, D]
+        v_i = new_values[:, i].astype(mx.float16)  # [BH, D]
+
+        if keys is None:
+            keys = new_keys[:, i : i + 1].astype(mx.float16)  # [BH, 1, D]
+            values = v_i[:, None, :]
+            scores = mx.ones((bh, 1), dtype=mx.float32)
+            continue
+
+        attn = _attention_scores_batched(k_i, keys.astype(mx.float32))  # [BH, n]
+        updated_scores = scores + attn
+
+        keys_cat = mx.concatenate([keys, new_keys[:, i : i + 1].astype(mx.float16)], axis=1)
+        values_cat = mx.concatenate([values, v_i[:, None, :]], axis=1)
+        scores_cat = mx.concatenate([updated_scores, mx.zeros((bh, 1), dtype=mx.float32)], axis=1)
+
+        n_total = keys_cat.shape[1]
+        if n_total > budget:
+            keys_cat, values_cat, scores_cat = _evict_via_mlx_batched(
+                keys_cat, values_cat, scores_cat, n_sink
+            )
+
+        keys, values, scores = keys_cat, values_cat, scores_cat
+
+        if (i + 1) % _EVAL_FLUSH_INTERVAL == 0:
+            mx.eval(keys, values, scores)
+
+    return keys, values, scores
+
+
+def squeeze_trim_batched(
+    keys: mx.array | None,
+    values: mx.array | None,
+    scores: mx.array | None,
+    n_sink: int,
+    budget: int,
+) -> tuple[mx.array | None, mx.array | None, mx.array | None]:
+    """Vectorized-over-``BH`` equivalent of calling
+    :meth:`SqueezeAttentionCache._trim_state` once per head.
+
+    Used for the one-shot post-prefill re-budget: once the coordinator
+    resolves this layer's data-driven budget (possibly smaller than the
+    average fallback ``squeeze_update_batched`` ran against during
+    prefill), every head is trimmed to it here by dropping the lowest-
+    cumulative-score non-sink tokens — the same ranking
+    :func:`_evict_via_mlx_batched` uses, applied ``n - budget`` times at
+    once via a single top-k-by-argsort instead of one-row-at-a-time
+    eviction. A no-op when every row is already within budget.
+
+    Args:
+        keys: ``[BH, n, D]`` fp16, or ``None`` before the first update.
+        values: ``[BH, n, D]`` fp16, or ``None``.
+        scores: ``[BH, n]`` fp32, or ``None``.
+        n_sink: Sink tokens protected from trimming (uniform across ``BH``).
+        budget: The new, uniform-across-``BH`` cap.
+
+    Returns:
+        ``(keys, values, scores)`` re-stamped at ``budget`` — unchanged
+        (same arrays) if ``keys is None`` or already within budget.
+    """
+    if keys is None:
+        return keys, values, scores
+    n = keys.shape[1]
+    if n <= budget:
+        return keys, values, scores
+
+    bh = keys.shape[0]
+    n_sink_eff = min(n_sink, n)
+    protected = scores
+    if n_sink_eff > 0:
+        sink_inf = mx.full((bh, n_sink_eff), float("inf"), dtype=mx.float32)
+        protected = mx.concatenate([sink_inf, protected[:, n_sink_eff:]], axis=1)
+
+    # Top-`budget` scores per row, then re-sort by original index to
+    # preserve temporal order (mirrors _trim_state's argsort-then-resort).
+    order = mx.argsort(protected, axis=-1)  # ascending: lowest score first
+    keep = order[:, n - budget :]  # [BH, budget] top-budget indices per row
+    keep_sorted = mx.sort(keep, axis=-1)  # preserve positional order
+
+    keys_kept = mx.take_along_axis(keys, keep_sorted[..., None], axis=1)
+    values_kept = mx.take_along_axis(values, keep_sorted[..., None], axis=1)
+    scores_kept = mx.take_along_axis(scores, keep_sorted, axis=1)
+    return keys_kept, values_kept, scores_kept
+
+
 def squeeze_get_kv(state: SqueezeState) -> tuple[mx.array, mx.array]:
     """Return ``(keys, values)`` arrays from state.
 
@@ -317,6 +493,8 @@ __all__ = [
     "SqueezeState",
     "init_squeeze_state",
     "squeeze_update",
+    "squeeze_update_batched",
+    "squeeze_trim_batched",
     "squeeze_get_kv",
     "squeeze_fp16_bytes",
     "full_squeeze_fp16_bytes",
