@@ -31,8 +31,13 @@ This module holds two things:
        H=32: 36.39ms → 3.65ms (10.0x)
        H=64: 76.59ms → 3.07ms (24.9x)
        H=128: 157.33ms → 4.40ms (35.7x)
-     Before scales ~linearly with H (pure per-head Python/dispatch overhead);
-     after stays nearly flat (one batched matmul regardless of head count).
+     Beyond single-layer head counts, bh=B*H combined (e.g. B=4,H=64):
+       bh=256:  312.1ms → 8.4ms  (37.0x)
+       bh=512:  645.1ms → 20.6ms (31.3x)
+       bh=1024: 1358.0ms → 33.1ms (41.0x)
+     Before scales ~linearly with bh (pure per-head Python/dispatch overhead)
+     throughout; after grows sub-linearly, only becoming compute-bound (rather
+     than dispatch-bound) once bh reaches the low hundreds.
 
 Relationship to H2O-adapted:
   H2O gives every layer the same ``h2o_budget``. PyramidKV is H2O's eviction
