@@ -22,6 +22,7 @@ from veloxquant_mlx.quantizers.pyramidkv import (
     pyramid_fp16_bytes,
     pyramid_get_kv,
     pyramid_update,
+    pyramid_update_heads,
 )
 
 
@@ -322,3 +323,54 @@ def test_deterministic_across_identical_inputs() -> None:
     kb, _ = pyramid_get_kv(st_b)
     mse = float(mx.mean((ka.astype(mx.float32) - kb.astype(mx.float32)) ** 2).item())
     assert mse == pytest.approx(0.0, abs=0.0)
+
+
+# ---------------------------------------------------------------------------
+# pyramid_update_heads — batched (BH) matmul-scoring vs. per-head loop
+# ---------------------------------------------------------------------------
+
+
+def _rand_kv_batch(bh: int, S: int, D: int, seed: int):
+    rng = np.random.default_rng(seed)
+    k = mx.array(rng.standard_normal((bh, S, D)).astype(np.float16))
+    v = mx.array(rng.standard_normal((bh, S, D)).astype(np.float16))
+    return k, v
+
+
+@pytest.mark.parametrize("n_sink,budget", [(0, 6), (2, 6), (1, 4)])
+@pytest.mark.parametrize("bh,S,D", [(1, 10, 16), (3, 10, 16), (8, 14, 16), (32, 5, 16)])
+def test_update_heads_matches_per_head_loop(bh, S, D, n_sink, budget) -> None:
+    seed = hash((bh, S, D, n_sink, budget)) % (2**31)
+    new_k, new_v = _rand_kv_batch(bh, S, D, seed)
+
+    states = [init_pyramid_state(n_sink, budget, D) for _ in range(bh)]
+    states = pyramid_update_heads(states, new_k, new_v, backend="mlx")
+
+    for g in range(bh):
+        ref = pyramid_update(
+            init_pyramid_state(n_sink, budget, D), new_k[g], new_v[g], backend="mlx"
+        )
+        np.testing.assert_array_equal(np.array(states[g].keys), np.array(ref.keys))
+        np.testing.assert_array_equal(np.array(states[g].values), np.array(ref.values))
+        np.testing.assert_allclose(
+            np.array(states[g].scores, dtype=np.float32),
+            np.array(ref.scores, dtype=np.float32),
+            rtol=1e-4,
+            atol=1e-5,
+        )
+
+
+def test_update_heads_multi_step_matches_per_head_loop() -> None:
+    bh, D, n_sink, budget = 5, 8, 1, 6
+    states = [init_pyramid_state(n_sink, budget, D) for _ in range(bh)]
+    ref_states = [init_pyramid_state(n_sink, budget, D) for _ in range(bh)]
+
+    for step, s in enumerate([3, 2, 4, 1]):
+        new_k, new_v = _rand_kv_batch(bh, s, D, seed=200 + step)
+        states = pyramid_update_heads(states, new_k, new_v, backend="mlx")
+        for g in range(bh):
+            ref_states[g] = pyramid_update(ref_states[g], new_k[g], new_v[g], backend="mlx")
+            np.testing.assert_array_equal(np.array(states[g].keys), np.array(ref_states[g].keys))
+            np.testing.assert_array_equal(
+                np.array(states[g].values), np.array(ref_states[g].values)
+            )

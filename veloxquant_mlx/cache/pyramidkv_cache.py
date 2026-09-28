@@ -146,31 +146,30 @@ class PyramidKVCache(_MLXKVCache):
                 values.reshape(B * H, S, D).astype(mx.float16),
                 backend=self._backend,
             )
-        k_out_b, v_out_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                idx = self._head_idx(b, h)
-                st = self._states[idx]
-                st = (
-                    st
-                    if batched
-                    else pyramid_update(
-                        st,
+            n_kept = self._states[0].keys.shape[0]
+            K_out = mx.stack([st.keys for st in self._states], axis=0).reshape(B, H, n_kept, D)
+            V_out = mx.stack([st.values for st in self._states], axis=0).reshape(B, H, n_kept, D)
+        else:
+            k_out_b, v_out_b = [], []
+            for b in range(B):
+                k_out_h, v_out_h = [], []
+                for h in range(H):
+                    idx = self._head_idx(b, h)
+                    st = pyramid_update(
+                        self._states[idx],
                         keys[b, h].astype(mx.float16),
                         values[b, h].astype(mx.float16),
                         backend=self._backend,
                     )
-                )
-                self._states[idx] = st
-                k_h, v_h = pyramid_get_kv(st)
-                k_out_h.append(k_h)  # [n_kept, D]
-                v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))  # [H, n_kept, D]
-            v_out_b.append(mx.stack(v_out_h, axis=0))
+                    self._states[idx] = st
+                    k_h, v_h = pyramid_get_kv(st)
+                    k_out_h.append(k_h)  # [n_kept, D]
+                    v_out_h.append(v_h)
+                k_out_b.append(mx.stack(k_out_h, axis=0))  # [H, n_kept, D]
+                v_out_b.append(mx.stack(v_out_h, axis=0))
 
-        K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_kept, D]
-        V_out = mx.stack(v_out_b, axis=0)
+            K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_kept, D]
+            V_out = mx.stack(v_out_b, axis=0)
 
         # Byte accounting: sum across all head states
         self._pyramid_kept_bytes = sum(pyramid_fp16_bytes(st) for st in self._states)
