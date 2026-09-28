@@ -35,7 +35,10 @@ from __future__ import annotations
 
 import mlx.core as mx
 
-from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
+from veloxquant_mlx.quantizers._quant_utils import (
+    _group_quant_dequant,
+    _group_quant_dequant_batched,
+)
 
 
 def rank_channels_by_sensitivity(
@@ -106,6 +109,66 @@ def quantize_mixed_channels(
     return mx.stack(parts, axis=1).astype(mx.float16)  # [S, D]
 
 
+def hi_mask_from_variance_batched(variance: mx.array, hi_fraction: float) -> mx.array:
+    """Batched-leading-axis channel ranking: variance ``[N, D]`` -> hi-bit mask ``[N, D]`` bool.
+
+    Replaces the per-row ``.tolist()`` + Python ``sorted()`` ranking in
+    :func:`rank_channels_by_sensitivity` / the decode branch of
+    ``KittyKVCache._quantize_keys`` with one host-sync-free ``mx.argsort``
+    call across all ``N`` rows (e.g. flattened ``B*H``) at once. ``mx.argsort``
+    breaks ties the same way Python's stable ``sorted()`` does (first index
+    wins), so the selected channel set matches exactly.
+
+    Args:
+        variance: ``[N, D]`` fp32 per-row, per-channel variance.
+        hi_fraction: Fraction of channels routed to high-bit quantization.
+
+    Returns:
+        ``[N, D]`` bool mask, True where the channel is in that row's
+        top-``hi_fraction`` (by variance, descending; ties broken by lower
+        channel index, matching Python's stable sort).
+    """
+    n, d = variance.shape
+    n_hi = max(1, int(d * hi_fraction))
+    order = mx.argsort(-variance, axis=-1)  # descending, stable on ties
+    rank = mx.argsort(order, axis=-1)  # rank[i, j] = position of channel j
+    return rank < n_hi
+
+
+def quantize_mixed_channels_batched(
+    keys: mx.array,
+    hi_mask: mx.array,
+    hi_bit: int = 4,
+    lo_bit: int = 2,
+    group_size: int = 32,
+) -> mx.array:
+    """Batched-leading-axis equivalent of :func:`quantize_mixed_channels`.
+
+    Quantizes the full ``[N, S, D]`` tensor at ``hi_bit`` and at ``lo_bit``
+    independently (each a single batched group-quant call, see
+    :func:`_group_quant_dequant_batched`), then selects per-row, per-channel
+    between the two reconstructions with ``hi_mask`` — avoiding a ragged
+    gather/scatter over per-row index lists of different composition.
+    Verified bit-for-bit equivalent to looping :func:`quantize_mixed_channels`
+    over axis 0 with the corresponding ``hi_indices``/``lo_indices``.
+
+    Args:
+        keys: ``[N, S, D]`` fp16 or fp32.
+        hi_mask: ``[N, D]`` bool, True where that row's channel is hi-bit
+            (as returned by :func:`hi_mask_from_variance_batched`).
+        hi_bit: Bit width for high-sensitivity channels.
+        lo_bit: Bit width for low-sensitivity channels.
+        group_size: Group size for quantization along the sequence axis.
+
+    Returns:
+        Reconstructed keys ``[N, S, D]`` fp16.
+    """
+    recon_hi = _group_quant_dequant_batched(keys, hi_bit, group_size)
+    recon_lo = _group_quant_dequant_batched(keys, lo_bit, group_size)
+    mask = hi_mask[:, None, :]  # [N, 1, D] broadcasts over S
+    return mx.where(mask, recon_hi, recon_lo).astype(mx.float16)
+
+
 def compute_running_variance(
     key_sum: mx.array,
     key_sq_sum: mx.array,
@@ -131,4 +194,6 @@ __all__ = [
     "rank_channels_by_sensitivity",
     "quantize_mixed_channels",
     "compute_running_variance",
+    "hi_mask_from_variance_batched",
+    "quantize_mixed_channels_batched",
 ]

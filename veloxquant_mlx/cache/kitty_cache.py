@@ -41,8 +41,8 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.kitty import (
     compute_running_variance,
-    quantize_mixed_channels,
-    rank_channels_by_sensitivity,
+    hi_mask_from_variance_batched,
+    quantize_mixed_channels_batched,
 )
 
 
@@ -84,44 +84,34 @@ class KittyKVCache(_MLXKVCache):
     # Core quantization
     # ------------------------------------------------------------------
     def _quantize_keys(self, keys: mx.array) -> mx.array:
-        """Quantize keys [B, H, S, D] using current channel rankings.
+        """Quantize keys [B, H, S, D] batched over B*H using current channel rankings.
 
         Uses per-head variance accumulated in self._key_sum / self._key_sq_sum.
         On first call (prefill), ranking is derived directly from the batch.
         On decode calls, uses running statistics updated before this call.
         """
         B, H, S, D = keys.shape
-        out_batches = []
-        for b in range(B):
-            out_heads = []
-            for h in range(H):
-                k_bh = keys[b, h]  # [S, D]
+        flat = keys.reshape(B * H, S, D)
 
-                if self._n_keys == 0:
-                    # Prefill: rank from the batch itself
-                    hi_idx, lo_idx = rank_channels_by_sensitivity(k_bh, self._hi_fraction)
-                else:
-                    # Decode: rank from running variance per this head
-                    var_h = compute_running_variance(
-                        self._key_sum[h], self._key_sq_sum[h], self._n_keys
-                    )
-                    var_list = var_h.tolist()
-                    sorted_idx = sorted(range(D), key=lambda i: -var_list[i])
-                    n_hi = max(1, int(D * self._hi_fraction))
-                    hi_idx = sorted(sorted_idx[:n_hi])
-                    lo_idx = sorted(sorted_idx[n_hi:])
+        if self._n_keys == 0:
+            # Prefill: rank from the batch itself, per (b,h) row.
+            variance = mx.var(flat.astype(mx.float32), axis=1)  # [B*H, D]
+        else:
+            # Decode: rank from running variance, broadcast per-head stats over B.
+            var_h = compute_running_variance(
+                self._key_sum, self._key_sq_sum, self._n_keys
+            )  # [H, D]
+            variance = mx.broadcast_to(var_h[None, :, :], (B, H, D)).reshape(B * H, D)
 
-                k_q = quantize_mixed_channels(
-                    k_bh,
-                    hi_idx,
-                    lo_idx,
-                    hi_bit=self._hi_bit,
-                    lo_bit=self._lo_bit,
-                    group_size=self._group_size,
-                )
-                out_heads.append(k_q)
-            out_batches.append(mx.stack(out_heads, axis=0))  # [H, S, D]
-        return mx.stack(out_batches, axis=0)  # [B, H, S, D]
+        hi_mask = hi_mask_from_variance_batched(variance, self._hi_fraction)  # [B*H, D]
+        out = quantize_mixed_channels_batched(
+            flat,
+            hi_mask,
+            hi_bit=self._hi_bit,
+            lo_bit=self._lo_bit,
+            group_size=self._group_size,
+        )
+        return out.reshape(B, H, S, D)
 
     def _update_accumulators(self, keys: mx.array) -> None:
         """Update running key_sum and key_sq_sum from incoming keys [B, H, S, D]."""
