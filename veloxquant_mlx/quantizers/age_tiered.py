@@ -41,7 +41,10 @@ from dataclasses import dataclass
 
 import mlx.core as mx
 
-from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
+from veloxquant_mlx.quantizers._quant_utils import (
+    _group_quant_dequant,
+    _group_quant_dequant_batched,
+)
 
 RECENT, MID, OLD = 0, 1, 2
 
@@ -111,6 +114,66 @@ def age_tier_quantize(x: mx.array, bits: int, group_size: int = 32) -> mx.array:
     return _group_quant_dequant(x, bits, group_size)
 
 
+def age_tier_quantize_batched(
+    raw: mx.array,
+    group_tier: list[int],
+    tiers_config: tuple[AgeTierConfig, ...],
+    group_size: int = 32,
+) -> mx.array:
+    """Batched-leading-axis equivalent of the per-group ``age_tier_quantize`` loop.
+
+    Replaces ``AgeTieredKVCache._requantize``'s ``for g in range(n_groups)``
+    loop (which quantizes each fixed-``group_size`` window at its own
+    group's bit-width) with one batched group-quant-dequant call per
+    distinct tier (there are always exactly 3: RECENT/MID/OLD) over the
+    whole ``[G, N, D]`` array, selected per group with :func:`mlx.core.where`.
+    Groups are windowed identically to the original (fixed
+    ``group_size``-wide, position-aligned, last group padded by
+    broadcasting its own last row) — verified bit-for-bit equivalent to
+    looping :func:`age_tier_quantize` per group.
+
+    A group's tier is head-invariant (age/position boundaries are global
+    constants, not per-head state — see
+    :class:`~veloxquant_mlx.cache.age_tiered_cache.AgeTieredKVCache`), so
+    ``group_tier`` is shared across every row of the leading ``G`` axis.
+
+    Args:
+        raw: ``[G, N, D]`` fp16 or fp32 raw (never-quantized) activations.
+        group_tier: Length ``n_groups = ceil(N / group_size)`` list of tier
+            ids, one per fixed-size window (as derived from each window's
+            first/oldest token's tier — matching the original's
+            ``tiers[start]`` semantics, including windows whose members
+            span more than one tier).
+        tiers_config: The ``(tier, bits)`` pairs, e.g. from
+            :func:`default_age_tiers`.
+        group_size: Token-axis group size for the shared min/max quantizer.
+
+    Returns:
+        ``[G, N, D]`` fp16 quantized-then-dequantized activations.
+    """
+    g, n, d = raw.shape
+    if n == 0:
+        return raw.astype(mx.float16)
+
+    gs = group_size
+    token_tier: list[int] = []
+    for gi, t in enumerate(group_tier):
+        start = gi * gs
+        end = min(start + gs, n)
+        token_tier.extend([t] * (end - start))
+    tiers_mx = mx.array(token_tier)  # [N]
+
+    out = None
+    for cfg in tiers_config:
+        if cfg.bits >= 16:
+            q = raw.astype(mx.float16)
+        else:
+            q = _group_quant_dequant_batched(raw, cfg.bits, gs)  # [G, N, D]
+        sel = (tiers_mx == cfg.tier)[None, :, None]  # [1, N, 1]
+        out = q if out is None else mx.where(sel, q, out)
+    return out
+
+
 def age_tiered_bytes(tier_counts: dict, tiers: tuple[AgeTierConfig, ...], head_dim: int) -> int:
     """Actual stored bytes given per-tier token counts (K + V combined).
 
@@ -146,6 +209,7 @@ __all__ = [
     "default_age_tiers",
     "assign_age_tiers",
     "age_tier_quantize",
+    "age_tier_quantize_batched",
     "age_tiered_bytes",
     "full_fp16_bytes",
 ]

@@ -27,7 +27,7 @@ from veloxquant_mlx.quantizers.age_tiered import (
     MID,
     OLD,
     RECENT,
-    age_tier_quantize,
+    age_tier_quantize_batched,
     age_tiered_bytes,
     assign_age_tiers,
     default_age_tiers,
@@ -107,28 +107,29 @@ class AgeTieredKVCache(_MLXKVCache):
 
         self._B: int = 0
         self._H: int = 0
-        # Per (b,h): raw (never quantized) fp16 activations for every token
-        # seen -- the only source _requantize ever reads from (#397). A
-        # group is re-quantized from *this*, not from the previous
-        # quantize-dequantize output, whenever its tier changes; deriving
-        # from raw every time means a token's error never compounds across
-        # steps -- it is always exactly one round-trip from the true value,
-        # no matter how many times its group's tier is later re-evaluated.
-        self._raw_keys: list[mx.array | None] = []
-        self._raw_values: list[mx.array | None] = []
-        self._keys: list[mx.array | None] = []  # per (b,h): [n_seen, D] fp16, quant-dequant output
-        self._values: list[
-            mx.array | None
-        ] = []  # per (b,h): [n_seen, D] fp16, quant-dequant output
-        # Per (b,h): tier id each fixed-size group of self._group_size
-        # tokens (aligned to absolute buffer position, token 0 starts group
-        # 0) was last quantized at. A token's tier only ever gets coarser
-        # as it ages (RECENT -> MID -> OLD), and groups are position
-        # -aligned (not contiguous-run-aligned) so a group's membership
-        # never changes once written -- only its tier can. Comparing
-        # against this lets _requantize skip re-deriving any group whose
-        # tier hasn't changed since it was last computed.
-        self._group_tier: list[list[int]] = []
+        # Raw (never quantized) fp16 activations for every token seen,
+        # batched over G = B*H as the leading axis -- the only source
+        # _requantize ever reads from (#397). A group is re-quantized from
+        # *this*, not from the previous quantize-dequantize output, whenever
+        # its tier changes; deriving from raw every time means a token's
+        # error never compounds across steps -- it is always exactly one
+        # round-trip from the true value, no matter how many times its
+        # group's tier is later re-evaluated.
+        self._raw_keys: mx.array | None = None  # [G, n_seen, D] fp16
+        self._raw_values: mx.array | None = None
+        self._keys_batched: mx.array | None = None  # [G, n_seen, D] fp16, quant-dequant output
+        self._values_batched: mx.array | None = None
+        # Tier id each fixed-size group of self._group_size tokens (aligned
+        # to absolute buffer position, token 0 starts group 0) was last
+        # quantized at. Head-invariant (age/position boundaries are global
+        # constants, not per-head state -- see #556), so tracked once
+        # instead of per (b,h). A token's tier only ever gets coarser as it
+        # ages (RECENT -> MID -> OLD), and groups are position-aligned (not
+        # contiguous-run-aligned) so a group's membership never changes once
+        # written -- only its tier can. Comparing against this lets
+        # _requantize skip re-deriving any group whose tier hasn't changed
+        # since it was last computed.
+        self._group_tier: list[int] = []
 
         self._tokens_seen_total: int = 0
         self._current_position: int = 0
@@ -137,17 +138,9 @@ class AgeTieredKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def _ensure_state(self, B: int, H: int) -> None:
-        if not self._keys:
+        if self._raw_keys is None:
             self._B = B
             self._H = H
-            self._raw_keys = [None] * (B * H)
-            self._raw_values = [None] * (B * H)
-            self._keys = [None] * (B * H)
-            self._values = [None] * (B * H)
-            self._group_tier = [[] for _ in range(B * H)]
-
-    def _head_idx(self, b: int, h: int) -> int:
-        return b * self._H + h
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
@@ -168,59 +161,39 @@ class AgeTieredKVCache(_MLXKVCache):
         self._tokens_seen_total += B * H * S
         self._current_position += S
 
-        k_out_b, v_out_b = [], []
-        head0_tiers: list[int] | None = None
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                idx = self._head_idx(b, h)
-                k_step = keys[b, h].astype(mx.float16)  # [S, D]
-                v_step = values[b, h].astype(mx.float16)  # [S, D]
+        G = B * H
+        k_step = keys.reshape(G, S, D).astype(mx.float16)
+        v_step = values.reshape(G, S, D).astype(mx.float16)
 
-                prev_raw_k = self._raw_keys[idx]
-                prev_raw_v = self._raw_values[idx]
-                raw_k = (
-                    k_step if prev_raw_k is None else mx.concatenate([prev_raw_k, k_step], axis=0)
-                )
-                raw_v = (
-                    v_step if prev_raw_v is None else mx.concatenate([prev_raw_v, v_step], axis=0)
-                )
-                self._raw_keys[idx] = raw_k
-                self._raw_values[idx] = raw_v
-                n = int(raw_k.shape[0])
+        raw_k = (
+            k_step if self._raw_keys is None else mx.concatenate([self._raw_keys, k_step], axis=1)
+        )
+        raw_v = (
+            v_step
+            if self._raw_values is None
+            else mx.concatenate([self._raw_values, v_step], axis=1)
+        )
+        self._raw_keys = raw_k
+        self._raw_values = raw_v
+        n = int(raw_k.shape[1])
 
-                # age[i] = current_position - (i + 1); the token written this
-                # step (i == n - 1) has age 0.
-                ages = [self._current_position - (i + 1) for i in range(n)]
-                tiers = assign_age_tiers(ages, self._age_recent_boundary, self._age_mid_boundary)
-                if idx == 0:
-                    # Every (b, h) head sees the same n_per_head/current_position,
-                    # so this per-head tiering is identical across heads --
-                    # captured once here for _account_bytes below instead of
-                    # _accumulate_tier_counts() redoing this same O(n) pass a
-                    # second time on every decode step (see #397-adjacent
-                    # byte-accounting path).
-                    head0_tiers = tiers
+        # age[i] = current_position - (i + 1); the token written this step
+        # (i == n - 1) has age 0. Head-invariant -- same for every (b, h).
+        ages = [self._current_position - (i + 1) for i in range(n)]
+        tiers = assign_age_tiers(ages, self._age_recent_boundary, self._age_mid_boundary)
 
-                prev_group_tier = self._group_tier[idx]
-                new_k, new_group_tier = self._requantize(
-                    raw_k, self._keys[idx], tiers, prev_group_tier
-                )
-                new_v, _ = self._requantize(raw_v, self._values[idx], tiers, prev_group_tier)
+        new_k, new_group_tier = self._requantize(raw_k, self._keys_batched, tiers, self._group_tier)
+        new_v, _ = self._requantize(raw_v, self._values_batched, tiers, self._group_tier)
 
-                self._keys[idx] = new_k
-                self._values[idx] = new_v
-                self._group_tier[idx] = new_group_tier
-                k_out_h.append(new_k)
-                v_out_h.append(new_v)
-            k_out_b.append(mx.stack(k_out_h, axis=0))
-            v_out_b.append(mx.stack(v_out_h, axis=0))
+        self._keys_batched = new_k
+        self._values_batched = new_v
+        self._group_tier = new_group_tier
 
-        K_out = mx.stack(k_out_b, axis=0)
-        V_out = mx.stack(v_out_b, axis=0)
+        K_out = new_k.reshape(B, H, n, D)
+        V_out = new_v.reshape(B, H, n, D)
 
         self._age_tiered_bytes = age_tiered_bytes(
-            self._tier_counts_from_tiers(head0_tiers), self._tiers, self._head_dim
+            self._tier_counts_from_tiers(tiers), self._tiers, self._head_dim
         )
 
         self.keys = None
@@ -231,16 +204,16 @@ class AgeTieredKVCache(_MLXKVCache):
     def _accumulate_tier_counts(self) -> dict[int, int]:
         """Recompute cumulative tier counts across all (b,h) from current state.
 
-        Re-derives from ``self._keys`` (whose length per head always equals
-        the total tokens seen by that head) rather than trying to track a
-        running delta, since a token's tier can change between calls as it
-        ages — a delta would double count or drift. Used by the
+        Re-derives from ``self._keys_batched`` (whose per-row length always
+        equals the total tokens seen by that head) rather than trying to
+        track a running delta, since a token's tier can change between
+        calls as it ages — a delta would double count or drift. Used by the
         ``tokens_recent``/``tokens_mid``/``tokens_old`` properties, which are
         not on the decode hot path and may be queried after any call.
         """
-        if not self._keys or self._keys[0] is None:
+        if self._keys_batched is None:
             return {RECENT: 0, MID: 0, OLD: 0}
-        n_per_head = int(self._keys[0].shape[0])
+        n_per_head = int(self._keys_batched.shape[1])
         ages = [self._current_position - (i + 1) for i in range(n_per_head)]
         tiers = assign_age_tiers(ages, self._age_recent_boundary, self._age_mid_boundary)
         return self._tier_counts_from_tiers(tiers)
@@ -249,15 +222,15 @@ class AgeTieredKVCache(_MLXKVCache):
         """Per-head tier counts (identical across heads), scaled by head count.
 
         Args:
-            tiers: One head's per-token tier assignment, or ``None`` before
-                any tokens have been seen.
+            tiers: One head's per-token tier assignment (head-invariant), or
+                ``None`` before any tokens have been seen.
         """
         counts = {RECENT: 0, MID: 0, OLD: 0}
-        if tiers is None or not self._keys:
+        if tiers is None or self._keys_batched is None:
             return counts
         for t in tiers:
             counts[t] += 1
-        n_heads = len(self._keys)
+        n_heads = int(self._keys_batched.shape[0])
         return {k: v * n_heads for k, v in counts.items()}
 
     def _requantize(
@@ -269,54 +242,66 @@ class AgeTieredKVCache(_MLXKVCache):
     ) -> tuple[mx.array, list[int]]:
         """Re-derive from raw only the groups whose tier actually changed (#397).
 
+        Batched over the leading ``G = B*H`` axis of ``raw`` -- tiering is
+        head-invariant (age/position boundaries are global constants, not
+        per-head state, see #556), so a group's tier and its changed/
+        unchanged status are also head-invariant, computed once here and
+        applied to every row identically.
+
         Tokens are partitioned into fixed ``self._group_size``-wide windows
         by *absolute* buffer position (token 0 always starts group 0) --
-        the same windows ``age_tier_quantize``'s own min/max grouping uses.
-        Unlike a contiguous-same-tier-run grouping, a position-aligned
-        group's *membership* never changes once every slot in it has been
-        written: only its tier can change (as its oldest/first token ages).
-        That makes "did this group change" a stable per-group question
-        instead of one that gets triggered every step by an ever-growing
-        run absorbing new neighbors.
+        the same windows :func:`age_tier_quantize_batched`'s own min/max
+        grouping uses. Unlike a contiguous-same-tier-run grouping, a
+        position-aligned group's *membership* never changes once every slot
+        in it has been written: only its tier can change (as its oldest/
+        first token ages). That makes "did this group change" a stable
+        per-group question instead of one that gets triggered every step by
+        an ever-growing run absorbing new neighbors.
 
         A group's tier is defined by its first (oldest) token's current
-        tier. When a group's tier is unchanged since it was last computed,
-        its previous quantize-dequantize output (``prev_out``) is reused
-        byte-for-byte. When it has changed (or the group is new), it is
-        quantized from ``raw`` -- never from ``prev_out`` -- so a token's
-        reconstruction error is always exactly one round-trip from its true
-        value, no matter how many times its group's tier is later
+        tier. Groups whose tier is unchanged since it was last computed
+        reuse their previous quantize-dequantize output (``prev_out``)
+        byte-for-byte, spliced in via a boolean group mask. Changed (or new)
+        groups are quantized from ``raw`` -- never from ``prev_out`` -- so a
+        token's reconstruction error is always exactly one round-trip from
+        its true value, no matter how many times its group's tier is later
         re-evaluated, instead of compounding across steps.
 
         Returns:
             ``(requantized, group_tier)`` where ``group_tier[g]`` is group
             ``g``'s tier after this call, to compare against on the next.
         """
-        n = raw.shape[0]
+        n = raw.shape[1]
         if n == 0:
-            return raw, []
-        by_tier = {cfg.tier: cfg.bits for cfg in self._tiers}
+            return raw.astype(mx.float16), []
         gs = self._group_size
         n_groups = (n + gs - 1) // gs
 
-        out_chunks = []
-        new_group_tier = []
+        new_group_tier = [tiers[g * gs] for g in range(n_groups)]
+
+        recomputed = age_tier_quantize_batched(raw, new_group_tier, self._tiers, gs)
+
+        if prev_out is None or prev_out.shape[1] < n:
+            return recomputed, new_group_tier
+
+        # Splice in unchanged groups' previous output byte-for-byte instead
+        # of the freshly recomputed (but numerically identical) value --
+        # avoids the quantize arithmetic for groups that don't need it.
+        unchanged = [
+            g < len(prev_group_tier) and prev_group_tier[g] == new_group_tier[g]
+            for g in range(n_groups)
+        ]
+        if not any(unchanged):
+            return recomputed, new_group_tier
+
+        token_unchanged: list[bool] = []
         for g in range(n_groups):
             start = g * gs
             end = min(start + gs, n)
-            group_tier = tiers[start]
-            new_group_tier.append(group_tier)
-            if (
-                prev_out is not None
-                and end <= prev_out.shape[0]
-                and g < len(prev_group_tier)
-                and prev_group_tier[g] == group_tier
-            ):
-                chunk = prev_out[start:end]
-            else:
-                chunk = age_tier_quantize(raw[start:end], by_tier[group_tier], gs)
-            out_chunks.append(chunk)
-        return mx.concatenate(out_chunks, axis=0), new_group_tier
+            token_unchanged.extend([unchanged[g]] * (end - start))
+        mask = mx.array(token_unchanged)[None, :, None]  # [1, N, 1]
+        out = mx.where(mask, prev_out[:, :n], recomputed)
+        return out, new_group_tier
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:
@@ -352,9 +337,9 @@ class AgeTieredKVCache(_MLXKVCache):
     @property
     def tokens_kept(self) -> int:
         """Tokens currently in the (B=0, H=0) head's cache — always == tokens per head seen."""
-        if not self._keys or self._keys[0] is None:
+        if self._keys_batched is None:
             return 0
-        return int(self._keys[0].shape[0])
+        return int(self._keys_batched.shape[1])
 
     @property
     def tokens_recent(self) -> int:

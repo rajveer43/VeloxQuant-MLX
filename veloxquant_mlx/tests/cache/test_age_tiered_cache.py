@@ -353,7 +353,7 @@ def test_settled_group_is_not_touched_on_later_steps() -> None:
     for i in range(20):
         k, v = _rand_kv(S=1, H=1, D=8, seed=100 + i)
         ko, vo = c.update_and_fetch(k, v)
-    assert list(c._group_tier[0][:1]) == [OLD]
+    assert c._group_tier[0] == OLD
 
     settled_k_before = np.array(ko[0, 0, :4])
     settled_v_before = np.array(vo[0, 0, :4])
@@ -410,10 +410,14 @@ def test_requantize_only_touches_groups_containing_a_crossing() -> None:
     change (by its first/oldest token, which defines the group's tier)
     must reuse its previous quantized output byte-for-byte, while a group
     whose first token just crossed a boundary is re-derived from raw.
+
+    ``_requantize`` is now batched over a leading ``G = B*H`` axis (#556),
+    so ``raw`` is ``[G, N, D]`` and the output/group_tier are shared across
+    every row of that axis (tiering is head-invariant).
     """
     c = _make(age_group_size=4, head_dim=8, age_bits_recent=8, age_bits_old=2)
     rng = np.random.default_rng(3)
-    raw = mx.array(rng.standard_normal((8, 8)).astype(np.float16))
+    raw = mx.array(rng.standard_normal((1, 8, 8)).astype(np.float16))
 
     # Two full groups of 4; only the second group (first index 4) crosses.
     prev_tiers = [RECENT, RECENT, RECENT, RECENT, MID, MID, MID, MID]
@@ -423,6 +427,6 @@ def test_requantize_only_touches_groups_containing_a_crossing() -> None:
     prev_out, _ = c._requantize(raw, None, prev_tiers, [])
     out, group_tier = c._requantize(raw, prev_out, tiers, prev_group_tier)
 
-    assert np.array_equal(np.array(out[:4]), np.array(prev_out[:4]))
-    assert not np.array_equal(np.array(out[4:]), np.array(prev_out[4:]))
+    assert np.array_equal(np.array(out[0, :4]), np.array(prev_out[0, :4]))
+    assert not np.array_equal(np.array(out[0, 4:]), np.array(prev_out[0, 4:]))
     assert group_tier == [RECENT, OLD]
