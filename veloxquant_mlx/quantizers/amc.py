@@ -79,7 +79,10 @@ import mlx.core as mx
 from veloxquant_mlx.dsa.bit_pack import BitPackBuffer
 from veloxquant_mlx.dsa.heap import MaxHeap
 from veloxquant_mlx.dsa.ring_buffer import RingBuffer
-from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
+from veloxquant_mlx.quantizers._quant_utils import (
+    _group_quant_dequant,
+    _group_quant_dequant_batched,
+)
 
 # ---------------------------------------------------------------------------
 # Tier definitions — Algorithm 1 (paper), exact rank/bit values
@@ -176,6 +179,38 @@ def amc_query_aware_saliency(
     return mx.clip(s, 0.0, 1.0)
 
 
+def amc_query_aware_saliency_batched(
+    x: mx.array,
+    keys: mx.array,
+    query: mx.array,
+    alpha: float = 0.5,
+) -> mx.array:
+    """Batched-leading-axis equivalent of :func:`amc_query_aware_saliency`.
+
+    Args:
+        x: ``[G, N, D]`` token activations (for the magnitude term).
+        keys: ``[G, N, D]`` key projection vectors (for the semantic term).
+        query: ``[G, D]`` per-group embedded query/prompt vector.
+        alpha: Balance coefficient in ``[0, 1]``.
+
+    Returns:
+        ``[G, N]`` saliency scores in ``[0, 1]``.
+    """
+    mag = mx.mean(mx.abs(x.astype(mx.float32)), axis=-1)  # [G, N]
+
+    k32 = keys.astype(mx.float32)
+    q32 = query.astype(mx.float32)
+    k_norm = mx.sqrt(mx.sum(k32 * k32, axis=-1))  # [G, N]
+    q_norm = mx.sqrt(mx.sum(q32 * q32, axis=-1))  # [G]
+    eps = 1e-8
+    denom = mx.maximum(k_norm * q_norm[:, None], eps)  # [G, N]
+    cos_sim = mx.sum(k32 * q32[:, None, :], axis=-1) / denom  # [G, N]
+    cos_sim = mx.clip((cos_sim + 1.0) * 0.5, 0.0, 1.0)
+
+    s = alpha * mx.clip(mag, 0.0, 1.0) + (1.0 - alpha) * cos_sim
+    return mx.clip(s, 0.0, 1.0)
+
+
 # ---------------------------------------------------------------------------
 # Tier assignment — Algorithm 1 Phase II, top-k selection via dsa.MaxHeap
 # ---------------------------------------------------------------------------
@@ -230,6 +265,51 @@ def amc_assign_tiers(
         tiers[idx] = MID
     # Remaining heap contents stay LOW (already the default fill).
     return tiers
+
+
+def amc_assign_tiers_batched(
+    saliency: mx.array,
+    k_high: float = 0.20,
+    k_mid: float = 0.30,
+) -> mx.array:
+    """Batched-leading-axis equivalent of :func:`amc_assign_tiers`.
+
+    Replaces the per-row ``.tolist()`` + :class:`~veloxquant_mlx.dsa.heap.MaxHeap`
+    top-k selection with one host-sync-free ``mx.argsort`` call across all
+    ``G`` rows (e.g. flattened ``B*H``) at once, using the same
+    double-argsort-for-rank trick as
+    :func:`veloxquant_mlx.quantizers.kitty.hi_mask_from_variance_batched`.
+
+    On tie-free saliency (the realistic case — saliency is a continuous
+    function of float activations, so exact ties are measure-zero) this is
+    verified equivalent to looping :func:`amc_assign_tiers` per row. Exact
+    ties can select a different index than the heap does: heap pop order on
+    equal priorities is an unspecified artifact of :class:`MaxHeap`'s array
+    layout, not a documented tie-break guarantee, so this is not considered
+    a behavior change.
+
+    Args:
+        saliency: ``[G, N]`` saliency scores.
+        k_high: Fraction of tokens routed to the High tier.
+        k_mid: Fraction of tokens routed to the Mid tier (after High).
+
+    Returns:
+        ``[G, N]`` int32 tier ids (``HIGH``/``MID``/``LOW``).
+    """
+    g, n = saliency.shape
+    if n == 0:
+        return mx.zeros((g, 0), dtype=mx.int32)
+
+    n_high = max(1, math.ceil(k_high * n))
+    n_mid = max(1, math.ceil(k_mid * n)) if n > 1 else 0
+    n_high = min(n_high, n)
+    n_mid = min(n_mid, n - n_high)
+
+    order = mx.argsort(-saliency, axis=-1)  # descending, stable on ties
+    rank = mx.argsort(order, axis=-1)  # rank[g, i] = position of token i
+
+    tiers = mx.where(rank < n_high, HIGH, mx.where(rank < n_high + n_mid, MID, LOW))
+    return tiers.astype(mx.int32)
 
 
 # ---------------------------------------------------------------------------
@@ -313,20 +393,22 @@ def amc_apply_rank_mask(x: mx.array, rank: int) -> mx.array:
     """Zero channels ``[rank:D)`` of a (calibration-ordered) activation vector.
 
     Args:
-        x: ``[N, D]`` activations, already permuted by
+        x: ``[..., D]`` activations, already permuted by
             :func:`veloxquant_mlx.quantizers.amc_calibration.amc_calibrate_channel_order`
-            so the surviving prefix is the highest-variance subspace.
+            so the surviving prefix is the highest-variance subspace. Any
+            number of leading batch axes is supported (broadcasts against
+            the last axis only).
         rank: Number of leading channels to keep.
 
     Returns:
-        ``[N, D]`` with columns ``rank:D`` zeroed.
+        Same shape as ``x`` with columns ``rank:D`` zeroed.
     """
-    n, d = x.shape
+    d = x.shape[-1]
     rank = max(0, min(rank, d))
     if rank == d:
         return x
     mask = mx.concatenate([mx.ones((rank,), dtype=x.dtype), mx.zeros((d - rank,), dtype=x.dtype)])
-    return x * mask[None, :]
+    return x * mask
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +437,63 @@ def amc_quantize_tier(x: mx.array, bits: int, group_size: int = 32) -> mx.array:
     if bits >= 16:
         return x.astype(mx.float16)
     return _group_quant_dequant(x, bits, group_size)
+
+
+def amc_compress_tokens_batched(
+    x: mx.array,
+    tiers: mx.array,
+    tier_configs: dict[int, AMCTierConfig],
+) -> mx.array:
+    """Batched equivalent of per-token rank-mask + quantize, over ``[..., N, D]``.
+
+    Replaces ``AMCKVCache._compress_step``'s ``for i in range(n)`` loop
+    (nested inside a ``for b: for h:`` loop over heads) with one pass per
+    tier (there are always exactly 3: HIGH/MID/LOW) over the whole
+    ``[G, N, D]`` array (``G`` = flattened ``B*H``), selected per token with
+    :func:`mlx.core.where`. Each token is quantized independently of every
+    other token — the original calls ``_group_quant_dequant`` on a single
+    ``[1, D]`` row, so its "group" always contains only that row (padding
+    rows are broadcast copies of it, which don't change the group's min/max)
+    — equivalent to
+    :func:`~veloxquant_mlx.quantizers._quant_utils._group_quant_dequant_batched`
+    with ``group_size=1``, verified bit-for-bit against the per-token loop.
+
+    Args:
+        x: ``[G, N, D]`` activations (fp16 or fp32), or ``[N, D]`` for a
+            single group.
+        tiers: ``[G, N]`` (or ``[N]``) int tier ids per token
+            (``HIGH``/``MID``/``LOW``), as returned by
+            :func:`amc_assign_tiers_batched`.
+        tier_configs: ``{tier_id: AMCTierConfig}`` for this head_dim (see
+            :func:`_tier_config_for_dim`).
+
+    Returns:
+        Same leading shape as ``x``, fp16 rank-masked,
+        quantized-then-dequantized activations.
+    """
+    squeeze = x.ndim == 2
+    if squeeze:
+        x = x[None]
+        tiers = tiers[None]
+
+    g, n, d = x.shape
+    if n == 0:
+        out = x.astype(mx.float16)
+        return out[0] if squeeze else out
+
+    tiers_mx = tiers if isinstance(tiers, mx.array) else mx.array(tiers)
+
+    out = None
+    for tier_id, cfg in tier_configs.items():
+        masked = amc_apply_rank_mask(x, cfg.rank)  # [G, N, D]
+        if cfg.bits >= 16:
+            q = masked.astype(mx.float16)
+        else:
+            q = _group_quant_dequant_batched(masked.reshape(g * n, 1, d), cfg.bits, 1)
+            q = q.reshape(g, n, d)
+        sel = (tiers_mx == tier_id)[:, :, None]
+        out = q if out is None else mx.where(sel, q, out)
+    return out[0] if squeeze else out
 
 
 # ---------------------------------------------------------------------------
@@ -422,10 +561,13 @@ __all__ = [
     "init_amc_threshold_state",
     "amc_saliency",
     "amc_query_aware_saliency",
+    "amc_query_aware_saliency_batched",
     "amc_assign_tiers",
+    "amc_assign_tiers_batched",
     "amc_adaptive_thresholds",
     "amc_apply_rank_mask",
     "amc_quantize_tier",
+    "amc_compress_tokens_batched",
     "amc_pack_low_tier",
     "amc_fp16_bytes",
     "full_amc_fp16_bytes",

@@ -37,11 +37,10 @@ from veloxquant_mlx.quantizers.amc import (
     AMCThresholdState,
     _tier_config_for_dim,
     amc_adaptive_thresholds,
-    amc_apply_rank_mask,
-    amc_assign_tiers,
+    amc_assign_tiers_batched,
+    amc_compress_tokens_batched,
     amc_fp16_bytes,
-    amc_quantize_tier,
-    amc_query_aware_saliency,
+    amc_query_aware_saliency_batched,
     amc_saliency,
     full_amc_fp16_bytes,
     init_amc_threshold_state,
@@ -115,10 +114,8 @@ class AMCKVCache(_MLXKVCache):
         self._head_dim: int = int(getattr(config, "head_dim", 128))
         # (tier, head_dim) -> AMCTierConfig is invariant for the lifetime of
         # this cache (head_dim is fixed at construction, tier is one of
-        # HIGH/MID/LOW) but _compress_step calls _tier_config_for_dim once
-        # per token per K/V array -- i.e. 2 * B * H times every decode
-        # step -- so precompute the (small, 3-entry) table once here instead
-        # of re-deriving the same rank/bit-width pair on every call.
+        # HIGH/MID/LOW) so precompute the (small, 3-entry) table once here
+        # instead of re-deriving the same rank/bit-width pair on every call.
         self._tier_configs = {t: _tier_config_for_dim(t, self._head_dim) for t in (HIGH, MID, LOW)}
 
         self._B: int = 0
@@ -145,9 +142,6 @@ class AMCKVCache(_MLXKVCache):
                     init_amc_threshold_state(self._threshold_window, self._calib_variance)
                     for _ in range(B * H)
                 ]
-
-    def _head_idx(self, b: int, h: int) -> int:
-        return b * self._H + h
 
     def _tier_thresholds(self, idx: int, saliency: mx.array) -> tuple:
         """Resolve (tau_H, tau_L) either statically or via the closed loop."""
@@ -188,54 +182,48 @@ class AMCKVCache(_MLXKVCache):
         self._full_seq_bytes += full_amc_fp16_bytes(B * H * S, D)
         self._tokens_seen_total += B * H * S
 
-        k_out_b, v_out_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                idx = self._head_idx(b, h)
-                k_step = keys[b, h].astype(mx.float16)  # [S, D]
-                v_step = values[b, h].astype(mx.float16)  # [S, D]
+        G = B * H
+        k_flat = keys.reshape(G, S, D).astype(mx.float16)  # [G, S, D]
+        v_flat = values.reshape(G, S, D).astype(mx.float16)
 
-                if self._use_query_saliency:
-                    query = mx.mean(k_step.astype(mx.float32), axis=0)
-                    saliency = amc_query_aware_saliency(
-                        k_step, k_step, query, alpha=self._query_alpha
-                    )
-                else:
-                    saliency = amc_saliency(k_step)
+        if self._use_query_saliency:
+            query = mx.mean(k_flat.astype(mx.float32), axis=1)  # [G, D]
+            saliency = amc_query_aware_saliency_batched(
+                k_flat, k_flat, query, alpha=self._query_alpha
+            )  # [G, S]
+        else:
+            saliency = amc_saliency(k_flat)  # [G, S]
 
-                self._tier_thresholds(idx, saliency)
+        if self._use_adaptive_thresholds:
+            for idx in range(G):
+                self._tier_thresholds(idx, saliency[idx])
 
-                tiers = amc_assign_tiers(saliency, self._k_high, self._k_mid)
+        tiers = amc_assign_tiers_batched(saliency, self._k_high, self._k_mid)  # [G, S] int32
 
-                k_compressed = self._compress_step(k_step, tiers)
-                v_compressed = self._compress_step(v_step, tiers)
+        k_compressed = amc_compress_tokens_batched(k_flat, tiers, self._tier_configs)  # [G, S, D]
+        v_compressed = amc_compress_tokens_batched(v_flat, tiers, self._tier_configs)
 
-                for t in tiers:
-                    self._tier_counts[t] += 1
+        tiers_np = tiers.tolist()
+        for row in tiers_np:
+            for t in row:
+                self._tier_counts[t] += 1
 
-                prev_k = self._keys[idx]
-                prev_v = self._values[idx]
-                new_k = (
-                    k_compressed
-                    if prev_k is None
-                    else mx.concatenate([prev_k, k_compressed], axis=0)
-                )
-                new_v = (
-                    v_compressed
-                    if prev_v is None
-                    else mx.concatenate([prev_v, v_compressed], axis=0)
-                )
-                self._keys[idx] = new_k
-                self._values[idx] = new_v
-
-                k_out_h.append(new_k)
-                v_out_h.append(new_v)
-            k_out_b.append(mx.stack(k_out_h, axis=0))
-            v_out_b.append(mx.stack(v_out_h, axis=0))
-
-        K_out = mx.stack(k_out_b, axis=0)
-        V_out = mx.stack(v_out_b, axis=0)
+        if self._keys[0] is None:
+            K_out = k_compressed.reshape(B, H, S, D)
+            V_out = v_compressed.reshape(B, H, S, D)
+            for idx in range(G):
+                self._keys[idx] = k_compressed[idx]
+                self._values[idx] = v_compressed[idx]
+        else:
+            prev_k = mx.stack(self._keys, axis=0)  # [G, n_seen, D]
+            prev_v = mx.stack(self._values, axis=0)
+            new_k = mx.concatenate([prev_k, k_compressed], axis=1)  # [G, n_seen+S, D]
+            new_v = mx.concatenate([prev_v, v_compressed], axis=1)
+            for idx in range(G):
+                self._keys[idx] = new_k[idx]
+                self._values[idx] = new_v[idx]
+            K_out = new_k.reshape(B, H, -1, D)
+            V_out = new_v.reshape(B, H, -1, D)
 
         self._amc_kept_bytes = amc_fp16_bytes(self._tier_counts, self._head_dim)
 
@@ -257,18 +245,6 @@ class AMCKVCache(_MLXKVCache):
         determines what gets returned, silently corrupting future calls.
         """
         return False
-
-    def _compress_step(self, x: mx.array, tiers: list[int]) -> mx.array:
-        """Apply per-token rank mask + quantization according to each token's tier."""
-        n = x.shape[0]
-        out_rows = []
-        for i in range(n):
-            cfg = self._tier_configs[tiers[i]]
-            row = x[i : i + 1]  # [1, D]
-            row = amc_apply_rank_mask(row, cfg.rank)
-            row = amc_quantize_tier(row, cfg.bits, self._group_size)
-            out_rows.append(row)
-        return mx.concatenate(out_rows, axis=0) if out_rows else x
 
     # ------------------------------------------------------------------
     @property
