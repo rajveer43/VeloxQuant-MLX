@@ -20,7 +20,10 @@ explain the reasoning in the relevant issue or PR thread.
 
 Open PRs, review others' PRs, help triage issues, or improve documentation.
 There is no formal application process. Consistent, high-quality contributions
-are the only criterion.
+are the only criterion. For how a merged contribution is credited — a
+[CONTRIBUTORS.md](CONTRIBUTORS.md) listing, a paper acknowledgement, or
+co-authorship — see [Authorship & Acknowledgement
+Policy](#authorship--acknowledgement-policy) below.
 
 ## Becoming a Co-Maintainer
 

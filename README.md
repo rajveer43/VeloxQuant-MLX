@@ -404,11 +404,13 @@ it buys maintenance time.
 
 ## Citation
 
-VeloxQuant-MLX is MIT-licensed — you do not need permission or attribution to use
-it in code, products, or infrastructure. **For academic and research use**,
-citing the project is not required by the license but is genuinely appreciated:
-it helps surface the work, and it is the main signal a solo-maintained project
-like this has that it is useful to someone.
+VeloxQuant-MLX is MIT-licensed — using it in code, products, or infrastructure
+does not require permission or a paper citation. If you redistribute a copy or
+a substantial portion of the source, keep the MIT copyright and permission
+notice, as the license requires. **For academic and research use**, citing the
+project beyond that is not required by the license but is genuinely
+appreciated: it helps surface the work, and it is the main signal a
+solo-maintained project like this has that it is useful to someone.
 
 ```bibtex
 @software{veloxquant_mlx,
