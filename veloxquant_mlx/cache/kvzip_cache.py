@@ -53,11 +53,8 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.kvzip import (
-    KVzipState,
     init_kvzip_state,
-    kvzip_fp16_bytes,
-    kvzip_get_kv,
-    kvzip_update,
+    kvzip_update_batched,
 )
 
 
@@ -97,9 +94,17 @@ class KVzipKVCache(_MLXKVCache):
         init_kvzip_state(self._n_sink, self._budget, 1, probe=self._probe)
 
         self._head_dim: int = 0
-        self._states: list[KVzipState] = []
         self._B: int = 0
         self._H: int = 0
+        self._initialised: bool = False
+
+        # Flat [BH, n, D] state — replaces the old per-(b,h) KVzipState
+        # list. Batching every head into one call (instead of a Python loop
+        # calling kvzip_update once per (b,h) pair) removes the O(B*H)
+        # Python-dispatch bottleneck on the decode hot path — same fix,
+        # same template, as H2OKVCache's _bh_* state.
+        self._bh_keys: mx.array | None = None
+        self._bh_values: mx.array | None = None
 
         self._kvzip_kept_bytes: int = 0
         self._full_seq_bytes: int = 0
@@ -133,17 +138,11 @@ class KVzipKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
-        if not self._states:
+        if not self._initialised:
             self._B = B
             self._H = H
             self._head_dim = D
-            self._states = [
-                init_kvzip_state(self._n_sink, self._budget, D, probe=self._probe)
-                for _ in range(B * H)
-            ]
-
-    def _head_idx(self, b: int, h: int) -> int:
-        return b * self._H + h
+            self._initialised = True
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
@@ -163,27 +162,24 @@ class KVzipKVCache(_MLXKVCache):
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
-        k_out_b, v_out_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                idx = self._head_idx(b, h)
-                st = kvzip_update(
-                    self._states[idx],
-                    keys[b, h].astype(mx.float16),
-                    values[b, h].astype(mx.float16),
-                )
-                self._states[idx] = st
-                k_h, v_h = kvzip_get_kv(st)
-                k_out_h.append(k_h)
-                v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))
-            v_out_b.append(mx.stack(v_out_h, axis=0))
+        new_keys_flat = keys.astype(mx.float16).reshape(B * H, S, D)
+        new_values_flat = values.astype(mx.float16).reshape(B * H, S, D)
 
-        K_out = mx.stack(k_out_b, axis=0)
-        V_out = mx.stack(v_out_b, axis=0)
+        self._bh_keys, self._bh_values = kvzip_update_batched(
+            self._bh_keys,
+            self._bh_values,
+            new_keys_flat,
+            new_values_flat,
+            self._n_sink,
+            self._budget,
+            self._probe,
+        )
 
-        self._kvzip_kept_bytes = sum(kvzip_fp16_bytes(st) for st in self._states)
+        n_kept = self._bh_keys.shape[1]
+        K_out = self._bh_keys.reshape(B, H, n_kept, D)
+        V_out = self._bh_values.reshape(B, H, n_kept, D)
+
+        self._kvzip_kept_bytes = B * H * n_kept * D * 2 * 2
 
         # K_out/V_out is the full retained state every call, not a delta —
         # reset so the base class's append-only buffer starts fresh instead
@@ -230,9 +226,9 @@ class KVzipKVCache(_MLXKVCache):
     @property
     def tokens_kept(self) -> int:
         """Tokens currently in the (B=0, H=0) head's cache (diagnostic)."""
-        if not self._states or self._states[0].keys is None:
+        if self._bh_keys is None:
             return 0
-        return int(self._states[0].keys.shape[0])
+        return int(self._bh_keys.shape[1])
 
 
 __all__ = ["KVzipKVCache"]

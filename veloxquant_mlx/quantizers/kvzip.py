@@ -258,6 +258,105 @@ def kvzip_update(
     return state
 
 
+_EVAL_FLUSH_INTERVAL = 32
+
+
+def _reconstruction_importance_batched(keys: mx.array, probe: str) -> mx.array:
+    """Batched-``[BH,n,D]`` equivalent of :func:`_reconstruction_importance`.
+
+    Args:
+        keys:  ``[BH, n, D]`` stored key rows (the keep-set candidates).
+        probe: ``"context"`` | ``"latest"``.
+
+    Returns:
+        ``[BH, n]`` reconstruction-reliance score per stored key.
+    """
+    keys_f = keys.astype(mx.float32)
+    n = int(keys_f.shape[1])
+
+    if probe == "latest":
+        # Single most-recent key (per row) as the reconstruction probe ->
+        # exactly the TOVA-adapted latest-token attention over the keep set.
+        scale = 1.0 / math.sqrt(float(keys_f.shape[-1]))
+        latest = keys_f[:, n - 1]  # [BH, D]
+        logits = (keys_f @ latest[..., None])[..., 0] * scale  # [BH, n]
+        return mx.softmax(logits, axis=-1)
+
+    # probe == "context": max over all probe rows of the attention placed on
+    # each stored key. Build the [BH, n_probe, n] matrix and reduce with
+    # max(axis=1) (the probe axis).
+    scale = 1.0 / math.sqrt(float(keys_f.shape[-1]))
+    logits = (keys_f @ mx.swapaxes(keys_f, -1, -2)) * scale  # [BH, n_probe, n]
+    attn = mx.softmax(logits, axis=-1)  # each probe row sums to ~1
+    return mx.max(attn, axis=1)  # [BH, n] max reliance per key
+
+
+def kvzip_update_batched(
+    keys: mx.array | None,  # [BH, n, D] fp16 or None
+    values: mx.array | None,  # [BH, n, D] fp16 or None
+    new_keys: mx.array,  # [BH, S, D]
+    new_values: mx.array,  # [BH, S, D]
+    n_sink: int,
+    budget: int,
+    probe: str,
+) -> tuple[mx.array, mx.array]:
+    """Vectorized-over-``BH`` equivalent of calling :func:`kvzip_update` once
+    per ``(batch, head)`` pair with identical per-row ``n_sink``/``budget``/
+    ``probe`` (true for every real caller: :class:`KVzipKVCache` applies one
+    uniform config to every head), so the per-token append/rank/evict math —
+    otherwise identical for every row — can run as one batched MLX call per
+    step instead of ``BH`` separate Python-level calls into
+    :func:`kvzip_update`. Same fix, same template, as
+    :func:`veloxquant_mlx.quantizers.h2o.h2o_update_batched`.
+
+    Numerically identical to the per-head loop it replaces: every op below
+    is the same formula as :func:`kvzip_update`'s bootstrap/append/evict
+    branches, applied over a leading ``BH`` axis instead of a Python loop.
+
+    Returns:
+        ``(keys, values)`` — ``[BH, n_kept, D]`` each.
+    """
+    bh, s, d = new_keys.shape
+    if s == 0:
+        return keys, values
+    if n_sink >= budget:
+        raise ValueError("kvzip: n_sink must be < budget — no evictable positions remain")
+
+    for i in range(s):
+        if keys is None:
+            keys = new_keys[:, i : i + 1].astype(mx.float16)  # [BH, 1, D]
+            values = new_values[:, i : i + 1].astype(mx.float16)
+            continue
+
+        keys_cat = mx.concatenate([keys, new_keys[:, i : i + 1].astype(mx.float16)], axis=1)
+        values_cat = mx.concatenate([values, new_values[:, i : i + 1].astype(mx.float16)], axis=1)
+
+        n_total = keys_cat.shape[1]
+        if n_total > budget:
+            importance = _reconstruction_importance_batched(keys_cat, probe)  # [BH, n_total]
+
+            n_sink_eff = min(n_sink, n_total)
+            protect = mx.zeros((bh, n_total), dtype=mx.float32)
+            if n_sink_eff > 0:
+                sink_inf = mx.full((bh, n_sink_eff), float("inf"), dtype=mx.float32)
+                protect = mx.concatenate([sink_inf, protect[:, n_sink_eff:]], axis=1)
+            sel = importance + protect
+
+            evict_idx = mx.argmin(sel, axis=-1, keepdims=True)  # [BH, 1]
+            rows = mx.arange(n_total - 1)[None]  # [1, n_total-1]
+            source = rows + (rows >= evict_idx)  # [BH, n_total-1]
+
+            keys_cat = mx.take_along_axis(keys_cat, source[..., None], axis=1)
+            values_cat = mx.take_along_axis(values_cat, source[..., None], axis=1)
+
+        keys, values = keys_cat, values_cat
+
+        if (i + 1) % _EVAL_FLUSH_INTERVAL == 0:
+            mx.eval(keys, values)
+
+    return keys, values
+
+
 def kvzip_get_kv(state: KVzipState) -> tuple[mx.array, mx.array]:
     """Return ``(keys, values)`` arrays from state.
 
@@ -285,6 +384,7 @@ __all__ = [
     "KVzipState",
     "init_kvzip_state",
     "kvzip_update",
+    "kvzip_update_batched",
     "kvzip_get_kv",
     "kvzip_fp16_bytes",
     "full_kvzip_fp16_bytes",
