@@ -82,7 +82,15 @@ Downloaded and tested MLX 4-bit Qwen3-8B and GLM-4-9B-0414: 168 successful runs 
 
 The Qwen3-8B probe isolated the earlier decode regression: SnapKV forced BF16 model K/V to FP16, causing MLX attention to produce FP32 output. `snap_dtype="auto"` now preserves BF16 when the model supplies BF16 K/V; `snap_dtype="float16"` keeps the legacy route available. A controlled probe measured about 47–56 ms/step for native BF16 versus 68–78 ms/step for forced FP16.
 
-The Metal path now includes threshold/tie compaction and a combined K/V gather. `snap_batched_scoring` is available as an opt-in experiment; it changes matmul batching and must be checked for near-tie parity before defaulting. The default scorer remains per-head for numerical parity.
+The Metal path now includes threshold/tie compaction and a combined K/V gather. `snap_batched_scoring` was available as an opt-in experiment pending a near-tie selection-parity check before defaulting.
+
+## Batched scoring promoted to default
+
+That check is now done. `test_snapkv_batched_scoring.py` verifies score-level parity (rtol=1e-5 across varied B/H/S/D shapes and 20 random seeds) and selection-boundary parity: 2000 randomized trials plus a deliberately engineered near-tie (two key rows perturbed to ~1 float32 ULP apart, driving their scores to within ~5e-10 of each other) all select identical indices under both the looped and batched scorer. A real-model check on the cached Llama-3.2-1B-Instruct-4bit snapshot (budget=512/chunk=192 and budget=64/chunk=192 scenarios from this doc's earlier tables) showed zero logit divergence and identical generated tokens between the two scoring modes; the third scenario (budget=64/chunk=48) could not be checked because it currently fails with a mask-broadcast error on unmodified `scripts/snapkv_model_check.py` regardless of `batched_scoring`, an unrelated pre-existing issue (likely `mlx_lm` mask/SDPA contract drift since this doc was written).
+
+A synthetic benchmark (`_snapkv_compress_batched`, S=512, D=128, budget=128, MLX backend, median of 10-30 reps) found the batched scorer 1.4-2.2x faster than the looped scorer at B*H=64-512 (realistic-to-large KV-head counts), roughly at parity for B*H=1-32 where per-call dispatch overhead dominates either way, with no regression beyond measurement noise at any tested size.
+
+`snap_batched_scoring` now defaults to `True` in `KVCacheConfig` and in `_snapkv_compress_batched`'s own signature. Set it to `False` to force the original per-head loop (e.g. to isolate a suspected scoring divergence). The `reference` and `metal` backends, and `obs_window_attention_scores()` itself, are unchanged by this — `batched_scoring` only selects how `_snapkv_compress_batched` computes scores before selection/gather.
 
 Post-fix Qwen results are in [raw data](benchmarks/snapkv_qwen8b_after_dtype.json). One warmup and three measured trials per route/scenario passed. MLX/Metal matched the reference's first-token logits and generated tokens in every measured case. The native-dtype change restores decode timing near the plain cache; Metal remains mixed and is still not automatic.
 

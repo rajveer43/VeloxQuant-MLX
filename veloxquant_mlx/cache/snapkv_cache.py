@@ -99,7 +99,7 @@ class SnapKVKVCache(_MLXKVCache):
         # (mx.float16, mx.bfloat16, ...) raise TypeError from copy.deepcopy
         # ("cannot pickle 'mlx.core.Dtype' object").
         self._storage_dtype_name: str | None = None
-        self._batched_scoring = getattr(config, "snap_batched_scoring", False)
+        self._batched_scoring = getattr(config, "snap_batched_scoring", True)
         self._budget = int(getattr(config, "snap_budget", 512))
         self._obs_window = int(getattr(config, "snap_obs_window", 32))
         self._n_sink = int(getattr(config, "snap_n_sink", 4))

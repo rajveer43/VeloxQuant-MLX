@@ -209,12 +209,19 @@ def _snapkv_compress_batched(
     *,
     backend="auto",
     output_dtype=mx.float16,
-    batched_scoring=False,
+    batched_scoring=True,
     return_indices=False,
 ):
-    """Batch selection/gather while preserving the original per-head scorer.
+    """Batch selection/gather; scoring is batched across B*H by default.
 
     Args:
+        batched_scoring: If True (default), scores all B*H heads with one
+            batched matmul instead of a Python loop of per-head matmuls.
+            Verified score- and selection-parity with the per-head loop,
+            including under engineered near-tie scores and 2000 randomized
+            trials — see test_snapkv_batched_scoring.py and
+            docs/SNAPKV_METAL_FINDINGS.md. Set False to force the per-head
+            loop (e.g. for isolating a suspected scoring divergence).
         return_indices: If True, also return ``indices`` — ``[B, H, count]``
             int32, the kept rows' positions in the input ``keys``/``values``
             (ascending per (batch, head)). Used by the cache wrapper to build

@@ -604,7 +604,7 @@ class KVCacheConfig:
     zipcache_quantize_values: bool = True  # apply mixed-precision to values too
     # --- SnapKV-adapted configuration (prefill observation-window token eviction) ---
     snap_dtype: str = "auto"  # auto preserves BF16; float16 forces legacy storage
-    snap_batched_scoring: bool = False  # experimental: may change near-tie scores
+    snap_batched_scoring: bool = True  # default since near-tie selection parity was verified; see docs/SNAPKV_METAL_FINDINGS.md
     snap_backend: str = "auto"  # auto | mlx | metal (experimental) | reference
     snap_budget: int = 512  # max tokens retained after prefill eviction
     snap_obs_window: int = 32  # trailing key rows used as proxy queries
