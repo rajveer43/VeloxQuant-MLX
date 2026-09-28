@@ -527,6 +527,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.14 (2026-09-28)
+
+### Performance Improvements
+
+- **cache**: Batch AMC's per-token saliency, tiering, and compression across B*H
+  ([#573](https://github.com/rajveer43/VeloxQuant-MLX/pull/573),
+  [`2abd68b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2abd68bf609eb73ef6a5752e7056279091212f30))
+
+
 ## v0.91.13 (2026-09-28)
 
 ### Performance Improvements
