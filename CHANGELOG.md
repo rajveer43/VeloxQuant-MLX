@@ -527,6 +527,33 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.10 (2026-09-28)
+
+### Documentation
+
+- **pyramidkv**: Add bh=256..1024 benchmark points
+  ([#549](https://github.com/rajveer43/VeloxQuant-MLX/pull/549),
+  [`55a7462`](https://github.com/rajveer43/VeloxQuant-MLX/commit/55a7462f99209e9fbd1d301bf619f2ab99132b40))
+
+- **pyramidkv**: Expand batched-scoring benchmark to full H sweep
+  ([#549](https://github.com/rajveer43/VeloxQuant-MLX/pull/549),
+  [`55a7462`](https://github.com/rajveer43/VeloxQuant-MLX/commit/55a7462f99209e9fbd1d301bf619f2ab99132b40))
+
+- **readme**: Add Citation section with BibTeX entry
+  ([#539](https://github.com/rajveer43/VeloxQuant-MLX/pull/539),
+  [`81ad352`](https://github.com/rajveer43/VeloxQuant-MLX/commit/81ad35256f825d3321770347a3c405606d0428ff))
+
+- **readme**: Fix citation year to 2026
+  ([#540](https://github.com/rajveer43/VeloxQuant-MLX/pull/540),
+  [`52c0b00`](https://github.com/rajveer43/VeloxQuant-MLX/commit/52c0b00a4b57df3e6cd2e3ea3cc651c415c02dd8))
+
+### Performance Improvements
+
+- **cache**: Batch PyramidKV attention scoring and output stacking across B*H
+  ([#549](https://github.com/rajveer43/VeloxQuant-MLX/pull/549),
+  [`55a7462`](https://github.com/rajveer43/VeloxQuant-MLX/commit/55a7462f99209e9fbd1d301bf619f2ab99132b40))
+
+
 ## v0.91.9 (2026-09-27)
 
 ### Performance Improvements
