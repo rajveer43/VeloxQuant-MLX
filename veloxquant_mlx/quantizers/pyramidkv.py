@@ -22,9 +22,17 @@ This module holds two things:
      (same idiom as ``knorm_update_batched`` / RocketKV / xKV): per-timestep
      attention scoring is one batched ``mx.matmul`` over the ``bh`` axis instead
      of a Python loop of per-head GEMVs. Measured on M4/24GB, bh=H (B=1),
-     budget=256, D=64, 64 steps: H=8: 10.4ms→2.7ms/batch (3.8x); H=32:
-     36.0ms→2.6ms/batch (13.6x) — the win grows with head count since the loop
-     it replaces was O(bh) Python overhead per step.
+     budget=256, D=64, 64 steps, before→after (speedup):
+       H=1:   2.57ms → 2.44ms  (1.1x)
+       H=2:   3.82ms → 2.43ms  (1.6x)
+       H=4:   5.95ms → 2.59ms  (2.3x)
+       H=8:  10.27ms → 2.72ms  (3.8x)
+       H=16: 18.51ms → 3.11ms  (6.0x)
+       H=32: 36.39ms → 3.65ms (10.0x)
+       H=64: 76.59ms → 3.07ms (24.9x)
+       H=128: 157.33ms → 4.40ms (35.7x)
+     Before scales ~linearly with H (pure per-head Python/dispatch overhead);
+     after stays nearly flat (one batched matmul regardless of head count).
 
 Relationship to H2O-adapted:
   H2O gives every layer the same ``h2o_budget``. PyramidKV is H2O's eviction
