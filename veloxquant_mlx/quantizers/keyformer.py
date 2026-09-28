@@ -109,6 +109,7 @@ full_keyformer_fp16_bytes — hypothetical cost without eviction
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import mlx.core as mx
@@ -120,6 +121,7 @@ from veloxquant_mlx.quantizers._eviction_common import (
     get_kv,
 )
 from veloxquant_mlx.quantizers.a2ats_rope import rope_remap_positions
+from veloxquant_mlx.quantizers.h2o import _rope_remap_positions_batched
 
 
 @dataclass
@@ -289,6 +291,30 @@ def _gumbel_at(seed: int, pos: int) -> mx.array:
     """
     key = mx.random.key(seed * 1_000_003 + pos)
     u = mx.random.uniform(low=1e-9, high=1.0, key=key)  # avoid log(0)
+    return -mx.log(-mx.log(u))
+
+
+def _draw_uniform_from_key(key: mx.array) -> mx.array:
+    return mx.random.uniform(low=1e-9, high=1.0, key=key)
+
+
+def _gumbel_at_batched(seeds: list[int], pos: int) -> mx.array:
+    """Batched-``[BH]`` equivalent of calling :func:`_gumbel_at` once per row.
+
+    ``mx.random.key`` only accepts a Python ``int`` (no batched-key overload
+    in this MLX build — confirmed: neither ``mx.random.uniform(key=...)``
+    nor ``mx.random.gumbel`` accept a leading-axis batch of keys), so the
+    ``BH`` per-head keys are built with one Python-level ``mx.random.key``
+    call each — cheap (pure int arithmetic + key construction, no
+    data-dependent Metal work, ~34us for BH=64 measured) and only *once per
+    token step*, not once per ``(head, step)`` pair like the loop this
+    replaces. ``mx.vmap`` then does the actual random draw for all ``BH``
+    rows in one batched call. Verified bit-for-bit equal to stacking
+    :func:`_gumbel_at` calls (same ``seed * 1_000_003 + pos`` key derivation,
+    same inverse-CDF formula).
+    """
+    keys = mx.stack([mx.random.key(s * 1_000_003 + pos) for s in seeds])
+    u = mx.vmap(_draw_uniform_from_key)(keys)
     return -mx.log(-mx.log(u))
 
 
@@ -518,6 +544,233 @@ def keyformer_update(
     return state
 
 
+def _attention_scores_batched(query_proxy: mx.array, keys: mx.array) -> mx.array:
+    """Softmax attention weights, batched over a leading ``[BH]`` axis.
+
+    Identical formula to :func:`h2o._attention_scores_batched` (not
+    imported directly to avoid a private cross-module dependency); see
+    that function's docstring.
+
+    Args:
+        query_proxy: ``[BH, D]``.
+        keys:        ``[BH, n, D]``.
+
+    Returns:
+        ``[BH, n]`` softmax weights, each row summing to ~1.
+    """
+    scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
+    logits = (keys @ query_proxy[..., None])[..., 0] * scale  # [BH, n]
+    return mx.softmax(logits, axis=-1)
+
+
+def _evict_via_mlx_batched(
+    keys_cat: mx.array,
+    values_cat: mx.array,
+    scores_cat: mx.array,
+    gumbel_cat: mx.array,
+    positions_cat: mx.array,
+    n_sink: int,
+    recent: int,
+    tau: float,
+    rope_base: float,
+) -> tuple[mx.array, mx.array, mx.array, mx.array, mx.array]:
+    """Batched-``[BH,·]`` equivalent of :func:`_evict_via_mlx`.
+
+    Each ``bh`` row's Gumbel-regularized argmin/evict/re-rotate is
+    independent of every other row — a like-for-like vectorization of
+    :func:`_evict_via_mlx`'s per-head-loop math over a leading ``BH`` axis,
+    not a new eviction policy. Same protected-region construction as H2O's
+    :func:`h2o._evict_via_mlx_batched`, extended with the ``recent`` window
+    (an extension H2O's batched helper doesn't have) and the additive
+    ``tau * gumbel`` regularizer term.
+    """
+    bh, n_total = scores_cat.shape
+    sel = scores_cat + tau * gumbel_cat
+
+    n_sink_eff = min(n_sink, n_total)
+    protect = mx.zeros((bh, n_total), dtype=mx.float32)
+    if n_sink_eff > 0:
+        sink_inf = mx.full((bh, n_sink_eff), float("inf"), dtype=mx.float32)
+        protect = mx.concatenate([sink_inf, protect[:, n_sink_eff:]], axis=1)
+    if recent > 0:
+        r_eff = min(recent, n_total - n_sink_eff)
+        if r_eff > 0:
+            recent_inf = mx.full((bh, r_eff), float("inf"), dtype=mx.float32)
+            protect = mx.concatenate([protect[:, : n_total - r_eff], recent_inf], axis=1)
+    sel = sel + protect
+
+    evict_idx = mx.argmin(sel, axis=-1, keepdims=True)  # [BH, 1]
+    rows = mx.arange(n_total - 1)[None]  # [1, n_total-1]
+    source = rows + (rows >= evict_idx)  # [BH, n_total-1]
+
+    keys_kept = mx.take_along_axis(keys_cat, source[..., None], axis=1)
+    values_kept = mx.take_along_axis(values_cat, source[..., None], axis=1)
+    scores_kept = mx.take_along_axis(scores_cat, source, axis=1)
+    gumbel_kept = mx.take_along_axis(gumbel_cat, source, axis=1)
+    old_positions_kept = mx.take_along_axis(positions_cat, source, axis=1)
+    evicted_pos = mx.take_along_axis(positions_cat, evict_idx, axis=1)  # [BH, 1]
+
+    shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
+    new_positions = old_positions_kept + shift
+    keys_kept = _rope_remap_positions_batched(
+        keys_kept, old_positions_kept, new_positions, base=rope_base
+    )
+    return keys_kept, values_kept, scores_kept, gumbel_kept, new_positions
+
+
+def _evict_via_metal_batched(
+    keys_cat: mx.array,
+    values_cat: mx.array,
+    scores_cat: mx.array,
+    gumbel_cat: mx.array,
+    positions_cat: mx.array,
+    n_sink: int,
+    recent: int,
+    tau: float,
+    rope_base: float,
+) -> tuple[mx.array, mx.array, mx.array, mx.array, mx.array]:
+    """Batched-``[BH,·]`` fused Metal eviction — a direct pass-through to
+    :func:`veloxquant_mlx.metal.keyformer_fused_evict`, which already accepts
+    a ``BH`` leading dimension (see ``metal/_keyformer_evict.py``); no new
+    kernel is needed here, only batching the caller (same relationship as
+    H2O's ``_metal_evict_batched`` to ``h2o_fused_evict``).
+    """
+    from veloxquant_mlx.metal import keyformer_fused_evict
+
+    return keyformer_fused_evict(
+        keys_cat,
+        values_cat,
+        scores_cat,
+        gumbel_cat,
+        positions_cat,
+        n_sink=n_sink,
+        rope_base=rope_base,
+        tau=tau,
+        recent=recent,
+    )
+
+
+def keyformer_update_batched(
+    keys: mx.array | None,  # [BH, n, D] fp16 or None
+    values: mx.array | None,  # [BH, n, D] fp16 or None
+    scores: mx.array | None,  # [BH, n] fp32 or None
+    gumbel: mx.array | None,  # [BH, n] fp32 or None
+    positions: mx.array | None,  # [BH, n] int32 or None
+    new_keys: mx.array,  # [BH, S, D]
+    new_values: mx.array,  # [BH, S, D]
+    n_sink: int,
+    budget: int,
+    recent: int,
+    tau_init: float,
+    tau_end: float,
+    anneal_steps: int,
+    rope_base: float,
+    next_pos: int,
+    pos: int,
+    seeds: list[int],
+) -> tuple[mx.array, mx.array, mx.array, mx.array, mx.array, int, int]:
+    """Vectorized-over-``BH`` equivalent of calling :func:`keyformer_update`
+    once per ``(batch, head)`` pair with identical per-row config.
+
+    All ``BH`` rows share ``n_sink``/``budget``/``recent``/the tau schedule/
+    ``rope_base``/``next_pos``/``pos`` (true for every real caller:
+    :class:`KeyformerKVCache` applies one uniform config to every head; only
+    each head's Gumbel noise stream differs, via a distinct ``seeds[hh]`` —
+    see :func:`_gumbel_at_batched`), so the per-token score/append/evict/
+    RoPE-remap math — otherwise identical for every row — can run as one
+    batched MLX call per step instead of ``BH`` separate Python-level calls
+    into :func:`keyformer_update`. Same fix, same template, as
+    :func:`veloxquant_mlx.quantizers.h2o.h2o_update_batched` (Keyformer is
+    documented as the "Metal-fused sibling" of H2O-adapted — see this
+    module's docstring).
+
+    Numerically identical to the per-head loop it replaces: every op below
+    is the same formula as :func:`keyformer_update`'s bootstrap/score-update/
+    evict branches, applied over a leading ``BH`` axis instead of a Python
+    loop — verified bit-for-bit (fp32-rounding-only) equivalent.
+
+    Returns:
+        ``(keys, values, scores, gumbel, positions, next_pos, pos)`` — the
+        first five ``[BH, n_kept, D]``/``[BH, n_kept]``, ``next_pos`` the
+        updated absolute step count and ``pos`` the updated per-head running
+        position count (both shared across all rows, as in the loop this
+        replaces).
+    """
+    bh, s, d = new_keys.shape
+    if s == 0:
+        return keys, values, scores, gumbel, positions, next_pos, pos
+    if n_sink + recent >= budget:
+        raise ValueError(
+            f"keyformer: n_sink ({n_sink}) + recent ({recent}) must be < "
+            f"budget ({budget}) — no evictable positions remain"
+        )
+
+    use_metal = _metal_evict_available()
+    no_anneal = tau_end == tau_init or anneal_steps <= 0
+
+    for i in range(s):
+        k_i = new_keys[:, i].astype(mx.float16)  # [BH, D]
+        v_i = new_values[:, i].astype(mx.float16)  # [BH, D]
+        g_i = _gumbel_at_batched(seeds, pos)  # [BH]
+        cur_pos = next_pos
+
+        if keys is None:
+            keys = new_keys[:, i : i + 1].astype(mx.float16)  # [BH, 1, D]
+            values = v_i[:, None, :]
+            scores = mx.ones((bh, 1), dtype=mx.float32)
+            gumbel = g_i[:, None]
+            positions = mx.full((bh, 1), cur_pos, dtype=mx.int32)
+            pos += 1
+            next_pos = cur_pos + 1
+            continue
+
+        attn = _attention_scores_batched(k_i.astype(mx.float32), keys.astype(mx.float32))
+        updated_scores = scores + attn  # [BH, n]
+
+        keys_cat = mx.concatenate([keys, k_i[:, None, :]], axis=1)
+        values_cat = mx.concatenate([values, v_i[:, None, :]], axis=1)
+        scores_cat = mx.concatenate([updated_scores, mx.zeros((bh, 1), dtype=mx.float32)], axis=1)
+        gumbel_cat = mx.concatenate([gumbel, g_i[:, None]], axis=1)
+        positions_cat = mx.concatenate(
+            [positions, mx.full((bh, 1), cur_pos, dtype=mx.int32)], axis=1
+        )
+
+        n_total = keys_cat.shape[1]
+        if n_total > budget:
+            tau = (
+                tau_init
+                if no_anneal
+                else tau_init + min(pos, anneal_steps) * ((tau_end - tau_init) / anneal_steps)
+            )
+            evict_fn = _evict_via_metal_batched if use_metal else _evict_via_mlx_batched
+            keys_cat, values_cat, scores_cat, gumbel_cat, positions_cat = evict_fn(
+                keys_cat,
+                values_cat,
+                scores_cat,
+                gumbel_cat,
+                positions_cat,
+                n_sink,
+                recent,
+                tau,
+                rope_base,
+            )
+
+        keys, values, scores, gumbel, positions = (
+            keys_cat,
+            values_cat,
+            scores_cat,
+            gumbel_cat,
+            positions_cat,
+        )
+        pos += 1
+        next_pos = cur_pos + 1
+
+        if (i + 1) % _EVAL_FLUSH_INTERVAL == 0:
+            mx.eval(keys, values, scores, gumbel, positions)
+
+    return keys, values, scores, gumbel, positions, next_pos, pos
+
+
 def keyformer_get_kv(state: KeyformerState) -> tuple[mx.array, mx.array]:
     """Return ``(keys, values)`` arrays from state.
 
@@ -545,6 +798,7 @@ __all__ = [
     "KeyformerState",
     "init_keyformer_state",
     "keyformer_update",
+    "keyformer_update_batched",
     "keyformer_get_kv",
     "keyformer_fp16_bytes",
     "full_keyformer_fp16_bytes",

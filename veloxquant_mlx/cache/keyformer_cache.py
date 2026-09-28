@@ -67,11 +67,8 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.keyformer import (
-    KeyformerState,
     init_keyformer_state,
-    keyformer_fp16_bytes,
-    keyformer_get_kv,
-    keyformer_update,
+    keyformer_update_batched,
 )
 
 
@@ -139,9 +136,27 @@ class KeyformerKVCache(_MLXKVCache):
         )
 
         self._head_dim: int = 0
-        self._states: list[KeyformerState] = []
         self._B: int = 0
         self._H: int = 0
+        self._initialised: bool = False
+
+        # Flat [BH, n, D] / [BH, n] state — replaces the old per-(b,h)
+        # KeyformerState list. Batching every head into one call (instead of
+        # a Python loop calling keyformer_update once per (b,h) pair)
+        # removes the O(B*H) Python-dispatch bottleneck on the decode hot
+        # path — same fix, same template, as H2OKVCache's _bh_* state (see
+        # h2o_cache.py); Keyformer is documented as H2O-adapted's
+        # "Metal-fused sibling". Only the Gumbel noise stream differs per
+        # row (self._seeds[hh] = self._seed + hh), threaded through
+        # keyformer_update_batched's `seeds` argument.
+        self._bh_keys: mx.array | None = None
+        self._bh_values: mx.array | None = None
+        self._bh_scores: mx.array | None = None
+        self._bh_gumbel: mx.array | None = None
+        self._bh_positions: mx.array | None = None
+        self._seeds: list[int] = []
+        self._next_pos: int = 0
+        self._pos: int = 0
 
         self._keyformer_kept_bytes: int = 0
         self._full_seq_bytes: int = 0
@@ -149,29 +164,16 @@ class KeyformerKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
-        if not self._states:
+        if not self._initialised:
             self._B = B
             self._H = H
             self._head_dim = D
-            # Per-head seed offset keeps heads' frozen noise independent while
-            # remaining fully deterministic.
-            self._states = [
-                init_keyformer_state(
-                    self._n_sink,
-                    self._budget,
-                    D,
-                    recent=self._recent,
-                    tau_init=self._tau_init,
-                    tau_end=self._tau_end,
-                    anneal_steps=self._anneal_steps,
-                    rope_base=self._rope_base,
-                    seed=self._seed + hh,
-                )
-                for hh in range(B * H)
-            ]
-
-    def _head_idx(self, b: int, h: int) -> int:
-        return b * self._H + h
+            # Per-head seed offset keeps heads' frozen noise independent
+            # while remaining fully deterministic — validated once here via
+            # init_keyformer_state's guards (see __init__), one call per
+            # head is unnecessary since every head shares budget/n_sink/tau.
+            self._seeds = [self._seed + hh for hh in range(B * H)]
+            self._initialised = True
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
@@ -191,27 +193,42 @@ class KeyformerKVCache(_MLXKVCache):
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
-        k_out_b, v_out_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                idx = self._head_idx(b, h)
-                st = keyformer_update(
-                    self._states[idx],
-                    keys[b, h].astype(mx.float16),
-                    values[b, h].astype(mx.float16),
-                )
-                self._states[idx] = st
-                k_h, v_h = keyformer_get_kv(st)
-                k_out_h.append(k_h)
-                v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))
-            v_out_b.append(mx.stack(v_out_h, axis=0))
+        new_keys_flat = keys.astype(mx.float16).reshape(B * H, S, D)
+        new_values_flat = values.astype(mx.float16).reshape(B * H, S, D)
 
-        K_out = mx.stack(k_out_b, axis=0)
-        V_out = mx.stack(v_out_b, axis=0)
+        (
+            self._bh_keys,
+            self._bh_values,
+            self._bh_scores,
+            self._bh_gumbel,
+            self._bh_positions,
+            self._next_pos,
+            self._pos,
+        ) = keyformer_update_batched(
+            self._bh_keys,
+            self._bh_values,
+            self._bh_scores,
+            self._bh_gumbel,
+            self._bh_positions,
+            new_keys_flat,
+            new_values_flat,
+            self._n_sink,
+            self._budget,
+            self._recent,
+            self._tau_init,
+            self._tau_end,
+            self._anneal_steps,
+            self._rope_base,
+            self._next_pos,
+            self._pos,
+            self._seeds,
+        )
 
-        self._keyformer_kept_bytes = sum(keyformer_fp16_bytes(st) for st in self._states)
+        n_kept = self._bh_keys.shape[1]
+        K_out = self._bh_keys.reshape(B, H, n_kept, D)
+        V_out = self._bh_values.reshape(B, H, n_kept, D)
+
+        self._keyformer_kept_bytes = B * H * n_kept * D * 2 * 2
 
         # K_out/V_out is the full retained state every call, not a delta —
         # reset so the base class's append-only buffer starts fresh instead
@@ -258,9 +275,9 @@ class KeyformerKVCache(_MLXKVCache):
     @property
     def tokens_kept(self) -> int:
         """Tokens currently in the (B=0, H=0) head's cache (diagnostic)."""
-        if not self._states or self._states[0].keys is None:
+        if self._bh_keys is None:
             return 0
-        return int(self._states[0].keys.shape[0])
+        return int(self._bh_keys.shape[1])
 
 
 __all__ = ["KeyformerKVCache"]
