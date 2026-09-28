@@ -5,11 +5,24 @@
   # build on every PR, including ones that only touch veloxquant_mlx/ Python
   # source with nothing under landing/ or docs-site/ changed.
   #
+  # `HEAD^` (previous commit) is the wrong comparison for a PR: any merge
+  # commit from syncing with the target branch (e.g. `git merge origin/master`
+  # into a feature branch) makes HEAD^ point at unrelated history instead of
+  # the PR's actual base, so an unrelated docs-site/landing change merged
+  # into master earlier can make this branch's own unrelated PR falsely
+  # "look" like it touched those paths. Diff against `$CACHED_COMMIT_REF`
+  # (the last commit Netlify actually deployed) instead, falling back to
+  # `origin/master` when there's no prior deploy to compare against (e.g. a
+  # brand-new branch/PR).
+  #
   # Netlify's convention for `ignore`: exit 0 => SKIP the build, exit 1 =>
-  # proceed. `git diff --quiet` itself exits 1 when there IS a diff and 0
-  # when there ISN'T, so it's inverted with `!` to match what we want here:
-  # skip (exit 0) when nothing relevant changed, build (exit 1) when it did.
-  ignore = "! git diff --quiet HEAD^ HEAD -- landing docs-site netlify.toml"
+  # proceed. `git diff --quiet` already has exactly these semantics on its
+  # own — exit 0 when there is NO diff, exit 1 when there IS one — so no `!`
+  # is needed. (A previous version of this line prepended `!`, which
+  # inverted it: skip exactly when something relevant DID change, and build
+  # on every unrelated PR. That is almost certainly why Netlify's preview
+  # build was observed running on PRs that only touched veloxquant_mlx/.)
+  ignore = "git diff --quiet ${CACHED_COMMIT_REF:-origin/master} HEAD -- landing docs-site netlify.toml"
   command = """
     cd docs-site && npm install && npm run build && cd .. &&
     mkdir -p dist/docs &&
