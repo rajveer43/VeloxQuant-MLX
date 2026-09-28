@@ -11,10 +11,14 @@ import pytest
 from veloxquant_mlx.quantizers.cachegen import (
     cachegen_quant_dequant,
     dequant_codes,
+    dequant_codes_batched,
     entropy_coded_bytes,
+    entropy_coded_bytes_batched,
     fixed_width_bytes,
+    fixed_width_bytes_batched,
     layer_group_bits,
     quantize_to_codes,
+    quantize_to_codes_batched,
     symbol_entropy_bits,
     token_delta,
 )
@@ -139,3 +143,90 @@ def test_layer_group_bits_empty() -> None:
 
 def test_layer_group_bits_single_layer() -> None:
     assert layer_group_bits(n_layers=1, base_bits=4) == [4]
+
+
+# ------------------------------------------------------------------
+# Batched (B*H) parity — quantize_to_codes_batched / dequant_codes_batched /
+# entropy_coded_bytes_batched / fixed_width_bytes_batched vs. the per-head
+# loop they replace in CacheGenKVCache._quant_and_account.
+# ------------------------------------------------------------------
+
+
+def _looped_quant_dequant(x: mx.array, bits: int, gs: int) -> mx.array:
+    g = x.shape[0]
+    return mx.stack([dequant_codes(quantize_to_codes(x[i], bits, gs)) for i in range(g)])
+
+
+def _looped_bytes(x: mx.array, bits: int, gs: int, use_delta: bool, per_channel: bool):
+    g = x.shape[0]
+    comp, fixed = [], []
+    for i in range(g):
+        st = quantize_to_codes(x[i], bits, gs)
+        comp.append(entropy_coded_bytes(st, use_delta=use_delta, per_channel=per_channel))
+        fixed.append(fixed_width_bytes(st))
+    return comp, fixed
+
+
+@pytest.mark.parametrize(
+    "G,S,D,bits,gs",
+    [
+        (3, 1, 8, 4, 32),  # decode: single token
+        (4, 33, 16, 3, 32),  # S not a multiple of group_size
+        (2, 65, 24, 8, 32),  # 8-bit: largest alphabet
+        (1, 32, 8, 2, 16),  # 2-bit: smallest alphabet, group_size == S
+        (5, 5, 8, 4, 32),  # S < group_size: single partial group
+        (6, 130, 48, 4, 32),  # general case, several heads
+    ],
+)
+def test_batched_dequant_matches_looped(G: int, S: int, D: int, bits: int, gs: int) -> None:
+    rng = np.random.default_rng(100 + G + S + D)
+    x = mx.array(rng.standard_normal((G, S, D)).astype(np.float32))
+    recon_loop = _looped_quant_dequant(x, bits, gs)
+    recon_batch = dequant_codes_batched(quantize_to_codes_batched(x, bits, gs))
+    mx.eval(recon_loop, recon_batch)
+    assert mx.array_equal(recon_loop, recon_batch).item()
+
+
+@pytest.mark.parametrize("use_delta", [True, False])
+@pytest.mark.parametrize("per_channel", [True, False])
+@pytest.mark.parametrize(
+    "G,S,D,bits,gs",
+    [
+        (3, 1, 8, 4, 32),
+        (4, 33, 16, 3, 32),
+        (2, 65, 24, 8, 32),
+        (1, 32, 8, 2, 16),
+        (5, 5, 8, 4, 32),
+    ],
+)
+def test_batched_bytes_match_looped_random(
+    G: int, S: int, D: int, bits: int, gs: int, per_channel: bool, use_delta: bool
+) -> None:
+    rng = np.random.default_rng(200 + G + S + D)
+    x = mx.array(rng.standard_normal((G, S, D)).astype(np.float32))
+    comp_loop, fixed_loop = _looped_bytes(x, bits, gs, use_delta, per_channel)
+    stream = quantize_to_codes_batched(x, bits, gs)
+    comp_batch = entropy_coded_bytes_batched(stream, use_delta=use_delta, per_channel=per_channel)
+    fixed_batch = fixed_width_bytes_batched(stream)
+    assert comp_loop == comp_batch
+    assert fixed_loop == fixed_batch
+
+
+@pytest.mark.parametrize("use_delta", [True, False])
+@pytest.mark.parametrize("per_channel", [True, False])
+def test_batched_bytes_match_looped_correlated(use_delta: bool, per_channel: bool) -> None:
+    """Correlated (random-walk) data — the case where entropy coding
+    actually beats fixed-width, exercising the interesting branch rather
+    than just the incompressible-data cap."""
+    rng = np.random.default_rng(7)
+    G, S, D, bits, gs = 5, 200, 40, 4, 32
+    walk = np.cumsum(rng.standard_normal((G, S, D)).astype(np.float32) * 0.1, axis=1)
+    x = mx.array(walk)
+    comp_loop, fixed_loop = _looped_bytes(x, bits, gs, use_delta, per_channel)
+    stream = quantize_to_codes_batched(x, bits, gs)
+    comp_batch = entropy_coded_bytes_batched(stream, use_delta=use_delta, per_channel=per_channel)
+    fixed_batch = fixed_width_bytes_batched(stream)
+    assert comp_loop == comp_batch
+    assert fixed_loop == fixed_batch
+    # sanity: this data should actually show entropy coding beating fixed-width
+    assert sum(comp_loop) < sum(fixed_loop)

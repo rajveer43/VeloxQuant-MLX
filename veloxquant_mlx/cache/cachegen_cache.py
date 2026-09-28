@@ -30,10 +30,10 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.cachegen import (
-    dequant_codes,
-    entropy_coded_bytes,
-    fixed_width_bytes,
-    quantize_to_codes,
+    dequant_codes_batched,
+    entropy_coded_bytes_batched,
+    fixed_width_bytes_batched,
+    quantize_to_codes_batched,
 )
 
 
@@ -74,22 +74,17 @@ class CacheGenKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def _quant_and_account(self, t: mx.array, is_key: bool) -> mx.array:
-        """Quantize [B, H, S, D] per head, accumulate byte accounting, return fp16."""
+        """Quantize [B, H, S, D] batched over B*H, accumulate byte accounting, return fp16."""
         B, H, S, D = t.shape
-        recon_b = []
-        comp = 0
-        fixed = 0
-        for b in range(B):
-            recon_h = []
-            for h in range(H):
-                stream = quantize_to_codes(t[b, h], self._bits, self._gs)
-                recon_h.append(dequant_codes(stream))
-                comp += entropy_coded_bytes(
-                    stream, use_delta=self._use_delta, per_channel=self._per_channel
-                )
-                fixed += fixed_width_bytes(stream)
-            recon_b.append(mx.stack(recon_h, axis=0))
-        out = mx.stack(recon_b, axis=0)
+        flat = t.reshape(B * H, S, D)
+        stream = quantize_to_codes_batched(flat, self._bits, self._gs)
+        out = dequant_codes_batched(stream).reshape(B, H, S, D)
+        comp = sum(
+            entropy_coded_bytes_batched(
+                stream, use_delta=self._use_delta, per_channel=self._per_channel
+            )
+        )
+        fixed = sum(fixed_width_bytes_batched(stream))
 
         fp16 = B * H * S * D * 2
         if is_key:

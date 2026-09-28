@@ -189,6 +189,137 @@ def fixed_width_bytes(stream: CodeStream) -> int:
     return code_bytes + param_bytes
 
 
+def _pad_to_groups_batched(x32: mx.array, group_size: int) -> tuple[mx.array, int, int]:
+    g, n, d = x32.shape
+    n_groups = (n + group_size - 1) // group_size
+    pad = n_groups * group_size - n
+    if pad:
+        x32 = mx.concatenate([x32, mx.broadcast_to(x32[:, -1:], (g, pad, d))], axis=1)
+    return x32, n_groups, n
+
+
+def quantize_to_codes_batched(x: mx.array, bits: int, group_size: int = 32) -> CodeStream:
+    """Batched ``quantize_to_codes`` over a leading ``G = B*H`` axis.
+
+    Args:
+        x: ``[G, N, D]`` fp16/fp32 — ``G`` independent heads' keys or values.
+        bits: bit-width.
+        group_size: tokens per group along axis 1.
+
+    Returns:
+        CodeStream whose fields carry the extra leading ``G`` axis:
+        ``codes``/``scale``/``zero`` are ``[G, n_groups, group_size (or 1), D]``.
+    """
+    g = x.shape[0]
+    x32 = x.astype(mx.float32)
+    x32, n_groups, n = _pad_to_groups_batched(x32, group_size)
+    d = x32.shape[-1]
+    xg = x32.reshape(g, n_groups, group_size, d)
+    gmin = mx.min(xg, axis=2, keepdims=True)
+    gmax = mx.max(xg, axis=2, keepdims=True)
+    levels = (1 << bits) - 1
+    scale = mx.maximum((gmax - gmin) / levels, 1e-8)
+    codes = mx.clip(mx.round((xg - gmin) / scale), 0, levels)
+    return CodeStream(codes=codes, scale=scale, zero=gmin, n_rows=n, bits=bits)
+
+
+def dequant_codes_batched(stream: CodeStream) -> mx.array:
+    """Batched ``dequant_codes``: reconstruct fp16 ``[G, n_rows, D]``."""
+    recon = stream.codes * stream.scale + stream.zero
+    g, n_groups, gs, d = recon.shape
+    return recon.reshape(g, n_groups * gs, d)[:, : stream.n_rows].astype(mx.float16)
+
+
+def token_delta_batched(codes_flat: mx.array) -> mx.array:
+    """Batched ``token_delta`` over ``[G, N, D]`` — delta along axis 1."""
+    if codes_flat.shape[1] <= 1:
+        return codes_flat
+    prev = codes_flat[:, :-1]
+    rest = codes_flat[:, 1:] - prev
+    return mx.concatenate([codes_flat[:, :1], rest], axis=1)
+
+
+def _batched_symbol_entropy_bits(symbols: mx.array, alphabet_min: int, alphabet_size: int) -> mx.array:
+    """Shannon entropy (bits/symbol) per leading-axis slice, no host sync.
+
+    Args:
+        symbols: ``[G, N]`` int-valued (stored as float32/int32) symbol stream.
+        alphabet_min: known lower bound of ``symbols`` (e.g. ``-levels`` for a
+            delta stream, ``0`` for a raw code stream) — data-independent, so
+            no ``.item()`` read of the actual data is needed to size the
+            histogram (codes are clipped to ``[0, levels]`` at quantization
+            time, and a token-delta of two such codes is bounded by
+            ``[-levels, levels]``; both bounds are static given ``bits``).
+        alphabet_size: number of distinct symbol values in range.
+
+    Returns:
+        ``[G]`` fp32 entropy in bits/symbol — a lazy MLX array; the caller
+        evaluates and reads it back with a single batched ``.tolist()``
+        instead of one ``.item()`` per (head, channel).
+    """
+    g, n = symbols.shape
+    shifted = (symbols - alphabet_min).astype(mx.int32)
+    # One-hot histogram via matmul instead of per-slice scatter-add: the
+    # alphabet is small (<=511 even at 8-bit codes — see quantize_to_codes's
+    # clip range), so this stays cheap and needs no data-dependent shape.
+    onehot = (shifted[:, :, None] == mx.arange(alphabet_size)[None, None, :]).astype(mx.float32)
+    counts = mx.sum(onehot, axis=1)  # [G, alphabet_size]
+    p = counts / float(n)
+    nz = p > 0
+    p_nz = mx.where(nz, p, mx.ones_like(p))
+    ent = -mx.sum(mx.where(nz, p * (mx.log(p_nz) / math.log(2.0)), mx.zeros_like(p)), axis=1)
+    return ent  # [G]
+
+
+def entropy_coded_bytes_batched(
+    stream: CodeStream, use_delta: bool = True, per_channel: bool = True
+) -> list[int]:
+    """Batched ``entropy_coded_bytes`` over the CodeStream's leading ``G`` axis.
+
+    Same estimate as :func:`entropy_coded_bytes`, computed for all ``G``
+    heads (and, if ``per_channel``, all ``D`` channels) in one vectorized
+    pass with a single final host read, instead of ``entropy_coded_bytes``
+    called once per head with its own internal per-channel Python loop and
+    two ``.item()`` calls per channel (``G * D`` host syncs total there).
+
+    Returns:
+        Length-``G`` list of estimated compressed sizes in bytes (codes via
+        entropy + fp16 params), each capped at that head's fixed-width size.
+    """
+    g, n_groups, gs, d = stream.codes.shape
+    flat = stream.codes.reshape(g, n_groups * gs, d)[:, : stream.n_rows]  # [G, N, D]
+    symbols = token_delta_batched(flat) if use_delta else flat
+    levels = (1 << stream.bits) - 1
+    alphabet_min = -levels if use_delta else 0
+    alphabet_size = 2 * levels + 1 if use_delta else levels + 1
+
+    if per_channel:
+        # [G, D, N] so the batched entropy fn's leading axis covers every
+        # (head, channel) pair in one pass — no Python loop over channels.
+        per_ch = mx.moveaxis(symbols, 2, 1).reshape(g * d, stream.n_rows)
+        ent = _batched_symbol_entropy_bits(per_ch, alphabet_min, alphabet_size)
+        ent = mx.minimum(ent, float(stream.bits)).reshape(g, d)
+        code_bits = mx.sum(ent, axis=1) * stream.n_rows  # [G]
+    else:
+        flat_gn = symbols.reshape(g, -1)
+        ent = _batched_symbol_entropy_bits(flat_gn, alphabet_min, alphabet_size)
+        ent = mx.minimum(ent, float(stream.bits))
+        code_bits = ent * stream.n_rows * d  # [G]
+
+    code_bytes = mx.ceil(code_bits / 8.0)
+    param_bytes = n_groups * d * 2 * 2  # scale + zero, fp16 — same for every head
+    total = code_bytes + float(param_bytes)
+    return [int(v) for v in total.tolist()]
+
+
+def fixed_width_bytes_batched(stream: CodeStream) -> list[int]:
+    """Batched ``fixed_width_bytes`` over the CodeStream's leading ``G`` axis."""
+    g, n_groups, gs, d = stream.codes.shape
+    code_bytes = math.ceil(stream.n_rows * d * stream.bits / 8)
+    param_bytes = n_groups * d * 2 * 2
+    return [code_bytes + param_bytes] * g
+
+
 def layer_group_bits(n_layers: int, base_bits: int, n_groups: int = 3) -> list[int]:
     """Per-layer bit-width schedule from the paper's layer-wise sensitivity insight (§5.1.2/§5.2).
 
@@ -241,4 +372,9 @@ __all__ = [
     "fixed_width_bytes",
     "layer_group_bits",
     "cachegen_quant_dequant",
+    "quantize_to_codes_batched",
+    "dequant_codes_batched",
+    "token_delta_batched",
+    "entropy_coded_bytes_batched",
+    "fixed_width_bytes_batched",
 ]
