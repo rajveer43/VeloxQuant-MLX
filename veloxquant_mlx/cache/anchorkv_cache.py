@@ -48,9 +48,9 @@ from veloxquant_mlx.quantizers.anchorkv import (
     ResidualCodec,
     allocate_residual_budget,
     anchorkv_budget_slots,
-    assign_and_project,
-    key_value_utility,
-    select_anchors,
+    assign_and_project_batched,
+    key_value_utility_batched,
+    select_anchors_batched,
 )
 
 
@@ -136,41 +136,56 @@ class AnchorKVKVCache(_MLXKVCache):
     def _head_idx(self, b: int, h: int) -> int:
         return b * self._H + h
 
-    def _compress_head(self, keys_h: Any, values_h: Any) -> tuple[Any, Any, int, int]:
-        """Compress one head's ``[S, D]`` K/V; returns reconstructed fp16 (K, V)
-        plus (n_anchor, n_residual) for byte accounting."""
-        S = int(keys_h.shape[0])
-        D = int(keys_h.shape[1])
+    def _compress_all_heads(self, keys_bh: Any, values_bh: Any) -> tuple[Any, Any]:
+        """Compress every ``(batch, head)`` row's ``[S, D]`` K/V at once;
+        returns reconstructed fp16 ``(K, V)``, each ``[BH, S, D]``.
+
+        Anchor selection, assignment/projection, and utility scoring are
+        batched over the leading ``BH`` axis (``select_anchors_batched``/
+        ``assign_and_project_batched``/``key_value_utility_batched`` —
+        one MLX/numpy call across all rows instead of ``BH`` separate
+        Python-level calls), since each row's own math is independent and
+        every row shares the same config (window/rho/anchor_frac/theta).
+
+        ``allocate_residual_budget`` stays a per-row Python-level call
+        exactly as before: at this call site it only ever sees one row's
+        utilities (``[u_key_row]``), so its documented cross-head pooling
+        capability is not in use here, and batching the *call site* would
+        silently start pooling residual budget across heads — a distinct
+        design decision this fix does not make (see issue #567).
+        """
+        bh, S, D = keys_bh.shape
         k_budget = max(1, int(round(S * self._anchor_frac)))
 
-        anchors = select_anchors(
-            keys_h.astype(mx.float32),
+        anchors = select_anchors_batched(
+            keys_bh.astype(mx.float32),
             k=k_budget,
             window=self._window,
             rho=self._rho,
             seed=self._seed,
-        )
-        n_anchor = int(anchors.shape[0])
+        )  # [BH, n_anchor]
+        n_anchor = int(anchors.shape[1])
 
-        key_assign = assign_and_project(keys_h, anchors)
-        value_assign = assign_and_project(values_h, anchors)
+        key_assign = assign_and_project_batched(keys_bh, anchors)
+        value_assign = assign_and_project_batched(values_bh, anchors)
 
         m = min(self._window, S)
-        proxy_q = keys_h.astype(mx.float32)[-m:]
-        u_key, u_value = key_value_utility(
+        proxy_q = keys_bh.astype(mx.float32)[:, -m:]
+        u_key, u_value = key_value_utility_batched(
             proxy_q,
-            keys_h.astype(mx.float32),
-            values_h.astype(mx.float32),
+            keys_bh.astype(mx.float32),
+            values_bh.astype(mx.float32),
             key_assign.residual,
             value_assign.residual,
-        )
+        )  # [BH, S] each
 
-        anchor_set = {int(a) for a in anchors.tolist()}
-        non_anchor_mask_np = [i not in anchor_set for i in range(S)]
-
-        non_anchor_mask = mx.array(non_anchor_mask_np)
+        # Anchors never receive a residual: mask them to -inf before the
+        # per-row top-n_slots selection below (same as the unbatched path).
+        row_idx = mx.arange(bh)[:, None]
+        anchor_onehot = mx.zeros((bh, S), dtype=mx.bool_)
+        anchor_onehot = anchor_onehot.at[row_idx, anchors].add(True)
         neg_inf_on_anchor = mx.where(
-            non_anchor_mask, mx.zeros((S,), dtype=mx.float32), mx.full((S,), -1e30)
+            anchor_onehot, mx.full((bh, S), -1e30), mx.zeros((bh, S), dtype=mx.float32)
         )
         u_key = u_key + neg_inf_on_anchor
         u_value = u_value + neg_inf_on_anchor
@@ -188,31 +203,44 @@ class AnchorKVKVCache(_MLXKVCache):
         n_key_slots = n_slots // 2
         n_value_slots = n_slots - n_key_slots
 
-        key_mask = allocate_residual_budget([u_key], n_key_slots)[0]
-        value_mask = allocate_residual_budget([u_value], n_value_slots)[0]
+        key_masks, value_masks = [], []
+        for row in range(bh):
+            key_masks.append(allocate_residual_budget([u_key[row]], n_key_slots)[0])
+            value_masks.append(allocate_residual_budget([u_value[row]], n_value_slots)[0])
+            n_residual = int(mx.sum(key_masks[-1].astype(mx.int32)).item()) + int(
+                mx.sum(value_masks[-1].astype(mx.int32)).item()
+            )
+            anchor_bytes = n_anchor * D * 2 * 2
+            metadata_bytes = (S - n_anchor) * 2 * (4 + 4)
+            residual_bytes = n_residual * codec.bytes_per_residual
+            self._anchorkv_bytes += anchor_bytes + metadata_bytes + residual_bytes
+            self._n_anchor_total += n_anchor
+            self._n_residual_total += n_residual
 
-        key_recon = self._reconstruct_side(keys_h, key_assign, key_mask, codec)
-        value_recon = self._reconstruct_side(values_h, value_assign, value_mask, codec)
+        key_mask = mx.stack(key_masks, axis=0)  # [BH, S]
+        value_mask = mx.stack(value_masks, axis=0)
 
-        n_residual = int(mx.sum(key_mask.astype(mx.int32)).item()) + int(
-            mx.sum(value_mask.astype(mx.int32)).item()
-        )
-        anchor_bytes = n_anchor * D * 2 * 2
-        metadata_bytes = (S - n_anchor) * 2 * (4 + 4)
-        residual_bytes = n_residual * codec.bytes_per_residual
-        self._anchorkv_bytes += anchor_bytes + metadata_bytes + residual_bytes
+        key_recon = self._reconstruct_side_batched(keys_bh, key_assign, key_mask, codec)
+        value_recon = self._reconstruct_side_batched(values_bh, value_assign, value_mask, codec)
 
-        return key_recon.astype(mx.float16), value_recon.astype(mx.float16), n_anchor, n_residual
+        return key_recon.astype(mx.float16), value_recon.astype(mx.float16)
 
     @staticmethod
-    def _reconstruct_side(x: Any, assign, mask: Any, codec: ResidualCodec) -> Any:
-        """``x_hat = gamma * anchor + (residual if mask else 0)`` (paper Eq. 3)."""
-        chosen_anchor = x.astype(mx.float32)[assign.anchor_positions][assign.assign_idx]
-        x_tilde = assign.gamma[:, None] * chosen_anchor
+    def _reconstruct_side_batched(x: Any, assign, mask: Any, codec: ResidualCodec) -> Any:
+        """``x_hat = gamma * anchor + (residual if mask else 0)`` (paper Eq. 3),
+        batched over the leading ``[BH, ...]`` axis."""
+        chosen_anchor = mx.take_along_axis(
+            mx.take_along_axis(x.astype(mx.float32), assign.anchor_positions[:, :, None], axis=1),
+            assign.assign_idx[:, :, None],
+            axis=1,
+        )
+        x_tilde = assign.gamma[:, :, None] * chosen_anchor
 
         codes, scale = codec.encode(assign.residual)
         decoded_residual = codec.decode(codes, scale)
-        residual_term = mx.where(mask[:, None], decoded_residual, mx.zeros_like(decoded_residual))
+        residual_term = mx.where(
+            mask[:, :, None], decoded_residual, mx.zeros_like(decoded_residual)
+        )
 
         return x_tilde + residual_term
 
@@ -220,22 +248,14 @@ class AnchorKVKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         self._B, self._H, self._head_dim = B, H, D
 
-        k_out_b, v_out_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                k_recon, v_recon, n_anchor, n_residual = self._compress_head(
-                    keys[b, h], values[b, h]
-                )
-                k_out_h.append(k_recon)
-                v_out_h.append(v_recon)
-                self._n_anchor_total += n_anchor
-                self._n_residual_total += n_residual
-            k_out_b.append(mx.stack(k_out_h, axis=0))
-            v_out_b.append(mx.stack(v_out_h, axis=0))
+        bh = B * H
+        keys_bh = keys.reshape(bh, S, D)
+        values_bh = values.reshape(bh, S, D)
 
-        self._reconstructed_keys = mx.stack(k_out_b, axis=0)
-        self._reconstructed_values = mx.stack(v_out_b, axis=0)
+        k_recon, v_recon = self._compress_all_heads(keys_bh, values_bh)
+
+        self._reconstructed_keys = k_recon.reshape(B, H, S, D)
+        self._reconstructed_values = v_recon.reshape(B, H, S, D)
         self._compressed = True
         return self._reconstructed_keys, self._reconstructed_values
 

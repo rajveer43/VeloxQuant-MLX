@@ -254,21 +254,27 @@ class ResidualCodec:
             self._rotation = None
 
     def encode(self, residual: Any) -> tuple[Any, Any]:  # noqa: F821
-        """Encode ``[n, D]`` fp32 residuals -> (``[n, D]`` uint8 codes, ``[n]`` fp32 scales)."""
+        """Encode ``[..., D]`` fp32 residuals -> (``[..., D]`` uint8 codes,
+        ``[...]`` fp32 scales).
+
+        Ellipsis-indexed (``[..., None]`` rather than ``[:, None]``) so this
+        accepts either a single head's ``[n, D]`` slice or a batched
+        ``[BH, n, D]`` tensor with no other change.
+        """
         import mlx.core as mx
 
         rotated = self._rotation.apply(residual) if self._rotation is not None else residual
-        scale = mx.max(mx.abs(rotated), axis=-1) + 1e-8  # [n]
-        normalized = rotated / scale[:, None]
+        scale = mx.max(mx.abs(rotated), axis=-1) + 1e-8  # [...]
+        normalized = rotated / scale[..., None]
         codes = self._codebook.quantize(normalized.astype(mx.float16))
         return codes, scale
 
     def decode(self, codes: Any, scale: Any) -> Any:  # noqa: F821
-        """Decode ``([n, D]`` uint8 codes, ``[n]`` fp32 scales) -> ``[n, D]`` fp32 residuals."""
+        """Decode (``[..., D]`` uint8 codes, ``[...]`` fp32 scales) -> ``[..., D]`` fp32 residuals."""
         import mlx.core as mx
 
         centroids = self._codebook.dequantize(codes).astype(mx.float32)
-        rotated = centroids * scale[:, None]
+        rotated = centroids * scale[..., None]
         return self._rotation.apply_inverse(rotated) if self._rotation is not None else rotated
 
     @property
@@ -309,6 +315,167 @@ def unpack_codes(packed: np.ndarray, d: int, bits: int = RESIDUAL_BITS) -> np.nd
         shift = 8 - bits * ((j % per_byte) + 1)
         out[:, j] = (packed[:, byte_idx] >> shift) & mask
     return out
+
+
+def _obs_window_attention_scores_batched(keys: Any, obs_window: int) -> Any:  # noqa: F821
+    """Vectorized-over-``BH`` equivalent of
+    :func:`veloxquant_mlx.quantizers.snapkv.obs_window_attention_scores`.
+
+    Args:
+        keys: ``[BH, S, D]`` fp32/fp16 key matrix.
+        obs_window: Trailing-token window shared across all rows (uniform
+            config — true for every real caller).
+
+    Returns:
+        ``[BH, S]`` fp32 importance scores, bit-for-bit equivalent to
+        calling the unbatched function once per row.
+    """
+    import mlx.core as mx
+
+    bh, S, D = keys.shape
+    w = min(max(obs_window, 1), S)
+    k32 = keys.astype(mx.float32)
+    q_proxy = k32[:, -w:]  # [BH, w, D]
+    scale = math.sqrt(D)
+    logits = (q_proxy @ mx.swapaxes(k32, -1, -2)) / scale  # [BH, w, S]
+    attn = mx.softmax(logits, axis=-1)
+    scores = mx.mean(attn, axis=1)  # [BH, S]
+    return scores.astype(mx.float32)
+
+
+def select_anchors_batched(
+    scoring_keys: Any,  # noqa: F821
+    k: int,
+    window: int,
+    rho: float,
+    seed: int,
+) -> Any:  # noqa: F821
+    """Vectorized-over-``BH`` equivalent of calling :func:`select_anchors`
+    once per ``(batch, head)`` row.
+
+    All ``BH`` rows share ``k``/``window``/``rho``/config (one uniform cache
+    config, true for every real caller), so ``select_anchors``'s
+    window/candidate/budget bookkeeping resolves to the exact same *sizes*
+    for every row — only *which* positions are chosen differs, since that
+    depends on each row's own attention scores and RNG draw. The expensive
+    tensor math (the observation-window attention score, a matmul+softmax)
+    is batched into one call across all ``BH`` rows via
+    :func:`_obs_window_attention_scores_batched`; the per-row top-k/union/
+    uniform-sample selection remains row-by-row (inherently a small, ragged,
+    combinatorial index-set operation, not a tensor op), but now works off
+    the already-batched scores instead of re-running the matmul per row.
+
+    Args:
+        scoring_keys: ``[BH, S, D]`` keys used to rank earlier positions.
+        k, window, rho, seed: see :func:`select_anchors`. ``seed`` is passed
+            through UNCHANGED to every row's ``np.random.default_rng(seed)``
+            draw — matching the existing per-head loop, which always called
+            ``select_anchors`` with the same ``self._seed`` for every head.
+            The uniform-sample pool still typically differs per row (each
+            row's attention-based ``chosen`` subset differs, since scores
+            differ per row), so this does not usually mean identical picks
+            across rows; it only reduces to that in the narrow case the old
+            loop already reduced to it (``n_scored == 0``, e.g. ``rho == 0``
+            or ``window == 0``, where every row's candidate pool is
+            identical). Preserved deliberately, not changed: this batching
+            fix must not alter which positions get selected.
+
+    Returns:
+        ``[BH, n_anchor]`` int32 anchor positions per row, ascending,
+        where ``n_anchor = min(k, S)`` (identical across all rows, proven
+        by the uniform-config argument above).
+    """
+    import mlx.core as mx
+
+    bh, S, D = scoring_keys.shape
+    k = min(max(k, 1), S)
+    w = min(max(window, 0), k)
+
+    window_start = S - w
+    window_set = set(range(window_start, S))
+    remaining_slots = k - w
+
+    if remaining_slots <= 0 or len(window_set) >= S:
+        row = sorted(window_set)
+        return mx.array([row for _ in range(bh)], dtype=mx.int32)
+
+    candidates = [i for i in range(S) if i not in window_set]
+    n_scored = min(int(round(rho * remaining_slots)), len(candidates))
+    n_scored = max(n_scored, 0)
+
+    scores_batched = None
+    if n_scored > 0 and w > 0:
+        scores_batched = _obs_window_attention_scores_batched(scoring_keys, w)
+        scores_np = np.array(scores_batched)
+
+    rows: list[list[int]] = []
+    for row_idx in range(bh):
+        chosen: set[int] = set()
+        if scores_batched is not None:
+            score_list = scores_np[row_idx].tolist()
+            ranked = sorted(candidates, key=lambda i: score_list[i], reverse=True)
+            chosen.update(ranked[:n_scored])
+
+        n_uniform = remaining_slots - len(chosen)
+        if n_uniform > 0:
+            rng = np.random.default_rng(seed)
+            pool = [i for i in candidates if i not in chosen]
+            if pool:
+                n_uniform = min(n_uniform, len(pool))
+                picked = rng.choice(np.array(pool), size=n_uniform, replace=False)
+                chosen.update(int(p) for p in picked.tolist())
+
+        rows.append(sorted(window_set | chosen))
+
+    return mx.array(rows, dtype=mx.int32)
+
+
+def assign_and_project_batched(
+    x: Any,  # noqa: F821
+    anchor_positions: Any,  # noqa: F821
+) -> AnchorAssignment:
+    """Vectorized-over-``BH`` equivalent of calling :func:`assign_and_project`
+    once per ``(batch, head)`` row.
+
+    Args:
+        x: ``[BH, S, D]`` fp16/fp32 K or V matrix.
+        anchor_positions: ``[BH, n_anchor]`` int32 anchor positions per row
+            (from :func:`select_anchors_batched`).
+
+    Returns:
+        :class:`AnchorAssignment` with ``anchor_positions`` ``[BH, n_anchor]``,
+        ``assign_idx``/``gamma`` ``[BH, S]``, ``residual`` ``[BH, S, D]`` —
+        numerically identical to stacking ``BH`` separate unbatched calls.
+    """
+    import mlx.core as mx
+
+    bh, S, D = x.shape
+    x32 = x.astype(mx.float32)
+    anchors = mx.take_along_axis(x32, anchor_positions[:, :, None], axis=1)  # [BH, n_anchor, D]
+
+    anchor_norms = mx.sqrt(mx.sum(anchors * anchors, axis=-1))  # [BH, n_anchor]
+    x_norms = mx.sqrt(mx.sum(x32 * x32, axis=-1))  # [BH, S]
+
+    dots = x32 @ mx.swapaxes(anchors, -1, -2)  # [BH, S, n_anchor]
+    denom = (x_norms[:, :, None] * anchor_norms[:, None, :]) + 1e-12
+    cos = mx.abs(dots) / denom
+
+    assign_idx = mx.argmax(cos, axis=-1).astype(mx.int32)  # [BH, S]
+
+    anchor_norm_sq = (anchor_norms * anchor_norms) + 1e-12  # [BH, n_anchor]
+    gamma_all = dots / anchor_norm_sq[:, None, :]  # [BH, S, n_anchor]
+    gamma = mx.take_along_axis(gamma_all, assign_idx[:, :, None], axis=-1)[:, :, 0]  # [BH, S]
+
+    chosen_anchor = mx.take_along_axis(anchors, assign_idx[:, :, None], axis=1)  # [BH, S, D]
+    x_tilde = gamma[:, :, None] * chosen_anchor  # [BH, S, D]
+    residual = x32 - x_tilde  # [BH, S, D]
+
+    return AnchorAssignment(
+        anchor_positions=anchor_positions,
+        assign_idx=assign_idx,
+        gamma=gamma,
+        residual=residual,
+    )
 
 
 def key_value_utility(
@@ -353,6 +520,49 @@ def key_value_utility(
     # u_value_t = mean_w [ alpha_t^2 * ||r_t^V||^2 ]
     value_residual_norm_sq = mx.sum(value_residual * value_residual, axis=-1)  # [S]
     u_value = mx.mean((attn**2), axis=0) * value_residual_norm_sq  # [S]
+
+    return u_key, u_value
+
+
+def key_value_utility_batched(
+    proxy_queries: Any,  # noqa: F821
+    keys: Any,  # noqa: F821
+    values: Any,  # noqa: F821
+    key_residual: Any,  # noqa: F821
+    value_residual: Any,  # noqa: F821
+) -> tuple[Any, Any]:  # noqa: F821
+    """Vectorized-over-``BH`` equivalent of calling :func:`key_value_utility`
+    once per ``(batch, head)`` row.
+
+    Args:
+        proxy_queries: ``[BH, m, D]`` fp32 proxy query vectors.
+        keys: ``[BH, S, D]`` fp32 exact keys.
+        values: ``[BH, S, D]`` fp32 exact values.
+        key_residual: ``[BH, S, D]`` fp32 key residuals.
+        value_residual: ``[BH, S, D]`` fp32 value residuals.
+
+    Returns:
+        ``(u_key, u_value)``, each ``[BH, S]`` fp32 — bit-for-bit equivalent
+        to stacking ``BH`` separate unbatched calls (every op is a per-row
+        matmul/reduction with no cross-row mixing).
+    """
+    import mlx.core as mx
+
+    bh, S, D = keys.shape
+    scale = math.sqrt(D)
+
+    logits = (proxy_queries @ mx.swapaxes(keys, -1, -2)) / scale  # [BH, m, S]
+    attn = mx.softmax(logits, axis=-1)
+    outputs = attn @ values  # [BH, m, D]
+
+    delta_s = (proxy_queries @ mx.swapaxes(key_residual, -1, -2)) / scale  # [BH, m, S]
+    diff_norm_sq = mx.sum(
+        (values[:, None, :, :] - outputs[:, :, None, :]) ** 2, axis=-1
+    )  # [BH, m, S]
+    u_key = mx.mean((attn**2) * (delta_s**2) * diff_norm_sq, axis=1)  # [BH, S]
+
+    value_residual_norm_sq = mx.sum(value_residual * value_residual, axis=-1)  # [BH, S]
+    u_value = mx.mean((attn**2), axis=1) * value_residual_norm_sq  # [BH, S]
 
     return u_key, u_value
 
@@ -449,10 +659,13 @@ __all__ = [
     "AnchorAssignment",
     "ResidualCodec",
     "select_anchors",
+    "select_anchors_batched",
     "assign_and_project",
+    "assign_and_project_batched",
     "pack_codes",
     "unpack_codes",
     "key_value_utility",
+    "key_value_utility_batched",
     "allocate_residual_budget",
     "anchorkv_budget_slots",
 ]
