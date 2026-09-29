@@ -70,10 +70,10 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
 ]
-# Only the release workflow (.github/workflows/release.yml) needs this group --
-# it bumps the version, builds the sdist/wheel, and drives semantic-release's
-# commit parsing. Kept out of `dev` so contributors and the lint/test CI jobs
-# don't install the release toolchain just to run pytest or ruff. See #472.
+# Only the release workflow (.github/workflows/release.yml) needs this group.
+# It bumps the version, builds the sdist/wheel, and runs semantic-release's
+# commit parsing. It's kept out of `dev` so contributors and CI don't have to
+# install the release tools just to run pytest or ruff. See #472.
 release = [
     "build>=1.2",
     "twine>=5.0",
@@ -103,29 +103,29 @@ mlx-kv-quant = "veloxquant_mlx.__main__:main"
 where = ["."]
 include = ["veloxquant_mlx*"]
 # The `veloxquant_mlx*` glob above also matches `veloxquant_mlx.tests` and its
-# subpackages, which silently put 184 test files -- 18.4% of the wheel's
-# uncompressed payload -- into every PyPI install. 138 of them import `pytest`
-# or `psutil`, neither of which is a runtime dependency, so they were
-# unimportable in a default install anyway.
+# subpackages. Without this exclude, that would silently add 184 test files
+# (18.4% of the wheel's uncompressed size) to every PyPI install. 138 of those
+# files import `pytest` or `psutil`, which aren't runtime dependencies, so they
+# wouldn't even import in a normal install anyway.
 #
-# This `exclude` drives BOTH artifacts, so on its own it also strips the tests
-# from the sdist -- which would break the reproducibility story, since the sdist
-# is what a reviewer unpacks to run `pytest`. MANIFEST.in grafts them back into
-# the sdist only; keep the two in sync if this list ever changes. See #434.
+# This `exclude` applies to both the wheel and the sdist, so it would also
+# strip the tests from the sdist -- but the sdist is what a reviewer unpacks to
+# run `pytest`, so we don't want that. MANIFEST.in adds the tests back into the
+# sdist only. If this list changes, update MANIFEST.in too. See #434.
 exclude = ["veloxquant_mlx.tests", "veloxquant_mlx.tests.*"]
 
 [tool.setuptools.package-data]
-# The control panel's frontend is plain static files with no build step, so
-# they must be shipped in the wheel alongside the Python sources.
+# The control panel's frontend has no build step -- it's just static files --
+# so they need to ship in the wheel alongside the Python source.
 "veloxquant_mlx.ui" = ["static/*"]
 veloxquant_mlx = ["metal/src/*.metal", "py.typed"]
 
 [tool.setuptools.exclude-package-data]
-# Under pyproject.toml setuptools defaults `include-package-data = true`, which
-# makes MANIFEST.in feed the *wheel* too -- so the `recursive-include` there
-# that keeps tests in the sdist would otherwise put them straight back into the
-# wheel, defeating the `exclude` in [tool.setuptools.packages.find]. Prune them
-# from the wheel explicitly. See #434.
+# setuptools defaults `include-package-data = true`, so MANIFEST.in feeds the
+# wheel too, not just the sdist. That means the `recursive-include` in
+# MANIFEST.in (which puts tests back into the sdist) would also put them back
+# into the wheel, undoing the `exclude` in [tool.setuptools.packages.find]
+# above. So we remove them from the wheel explicitly here. See #434.
 veloxquant_mlx = ["tests/*", "tests/**/*"]
 
 [tool.pytest.ini_options]
@@ -133,70 +133,69 @@ testpaths = ["veloxquant_mlx/tests"]
 addopts = "-v"
 filterwarnings = ["ignore::DeprecationWarning"]
 markers = [
-    "metal: requires a real Metal device (mx.fast.metal_kernel); select with -m metal, deselect with -m 'not metal'. Tests still self-skip via metal_available() when run where Metal is genuinely absent -- this marker exists so CI can also *choose* to exclude or isolate them, e.g. to keep a hosted-runner correctness job separate from a bare-metal performance job.",
+    "metal: requires a real Metal device (mx.fast.metal_kernel). Select with -m metal, or skip with -m 'not metal'. These tests already skip themselves via metal_available() when Metal isn't there, but this marker also lets CI deliberately exclude or isolate them -- for example, keeping a hosted-runner correctness job separate from a bare-metal performance job.",
 ]
 
 [tool.coverage.run]
 source = ["veloxquant_mlx"]
-# Test files themselves inflate the number without saying anything about the
-# library: pytest collecting and executing a test body already "covers" its
-# lines. Omitting them is what turns a self-referential ~91% into the
-# source-only number (measured 81.5%, #437) that actually describes how much
-# of the shipped package the suite exercises.
+# Test files inflate the coverage number without telling us anything useful:
+# just running a test already "covers" its own lines. Leaving them out turns a
+# misleading ~91% into the real number -- how much of the shipped library the
+# tests actually exercise, measured at 81.5% (#437).
 omit = ["veloxquant_mlx/tests/*"]
 
 [tool.coverage.report]
-# 80%, not the measured 81.5%: a floor just under the current value blocks
-# regression without requiring new tests to land it. Deliberately the
-# measured number rounded down, not an aspirational target -- see #437 for
-# where the gap actually is (benchmarks/ and cli/ are ~0% covered and are
-# the main drag; closing that is separate follow-up work, not implied by
-# this floor).
+# Set to 80%, just under the measured 81.5%. That's on purpose: it's a floor
+# that blocks regressions without forcing new tests to be written right now.
+# It's the current number rounded down, not a target to aim for -- see #437
+# for where the real gap is (benchmarks/ and cli/ are near 0% covered; closing
+# that is separate follow-up work, not something this floor requires).
 #
-# Measured on the MLX lane only (mlx-tests.yml, macos-14, one matrix leg --
-# see that workflow's coverage step). tests/non_metal/ (non-metal-unit.yml,
-# ubuntu, no MLX installed) is not gated: it deliberately never imports
-# veloxquant_mlx at all, so a repo-wide or combined percentage there would
-# either fail permanently or require a floor low enough to measure nothing.
+# This is only measured on the MLX test lane (mlx-tests.yml, macos-14, one
+# matrix leg -- see that workflow's coverage step). tests/non_metal/
+# (non-metal-unit.yml, ubuntu, no MLX installed) isn't covered by this floor:
+# it never imports veloxquant_mlx at all, so measuring it here would either
+# always fail or need a floor low enough to be meaningless.
 fail_under = 80
 
 [tool.mypy]
-# 3.12, not the 3.10 floor in `requires-python`: numpy's bundled stubs use the
-# PEP 695 `type X = ...` alias syntax, which mypy only parses when the
-# configured target is 3.12+. Pinning this to the floor makes mypy fail
-# outright ("Type statement is only supported in Python 3.12 and greater")
-# against any numpy satisfying this project's own `numpy>=1.26` dependency
-# floor, before it even reaches real code.
+# This is set to 3.12, not the 3.10 floor in `requires-python`, because
+# numpy's bundled stubs use the newer `type X = ...` alias syntax (PEP 695),
+# which mypy only understands when targeting 3.12+. If we set this to 3.10,
+# mypy would fail immediately ("Type statement is only supported in Python
+# 3.12 and greater") on any numpy version that satisfies our own
+# `numpy>=1.26` requirement, before even checking real code.
 #
-# This is a type-checking target only: it does not narrow what the package
-# supports or runs on. `requires-python = ">=3.10"` is what users install
-# against, and CI runs the suite on 3.10 through 3.14.
+# This only affects type checking, not what Python versions the package
+# supports. `requires-python = ">=3.10"` is still what users install against,
+# and CI runs the test suite on 3.10 through 3.14.
 python_version = "3.12"
 ignore_missing_imports = true
 
-# Per-module strictness ladder. These modules pass the flags below today, so
-# enabling them costs nothing now and stops the layer everything else types
-# against from regressing. The package ships `py.typed`, so downstream type
-# checkers consume these annotations -- this is what makes that marker mean
-# something.
+# This is a per-module strictness ladder. These specific modules already pass
+# the stricter flags below, so turning them on costs nothing and stops this
+# foundational layer from getting worse over time. The package ships
+# `py.typed`, so downstream type checkers actually read these annotations --
+# that's what makes keeping them accurate worthwhile.
 #
-# NOT a repo-wide strict flip. The remaining ~343 shipped-source errors are
-# dominated by mlx/numpy scalar-union stub artifacts (`int | float | complex`,
-# `floating`, `bool_` reaching `float()` and index positions), plus 12
-# `union-attr` hits on documented "None until loaded" fields guarded by
-# separate `is_loaded()`-style predicates mypy cannot correlate with a later
-# attribute access. Neither bucket is a confirmed runtime bug, and both want
-# design work rather than a flag. See #438 for the full triage.
+# This is NOT a repo-wide strict mode. The rest of the codebase still has
+# about 343 errors, mostly from two sources: mlx/numpy stub quirks around
+# mixed numeric types (`int | float | complex`, `floating`, `bool_` reaching
+# `float()` or being used as an index), and 12 `union-attr` warnings on fields
+# that are documented as "None until loaded" and guarded by an `is_loaded()`
+# check mypy can't connect to the later access. Neither is a real bug we've
+# confirmed; both need actual design work, not just a flag. Full triage in #438.
 #
-# `warn_redundant_casts` is deliberately absent despite being in #438's
-# proposed snippet: it is a *global-only* flag. Inside a per-module section
-# mypy prints "Per-module sections should only specify per-module flags" and
-# then exits 0 -- a permanent warning on every run that never fails anything.
-# If you want it, set it at the top level of [tool.mypy], not here.
+# `warn_redundant_casts` is intentionally left out even though #438 suggested
+# it: it's a global-only flag. Set inside a per-module section like this one,
+# mypy just prints a warning ("Per-module sections should only specify
+# per-module flags") and exits successfully without actually checking
+# anything -- so it would silently do nothing on every run. If you want this
+# flag, add it to the top level of [tool.mypy] instead.
 #
-# To extend the ladder: run the module under these flags, and only add it once
-# it is already clean. `cache/base.py` is the next candidate -- its 10 errors
-# are all `[no-untyped-def]` (missing annotations, not type errors).
+# To add a module to this ladder: run it under these flags, and only add it
+# once it's already clean. `cache/base.py` is next in line -- its 10 errors
+# are all missing type annotations (`[no-untyped-def]`), not real type errors.
 [[tool.mypy.overrides]]
 module = [
     "veloxquant_mlx.core.abstractions",
@@ -213,84 +212,85 @@ target-version = "py310"
 line-length = 100
 
 [tool.ruff.lint]
-# N (pep8-naming) and ARG (unused-arguments) were evaluated and rejected,
-# not just left off by default:
-#   - N: ~2372 violations, 96% of them N806/N803 flagging single-letter
-#     tensor-dimension names (D, H, B, N, K...) that are this codebase's
-#     established convention, matching the papers it implements. Not a
-#     real naming problem.
-#   - ARG: 59 violations, most of them deliberate -- factory/protocol-
-#     conforming constructor params ("accepted for QuantizerFactory
-#     parity"), static-method overrides matching a base class signature,
-#     and mock/stub callables matching a caller's expected arity. Fixing
-#     these for real would mean breaking interface contracts across the
-#     quantizer/cache factory pattern; enabling the rule would mostly
-#     produce scoped noqas rather than genuine fixes.
-#   - D (pydocstyle): NOT added to this global `select`. #424 asked for a
-#     *scoped* D-rule check covering only __all__-exported and CLI-entry-
-#     point symbols, mirroring the N/ARG rejections above -- but a literal
-#     "every __all__-exported module" reading turned out to cover ~155 of
-#     this package's 256 source files (nearly the whole tree, since
-#     virtually every module here exports one), which would apply D just
-#     as broadly as the repo-wide adoption #424 itself rejects.
-#     `[tool.ruff.lint.per-file-ignores]` also can't express "ignore
-#     everywhere except these paths" the way one might expect: ruff unions
-#     the ignore sets of every pattern that matches a given file, so a
-#     wildcard `"*" = ["D101", ...]` can never be narrowed back by a more
-#     specific pattern with an empty list -- the wildcard's ignores still
-#     apply. Getting the scope right needs the file list on the *select*
-#     side, not on a per-file *ignore*, so it's run as a separate, narrowly-
-#     targeted invocation instead -- see the `docstring-coverage` job in
-#     .github/workflows/lint.yml, which runs
-#     `ruff check --select D101,D102,D103 <the scoped paths>` directly
-#     against exactly the surfaces #424's own Specification named: the CLI
-#     entry point (__main__.py, cli/*.py), the control-panel HTTP/process
-#     surface (ui/*.py), and the artifact-persistence contract
-#     (artifacts/*.py) -- "a new contributor or user hits first" plus the
-#     "what does this promise, not just what does it do" read/write
-#     contract, not every module with a dunder export.
+# N (pep8-naming) and ARG (unused-arguments) were tried and turned down on
+# purpose, not just left off by default:
+#   - N: found about 2372 violations, 96% of them flagging single-letter
+#     tensor-dimension names like D, H, B, N, K. That's this codebase's normal
+#     style, matching the papers it implements, not an actual naming problem.
+#   - ARG: found 59 violations, and most are intentional -- constructor
+#     parameters kept for factory/protocol compatibility (noted as "accepted
+#     for QuantizerFactory parity"), static-method overrides that must match a
+#     base class signature, and mock/stub callables that match a caller's
+#     expected argument count. Actually fixing these would break interface
+#     contracts across the quantizer/cache factory pattern, so turning the
+#     rule on would mostly mean adding noqa comments rather than fixing
+#     anything real.
+#   - D (pydocstyle): not added here at all. #424 asked for a narrower check,
+#     covering only __all__-exported symbols and CLI entry points. But taken
+#     literally, "every __all__-exported module" turned out to be about 155 of
+#     this package's 256 files -- almost the whole codebase, since nearly
+#     every module exports something. That's just as broad as the repo-wide
+#     version #424 itself said no to.
+#     `[tool.ruff.lint.per-file-ignores]` can't express "ignore everywhere
+#     except these paths" either: ruff combines the ignore lists from every
+#     pattern that matches a file, so a wildcard like `"*" = ["D101", ...]`
+#     can't be overridden by a more specific pattern with an empty ignore
+#     list -- the wildcard's ignores still apply. So the scoping has to happen
+#     on the *select* side, listing exactly which files to check, not via a
+#     per-file *ignore*. That's done as a separate command instead: see the
+#     `docstring-coverage` job in .github/workflows/lint.yml, which runs
+#     `ruff check --select D101,D102,D103 <the scoped paths>` against exactly
+#     what #424 asked for -- the CLI entry point (__main__.py, cli/*.py), the
+#     control panel's HTTP/process code (ui/*.py), and the artifact-
+#     persistence contract (artifacts/*.py). These are the surfaces a new
+#     contributor or user hits first, and where the docstring needs to state
+#     a contract (not just describe what the code does) -- not every module
+#     that happens to export something.
 #
-#     That invocation selects only D101/D102/D103 (missing docstring on a
-#     public class/function/method), not the full D rule family:
-#     D400/D401/D415/D107 etc. enforce docstring *prose* style (imperative
-#     mood, terminal punctuation, __init__ coverage) and fired false
-#     positives even on already-thorough docstrings here (e.g.
-#     cli/benchmark.py's one-line module docstring, or D107 wanting an
-#     __init__ docstring ServerSupervisor's class docstring already
-#     covers) -- exactly the kind of pedantic mismatch that got N rejected
-#     above. D101-103 alone is a direct, low-noise check for "is this
-#     missing", which is what #424 was actually about.
+#     That command only checks D101/D102/D103 (missing docstrings on public
+#     classes/functions/methods), not the full D rule family. Rules like
+#     D400/D401/D415/D107 check docstring *writing style* (imperative mood,
+#     ending punctuation, requiring __init__ docstrings) and produced false
+#     positives on docstrings that were already good -- e.g. cli/benchmark.py's
+#     one-line module docstring, or D107 asking for an __init__ docstring when
+#     the class docstring already covers it. That's the same kind of pedantic
+#     mismatch that got N turned down above. D101-103 alone just checks "is a
+#     docstring missing," which is what #424 actually wanted.
 select = ["E", "F", "I", "W", "UP", "B", "PTH", "RET", "SIM", "C4"]
-# E501 (line too long) stays ignored: checked all 25 lines over 100 chars
-# in veloxquant_mlx/ as of the audit that added the rule groups above --
-# every one is an f-string/docstring/comment/help-text literal (table
-# formatting, error messages, long method-name lists) that can't wrap
-# without hurting readability, not real multi-statement code.
+# E501 (line too long) is still ignored. We checked all 25 lines over 100
+# characters in veloxquant_mlx/ when the rule groups above were added, and
+# every one is a long string literal -- an f-string, docstring, comment, or
+# help text (table formatting, error messages, long lists of method names)
+# that would be harder to read if wrapped. None of them are actual code that
+# should be split up.
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
-# B023: verified false positives, not fixed because fixing would make the code
-# worse. Every flagged closure across these 8 benchmark harnesses is handed to
-# a local timing helper (_bench/_timeit/bench_decode_step) that calls fn()
-# synchronously inside its own loops and never stores, schedules, or returns
-# it -- so the closure is fully consumed before the enclosing loop rebinds
-# anything. Checked all 8 files for any deferral primitive
-# (functools.partial/.append(lambda.../Thread/Pool/submit/asyncio/.map(/
-# callback=/schedule): none present. Binding defaults to silence the rule
-# would add ~9 dummy parameters per call site to benchmark code purely to
-# satisfy a rule that isn't describing a real defect here -- one lambda at
-# kv_kernel_roofline_bench.py:257 alone accounts for 9 of the 137 hits
-# (q, k_codes, k_scale, k_zero, v_codes, v_scale, v_zero, scale, plus one
-# more). See #435.
+# B023 is ignored here because we checked and these are false positives --
+# fixing them would make the code worse, not better. Every closure this rule
+# flags, across these 8 benchmark files, is passed straight to a local timing
+# helper (_bench/_timeit/bench_decode_step) that calls it right away, inside
+# its own loop, and never stores, schedules, or returns it. So the closure is
+# fully used before the loop can rebind any variable it depends on. We checked
+# all 8 files for anything that would actually defer the call (functools.partial,
+# appending a lambda, Thread, Pool, submit, asyncio, .map(, callback=, schedule)
+# and found none. Silencing the warning by adding default-argument bindings
+# would mean adding about 9 extra dummy parameters per call site, just to
+# satisfy a rule that isn't catching a real bug here -- one lambda alone, at
+# kv_kernel_roofline_bench.py:257, accounts for 9 of the 137 total hits
+# (q, k_codes, k_scale, k_zero, v_codes, v_scale, v_zero, scale, plus one more).
+# See #435.
 "scripts/*.py" = ["B023"]
 
-# E402: these standalone scripts insert the repo root into sys.path so they
-# run from a checkout without an install; the first-party imports below that
-# line cannot be hoisted above it without breaking the whole point of the
-# pattern. Standard sys.path-bootstrap exception. (benchmark_gemma4.py's two
-# E402 hits were a different, genuinely fixable shape -- unrelated mid-file
-# re-imports with no path dependency -- and were fixed directly rather than
-# ignored; it no longer triggers this rule at all.) See #435.
+# E402 is ignored for these scripts because they add the repo root to
+# sys.path so they can run straight from a checkout without installing the
+# package first. The first-party imports that come after that line can't be
+# moved above it without breaking the whole point of doing this -- it's a
+# standard sys.path-bootstrap pattern. (benchmark_gemma4.py had two E402 hits
+# for a different, actually fixable reason -- unrelated re-imports in the
+# middle of the file with no connection to sys.path -- and those were fixed
+# directly instead of ignored; that file no longer triggers this rule at all.)
+# See #435.
 "benchmark_scripts/*.py" = ["E402"]
 
 [tool.ruff.lint.isort]
@@ -299,18 +299,20 @@ known-first-party = ["veloxquant_mlx"]
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = ["veloxquant_mlx/__init__.py:__version__"]
-# Empty string, not `false`: python-semantic-release >=10 validates this as a
-# string, and a bool raises a pydantic error that `semantic-release version
-# --print` reports on stderr. The release workflow swallows that stderr and
-# falls back to an empty version, so the bad value made every run silently
-# take the "No release needed" branch instead of failing loudly.
+# This must be an empty string, not `false`. python-semantic-release 10+
+# expects a string here, and a boolean causes a validation error that
+# `semantic-release version --print` writes to stderr. The release workflow
+# swallows that stderr and falls back to an empty version, so using `false`
+# made every run silently act as if "no release is needed," instead of
+# actually failing with an error.
 build_command = ""
 commit_parser = "conventional"
 commit_message = "chore(release): {version} [skip ci]"
 tag_format = "v{version}"
-# Both are required to stay on 0.x. `major_on_zero = false` alone only stops a
-# *breaking change* from forcing 1.0.0; without `allow_zero_version` PSR still
-# graduates the project to 1.0.0 on the next release.
+# Both settings are needed to stay on version 0.x. `major_on_zero = false` by
+# itself only stops a breaking change from forcing a jump to 1.0.0 -- without
+# `allow_zero_version` too, semantic-release would still bump to 1.0.0 on the
+# next release regardless.
 major_on_zero = false
 allow_zero_version = true
 
@@ -322,11 +324,12 @@ changelog_file = "CHANGELOG.md"
 exclude_commit_patterns = [
     "^chore\\(release\\):",
 ]
-# Default mode is "init" -- regenerate-from-scratch, only if CHANGELOG.md
-# doesn't already exist. This repo's CHANGELOG.md was hand-authored before
-# any release ran, so every release silently no-op'd on it forever (no
-# error, no diff) until this was set. "update" prepends each new version's
-# section above the `<!-- version list -->` marker in the existing file.
+# The default mode is "init", which only writes CHANGELOG.md from scratch if
+# it doesn't already exist. This repo's CHANGELOG.md was written by hand
+# before any release ran, so with the default mode, every release just did
+# nothing to it (no error, no change) until we set this. "update" instead adds
+# each new version's section above the `<!-- version list -->` marker already
+# in the file.
 mode = "update"
 insertion_flag = "<!-- version list -->"
 
