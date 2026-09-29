@@ -56,7 +56,7 @@ from veloxquant_mlx.quantizers.svdq import (
     latent_group_slices,
     min_safe_rank,
     project_quantize_reconstruct_batched,
-    svd_compress_keys,
+    svd_compress_keys_batched,
 )
 
 
@@ -141,21 +141,11 @@ class SVDqKVCache(_MLXKVCache):
         serves it unbatched.
         """
         B, H, S, D = keys.shape
-        self._V = []
-        self._K_mean = []
-        self._singular_values = []
-        self._r = []
-        self._effective_schedule = []
-
-        for h in range(H):
-            k_h = keys[0, h].astype(mx.float32)  # [S, D]
-            L, V, K_mean, s_vals = svd_compress_keys(
-                k_h, rank=self._rank, energy_threshold=self._energy_threshold
-            )
-            self._V.append(V)  # [D, r_h]
-            self._K_mean.append(K_mean)  # [D]
-            self._singular_values.append(s_vals)  # [r_h]
-            self._r.append(int(V.shape[1]))
+        keys_hsd = keys[0].astype(mx.float32)  # [H, S, D]
+        _, self._V, self._K_mean, self._singular_values = svd_compress_keys_batched(
+            keys_hsd, rank=self._rank, energy_threshold=self._energy_threshold
+        )
+        self._r = [int(V.shape[1]) for V in self._V]
         mx.eval(self._V, self._K_mean, self._singular_values)
 
         self._effective_schedule = [self._resolve_safe_schedule(h) for h in range(H)]

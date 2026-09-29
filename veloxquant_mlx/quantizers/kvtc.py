@@ -275,6 +275,88 @@ def kvtc_compress(
     s_np = np.asarray(s_vals.tolist(), dtype=np.float64)
     variances = (s_np**2) / max(S, 1)  # per-component sample variance
 
+    return kvtc_compress_from_pca_fit(
+        L, V, mean, variances, S, total_bit_budget, bit_choices=bit_choices, beta=beta
+    )
+
+
+def kvtc_local_pca_batched(
+    tensor: mx.array,  # [BH, S, D] fp16/fp32
+) -> tuple[list[mx.array], list[mx.array], list[mx.array], list[np.ndarray]]:
+    """Batched-over-``BH`` equivalent of :func:`kvtc_compress`'s local-PCA
+    fit step (Section "Algorithm", steps 1-3), replacing
+    ``KVTCKVCache.update_and_fetch``'s ``for b / for h`` loop's SVD fit call
+    (VeloxQuant-MLX#569). Does NOT run DP bit allocation, quantization, or
+    entropy coding — those remain separate, correctly-sequential per-row
+    steps (DP is a genuine sequential solver, out of scope per the issue;
+    quantization/entropy-coding are numpy-based and already fast).
+
+    ``mx.linalg.svd`` natively supports a batched leading axis (verified
+    directly: singular values/vectors for each row of a batched call are
+    bit-identical to calling it once per row), so the SVD is one dispatch
+    instead of ``BH`` separate CPU-stream calls — same technique as GEAR's
+    ``_truncated_svd_batched`` (#504) and SVDq's ``svd_compress_keys_batched``
+    (#569). Unlike those, KVTC's rank is always ``r = min(S, D)`` (no
+    energy-threshold auto-rank) — since ``S`` and ``D`` are shared across
+    every row in one call, every row's rank is already identical, so no
+    zero-pad/truncate-to-own-rank step is needed here.
+
+    Args:
+        tensor: ``[BH, S, D]`` fp16 or fp32 — one row per (batch, head).
+
+    Returns:
+        Four length-``BH`` lists ``(L_list, V_list, mean_list,
+        variances_list)`` — ``L`` is ``[S, r]`` fp32 latents (NOT folded
+        with singular values, unlike GEAR's convention — matches
+        :func:`kvtc_compress`'s local variable exactly), ``V`` is
+        ``[D, r]`` fp32, ``mean`` is ``[D]`` fp32, ``variances`` is a
+        ``[r]`` float64 numpy array (``s_i^2 / S``, matching
+        :func:`kvtc_compress`'s dtype exactly since it feeds directly into
+        :func:`veloxquant_mlx.allocators.kvtc_dp.dp_allocate_bits`).
+    """
+    x = tensor.astype(mx.float32)
+    bh, S, D = int(x.shape[0]), int(x.shape[1]), int(x.shape[2])
+    mean = mx.mean(x, axis=1)  # [BH, D]
+    x_centered = x - mean[:, None, :]
+
+    r = min(S, D)
+    U, s_vals, Vt = mx.linalg.svd(x_centered, stream=mx.cpu)  # [BH,S,S],[BH,min(S,D)],[BH,min(S,D),D]
+    mx.eval(U, s_vals, Vt)
+    Vt_r = Vt[:, :r, :]  # [BH, r, D]
+    V = mx.swapaxes(Vt_r, -1, -2)  # [BH, D, r]
+
+    L = x_centered @ V  # [BH, S, r]
+    mx.eval(L)
+
+    s_r = s_vals[:, :r]  # [BH, r]
+    s_np = np.asarray(s_r.tolist(), dtype=np.float64)  # [BH, r]
+    variances_all = (s_np**2) / max(S, 1)  # [BH, r]
+
+    L_list = [L[i] for i in range(bh)]
+    V_list = [V[i] for i in range(bh)]
+    mean_list = [mean[i] for i in range(bh)]
+    variances_list = [variances_all[i] for i in range(bh)]
+    return L_list, V_list, mean_list, variances_list
+
+
+def kvtc_compress_from_pca_fit(
+    L: mx.array,
+    V: mx.array,
+    mean: mx.array,
+    variances: np.ndarray,
+    S: int,
+    total_bit_budget: int,
+    bit_choices: tuple[int, ...] = DEFAULT_BIT_CHOICES,
+    beta: float = DEFAULT_BETA,
+) -> KVTCArtifact:
+    """DP bit allocation + quantization + entropy coding from an already-
+    fitted local PCA basis (``L``, ``V``, ``mean``, ``variances``) — the
+    remaining, correctly-sequential-per-row steps of :func:`kvtc_compress`
+    after its SVD fit (see :func:`kvtc_local_pca_batched`, which batches
+    that fit step across ``BH`` rows; this function runs the rest, still
+    once per row, exactly as :func:`kvtc_compress` would from the same
+    inputs).
+    """
     bit_alloc = dp_allocate_bits(variances, total_bit_budget, bit_choices=bit_choices, beta=beta)
 
     L_np = np.asarray(L.tolist(), dtype=np.float64)
@@ -387,6 +469,8 @@ def kvtc_fp16_bytes(artifact: KVTCArtifact) -> int:
 __all__ = [
     "KVTCArtifact",
     "kvtc_compress",
+    "kvtc_compress_from_pca_fit",
+    "kvtc_local_pca_batched",
     "kvtc_decompress",
     "kvtc_fp16_bytes",
     "kvtc_pre_entropy_bytes",

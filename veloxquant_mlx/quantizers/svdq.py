@@ -110,6 +110,92 @@ def svd_compress_keys(
     return L, V, K_mean, s_r
 
 
+def svd_compress_keys_batched(
+    keys: mx.array,  # [H, S, D] fp16/fp32
+    rank: int | None = None,
+    energy_threshold: float = 0.95,
+) -> tuple[list[mx.array], list[mx.array], list[mx.array], list[mx.array]]:
+    """Batched-over-heads equivalent of calling :func:`svd_compress_keys` once
+    per head, replacing ``SVDqKVCache._run_prefill_svd``'s ``for h in
+    range(H):`` loop (VeloxQuant-MLX#569).
+
+    ``mx.linalg.svd`` natively supports a batched leading axis (verified
+    directly: singular values/vectors for each row of a batched ``[H,S,D]``
+    call are bit-identical to calling it once per row), so the SVD itself is
+    one dispatch instead of ``H`` separate CPU-stream calls — the same
+    technique GEAR's ``_truncated_svd_batched`` (#504) already uses.
+
+    Each head's SVD can legitimately land at a different rank under
+    energy-threshold auto-rank (different heads' key distributions have
+    different effective dimensionality) — since a single array can't hold a
+    per-row-variable width, the SVD factors are computed at the batch's max
+    rank and each head's per-head outputs are truncated back to its own
+    rank before being returned, so the return contract exactly matches
+    calling :func:`svd_compress_keys` per head: no padding leaks out of
+    this function.
+
+    Args:
+        keys: ``[H, S, D]`` fp16 or fp32 — one head axis.
+        rank: Explicit rank shared by every head. If None, chosen per-head
+            by ``energy_threshold`` (vectorized cumulative-energy selection,
+            not a per-row Python loop; verified bit-identical to looping
+            :func:`svd_compress_keys`'s scalar rank selection).
+        energy_threshold: Fraction of singular-value energy to retain per
+            head when ``rank`` is None.
+
+    Returns:
+        Four length-``H`` lists ``(L_list, V_list, K_mean_list, s_list)``,
+        matching :func:`svd_compress_keys`'s per-head return values exactly
+        (each already truncated to that head's own rank — no shared padding
+        in the returned lists).
+    """
+    x = keys.astype(mx.float32)
+    H, S, D = x.shape
+    K_mean = mx.mean(x, axis=1)  # [H, D]
+    x_centered = x - K_mean[:, None, :]  # [H, S, D]
+
+    U, S_vals, Vt = mx.linalg.svd(x_centered, stream=mx.cpu)  # [H,S,S],[H,min(S,D)],[H,min(S,D),D]
+    mx.eval(U, S_vals, Vt)
+
+    r_max_possible = S_vals.shape[-1]
+    if rank is not None:
+        r = min(rank, r_max_possible, D)
+        ranks = [r] * H
+        max_rank = r
+    else:
+        total = mx.sum(S_vals, axis=-1, keepdims=True)  # [H, 1]
+        is_near_zero = (total < 1e-12).reshape(H)  # matches the scalar
+        # version's `if total_energy < 1e-12: rank = 1` short-circuit,
+        # evaluated BEFORE the cumulative-energy loop there — same special
+        # case as GEAR's _truncated_svd_batched (see its docstring for why
+        # this must be its own branch rather than falling through the
+        # division-safe cumsum/max(total,eps) path below).
+        cumsum = mx.cumsum(S_vals, axis=-1)  # [H, R]
+        frac = cumsum / mx.maximum(total, 1e-12)
+        meets = frac >= energy_threshold  # [H, R] bool
+        first_true = mx.argmax(meets.astype(mx.int32), axis=-1)  # [H]
+        any_true = mx.any(meets, axis=-1)
+        raw_rank = mx.where(
+            any_true, first_true + 1, mx.full((H,), r_max_possible, dtype=mx.int32)
+        )
+        raw_rank = mx.where(is_near_zero, mx.ones_like(raw_rank), raw_rank)
+        mx.eval(raw_rank)
+        raw_rank_list: list[int] = raw_rank.tolist()  # type: ignore[assignment]
+        ranks = [min(r, int(r_max_possible), D) for r in raw_rank_list]
+        max_rank = max(ranks) if ranks else 0
+
+    Vt_trunc = Vt[:, :max_rank, :]  # [H, max_rank, D]
+    V_padded = mx.swapaxes(Vt_trunc, -1, -2)  # [H, D, max_rank]
+    s_padded = S_vals[:, :max_rank]  # [H, max_rank]
+    L_padded = x_centered @ V_padded  # [H, S, max_rank]
+
+    L_list = [L_padded[h, :, : ranks[h]] for h in range(H)]
+    V_list = [V_padded[h, :, : ranks[h]] for h in range(H)]
+    K_mean_list = [K_mean[h] for h in range(H)]
+    s_list = [s_padded[h, : ranks[h]] for h in range(H)]
+    return L_list, V_list, K_mean_list, s_list
+
+
 def latent_group_slices(r: int, n_groups: int = 8) -> list[tuple[int, int]]:
     """Split ``r`` latent channels (descending singular-value order) into
     ``n_groups`` contiguous, near-equal-size slices, matching the paper's
@@ -349,6 +435,7 @@ def equivalent_bit_width(r: int, bit_schedule: Sequence[int] = DEFAULT_BIT_SCHED
 
 __all__ = [
     "svd_compress_keys",
+    "svd_compress_keys_batched",
     "quantize_latents_mixed",
     "reconstruct_keys",
     "project_quantize_reconstruct_batched",
