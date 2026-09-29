@@ -55,8 +55,7 @@ from veloxquant_mlx.quantizers.svdq import (
     equivalent_bit_width,
     latent_group_slices,
     min_safe_rank,
-    quantize_latents_mixed,
-    reconstruct_keys,
+    project_quantize_reconstruct_batched,
     svd_compress_keys,
 )
 
@@ -221,26 +220,23 @@ class SVDqKVCache(_MLXKVCache):
 
     def _project_quantize_reconstruct(self, keys: mx.array) -> mx.array:
         """Project keys → latent → quantize → reconstruct for all [B, H, S, D],
-        each head through its own SVD basis (see _run_prefill_svd)."""
-        B, H, S, D = keys.shape
+        each head through its own SVD basis (see _run_prefill_svd).
 
-        out_batch = []
-        for h in range(H):
-            V = self._V[h]
-            K_mean = self._K_mean[h]
-            sv = self._singular_values[h]
-            k_bh = keys[0, h].astype(mx.float32)  # [S, D]
-            k_centered = k_bh - K_mean[None, :]
-            L = k_centered @ V  # [S, r_h]
-            L_q = quantize_latents_mixed(
-                L,
-                sv,
-                bit_schedule=self._effective_schedule[h],
-                group_size=self._group_size,
-            )
-            k_hat = reconstruct_keys(L_q, V, K_mean)  # [S, D] fp16
-            out_batch.append(k_hat)
-        return mx.stack(out_batch, axis=0)[None]  # [1, H, S, D]
+        Batched across heads (grouped by their exact (rank, effective
+        schedule) pair — see project_quantize_reconstruct_batched) instead
+        of a Python loop calling this pipeline once per head — the decode
+        hot path this batching targets (#562; the SVD *fit* itself,
+        _run_prefill_svd, is out of scope here — see #569).
+        """
+        B, H, S, D = keys.shape
+        keys_hsd = keys[0].astype(mx.float32)  # [H, S, D]
+        return project_quantize_reconstruct_batched(
+            keys_hsd,
+            self._V,
+            self._K_mean,
+            self._effective_schedule,
+            self._group_size,
+        )[None]  # [1, H, S, D]
 
     # ------------------------------------------------------------------
     # mlx_lm protocol

@@ -50,7 +50,10 @@ from collections.abc import Sequence
 
 import mlx.core as mx
 
-from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
+from veloxquant_mlx.quantizers._quant_utils import (
+    _group_quant_dequant,
+    _group_quant_dequant_batched,
+)
 
 #: Paper's worked example schedule (Section 4.2): 8 equal-size groups over the
 #: latent channels, ordered from largest to smallest singular value, with the
@@ -207,6 +210,112 @@ def quantize_latents_mixed(
     return mx.concatenate(parts, axis=1)
 
 
+def project_quantize_reconstruct_batched(
+    keys: mx.array,  # [H, S, D]
+    V_list: list[mx.array],  # each [D, r_h] fp32
+    K_mean_list: list[mx.array],  # each [D] fp32
+    schedules: list[Sequence[int]],  # per-head effective bit schedule
+    group_size: int,
+) -> mx.array:
+    """Batched-over-heads equivalent of looping project -> quantize -> reconstruct
+    once per head, each through its own already-fitted SVD basis.
+
+    Replaces ``SVDqKVCache._project_quantize_reconstruct``'s ``for h in
+    range(H):`` loop — the decode-hot-path cost this function exists to
+    remove (see VeloxQuant-MLX#562; distinct from the SVD-*fit* loop, tracked
+    separately in #569). Each head's basis (``V_list[h]``, ``K_mean_list[h]``)
+    was already fit (by :func:`svd_compress_keys`, still called once per head
+    at prefill — out of scope here) and generally has its own rank ``r_h``
+    and, after the small-rank safe-schedule guard, possibly its own bit
+    schedule; this function only batches the per-token *application* of
+    those already-fitted, ragged-rank bases.
+
+    Heads are grouped by their exact ``(r_h, schedule_h)`` pair — in
+    practice very few distinct groups (typically 1, when every head shares
+    one explicit ``svdq_rank``/schedule; a handful under energy-threshold
+    auto-rank) — and each group's projection, quantization, and
+    reconstruction run as one batched call instead of ``H`` separate ones.
+    Within a group, the projection itself is further batched across ALL
+    heads at once (not just the group) by zero-padding every head's ``V``/
+    latent to the batch's max rank — :func:`quantize_latents_mixed`'s
+    channel-group boundaries depend on the exact rank, though, so
+    quantization is still done per ``(r_h, schedule_h)`` group. Numerically
+    identical to the per-head loop: a padded head's extra latent columns
+    are exact zeros (unused rows of a zero-padded ``V``project to 0,
+    independent of any other head's data), so they never influence another
+    head's projection, quantization, or reconstruction.
+
+    Args:
+        keys: ``[H, S, D]`` fp16 or fp32 — this call's keys, one head axis.
+        V_list: Per-head projection basis, length ``H``, each ``[D, r_h]``.
+        K_mean_list: Per-head mean key, length ``H``, each ``[D]``.
+        schedules: Per-head effective bit schedule, length ``H``.
+        group_size: Token-axis group size for the latent quantizer.
+
+    Returns:
+        ``[H, S, D]`` fp16 reconstructed keys.
+    """
+    H, S, D = keys.shape
+    ranks = [int(V.shape[1]) for V in V_list]
+    r_max = max(ranks) if ranks else 0
+
+    keys_f = keys.astype(mx.float32)
+
+    if r_max == 0:
+        return mx.zeros((H, S, D), dtype=mx.float16)
+
+    # Zero-pad every head's V/K_mean to [H, D, r_max] / [H, D] so the
+    # projection is one batched matmul across all H heads regardless of
+    # each head's own (possibly smaller) rank — padded V columns are exact
+    # zeros, so they contribute nothing to the padded latent columns.
+    V_padded = mx.zeros((H, D, r_max), dtype=mx.float32)
+    K_mean_stacked = mx.stack(K_mean_list, axis=0)  # [H, D]
+    for h in range(H):
+        r_h = ranks[h]
+        if r_h > 0:
+            V_padded[h, :, :r_h] = V_list[h]
+
+    k_centered = keys_f - K_mean_stacked[:, None, :]  # [H, S, D]
+    L = k_centered @ V_padded  # [H, S, r_max]
+
+    # Quantize per distinct (rank, schedule) group — channel-group
+    # boundaries (latent_group_slices) depend on the exact rank, so a
+    # padded-to-r_max quantize call would put the wrong channels in each
+    # bit-width tier for any head whose true rank differs from r_max.
+    groups: dict[tuple[int, tuple[int, ...]], list[int]] = {}
+    for h in range(H):
+        key = (ranks[h], tuple(schedules[h]))
+        groups.setdefault(key, []).append(h)
+
+    L_q = mx.zeros((H, S, r_max), dtype=mx.float16)
+    for (r_h, schedule_h), head_idxs in groups.items():
+        if r_h == 0:
+            continue
+        idx = mx.array(head_idxs)
+        L_group = mx.take(L, idx, axis=0)[:, :, :r_h]  # [n, S, r_h]
+        slices = latent_group_slices(r_h, n_groups=len(schedule_h))
+        parts: list[mx.array] = []
+        for group_idx, (start, end) in enumerate(slices):
+            bits = schedule_h[group_idx]
+            chunk = L_group[:, :, start:end]
+            if bits <= 0:
+                parts.append(mx.zeros_like(chunk).astype(mx.float16))
+            else:
+                parts.append(_group_quant_dequant_batched(chunk, bits, group_size))
+        recon = (
+            mx.concatenate(parts, axis=2)
+            if parts
+            else mx.zeros((len(head_idxs), S, 0), dtype=mx.float16)
+        )
+        if r_h < r_max:
+            pad = mx.zeros((len(head_idxs), S, r_max - r_h), dtype=mx.float16)
+            recon = mx.concatenate([recon, pad], axis=2)
+        L_q[idx] = recon
+
+    K_hat = L_q.astype(mx.float32) @ mx.swapaxes(V_padded, -1, -2) + K_mean_stacked[:, None, :]
+    return K_hat.astype(mx.float16)
+
+
 def reconstruct_keys(
     L_q: mx.array,
     V: mx.array,
@@ -242,6 +351,7 @@ __all__ = [
     "svd_compress_keys",
     "quantize_latents_mixed",
     "reconstruct_keys",
+    "project_quantize_reconstruct_batched",
     "latent_group_slices",
     "equivalent_bit_width",
     "min_safe_rank",
