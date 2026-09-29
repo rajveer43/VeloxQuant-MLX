@@ -80,9 +80,6 @@ release = [
     "python-semantic-release>=9.15",
     "GitPython<3.1.60",
 ]
-# Builds the Sphinx API reference in docs_sphinx/ (Read the Docs uses this
-# group via .readthedocs.yaml). Kept out of `dev` since it's only needed to
-# build docs, not to develop the package.
 docs = [
     "sphinx>=7.2",
     "furo>=2024.8",
