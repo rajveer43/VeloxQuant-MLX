@@ -89,6 +89,26 @@ release workflow -- you will not need it for ordinary contributions.
 Fork first if you do not have write access, then add
 `upstream` pointing at `rajveer43/VeloxQuant-MLX`.
 
+## Documentation layout
+
+Three separate places hold docs, each for a different purpose:
+
+- [`docs/`](docs/) -- research findings, benchmark write-ups, and design/architecture
+  notes. Hand-written, not built into a site.
+- [`docs-site/`](docs-site/) -- the user-facing guide at
+  [veloxquant.dev](https://veloxquant.dev/) (Docusaurus): installation, quickstart,
+  the algorithm overview, and per-feature guides. Hand-written.
+- [`docs_sphinx/`](docs_sphinx/) -- the API reference published on Read the Docs,
+  generated from `veloxquant_mlx`'s docstrings via Sphinx autodoc. Don't hand-write
+  content here beyond `index.md`/`quickstart.md`/`changelog.md` -- to change what
+  appears for a class or function, edit its docstring in `veloxquant_mlx/` and
+  rebuild:
+
+  ```bash
+  pip install -e ".[docs]"
+  sphinx-build -b html docs_sphinx docs_sphinx/_build/html
+  ```
+
 ## Code style (pre-commit)
 
 Python code is formatted and linted with [Ruff](https://docs.astral.sh/ruff/)

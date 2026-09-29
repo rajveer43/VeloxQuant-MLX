@@ -39,3 +39,6 @@ turboquant-mlx/
 brag-*
 
 skill-lock.json
+
+# Sphinx API docs build output (docs_sphinx/ source is tracked, this isn't)
+docs_sphinx/_build/

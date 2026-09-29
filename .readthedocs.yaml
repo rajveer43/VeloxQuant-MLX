@@ -1,0 +1,23 @@
+version: 2
+
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.12"
+  jobs:
+    # mlx (a hard runtime dependency, imported by ~half the package's modules)
+    # has no Linux wheels on PyPI -- it's macOS/Apple-Silicon-only -- so a
+    # plain `pip install .[docs]` fails resolving it on this Ubuntu image.
+    # Installing the package with --no-deps skips that resolution; conf.py
+    # mocks `mlx` and `mlx_lm` via autodoc_mock_imports so autodoc never
+    # actually imports them. numpy/scipy (this package's other runtime deps)
+    # have ordinary Linux wheels, so they're installed explicitly here rather
+    # than skipped -- keep this list in sync with [project.dependencies] in
+    # pyproject.toml if that ever changes.
+    post_install:
+      - pip install --no-deps -e .
+      - pip install "numpy>=1.26" "scipy>=1.11" sphinx furo myst-parser sphinx-autodoc-typehints
+
+sphinx:
+  configuration: docs_sphinx/conf.py
+  fail_on_warning: false
