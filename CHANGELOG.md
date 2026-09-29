@@ -527,6 +527,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.17 (2026-09-29)
+
+### Performance Improvements
+
+- **cache**: Batch CaM's per-head eviction/merge dispatch across B*H
+  ([#581](https://github.com/rajveer43/VeloxQuant-MLX/pull/581),
+  [`7f8a251`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7f8a251fb882bc7629e1e3ee08b3575c5ed23475))
+
+
 ## v0.91.16 (2026-09-29)
 
 ### Performance Improvements
