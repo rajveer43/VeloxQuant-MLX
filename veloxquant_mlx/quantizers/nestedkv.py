@@ -484,6 +484,274 @@ def full_nestedkv_fp16_bytes(tokens_seen: int, head_dim: int) -> int:
     return tokens_seen * head_dim * 2 * 2  # K + V, 2 bytes each
 
 
+# ---------------------------------------------------------------------------
+# Batched ([BH, S, D]) equivalents — dispatch-only vectorization over the
+# B*H axis. Each row's scoring/eviction is independent of every other row
+# (uniform budget, see #21 / module docstring), so this is a like-for-like
+# reimplementation of nestedkv_score/nestedkv_compress_prefill/
+# nestedkv_append_decode over a leading BH axis, not a new algorithm.
+# Verified bit-for-bit equivalent to calling the per-head functions in a
+# Python loop (see test_nestedkv_batched.py).
+# ---------------------------------------------------------------------------
+
+
+def _normalize_keys_batched(keys: mx.array) -> mx.array:
+    """L2-normalize each row of ``[BH, n, D]`` keys. Zero rows stay zero."""
+    norm = mx.sqrt(mx.sum(keys * keys, axis=-1, keepdims=True))
+    safe_norm = mx.maximum(norm, 1e-12)
+    return keys / safe_norm
+
+
+def _stable_memory_batched(k_hat: mx.array) -> mx.array:
+    """mu_s = mean over ALL normalized keys, per row. Returns [BH, D]."""
+    return mx.mean(k_hat, axis=1)
+
+
+def _episodic_memory_batched(k_hat: mx.array, block_size: int) -> mx.array:
+    """mu_e(i) = mean over the contiguous block containing token i, per row.
+
+    Same fixed block partition (by position) for every row, since
+    ``block_size`` is derived from S alone (identical across rows in one
+    call) — blocks stay rectangular. Returns [BH, n, D].
+    """
+    bh, n, d = k_hat.shape
+    b = max(1, min(int(block_size), n))
+    means = []
+    for start in range(0, n, b):
+        end = min(start + b, n)
+        block_mean = mx.mean(k_hat[:, start:end], axis=1, keepdims=True)  # [BH,1,D]
+        means.append(mx.broadcast_to(block_mean, (bh, end - start, d)))
+    return mx.concatenate(means, axis=1)
+
+
+def _current_memory_batched(k_hat: mx.array, window: int) -> mx.array:
+    """mu_c(i) = mean over the trailing causal window ending at i, per row.
+
+    Vectorized replacement of the per-token Python loop in
+    :func:`_current_memory`: the window boundary ``lo[i]`` depends only on
+    the (shared) position index i, not on row data, so the cumsum-diff
+    trick batches directly over the leading BH axis. Returns [BH, n, D].
+    """
+    bh, n, d = k_hat.shape
+    w = max(1, int(window))
+    cumsum = mx.cumsum(k_hat, axis=1)  # [BH, n, D]
+    idx = mx.arange(n)
+    lo = mx.maximum(idx - w + 1, 0)  # [n]
+    # window_sum[:, i] = cumsum[:, i] - cumsum[:, lo[i]-1] (or cumsum[:, i] if lo[i]==0).
+    # Gather cumsum at (lo - 1) clamped to 0, then zero out rows where lo == 0.
+    lo_minus_1 = mx.maximum(lo - 1, 0)  # [n]
+    gathered = cumsum[:, lo_minus_1]  # [BH, n, D]
+    has_prefix = (lo > 0)[None, :, None]  # [1, n, 1]
+    prefix_sum = mx.where(has_prefix, gathered, mx.zeros_like(gathered))
+    window_sum = cumsum - prefix_sum
+    counts = (idx - lo + 1).astype(mx.float32)[None, :, None]  # [1, n, 1]
+    return window_sum / counts
+
+
+def per_scale_anomaly_scores_batched(
+    k_hat: mx.array,
+    block_size: int,
+    window: int,
+) -> tuple[mx.array, mx.array, mx.array]:
+    """Batched-``[BH,n,D]`` equivalent of :func:`per_scale_anomaly_scores`.
+
+    Returns three ``[BH, n]`` float32 arrays, each min-max normalized to
+    ``[0, 1]`` independently per row (matching the per-head function's
+    per-head normalization).
+    """
+    mu_s = _stable_memory_batched(k_hat)  # [BH, D]
+    mu_e = _episodic_memory_batched(k_hat, block_size)  # [BH, n, D]
+    mu_c = _current_memory_batched(k_hat, window)  # [BH, n, D]
+
+    a_s = -mx.sum(k_hat * mu_s[:, None, :], axis=-1)  # [BH, n]
+    a_e = -mx.sum(k_hat * mu_e, axis=-1)
+    a_c = -mx.sum(k_hat * mu_c, axis=-1)
+
+    return (
+        _min_max_normalize_batched(a_s),
+        _min_max_normalize_batched(a_e),
+        _min_max_normalize_batched(a_c),
+    )
+
+
+def _min_max_normalize_batched(x: mx.array) -> mx.array:
+    """Normalize ``[BH, n]`` to ``[0, 1]`` independently per row.
+
+    Constant rows (span <= 1e-12) map to all-zeros for that row, matching
+    :func:`_min_max_normalize`'s per-row behavior.
+    """
+    lo = mx.min(x, axis=-1, keepdims=True)
+    hi = mx.max(x, axis=-1, keepdims=True)
+    span = hi - lo
+    safe_span = mx.where(span > 1e-12, span, mx.ones_like(span))
+    normed = (x - lo) / safe_span
+    return mx.where(span > 1e-12, normed, mx.zeros_like(x))
+
+
+def _top_bottom_gap_batched(x: mx.array, p: float = 0.10) -> mx.array:
+    """Delta_k = mean(top-p(x)) - mean(bottom-p(x)), per row. Returns [BH]."""
+    n = x.shape[-1]
+    k = max(1, int(round(n * p)))
+    sorted_x = mx.sort(x, axis=-1)  # ascending, [BH, n]
+    bottom = sorted_x[:, :k]
+    top = sorted_x[:, n - k :]
+    return mx.mean(top, axis=-1) - mx.mean(bottom, axis=-1)
+
+
+def head_adaptive_blend_batched(
+    a_s_hat: mx.array,
+    a_e_hat: mx.array,
+    a_c_hat: mx.array,
+    beta: float = 3.0,
+    prior: tuple[float, float, float] = (0.4, 0.4, 0.2),
+) -> mx.array:
+    """Batched-``[BH,n]`` equivalent of :func:`head_adaptive_blend`.
+
+    Each row's blend weights are computed from that row's own scores only
+    (no cross-row coupling) — same per-row-independence as every other
+    NestedKV batched primitive. ``n<=1`` rows fall back to the fixed prior
+    exactly as the per-head function does; since ``n`` is shared across all
+    rows in one call (same S), the fallback is an all-rows-or-no-rows branch.
+
+    Returns:
+        [BH, n] float32 blended score a_blend.
+    """
+    n = a_s_hat.shape[-1]
+    if n <= 1:
+        w_s, w_e, w_c = prior
+        return w_s * a_s_hat + w_e * a_e_hat + w_c * a_c_hat
+
+    delta_s = _top_bottom_gap_batched(a_s_hat)  # [BH]
+    delta_e = _top_bottom_gap_batched(a_e_hat)
+    delta_c = _top_bottom_gap_batched(a_c_hat)
+    deltas = mx.stack([delta_s, delta_e, delta_c], axis=-1)  # [BH, 3]
+
+    log_prior = mx.array([float(mx.log(mx.array(p)).item()) for p in prior])  # [3]
+    logits = log_prior[None, :] + beta * deltas  # [BH, 3]
+    weights = mx.softmax(logits, axis=-1)  # [BH, 3]
+    w_s, w_e, w_c = weights[:, 0:1], weights[:, 1:2], weights[:, 2:3]  # [BH, 1]
+    return w_s * a_s_hat + w_e * a_e_hat + w_c * a_c_hat
+
+
+def surprise_gated_score_batched(
+    a_s_hat: mx.array,
+    a_e_hat: mx.array,
+    a_c_hat: mx.array,
+    a_blend: mx.array,
+    tau: float = 0.60,
+    kappa: float = 10.0,
+) -> mx.array:
+    """Batched-``[BH,n]`` equivalent of :func:`surprise_gated_score`.
+
+    Returns:
+        [BH, n] float32 final NestedKV score a_star.
+    """
+    stacked = mx.stack([a_s_hat, a_e_hat, a_c_hat], axis=0)  # [3, BH, n]
+    surprise = mx.std(stacked, axis=0)  # [BH, n]
+
+    surprise_norm = _min_max_normalize_batched(surprise)
+    surprise_centered = surprise_norm - mx.mean(surprise_norm, axis=-1, keepdims=True)
+
+    a_win = mx.max(stacked, axis=0)  # [BH, n]
+    alpha = mx.sigmoid(kappa * (surprise_centered - tau))
+    return (1.0 - alpha) * a_blend + alpha * a_win
+
+
+def nestedkv_score_batched(
+    keys: mx.array,
+    window: int = 64,
+    beta: float = 3.0,
+    tau: float = 0.60,
+    kappa: float = 10.0,
+    prior: tuple[float, float, float] = (0.4, 0.4, 0.2),
+) -> mx.array:
+    """Batched-``[BH,n,D]`` equivalent of :func:`nestedkv_score`.
+
+    Args:
+        keys: [BH, n, D] fp16/fp32 key matrix (full prefill), one row per head.
+        window, beta, tau, kappa, prior: gate/blend constants (shared across
+            rows — every real caller applies one uniform config per layer).
+
+    Returns:
+        [BH, n] float32 final score a_star (higher = more anomalous = keep-worthy).
+    """
+    n = keys.shape[1]
+    block_size = block_size_for(n)
+    k_hat = _normalize_keys_batched(keys.astype(mx.float32))
+    a_s_hat, a_e_hat, a_c_hat = per_scale_anomaly_scores_batched(k_hat, block_size, window)
+    a_blend = head_adaptive_blend_batched(a_s_hat, a_e_hat, a_c_hat, beta=beta, prior=prior)
+    return surprise_gated_score_batched(a_s_hat, a_e_hat, a_c_hat, a_blend, tau=tau, kappa=kappa)
+
+
+def nestedkv_compress_prefill_batched(
+    keys: mx.array,  # [BH, S, D] fp16/fp32, S > 1
+    values: mx.array,  # [BH, S, D]
+    n_sink: int,
+    budget: int,
+    window: int = 64,
+    beta: float = 3.0,
+    tau: float = 0.60,
+    kappa: float = 10.0,
+) -> tuple[mx.array, mx.array]:
+    """Batched-``[BH,S,D]`` equivalent of :func:`nestedkv_compress_prefill`.
+
+    Runs the one-shot NestedKV scoring once across all BH rows, then keeps
+    each row's own top-``budget_eff`` scoring tokens (sinks always
+    included), in ascending original-position order — same per-row-
+    independent selection as the per-head loop, batched via ``mx.argsort``/
+    ``take_along_axis`` instead of Python ``.tolist()``/``sorted()``.
+    ``budget_eff`` depends only on ``n_sink``/``budget``/``S`` (all shared
+    across rows in one call), so every row keeps exactly the same count —
+    stacks with no padding, same invariant the per-head loop relies on.
+
+    Returns:
+        (kept_keys, kept_values), both [BH, budget_eff, D] fp16.
+    """
+    bh, S, D = keys.shape
+    n_sink_eff = min(n_sink, S)
+    budget_eff = max(n_sink_eff, min(budget, S))
+
+    scores = nestedkv_score_batched(keys.astype(mx.float32), window=window, beta=beta, tau=tau, kappa=kappa)
+
+    if n_sink_eff > 0:
+        sink_inf = mx.full((bh, n_sink_eff), float("inf"), dtype=mx.float32)
+        protected = mx.concatenate([sink_inf, scores[:, n_sink_eff:]], axis=1)
+    else:
+        protected = scores
+
+    # Top-budget_eff by score (descending), then re-sort ascending by
+    # original position -- matches `sorted(ranked[:budget_eff])` exactly.
+    ranked = mx.argsort(-protected, axis=-1)[:, :budget_eff]  # [BH, budget_eff]
+    kept = mx.sort(ranked, axis=-1)  # [BH, budget_eff]
+
+    kept_keys = mx.take_along_axis(keys, kept[..., None], axis=1).astype(mx.float16)
+    kept_values = mx.take_along_axis(values, kept[..., None], axis=1).astype(mx.float16)
+    return kept_keys, kept_values
+
+
+def nestedkv_append_decode_batched(
+    prev_keys: mx.array | None,  # [BH, n_prev, D] fp16, or None before first token
+    prev_values: mx.array | None,
+    keys: mx.array,  # [BH, S, D], S == 1 typically
+    values: mx.array,
+) -> tuple[mx.array, mx.array]:
+    """Batched-``[BH,S,D]`` equivalent of :func:`nestedkv_append_decode`.
+
+    Plain unscored concatenation along the token axis — inherently
+    independent per row, so this is a single vectorized concat over all BH
+    rows instead of a Python loop issuing BH separate concats. Also serves
+    as the bootstrap path when ``prev_keys`` is ``None``.
+    """
+    k16 = keys.astype(mx.float16)
+    v16 = values.astype(mx.float16)
+    if prev_keys is None:
+        return k16, v16
+    return (
+        mx.concatenate([prev_keys, k16], axis=1),
+        mx.concatenate([prev_values, v16], axis=1),
+    )
+
+
 __all__ = [
     "NestedKVState",
     "init_nestedkv_state",
@@ -498,4 +766,10 @@ __all__ = [
     "nestedkv_get_kv",
     "nestedkv_fp16_bytes",
     "full_nestedkv_fp16_bytes",
+    "per_scale_anomaly_scores_batched",
+    "head_adaptive_blend_batched",
+    "surprise_gated_score_batched",
+    "nestedkv_score_batched",
+    "nestedkv_compress_prefill_batched",
+    "nestedkv_append_decode_batched",
 ]

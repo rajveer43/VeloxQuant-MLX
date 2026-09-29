@@ -76,10 +76,8 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 from veloxquant_mlx.quantizers.nestedkv import (
     NestedKVState,
     init_nestedkv_state,
-    nestedkv_append_decode,
-    nestedkv_compress_prefill,
-    nestedkv_fp16_bytes,
-    nestedkv_get_kv,
+    nestedkv_append_decode_batched,
+    nestedkv_compress_prefill_batched,
 )
 
 
@@ -135,9 +133,11 @@ class NestedKVKVCache(_MLXKVCache):
         self._safeguard_alpha = float(getattr(config, "nestedkv_safeguard_alpha", 0.20))
 
         self._head_dim: int = 0
-        self._states: list[NestedKVState] = []
         self._B: int = 0
         self._H: int = 0
+        self._compressed: bool = False
+        self._bh_keys: mx.array | None = None
+        self._bh_values: mx.array | None = None
 
         self._nestedkv_kept_bytes: int = 0
         self._full_seq_bytes: int = 0
@@ -172,75 +172,86 @@ class NestedKVKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
-        """Lazily initialise per-head NestedKVState list on first call."""
-        if not self._states:
+        """Lazily record B/H/D on first call."""
+        if self._B == 0 and self._H == 0:
             self._B = B
             self._H = H
             self._head_dim = D
-            self._states = [init_nestedkv_state(self._n_sink) for _ in range(B * H)]
 
-    def _head_idx(self, b: int, h: int) -> int:
-        return b * self._H + h
+    @property
+    def _states(self) -> list[NestedKVState]:
+        """Backward-compat diagnostic view: one NestedKVState per (b, h) row,
+        synthesized from the flat ``[BH, n, D]`` tensors. Not used internally
+        by ``_process_prefill``/``_process_decode`` (those operate on the
+        flat tensors directly, batched); kept only so existing diagnostics/
+        tests that iterate ``cache._states`` keep working unchanged.
+        """
+        bh = self._B * self._H
+        if bh == 0 or self._bh_keys is None:
+            return [init_nestedkv_state(self._n_sink) for _ in range(bh)]
+        return [
+            NestedKVState(
+                keys=self._bh_keys[i],
+                values=self._bh_values[i],
+                n_sink=self._n_sink,
+                compressed=self._compressed,
+            )
+            for i in range(bh)
+        ]
 
     # ------------------------------------------------------------------
     def _process_prefill(self, keys: mx.array, values: mx.array):
         """One-shot prefill compression: score every head, evict down to a
         uniform per-head budget (see #21 and the module docstring for why
         this is uniform rather than the paper's cross-head-competed split).
+
+        Batched over all B*H heads in one call: budget_eff depends only on
+        n_sink/budget/S (all shared across heads in one call, not per-head
+        data), so every row keeps exactly the same count -- stacks with no
+        padding, same invariant the old per-head loop relied on.
         """
         B, H, S, D = keys.shape
-        k_out_b, v_out_b = [], []
+        keys_bh = keys.reshape(B * H, S, D)
+        values_bh = values.reshape(B * H, S, D)
 
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                idx = self._head_idx(b, h)
-                st = self._states[idx]
-                st = nestedkv_compress_prefill(
-                    st,
-                    keys[b, h],
-                    values[b, h],
-                    budget=self._budget,
-                    window=self._window,
-                    beta=self._beta,
-                    tau=self._tau,
-                    kappa=self._kappa,
-                )
-                self._states[idx] = st
-                k_h, v_h = nestedkv_get_kv(st)
-                k_out_h.append(k_h)
-                v_out_h.append(v_h)
-            # Every head kept exactly the same length: nestedkv_compress_prefill's
-            # budget_eff = max(n_sink_eff, min(budget, S)) depends only on
-            # budget (now uniform) and S (identical across heads in one
-            # call), so this stacks safely with no padding.
-            k_out_b.append(mx.stack(k_out_h, axis=0))
-            v_out_b.append(mx.stack(v_out_h, axis=0))
+        kept_keys, kept_values = nestedkv_compress_prefill_batched(
+            keys_bh,
+            values_bh,
+            n_sink=self._n_sink,
+            budget=self._budget,
+            window=self._window,
+            beta=self._beta,
+            tau=self._tau,
+            kappa=self._kappa,
+        )
+        self._bh_keys = kept_keys
+        self._bh_values = kept_values
+        self._compressed = True
 
-        return mx.stack(k_out_b, axis=0), mx.stack(v_out_b, axis=0)
+        n_kept = kept_keys.shape[1]
+        return kept_keys.reshape(B, H, n_kept, D), kept_values.reshape(B, H, n_kept, D)
 
     def _process_decode(self, keys: mx.array, values: mx.array):
         """Plain unscored append for decode tokens — never evicted.
 
         Every head entered decode at the same uniform prefill length (#21)
         and grows by the same S every call, so heads stay uniform-length
-        here too — no padding needed.
+        here too — no padding needed. Batched into one vectorized concat
+        over all B*H heads instead of a Python per-head loop (dispatch-only
+        optimization: append is inherently independent per head).
         """
         B, H, S, D = keys.shape
-        k_out_b, v_out_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                idx = self._head_idx(b, h)
-                st = self._states[idx]
-                st = nestedkv_append_decode(st, keys[b, h], values[b, h])
-                self._states[idx] = st
-                k_h, v_h = nestedkv_get_kv(st)
-                k_out_h.append(k_h)
-                v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))
-            v_out_b.append(mx.stack(v_out_h, axis=0))
-        return mx.stack(k_out_b, axis=0), mx.stack(v_out_b, axis=0)
+        keys_bh = keys.reshape(B * H, S, D)
+        values_bh = values.reshape(B * H, S, D)
+
+        kept_keys, kept_values = nestedkv_append_decode_batched(
+            self._bh_keys, self._bh_values, keys_bh, values_bh
+        )
+        self._bh_keys = kept_keys
+        self._bh_values = kept_values
+
+        n_kept = kept_keys.shape[1]
+        return kept_keys.reshape(B, H, n_kept, D), kept_values.reshape(B, H, n_kept, D)
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
@@ -259,13 +270,14 @@ class NestedKVKVCache(_MLXKVCache):
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
-        is_prefill = S > 1 and not self._states[0].compressed
+        is_prefill = S > 1 and not self._compressed
         if is_prefill:
             K_out, V_out = self._process_prefill(keys, values)
         else:
             K_out, V_out = self._process_decode(keys, values)
 
-        self._nestedkv_kept_bytes = sum(nestedkv_fp16_bytes(st) for st in self._states)
+        bh, n_kept, kept_d = self._bh_keys.shape
+        self._nestedkv_kept_bytes = bh * n_kept * kept_d * 2 * 2  # K + V, fp16
 
         # K_out/V_out is the full retained state every call (uniform length
         # across heads, see #21), not a delta — reset so the base class's
@@ -312,9 +324,9 @@ class NestedKVKVCache(_MLXKVCache):
     @property
     def tokens_kept(self) -> int:
         """Tokens currently in the (B=0, H=0) head's cache (diagnostic)."""
-        if not self._states or self._states[0].keys is None:
+        if self._bh_keys is None:
             return 0
-        return int(self._states[0].keys.shape[0])
+        return int(self._bh_keys.shape[1])
 
 
 __all__ = ["NestedKVKVCache"]
