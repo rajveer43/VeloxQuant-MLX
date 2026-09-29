@@ -53,9 +53,9 @@ from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.palu import (
     group_head_svd,
     head_group_bounds,
-    project_to_latent,
-    quantize_latent,
-    reconstruct_from_latent,
+    project_to_latent_batched,
+    quantize_latent_batched,
+    reconstruct_from_latent_batched,
 )
 
 
@@ -93,7 +93,11 @@ class _TensorLowRank:
         self._sv: list[mx.array] = []  # per group [r]
         self._head_group: list[int] = []  # head -> group index
         self._r: int = 0  # rank (uniform across groups)
-        # Latent buffer: list over heads, each a growing [S, r] fp16 array.
+        # Latent buffer: list over groups (not heads), each a growing
+        # [heads_in_group, S, r] fp16 array. Heads within a group share one
+        # projection basis, so a group is projected/quantized/reconstructed
+        # with one batched call instead of one call per head — see append()/
+        # reconstruct() (#561).
         self._latents: list[mx.array] | None = None
         self._fitted = False
 
@@ -125,12 +129,17 @@ class _TensorLowRank:
         self._fitted = True
 
     # ------------------------------------------------------------------
-    def _encode_head(self, x_hd: mx.array, h: int) -> mx.array:
-        """Project + (optionally) quantize one head's [S, D] → [S, r] fp16."""
-        g = self._head_group[h]
-        L = project_to_latent(x_hd, self._V[g], self._mu[g])  # [S, r] fp32
+    def _encode_group(self, x_g: mx.array, g: int) -> mx.array:
+        """Project + (optionally) quantize one group's heads [G, S, D] -> [G, S, r] fp16.
+
+        Batched over the group's heads in one call each (project, quantize)
+        instead of one call per head — heads sharing a group share the same
+        projection basis, so this is a direct group-batched matmul/quantize,
+        not a new algorithm (#561).
+        """
+        L = project_to_latent_batched(x_g, self._V[g], self._mu[g])  # [G, S, r] fp32
         if self.quantize:
-            L = quantize_latent(
+            L = quantize_latent_batched(
                 L,
                 self._sv[g],
                 hi_bit=self.hi_bit,
@@ -141,31 +150,41 @@ class _TensorLowRank:
         return L.astype(mx.float16)
 
     def append(self, x: mx.array) -> None:
-        """Project + quantize ``x`` [B, H, S, D] and grow the latent buffers."""
-        B, H, S, D = x.shape
-        encoded = [self._encode_head(x[0, h].astype(mx.float32), h) for h in range(H)]
+        """Project + quantize ``x`` [B, H, S, D] and grow the latent buffers.
+
+        One batched call per head-group (``len(self._bounds)``, typically
+        2-4) instead of one call per head.
+        """
+        encoded = [
+            self._encode_group(x[0, lo:hi].astype(mx.float32), g)
+            for g, (lo, hi) in enumerate(self._bounds)
+        ]
         if self._latents is None:
             self._latents = encoded
         else:
             self._latents = [
-                mx.concatenate([self._latents[h], encoded[h]], axis=0) for h in range(H)
+                mx.concatenate([self._latents[g], encoded[g]], axis=1)
+                for g in range(len(self._bounds))
             ]
 
     def reconstruct(self) -> mx.array:
-        """Reconstruct full fp16 keys/values [1, H, S, D] from latent buffers."""
+        """Reconstruct full fp16 keys/values [1, H, S, D] from latent buffers.
+
+        One batched call per head-group instead of one call per head.
+        """
         assert self._latents is not None
-        heads = []
-        for h, L in enumerate(self._latents):
-            g = self._head_group[h]
-            heads.append(reconstruct_from_latent(L, self._V[g], self._mu[g]))  # [S, D]
-        return mx.stack(heads, axis=0)[None]  # [1, H, S, D]
+        groups = [
+            reconstruct_from_latent_batched(L, self._V[g], self._mu[g])  # [G, S, D]
+            for g, L in enumerate(self._latents)
+        ]
+        return mx.concatenate(groups, axis=0)[None]  # [1, H, S, D]
 
     def trim(self, n: int) -> None:
-        """Drop the ``n`` most-recent tokens from every head's latent buffer."""
+        """Drop the ``n`` most-recent tokens from every group's latent buffer."""
         if not self._latents or n <= 0:
             return
-        keep = max(0, self._latents[0].shape[0] - n)
-        self._latents = [L[:keep] for L in self._latents]
+        keep = max(0, self._latents[0].shape[1] - n)
+        self._latents = [L[:, :keep] for L in self._latents]
 
     # ------------------------------------------------------------------
     @property

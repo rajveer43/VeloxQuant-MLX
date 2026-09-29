@@ -56,7 +56,10 @@ from __future__ import annotations
 
 import mlx.core as mx
 
-from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant
+from veloxquant_mlx.quantizers._quant_utils import (
+    _group_quant_dequant,
+    _group_quant_dequant_batched,
+)
 
 
 def head_group_bounds(n_heads: int, n_groups: int) -> list[tuple[int, int]]:
@@ -175,10 +178,91 @@ def quantize_latent(
     return mx.stack(parts, axis=1).astype(mx.float16)
 
 
+def project_to_latent_batched(x: mx.array, V: mx.array, mu: mx.array) -> mx.array:
+    """Batched-leading-axis equivalent of :func:`project_to_latent`.
+
+    Args:
+        x:  ``[G, S, D]`` — one group's heads (contiguous head-group range),
+            fp16 or fp32.
+        V:  ``[D, r]`` — this group's shared projection basis.
+        mu: ``[D]`` — this group's shared mean.
+
+    Returns:
+        ``[G, S, r]`` fp32 latents.
+    """
+    return (x.astype(mx.float32) - mu[None, None, :]) @ V[None]
+
+
+def reconstruct_from_latent_batched(L: mx.array, V: mx.array, mu: mx.array) -> mx.array:
+    """Batched-leading-axis equivalent of :func:`reconstruct_from_latent`.
+
+    Args:
+        L:  ``[G, S, r]`` — one group's heads' latents.
+        V:  ``[D, r]`` — this group's shared projection basis.
+        mu: ``[D]`` — this group's shared mean.
+
+    Returns:
+        ``[G, S, D]`` fp16.
+    """
+    out = L.astype(mx.float32) @ mx.swapaxes(V, -1, -2)[None] + mu[None, None, :]
+    return out.astype(mx.float16)
+
+
+def quantize_latent_batched(
+    L: mx.array,
+    singular_values: mx.array,
+    hi_bit: int,
+    lo_bit: int,
+    hi_fraction: float,
+    group_size: int,
+) -> mx.array:
+    """Batched-leading-axis equivalent of :func:`quantize_latent`.
+
+    All rows of the leading ``G`` axis share the same ``singular_values``
+    (true for every real caller: heads in the same PALU head-group share one
+    projection and therefore one channel importance ranking), so the
+    hi/lo channel split is computed once and both tiers are quantized with
+    one :func:`_group_quant_dequant_batched` call each instead of looping
+    :func:`quantize_latent` per head.
+
+    Args:
+        L: ``[G, S, r]`` latents for every head in this group.
+        singular_values: ``[r]``, shared across the group.
+        hi_bit / lo_bit / hi_fraction / group_size: see :func:`quantize_latent`.
+
+    Returns:
+        ``[G, S, r]`` fp16 reconstructed (quantize-then-dequantize) latents.
+    """
+    g, s, r = L.shape
+    n_hi = max(1, int(r * hi_fraction))
+    sv_np = singular_values.tolist()
+    sorted_idx = sorted(range(r), key=lambda i: -sv_np[i])
+    hi_idx = sorted(sorted_idx[:n_hi])
+    lo_idx = sorted(sorted_idx[n_hi:])
+
+    parts = [None] * r
+    if hi_idx:
+        recon_hi = _group_quant_dequant_batched(
+            mx.take(L, mx.array(hi_idx), axis=2), hi_bit, group_size
+        )
+        for new_col_idx, orig_col_idx in enumerate(hi_idx):
+            parts[orig_col_idx] = recon_hi[:, :, new_col_idx]
+    if lo_idx:
+        recon_lo = _group_quant_dequant_batched(
+            mx.take(L, mx.array(lo_idx), axis=2), lo_bit, group_size
+        )
+        for new_col_idx, orig_col_idx in enumerate(lo_idx):
+            parts[orig_col_idx] = recon_lo[:, :, new_col_idx]
+    return mx.stack(parts, axis=2).astype(mx.float16)
+
+
 __all__ = [
     "head_group_bounds",
     "group_head_svd",
     "project_to_latent",
     "reconstruct_from_latent",
     "quantize_latent",
+    "project_to_latent_batched",
+    "reconstruct_from_latent_batched",
+    "quantize_latent_batched",
 ]
