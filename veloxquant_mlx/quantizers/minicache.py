@@ -138,11 +138,16 @@ def merge_pair(
     retention_threshold: float = 0.9,
     t: float = 0.5,
 ) -> MergeResult:
-    """Merge two layers' [S, D] KV (one head) into a shared direction + magnitudes.
+    """Merge two layers' [..., D] KV into a shared direction + magnitudes.
+
+    Every op here (magnitude/direction split, dot product, SLERP) is
+    elementwise-independent across all leading dims, so this accepts either
+    a single head's [S, D] slice or a fully batched [B, H, S, D] tensor with
+    no other change — the caller controls the granularity.
 
     Args:
-        x_primary: [S, D] primary layer's keys or values.
-        x_merge:   [S, D] merge layer's keys or values (same head).
+        x_primary: [..., D] primary layer's keys or values.
+        x_merge:   [..., D] merge layer's keys or values (same shape).
         retention_threshold: cosine below which a token pair is NOT merged.
         t: SLERP factor.
 
@@ -151,9 +156,9 @@ def merge_pair(
     """
     mag_p, dir_p = to_mag_dir(x_primary)
     mag_m, dir_m = to_mag_dir(x_merge)
-    cos = mx.sum(dir_p * dir_m, axis=-1, keepdims=True)  # [S, 1]
-    retained = (cos < retention_threshold).reshape(-1)  # [S]
-    shared = slerp(dir_p, dir_m, t=t)  # [S, D]
+    cos = mx.sum(dir_p * dir_m, axis=-1, keepdims=True)  # [..., 1]
+    retained = (cos < retention_threshold)[..., 0]  # [...]
+    shared = slerp(dir_p, dir_m, t=t)  # [..., D]
     return MergeResult(
         shared_dir=shared,
         mag_primary=mag_p,
@@ -165,7 +170,11 @@ def merge_pair(
 
 
 def reconstruct_layer(res: MergeResult, which: str) -> mx.array:
-    """Reconstruct one layer's [S, D] fp16 KV from a MergeResult.
+    """Reconstruct one layer's [..., D] fp16 KV from a MergeResult.
+
+    Accepts the same [S, D] or batched [B, H, S, D] granularity as
+    :func:`merge_pair` produced ``res`` from — every op is elementwise over
+    leading dims.
 
     Merged tokens: ``magnitude * shared_direction``. Retained tokens: the full
     stored vector for that layer.
@@ -175,7 +184,7 @@ def reconstruct_layer(res: MergeResult, which: str) -> mx.array:
         which: ``"primary"`` or ``"merge"``.
 
     Returns:
-        [S, D] fp16 reconstruction.
+        [..., D] fp16 reconstruction.
     """
     if which == "primary":
         mag, full = res.mag_primary, res.full_primary
@@ -183,8 +192,8 @@ def reconstruct_layer(res: MergeResult, which: str) -> mx.array:
         mag, full = res.mag_merge, res.full_merge
     else:
         raise ValueError(f"reconstruct_layer: which must be primary|merge, got {which!r}")
-    merged = (mag * res.shared_dir).astype(mx.float16)  # [S, D]
-    mask = res.retained.reshape(-1, 1)  # [S, 1]
+    merged = (mag * res.shared_dir).astype(mx.float16)  # [..., D]
+    mask = res.retained[..., None]  # [..., 1]
     return mx.where(mask, full.astype(mx.float16), merged)
 
 

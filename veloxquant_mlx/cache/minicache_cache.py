@@ -119,29 +119,28 @@ class MiniCacheKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def _merge_reconstruct(self, t_self: mx.array, t_primary: mx.array, is_key: bool) -> mx.array:
-        """Merge this (merge-role) layer with the primary's tensor, per head.
+        """Merge this (merge-role) layer with the primary's tensor.
 
         Reconstructs *this* layer from the shared-direction merge. Accumulates
         the merged/retained token accounting (key side only, to avoid double).
+
+        ``merge_pair``/``reconstruct_layer`` are elementwise over all leading
+        dims (magnitude/direction split, dot product, SLERP trig), so this
+        runs as one batched call over the full ``[B, H, S, D]`` tensor
+        instead of a Python loop over ``(b, h)`` — bit-for-bit identical to
+        the per-head loop it replaces, since nothing is reduced across the
+        batch/head axes.
         """
         B, H, S, D = t_self.shape
-        out_b = []
-        n_ret = 0
-        for b in range(B):
-            out_h = []
-            for h in range(H):
-                res = merge_pair(
-                    t_primary[b, h],
-                    t_self[b, h],
-                    retention_threshold=self._ret,
-                    t=self._t,
-                )
-                out_h.append(reconstruct_layer(res, "merge"))
-                if is_key:
-                    n_ret += int(mx.sum(res.retained).item())
-            out_b.append(mx.stack(out_h, axis=0))
-        out = mx.stack(out_b, axis=0)
+        res = merge_pair(
+            t_primary,
+            t_self,
+            retention_threshold=self._ret,
+            t=self._t,
+        )
+        out = reconstruct_layer(res, "merge")
         if is_key:
+            n_ret = int(mx.sum(res.retained).item())
             n_total = B * H * S
             self._n_retained += n_ret
             self._n_merged += n_total - n_ret
