@@ -254,6 +254,94 @@ def gear_compress(
     )
 
 
+def sparse_outliers_batched(
+    resid: mx.array,
+    frac: float,
+) -> tuple[mx.array | None, mx.array | None]:
+    """Batched-leading-axis equivalent of :func:`sparse_outliers` (#570).
+
+    Every row of a ``_compress_and_account`` batch shares the same ``[N, D]``
+    shape (same ``S``/``D`` for the whole call), so ``nnz`` — unlike SVD rank
+    — is already uniform across the batch; no ragged-width padding/truncation
+    is needed here (contrast :func:`_truncated_svd_batched`, whose per-row
+    rank genuinely varies and must be handled that way).
+
+    Args:
+        resid: Post-low-rank residual ``[BH, N, D]`` fp32.
+        frac: Fraction of entries to keep exact (0 → no sparse term).
+
+    Returns:
+        ``(flat_idx[int32], values[fp16])`` each ``[BH, nnz]``, or
+        ``(None, None)`` if no sparse term — matching :func:`sparse_outliers`'
+        per-row contract, just with a leading ``BH`` axis.
+    """
+    if frac <= 0.0:
+        return None, None
+    bh, n, d = resid.shape
+    total = n * d
+    nnz = int(total * frac)
+    if nnz <= 0:
+        return None, None
+    flat = resid.reshape(bh, total)
+    mag = mx.abs(flat)
+    order = mx.argsort(mag, axis=-1)  # ascending, per row
+    top = order[:, total - nnz :]  # [BH, nnz] largest-magnitude indices per row
+    top = top.astype(mx.int32)
+    vals = mx.take_along_axis(flat, top, axis=-1).astype(mx.float16)
+    return top, vals
+
+
+def gear_reconstruct_batched(
+    base: mx.array,
+    L: mx.array | None,
+    R: mx.array | None,
+    sp_idx: mx.array | None,
+    sp_val: mx.array | None,
+) -> mx.array:
+    """Batched-leading-axis equivalent of :func:`gear_reconstruct` (#570).
+
+    Replaces the ``for idx in range(B * H): gear_reconstruct(...)`` loop —
+    the largest remaining per-head cost in ``GEARKVCache._compress_and_account``
+    after #504 batched Passes 1-2 (~50% of wall time in isolated profiling,
+    per that class's module docstring). The low-rank add and sparse scatter
+    for head ``(b, h)`` only ever touch that head's own factors/mask — no
+    cross-head coupling — so both are pure vectorizations over the batch axis.
+
+    ``L``/``R`` here are the **padded, batch-max-rank** factors straight out
+    of ``_truncated_svd_batched`` (already zero-masked beyond each row's own
+    rank), NOT per-row-truncated to ``ranks[idx]`` — unlike storage/byte
+    accounting, the padded columns are numerically inert for this batched
+    matmul (zero singular values contribute exactly 0 to ``L @ R``), so
+    skipping the per-row slice here is correctness-preserving and avoids
+    rebuilding a ragged Python list just to re-stack it.
+
+    Args:
+        base: Batched base-layer dequant, fp32 ``[BH, N, D]`` (Pass 1's
+            output — already computed once, batched, upstream).
+        L: ``[BH, N, max_rank]`` fp32 or None (no low-rank term for the batch).
+        R: ``[BH, max_rank, D]`` fp32 or None.
+        sp_idx: ``[BH, nnz]`` int32 flattened indices into each row's
+            ``[N, D]``, or None (no sparse term).
+        sp_val: ``[BH, nnz]`` fp16 outlier values, or None.
+
+    Returns:
+        fp16 ``[BH, N, D]`` reconstruction, matching
+        ``mx.stack([gear_reconstruct(...) for idx in range(BH)], axis=0)``.
+    """
+    out = base.astype(mx.float32)
+    if L is not None and R is not None:
+        out = out + (L @ R)
+    if sp_idx is not None and sp_val is not None:
+        bh, n, d = out.shape
+        nnz = sp_idx.shape[1]
+        row_base = (mx.arange(bh, dtype=mx.int32) * (n * d))[:, None]  # [BH, 1]
+        combined_idx = (row_base + sp_idx).reshape(-1)  # [BH * nnz]
+        flat = out.reshape(-1)
+        flat = flat.at[combined_idx].add(sp_val.reshape(-1).astype(mx.float32))
+        out = flat.reshape(bh, n, d)
+    return out.astype(mx.float16)
+
+
 def gear_reconstruct(state: GEARState, base: mx.array | None = None) -> mx.array:
     """Reconstruct fp16 ``[n_rows, D]`` from a GEARState (base + low-rank + sparse).
 
@@ -358,8 +446,10 @@ __all__ = [
     "residual",
     "lowrank_error",
     "sparse_outliers",
+    "sparse_outliers_batched",
     "gear_compress",
     "gear_reconstruct",
+    "gear_reconstruct_batched",
     "gear_bytes",
     "base_only_bytes",
     "gear_quant_dequant",

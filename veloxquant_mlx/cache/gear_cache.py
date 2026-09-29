@@ -57,9 +57,29 @@ batched across all ``B*H`` heads, as ``bases[idx]``, only for Pass 3 to throw
 it away and have ``gear_reconstruct`` recompute the identical
 ``_dequant_axis`` math per head. ``gear_reconstruct`` now takes an optional
 precomputed ``base`` and this call site passes ``bases[idx]`` through,
-removing that duplicate work. The remaining per-head cost (low-rank add +
-sparse scatter-add + fp16 cast) is still unbatched — documented honestly as
-the next lever rather than left unstated.
+removing that duplicate work.
+
+Follow-up (VeloxQuant-MLX#570): the remaining per-head cost this class's own
+docstring flagged as "still unbatched" — low-rank add + sparse-outlier
+top-k/scatter + fp16 cast — is now also batched across ``B*H``, via
+``sparse_outliers_batched`` (vectorized ``argsort`` + ``take_along_axis``
+over the last axis, since every row shares the same ``[N, D]`` shape so
+``nnz`` is uniform across the batch — unlike SVD rank, no ragged-width
+padding is needed) and ``gear_reconstruct_batched`` (batched low-rank matmul
++ batched flat-index scatter-add). Per-row ``GEARState`` construction (for
+storage/byte accounting) and the error-recovery ``.item()`` reduction remain
+as before — only the numerics that produce the returned reconstruction and
+the sparse selection were batched.
+
+Measured (isolated ``update_and_fetch`` prefill, D=32, S=64, bits=2,
+energy_threshold=0.9, sparse=0.01, this M4): 1.2x-1.4x for H=8-128 — a real
+but modest win, honestly smaller than Passes 1-2's gains in #504. Unlike the
+SVD/base-quant passes (real numerical kernels dominated by per-call
+dispatch overhead), Pass 3's per-row ops were already cheap
+elementwise/argsort work on small ``[S, D]``-shaped arrays; batching mostly
+removes Python-loop/dispatch overhead rather than algorithmic cost, so the
+speedup is smaller and shrinks further as S grows (Passes 1-2 dominate wall
+time at larger S).
 
 Overhead caveat: the low-rank factors cost ``(N + D) * r * 2`` bytes and the
 sparse triples ``nnz * 6`` bytes. For these to stay below the fp16 budget the
@@ -92,8 +112,8 @@ from veloxquant_mlx.quantizers.gear import (
     GEARState,
     base_only_bytes,
     gear_bytes,
-    gear_reconstruct,
-    sparse_outliers,
+    gear_reconstruct_batched,
+    sparse_outliers_batched,
 )
 
 
@@ -153,14 +173,15 @@ class GEARKVCache(_MLXKVCache):
              ``_group_dequant_codes_batched`` (the same math
              ``quantize_base``/``cachegen.quantize_to_codes`` use, just
              with a leading BH axis instead of a Python loop).
-        The sparse-outlier top-k and per-row rank truncation remain
-        per-head (cheap elementwise/argsort ops on already-small [S,
-        D]-shaped arrays; not measured as a bottleneck at either stage).
-        ``gear_reconstruct`` also remains per-head and, after (1) and (2)
-        above, is now the largest remaining single cost (~50% of wall time
-        in isolated profiling) — see the module docstring's "Performance"
-        section for the honest current state; batching it was not
-        attempted in this pass.
+        Follow-up (VeloxQuant-MLX#570): Pass 3 (sparse-outlier top-k +
+        low-rank add + reconstruction) — the largest remaining single cost
+        per the module docstring's "Performance" section — is now also
+        batched across B*H, via ``sparse_outliers_batched`` and
+        ``gear_reconstruct_batched``. Per-row ``GEARState`` objects are
+        still built in a Python loop (needed for storage/byte accounting,
+        which is inherently per-row: each head's own rank and nnz), but
+        that loop no longer does any array numerics — it only slices
+        already-computed batched results.
         """
         B, H, S, D = t.shape
         base_axis = "channel" if is_key else "token"  # KCVT: keys per-channel, values per-token
@@ -230,18 +251,34 @@ class GEARKVCache(_MLXKVCache):
                 E_batched, rank=self._rank, energy_threshold=self._energy
             )
 
-        # Pass 3 (still per-head — sparse-outlier top-k and reconstruction
-        # are cheap elementwise/argsort ops, not the measured bottleneck):
-        # truncate each row's L/R to its own rank, apply sparse correction,
-        # and reconstruct. Byte accounting is summed in plain Python (cheap
-        # integer arithmetic, no host sync) but the error-recovery
-        # accumulator's `.item()` calls — previously one pair PER HEAD,
-        # unconditionally, every call (VeloxQuant-MLX#504 flagged this
-        # explicitly: "2 host syncs x B x H per call for free") — are now
-        # batched into exactly 2 `.item()` calls for the whole (B, H) block,
-        # by summing the squared-error arrays across every head first and
-        # only converting to a Python float once at the very end.
-        recon_flat: list[mx.array] = []
+        # Pass 3 (VeloxQuant-MLX#570): ONE batched low-rank add + ONE
+        # batched sparse-outlier top-k/scatter + ONE batched reconstruction
+        # across all B*H heads, instead of B*H separate calls. L_batched/
+        # R_batched are already zero-masked beyond each row's own rank (see
+        # _truncated_svd_batched's docstring), so using the padded batch-max
+        # width directly here (rather than per-row-truncating first) is
+        # correctness-preserving for the matmul — only storage/byte
+        # accounting needs the per-row truncated width, done below in plain
+        # Python slicing (cheap; no array numerics).
+        E_batched = mx.stack(residuals, axis=0)  # [B*H, S, D]
+        base_batched = mx.stack(bases, axis=0)  # [B*H, S, D]
+        if L_batched is not None and R_batched is not None:
+            E_after_batched = E_batched - (L_batched @ R_batched)
+        else:
+            E_after_batched = E_batched
+
+        sp_idx_b, sp_val_b = sparse_outliers_batched(E_after_batched, self._sparse_frac)
+        recon_batched = gear_reconstruct_batched(
+            base_batched, L_batched, R_batched, sp_idx_b, sp_val_b
+        )  # [B*H, S, D] fp16
+
+        # Byte accounting and the error-recovery accumulator still need a
+        # per-row GEARState (each head's own rank/nnz determine its stored
+        # size) — but this loop is now pure Python slicing of already-
+        # computed batched arrays, not array numerics. The error-recovery
+        # `.item()` calls remain batched into exactly 2 for the whole block
+        # (VeloxQuant-MLX#504), by summing squared-error arrays first and
+        # converting to a Python float once at the end.
         base_err_terms: list[mx.array] = []
         after_err_terms: list[mx.array] = []
         comp = 0
@@ -250,20 +287,11 @@ class GEARKVCache(_MLXKVCache):
             mat32 = mats32[idx]
             stream = streams[idx]
             base_recon = bases[idx]
-            E = residuals[idx]
             r = ranks[idx]
-            L_i: mx.array | None
-            R_i: mx.array | None
-            if L_batched is not None and R_batched is not None:
-                L_i = L_batched[idx, :, :r]
-                R_i = R_batched[idx, :r, :]
-                E_after = E - (L_i @ R_i)
-            else:
-                L_i = None
-                R_i = None
-                E_after = E
-
-            sp_idx, sp_val = sparse_outliers(E_after, self._sparse_frac)
+            L_i = L_batched[idx, :, :r] if L_batched is not None else None
+            R_i = R_batched[idx, :r, :] if R_batched is not None else None
+            sp_idx = sp_idx_b[idx] if sp_idx_b is not None else None
+            sp_val = sp_val_b[idx] if sp_val_b is not None else None
 
             n, d = int(mat32.shape[0]), int(mat32.shape[1])
             state = GEARState(
@@ -280,17 +308,11 @@ class GEARKVCache(_MLXKVCache):
                 axis=base_axis,
                 d_cols=d,
             )
-            # base_recon (== bases[idx]) is Pass 1's already-batched base
-            # dequant for this exact head — pass it through so
-            # gear_reconstruct doesn't redo that dequant math per head (the
-            # remaining bottleneck this class's own docstring calls out;
-            # this closes part of that gap without a full batching rewrite).
-            rec = gear_reconstruct(state, base=base_recon)
-            recon_flat.append(rec)
             comp += gear_bytes(state)
             base += base_only_bytes(state)
 
             if is_key:
+                rec = recon_batched[idx]
                 base_err_terms.append(mx.sum((mat32 - base_recon) ** 2))
                 after_err_terms.append(mx.sum((mat32 - rec.astype(mx.float32)) ** 2))
 
@@ -298,7 +320,7 @@ class GEARKVCache(_MLXKVCache):
             self._err_base_sq += float(mx.sum(mx.stack(base_err_terms)).item())
             self._err_after_sq += float(mx.sum(mx.stack(after_err_terms)).item())
 
-        out = mx.stack(recon_flat, axis=0).reshape(B, H, S, D)
+        out = recon_batched.reshape(B, H, S, D)
 
         fp16 = B * H * S * D * 2
         if is_key:
