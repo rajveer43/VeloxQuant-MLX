@@ -79,8 +79,8 @@ def test_single_cache_preserves_sinks():
     cache = CaMKVCache(cfg)
     k, v = _kv(1, 1, 60, 8, seed=2)
     cache.update_and_fetch(k, v)
-    st = cache._states[0]
-    assert bool(mx.all(st.keys[:3] == k[0, 0, :3].astype(mx.float16)).item())
+    stored_keys = cache._bh_keys[0]  # [n_kept, D] — (b=0, h=0) row
+    assert bool(mx.all(stored_keys[:3] == k[0, 0, :3].astype(mx.float16)).item())
 
 
 def test_byte_accounting_and_ratio():

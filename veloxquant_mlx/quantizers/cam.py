@@ -106,6 +106,7 @@ full_cam_fp16_bytes   — hypothetical cost without eviction
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import mlx.core as mx
@@ -254,6 +255,94 @@ def sample_merge_gate(probability: float, seed: int, draw_id: int) -> bool:
     key = mx.random.key(seed * 1_000_003 + draw_id)
     u = float(mx.random.uniform(low=0.0, high=1.0, key=key).item())
     return u < probability
+
+
+def _draw_uniform_from_key(key: mx.array) -> mx.array:
+    return mx.random.uniform(low=0.0, high=1.0, key=key)
+
+
+def _sample_merge_gate_batched(probability: mx.array, seeds: list[int], draw_id: int) -> mx.array:
+    """Batched-``[BH]`` equivalent of calling :func:`sample_merge_gate` once per row.
+
+    Same ``mx.random.key``-has-no-batched-key-overload workaround as
+    :func:`veloxquant_mlx.quantizers.keyformer._gumbel_at_batched`: one cheap
+    Python-level ``mx.random.key`` call per row (only once per token *step*,
+    not once per ``(head, step)`` pair), then one batched ``mx.vmap`` draw for
+    all ``BH`` rows. Verified bit-for-bit equal to stacking
+    :func:`sample_merge_gate`'s draws (same ``seed * 1_000_003 + draw_id`` key
+    derivation, same comparison). The ``probability <= 0`` / ``>= 1`` shortcuts
+    in the scalar version are folded into the comparison itself here (a draw
+    is always made, but ``u < 0`` is always False and ``u < 1`` is always True
+    for ``u`` drawn from ``[0, 1)``, so the result is identical).
+    """
+    keys = mx.stack([mx.random.key(s * 1_000_003 + draw_id) for s in seeds])
+    u = mx.vmap(_draw_uniform_from_key)(keys)
+    return u < probability
+
+
+def _most_similar_survivor_batched(
+    evicted_key: mx.array,  # [BH, D]
+    keys: mx.array,  # [BH, n, D]
+    evict_idx: mx.array,  # [BH, 1] int32
+    n_sink_eff: int,
+) -> mx.array:
+    """Batched-``[BH]`` equivalent of calling :func:`most_similar_survivor` once per row.
+
+    Returns ``[BH]`` int32 indices into ``keys``' ``n`` axis, or ``-1`` where
+    no eligible survivor exists (mirrors the per-row scalar function).
+    """
+    bh, n, _ = keys.shape
+    k = keys.astype(mx.float32)
+    e = evicted_key.astype(mx.float32)
+    e_norm = e / (mx.sqrt(mx.sum(e * e, axis=-1, keepdims=True)) + 1e-8)  # [BH, D]
+    row_norms = mx.sqrt(mx.sum(k * k, axis=-1)) + 1e-8  # [BH, n]
+    cos = mx.sum(k * e_norm[:, None, :], axis=-1) / row_norms  # [BH, n]
+
+    idx = mx.arange(n)[None, :]  # [1, n]
+    eligible = (idx >= n_sink_eff) & (idx != evict_idx)  # [BH, n]
+    neg_inf = mx.full((bh, n), float("-inf"), dtype=mx.float32)
+    masked = mx.where(eligible, cos, neg_inf)
+
+    has_eligible = mx.any(eligible, axis=-1)  # [BH]
+    result = mx.argmax(masked, axis=-1).astype(mx.int32)  # [BH]
+    return mx.where(has_eligible, result, mx.array(-1, dtype=mx.int32))
+
+
+def _merge_pair_batched(
+    k_survivor: mx.array,  # [BH, D]
+    v_survivor: mx.array,  # [BH, D]
+    k_evicted: mx.array,  # [BH, D]
+    v_evicted: mx.array,  # [BH, D]
+    merge_mode: str,
+    merge_keys: bool,
+) -> tuple[mx.array, mx.array]:
+    """Batched-``[BH]`` equivalent of calling :func:`merge_pair` once per row.
+
+    ``merge_mode``/``merge_keys`` are uniform across rows (one config per
+    cache instance — see :class:`CaMKVCache`), so only the per-row blend
+    weight (``"sim_weighted"``) needs vectorizing.
+    """
+    if merge_mode == "drop":
+        return k_survivor, v_survivor
+
+    ks = k_survivor.astype(mx.float32)
+    vs = v_survivor.astype(mx.float32)
+    ke = k_evicted.astype(mx.float32)
+    ve = v_evicted.astype(mx.float32)
+
+    if merge_mode == "mean":
+        w = mx.full((k_survivor.shape[0],), 0.5, dtype=mx.float32)
+    else:  # sim_weighted
+        denom = (
+            mx.sqrt(mx.sum(ks * ks, axis=-1)) * mx.sqrt(mx.sum(ke * ke, axis=-1))
+        ) + 1e-8  # [BH]
+        cos = mx.sum(ks * ke, axis=-1) / denom  # [BH]
+        w = mx.clip(cos, 0.0, 1.0)
+
+    w_col = w[:, None]
+    v_new = ((1.0 - w_col) * vs + w_col * ve).astype(mx.float16)
+    k_new = ((1.0 - w_col) * ks + w_col * ke).astype(mx.float16) if merge_keys else k_survivor
+    return k_new, v_new
 
 
 @dataclass
@@ -519,6 +608,204 @@ def cam_update(
     return state
 
 
+# How often (in loop iterations) cam_update_batched forces graph
+# materialization during the over-budget eviction loop. Same rationale and
+# same interval as h2o.py's identically-named constant: without this, a long
+# prefill whose budget is exceeded almost immediately queues one eviction's
+# (plus merge's) worth of unevaluated graph nodes per token, risking MLX's
+# Metal resource/command-buffer tracking limit before generation finishes.
+_EVAL_FLUSH_INTERVAL = 32
+
+
+def cam_update_batched(
+    keys: mx.array | None,  # [BH, n, D] fp16 or None
+    values: mx.array | None,  # [BH, n, D] fp16 or None
+    scores: mx.array | None,  # [BH, n] fp32 or None
+    positions: mx.array | None,  # [BH, n] int32 or None
+    new_keys: mx.array,  # [BH, S, D]
+    new_values: mx.array,  # [BH, S, D]
+    n_sink: int,
+    budget: int,
+    merge_mode: str,
+    merge_keys: bool,
+    merge_gate: bool,
+    seeds: list[int],
+    next_pos: int,
+    draw_count: int,
+) -> tuple[mx.array, mx.array, mx.array, mx.array, int, int]:
+    """Vectorized-over-``BH`` equivalent of calling :func:`cam_update` once
+    per ``(batch, head)`` pair with identical per-row state.
+
+    All ``BH`` rows share ``n_sink``/``budget``/``merge_mode``/``merge_keys``/
+    ``merge_gate`` (true for every real caller: :class:`CaMKVCache` applies
+    one uniform config to every head — only the gate's RNG stream differs per
+    row, via ``seeds``), so the per-token score/append/evict/merge math —
+    otherwise identical for every row — can run as one batched MLX call per
+    step instead of ``BH`` separate Python-level calls into :func:`cam_update`.
+    Mirrors :func:`veloxquant_mlx.quantizers.h2o.h2o_update_batched`'s
+    ``[BH,S,D]`` design; the per-token loop over ``S`` itself remains a
+    genuine recurrence (each token's merge decision depends on the previous
+    token's state) and is untouched, exactly as in the function it replaces.
+
+    Every step removes exactly one row when over budget (either the merged
+    survivor slot is rewritten in place and the loser's slot dropped, or — in
+    ``"drop"`` mode / a failed gate draw — the loser's slot is dropped
+    outright), so ``keys``/``values``/``scores``/``positions`` stay
+    rectangular across rows at every step, the same shape invariant
+    :func:`h2o_update_batched` relies on for its ``take_along_axis``
+    compaction.
+
+    Numerically identical to the per-head loop it replaces: every op below is
+    the same formula as :func:`cam_update`'s bootstrap/score-update/evict/
+    merge branches, applied over a leading ``BH`` axis instead of a Python
+    loop. Keys, scores, and positions are bit-for-bit equivalent (the
+    eviction argmin and survivor argmax are computed identically either
+    way); merged values in ``"sim_weighted"``/``"mean"`` mode carry an
+    inherent, unavoidable float32 reduction-order difference from
+    ``merge_pair``'s cosine-similarity weight (MLX's batched ``[BH,D]`` sum
+    accumulates in a different order than a per-row ``[D]`` sum for the same
+    data — confirmed to never exceed one fp16 representable step); ``"drop"``
+    mode has no such reduction and stays bit-for-bit exact throughout. See
+    ``veloxquant_mlx/tests/quantizers/test_cam_batched.py``.
+
+    Args:
+        seeds: ``[BH]`` per-row base seeds for the merge gate's deterministic
+            draws (``CaMKVCache`` uses ``self._seed + head_idx``, mirroring
+            the per-head loop's distinct draw stream per row).
+        draw_count: Running count of gate draws made so far, shared across
+            rows (every row draws at most once per step, so one counter
+            advances once per step exactly as :func:`h2o_update_batched`
+            advances ``next_pos`` once per step).
+
+    Returns:
+        ``(keys, values, scores, positions, next_pos, draw_count)`` — the
+        first four ``[BH, n_kept, D]``/``[BH, n_kept]``.
+    """
+    bh, s, _d = new_keys.shape
+    if s == 0:
+        return keys, values, scores, positions, next_pos, draw_count
+    if n_sink >= budget:
+        raise ValueError("cam: sinks must leave at least one evictable position")
+
+    for i in range(s):
+        k_i = new_keys[:, i].astype(mx.float32)  # [BH, D]
+        v_i = new_values[:, i].astype(mx.float16)  # [BH, D]
+        cur_pos = next_pos
+
+        if keys is None:
+            keys = new_keys[:, i : i + 1].astype(mx.float16)  # [BH, 1, D]
+            values = v_i[:, None, :]
+            scores = mx.ones((bh, 1), dtype=mx.float32)
+            positions = mx.full((bh, 1), cur_pos, dtype=mx.int32)
+            next_pos = cur_pos + 1
+            continue
+
+        attn = _attention_scores_batched(k_i, keys.astype(mx.float32))  # [BH, n]
+        updated_scores = scores + attn
+
+        keys_cat = mx.concatenate([keys, new_keys[:, i : i + 1].astype(mx.float16)], axis=1)
+        values_cat = mx.concatenate([values, v_i[:, None, :]], axis=1)
+        scores_cat = mx.concatenate([updated_scores, mx.zeros((bh, 1), dtype=mx.float32)], axis=1)
+        positions_cat = mx.concatenate(
+            [positions, mx.full((bh, 1), cur_pos, dtype=mx.int32)], axis=1
+        )
+
+        n_total = keys_cat.shape[1]
+
+        if n_total > budget:
+            n_sink_eff = min(n_sink, n_total)
+            if n_sink_eff > 0:
+                sink_inf = mx.full((bh, n_sink_eff), float("inf"), dtype=mx.float32)
+                protected = mx.concatenate([sink_inf, scores_cat[:, n_sink_eff:]], axis=1)
+            else:
+                protected = scores_cat
+            evict_idx = mx.argmin(protected, axis=-1, keepdims=True).astype(mx.int32)  # [BH, 1]
+
+            if merge_mode != "drop":
+                evicted_key = mx.take_along_axis(keys_cat, evict_idx[..., None], axis=1)[
+                    :, 0
+                ].astype(mx.float32)
+                tgt = _most_similar_survivor_batched(evicted_key, keys_cat, evict_idx, n_sink_eff)
+                has_tgt = tgt >= 0
+                tgt_safe = mx.where(has_tgt, tgt, mx.array(0, dtype=mx.int32))[:, None]  # [BH, 1]
+
+                do_merge = has_tgt
+                if merge_gate:
+                    evicted_score = mx.take_along_axis(scores_cat, evict_idx, axis=1)[:, 0]
+                    survivor_score = mx.take_along_axis(scores_cat, tgt_safe, axis=1)[:, 0]
+                    p = mx.where(
+                        survivor_score <= 0.0,
+                        mx.where(evicted_score > 0.0, mx.array(1.0), mx.array(0.0)),
+                        mx.clip(evicted_score / mx.maximum(survivor_score, 1e-30), 0.0, 1.0),
+                    )
+                    gate_draw = _sample_merge_gate_batched(p, seeds, draw_count)
+                    draw_count += 1
+                    do_merge = do_merge & gate_draw
+
+                k_tgt = mx.take_along_axis(keys_cat, tgt_safe[..., None], axis=1)[:, 0]
+                v_tgt = mx.take_along_axis(values_cat, tgt_safe[..., None], axis=1)[:, 0]
+                k_evicted_row = evicted_key.astype(mx.float16)
+                v_evicted_row = mx.take_along_axis(values_cat, evict_idx[..., None], axis=1)[:, 0]
+
+                k_merged, v_merged = _merge_pair_batched(
+                    k_tgt, v_tgt, k_evicted_row, v_evicted_row, merge_mode, merge_keys
+                )
+                do_merge_col = do_merge[:, None]
+                k_new_tgt = mx.where(do_merge_col, k_merged, k_tgt)
+                v_new_tgt = mx.where(do_merge_col, v_merged, v_tgt)
+
+                merged_score = (
+                    mx.take_along_axis(scores_cat, evict_idx, axis=1)[:, 0]
+                    + mx.take_along_axis(scores_cat, tgt_safe, axis=1)[:, 0]
+                )
+                survivor_score_cur = mx.take_along_axis(scores_cat, tgt_safe, axis=1)[:, 0]
+                new_score_tgt = mx.where(do_merge, merged_score, survivor_score_cur)
+
+                tgt_onehot = mx.arange(n_total)[None, :] == tgt_safe
+                keys_cat = mx.where(tgt_onehot[..., None], k_new_tgt[:, None, :], keys_cat)
+                values_cat = mx.where(tgt_onehot[..., None], v_new_tgt[:, None, :], values_cat)
+                scores_cat = mx.where(tgt_onehot, new_score_tgt[:, None], scores_cat)
+
+                if positions is not None:
+                    evicted_pos = mx.take_along_axis(positions_cat, evict_idx, axis=1)[:, 0]
+                    tgt_pos = mx.take_along_axis(positions_cat, tgt_safe, axis=1)[:, 0]
+                    merged_pos = mx.maximum(tgt_pos, evicted_pos)
+                    new_pos_tgt = mx.where(do_merge, merged_pos, tgt_pos)
+                    positions_cat = mx.where(tgt_onehot, new_pos_tgt[:, None], positions_cat)
+
+            # Remove the loser's slot (batched compaction — same
+            # take_along_axis trick as h2o_update_batched's evict path).
+            rows = mx.arange(n_total - 1)[None]  # [1, n_total-1]
+            source = rows + (rows >= evict_idx)  # [BH, n_total-1]
+            keys_cat = mx.take_along_axis(keys_cat, source[..., None], axis=1)
+            values_cat = mx.take_along_axis(values_cat, source[..., None], axis=1)
+            scores_cat = mx.take_along_axis(scores_cat, source, axis=1)
+            positions_cat = mx.take_along_axis(positions_cat, source, axis=1)
+
+        keys, values, scores, positions = keys_cat, values_cat, scores_cat, positions_cat
+        next_pos = cur_pos + 1
+
+        if (i + 1) % _EVAL_FLUSH_INTERVAL == 0:
+            mx.eval(keys, values, scores, positions)
+
+    return keys, values, scores, positions, next_pos, draw_count
+
+
+def _attention_scores_batched(query_proxy: mx.array, keys: mx.array) -> mx.array:
+    """Softmax attention weights, batched over a leading ``[BH]`` axis.
+
+    Args:
+        query_proxy: ``[BH, D]``.
+        keys:        ``[BH, n, D]``.
+
+    Returns:
+        ``[BH, n]`` softmax weights, each row summing to ~1.
+    """
+    scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
+    logits = (keys @ query_proxy[..., None])[..., 0] * scale  # [BH, n]
+    return mx.softmax(logits, axis=-1)
+
+
 def cam_get_kv(state: CaMState) -> tuple[mx.array, mx.array]:
     """Return ``(keys, values)`` arrays from state.
 
@@ -545,6 +832,7 @@ __all__ = [
     "CaMState",
     "init_cam_state",
     "cam_update",
+    "cam_update_batched",
     "cam_get_kv",
     "cam_fp16_bytes",
     "full_cam_fp16_bytes",

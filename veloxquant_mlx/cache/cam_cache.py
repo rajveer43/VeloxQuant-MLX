@@ -67,13 +67,7 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.cache._eviction_mask import eviction_make_mask
-from veloxquant_mlx.quantizers.cam import (
-    CaMState,
-    cam_fp16_bytes,
-    cam_get_kv,
-    cam_update,
-    init_cam_state,
-)
+from veloxquant_mlx.quantizers.cam import cam_update_batched
 
 
 class CaMKVCache(_MLXKVCache):
@@ -118,9 +112,22 @@ class CaMKVCache(_MLXKVCache):
         self._seed = int(getattr(config, "seed", 0))
 
         self._head_dim: int = 0
-        self._states: list[CaMState] = []
         self._B: int = 0
         self._H: int = 0
+        self._initialised: bool = False
+        self._next_pos: int = 0
+        self._draw_count: int = 0
+        self._seeds: list[int] = []
+
+        # Flat [BH, n, D] / [BH, n] state — replaces the old per-(b,h)
+        # CaMState list. Batching every head into one call (instead of a
+        # Python loop calling cam_update once per (b,h) pair) removes the
+        # O(B*H) Python-dispatch bottleneck (issue #563), following the same
+        # template as H2OKVCache/#504.
+        self._bh_keys: mx.array | None = None
+        self._bh_values: mx.array | None = None
+        self._bh_scores: mx.array | None = None
+        self._bh_positions: mx.array | None = None
 
         self._cam_kept_bytes: int = 0
         self._full_seq_bytes: int = 0
@@ -131,11 +138,6 @@ class CaMKVCache(_MLXKVCache):
         # correct after tokens are dropped/merged (see #171-style handling
         # elsewhere).
         self._true_offset: int = 0
-
-        # Per-(b,h) list of [n] int32 true absolute positions, parallel to
-        # each head's CaMState.keys/values. None entries mean "nothing
-        # stored yet for this head" (mirrors CaMState.keys is None).
-        self._bh_positions: list[mx.array | None] = []
 
         # [B, n_kept] int32 true absolute position of each currently-stored
         # (head 0) row — see make_mask() and update_and_fetch()'s #370
@@ -150,27 +152,15 @@ class CaMKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
-        """Lazily initialise per-head CaMState list on first call."""
-        if not self._states:
+        """Lazily record shape and per-row gate seeds on first call."""
+        if not self._initialised:
             self._B = B
             self._H = H
             self._head_dim = D
-            self._states = [
-                init_cam_state(
-                    self._n_sink,
-                    self._budget,
-                    D,
-                    merge_mode=self._merge_mode,
-                    merge_keys=self._merge_keys,
-                    merge_gate=self._merge_gate,
-                    seed=self._seed + head_idx,  # distinct draw stream per head
-                )
-                for head_idx in range(B * H)
-            ]
-            self._bh_positions = [None for _ in range(B * H)]
-
-    def _head_idx(self, b: int, h: int) -> int:
-        return b * self._H + h
+            # Distinct draw stream per (b,h) row, same derivation as the
+            # per-head loop's ``seed=self._seed + head_idx``.
+            self._seeds = [self._seed + head_idx for head_idx in range(B * H)]
+            self._initialised = True
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
@@ -212,59 +202,62 @@ class CaMKVCache(_MLXKVCache):
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
-        new_positions = mx.arange(self._true_offset, self._true_offset + S, dtype=mx.int32)
+        new_keys_flat = keys.astype(mx.float16).reshape(B * H, S, D)
+        new_values_flat = values.astype(mx.float16).reshape(B * H, S, D)
 
-        # Capture each head's pre-update stored K/V (for THIS call's own
-        # deferred return) BEFORE running cam_update — see #370.
-        previous_k = [cam_get_kv(st)[0] if st.keys is not None else None for st in self._states]
-        previous_v = [cam_get_kv(st)[1] if st.keys is not None else None for st in self._states]
+        # This call's own (deferred) attention return gets the full
+        # pre-eviction concatenation — captured before cam_update_batched
+        # (below) evicts/merges anything. See #370.
+        prev_keys_flat = self._bh_keys
+        prev_values_flat = self._bh_values
 
-        k_out_b, v_out_b = [], []
-        k_full_b, v_full_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            k_full_h, v_full_h = [], []
-            for h in range(H):
-                idx = self._head_idx(b, h)
-                st = self._states[idx]
-                st, pos = cam_update(
-                    st,
-                    keys[b, h].astype(mx.float16),
-                    values[b, h].astype(mx.float16),
-                    self._bh_positions[idx],
-                    new_positions,
-                )
-                self._states[idx] = st
-                self._bh_positions[idx] = pos
-                k_h, v_h = cam_get_kv(st)
-                k_out_h.append(k_h)  # [n_kept, D]
-                v_out_h.append(v_h)
-                new_k_bh = keys[b, h].astype(mx.float16)
-                new_v_bh = values[b, h].astype(mx.float16)
-                if previous_k[idx] is None:
-                    k_full_h.append(new_k_bh)
-                    v_full_h.append(new_v_bh)
-                else:
-                    k_full_h.append(mx.concatenate([previous_k[idx], new_k_bh], axis=0))
-                    v_full_h.append(mx.concatenate([previous_v[idx], new_v_bh], axis=0))
-            k_out_b.append(mx.stack(k_out_h, axis=0))  # [H, n_kept, D]
-            v_out_b.append(mx.stack(v_out_h, axis=0))
-            k_full_b.append(mx.stack(k_full_h, axis=0))  # [H, n_full, D]
-            v_full_b.append(mx.stack(v_full_h, axis=0))
+        (
+            self._bh_keys,
+            self._bh_values,
+            self._bh_scores,
+            self._bh_positions,
+            self._next_pos,
+            self._draw_count,
+        ) = cam_update_batched(
+            self._bh_keys,
+            self._bh_values,
+            self._bh_scores,
+            self._bh_positions,
+            new_keys_flat,
+            new_values_flat,
+            self._n_sink,
+            self._budget,
+            self._merge_mode,
+            self._merge_keys,
+            self._merge_gate,
+            self._seeds,
+            self._next_pos,
+            self._draw_count,
+        )
 
-        K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_kept, D] — for STORAGE
-        V_out = mx.stack(v_out_b, axis=0)
-        K_full = mx.stack(k_full_b, axis=0)  # [B, H, n_full, D] — this call's RETURN
-        V_full = mx.stack(v_full_b, axis=0)
+        n_kept = self._bh_keys.shape[1]
+        K_out = self._bh_keys.reshape(B, H, n_kept, D)  # [B, H, n_kept, D] — for STORAGE
+        V_out = self._bh_values.reshape(B, H, n_kept, D)
 
-        # Byte accounting: sum across all head states.
-        self._cam_kept_bytes = sum(cam_fp16_bytes(st) for st in self._states)
+        if prev_keys_flat is None:
+            K_full = new_keys_flat.reshape(B, H, S, D)
+            V_full = new_values_flat.reshape(B, H, S, D)
+        else:
+            n_full = prev_keys_flat.shape[1] + S
+            K_full = mx.concatenate([prev_keys_flat, new_keys_flat], axis=1).reshape(
+                B, H, n_full, D
+            )
+            V_full = mx.concatenate([prev_values_flat, new_values_flat], axis=1).reshape(
+                B, H, n_full, D
+            )
+
+        # Byte accounting: bytes currently retained across all (b,h) rows.
+        self._cam_kept_bytes = B * H * n_kept * D * 2 * 2
 
         # head-0 true kept positions per batch element, for the NEXT call's
         # make_mask (see that method) — not this call's own mask, already
         # fixed by the time we get here.
-        head0_positions = [self._bh_positions[self._head_idx(b, 0)] for b in range(B)]
-        self._kept_positions = mx.stack(head0_positions, axis=0)
+        self._kept_positions = self._bh_positions.reshape(B, H, n_kept)[:, 0, :]
 
         # K_out/V_out is the full retained state every call, not a delta —
         # reset so the base class's append-only buffer starts fresh instead
@@ -356,9 +349,9 @@ class CaMKVCache(_MLXKVCache):
     @property
     def tokens_kept(self) -> int:
         """Tokens currently in the (B=0, H=0) head's cache (diagnostic)."""
-        if not self._states or self._states[0].keys is None:
+        if self._bh_keys is None:
             return 0
-        return int(self._states[0].keys.shape[0])
+        return int(self._bh_keys.shape[1])
 
 
 __all__ = ["CaMKVCache"]
