@@ -76,13 +76,7 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.quantizers.a2ats_rope import rope_remap_positions
-from veloxquant_mlx.quantizers.curdkv import (
-    CurDKVState,
-    curdkv_fp16_bytes,
-    curdkv_get_kv,
-    curdkv_update,
-    init_curdkv_state,
-)
+from veloxquant_mlx.quantizers.curdkv import curdkv_update_batched
 
 
 class CurDKVKVCache(_MLXKVCache):
@@ -128,9 +122,20 @@ class CurDKVKVCache(_MLXKVCache):
         self._rope_base = float(getattr(config, "curdkv_rope_base", 10000.0))
 
         self._head_dim: int = 0
-        self._states: list[CurDKVState] = []
         self._B: int = 0
         self._H: int = 0
+
+        # Flat [BH, n, D] / [BH, n] state — the batched equivalent of the
+        # old per-(b,h) CurDKVState list. All BH rows share n_sink/budget/
+        # rank_cap/rope_base (one config, applied uniformly), so a single
+        # batched curdkv_update_batched call replaces the old B*H-deep
+        # Python-level per-head loop into curdkv_update.
+        self._bh_keys: mx.array | None = None
+        self._bh_values: mx.array | None = None
+        self._bh_leverage_scores: mx.array | None = None
+        self._bh_n_updates: mx.array | None = None
+        self._bh_positions: mx.array | None = None
+        self._next_pos: int = 0
 
         self._curdkv_kept_bytes: int = 0
         self._full_seq_bytes: int = 0
@@ -138,20 +143,12 @@ class CurDKVKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
-        """Lazily initialise per-head CurDKVState list on first call."""
-        if not self._states:
+        """Record B/H/D on first call (state itself is lazily created by
+        curdkv_update_batched on its first bootstrap step)."""
+        if self._B == 0:
             self._B = B
             self._H = H
             self._head_dim = D
-            self._states = [
-                init_curdkv_state(
-                    self._n_sink, self._budget, D, self._rank_cap, rope_base=self._rope_base
-                )
-                for _ in range(B * H)
-            ]
-
-    def _head_idx(self, b: int, h: int) -> int:
-        return b * self._H + h
 
     def _fix_incoming_rope(self, keys: mx.array, offset_before: int, next_pos: int) -> mx.array:
         """Re-rotate incoming keys if the model rotated them at the wrong
@@ -173,9 +170,10 @@ class CurDKVKVCache(_MLXKVCache):
         for b in range(B):
             out_h = []
             for h in range(H):
-                base = self._states[self._head_idx(b, h)].rope_base
                 out_h.append(
-                    rope_remap_positions(keys[b, h], old_positions, new_positions, base=base)
+                    rope_remap_positions(
+                        keys[b, h], old_positions, new_positions, base=self._rope_base
+                    )
                 )
             out_b.append(mx.stack(out_h, axis=0))
         return mx.stack(out_b, axis=0)
@@ -205,7 +203,7 @@ class CurDKVKVCache(_MLXKVCache):
         self._ensure_states(B, H, D)
 
         offset_before = self.offset
-        next_pos = self._states[0].next_pos  # identical across heads (see class docstring)
+        next_pos = self._next_pos  # identical across heads (see class docstring)
 
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
@@ -219,29 +217,38 @@ class CurDKVKVCache(_MLXKVCache):
         if values.dtype != mx.float16:
             values = values.astype(mx.float16)
 
-        k_out_b, v_out_b = [], []
-        for b in range(B):
-            k_out_h, v_out_h = [], []
-            for h in range(H):
-                idx = self._head_idx(b, h)
-                st = self._states[idx]
-                st = curdkv_update(
-                    st,
-                    keys_fixed[b, h],
-                    values[b, h],
-                )
-                self._states[idx] = st
-                k_h, v_h = curdkv_get_kv(st)
-                k_out_h.append(k_h)  # [n_kept, D]
-                v_out_h.append(v_h)
-            k_out_b.append(mx.stack(k_out_h, axis=0))  # [H, n_kept, D]
-            v_out_b.append(mx.stack(v_out_h, axis=0))
+        bh = B * H
+        new_keys_bh = keys_fixed.reshape(bh, S, D)
+        new_values_bh = values.reshape(bh, S, D)
 
-        K_out = mx.stack(k_out_b, axis=0)  # [B, H, n_kept, D]
-        V_out = mx.stack(v_out_b, axis=0)
+        (
+            self._bh_keys,
+            self._bh_values,
+            self._bh_leverage_scores,
+            self._bh_n_updates,
+            self._bh_positions,
+            self._next_pos,
+        ) = curdkv_update_batched(
+            self._bh_keys,
+            self._bh_values,
+            self._bh_leverage_scores,
+            self._bh_n_updates,
+            self._bh_positions,
+            new_keys_bh,
+            new_values_bh,
+            self._n_sink,
+            self._budget,
+            self._rank_cap,
+            self._rope_base,
+            next_pos,
+        )
+
+        n_kept = self._bh_keys.shape[1]
+        K_out = self._bh_keys.reshape(B, H, n_kept, D)
+        V_out = self._bh_values.reshape(B, H, n_kept, D)
 
         # Byte accounting: sum across all head states
-        self._curdkv_kept_bytes = sum(curdkv_fp16_bytes(st) for st in self._states)
+        self._curdkv_kept_bytes = bh * n_kept * D * 2 * 2  # K + V, fp16
 
         # Store exactly the n_kept retained rows — NOT delegated to the base
         # class's update_and_fetch, whose growing-buffer bookkeeping assumes
@@ -251,7 +258,7 @@ class CurDKVKVCache(_MLXKVCache):
         # physically stored.
         self.keys = K_out
         self.values = V_out
-        self.offset = self._states[0].next_pos
+        self.offset = self._next_pos
         return K_out, V_out
 
     # ------------------------------------------------------------------
@@ -320,9 +327,9 @@ class CurDKVKVCache(_MLXKVCache):
     @property
     def tokens_kept(self) -> int:
         """Tokens currently in the (B=0, H=0) head's cache (diagnostic)."""
-        if not self._states or self._states[0].keys is None:
+        if self._bh_keys is None:
             return 0
-        return int(self._states[0].keys.shape[0])
+        return int(self._bh_keys.shape[1])
 
 
 __all__ = ["CurDKVKVCache"]

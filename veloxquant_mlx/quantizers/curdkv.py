@@ -87,6 +87,7 @@ Public API
 CurDKVState          — immutable per-head state dataclass
 init_curdkv_state    — construct empty state
 curdkv_update        — absorb S new tokens, evict if over budget
+curdkv_update_batched — vectorized-over-BH equivalent of the per-head loop
 curdkv_get_kv        — extract current (keys, values) arrays
 curdkv_fp16_bytes    — bytes stored in current state
 full_curdkv_fp16_bytes — hypothetical cost without eviction
@@ -504,6 +505,299 @@ def curdkv_update(
     return state
 
 
+_EVAL_FLUSH_INTERVAL = 32
+
+
+def _robust_svd_batched(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Batched SVD of ``a`` (``[BH, n, D]``), robust to per-item ``gesdd``
+    non-convergence.
+
+    ``numpy.linalg.svd`` natively batches over leading dimensions as a
+    single LAPACK dispatch loop in C (verified: shapes ``(BH, n, D)`` in,
+    ``(BH, n, k)``/``(BH, k)`` out) — this is the whole point of batching
+    here: one call across all ``BH`` heads instead of ``BH`` separate
+    Python-level calls into :func:`_robust_svd`, each issuing its own
+    LAPACK call. The common case (every item converges under ``gesdd``)
+    pays for exactly one batched call.
+
+    ``gesdd`` failure is data-dependent and real (issue #147), but batched
+    ``svd`` raises ``LinAlgError`` for the *entire* batch if even one item
+    fails to converge — there is no batched ``gesvd`` fallback in LAPACK.
+    On that (rare) event, fall back item-by-item to the existing
+    :func:`_robust_svd` (which has its own single-item ``gesvd`` + timeout
+    remedy), so robustness is unchanged from the unbatched path — only the
+    common, fully-converged case gets the batched speedup.
+
+    Returns:
+        ``(u, s)`` — ``u`` is ``[BH, n, k]``, ``s`` is ``[BH, k]``, where
+        ``k = min(n, D)``, zero-padded per item to a common ``k`` when the
+        item-by-item fallback path is used (matches the batched-success
+        shape so callers don't need to special-case it).
+    """
+    try:
+        u, s, _ = np.linalg.svd(a, full_matrices=False)
+        return u, s
+    except np.linalg.LinAlgError:
+        pass
+
+    bh, n, d = a.shape
+    k = min(n, d)
+    u_out = np.zeros((bh, n, k), dtype=a.dtype)
+    s_out = np.zeros((bh, k), dtype=a.dtype)
+    for i in range(bh):
+        u_i, s_i = _robust_svd(a[i])
+        u_out[i, :, : u_i.shape[1]] = u_i
+        s_out[i, : s_i.shape[0]] = s_i
+    return u_out, s_out
+
+
+def _leverage_scores_batched(
+    query_proxy: mx.array, keys: mx.array, values: mx.array, rank_cap: int
+) -> mx.array:
+    """Vectorized-over-``BH`` equivalent of calling :func:`_leverage_scores`
+    once per ``(batch, head)`` row.
+
+    Args:
+        query_proxy: ``[BH, D]`` — proxy query (incoming key vector) per row.
+        keys:        ``[BH, n, D]`` — existing key rows per row.
+        values:      ``[BH, n, D]`` — existing value rows per row.
+        rank_cap:    Maximum number of leading singular directions considered
+                     (shared across all rows — true for every real caller,
+                     same uniform-config invariant every other batched
+                     primitive in this repo relies on).
+
+    Returns:
+        ``[BH, n]`` non-negative leverage scores, each row summing to ~1 (or
+        all-zero for rows whose weighted-value block is degenerately
+        all-zero) — bit-for-bit equivalent to stacking ``BH`` separate
+        :func:`_leverage_scores` calls, since the batched SVD (numpy's
+        native stacked LAPACK dispatch) computes the exact same
+        factorization per item as the unbatched call would.
+    """
+    scale = 1.0 / math.sqrt(float(query_proxy.shape[-1]))
+    logits = mx.sum(keys * query_proxy[:, None, :], axis=-1) * scale  # [BH, n]
+    attn = mx.softmax(logits, axis=-1)  # [BH, n]
+    weighted_values = values * attn[:, :, None]  # [BH, n, D]
+
+    bh, n, d = weighted_values.shape
+
+    wv_np = np.array(weighted_values.astype(mx.float32)).astype(np.float64)
+    row_nonzero = np.any(wv_np != 0.0, axis=(1, 2))  # [BH]
+
+    if not np.any(row_nonzero):
+        return mx.zeros((bh, n), dtype=mx.float32)
+
+    u, s = _robust_svd_batched(wv_np)  # [BH, n, k], [BH, k]
+    k = max(1, min(rank_cap, n, d))
+    u_k = u[:, :, :k]  # [BH, n, k]
+    s_k = s[:, :k]  # [BH, k]
+
+    energy = s_k * s_k  # [BH, k]
+    energy_total = energy.sum(axis=-1, keepdims=True)  # [BH, 1]
+    has_energy = (energy_total[:, 0] > 0) & row_nonzero  # [BH]
+    safe_total = np.where(energy_total > 0, energy_total, 1.0)
+    weights = energy / safe_total  # [BH, k]
+
+    scores = np.sum((u_k * u_k) * weights[:, None, :], axis=2)  # [BH, n]
+
+    total = scores.sum(axis=-1, keepdims=True)  # [BH, 1]
+    safe_row_total = np.where(total > 0, total, 1.0)
+    scores = scores / safe_row_total
+
+    scores = np.where(has_energy[:, None], scores, 0.0)
+    return mx.array(scores.astype(np.float32))
+
+
+def _rotate_batched(x: mx.array, cos: mx.array, sin: mx.array) -> mx.array:
+    """Same formula as ``a2ats_rope._rotate``, generalized via ellipsis
+    indexing to an arbitrary leading batch rank (here ``[BH, N, D]``)."""
+    half = x.shape[-1] // 2
+    x1, x2 = x[..., :half], x[..., half:]
+    return mx.concatenate([x1 * cos - x2 * sin, x1 * sin + x2 * cos], axis=-1)
+
+
+def _rope_remap_positions_batched(
+    x: mx.array, old_positions: mx.array, new_positions: mx.array, base: float
+) -> mx.array:
+    """Vectorized-over-``BH`` equivalent of
+    :func:`veloxquant_mlx.quantizers.a2ats_rope.rope_remap_positions`.
+
+    Args:
+        x: ``[BH, N, D]`` fp16/fp32 vectors, already RoPE'd at ``old_positions``.
+        old_positions: ``[BH, N]`` absolute positions each row was rotated at.
+        new_positions: ``[BH, N]`` absolute positions to re-rotate each row to.
+        base: RoPE frequency base — shared across rows (see class docstring's
+              ``curdkv_rope_base`` — uniform across heads, same convention as
+              every other per-head config field).
+
+    Returns:
+        ``[BH, N, D]`` fp16 vectors, numerically identical (same one-rotation
+        formula, just batched) to calling ``rope_remap_positions`` once per row.
+    """
+    if x.shape[1] == 0:
+        return x.astype(mx.float16)
+    delta = new_positions.astype(mx.float32) - old_positions.astype(mx.float32)  # [BH, N]
+    half = x.shape[-1] // 2
+    inv_freq = 1.0 / (base ** (mx.arange(0, half, dtype=mx.float32) / half))  # [half]
+    angles = delta[:, :, None] * inv_freq[None, None, :]  # [BH, N, half]
+    cos, sin = mx.cos(angles).astype(mx.float16), mx.sin(angles).astype(mx.float16)
+    return _rotate_batched(x.astype(mx.float16), cos, sin)
+
+
+def curdkv_update_batched(
+    keys: mx.array | None,  # [BH, n, D] fp16 or None
+    values: mx.array | None,  # [BH, n, D] fp16 or None
+    leverage_scores: mx.array | None,  # [BH, n] fp32 or None
+    n_updates: mx.array | None,  # [BH, n] fp32 or None
+    positions: mx.array | None,  # [BH, n] int32 or None
+    new_keys: mx.array,  # [BH, S, D]
+    new_values: mx.array,  # [BH, S, D]
+    n_sink: int,
+    budget: int,
+    rank_cap: int,
+    rope_base: float,
+    next_pos: int,
+) -> tuple[mx.array, mx.array, mx.array, mx.array, mx.array, int]:
+    """Vectorized-over-``BH`` equivalent of calling :func:`curdkv_update`
+    once per ``(batch, head)`` pair with identical per-row config.
+
+    All ``BH`` rows share ``n_sink``/``budget``/``rank_cap``/``rope_base``
+    (true for every real caller: :class:`CurDKVKVCache` applies one uniform
+    config to every head), so the per-token append/evict/remap bookkeeping —
+    otherwise identical for every row — runs as one batched MLX/numpy call
+    per step instead of ``BH`` separate Python-level calls into
+    :func:`curdkv_update`. Mirrors :func:`veloxquant_mlx.quantizers.cam
+    .cam_update_batched`'s ``[BH,S,D]`` design and single-row-eviction
+    compaction trick.
+
+    The leverage-score estimate itself is *not* simplified or approximated
+    differently here — :func:`_leverage_scores_batched` computes the exact
+    same per-row SVD-based estimate as :func:`_leverage_scores` would,
+    just via one batched ``numpy.linalg.svd`` call across all ``BH`` rows'
+    ``[n, D]`` blocks instead of ``BH`` separate small LAPACK calls (numpy
+    natively supports stacked/batched SVD over leading dimensions). The
+    per-token recurrence itself (leverage scores and eviction at step ``i``
+    depend on step ``i-1``'s surviving state) is a genuine sequential
+    dependency and remains a Python loop over ``S`` — only the head axis is
+    batched, exactly the scope the filing issue calls out as safe.
+
+    Every step removes exactly one row when over budget, so
+    ``keys``/``values``/``leverage_scores``/``n_updates``/``positions`` stay
+    rectangular across rows at every step (same invariant every other
+    batched primitive in this repo relies on).
+
+    Numerically identical to the per-head loop it replaces: every op below
+    is the same formula as :func:`curdkv_update`'s bootstrap/score-update/
+    evict/remap branches, applied over a leading ``BH`` axis instead of a
+    Python loop — including the mean-per-step score comparison, self-
+    leverage seeding, and the post-eviction RoPE remap of only the rows
+    that shifted storage index. See
+    ``veloxquant_mlx/tests/quantizers/test_curdkv_batched.py``.
+
+    Returns:
+        ``(keys, values, leverage_scores, n_updates, positions, next_pos)``
+        — the first five ``[BH, n_kept, D]``/``[BH, n_kept]``.
+    """
+    bh, s, _d = new_keys.shape
+    if s == 0:
+        return keys, values, leverage_scores, n_updates, positions, next_pos
+    if n_sink > 0 and n_sink >= budget:
+        raise ValueError(
+            f"curdkv: n_sink ({n_sink}) must be < budget ({budget}) — no "
+            "evictable positions remain, so sinks would be evicted once "
+            "the cache fills"
+        )
+
+    for i in range(s):
+        k_i = new_keys[:, i]  # [BH, D] fp16
+        v_i = new_values[:, i].astype(mx.float16)  # [BH, D]
+        cur_pos = next_pos
+
+        if keys is None:
+            keys = k_i[:, None, :].astype(mx.float16)  # [BH, 1, D]
+            values = v_i[:, None, :]
+            leverage_scores = mx.ones((bh, 1), dtype=mx.float32)
+            n_updates = mx.ones((bh, 1), dtype=mx.float32)
+            positions = mx.full((bh, 1), cur_pos, dtype=mx.int32)
+            next_pos = cur_pos + 1
+            continue
+
+        # --- leverage-score update ------------------------------------
+        lev = _leverage_scores_batched(
+            k_i.astype(mx.float32),
+            keys.astype(mx.float32),
+            values.astype(mx.float32),
+            rank_cap,
+        )
+        updated_scores = leverage_scores + lev  # [BH, n]
+        updated_n_updates = n_updates + 1.0  # [BH, n]
+
+        # --- append new token, seeded with its own leverage within the
+        # resulting (existing + new) block (see curdkv_update docstring) ---
+        keys_cat = mx.concatenate([keys, k_i[:, None, :].astype(mx.float16)], axis=1)
+        values_cat = mx.concatenate([values, v_i[:, None, :]], axis=1)
+        self_lev = _leverage_scores_batched(
+            k_i.astype(mx.float32),
+            keys_cat.astype(mx.float32),
+            values_cat.astype(mx.float32),
+            rank_cap,
+        )[:, -1:]
+        scores_cat = mx.concatenate([updated_scores, self_lev], axis=1)
+        n_updates_cat = mx.concatenate(
+            [updated_n_updates, mx.ones((bh, 1), dtype=mx.float32)], axis=1
+        )
+        positions_cat = mx.concatenate(
+            [positions, mx.full((bh, 1), cur_pos, dtype=mx.int32)], axis=1
+        )
+
+        n_total = keys_cat.shape[1]
+
+        if n_total > budget:
+            mean_scores = scores_cat / n_updates_cat  # [BH, n_total]
+
+            n_sink_eff = min(n_sink, n_total)
+            if n_sink_eff > 0:
+                sink_inf = mx.full((bh, n_sink_eff), float("inf"), dtype=mx.float32)
+                protected = mx.concatenate([sink_inf, mean_scores[:, n_sink_eff:]], axis=1)
+            else:
+                protected = mean_scores
+            evict_idx = mx.argmin(protected, axis=-1, keepdims=True).astype(mx.int32)  # [BH, 1]
+            evicted_pos = mx.take_along_axis(positions_cat, evict_idx, axis=1)  # [BH, 1]
+
+            # Batched compaction — same take_along_axis trick as
+            # h2o_update_batched/cam_update_batched's single-row eviction.
+            rows = mx.arange(n_total - 1)[None]  # [1, n_total-1]
+            source = rows + (rows >= evict_idx)  # [BH, n_total-1]
+            keys_cat = mx.take_along_axis(keys_cat, source[..., None], axis=1)
+            values_cat = mx.take_along_axis(values_cat, source[..., None], axis=1)
+            scores_cat = mx.take_along_axis(scores_cat, source, axis=1)
+            n_updates_cat = mx.take_along_axis(n_updates_cat, source, axis=1)
+            old_positions_kept = mx.take_along_axis(positions_cat, source, axis=1)
+
+            # Rows before the gap keep their exact original position; rows
+            # after shift down by exactly one each, closing the gap. Only
+            # rows after the gap need re-rotating.
+            shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
+            positions_cat = old_positions_kept + shift
+            keys_cat = _rope_remap_positions_batched(
+                keys_cat, old_positions_kept, positions_cat, rope_base
+            )
+
+        keys, values, leverage_scores, n_updates, positions = (
+            keys_cat,
+            values_cat,
+            scores_cat,
+            n_updates_cat,
+            positions_cat,
+        )
+        next_pos = cur_pos + 1
+
+        if (i + 1) % _EVAL_FLUSH_INTERVAL == 0:
+            mx.eval(keys, values, leverage_scores, n_updates, positions)
+
+    return keys, values, leverage_scores, n_updates, positions, next_pos
+
+
 def curdkv_get_kv(state: CurDKVState) -> tuple[mx.array, mx.array]:
     """Return ``(keys, values)`` arrays from state.
 
@@ -532,6 +826,7 @@ __all__ = [
     "CurDKVState",
     "init_curdkv_state",
     "curdkv_update",
+    "curdkv_update_batched",
     "curdkv_get_kv",
     "curdkv_fp16_bytes",
     "full_curdkv_fp16_bytes",
