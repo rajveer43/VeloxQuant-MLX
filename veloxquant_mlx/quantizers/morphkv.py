@@ -69,6 +69,7 @@ full_morphkv_fp16_bytes — hypothetical cost without eviction
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import mlx.core as mx
@@ -172,6 +173,39 @@ def _recent_relevance(keys: mx.array, recent_keys: mx.array) -> mx.array:
     return acc / float(w)
 
 
+def _recent_relevance_batched(keys: mx.array, w_eff: int) -> mx.array:
+    """Batched-``[BH,n,D]`` equivalent of :func:`_recent_relevance`.
+
+    Replaces the ``for j in range(w): acc += attention_scores(...)`` window
+    loop (one dot-product-based score per recent-window position, computed
+    sequentially against the same ``keys``) with a single batched matmul
+    over the window axis — same recipe as PyramidKV's ``pyramid_update_heads``
+    fix (#549): ``keys_f @ recent_keys.T`` computes every window position's
+    logits against every stored key in one call, softmax per probe row, then
+    mean-reduce over the window axis instead of accumulating ``w`` separate
+    calls.
+
+    Args:
+        keys:  ``[BH, n, D]`` stored key rows (the keep-set candidates). The
+               trailing ``w_eff`` rows of each are also this step's recent
+               window (mirrors ``morphkv_update``'s ``recent = keys_cat[n -
+               w_eff:]``).
+        w_eff: Window size (``min(window, n)``), shared across all ``BH``
+               rows (true for every real caller: one uniform
+               ``morphkv_window`` per layer).
+
+    Returns:
+        ``[BH, n]`` mean recent-window attention mass per stored key.
+    """
+    keys_f = keys.astype(mx.float32)
+    n = int(keys_f.shape[1])
+    recent = keys_f[:, n - w_eff :]  # [BH, w_eff, D]
+    scale = 1.0 / math.sqrt(float(keys_f.shape[-1]))
+    logits = (recent @ mx.swapaxes(keys_f, -1, -2)) * scale  # [BH, w_eff, n]
+    attn = mx.softmax(logits, axis=-1)  # each recent-window row sums to ~1
+    return mx.mean(attn, axis=1)  # [BH, n]
+
+
 def morphkv_update(
     state: MorphKVState,
     new_keys: mx.array,  # [S, D] fp16
@@ -248,6 +282,85 @@ def morphkv_update(
     return state
 
 
+_EVAL_FLUSH_INTERVAL = 32
+
+
+def morphkv_update_batched(
+    keys: mx.array | None,  # [BH, n, D] fp16 or None
+    values: mx.array | None,  # [BH, n, D] fp16 or None
+    new_keys: mx.array,  # [BH, S, D]
+    new_values: mx.array,  # [BH, S, D]
+    n_sink: int,
+    budget: int,
+    window: int,
+) -> tuple[mx.array, mx.array]:
+    """Vectorized-over-``BH`` equivalent of calling :func:`morphkv_update`
+    once per ``(batch, head)`` pair with identical per-row ``n_sink``/
+    ``budget``/``window`` (true for every real caller: :class:`MorphKVKVCache`
+    applies one uniform config to every head), so the per-token append/rank/
+    evict math — otherwise identical for every row — can run as one batched
+    MLX call per step instead of ``BH`` separate Python-level calls into
+    :func:`morphkv_update`. Same fix, same template, as
+    :func:`veloxquant_mlx.quantizers.h2o.h2o_update_batched`. Uses
+    :func:`_recent_relevance_batched` internally, which also removes the
+    inner ``for j in range(window):`` loop :func:`_recent_relevance` runs
+    per call — issue #560's second, compounding finding.
+
+    Numerically identical to the per-head loop it replaces: every op below
+    is the same formula as :func:`morphkv_update`'s bootstrap/append/evict
+    branches, applied over a leading ``BH`` axis instead of a Python loop.
+
+    Returns:
+        ``(keys, values)`` — ``[BH, n_kept, D]`` each.
+    """
+    bh, s, d = new_keys.shape
+    if s == 0:
+        return keys, values
+    if n_sink + window >= budget:
+        raise ValueError(
+            f"morphkv: n_sink ({n_sink}) + window ({window}) must be < "
+            f"budget ({budget}) — no evictable positions remain"
+        )
+
+    for i in range(s):
+        if keys is None:
+            keys = new_keys[:, i : i + 1].astype(mx.float16)  # [BH, 1, D]
+            values = new_values[:, i : i + 1].astype(mx.float16)
+            continue
+
+        keys_cat = mx.concatenate([keys, new_keys[:, i : i + 1].astype(mx.float16)], axis=1)
+        values_cat = mx.concatenate([values, new_values[:, i : i + 1].astype(mx.float16)], axis=1)
+
+        n_total = keys_cat.shape[1]
+        if n_total > budget:
+            w_eff = min(window, n_total)
+            relevance = _recent_relevance_batched(keys_cat, w_eff)  # [BH, n_total]
+
+            n_sink_eff = min(n_sink, n_total)
+            protect = mx.zeros((bh, n_total), dtype=mx.float32)
+            if n_sink_eff > 0:
+                sink_inf = mx.full((bh, n_sink_eff), float("inf"), dtype=mx.float32)
+                protect = mx.concatenate([sink_inf, protect[:, n_sink_eff:]], axis=1)
+            # Trailing recent window always protected (it drives the ranking).
+            window_inf = mx.full((bh, w_eff), float("inf"), dtype=mx.float32)
+            protect = mx.concatenate([protect[:, : n_total - w_eff], window_inf], axis=1)
+            sel = relevance + protect
+
+            evict_idx = mx.argmin(sel, axis=-1, keepdims=True)  # [BH, 1]
+            rows = mx.arange(n_total - 1)[None]  # [1, n_total-1]
+            source = rows + (rows >= evict_idx)  # [BH, n_total-1]
+
+            keys_cat = mx.take_along_axis(keys_cat, source[..., None], axis=1)
+            values_cat = mx.take_along_axis(values_cat, source[..., None], axis=1)
+
+        keys, values = keys_cat, values_cat
+
+        if (i + 1) % _EVAL_FLUSH_INTERVAL == 0:
+            mx.eval(keys, values)
+
+    return keys, values
+
+
 def morphkv_get_kv(state: MorphKVState) -> tuple[mx.array, mx.array]:
     """Return ``(keys, values)`` arrays from state.
 
@@ -275,6 +388,7 @@ __all__ = [
     "MorphKVState",
     "init_morphkv_state",
     "morphkv_update",
+    "morphkv_update_batched",
     "morphkv_get_kv",
     "morphkv_fp16_bytes",
     "full_morphkv_fp16_bytes",
