@@ -110,7 +110,9 @@ def bench_scalar_quantize(peak_gbs: float) -> None:
         f"{'AI (F/B)':>9} {'GFLOP/s':>9}  class"
     )
     rng = np.random.default_rng(0)
-    sizes = [10_000, 1_000_000, 16_000_000]
+    # 16M alone lands at ~55-65% and reads as "maybe headroom"; the ceiling
+    # only shows once dispatch cost is amortized (see Recommendation #3).
+    sizes = [10_000, 1_000_000, 16_000_000, 64_000_000, 256_000_000]
     for b in (2, 4):
         n_cents = 1 << b
         centroids = mx.array(np.linspace(-2.0, 2.0, n_cents).astype(np.float32))

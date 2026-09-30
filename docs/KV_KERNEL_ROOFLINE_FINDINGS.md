@@ -70,9 +70,10 @@ across two runs and agreed within a few percent except where noted.
 
 Even at b=4 (16 centroids scanned per element, the highest FLOPs/byte
 tested), AI stays at 10.67 — nowhere near compute-bound. Bandwidth climbs
-toward ~55% of peak as N grows and plateaus; it doesn't clearly cross the
-60% memory-bound threshold at the largest size tested here, so more
-headroom may exist at even larger N (not tested — see Limitations).
+toward ~55% of peak as N grows; it doesn't clearly cross the 60%
+memory-bound threshold at the largest size in this table. A follow-up
+sweep to 256M (Recommendation #3) shows it keeps climbing to the
+calibrated ceiling — memory-bound, not plateaued.
 
 ### `turboquant_scalar_dequantize` — centroid gather decode (zero arithmetic)
 
@@ -145,7 +146,7 @@ at the B*H*S_q level tested here.
 
 | Kernel | Regime | Bottleneck at realistic scale |
 |---|---|---|
-| `turboquant_scalar_quantize` | argmin, AI 2.67–10.67 | memory-bound (trending toward it, ~55% at largest N tested) |
+| `turboquant_scalar_quantize` | argmin, AI 2.67–10.67 | **memory-bound** (confirmed at larger N: 93–100% of peak at 256M — see Recommendation #3) |
 | `turboquant_scalar_dequantize` | pure gather, AI ≈ 0 | **memory-bound** (confirmed, ~61% of peak) |
 | `kivi_group_quant_dequant` | group reduce + fused write, AI 1.17 | **memory-bound** (confirmed, ~102% of peak) |
 | `scalar_fused_decode_attend` | fused decode+attend, AI 1.62 | **occupancy/dispatch-bound**, not bandwidth — confirmed via threadgroup-count sweep |
@@ -941,13 +942,31 @@ separately optimized.
    production-grade integration (real residual-window cache, wired
    through `KVCacheBuilder`, variable-length concurrent requests) remains
    future work.
-3. **`turboquant_scalar_quantize` didn't clearly cross the memory-bound
-   threshold even at 16M elements** (52–55%, vs. 61–102% for the other
-   two bandwidth-confirmed kernels) — worth a follow-up at larger N to see
-   whether it plateaus below the ceiling (suggesting real headroom, e.g.
-   from its per-element centroid-scan loop not being fully hidden by
-   memory latency) or simply needs more elements to amortize dispatch
-   overhead the same way the others did. Not resolved here.
+3. **`turboquant_scalar_quantize` is memory-bound; it just needed larger
+   N to show it.** The original run measured 52–55% at 16M elements and
+   left open whether the per-element centroid scan was leaving headroom.
+   Re-measured to 256M (three runs, same M4, MLX 0.32.2). Two of those
+   runs also timed MLX's own `x.astype(mx.uint8)` — the identical access
+   pattern (read fp16, write uint8, no arithmetic) and so the fairest
+   ceiling for this kernel:
+
+   | N | quantize % of peak (b=2/4, 3 runs) | `astype(uint8)` % of peak (2 runs) | quantize / astype time |
+   |---|---|---|---|
+   | 16M  | 57–65% | 58–64% | 0.91–1.00x |
+   | 64M  | 81–89% | 85–88% | 0.97–1.00x |
+   | 128M | 81–95% | 83–87% | 0.87–1.07x |
+   | 256M | 93–100% | 72–74% | 0.72–0.76x |
+
+   16M straddles the 60% threshold run to run (the original 52–55% sits
+   just below this range), but the kernel tracks `astype` to within noise
+   through 128M and reaches 93–100% of the calibrated ceiling at 256M,
+   where it is faster than `astype`. The argmin loop is
+   fully hidden behind memory latency even at b=4 (16 centroids). No kernel
+   change is warranted; the only lever left is moving fewer bytes, per
+   Recommendation #1. Realistic per-step decode quantize sizes are far
+   below 16M and launch-bound — a batching/fusion question, not a kernel
+   one. Reproduction: `python scripts/kv_kernel_roofline_bench.py` (sizes
+   now extend to 256M).
 
 ## Limitations
 
@@ -963,8 +982,6 @@ separately optimized.
   measurements and the kernels' own dispatch-shape documentation, the
   same limitation the prefill roofline's Step 4 flagged for its own
   root-cause hypothesis.
-- **`turboquant_scalar_quantize`'s trend at N > 16M is untested** (see
-  Recommendation #3).
 - **Synchronization-bound behavior wasn't isolated with a dedicated
   experiment** (e.g. varying `NSG_C` and measuring barrier count vs.
   throughput directly) — the conclusion that no kernel here is
