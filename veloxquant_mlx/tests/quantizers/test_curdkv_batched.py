@@ -163,7 +163,9 @@ def test_real_cache_matches_reference_loop(B, H, seed):
     budget = 6
     rank_cap = 4
 
-    cache = _make_cache(head_dim=D, curdkv_budget=budget, curdkv_n_sink=n_sink, curdkv_rank_cap=rank_cap)
+    cache = _make_cache(
+        head_dim=D, curdkv_budget=budget, curdkv_n_sink=n_sink, curdkv_rank_cap=rank_cap
+    )
 
     step_sizes = [5, 1, 1, 1, 1, 1]
     steps = []

@@ -527,6 +527,42 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.21 (2026-09-30)
+
+### Bug Fixes
+
+- **cache**: Defer SnapKV eviction for later prefill chunks so the mask matches
+  ([#605](https://github.com/rajveer43/VeloxQuant-MLX/pull/605),
+  [`f5dbe0a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f5dbe0a7a75193c82a20d09a0b8d7192d9cdadd5))
+
+- **metal**: Shrink scalar_predecoded_attend's merge buffer so autotuned nsg fits
+  ([#603](https://github.com/rajveer43/VeloxQuant-MLX/pull/603),
+  [`6bcc718`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6bcc718375f547e2d7219981fa9586879aceb78b))
+
+### Documentation
+
+- **roofline**: Resolve scalar-quantize headroom question at larger N
+  ([#604](https://github.com/rajveer43/VeloxQuant-MLX/pull/604),
+  [`ff3fb23`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ff3fb23d47e6b3f178520711facc776057b00408))
+
+
+## v0.91.20 (2026-09-30)
+
+### Bug Fixes
+
+- **ci**: Pin ruff to 0.16.7 across CI, pre-commit, and pyproject; reformat repo
+  ([#599](https://github.com/rajveer43/VeloxQuant-MLX/pull/599),
+  [`4f955c4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4f955c4ab4077642ccebeeed289ce282beb460e5))
+
+- **scripts**: Drop tomllib from sync_release_badges.py, breaking 3.10 collection
+  ([#602](https://github.com/rajveer43/VeloxQuant-MLX/pull/602),
+  [`40a79c7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/40a79c7f288d666fa5374ded28cb3557877f36d6))
+
+- **tests**: Move CLI/recommender drift test out of the no-MLX tree
+  ([#601](https://github.com/rajveer43/VeloxQuant-MLX/pull/601),
+  [`efdbe92`](https://github.com/rajveer43/VeloxQuant-MLX/commit/efdbe92b0961caae5253652198aa3adbc6ab8c93))
+
+
 ## v0.91.19 (2026-09-30)
 
 ### Bug Fixes

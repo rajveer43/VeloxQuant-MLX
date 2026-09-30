@@ -16,8 +16,13 @@ from veloxquant_mlx.profiling.model_profiler import ModelProfile
 
 def _model() -> ModelProfile:
     return ModelProfile(
-        model_id="tiny", architecture="llama", num_layers=4, num_query_heads=8,
-        num_kv_heads=8, head_dim=128, attention_type="mha",
+        model_id="tiny",
+        architecture="llama",
+        num_layers=4,
+        num_query_heads=8,
+        num_kv_heads=8,
+        head_dim=128,
+        attention_type="mha",
     )
 
 
@@ -27,7 +32,8 @@ def _hw() -> HardwareProfile:
 
 def _result(objective: str = WorkloadObjective.BALANCED):
     return plan_strategy(
-        _model(), _hw(),
+        _model(),
+        _hw(),
         WorkloadProfile(context_length=4096, objective=objective),
     )
 

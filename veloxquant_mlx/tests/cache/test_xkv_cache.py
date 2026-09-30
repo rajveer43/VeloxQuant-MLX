@@ -410,9 +410,7 @@ def test_batched_projection_matches_cache_output_B_gt1_H_gt1():
         for h in range(H):
             k_bh = k[b, h].astype(mx.float32)
             L = project_into_shared_basis(k_bh, V_g, K_mean_g)
-            L_q = quantize_latents_uniform(
-                L, bits=m0._latent_bits, group_size=m0._group_quant_size
-            )
+            L_q = quantize_latents_uniform(L, bits=m0._latent_bits, group_size=m0._group_quant_size)
             k_hat = reconstruct_from_shared_basis(L_q, V_g, K_mean_g)
             expected_batch.append(k_hat)
         expected_heads.append(mx.stack(expected_batch, axis=0))

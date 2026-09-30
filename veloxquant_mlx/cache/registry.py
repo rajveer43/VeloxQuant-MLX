@@ -362,7 +362,7 @@ _BLURB: dict[str, str] = {
 _PAPER_DEVIATION: dict[str, str] = {
     "adakv": (
         "Default importance proxy (norm_variance) is sign-inverted vs the paper's "
-        "attention-entropy criterion; set adakv_importance=\"attention_entropy\" to "
+        'attention-entropy criterion; set adakv_importance="attention_entropy" to '
         "match the paper's sign. (The non-adaptive target==lo_bit default this "
         "note used to describe was fixed by #31 — target_avg_bits now defaults "
         "to 2.5, above lo_bit.)"
@@ -930,9 +930,7 @@ def static_method_info(name: str) -> MethodInfo:
     silently disappear: the crash surface is real tensors, not this table.
     """
     if name not in all_method_names():
-        raise KeyError(
-            f"unknown method {name!r}. Known methods: {', '.join(all_method_names())}"
-        )
+        raise KeyError(f"unknown method {name!r}. Known methods: {', '.join(all_method_names())}")
     return MethodInfo(
         name=name,
         family=_FAMILY.get(name, MethodFamily.QUANTIZATION),

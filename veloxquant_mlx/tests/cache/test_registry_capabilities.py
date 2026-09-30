@@ -118,7 +118,10 @@ def test_get_method_matches_static_capabilities(monkeypatch):
     # stub the probe so the test is hermetic: capabilities come from the same
     # _capabilities_for table on both paths regardless of the live probe result
     monkeypatch.setattr(reg, "probe_serve_tier", lambda name: reg.ServeTier.HONEST_BYTES)
-    assert reg.get_method("kivi").capabilities.to_dict() == static_method_info("kivi").capabilities.to_dict()
+    assert (
+        reg.get_method("kivi").capabilities.to_dict()
+        == static_method_info("kivi").capabilities.to_dict()
+    )
 
 
 def test_get_method_uses_probed_tier(monkeypatch):

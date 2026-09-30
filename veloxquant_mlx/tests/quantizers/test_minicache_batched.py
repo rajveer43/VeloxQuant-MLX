@@ -65,9 +65,9 @@ def test_batched_matches_reference_loop(desc, B, H, S, D, ret, t, seed):
     ref_primary = _reference_loop(xp, xm, ret, t, "primary")
 
     assert mx.array_equal(out_merge_batched, ref_merge), f"{desc}: merge reconstruction diverged"
-    assert mx.array_equal(
-        out_primary_batched, ref_primary
-    ), f"{desc}: primary reconstruction diverged"
+    assert mx.array_equal(out_primary_batched, ref_primary), (
+        f"{desc}: primary reconstruction diverged"
+    )
 
 
 def test_retained_mask_shape_matches_leading_dims():

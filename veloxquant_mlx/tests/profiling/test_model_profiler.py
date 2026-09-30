@@ -148,9 +148,17 @@ def test_parameter_count_absent_is_none():
 
 def test_profile_from_model_object():
     class _Model:
-        config = type("C", (), {"torch_dtype": "float16", "num_hidden_layers": 4,
-                                "num_attention_heads": 8, "num_key_value_heads": 8,
-                                "hidden_size": 1024})()
+        config = type(
+            "C",
+            (),
+            {
+                "torch_dtype": "float16",
+                "num_hidden_layers": 4,
+                "num_attention_heads": 8,
+                "num_key_value_heads": 8,
+                "hidden_size": 1024,
+            },
+        )()
 
     profile = profile_model_from_model(_Model())
     assert profile.attention_type == "mha"

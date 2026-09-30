@@ -484,11 +484,13 @@ Example — registering and looking up a custom quantizer:
 from veloxquant_mlx.core.abstractions import Quantizer
 from veloxquant_mlx.core.registry import QuantizerRegistry
 
+
 @QuantizerRegistry.register("my_quantizer")
 class MyQuantizer(Quantizer):
     def encode(self, x): ...
     def decode(self, ev): ...
     def estimate_inner_product(self, q, ev): ...
+
 
 # Look up the class by name and instantiate it directly
 cls = QuantizerRegistry.get("my_quantizer")

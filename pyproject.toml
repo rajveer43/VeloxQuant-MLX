@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "VeloxQuant-MLX"
-version = "0.91.19"
+version = "0.91.21"
 description = "Fast KV-cache quantization for Apple Silicon (MLX) — 43 research-adapted compression methods, from TurboQuant and KIVI to A2ATS, with Metal kernels"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -67,7 +67,7 @@ test = [
 dev = [
     "VeloxQuant-MLX[test]",
     "pre-commit>=3.7",
-    "ruff>=0.6",
+    "ruff==0.16.7",
     "mypy>=1.11",
 ]
 # Only the release workflow (.github/workflows/release.yml) needs this group.

@@ -104,11 +104,10 @@ def test_chunked_prefill_budget_stays_capped() -> None:
     stay capped at snap_budget across multiple S>1 calls, not grow by up to
     budget per chunk.
 
-    The first chunk's own RETURN value is the full S=50 (see #370 — that
-    call's attention mask was already fixed before eviction could run, so
-    eviction is deferred to storage only); subsequent chunks' returns are
-    the re-capped budget, since by then make_mask has correct kept-position
-    data to build a mask matching a shrunk return.
+    Every chunk's own RETURN value is un-evicted (see #370 — that call's
+    attention mask was already fixed before eviction could run, so eviction
+    is deferred to storage only): the first chunk returns its S=50, later
+    chunks return the stored budget plus their own 50 new rows.
     """
     c = _make(snap_budget=10, snap_obs_window=2, snap_n_sink=1)
     k1, v1 = _rand_kv(S=50, H=1, D=8, seed=1)
@@ -120,13 +119,15 @@ def test_chunked_prefill_budget_stays_capped() -> None:
     assert c.keys.shape[2] == 10
 
     ko2, _ = c.update_and_fetch(k2, v2)
-    assert ko2.shape[2] == 10, (
-        f"budget violated after 2nd prefill chunk: kept {ko2.shape[2]} > snap_budget=10"
+    assert ko2.shape[2] == 60
+    assert c.keys.shape[2] == 10, (
+        f"budget violated after 2nd prefill chunk: stored {c.keys.shape[2]} > snap_budget=10"
     )
 
     ko3, _ = c.update_and_fetch(k3, v3)
-    assert ko3.shape[2] == 10, (
-        f"budget violated after 3rd prefill chunk: kept {ko3.shape[2]} > snap_budget=10"
+    assert ko3.shape[2] == 60
+    assert c.keys.shape[2] == 10, (
+        f"budget violated after 3rd prefill chunk: stored {c.keys.shape[2]} > snap_budget=10"
     )
     # Since #171 ``offset`` reports the TRUE absolute token position (what
     # mlx_lm rotates RoPE at), not the retained row count — 150 tokens were
@@ -167,11 +168,12 @@ def test_chunked_prefill_sink_anchored_at_true_start() -> None:
     v2 = rng.standard_normal((1, 1, 50, 8)).astype(np.float32)
 
     c.update_and_fetch(mx.array(k1.astype(np.float16)), mx.array(v1.astype(np.float16)))
-    ko2, _ = c.update_and_fetch(mx.array(k2.astype(np.float16)), mx.array(v2.astype(np.float16)))
-    mx.eval(ko2)
+    c.update_and_fetch(mx.array(k2.astype(np.float16)), mx.array(v2.astype(np.float16)))
+    stored = c.keys[:, :, : c._row_offset]
+    mx.eval(stored)
 
-    ko2_np = np.array(ko2).astype(np.float32)
-    assert np.any(np.all(np.isclose(ko2_np[0, 0], k1[0, 0, 0, :], atol=1e-2), axis=-1)), (
+    stored_np = np.array(stored).astype(np.float32)
+    assert np.any(np.all(np.isclose(stored_np[0, 0], k1[0, 0, 0, :], atol=1e-2), axis=-1)), (
         "true sequence-start sink token must still be retained after a later chunk"
     )
 
@@ -415,7 +417,9 @@ def test_make_mask_after_eviction_is_position_correct_explicit_array() -> None:
     alignment silently assumes a contiguous trailing key window — false once
     eviction has kept a sparse subset), and that array must reflect true
     absolute positions: kept row j is visible to query i iff its true
-    position is <= query i's true position."""
+    position is <= query i's true position. The key axis also covers this
+    call's own new rows, which its attention runs over alongside the kept
+    ones."""
     from mlx_lm.models.base import create_attention_mask
 
     c = _make(snap_budget=5, snap_obs_window=2, snap_n_sink=1)
@@ -426,11 +430,38 @@ def test_make_mask_after_eviction_is_position_correct_explicit_array() -> None:
     h_fake = mx.zeros((1, 3, 4))
     mask = create_attention_mask(h_fake, c)
     assert isinstance(mask, mx.array), "must be an explicit array, not the causal string"
-    assert mask.shape == (1, 1, 3, 5)
+    assert mask.shape == (1, 1, 3, 8)
 
     query_positions = [c.offset + i for i in range(3)]
-    expected = [[kj <= qi for kj in kept_positions] for qi in query_positions]
+    key_positions = kept_positions + query_positions
+    expected = [[kj <= qi for kj in key_positions] for qi in query_positions]
     assert mask[0, 0].tolist() == expected
+
+
+@pytest.mark.parametrize("window_size", [None, 64])
+def test_mask_matches_returned_keys_through_chunked_prefill_and_decode(window_size) -> None:
+    """Regression: with a prefill chunk smaller than the budget, a later
+    chunk's mask covered only the stored rows while its attention ran over
+    a differently-sized set, so SDPA raised a broadcast error (reproduced on
+    Llama-3.2-1B with budget=64, chunk=48). Drive the cache the way an
+    mlx_lm attention layer does — mask first, then update_and_fetch, then
+    SDPA — across chunks that evict and decode steps after them."""
+    from mlx_lm.models.base import create_attention_mask
+
+    H_q, H_kv, D = 4, 2, 8
+    c = _make(snap_budget=64, snap_obs_window=4, snap_n_sink=1, head_dim=D)
+    rng = np.random.default_rng(11)
+    for step, n in enumerate([48, 48, 48, 48, 1, 1, 1]):
+        mask = create_attention_mask(mx.zeros((1, n, 4)), c, window_size=window_size)
+        k = mx.array(rng.standard_normal((1, H_kv, n, D)).astype(np.float16))
+        v = mx.array(rng.standard_normal((1, H_kv, n, D)).astype(np.float16))
+        q = mx.array(rng.standard_normal((1, H_q, n, D)).astype(np.float16))
+        ko, vo = c.update_and_fetch(k, v)
+        if isinstance(mask, mx.array):
+            assert mask.shape[-1] == ko.shape[2], f"step {step}: mask/key length mismatch"
+        out = mx.fast.scaled_dot_product_attention(q, ko, vo, scale=D**-0.5, mask=mask)
+        mx.eval(out)
+        assert c._row_offset <= 64 + (step - 3 if step > 3 else 0)
 
 
 def test_make_mask_single_query_returns_none() -> None:

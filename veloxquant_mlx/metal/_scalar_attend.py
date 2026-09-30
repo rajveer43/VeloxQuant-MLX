@@ -301,15 +301,15 @@ def _scalar_affine_decode_kernel(mode: str):
     )
 
 
-def _scalar_predecoded_attend_kernel(nsg: int):
-    key = ("scalar_predecoded_attend", nsg)
+def _scalar_predecoded_attend_kernel(D: int, nsg: int):
+    key = ("scalar_predecoded_attend", D, nsg)
     return _cache.get_or_create(
         key,
         lambda: mx.fast.metal_kernel(
-            name=f"scalar_predecoded_attend_nsg{nsg}",
+            name=f"scalar_predecoded_attend_d{D}_nsg{nsg}",
             input_names=["q", "k_hat", "v_hat", "scale_arr"],
             output_names=["out"],
-            header=f"#define NSG_C {nsg}\n",
+            header=f"#define NSG_C {nsg}\n#define DSLOTS_C {_d_slots(D)}\n",
             source=_SCALAR_PREDECODED_ATTEND_SRC,
             ensure_row_contiguous=True,
         ),
@@ -764,7 +764,7 @@ def scalar_predecoded_attend(
         nsg = _auto_nsg(D, 1, n_tg)
     scale_arr = _f32_param(scale)
 
-    outputs = _scalar_predecoded_attend_kernel(nsg)(
+    outputs = _scalar_predecoded_attend_kernel(D, nsg)(
         inputs=[
             q.astype(mx.float16),
             k_hat.astype(mx.float16),

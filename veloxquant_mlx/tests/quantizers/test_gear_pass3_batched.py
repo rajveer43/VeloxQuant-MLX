@@ -108,7 +108,9 @@ def test_gear_reconstruct_batched_matches_reference(desc, bh, n, d, rank, frac, 
             d_cols=d,
         )
         rec_r = gear_reconstruct(state, base=base[row])
-        diff = float(mx.max(mx.abs(recon_b[row].astype(mx.float32) - rec_r.astype(mx.float32))).item())
+        diff = float(
+            mx.max(mx.abs(recon_b[row].astype(mx.float32) - rec_r.astype(mx.float32))).item()
+        )
         assert diff < 1e-2, f"{desc}: row {row} reconstruction diverged by {diff}"
 
 

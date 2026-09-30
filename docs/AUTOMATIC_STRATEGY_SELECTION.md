@@ -34,8 +34,8 @@ result = optimizer.recommend_strategy(
     model_config={"num_layers": 32, "hidden_size": 4096},
     workload=WorkloadProfile(
         context_length=32768,
-        objective="latency"  # or "memory", "quality", "balanced"
-    )
+        objective="latency",  # or "memory", "quality", "balanced"
+    ),
 )
 
 # Use the recommendation
@@ -144,12 +144,12 @@ The system has **7 phases**, with phases 1–6 complete in MVP:
 from veloxquant_mlx.profiling.hardware_profiler import HardwareProfile
 
 profile = HardwareProfile.detect()
-print(f"Chip: {profile.chip}")                    # "Apple M4"
+print(f"Chip: {profile.chip}")  # "Apple M4"
 print(f"Generation: {profile.chip_generation}")  # 4
-print(f"Memory: {profile.total_memory_bytes}")   # 25769803776 (24 GiB)
+print(f"Memory: {profile.total_memory_bytes}")  # 25769803776 (24 GiB)
 print(f"Available: {profile.available_memory_bytes}")
 print(f"Bandwidth: {profile.bandwidth_gbps} GB/s")  # 90.0 (nominal, self-calibrated)
-print(f"Metal: {profile.metal_available}")       # True
+print(f"Metal: {profile.metal_available}")  # True
 ```
 
 **Features**:
@@ -171,13 +171,14 @@ profile = profile_model_from_config(config, model_id="Qwen/Qwen2.5-7B")
 
 # Or from loaded HF config object
 from transformers import AutoConfig
+
 hf_config = AutoConfig.from_pretrained("Qwen/Qwen2.5-7B")
 profile = profile_model_from_config(hf_config)
 
 print(f"Model: {profile.model_id}")
-print(f"Architecture: {profile.architecture}")    # "qwen"
+print(f"Architecture: {profile.architecture}")  # "qwen"
 print(f"Layers: {profile.num_layers}")
-print(f"Attention: {profile.attention_type}")    # "gqa", "mha", or "mqa"
+print(f"Attention: {profile.attention_type}")  # "gqa", "mha", or "mqa"
 print(f"KV bytes/token: {profile.baseline_kv_bytes_per_token}")
 ```
 
@@ -194,11 +195,11 @@ print(f"KV bytes/token: {profile.baseline_kv_bytes_per_token}")
 from veloxquant_mlx.planning.workload import WorkloadProfile
 
 workload = WorkloadProfile(
-    context_length=32768,        # Tokens in KV cache
-    max_new_tokens=1024,         # Tokens to generate
-    batch_size=1,                # Attention batch
-    objective="latency",         # "memory", "latency", "quality", "balanced"
-    constraints={}               # E.g., {"max_memory_gb": 4}
+    context_length=32768,  # Tokens in KV cache
+    max_new_tokens=1024,  # Tokens to generate
+    batch_size=1,  # Attention batch
+    objective="latency",  # "memory", "latency", "quality", "balanced"
+    constraints={},  # E.g., {"max_memory_gb": 4}
 )
 ```
 
@@ -242,16 +243,14 @@ print(f"Metal kernel: {caps.has_metal_kernel}")
 from veloxquant_mlx.planning.memory_estimator import estimate_candidate_memory
 
 estimates = estimate_candidate_memory(
-    methods=["kivi", "polar", "turboquant_rvq"],
-    model=profile,
-    workload=workload
+    methods=["kivi", "polar", "turboquant_rvq"], model=profile, workload=workload
 )
 
 for method, estimate in estimates.items():
     print(f"{method}:")
     print(f"  Bytes: {estimate.bytes}")
     print(f"  Confidence: {estimate.confidence}")  # "high", "medium", "low"
-    print(f"  Source: {estimate.source}")          # "empirical", "analytical"
+    print(f"  Source: {estimate.source}")  # "empirical", "analytical"
 ```
 
 **Accuracy**: ±20% vs actual MLX allocations (conservative: never under-promises)
@@ -276,13 +275,13 @@ result = filter_candidates(
         memory_budget_bytes=6_000_000_000,  # 6 GB cap
         prefer_no_calibration=False,
         require_metal=False,
-        minimum_context_length=2048
-    )
+        minimum_context_length=2048,
+    ),
 )
 
-print(f"Viable: {result.viable}")                  # ["kivi", "polar", ...]
-print(f"Excluded: {result.excluded}")              # {"method": "reason", ...}
-print(f"Soft warnings: {result.soft_warnings}")    # {"method": ["warning", ...]}
+print(f"Viable: {result.viable}")  # ["kivi", "polar", ...]
+print(f"Excluded: {result.excluded}")  # {"method": "reason", ...}
+print(f"Soft warnings: {result.soft_warnings}")  # {"method": ["warning", ...]}
 ```
 
 ---
@@ -293,10 +292,7 @@ print(f"Soft warnings: {result.soft_warnings}")    # {"method": ["warning", ...]
 from veloxquant_mlx.planning.strategy_planner import plan_strategy
 
 result = plan_strategy(
-    model=profile,
-    hardware=hw_profile,
-    workload=workload,
-    options=PlanningOptions(...)
+    model=profile, hardware=hw_profile, workload=workload, options=PlanningOptions(...)
 )
 
 # Top recommendation
@@ -333,6 +329,7 @@ print(text)
 
 # JSON explanation (with evidence links)
 import json
+
 json_exp = explain(result, as_json=True)
 print(json.dumps(json_exp, indent=2))
 ```
@@ -372,7 +369,7 @@ record = BenchmarkRecord(
     perplexity_delta=0.02,
     chip="M4",
     mlx_version="0.19.0",
-    macos_version="15.1"
+    macos_version="15.1",
 )
 db.add_record(record)
 
@@ -398,27 +395,25 @@ for match in matches:
 ```python
 class AutoOptimizer:
     """One-stop automatic strategy selector with caching.
-    
+
     Stateful: hardware detection + benchmark DB are cached so repeated
     calls don't re-probe.
     """
-    
+
     def __init__(self, options: AutoOptimizerOptions | None = None) -> None:
         """Initialize with optional benchmark DB path."""
-    
+
     def detect_hardware(self) -> HardwareProfile:
         """Detect and cache Apple Silicon environment."""
-    
-    def profile_model(
-        self, config: dict | None = None, **overrides
-    ) -> ModelProfile:
+
+    def profile_model(self, config: dict | None = None, **overrides) -> ModelProfile:
         """Profile model from HF config + optional overrides."""
-    
+
     def estimate_memory(
         self, workload: WorkloadProfile, model: ModelProfile | None = None
     ) -> dict[str, MemoryEstimate]:
         """Analytical per-method memory estimates."""
-    
+
     def recommend_strategy(
         self,
         model_config: dict | None = None,
@@ -429,13 +424,13 @@ class AutoOptimizer:
         **kwargs,
     ) -> RecommendationResult:
         """Recommend the best KV cache strategy.
-        
+
         Returns a RecommendationResult with:
         - recommendation: The top choice
         - ranked: Full ranked list (alternatives)
         - fallback_used: Whether we fell back to safe method
         """
-    
+
     def explain(self, result: RecommendationResult, **kwargs: Any) -> str:
         """Render human-readable explanation."""
 ```
@@ -445,17 +440,10 @@ class AutoOptimizer:
 **One-shot recommendation** (no caching):
 
 ```python
-from veloxquant_mlx.planning import (
-    plan_strategy,
-    PlanningOptions,
-    explain
-)
+from veloxquant_mlx.planning import plan_strategy, PlanningOptions, explain
 
 result = plan_strategy(
-    model=profile,
-    hardware=hw_profile,
-    workload=workload,
-    options=PlanningOptions(...)
+    model=profile, hardware=hw_profile, workload=workload, options=PlanningOptions(...)
 )
 text = explain(result)
 ```
@@ -475,6 +463,7 @@ class HardwareProfile:
     peak_memory_bandwidth_gbps: float | None
     avg_quantize_latency_ms_per_token: float | None
 
+
 @dataclass
 class ModelProfile:
     model_id: str
@@ -488,6 +477,7 @@ class ModelProfile:
     parameter_count: int | None
     hidden_size: int | None
 
+
 @dataclass
 class WorkloadProfile:
     context_length: int = 4096
@@ -496,12 +486,14 @@ class WorkloadProfile:
     objective: str = "balanced"  # or "memory", "latency", "quality"
     constraints: dict = field(default_factory=dict)
 
+
 @dataclass
 class RecommendationResult:
     recommendation: ScoredMethod  # Top pick
-    ranked: list[ScoredMethod]    # Ranked alternatives
+    ranked: list[ScoredMethod]  # Ranked alternatives
     fallback_used: bool
     evidence: dict[str, Any]
+
 
 @dataclass
 class ScoredMethod:
@@ -510,11 +502,12 @@ class ScoredMethod:
     confidence: str  # "high", "medium", "low"
     rationale: str
 
+
 @dataclass
 class MemoryEstimate:
     bytes: int
     confidence: str  # "high", "medium", "low"
-    source: str     # "empirical", "analytical"
+    source: str  # "empirical", "analytical"
 ```
 
 ---
@@ -528,8 +521,7 @@ from veloxquant_mlx import AutoOptimizer
 
 optimizer = AutoOptimizer()
 result = optimizer.recommend_strategy(
-    model_config=config,
-    workload=WorkloadProfile(context_length=32768, objective="latency")
+    model_config=config, workload=WorkloadProfile(context_length=32768, objective="latency")
 )
 method = result.recommendation.method
 ```
@@ -563,7 +555,7 @@ from veloxquant_mlx import AutoOptimizer, AutoOptimizerOptions
 optimizer = AutoOptimizer(
     options=AutoOptimizerOptions(
         benchmark_db_dir=str(Path.home() / ".cache" / "veloxquant" / "benchmarks"),
-        probe_top_n=3  # Validate top 3 candidates with live serve-tier probe
+        probe_top_n=3,  # Validate top 3 candidates with live serve-tier probe
     )
 )
 result = optimizer.recommend_strategy(model_config=config)

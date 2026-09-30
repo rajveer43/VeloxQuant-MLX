@@ -400,8 +400,6 @@ class TurboQuantRVQKVCache(_MLXKVCache):
     # (16th occurrence).
     merge = property(
         lambda self: (_ for _ in ()).throw(
-            AttributeError(
-                "TurboQuantRVQKVCache does not support merge() — see VeloxQuant-MLX#358"
-            )
+            AttributeError("TurboQuantRVQKVCache does not support merge() — see VeloxQuant-MLX#358")
         )
     )

@@ -124,8 +124,14 @@ class _TensorKVTC:
         """
         self._raw_rows = x0.astype(mx.float32)
         self._artifact = kvtc_compress_from_pca_fit(
-            L, V, mean, variances, x0.shape[0], self.bit_budget,
-            bit_choices=self.bit_choices, beta=self.beta,
+            L,
+            V,
+            mean,
+            variances,
+            x0.shape[0],
+            self.bit_budget,
+            bit_choices=self.bit_choices,
+            beta=self.beta,
         )
         self._fitted = True
         return kvtc_decompress(self._artifact)
@@ -344,8 +350,12 @@ class KVTCKVCache(_MLXKVCache):
                 v_bh = values[b, h]
 
                 if is_prefill:
-                    k_rec = ks.fit_prefill_from_pca(k_bh, k_L[idx], k_V[idx], k_mean[idx], k_var[idx])
-                    v_rec = vs.fit_prefill_from_pca(v_bh, v_L[idx], v_V[idx], v_mean[idx], v_var[idx])
+                    k_rec = ks.fit_prefill_from_pca(
+                        k_bh, k_L[idx], k_V[idx], k_mean[idx], k_var[idx]
+                    )
+                    v_rec = vs.fit_prefill_from_pca(
+                        v_bh, v_L[idx], v_V[idx], v_mean[idx], v_var[idx]
+                    )
                 else:
                     k_rec = ks.append(k_bh)
                     v_rec = vs.append(v_bh)

@@ -69,7 +69,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--auto",
         action="store_true",
-        help="Use the hardware-aware auto-selector (RFC method=\"auto\")",
+        help='Use the hardware-aware auto-selector (RFC method="auto")',
     )
     parser.add_argument(
         "--model-config",
@@ -177,7 +177,9 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     # --- Legacy path ----------------------------------------------------------
-    missing = [name for name in ("chip", "ram_gb", "model_class", "goal") if getattr(args, name) is None]
+    missing = [
+        name for name in ("chip", "ram_gb", "model_class", "goal") if getattr(args, name) is None
+    ]
     if missing:
         raise SystemExit(
             f"legacy mode requires --{'/--'.join(missing)}; or use --auto for the "
@@ -251,12 +253,8 @@ def _main_auto(args: argparse.Namespace) -> None:
         generation_length=args.generation or 512,
         objective=args.objective or WorkloadObjective.BALANCED,
     )
-    optimizer = AutoOptimizer(
-        AutoOptimizerOptions(probe_top_n=0 if args.no_probe else 3)
-    )
-    result = optimizer.recommend_strategy(
-        model_config, model=model, workload=workload
-    )
+    optimizer = AutoOptimizer(AutoOptimizerOptions(probe_top_n=0 if args.no_probe else 3))
+    result = optimizer.recommend_strategy(model_config, model=model, workload=workload)
 
     if args.json:
         payload = {

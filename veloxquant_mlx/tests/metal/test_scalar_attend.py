@@ -480,10 +480,15 @@ def _two_pass_attend(q, kc, ks, kz, vc, vs, vz, g, scale, nsg=4):
     return scalar_predecoded_attend(q, k_hat, v_hat, scale, nsg=nsg)
 
 
+@pytest.mark.parametrize("nsg", [4, None, 32])
 @pytest.mark.parametrize("S_kv", [64, 512, 2048])
 @pytest.mark.parametrize("H_q,H_kv", [(4, 4), (8, 2), (32, 4)])
-def test_scalar_decode_once_predecoded_attend_parity(H_q, H_kv, S_kv):
-    """Two-pass output must match the same numpy reference as the fused kernel."""
+def test_scalar_decode_once_predecoded_attend_parity(H_q, H_kv, S_kv, nsg):
+    """Two-pass output must match the same numpy reference as the fused kernel.
+
+    nsg=None at B=1, H_q<32 autotunes to 32, which overflowed the old fixed
+    8-slot fp32 merge buffer (33024B > 32768B) and crashed at kernel load.
+    """
     B, D, b, g = 1, 128, 2, 32
     scale = 1.0 / math.sqrt(D)
     q, kc, ks, kz, vc, vs, vz = _make_inputs(B, H_q, S_kv, D, b, g, H_kv=H_kv)
@@ -492,11 +497,38 @@ def test_scalar_decode_once_predecoded_attend_parity(H_q, H_kv, S_kv):
     akc, aks, akz = mx.array(kc), mx.array(ks), mx.array(kz)
     avc, avs, avz = mx.array(vc), mx.array(vs), mx.array(vz)
 
-    out = _two_pass_attend(aq, akc, aks, akz, avc, avs, avz, g, scale)
+    out = _two_pass_attend(aq, akc, aks, akz, avc, avs, avz, g, scale, nsg=nsg)
     ref = _reference_attend(q, kc, ks, kz, vc, vs, vz, g, scale)
 
     err = np.abs(np.array(out.astype(mx.float32)) - ref)
-    assert err.max() < 2e-3, f"max abs error {err.max():.6f} at H_q={H_q},H_kv={H_kv},S_kv={S_kv}"
+    assert err.max() < 2e-3, (
+        f"max abs error {err.max():.6f} at H_q={H_q},H_kv={H_kv},S_kv={S_kv},nsg={nsg}"
+    )
+
+
+@pytest.mark.parametrize("nsg", [1, 2, 4, 8, 16, 31, 32])
+def test_scalar_predecoded_attend_all_nsg_fit_at_max_d(nsg):
+    """Every legal nsg must fit the threadgroup-memory budget at D=256."""
+    B, H_q, H_kv, S_kv, D, b, g = 1, 4, 2, 96, 256, 2, 32
+    scale = 1.0 / math.sqrt(D)
+    q, kc, ks, kz, vc, vs, vz = _make_inputs(B, H_q, S_kv, D, b, g, H_kv=H_kv)
+
+    out = _two_pass_attend(
+        mx.array(q),
+        mx.array(kc),
+        mx.array(ks),
+        mx.array(kz),
+        mx.array(vc),
+        mx.array(vs),
+        mx.array(vz),
+        g,
+        scale,
+        nsg=nsg,
+    )
+    ref = _reference_attend(q, kc, ks, kz, vc, vs, vz, g, scale)
+
+    err = np.abs(np.array(out.astype(mx.float32)) - ref)
+    assert err.max() < 2e-3, f"max abs error {err.max():.6f} at D=256, nsg={nsg}"
 
 
 def test_scalar_decode_once_validation():

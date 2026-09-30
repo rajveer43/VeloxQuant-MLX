@@ -30,9 +30,13 @@ _HW = HardwareProfile(chip="M4", chip_generation=4, available_memory_bytes=_LONG
 
 def _model(attention: str = "gqa") -> ModelProfile:
     return ModelProfile(
-        model_id="t", architecture="llama", num_layers=4, num_query_heads=8,
+        model_id="t",
+        architecture="llama",
+        num_layers=4,
+        num_query_heads=8,
         num_kv_heads={"gqa": 4, "mha": 8, "mqa": 1}[attention],
-        head_dim=128, attention_type=attention,
+        head_dim=128,
+        attention_type=attention,
     )
 
 
@@ -44,8 +48,11 @@ def _workload(**kw) -> WorkloadProfile:
 
 def _estimate(method: str, compressed: int = 1 << 20) -> MemoryEstimate:
     return MemoryEstimate(
-        method=method, baseline_bytes=1 << 30, compressed_bytes=compressed,
-        resident_bytes=compressed, confidence="high",
+        method=method,
+        baseline_bytes=1 << 30,
+        compressed_bytes=compressed,
+        resident_bytes=compressed,
+        confidence="high",
     )
 
 
@@ -79,7 +86,14 @@ def _lookup_from(infos: dict[str, _FakeInfo]):
     return lookup
 
 
-def _filter(infos: dict[str, _FakeInfo], model=None, hw=_HW, workload=None, estimate_bytes: int = 1 << 18, **options_kw):
+def _filter(
+    infos: dict[str, _FakeInfo],
+    model=None,
+    hw=_HW,
+    workload=None,
+    estimate_bytes: int = 1 << 18,
+    **options_kw,
+):
     names = list(infos)
     opts = CandidateFilterOptions(registry_lookup=_lookup_from(infos), **options_kw)
     return filter_candidates(
@@ -96,7 +110,10 @@ def test_servable_real_methods_pass():
     from veloxquant_mlx.cache.registry import all_method_names
 
     result = filter_candidates(
-        _model(), _HW, _workload(), _estimates(list(all_method_names())),
+        _model(),
+        _HW,
+        _workload(),
+        _estimates(list(all_method_names())),
         options=CandidateFilterOptions(registry_lookup=static_method_info),
     )
     assert len(result.viable) > 10
@@ -118,9 +135,7 @@ def test_unservable_method_excluded_with_reason():
 
 def test_attention_mismatch_excludes():
     caps = StrategyCapabilities(supports_mha=True, supports_gqa=False, supports_mqa=False)
-    result = _filter(
-        {"a": _FakeInfo("a", ServeTier.HONEST_BYTES, caps)}, model=_model("gqa")
-    )
+    result = _filter({"a": _FakeInfo("a", ServeTier.HONEST_BYTES, caps)}, model=_model("gqa"))
     assert result.viable == []
     assert "gqa" in result.excluded["a"]
 
@@ -139,9 +154,7 @@ def test_memory_budget_excludes_oversized():
 def test_memory_budget_uses_hardware_when_unset():
     caps = StrategyCapabilities()
     tiny_hw = HardwareProfile(chip="M1", chip_generation=1, available_memory_bytes=1024)
-    result = _filter(
-        {"a": _FakeInfo("a", ServeTier.HONEST_BYTES, caps)}, hw=tiny_hw
-    )
+    result = _filter({"a": _FakeInfo("a", ServeTier.HONEST_BYTES, caps)}, hw=tiny_hw)
     assert result.viable == []
     assert "memory budget" in result.excluded["a"]
 
@@ -149,7 +162,9 @@ def test_memory_budget_uses_hardware_when_unset():
 def test_calibration_excluded_when_prefer_no_calibration():
     result = _filter(
         {
-            "cal": _FakeInfo("cal", ServeTier.HONEST_BYTES, StrategyCapabilities(requires_calibration=True)),
+            "cal": _FakeInfo(
+                "cal", ServeTier.HONEST_BYTES, StrategyCapabilities(requires_calibration=True)
+            ),
             "fast": _FakeInfo("fast", ServeTier.HONEST_BYTES, StrategyCapabilities()),
         },
         prefer_no_calibration=True,
@@ -161,7 +176,11 @@ def test_calibration_excluded_when_prefer_no_calibration():
 
 def test_calibration_is_soft_warning_without_preference():
     result = _filter(
-        {"cal": _FakeInfo("cal", ServeTier.HONEST_BYTES, StrategyCapabilities(requires_calibration=True))}
+        {
+            "cal": _FakeInfo(
+                "cal", ServeTier.HONEST_BYTES, StrategyCapabilities(requires_calibration=True)
+            )
+        }
     )
     assert result.viable == ["cal"]
     assert any("calibration" in w for w in result.soft_warnings["cal"])
@@ -170,8 +189,12 @@ def test_calibration_is_soft_warning_without_preference():
 def test_require_metal_excludes_reference_only():
     result = _filter(
         {
-            "has": _FakeInfo("has", ServeTier.HONEST_BYTES, StrategyCapabilities(has_metal_kernel=True)),
-            "nope": _FakeInfo("nope", ServeTier.HONEST_BYTES, StrategyCapabilities(has_metal_kernel=False)),
+            "has": _FakeInfo(
+                "has", ServeTier.HONEST_BYTES, StrategyCapabilities(has_metal_kernel=True)
+            ),
+            "nope": _FakeInfo(
+                "nope", ServeTier.HONEST_BYTES, StrategyCapabilities(has_metal_kernel=False)
+            ),
         },
         require_metal=True,
     )
@@ -181,7 +204,11 @@ def test_require_metal_excludes_reference_only():
 
 def test_missing_metal_is_only_soft_warning_by_default():
     result = _filter(
-        {"ref": _FakeInfo("ref", ServeTier.HONEST_BYTES, StrategyCapabilities(has_metal_kernel=False))}
+        {
+            "ref": _FakeInfo(
+                "ref", ServeTier.HONEST_BYTES, StrategyCapabilities(has_metal_kernel=False)
+            )
+        }
     )
     assert result.viable == ["ref"]
     assert any("Metal" in w for w in result.soft_warnings["ref"])
@@ -223,9 +250,7 @@ def test_missing_estimate_excludes():
 
 
 def test_result_to_dict_shape():
-    result = _filter(
-        {"a": _FakeInfo("a", ServeTier.HONEST_BYTES, StrategyCapabilities())}
-    )
+    result = _filter({"a": _FakeInfo("a", ServeTier.HONEST_BYTES, StrategyCapabilities())})
     data = result.to_dict()
     assert data["viable"] == ["a"]
     assert data["excluded"] == {}

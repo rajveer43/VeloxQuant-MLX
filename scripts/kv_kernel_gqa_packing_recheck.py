@@ -172,18 +172,10 @@ for H_q, H_kv in [(32, 4), (32, 8), (8, 2)]:
                     )
             return mx.concatenate(outs, axis=1)
 
-        # scalar_predecoded_attend has its own (unoptimized, fixed 8-D-slot fp32
-        # sh_o) threadgroup-memory layout distinct from the packed kernel's, and
-        # performs no budget check before dispatch -- nsg=32 silently overflows
-        # 32KB and crashes at the Metal-compiler level. Cap at 16, which fits
-        # (16*8*32*4 + 16*4*2 = 16512B) and matches the widest nsg _auto_nsg
-        # picks for these shapes elsewhere in this sweep.
-        nsg_attend = min(_auto_nsg(D, 1, n_tg=H_q), 16)
-
         def _two_pass():
             k_hat = scalar_decode_once(akc, aks, akz, g, mode="K")
             v_hat = scalar_decode_once(avc, avs, avz, g, mode="V")
-            return scalar_predecoded_attend(aq, k_hat, v_hat, scale, nsg=nsg_attend)
+            return scalar_predecoded_attend(aq, k_hat, v_hat, scale, nsg=None)
 
         tu = _timeit(_unpacked)
         tt = _timeit(_two_pass)

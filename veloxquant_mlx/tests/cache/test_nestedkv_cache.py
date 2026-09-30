@@ -304,12 +304,8 @@ def test_prefill_keeps_every_head_at_uniform_length() -> None:
     # kind of spread that used to produce a wide head_budgets range under
     # nestedkv_allocate_head_budgets's cross-head competition.
     scales = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
-    K = np.stack(
-        [rng.standard_normal((S, D)).astype(np.float32) * s for s in scales], axis=0
-    )[None]
-    V = np.stack(
-        [rng.standard_normal((S, D)).astype(np.float32) * s for s in scales], axis=0
-    )[None]
+    K = np.stack([rng.standard_normal((S, D)).astype(np.float32) * s for s in scales], axis=0)[None]
+    V = np.stack([rng.standard_normal((S, D)).astype(np.float32) * s for s in scales], axis=0)[None]
     c = _make(nestedkv_budget=budget, nestedkv_n_sink=2)
     ko, vo = c.update_and_fetch(mx.array(K.astype(np.float16)), mx.array(V.astype(np.float16)))
 
