@@ -133,8 +133,15 @@ def keyformer_fused_evict(
     tau: float = 0.0,
     recent: int = 0,
     nsg: int = 4,
-) -> tuple[mx.array, mx.array, mx.array, mx.array, mx.array]:
+    return_indices: bool = False,
+) -> (
+    tuple[mx.array, mx.array, mx.array, mx.array, mx.array]
+    | tuple[mx.array, mx.array, mx.array, mx.array, mx.array, mx.array]
+):
     """Fused Gumbel-regularized argmin + evict + RoPE-remap, batched over (batch*head).
+
+    With ``return_indices=True``, append chronological indices into the
+    supplied prior + new rows (or the supplied candidate rows for eviction).
 
     Matches ``keyformer_update``'s per-token eviction branch bit-for-bit.
     Caller must have already computed the "mid" state — the ``n_kept``
@@ -222,6 +229,10 @@ def keyformer_fused_evict(
         output_shapes=[(BH, n_kept, D), (BH, n_kept, D), (BH, n_kept), (BH, n_kept), (BH, n_kept)],
         output_dtypes=[mx.float16, mx.float16, mx.float32, mx.float32, mx.int32],
     )
+    if return_indices:
+        rows = mx.arange(n_kept)[None]
+        indices = rows + (rows >= evict_idx[:, None])
+        return keys_out, values_out, scores_out, gumbel_out, positions_out, indices
     return keys_out, values_out, scores_out, gumbel_out, positions_out
 
 

@@ -73,6 +73,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.cache._eviction_mask import eviction_make_mask
 from veloxquant_mlx.quantizers.a2ats_rope import rope_remap_positions
 from veloxquant_mlx.quantizers.curdkv import curdkv_update_batched
 
@@ -141,6 +142,11 @@ class CurDKVKVCache(_MLXKVCache):
         self._full_seq_bytes: int = 0
         self._tokens_seen_total: int = 0
 
+        # [B, n_kept] int32 true absolute position of each currently-stored
+        # (head 0) row — see make_mask() and update_and_fetch()'s #610
+        # deferred-eviction docstrings. None before the first update.
+        self._kept_positions: mx.array | None = None
+
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         """Record B/H/D on first call (state itself is lazily created by
@@ -196,8 +202,9 @@ class CurDKVKVCache(_MLXKVCache):
             values: ``[B, H, S, D]`` new value tokens.
 
         Returns:
-            ``(K_out, V_out)`` both ``[B, H, n_kept, D]`` fp16, where
-            ``n_kept <= curdkv_budget`` for all heads.
+            Prior retained rows plus all new rows, before eviction. mlx_lm
+            builds the current attention mask before this call (#610), so
+            only the state stored for the next call may shrink.
         """
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
@@ -220,6 +227,10 @@ class CurDKVKVCache(_MLXKVCache):
         bh = B * H
         new_keys_bh = keys_fixed.reshape(bh, S, D)
         new_values_bh = values.reshape(bh, S, D)
+
+        # Preserve current attention inputs before updating retained state.
+        prev_keys_bh = self._bh_keys
+        prev_values_bh = self._bh_values
 
         (
             self._bh_keys,
@@ -259,7 +270,33 @@ class CurDKVKVCache(_MLXKVCache):
         self.keys = K_out
         self.values = V_out
         self.offset = self._next_pos
-        return K_out, V_out
+
+        # head-0 true kept positions per batch element, for the NEXT call's
+        # make_mask (see that method) — not this call's own mask, already
+        # fixed by the time we get here.
+        self._kept_positions = self._bh_positions.reshape(B, H, n_kept)[:, 0, :]
+
+        if prev_keys_bh is None:
+            return keys_fixed, values
+        full_keys_bh = mx.concatenate([prev_keys_bh, new_keys_bh], axis=1)
+        full_values_bh = mx.concatenate([prev_values_bh, new_values_bh], axis=1)
+        n_full = full_keys_bh.shape[1]
+        return full_keys_bh.reshape(B, H, n_full, D), full_values_bh.reshape(B, H, n_full, D)
+
+    # ------------------------------------------------------------------
+    def make_mask(self, N: int, return_array: bool = False, window_size: int | None = None, **_):
+        """Describe prior retained rows plus the next N input rows (#610)."""
+        if self._kept_positions is None:
+            return super().make_mask(N, return_array=return_array, window_size=window_size)
+        B = self._kept_positions.shape[0]
+        prev_positions = self._kept_positions
+        new_positions = mx.arange(self.offset, self.offset + N, dtype=mx.int32)
+        new_positions = mx.broadcast_to(new_positions[None, :], (B, N))
+        key_positions = mx.concatenate([prev_positions, new_positions], axis=1)
+        query_positions = new_positions
+        return eviction_make_mask(
+            query_positions, key_positions, N, return_array=return_array, window_size=window_size
+        )
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:
@@ -295,11 +332,30 @@ class CurDKVKVCache(_MLXKVCache):
         """Restoring from a saved state cannot recover the true step count
         that produced it (CurDKV's own eviction history is not persisted), so
         ``self.offset`` is set to the stored row count as the least-wrong
-        available estimate. Loading a saved CurDKV cache mid-eviction-history
-        is not a supported/tested path.
+        available estimate, and the flat ``[BH,·]`` bookkeeping (including
+        ``_kept_positions``, which ``make_mask`` reads — see #610) is reset
+        to match: restored rows are treated as a contiguous trailing window
+        ending at the restored row count, and become immediately
+        eviction-eligible with no leverage-score history. Loading a saved
+        CurDKV cache mid-eviction-history is not a supported/tested path.
         """
         self.keys, self.values = v
         self.offset = 0 if self.keys is None else self.keys.shape[2]
+        if self.keys is None:
+            self._bh_keys = self._bh_values = self._bh_leverage_scores = None
+            self._bh_n_updates = self._bh_positions = None
+            self._next_pos = 0
+            self._kept_positions = None
+        else:
+            B, H, n, D = self.keys.shape
+            self._ensure_states(B, H, D)
+            self._bh_keys = self.keys.reshape(B * H, n, D)
+            self._bh_values = self.values.reshape(B * H, n, D)
+            self._bh_leverage_scores = mx.zeros((B * H, n), dtype=mx.float32)
+            self._bh_n_updates = mx.ones((B * H, n), dtype=mx.float32)
+            self._bh_positions = mx.broadcast_to(mx.arange(n, dtype=mx.int32)[None], (B * H, n))
+            self._next_pos = n
+            self._kept_positions = mx.broadcast_to(mx.arange(n, dtype=mx.int32)[None], (B, n))
 
     # ------------------------------------------------------------------
     @property

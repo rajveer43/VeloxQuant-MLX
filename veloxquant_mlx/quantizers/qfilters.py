@@ -192,8 +192,13 @@ def qfilters_update(
     state: QFiltersState,
     new_keys: mx.array,  # [S, D] fp16
     new_values: mx.array,  # [S, D] fp16
-) -> QFiltersState:
+    *,
+    return_indices: bool = False,
+) -> QFiltersState | tuple[QFiltersState, mx.array]:
     """Absorb a whole block of S tokens, then evict down to budget in one shot.
+
+    With ``return_indices=True``, append chronological indices into the
+    supplied prior + new rows (or the supplied candidate rows for eviction).
 
     Vectorized — no per-token loop. Before ``calib_tokens`` keys have been
     observed the filter is None and everything passes through (no eviction).
@@ -236,6 +241,7 @@ def qfilters_update(
 
     n_total = int(keys_cat.shape[0])
 
+    keep_idx = mx.arange(n_total)
     filter_dir = state.filter_dir
     # Freeze the filter as soon as we have enough observed tokens.
     if filter_dir is None and n_total >= state.calib_tokens:
@@ -243,7 +249,7 @@ def qfilters_update(
 
     # Still pre-calibration: keep everything, no scores yet.
     if filter_dir is None:
-        return QFiltersState(
+        result = QFiltersState(
             keys=keys_cat,
             values=values_cat,
             scores=None,
@@ -254,6 +260,8 @@ def qfilters_update(
             calib_tokens=state.calib_tokens,
             sign=state.sign,
         )
+
+        return (result, keep_idx) if return_indices else result
 
     # Score every stored token against the frozen filter (scores never change
     # for already-kept tokens: recomputing them yields the same values).
@@ -278,7 +286,7 @@ def qfilters_update(
         values_cat = values_cat[keep_idx]
         scores_cat = scores_cat[keep_idx]
 
-    return QFiltersState(
+    result = QFiltersState(
         keys=keys_cat,
         values=values_cat,
         scores=scores_cat,
@@ -290,6 +298,8 @@ def qfilters_update(
         sign=state.sign,
     )
 
+    return (result, keep_idx) if return_indices else result
+
 
 def qfilters_update_batched(
     keys_cat: mx.array,  # [BH, n_total, D] fp16
@@ -299,7 +309,9 @@ def qfilters_update_batched(
     n_sink: int,
     recent: int,
     sign: int,
-) -> tuple[mx.array, mx.array, mx.array]:
+    *,
+    return_indices: bool = False,
+) -> tuple[mx.array, mx.array, mx.array] | tuple[mx.array, mx.array, mx.array, mx.array]:
     """Score and evict every ``(batch, head)`` group at once — no Python loop.
 
     The batched twin of :func:`qfilters_update`'s post-calibration branch, for
@@ -322,6 +334,8 @@ def qfilters_update_batched(
         recent:     Trailing rows never evicted.
         sign:       ``+1`` = paper direction; ``-1`` = inverted ablation.
 
+    With ``return_indices=True``, append the selected input-row indices.
+
     Returns:
         ``(keys, values, scores)`` — keys/values ``[BH, n_kept, D]`` fp16 and
         scores ``[BH, n_kept]`` float32, temporal order. When the block is
@@ -333,6 +347,9 @@ def qfilters_update_batched(
     scores_cat = sign * mx.einsum("gnd,gd->gn", keys_cat.astype(mx.float32), filter_dir)
 
     if n_total <= budget:
+        if return_indices:
+            indices = mx.broadcast_to(mx.arange(n_total)[None], keys_cat.shape[:2])
+            return keys_cat, values_cat, scores_cat, indices
         return keys_cat, values_cat, scores_cat
 
     n_sink_eff = min(n_sink, n_total)
@@ -354,6 +371,8 @@ def qfilters_update_batched(
     keys_out = mx.take_along_axis(keys_cat, gather, axis=1)
     values_out = mx.take_along_axis(values_cat, gather, axis=1)
     scores_out = mx.take_along_axis(scores_cat, keep_idx, axis=1)
+    if return_indices:
+        return keys_out, values_out, scores_out, keep_idx
     return keys_out, values_out, scores_out
 
 

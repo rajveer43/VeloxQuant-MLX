@@ -98,7 +98,7 @@ def _evict_apply_kernel(max_budget: int):
         lambda: mx.fast.metal_kernel(
             name=f"qfilters_evict_apply_b{max_budget}",
             input_names=["keys_mid", "values_mid", "scores", "thresh_arr", "budget_arr"],
-            output_names=["keys_out", "values_out", "scores_out"],
+            output_names=["keys_out", "values_out", "scores_out", "indices_out"],
             header=f"#define QF_MAX_BUDGET {max_budget}\n",
             source=_QFILTERS_EVICT_APPLY_SRC,
             ensure_row_contiguous=True,
@@ -175,8 +175,13 @@ def qfilters_fused_evict(
     n_sink: int = 0,
     recent: int = 0,
     sign: int = 1,
-) -> tuple[mx.array, mx.array, mx.array]:
+    *,
+    return_indices: bool = False,
+) -> tuple[mx.array, mx.array, mx.array] | tuple[mx.array, mx.array, mx.array, mx.array]:
     """Fused projection scoring + block eviction, batched over ``(batch*head)``.
+
+    With ``return_indices=True``, append chronological indices into the
+    supplied prior + new rows (or the supplied candidate rows for eviction).
 
     Matches ``qfilters_update``'s over-budget branch: score every stored row
     against the frozen filter, then keep the ``budget`` highest-scoring rows
@@ -240,7 +245,7 @@ def qfilters_fused_evict(
     ordered = mx.sort(scores, axis=-1)  # ascending, [BH, n_total]
     thresh = ordered[:, n_total - budget]  # [BH]
 
-    keys_out, values_out, scores_out = _evict_apply_kernel(QFILTERS_MAX_BUDGET)(
+    keys_out, values_out, scores_out, indices_out = _evict_apply_kernel(QFILTERS_MAX_BUDGET)(
         inputs=[
             keys_mid.astype(mx.float16),
             values_mid.astype(mx.float16),
@@ -250,9 +255,11 @@ def qfilters_fused_evict(
         ],
         grid=(bh * 256, 1, 1),
         threadgroup=(256, 1, 1),
-        output_shapes=[(bh, budget, d), (bh, budget, d), (bh, budget)],
-        output_dtypes=[mx.float16, mx.float16, mx.float32],
+        output_shapes=[(bh, budget, d), (bh, budget, d), (bh, budget), (bh, budget)],
+        output_dtypes=[mx.float16, mx.float16, mx.float32, mx.int32],
     )
+    if return_indices:
+        return keys_out, values_out, scores_out, indices_out
     return keys_out, values_out, scores_out
 
 

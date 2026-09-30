@@ -50,13 +50,14 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.cache._deferred_eviction import DeferredEvictionMixin
 from veloxquant_mlx.quantizers.morphkv import (
     init_morphkv_state,
     morphkv_update_batched,
 )
 
 
-class MorphKVKVCache(_MLXKVCache):
+class MorphKVKVCache(DeferredEvictionMixin, _MLXKVCache):
     """KV cache implementing MorphKV-adapted recent-window retention for one layer.
 
     Args:
@@ -153,11 +154,12 @@ class MorphKVKVCache(_MLXKVCache):
             values: ``[B, H, S, D]`` new value tokens.
 
         Returns:
-            ``(K_out, V_out)`` both ``[B, H, n_kept, D]`` fp16, where
-            ``n_kept <= morphkv_budget`` for all heads.
+            Full prior kept rows plus all new rows, before eviction (#610).
+            Only the state stored for the next call is compressed.
         """
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
+        full_k, full_v, positions = self._prepare_attention(keys, values)
 
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
@@ -165,7 +167,7 @@ class MorphKVKVCache(_MLXKVCache):
         new_keys_flat = keys.astype(mx.float16).reshape(B * H, S, D)
         new_values_flat = values.astype(mx.float16).reshape(B * H, S, D)
 
-        self._bh_keys, self._bh_values = morphkv_update_batched(
+        self._bh_keys, self._bh_values, indices = morphkv_update_batched(
             self._bh_keys,
             self._bh_values,
             new_keys_flat,
@@ -173,24 +175,20 @@ class MorphKVKVCache(_MLXKVCache):
             self._n_sink,
             self._budget,
             self._window,
+            return_indices=True,
         )
 
+        self._positions = mx.take_along_axis(positions, indices.reshape(B, H, -1), axis=2)
         n_kept = self._bh_keys.shape[1]
         K_out = self._bh_keys.reshape(B, H, n_kept, D)
         V_out = self._bh_values.reshape(B, H, n_kept, D)
 
         self._morphkv_kept_bytes = B * H * n_kept * D * 2 * 2
 
-        # K_out/V_out is the full retained state every call, not a delta —
-        # reset so the base class's append-only buffer starts fresh instead
-        # of stacking on top of the previous call's rows. Without this,
-        # self.keys/self.values/self.offset stay at __init__ defaults
-        # forever, and mlx_lm's generate() crashes on `cache.state` during
-        # chunked prefill (see #83).
-        self.keys = None
-        self.values = None
-        self.offset = 0
-        return super().update_and_fetch(K_out, V_out)
+        # Only persisted state is evicted; current attention uses every new row.
+        self.keys, self.values = K_out, V_out
+        self.offset += S
+        return full_k, full_v
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:

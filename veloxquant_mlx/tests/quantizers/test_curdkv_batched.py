@@ -178,6 +178,7 @@ def test_real_cache_matches_reference_loop(B, H, seed):
     cache_out_k = cache_out_v = None
     for k, v in steps:
         cache_out_k, cache_out_v = cache.update_and_fetch(k, v)
+        cache_out_k, cache_out_v = cache.state  # Compare eviction results stored for the next call.
 
     ref_k, ref_v = _reference_loop(B, H, D, n_sink, budget, rank_cap, 10000.0, steps)
     n_kept = cache_out_k.shape[2]

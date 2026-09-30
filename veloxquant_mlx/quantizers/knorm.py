@@ -179,7 +179,9 @@ def knorm_update_batched(
     n_sink: int,
     recent: int,
     keep: str,
-) -> tuple[mx.array, mx.array, mx.array]:
+    *,
+    return_indices: bool = False,
+) -> tuple[mx.array, mx.array, mx.array] | tuple[mx.array, mx.array, mx.array, mx.array]:
     """Batched ``knorm_update`` across N = B*H independent rows.
 
     Requires ``budget``/``n_sink``/``recent``/``keep`` to be uniform across
@@ -195,6 +197,8 @@ def knorm_update_batched(
     there is no partial-page carry to fold in, just concatenation followed
     by an ordinary top-k).
 
+    With ``return_indices=True``, append the selected input-row indices.
+
     Returns ``(keys, values, norms)``, each ``[N, min(n_total, budget), D]``
     / ``[N, min(n_total, budget)]``, kept rows in original temporal order —
     bit-for-bit identical to running ``knorm_update`` per row in a loop
@@ -208,6 +212,9 @@ def knorm_update_batched(
 
     n_total = int(keys_cat.shape[1])
     if n_total <= budget:
+        if return_indices:
+            indices = mx.broadcast_to(mx.arange(n_total)[None], keys_cat.shape[:2])
+            return keys_cat, values_cat, norms_cat, indices
         return keys_cat, values_cat, norms_cat
 
     N = keys_cat.shape[0]
@@ -232,6 +239,8 @@ def knorm_update_batched(
     keys_out = keys_cat[row_idx, keep_idx]
     values_out = values_cat[row_idx, keep_idx]
     norms_out = norms_cat[row_idx, keep_idx]
+    if return_indices:
+        return keys_out, values_out, norms_out, keep_idx
     return keys_out, values_out, norms_out
 
 

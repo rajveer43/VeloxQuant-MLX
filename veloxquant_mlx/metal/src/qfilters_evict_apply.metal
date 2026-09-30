@@ -104,6 +104,7 @@
     // Scores are carried forward per row (one element each, not D).
     for (uint j = lane; j < n_kept; j += TG) {
         scores_out[bh * budget + j] = scores[bh * n_total + keep_idx[j]];
+        indices_out[bh * budget + j] = int(keep_idx[j]);
     }
 
     // ---- phase 3: pad any unfilled tail ----
@@ -119,4 +120,5 @@
     }
     for (uint j = n_kept + lane; j < budget; j += TG) {
         scores_out[bh * budget + j] = -INFINITY;
+        indices_out[bh * budget + j] = 0;
     }

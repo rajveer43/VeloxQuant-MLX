@@ -57,13 +57,14 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.cache._deferred_eviction import DeferredEvictionMixin
 from veloxquant_mlx.quantizers.knorm import (
     init_knorm_state,
     knorm_update_batched,
 )
 
 
-class L2NormKVCache(_MLXKVCache):
+class L2NormKVCache(DeferredEvictionMixin, _MLXKVCache):
     """KV cache implementing L2Norm-adapted intrinsic key-norm eviction for one layer.
 
     Args:
@@ -139,18 +140,19 @@ class L2NormKVCache(_MLXKVCache):
             values: ``[B, H, S, D]`` new value tokens.
 
         Returns:
-            ``(K_out, V_out)`` both ``[B, H, n_kept, D]`` fp16, where
-            ``n_kept <= knorm_budget`` for all heads.
+            Full prior kept rows plus all new rows, before eviction (#610).
+            Only the state stored for the next call is compressed.
         """
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
+        full_k, full_v, positions = self._prepare_attention(keys, values)
 
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
         keys_flat = keys.reshape(B * H, S, D)
         values_flat = values.reshape(B * H, S, D)
-        self._keys, self._values, self._norms = knorm_update_batched(
+        self._keys, self._values, self._norms, indices = knorm_update_batched(
             self._keys,
             self._values,
             self._norms,
@@ -160,53 +162,21 @@ class L2NormKVCache(_MLXKVCache):
             self._n_sink,
             self._recent,
             self._keep,
+            return_indices=True,
         )
 
+        self._positions = mx.take_along_axis(positions, indices.reshape(B, H, -1), axis=2)
         n_kept = self._keys.shape[1]
         K_out = self._keys.reshape(B, H, n_kept, D)
         V_out = self._values.reshape(B, H, n_kept, D)
 
         self._knorm_kept_bytes = B * H * n_kept * D * 2 * 2  # K + V, fp16
 
-        # K_out/V_out is the full retained state every call, not a delta —
-        # reset so the base class's append-only buffer starts fresh instead
-        # of stacking on top of the previous call's rows. Without this,
-        # self.keys/self.values/self.offset stay at __init__ defaults
-        # forever, and mlx_lm's generate() crashes on `cache.state` during
-        # chunked prefill (see #83).
-        self.keys = None
-        self.values = None
-        self.offset = 0
-        out = super().update_and_fetch(K_out, V_out)
-
-        # RoPE position correctness (see #171, #174).
-        #
-        # mlx_lm rotates BOTH the query and the incoming key at
-        # ``offset=cache.offset`` *before* calling update_and_fetch. The base
-        # class above just set ``self.offset`` to the number of RETAINED rows
-        # (reset to 0 then advanced by n_kept), so once eviction starts
-        # (n_kept pinned at budget) the offset stops advancing and every
-        # subsequent token is rotated at ~budget while its true position
-        # keeps climbing — a drift that grows without bound and scrambles
-        # attention.
-        #
-        # L2Norm PRESERVES the original position of every surviving token
-        # (eviction drops rows but never renumbers them: knorm_update keeps
-        # each retained row's original ordering), so all stored keys already
-        # carry rotations for their true absolute positions. RoPE is
-        # relative — <rope(q,i), rope(k,j)> depends only on i-j — so
-        # reporting the true position here puts queries, new keys, and
-        # survivors back on one consistent absolute axis, and no
-        # re-rotation of survivors is needed. This mirrors QFiltersKVCache's
-        # fix and is safe here for the same reason: every update_and_fetch
-        # call above fully resets self.keys/self.values/self.offset before
-        # delegating to the base class, so nothing later reads self.offset
-        # as a row-count cursor the way SnapKV's incremental decode path
-        # does (see snapkv_cache.py's ``offset`` property for the case where
-        # that is NOT true).
+        # Only persisted state is evicted; current attention uses every new row.
+        self.keys, self.values = K_out, V_out
         self._true_offset += S
         self.offset = self._true_offset
-        return out
+        return full_k, full_v
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:

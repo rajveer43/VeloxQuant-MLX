@@ -692,7 +692,9 @@ def nestedkv_compress_prefill_batched(
     beta: float = 3.0,
     tau: float = 0.60,
     kappa: float = 10.0,
-) -> tuple[mx.array, mx.array]:
+    *,
+    return_indices: bool = False,
+) -> tuple[mx.array, mx.array] | tuple[mx.array, mx.array, mx.array]:
     """Batched-``[BH,S,D]`` equivalent of :func:`nestedkv_compress_prefill`.
 
     Runs the one-shot NestedKV scoring once across all BH rows, then keeps
@@ -703,6 +705,8 @@ def nestedkv_compress_prefill_batched(
     ``budget_eff`` depends only on ``n_sink``/``budget``/``S`` (all shared
     across rows in one call), so every row keeps exactly the same count —
     stacks with no padding, same invariant the per-head loop relies on.
+
+    With ``return_indices=True``, append the selected input-row indices.
 
     Returns:
         (kept_keys, kept_values), both [BH, budget_eff, D] fp16.
@@ -728,6 +732,8 @@ def nestedkv_compress_prefill_batched(
 
     kept_keys = mx.take_along_axis(keys, kept[..., None], axis=1).astype(mx.float16)
     kept_values = mx.take_along_axis(values, kept[..., None], axis=1).astype(mx.float16)
+    if return_indices:
+        return kept_keys, kept_values, kept
     return kept_keys, kept_values
 
 

@@ -164,6 +164,7 @@ def test_real_cache_prefill_matches_reference_loop(B, H, seed):
         head_dim=D, nestedkv_budget=budget, nestedkv_n_sink=n_sink, nestedkv_window=window
     )
     k_out, v_out = cache.update_and_fetch(k, v)
+    k_out, v_out = cache.state  # Compare eviction results stored for the next call.
 
     k_out_b, v_out_b = [], []
     for b in range(B):
@@ -210,6 +211,7 @@ def test_real_cache_prefill_then_decode_matches_reference_loop(B, H, seed):
             np.random.default_rng(200 + i).standard_normal((B, H, 1, D)).astype(np.float32)
         ).astype(mx.float16)
         k_out, v_out = cache.update_and_fetch(kd, vd)
+        k_out, v_out = cache.state  # Compare eviction results stored for the next call.
         idx = 0
         for b in range(B):
             for h in range(H):
@@ -242,5 +244,6 @@ def test_real_cache_batch_dims_consistent_with_reference_shapes():
     cache = _make_cache(head_dim=D, nestedkv_budget=budget, nestedkv_n_sink=n_sink)
     k, v = _rand((2, 3, S, D), 0).astype(mx.float16), _rand((2, 3, S, D), 1).astype(mx.float16)
     k_out, v_out = cache.update_and_fetch(k, v)
+    k_out, v_out = cache.state  # Compare eviction results stored for the next call.
     assert k_out.shape == (2, 3, budget, D)
     assert v_out.shape == (2, 3, budget, D)

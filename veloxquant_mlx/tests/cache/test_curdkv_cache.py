@@ -66,12 +66,17 @@ def test_output_shape_below_budget() -> None:
 
 
 def test_output_shape_bounded_by_budget() -> None:
-    """S > budget → output seq dim <= budget."""
+    """S > budget → STORED state (c.keys) seq dim <= budget. The per-call
+    RETURN value is the full pre-eviction concatenation (#610, matching the
+    #370 deferred-eviction pattern) since the mask mlx_lm already built for
+    this call assumes all S keys are present — only what gets stored for
+    the NEXT call is capped."""
     budget = 8
     c = _make(curdkv_budget=budget, curdkv_n_sink=2)
     k, v = _rand_kv(S=20, H=2, D=32)
     ko, vo = c.update_and_fetch(k, v)
-    assert ko.shape[2] <= budget
+    assert ko.shape[2] == 20
+    assert c.keys.shape[2] <= budget
 
 
 def test_output_dtype_fp16() -> None:
@@ -98,27 +103,33 @@ def test_output_batch_head_dims_preserved() -> None:
 
 
 def test_budget_enforced_after_many_steps() -> None:
-    """30 decode steps — output seq dim never exceeds budget."""
+    """30 decode steps — STORED state (c.keys) never exceeds budget. The
+    per-call RETURN value can exceed budget by up to S=1 row right after an
+    eviction (#610, deferred-eviction pattern), so budget+1 bounds it."""
     budget = 10
     c = _make(curdkv_budget=budget, curdkv_n_sink=3)
     for i in range(30):
         k, v = _rand_kv(S=1, H=2, D=32, seed=i)
         ko, vo = c.update_and_fetch(k, v)
-        assert ko.shape[2] <= budget, f"step {i}: seq={ko.shape[2]} > {budget}"
+        assert ko.shape[2] <= budget + 1, f"step {i}: seq={ko.shape[2]} > {budget + 1}"
+        assert c.keys.shape[2] <= budget, f"step {i}: stored={c.keys.shape[2]} > {budget}"
 
 
 def test_prefill_then_decode_same_loop() -> None:
     """A multi-token prefill followed by single-token decode steps both go
-    through the same eviction loop (no prefill-only special case)."""
+    through the same eviction loop (no prefill-only special case). STORED
+    state (c.keys) is what stays capped at budget (#610)."""
     budget = 6
     c = _make(curdkv_budget=budget, curdkv_n_sink=1)
     k, v = _rand_kv(S=10, H=2, D=32, seed=0)  # prefill
     ko, vo = c.update_and_fetch(k, v)
-    assert ko.shape[2] <= budget
+    assert ko.shape[2] == 10
+    assert c.keys.shape[2] <= budget
     for i in range(10):
         k, v = _rand_kv(S=1, H=2, D=32, seed=50 + i)  # decode
         ko, vo = c.update_and_fetch(k, v)
-        assert ko.shape[2] <= budget
+        assert ko.shape[2] <= budget + 1
+        assert c.keys.shape[2] <= budget
 
 
 def test_tokens_kept_bounded_by_budget() -> None:
@@ -135,12 +146,14 @@ def test_tokens_kept_bounded_by_budget() -> None:
 
 
 def test_n_sink_zero_still_enforces_budget() -> None:
-    """With n_sink=0, all tokens may be evicted; budget still respected."""
+    """With n_sink=0, all tokens may be evicted; STORED state still respects
+    budget (the per-call RETURN value is the full pre-eviction set, #610)."""
     budget = 4
     c = _make(curdkv_budget=budget, curdkv_n_sink=0)
     k, v = _rand_kv(S=20, H=2, D=32)
     ko, vo = c.update_and_fetch(k, v)
-    assert ko.shape[2] <= budget
+    assert ko.shape[2] == 20
+    assert c.keys.shape[2] <= budget
 
 
 # ---------------------------------------------------------------------------
@@ -228,12 +241,16 @@ def test_build_via_for_model_propagates_config() -> None:
 
 def test_factory_smoke_compression_ratio_positive_both_kv() -> None:
     """End-to-end factory smoke test: compression_ratio > 1 at a reasonable
-    budget, exercising both K and V through the full factory path."""
+    budget, exercising both K and V through the full factory path. STORED
+    state (c.keys/c.values) is what's capped at budget (#610); the per-call
+    RETURN value is the full pre-eviction set."""
     c = _make(curdkv_budget=8, curdkv_n_sink=2)
     k, v = _rand_kv(S=64, H=2, D=32)
     ko, vo = c.update_and_fetch(k, v)
-    assert ko.shape[2] <= 8
-    assert vo.shape[2] <= 8
+    assert ko.shape[2] == 64
+    assert vo.shape[2] == 64
+    assert c.keys.shape[2] <= 8
+    assert c.values.shape[2] <= 8
     assert c.compression_ratio > 1.0
 
 
@@ -305,6 +322,14 @@ def test_two_call_split_matches_single_bulk_call_when_no_further_eviction() -> N
     kept row's key is bit-identical between the two paths. Before the fix,
     the split path's last row diverged from the single-call path because
     self.offset was wrong (kept-row count) instead of true position.
+
+    Compares the STORED state (``c.keys``), not each call's raw RETURN
+    value: since #610, a single call's return value is the full
+    pre-eviction concatenation (so the bulk and split paths' last-call
+    return shapes legitimately differ — 12 vs 9 rows here), while what
+    actually persists into the cache (and is what the next query's RoPE
+    and attention math sees) is the thing this test's offset-correctness
+    claim is really about.
     """
     from veloxquant_mlx.quantizers.a2ats_rope import a2ats_apply_exact_rope
 
@@ -333,6 +358,7 @@ def test_two_call_split_matches_single_bulk_call_when_no_further_eviction() -> N
     ko_split, _ = c_split.update_and_fetch(as_bhsd(rotated[-1:]), as_bhsd(values[-1:]))
 
     assert c_bulk.offset == c_split.offset == n_tokens
+    ko_bulk, ko_split = c_bulk.keys, c_split.keys
     assert ko_bulk.shape == ko_split.shape
 
     diff = float(mx.max(mx.abs(ko_bulk.astype(mx.float32) - ko_split.astype(mx.float32))).item())
@@ -340,3 +366,22 @@ def test_two_call_split_matches_single_bulk_call_when_no_further_eviction() -> N
         f"split-call path diverged from single-call path (max diff={diff}) — "
         "self.offset likely desynced from the true absolute position again"
     )
+
+
+def test_restored_state_mask_matches_next_attention():
+    c = _make(curdkv_budget=8, curdkv_n_sink=1)
+    k, v = _rand_kv(S=6, H=2, D=32)
+    c.state = (k, v)
+    mask = c.make_mask(4, window_size=4)
+    new_k, new_v = _rand_kv(S=4, H=2, D=32, seed=2)
+    ko, vo = c.update_and_fetch(new_k, new_v)
+    assert mask.shape[-2:] == (4, 10)
+    assert ko.shape == vo.shape == (1, 2, 10, 32)
+    assert c.offset == 10
+    assert c.keys.shape[2] == 8
+    np.testing.assert_array_equal(np.array(vo[:, :, :6]), np.array(v))
+    c.state = (None, None)
+    assert c.make_mask(4) == "causal"
+    ko, _ = c.update_and_fetch(new_k, new_v)
+    assert ko.shape[2] == 4
+    assert c.offset == 4

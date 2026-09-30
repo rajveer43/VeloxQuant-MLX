@@ -573,7 +573,11 @@ def _evict_via_mlx_batched(
     recent: int,
     tau: float,
     rope_base: float,
-) -> tuple[mx.array, mx.array, mx.array, mx.array, mx.array]:
+    return_indices: bool = False,
+) -> (
+    tuple[mx.array, mx.array, mx.array, mx.array, mx.array]
+    | tuple[mx.array, mx.array, mx.array, mx.array, mx.array, mx.array]
+):
     """Batched-``[BH,·]`` equivalent of :func:`_evict_via_mlx`.
 
     Each ``bh`` row's Gumbel-regularized argmin/evict/re-rotate is
@@ -615,6 +619,8 @@ def _evict_via_mlx_batched(
     keys_kept = _rope_remap_positions_batched(
         keys_kept, old_positions_kept, new_positions, base=rope_base
     )
+    if return_indices:
+        return keys_kept, values_kept, scores_kept, gumbel_kept, new_positions, source
     return keys_kept, values_kept, scores_kept, gumbel_kept, new_positions
 
 
@@ -628,7 +634,11 @@ def _evict_via_metal_batched(
     recent: int,
     tau: float,
     rope_base: float,
-) -> tuple[mx.array, mx.array, mx.array, mx.array, mx.array]:
+    return_indices: bool = False,
+) -> (
+    tuple[mx.array, mx.array, mx.array, mx.array, mx.array]
+    | tuple[mx.array, mx.array, mx.array, mx.array, mx.array, mx.array]
+):
     """Batched-``[BH,·]`` fused Metal eviction — a direct pass-through to
     :func:`veloxquant_mlx.metal.keyformer_fused_evict`, which already accepts
     a ``BH`` leading dimension (see ``metal/_keyformer_evict.py``); no new
@@ -647,6 +657,7 @@ def _evict_via_metal_batched(
         rope_base=rope_base,
         tau=tau,
         recent=recent,
+        return_indices=return_indices,
     )
 
 
@@ -668,8 +679,15 @@ def keyformer_update_batched(
     next_pos: int,
     pos: int,
     seeds: list[int],
-) -> tuple[mx.array, mx.array, mx.array, mx.array, mx.array, int, int]:
+    return_indices: bool = False,
+) -> (
+    tuple[mx.array, mx.array, mx.array, mx.array, mx.array, int, int]
+    | tuple[mx.array, mx.array, mx.array, mx.array, mx.array, int, int, mx.array]
+):
     """Vectorized-over-``BH`` equivalent of calling :func:`keyformer_update`
+
+    With ``return_indices=True``, append chronological indices into the
+    supplied prior + new rows (or the supplied candidate rows for eviction).
     once per ``(batch, head)`` pair with identical per-row config.
 
     All ``BH`` rows share ``n_sink``/``budget``/``recent``/the tau schedule/
@@ -697,8 +715,11 @@ def keyformer_update_batched(
         replaces).
     """
     bh, s, d = new_keys.shape
+    n_prior = 0 if keys is None else keys.shape[1]
+    indices = mx.broadcast_to(mx.arange(n_prior)[None], (bh, n_prior))
     if s == 0:
-        return keys, values, scores, gumbel, positions, next_pos, pos
+        result = (keys, values, scores, gumbel, positions, next_pos, pos)
+        return (*result, indices) if return_indices else result
     if n_sink + recent >= budget:
         raise ValueError(
             f"keyformer: n_sink ({n_sink}) + recent ({recent}) must be < "
@@ -709,6 +730,8 @@ def keyformer_update_batched(
     no_anneal = tau_end == tau_init or anneal_steps <= 0
 
     for i in range(s):
+        if return_indices:
+            indices = mx.concatenate([indices, mx.full((bh, 1), n_prior + i)], axis=1)
         k_i = new_keys[:, i].astype(mx.float16)  # [BH, D]
         v_i = new_values[:, i].astype(mx.float16)  # [BH, D]
         g_i = _gumbel_at_batched(seeds, pos)  # [BH]
@@ -743,7 +766,7 @@ def keyformer_update_batched(
                 else tau_init + min(pos, anneal_steps) * ((tau_end - tau_init) / anneal_steps)
             )
             evict_fn = _evict_via_metal_batched if use_metal else _evict_via_mlx_batched
-            keys_cat, values_cat, scores_cat, gumbel_cat, positions_cat = evict_fn(
+            evicted = evict_fn(
                 keys_cat,
                 values_cat,
                 scores_cat,
@@ -753,7 +776,11 @@ def keyformer_update_batched(
                 recent,
                 tau,
                 rope_base,
+                return_indices=return_indices,
             )
+            keys_cat, values_cat, scores_cat, gumbel_cat, positions_cat = evicted[:5]
+            if return_indices:
+                indices = mx.take_along_axis(indices, evicted[5], axis=1)
 
         keys, values, scores, gumbel, positions = (
             keys_cat,
@@ -766,9 +793,10 @@ def keyformer_update_batched(
         next_pos = cur_pos + 1
 
         if (i + 1) % _EVAL_FLUSH_INTERVAL == 0:
-            mx.eval(keys, values, scores, gumbel, positions)
+            mx.eval(keys, values, scores, gumbel, positions, indices)
 
-    return keys, values, scores, gumbel, positions, next_pos, pos
+    result = (keys, values, scores, gumbel, positions, next_pos, pos)
+    return (*result, indices) if return_indices else result
 
 
 def keyformer_get_kv(state: KeyformerState) -> tuple[mx.array, mx.array]:

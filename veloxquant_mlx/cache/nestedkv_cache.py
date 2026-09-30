@@ -73,6 +73,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.cache._deferred_eviction import DeferredEvictionMixin
 from veloxquant_mlx.quantizers.nestedkv import (
     NestedKVState,
     init_nestedkv_state,
@@ -81,7 +82,7 @@ from veloxquant_mlx.quantizers.nestedkv import (
 )
 
 
-class NestedKVKVCache(_MLXKVCache):
+class NestedKVKVCache(DeferredEvictionMixin, _MLXKVCache):
     """KV cache implementing NestedKV-adapted multi-scale ensembled eviction.
 
     Args:
@@ -214,7 +215,7 @@ class NestedKVKVCache(_MLXKVCache):
         keys_bh = keys.reshape(B * H, S, D)
         values_bh = values.reshape(B * H, S, D)
 
-        kept_keys, kept_values = nestedkv_compress_prefill_batched(
+        kept_keys, kept_values, self._prefill_indices = nestedkv_compress_prefill_batched(
             keys_bh,
             values_bh,
             n_sink=self._n_sink,
@@ -223,6 +224,7 @@ class NestedKVKVCache(_MLXKVCache):
             beta=self._beta,
             tau=self._tau,
             kappa=self._kappa,
+            return_indices=True,
         )
         self._bh_keys = kept_keys
         self._bh_values = kept_values
@@ -262,33 +264,33 @@ class NestedKVKVCache(_MLXKVCache):
             values: ``[B, H, S, D]`` new value tokens.
 
         Returns:
-            ``(K_out, V_out)`` both ``[B, H, n_kept, D]`` fp16.
+            Full prior kept rows plus all new rows, before eviction (#610).
+            Only the state stored for the next call is compressed.
         """
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
+        full_k, full_v, positions = self._prepare_attention(keys, values)
 
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
         is_prefill = S > 1 and not self._compressed
         if is_prefill:
-            K_out, V_out = self._process_prefill(keys, values)
+            K_out, V_out = self._process_prefill(full_k, full_v)
+            self._positions = mx.take_along_axis(
+                positions, self._prefill_indices.reshape(B, H, -1), axis=2
+            )
         else:
             K_out, V_out = self._process_decode(keys, values)
+            self._positions = positions
 
         bh, n_kept, kept_d = self._bh_keys.shape
         self._nestedkv_kept_bytes = bh * n_kept * kept_d * 2 * 2  # K + V, fp16
 
-        # K_out/V_out is the full retained state every call (uniform length
-        # across heads, see #21), not a delta — reset so the base class's
-        # append-only buffer starts fresh instead of stacking on top of the
-        # previous call's rows. Without this, self.keys/self.values/self.offset
-        # stay at __init__ defaults forever, and mlx_lm's generate() crashes
-        # on `cache.state` during chunked prefill (see #83).
-        self.keys = None
-        self.values = None
-        self.offset = 0
-        return super().update_and_fetch(K_out, V_out)
+        # Only persisted state is evicted; current attention uses every new row.
+        self.keys, self.values = K_out, V_out
+        self.offset += S
+        return full_k, full_v
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:

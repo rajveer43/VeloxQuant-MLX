@@ -102,6 +102,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.cache._deferred_eviction import DeferredEvictionMixin
 from veloxquant_mlx.quantizers.rocketkv import (
     append_paged_summary_batched,
     build_paged_summary,
@@ -176,7 +177,7 @@ class _SummaryView:
         return _SummaryRowList(self._cache, b)
 
 
-class RocketKVKVCache(_MLXKVCache):
+class RocketKVKVCache(DeferredEvictionMixin, _MLXKVCache):
     """KV cache implementing RocketKV-adapted two-stage compression for one layer.
 
     Args:
@@ -264,6 +265,18 @@ class RocketKVKVCache(_MLXKVCache):
         """Restore the retained row count (base-class bookkeeping only; see the getter for the true/retained distinction)."""
         self._row_offset = value
 
+    @property
+    def state(self):
+        """Expose retained rows, excluding the base cache's capacity padding."""
+        if self.keys is None:
+            return self.keys, self.values
+        return self.keys[:, :, : self._row_offset], self.values[:, :, : self._row_offset]
+
+    @state.setter
+    def state(self, value):
+        self.keys, self.values = value
+        self._row_offset = 0 if self.keys is None else self.keys.shape[2]
+
     def _head_idx(self, b: int, h: int) -> int:
         """Flatten a (batch, head) pair into this cache's [B*H, ...] row index."""
         return b * self._H + h
@@ -282,7 +295,9 @@ class RocketKVKVCache(_MLXKVCache):
             return int(self._head_topk1_cfg)
         return max(1, int(round(head_dim / self._head_dim_ratio)))
 
-    def _stage1_head(self, keys: mx.array, values: mx.array) -> tuple[mx.array, mx.array, int]:
+    def _stage1_head(
+        self, keys: mx.array, values: mx.array
+    ) -> tuple[mx.array, mx.array, int, mx.array]:
         """Stage-1 eviction for one head's ``[S, D]`` K/V via SnapKV reuse.
 
         Only used by the chunked-prefill re-run path below, where the
@@ -295,7 +310,7 @@ class RocketKVKVCache(_MLXKVCache):
         state = snapkv_compress(
             keys, values, budget=budget, obs_window=self._obs_window, n_sink=self._n_sink
         )
-        return state.kept_keys, state.kept_values, state.n_kept
+        return state.kept_keys, state.kept_values, state.n_kept, state.kept_indices
 
     def _process_prefill(self, keys: mx.array, values: mx.array):
         """Stage-1 eviction for every (batch, head) in one batched call.
@@ -320,7 +335,7 @@ class RocketKVKVCache(_MLXKVCache):
         self._head_topk1 = self._resolve_head_topk1(D)
 
         budget = max(1, int(round(S / self._stage1_ratio)))
-        k_out, v_out, _indices = _snapkv_compress_batched(
+        k_out, v_out, self._prefill_indices = _snapkv_compress_batched(
             keys,
             values,
             budget,
@@ -389,10 +404,12 @@ class RocketKVKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
         """Prefill: run stage-1 SnapKV eviction per head and build paged HSA summaries. Decode: append tokens exactly and update summaries incrementally."""
-        is_prefill = keys.shape[2] > 1
+        full_k, full_v, positions = self._prepare_attention(keys, values)
+        is_prefill = keys.shape[2] > 1 or not self._prefill_done
         if is_prefill:
             if not self._prefill_done:
                 k_out, v_out = self._process_prefill(keys, values)
+                self._positions = mx.take_along_axis(positions, self._prefill_indices, axis=2)
             else:
                 # Chunked prefill of the same prompt: fold this chunk in as
                 # if it were the tail of the original prefill, re-running
@@ -413,26 +430,29 @@ class RocketKVKVCache(_MLXKVCache):
                 # _process_decode which runs every generated token).
                 B, H, S, D = keys.shape
                 prev_kept = self._row_offset
-                k_out_b, v_out_b = [], []
+                k_out_b, v_out_b, pos_b = [], [], []
                 page_max_rows: list[mx.array] = []
                 page_min_rows: list[mx.array] = []
                 max_n_pages = 0
                 for b in range(B):
-                    k_out_h, v_out_h = [], []
+                    k_out_h, v_out_h, pos_h = [], [], []
                     for h in range(H):
                         prior_k = self.keys[b, h, :prev_kept, :]
                         prior_v = self.values[b, h, :prev_kept, :]
                         cat_k = mx.concatenate([prior_k, keys[b, h]], axis=0)
                         cat_v = mx.concatenate([prior_v, values[b, h]], axis=0)
-                        k_h, v_h, n_kept = self._stage1_head(cat_k, cat_v)
+                        k_h, v_h, n_kept, indices = self._stage1_head(cat_k, cat_v)
+                        pos_h.append(positions[b, h, indices])
                         k_out_h.append(k_h)
                         v_out_h.append(v_h)
                         row_summary = build_paged_summary(k_h, self._page_size)
                         page_max_rows.append(row_summary.page_max)
                         page_min_rows.append(row_summary.page_min)
                         max_n_pages = max(max_n_pages, int(row_summary.page_max.shape[0]))
+                    pos_b.append(mx.stack(pos_h, axis=0))
                     k_out_b.append(mx.stack(k_out_h, axis=0))
                     v_out_b.append(mx.stack(v_out_h, axis=0))
+                self._positions = mx.stack(pos_b, axis=0)
                 k_out = mx.stack(k_out_b, axis=0)
                 v_out = mx.stack(v_out_b, axis=0)
 
@@ -460,13 +480,16 @@ class RocketKVKVCache(_MLXKVCache):
                 self.values = None
         else:
             k_out, v_out = self._process_decode(keys, values)
+            self._positions = positions
 
         self._true_offset += keys.shape[2]
         self._in_base = True
         try:
-            return super().update_and_fetch(k_out, v_out)
+            super().update_and_fetch(k_out, v_out)
         finally:
             self._in_base = False
+
+        return full_k, full_v
 
     # ------------------------------------------------------------------
     def select_indices(self, query: mx.array, b: int, h: int, keep_recent: int = 0) -> mx.array:

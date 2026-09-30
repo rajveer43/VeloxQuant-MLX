@@ -55,23 +55,10 @@ ARMS = [
     ("curdkv", {"method": "curdkv", "curdkv_budget": BUDGET, "curdkv_n_sink": 4}),
 ]
 
-# Methods whose update_and_fetch RETURN value is, since #370, deliberately
-# the full pre-eviction set for a multi-token call (never capped at budget)
-# — mlx_lm's attention mask for that call is fixed before this cache's own
-# eviction can run, so shrinking the return would desync from it (see
-# veloxquant_mlx/cache/_eviction_mask.py). Only what these caches STORE
-# (``cache.keys``) is capped; qfilters/knorm are unaffected by #370 (not in
-# its scope) and still cap their own return value directly.
-_DEFERRED_EVICTION_METHODS = {"h2o", "tova", "streaming_llm", "chunkkv", "cam"}
-
 
 def _stored_or_returned_count(name: str, cache, k_out) -> int:
-    """Row count to check against the budget: STORED rows for #370-fixed
-    caches (their own return is deliberately un-evicted), else the RETURN
-    value itself (unaffected caches still cap what they return)."""
-    if name in _DEFERRED_EVICTION_METHODS:
-        return cache.keys.shape[2]
-    return k_out.shape[2]
+    """Budgets constrain retained storage, not current attention inputs (#610)."""
+    return cache.keys.shape[2]
 
 
 def _kv(S, H=2, D=HEAD_DIM, seed=0):

@@ -66,6 +66,7 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
+from veloxquant_mlx.cache._eviction_mask import eviction_make_mask
 from veloxquant_mlx.quantizers.keyformer import (
     init_keyformer_state,
     keyformer_update_batched,
@@ -162,6 +163,9 @@ class KeyformerKVCache(_MLXKVCache):
         self._full_seq_bytes: int = 0
         self._tokens_seen_total: int = 0
 
+        # Chronological positions for masking, independent of RoPE renumbering.
+        self._kept_positions: mx.array | None = None
+
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         if not self._initialised:
@@ -184,8 +188,9 @@ class KeyformerKVCache(_MLXKVCache):
             values: ``[B, H, S, D]`` new value tokens.
 
         Returns:
-            ``(K_out, V_out)`` both ``[B, H, n_kept, D]`` fp16, where
-            ``n_kept <= keyformer_budget`` for all heads.
+            Prior retained rows plus all new rows, before eviction. mlx_lm
+            builds the current attention mask before this call (#610), so
+            only the state stored for the next call may shrink.
         """
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
@@ -196,6 +201,18 @@ class KeyformerKVCache(_MLXKVCache):
         new_keys_flat = keys.astype(mx.float16).reshape(B * H, S, D)
         new_values_flat = values.astype(mx.float16).reshape(B * H, S, D)
 
+        # Preserve current attention inputs before updating retained state.
+        prev_keys_flat = self._bh_keys
+        prev_values_flat = self._bh_values
+        new_positions = mx.broadcast_to(
+            mx.arange(self._pos, self._pos + S, dtype=mx.int32)[None, None], (B, H, S)
+        )
+        positions = (
+            new_positions
+            if self._kept_positions is None
+            else mx.concatenate([self._kept_positions, new_positions], axis=2)
+        )
+
         (
             self._bh_keys,
             self._bh_values,
@@ -204,6 +221,7 @@ class KeyformerKVCache(_MLXKVCache):
             self._bh_positions,
             self._next_pos,
             self._pos,
+            indices,
         ) = keyformer_update_batched(
             self._bh_keys,
             self._bh_values,
@@ -222,6 +240,7 @@ class KeyformerKVCache(_MLXKVCache):
             self._next_pos,
             self._pos,
             self._seeds,
+            return_indices=True,
         )
 
         n_kept = self._bh_keys.shape[1]
@@ -230,16 +249,35 @@ class KeyformerKVCache(_MLXKVCache):
 
         self._keyformer_kept_bytes = B * H * n_kept * D * 2 * 2
 
-        # K_out/V_out is the full retained state every call, not a delta —
-        # reset so the base class's append-only buffer starts fresh instead
-        # of stacking on top of the previous call's rows. Without this,
-        # self.keys/self.values/self.offset stay at __init__ defaults
-        # forever, and mlx_lm's generate() crashes on `cache.state` during
-        # chunked prefill (see #83).
-        self.keys = None
-        self.values = None
-        self.offset = 0
-        return super().update_and_fetch(K_out, V_out)
+        # Preserve Keyformer's existing RoPE offset contract.
+        self.keys = K_out
+        self.values = V_out
+        self.offset = n_kept
+
+        # Track chronology separately from the quantizer's shifted RoPE positions.
+        self._kept_positions = mx.take_along_axis(positions, indices.reshape(B, H, n_kept), axis=2)
+
+        if prev_keys_flat is None:
+            return keys.astype(mx.float16), values.astype(mx.float16)
+        full_keys_flat = mx.concatenate([prev_keys_flat, new_keys_flat], axis=1)
+        full_values_flat = mx.concatenate([prev_values_flat, new_values_flat], axis=1)
+        n_full = full_keys_flat.shape[1]
+        return full_keys_flat.reshape(B, H, n_full, D), full_values_flat.reshape(B, H, n_full, D)
+
+    # ------------------------------------------------------------------
+    def make_mask(self, N: int, return_array: bool = False, window_size: int | None = None, **_):
+        """Mask using chronological positions, independent of RoPE renumbering."""
+        if self._kept_positions is None:
+            return super().make_mask(N, return_array=return_array, window_size=window_size)
+        B = self._kept_positions.shape[0]
+        prev_positions = self._kept_positions[:, 0]
+        new_positions = mx.arange(self._pos, self._pos + N, dtype=mx.int32)
+        new_positions = mx.broadcast_to(new_positions[None, :], (B, N))
+        key_positions = mx.concatenate([prev_positions, new_positions], axis=1)
+        query_positions = new_positions
+        return eviction_make_mask(
+            query_positions, key_positions, N, return_array=return_array, window_size=window_size
+        )
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:

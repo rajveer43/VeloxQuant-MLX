@@ -72,6 +72,7 @@ def test_prefill_evicts_when_over_budget() -> None:
     c = _make(rocketkv_compression_ratio=8.0)
     k, v = _rand_kv(S=64, H=2, D=32)
     ko, vo = c.update_and_fetch(k, v)
+    ko, vo = c.state  # Retained state; attention receives pre-eviction rows.
     assert ko.shape[2] < 64
     assert vo.shape[2] < 64
 
@@ -80,11 +81,13 @@ def test_decode_tokens_always_appended() -> None:
     c = _make()
     k, v = _rand_kv(S=40, H=2, D=32)
     ko, _ = c.update_and_fetch(k, v)
+    ko, _ = c.state  # Retained state; attention receives pre-eviction rows.
     prefill_size = ko.shape[2]
 
     for i in range(6):
         kd, vd = _rand_kv(S=1, H=2, D=32, seed=50 + i)
         ko, vo = c.update_and_fetch(kd, vd)
+        ko, vo = c.state  # Retained state; attention receives pre-eviction rows.
 
     assert ko.shape[2] == prefill_size + 6
     assert vo.shape[2] == prefill_size + 6
@@ -96,6 +99,7 @@ def test_offset_tracks_true_position_not_row_count() -> None:
     c = _make(rocketkv_compression_ratio=8.0)
     k, v = _rand_kv(S=64, H=2, D=32)
     ko, _ = c.update_and_fetch(k, v)
+    ko, _ = c.state  # Retained state; attention receives pre-eviction rows.
     assert ko.shape[2] < 64  # eviction happened
     assert c.offset == 64  # but true position is unaffected
 
@@ -119,8 +123,10 @@ def test_chunked_prefill_reenforces_budget() -> None:
     c = _make(rocketkv_compression_ratio=4.0)
     k1, v1 = _rand_kv(S=20, H=2, D=32, seed=1)
     ko1, _ = c.update_and_fetch(k1, v1)
+    ko1, _ = c.state  # Retained state; attention receives pre-eviction rows.
     k2, v2 = _rand_kv(S=20, H=2, D=32, seed=2)
     ko2, _ = c.update_and_fetch(k2, v2)
+    ko2, _ = c.state  # Retained state; attention receives pre-eviction rows.
 
     # Budget re-derived from the accumulated 40 tokens (not 20+20 stacked
     # independently), so retained count reflects stage1_ratio over 40 total,
@@ -338,6 +344,7 @@ def test_factory_smoke_compression_ratio_positive_both_kv() -> None:
     c = _make(rocketkv_compression_ratio=8.0)
     k, v = _rand_kv(S=100, H=2, D=32)
     ko, vo = c.update_and_fetch(k, v)
+    ko, vo = c.state  # Retained state; attention receives pre-eviction rows.
     assert ko.shape[2] < 100
     assert vo.shape[2] < 100
     assert c.compression_ratio > 1.0

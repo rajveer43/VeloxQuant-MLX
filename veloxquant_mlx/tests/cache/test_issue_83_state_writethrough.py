@@ -83,7 +83,18 @@ ALL_METHODS = list(_CONFIGS)
 # see cache/tova_cache.py) — TOVA does not renumber positions after eviction,
 # so survivors keep their true absolute position and offset must track true
 # elapsed steps, not stored-row count, for the same RoPE-correctness reason.
-_TRUE_STEP_COUNT_OFFSET_METHODS = ["h2o", "curdkv", "tova"]
+# #610 uses exact retained buffers and chronological positions for these
+# additional caches; offset is independent of the retained row count.
+_TRUE_STEP_COUNT_OFFSET_METHODS = [
+    "h2o",
+    "curdkv",
+    "tova",
+    "knorm",
+    "qfilters",
+    "morphkv",
+    "kvzip",
+    "nestedkv",
+]
 _OFFSET_EQUALS_SHAPE_METHODS = [m for m in ALL_METHODS if m not in _TRUE_STEP_COUNT_OFFSET_METHODS]
 
 

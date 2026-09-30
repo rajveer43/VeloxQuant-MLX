@@ -299,7 +299,9 @@ def kvzip_update_batched(
     n_sink: int,
     budget: int,
     probe: str,
-) -> tuple[mx.array, mx.array]:
+    *,
+    return_indices: bool = False,
+) -> tuple[mx.array, mx.array] | tuple[mx.array, mx.array, mx.array]:
     """Vectorized-over-``BH`` equivalent of calling :func:`kvzip_update` once
     per ``(batch, head)`` pair with identical per-row ``n_sink``/``budget``/
     ``probe`` (true for every real caller: :class:`KVzipKVCache` applies one
@@ -313,16 +315,22 @@ def kvzip_update_batched(
     is the same formula as :func:`kvzip_update`'s bootstrap/append/evict
     branches, applied over a leading ``BH`` axis instead of a Python loop.
 
+    With ``return_indices=True``, also return indices into prior + new rows.
+
     Returns:
         ``(keys, values)`` — ``[BH, n_kept, D]`` each.
     """
     bh, s, d = new_keys.shape
+    n_prior = 0 if keys is None else keys.shape[1]
+    indices = mx.broadcast_to(mx.arange(n_prior)[None], (bh, n_prior))
     if s == 0:
-        return keys, values
+        return (keys, values, indices) if return_indices else (keys, values)
     if n_sink >= budget:
         raise ValueError("kvzip: n_sink must be < budget — no evictable positions remain")
 
     for i in range(s):
+        if return_indices:
+            indices = mx.concatenate([indices, mx.full((bh, 1), n_prior + i)], axis=1)
         if keys is None:
             keys = new_keys[:, i : i + 1].astype(mx.float16)  # [BH, 1, D]
             values = new_values[:, i : i + 1].astype(mx.float16)
@@ -348,13 +356,15 @@ def kvzip_update_batched(
 
             keys_cat = mx.take_along_axis(keys_cat, source[..., None], axis=1)
             values_cat = mx.take_along_axis(values_cat, source[..., None], axis=1)
+            if return_indices:
+                indices = mx.take_along_axis(indices, source, axis=1)
 
         keys, values = keys_cat, values_cat
 
         if (i + 1) % _EVAL_FLUSH_INTERVAL == 0:
-            mx.eval(keys, values)
+            mx.eval(keys, values, indices)
 
-    return keys, values
+    return (keys, values, indices) if return_indices else (keys, values)
 
 
 def kvzip_get_kv(state: KVzipState) -> tuple[mx.array, mx.array]:
