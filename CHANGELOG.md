@@ -527,6 +527,39 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.22 (2026-09-30)
+
+### Bug Fixes
+
+- **rotation**: Drop m=20/28 from Hadamard gate to prevent silent data corruption
+  ([#608](https://github.com/rajveer43/VeloxQuant-MLX/pull/608),
+  [`6d86764`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6d867642c5036846750f50e88e322c4d90a7fdfe))
+
+### Chores
+
+- **deps**: Bump brace-expansion from 1.1.18 to 1.1.21 in /docs-site
+  ([#594](https://github.com/rajveer43/VeloxQuant-MLX/pull/594),
+  [`9ed6a47`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9ed6a47e69de9c74cdce8b1b6b5532d2d170042c))
+
+- **deps**: Bump fast-uri from 3.1.7 to 3.1.8 in /docs-site
+  ([#593](https://github.com/rajveer43/VeloxQuant-MLX/pull/593),
+  [`f59ff98`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f59ff9846ec94e31ae9293d41c8763307130d385))
+
+- **deps**: Bump joi from 17.13.6 to 17.13.8 in /docs-site
+  ([#607](https://github.com/rajveer43/VeloxQuant-MLX/pull/607),
+  [`2a3c23f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2a3c23f25c6471d915a05f49ed67996d0cd53553))
+
+- **deps-dev**: Bump undici from 7.29.0 to 7.30.0 in /docs-site
+  ([#595](https://github.com/rajveer43/VeloxQuant-MLX/pull/595),
+  [`5835525`](https://github.com/rajveer43/VeloxQuant-MLX/commit/58355254237ca6347dcef879ff03e91d7aaaf66e))
+
+### Documentation
+
+- Correct the fused decode-attend speedup claims against a production baseline
+  ([#606](https://github.com/rajveer43/VeloxQuant-MLX/pull/606),
+  [`668c0f7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/668c0f712e162818e5515e61b1c62ab226d9a91e))
+
+
 ## v0.91.21 (2026-09-30)
 
 ### Bug Fixes
