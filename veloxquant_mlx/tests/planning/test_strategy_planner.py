@@ -31,22 +31,27 @@ class _Rec:
 
 def _model() -> ModelProfile:
     return ModelProfile(
-        model_id="llama-7b", architecture="llama", num_layers=8, num_query_heads=8,
-        num_kv_heads=8, head_dim=128, attention_type="mha",
+        model_id="llama-7b",
+        architecture="llama",
+        num_layers=8,
+        num_query_heads=8,
+        num_kv_heads=8,
+        head_dim=128,
+        attention_type="mha",
     )
 
 
 def _hw() -> HardwareProfile:
     return HardwareProfile(
-        chip="M4", chip_generation=4,
-        available_memory_bytes=64 * 1024**3, mlx_version="0.32.2",
+        chip="M4",
+        chip_generation=4,
+        available_memory_bytes=64 * 1024**3,
+        mlx_version="0.32.2",
     )
 
 
 def _workload(objective: str = WorkloadObjective.BALANCED) -> WorkloadProfile:
-    return WorkloadProfile(
-        context_length=8192, generation_length=512, objective=objective
-    )
+    return WorkloadProfile(context_length=8192, generation_length=512, objective=objective)
 
 
 def test_plan_returns_ranked_result():
@@ -100,9 +105,7 @@ def test_plan_scores_in_range():
 
 
 def test_plan_max_results_respected():
-    result = plan_strategy(
-        _model(), _hw(), _workload(), options=PlanningOptions(max_results=5)
-    )
+    result = plan_strategy(_model(), _hw(), _workload(), options=PlanningOptions(max_results=5))
     assert len(result.ranked) == 5
 
 
@@ -133,7 +136,9 @@ def test_plan_empirical_memory_override():
 
     others = set(all_method_names()) - {"kivi"}
     result = plan_strategy(
-        _model(), _hw(), _workload(WorkloadObjective.MEMORY),
+        _model(),
+        _hw(),
+        _workload(WorkloadObjective.MEMORY),
         options=PlanningOptions(
             empirical={"kivi": _Rec(memory_reduction=0.2)},
             additional_exclusions=others,
@@ -150,7 +155,9 @@ def test_plan_empirical_latency_override():
 
     others = set(all_method_names()) - {"kivi"}
     result = plan_strategy(
-        _model(), _hw(), _workload(),
+        _model(),
+        _hw(),
+        _workload(),
         options=PlanningOptions(
             empirical={"kivi": _Rec(latency_ms_per_token=1.1)},
             additional_exclusions=others,
@@ -162,8 +169,12 @@ def test_plan_empirical_latency_override():
 
 def test_plan_empirical_latency_override_takes_effect():
     result = plan_strategy(
-        _model(), _hw(), _workload(WorkloadObjective.LATENCY),
-        options=PlanningOptions(empirical={"zipcache": _Rec(latency_ms_per_token=5000.0)}, max_results=5),
+        _model(),
+        _hw(),
+        _workload(WorkloadObjective.LATENCY),
+        options=PlanningOptions(
+            empirical={"zipcache": _Rec(latency_ms_per_token=5000.0)}, max_results=5
+        ),
     )
     # an absurd measured latency must knock zipcache off the latency podium
     best = result.best
@@ -179,7 +190,9 @@ def test_plan_empirical_record_with_junk_values_ignored():
 
     others = set(all_method_names()) - {"kivi"}
     result = plan_strategy(
-        _model(), _hw(), _workload(),
+        _model(),
+        _hw(),
+        _workload(),
         options=PlanningOptions(
             empirical={"kivi": _Rec(memory_reduction=99.0)},
             additional_exclusions=others,
@@ -192,7 +205,9 @@ def test_plan_empirical_record_with_junk_values_ignored():
 
 def test_plan_exclusions_respected():
     result = plan_strategy(
-        _model(), _hw(), _workload(),
+        _model(),
+        _hw(),
+        _workload(),
         options=PlanningOptions(additional_exclusions={"kivi", "h2o"}),
     )
     names = {item.method for item in result.ranked}
@@ -217,9 +232,7 @@ def test_custom_weights_override():
     )
     assert result.best is not None
     # pure-memory objective: the single strongest reducer takes rank 1
-    biggest = max(
-        result.ranked, key=lambda i: i.memory_estimate.savings_percent
-    )
+    biggest = max(result.ranked, key=lambda i: i.memory_estimate.savings_percent)
     assert biggest is result.ranked[0]
 
 
@@ -235,7 +248,12 @@ def test_scored_method_to_dict():
 def test_result_to_dict_shape():
     data = plan_strategy(_model(), _hw(), _workload()).to_dict()
     for key in (
-        "objective", "ranked", "candidates", "model", "hardware", "workload",
+        "objective",
+        "ranked",
+        "candidates",
+        "model",
+        "hardware",
+        "workload",
         "fallback_used",
     ):
         assert key in data
@@ -286,8 +304,10 @@ def test_recommendation_currently_invariant_to_bandwidth(bandwidth_gbps):
     silently making a previously-inert table value load-bearing.
     """
     hw = HardwareProfile(
-        chip="M4", chip_generation=4,
-        available_memory_bytes=64 * 1024**3, mlx_version="0.32.2",
+        chip="M4",
+        chip_generation=4,
+        available_memory_bytes=64 * 1024**3,
+        mlx_version="0.32.2",
         peak_memory_bandwidth_gbps=bandwidth_gbps,
     )
     baseline = plan_strategy(_model(), _hw(), _workload())

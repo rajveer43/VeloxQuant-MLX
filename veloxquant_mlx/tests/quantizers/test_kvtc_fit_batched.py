@@ -113,7 +113,10 @@ def test_real_cache_prefill_then_decode_matches_reference(H, seed):
     "not path-dependent" invariant (module docstring)."""
     D, S, budget = 16, 20, 48
     cache = _make_cache(head_dim=D, kvtc_bit_budget=budget)
-    k0, v0 = _rand((1, H, S, D), seed).astype(mx.float16), _rand((1, H, S, D), seed + 1).astype(mx.float16)
+    k0, v0 = (
+        _rand((1, H, S, D), seed).astype(mx.float16),
+        _rand((1, H, S, D), seed + 1).astype(mx.float16),
+    )
     cache.update_and_fetch(k0, v0)
 
     for i in range(4):

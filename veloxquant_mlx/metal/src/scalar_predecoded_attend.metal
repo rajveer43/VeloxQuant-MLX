@@ -40,9 +40,12 @@
 
     float running_m = -INFINITY;
     float running_d = 0.0f;
-    float my_out[8]; // D/32 <= 256/32 = 8
-    for (int i = 0; i < 8; ++i) my_out[i] = 0.0f;
-    uint n_owned = (D + 31u) / 32u;
+    // DSLOTS_C = ceil(D/32), baked in per-D by the kernel factory -- same
+    // sizing as scalar_affine_attend.metal, rather than the D<=256 worst case.
+    constexpr uint kDSlots = DSLOTS_C;
+    float my_out[kDSlots];
+    for (uint i = 0; i < kDSlots; ++i) my_out[i] = 0.0f;
+    uint n_owned = kDSlots;
 
     for (uint sk = sg; sk < S_kv; sk += NSG) {
         float partial_dot = 0.0f;
@@ -68,12 +71,16 @@
     }
 
     // ----- merge the NSG partial softmaxes through threadgroup memory -----
+    // sh_o is half and holds out_s / d_s (a convex combination of V, bounded by
+    // max|V|), exactly as in scalar_affine_attend.metal; the merge re-applies
+    // d_s. sh_m/sh_d stay fp32 because they feed exp() rescaling.
     threadgroup float sh_m[NSG_C];
     threadgroup float sh_d[NSG_C];
-    threadgroup float sh_o[NSG_C * 8 * 32];
+    threadgroup half  sh_o[NSG_C * DSLOTS_C * 32];
 
+    float inv_local = running_d > 0.0f ? 1.0f / running_d : 0.0f;
     for (uint i = 0; i < n_owned; ++i) {
-        sh_o[(sg * 8u + i) * 32u + lane] = my_out[i];
+        sh_o[(sg * kDSlots + i) * 32u + lane] = half(my_out[i] * inv_local);
     }
     if (lane == 0) {
         sh_m[sg] = running_m;
@@ -90,7 +97,8 @@
         for (uint i = 0; i < n_owned; ++i) {
             float acc = 0.0f;
             for (uint s = 0; s < NSG; ++s) {
-                acc += sh_o[(s * 8 + i) * 32 + lane] * metal::exp(sh_m[s] - gm);
+                acc += float(sh_o[(s * kDSlots + i) * 32 + lane])
+                     * sh_d[s] * metal::exp(sh_m[s] - gm);
             }
             uint d = lane + i * 32u;
             if (d < D) {

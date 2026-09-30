@@ -37,7 +37,9 @@ def test_estimate_memory_plain_text(capsys):
 
 
 def test_estimate_memory_batch_scales(capsys):
-    estimate_memory_cli.main([*_args(), "--context", "1024", "--batch", "4", "--top", "1", "--json"])
+    estimate_memory_cli.main(
+        [*_args(), "--context", "1024", "--batch", "4", "--top", "1", "--json"]
+    )
     payload = json.loads(capsys.readouterr().out)
     assert payload["workload"]["batch_size"] == 4
 

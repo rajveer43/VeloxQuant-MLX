@@ -320,7 +320,9 @@ def kvtc_local_pca_batched(
     x_centered = x - mean[:, None, :]
 
     r = min(S, D)
-    U, s_vals, Vt = mx.linalg.svd(x_centered, stream=mx.cpu)  # [BH,S,S],[BH,min(S,D)],[BH,min(S,D),D]
+    U, s_vals, Vt = mx.linalg.svd(
+        x_centered, stream=mx.cpu
+    )  # [BH,S,S],[BH,min(S,D)],[BH,min(S,D),D]
     mx.eval(U, s_vals, Vt)
     Vt_r = Vt[:, :r, :]  # [BH, r, D]
     V = mx.swapaxes(Vt_r, -1, -2)  # [BH, D, r]

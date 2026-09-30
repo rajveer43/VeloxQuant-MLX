@@ -50,7 +50,8 @@ _CALIB_PASSAGES = [
         "aggregate the values. This mechanism lets every position in a "
         "sequence gather information from every other position, which is "
         "what gives transformers their long-range modeling capacity. "
-    ) * 20,
+    )
+    * 20,
     (
         "Memory bandwidth, not raw compute, is often the binding constraint "
         "during autoregressive decoding on modern accelerators. Every "
@@ -60,7 +61,8 @@ _CALIB_PASSAGES = [
         "grows, the key-value cache itself becomes a larger and larger "
         "fraction of the total memory traffic, which is why cache "
         "compression techniques target it directly rather than the weights. "
-    ) * 20,
+    )
+    * 20,
     (
         "Apple Silicon unifies CPU and GPU memory into a single address "
         "space, which removes the need to copy data across a PCIe bus but "
@@ -69,7 +71,8 @@ _CALIB_PASSAGES = [
         "machine, an 8 billion parameter model at 4-bit precision already "
         "consumes a substantial fraction of that budget before a single "
         "token of context has been cached. "
-    ) * 20,
+    )
+    * 20,
     (
         "Vector quantization compresses a set of vectors by replacing each "
         "one with the index of its nearest neighbor in a small, shared "
@@ -78,7 +81,8 @@ _CALIB_PASSAGES = [
         "approximate. A codebook trained on data that doesn't resemble the "
         "true distribution of activations will reconstruct those "
         "activations poorly, regardless of how many centroids it has. "
-    ) * 20,
+    )
+    * 20,
     (
         "Eviction-based cache compression discards the least useful cached "
         "tokens once a fixed budget is exceeded, rather than approximating "
@@ -88,7 +92,8 @@ _CALIB_PASSAGES = [
         "function estimated from the wrong signal can evict tokens that "
         "turn out to matter, degrading generation quality in ways that are "
         "difficult to detect from throughput numbers alone. "
-    ) * 20,
+    )
+    * 20,
 ]
 
 
@@ -96,7 +101,9 @@ def main() -> int:
     _ensure_path()
     parser = argparse.ArgumentParser(description="Calibrate real Q-Filters for Qwen3-8B")
     parser.add_argument("--model", default="mlx-community/Qwen3-8B-4bit")
-    parser.add_argument("--output", default="figures/qwen3_8b_qfilters_calibrated/qfilters_qwen3_8b.npz")
+    parser.add_argument(
+        "--output", default="figures/qwen3_8b_qfilters_calibrated/qfilters_qwen3_8b.npz"
+    )
     parser.add_argument("--max-length", type=int, default=2048)
     parser.add_argument("--max-samples-per-head", type=int, default=3000)
     parser.add_argument("--seed", type=int, default=0)
@@ -120,16 +127,22 @@ def main() -> int:
     n_kv_heads = getattr(margs, "num_key_value_heads", None) or n_q_heads
     print(f"  num_attention_heads={n_q_heads} num_key_value_heads={n_kv_heads}")
 
-    print(f"Collecting query activations on {len(_CALIB_PASSAGES)} calibration passages "
-          f"(max_length={args.max_length})...", flush=True)
+    print(
+        f"Collecting query activations on {len(_CALIB_PASSAGES)} calibration passages "
+        f"(max_length={args.max_length})...",
+        flush=True,
+    )
     per_layer_queries = collect_query_activations(
-        model, tokenizer, _CALIB_PASSAGES,
+        model,
+        tokenizer,
+        _CALIB_PASSAGES,
         max_length=args.max_length,
         max_samples_per_head=args.max_samples_per_head,
         seed=args.seed,
     )
-    print(f"  captured {len(per_layer_queries)} layers, "
-          f"shape[0]={tuple(per_layer_queries[0].shape)}")
+    print(
+        f"  captured {len(per_layer_queries)} layers, shape[0]={tuple(per_layer_queries[0].shape)}"
+    )
 
     print("Computing per-head Q-Filters (SVD, sign-fixed per Theorem 3.3)...", flush=True)
     per_layer_filters = []

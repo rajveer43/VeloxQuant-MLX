@@ -353,8 +353,12 @@ def test_batched_update_matches_unbatched_loop_B_gt1_H_gt1_multi_step() -> None:
         for h in range(H):
             idx = b * H + h
             assert n_kept == ref_states[idx].keys.shape[0]
-            np.testing.assert_array_equal(np.array(cache._keys[idx]), np.array(ref_states[idx].keys))
+            np.testing.assert_array_equal(
+                np.array(cache._keys[idx]), np.array(ref_states[idx].keys)
+            )
             np.testing.assert_array_equal(
                 np.array(cache._values[idx]), np.array(ref_states[idx].values)
             )
-            np.testing.assert_array_equal(np.array(cache._norms[idx]), np.array(ref_states[idx].norms))
+            np.testing.assert_array_equal(
+                np.array(cache._norms[idx]), np.array(ref_states[idx].norms)
+            )

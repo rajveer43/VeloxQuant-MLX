@@ -276,6 +276,11 @@ class SnapKVKVCache(_MLXKVCache):
         prior per-(b, h) kept contribution is subtracted before adding the
         new one. ``tokens_total`` only grows by this chunk's ``S`` (prior
         chunks' totals were already counted when first seen).
+
+        As in ``_process_prefill``, the recompressed set is only *stored*:
+        this call's own attention gets the full ``[prior kept ++ new chunk]``
+        rows, because mlx_lm built this call's mask before eviction could
+        decide which rows survive. ``make_mask`` sizes the mask to match.
         """
         B, H, S, D = keys.shape
         # Retained row count — NOT self.offset, which since #171 reports the
@@ -314,14 +319,15 @@ class SnapKVKVCache(_MLXKVCache):
         self._full_value_bytes += B * H * S * D * 2
         self._tokens_total += B * H * S
 
-        # The recomputed kept set replaces (not appends to) what's stored:
-        # reset so the base class's append-only update_and_fetch starts a
-        # fresh buffer instead of stacking this chunk's output on top of
-        # the pre-recompression rows still sitting in self.keys/values.
+        # Reset so the base class's append-only update_and_fetch starts a
+        # fresh buffer holding exactly [prior kept ++ new chunk] (what this
+        # call's attention sees), which update_and_fetch then swaps for the
+        # recompressed set once this call returns.
         self.offset = 0
         self.keys = None
         self.values = None
-        return k_out, v_out
+        self._post_step_evicted = (k_out, v_out)
+        return cat_k.astype(self._storage_dtype), cat_v.astype(self._storage_dtype)
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
@@ -376,16 +382,20 @@ class SnapKVKVCache(_MLXKVCache):
         (``_kept_positions`` is still ``None``, nothing evicted yet) this
         falls back to the base class's behavior exactly, since a plain
         trailing-window mask is correct there.
+
+        Called before this step's ``update_and_fetch``, whose attention runs
+        over the stored rows plus this step's ``N`` new ones (eviction is
+        deferred past the return), so the key axis is ``len(kept) + N``.
         """
         if self._kept_positions is None:
             return super().make_mask(N, return_array=return_array, window_size=window_size)
-        query_positions = mx.arange(self._true_offset, self._true_offset + N, dtype=mx.int32)
-        query_positions = mx.broadcast_to(
-            query_positions[None, :], (self._kept_positions.shape[0], N)
-        )
+        B = self._kept_positions.shape[0]
+        new_positions = mx.arange(self._true_offset, self._true_offset + N, dtype=mx.int32)
+        new_positions = mx.broadcast_to(new_positions[None, :], (B, N))
+        key_positions = mx.concatenate([self._kept_positions, new_positions], axis=1)
         return eviction_make_mask(
-            query_positions,
-            self._kept_positions,
+            new_positions,
+            key_positions,
             N,
             return_array=return_array,
             window_size=window_size,

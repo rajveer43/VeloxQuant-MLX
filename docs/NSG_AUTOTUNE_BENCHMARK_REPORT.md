@@ -9,8 +9,18 @@ tuned. Two threadgroup-memory footprint fixes unblocked higher values, and an
 autotuned default now selects from the dispatch shape. Kernel-level speedup vs.
 the old default is **1.2–4.2x**; real end-to-end decode throughput on
 Qwen3-4B-4bit improves **1.07x–1.85x** depending on context length, and
-**1.48x–5.31x** against the dequantize-then-SDPA path a KIVI-style cache uses
-today. All 3352 tests pass; output is verified against a numpy reference.
+**1.48x–5.31x** against dequantizing the full history to fp16 every step. All
+3352 tests pass; output is verified against a numpy reference.
+
+> **Correction (2026-09-30):** an earlier version of this TL;DR described the
+> dequantize-every-step baseline as the path a KIVI-style cache uses today. It
+> isn't: `KIVIKVCache` dequantizes once into its fp16 buffer, so its decode
+> costs the same as a plain fp16 cache. Against plain fp16 `KVCache` the fused
+> path, even with `nsg` autotune, measures **0.48–0.85x** end to end, and
+> mlx_lm's `QuantizedKVCache(bits=4)` beats both. The `nsg` improvement over
+> the old default stands; the comparison to production does not. See
+> `docs/KV_KERNEL_ROOFLINE_FINDINGS.md`, "Addendum: the fused decode path is
+> slower than the production baseline".
 
 ---
 
@@ -291,8 +301,11 @@ projections, sampling, and per-step quantization.
 **All arms attend over the identical KIVI-quantized state.** The only
 difference is the attend path:
 
-- **dequant** — dequantize to fp16, then standard MLX SDPA. This is what a real
-  KIVI-style cache does today.
+- **dequant** — dequantize the whole quantized history to fp16 on every decode
+  step, then standard MLX SDPA. No cache in this repo does this —
+  `KIVIKVCache` dequantizes once and keeps fp16, costing the same as a plain
+  fp16 cache — so this arm is a lower bound, not the production baseline (see
+  the correction under the TL;DR).
 - **fused `nsg=4`** — `scalar_fused_decode_attend` at the previously shipped
   default.
 - **fused auto** — `scalar_fused_decode_attend` with `nsg=None` (this work).
@@ -310,7 +323,9 @@ Decode throughput, tokens/sec:
 
 The end-to-end win **grows with context**, mirroring the kernel sweep — 1.07×
 at short context rising to 1.85× at `prompt_len`=4096 over the previously
-shipped default, and 5.31× over the dequantize-then-SDPA path.
+shipped default, and 5.31× over the dequantize-every-step arm. For reference,
+plain fp16 `KVCache` decodes at 29.1 tok/s at `prompt_len`=4096 on the same
+model — about 2× faster than fused auto's 13.6.
 
 > ### ⚠️ The short-context number is reported deliberately
 >

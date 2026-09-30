@@ -147,15 +147,20 @@ def test_real_cache_prefill_matches_reference_loop(B, H, seed):
         k_out_h, v_out_h = [], []
         for h in range(H):
             keys_h, values_h = k[b, h], v[b, h]
-            anchors = select_anchors(keys_h.astype(mx.float32), k=k_budget, window=window, rho=rho, seed=seed_cfg)
+            anchors = select_anchors(
+                keys_h.astype(mx.float32), k=k_budget, window=window, rho=rho, seed=seed_cfg
+            )
             n_anchor = int(anchors.shape[0])
             key_assign = assign_and_project(keys_h, anchors)
             value_assign = assign_and_project(values_h, anchors)
             m = min(window, S)
             proxy_q = keys_h.astype(mx.float32)[-m:]
             u_key, u_value = key_value_utility(
-                proxy_q, keys_h.astype(mx.float32), values_h.astype(mx.float32),
-                key_assign.residual, value_assign.residual,
+                proxy_q,
+                keys_h.astype(mx.float32),
+                values_h.astype(mx.float32),
+                key_assign.residual,
+                value_assign.residual,
             )
             anchor_set = {int(a) for a in anchors.tolist()}
             non_anchor_mask = mx.array([i not in anchor_set for i in range(S)])
@@ -164,7 +169,10 @@ def test_real_cache_prefill_matches_reference_loop(B, H, seed):
             u_value = u_value + neg_inf
 
             n_slots = anchorkv_budget_slots(
-                seq_len=S, head_dim=D, n_anchor=n_anchor, theta=theta,
+                seq_len=S,
+                head_dim=D,
+                n_anchor=n_anchor,
+                theta=theta,
                 residual_codec_bytes=codec.bytes_per_residual,
             )
             n_key_slots = n_slots // 2

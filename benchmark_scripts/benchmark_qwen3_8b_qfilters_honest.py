@@ -103,11 +103,15 @@ def _hardware() -> dict:
     try:
         chip = subprocess.run(
             ["sysctl", "-n", "machdep.cpu.brand_string"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout.strip()
         mem = subprocess.run(
             ["sysctl", "-n", "hw.memsize"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout.strip()
         if chip:
             info["chip"] = chip
@@ -121,7 +125,9 @@ def _hardware() -> dict:
 def _gpu_contention_check() -> list[str]:
     suspects = []
     try:
-        out = subprocess.run(["ps", "-Ao", "comm"], capture_output=True, text=True, timeout=5).stdout
+        out = subprocess.run(
+            ["ps", "-Ao", "comm"], capture_output=True, text=True, timeout=5
+        ).stdout
         keywords = ("python", "ollama", "mlx", "llama", "lmstudio")
         for line in out.splitlines():
             low = line.lower()
@@ -164,12 +170,19 @@ def _build_fp16_caches(model) -> list:
     return [_FallbackCache() for _ in layers]
 
 
-def _generate(model, tokenizer, prompt: str, max_tokens: int, caches: list) -> tuple[str, int, float]:
+def _generate(
+    model, tokenizer, prompt: str, max_tokens: int, caches: list
+) -> tuple[str, int, float]:
     from mlx_lm import generate
 
     t0 = time.time()
     out = generate(
-        model, tokenizer, prompt=prompt, max_tokens=max_tokens, verbose=False, prompt_cache=caches,
+        model,
+        tokenizer,
+        prompt=prompt,
+        max_tokens=max_tokens,
+        verbose=False,
+        prompt_cache=caches,
     )
     elapsed = time.time() - t0
     n_tok = len(tokenizer.encode(out)) if out else 0
@@ -183,7 +196,9 @@ def _word_overlap(a: str, b: str) -> float:
     return len(wa & wb) / len(wa | wb)
 
 
-def _run_once(model, tokenizer, arm: str, prompt: str, max_tokens: int, budget: int, seed: int) -> dict:
+def _run_once(
+    model, tokenizer, arm: str, prompt: str, max_tokens: int, budget: int, seed: int
+) -> dict:
     _reset_peak()
     if arm == "fp16":
         caches = _build_fp16_caches(model)
@@ -232,14 +247,24 @@ def _summarize(runs: list[dict]) -> dict:
     }
 
 
-def _run_prompt_length(model, tokenizer, prompt_name: str, prompt: str, max_tokens: int,
-                        repeats: int, budget: int, seed: int) -> dict:
+def _run_prompt_length(
+    model,
+    tokenizer,
+    prompt_name: str,
+    prompt: str,
+    max_tokens: int,
+    repeats: int,
+    budget: int,
+    seed: int,
+) -> dict:
     arms = ["fp16", "qfilters_off", "qfilters_on"]
     collected: dict[str, list[dict]] = {a: [] for a in arms}
     for rep in range(repeats):
         for arm in arms:
             print(f"  [{prompt_name}] rep {rep + 1}/{repeats} arm={arm}", flush=True)
-            collected[arm].append(_run_once(model, tokenizer, arm, prompt, max_tokens, budget, seed))
+            collected[arm].append(
+                _run_once(model, tokenizer, arm, prompt, max_tokens, budget, seed)
+            )
 
     summaries = {arm: _summarize(runs) for arm, runs in collected.items()}
 
@@ -266,16 +291,24 @@ def main() -> int:
     parser.add_argument("--model", default="mlx-community/Qwen3-8B-4bit")
     parser.add_argument("--max-tokens", type=int, default=120)
     parser.add_argument("--repeats", type=int, default=5)
-    parser.add_argument("--budget", type=int, default=512,
-                         help="qfilters_budget; default 512 (this method's own default). "
-                              "The short prompt (~231 tok) stays under budget -- no eviction. "
-                              "The long prompt (~2238 tok) exceeds it -- heavy eviction, by design.")
+    parser.add_argument(
+        "--budget",
+        type=int,
+        default=512,
+        help="qfilters_budget; default 512 (this method's own default). "
+        "The short prompt (~231 tok) stays under budget -- no eviction. "
+        "The long prompt (~2238 tok) exceeds it -- heavy eviction, by design.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", default=None)
     args = parser.parse_args()
 
     model_stem = args.model.split("/")[-1]
-    out_dir = Path(args.output_dir) if args.output_dir else Path("figures/qwen3_8b_qfilters_honest") / model_stem
+    out_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else Path("figures/qwen3_8b_qfilters_honest") / model_stem
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     hw = _hardware()
@@ -296,7 +329,9 @@ def main() -> int:
     layers = getattr(model, "layers", None) or model.model.layers
     margs = getattr(model, "args", None) or model.model.args
     n_layers = len(layers)
-    n_kv_heads = getattr(margs, "num_key_value_heads", None) or getattr(margs, "num_attention_heads", 1)
+    n_kv_heads = getattr(margs, "num_key_value_heads", None) or getattr(
+        margs, "num_attention_heads", 1
+    )
     head_dim = getattr(margs, "head_dim", None) or (margs.hidden_size // margs.num_attention_heads)
     print(f"  n_layers={n_layers} n_kv_heads={n_kv_heads} head_dim={head_dim} budget={args.budget}")
 
@@ -304,7 +339,14 @@ def main() -> int:
     for name, prompt in PROMPTS.items():
         print(f"\n=== prompt length: {name} ===", flush=True)
         results[name] = _run_prompt_length(
-            model, tokenizer, name, prompt, args.max_tokens, args.repeats, args.budget, args.seed,
+            model,
+            tokenizer,
+            name,
+            prompt,
+            args.max_tokens,
+            args.repeats,
+            args.budget,
+            args.seed,
         )
 
     payload = {
@@ -334,7 +376,9 @@ def main() -> int:
                 f"(min={s['peak_mb_min']:.0f} max={s['peak_mb_max']:.0f})  "
                 f"compression_x={s['compression_ratio']:.2f}"
             )
-        print(f"  qfilters_on vs qfilters_off identical text: {r['qfilters_on_vs_off_identical_text']}")
+        print(
+            f"  qfilters_on vs qfilters_off identical text: {r['qfilters_on_vs_off_identical_text']}"
+        )
         print(f"  fp16 vs qfilters word overlap: {r['fp16_vs_qfilters_word_overlap']:.2f}")
 
     return 0

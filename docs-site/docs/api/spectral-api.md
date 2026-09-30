@@ -211,7 +211,7 @@ from veloxquant_mlx.spectral.bit_allocator import water_fill_bits
 d = len(rotations[0][2])  # key_eigenvalues for layer 0
 bits_per_dim = water_fill_bits(
     eigenvalues=rotations[0][2],  # key_eigenvalues
-    total_bit_budget=3 * d,       # e.g. average of 3 bits/dim over d dims
+    total_bit_budget=3 * d,  # e.g. average of 3 bits/dim over d dims
 )
 print(bits_per_dim[:8])
 ```

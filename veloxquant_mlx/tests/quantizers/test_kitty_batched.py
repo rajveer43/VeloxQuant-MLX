@@ -64,13 +64,17 @@ def test_batched_prefill_ranking_matches_looped(
     for i in range(G):
         hi_idx, lo_idx = rank_channels_by_sensitivity(keys[i], hi_fraction)
         outs.append(
-            quantize_mixed_channels(keys[i], hi_idx, lo_idx, hi_bit=hi_bit, lo_bit=lo_bit, group_size=gs)
+            quantize_mixed_channels(
+                keys[i], hi_idx, lo_idx, hi_bit=hi_bit, lo_bit=lo_bit, group_size=gs
+            )
         )
     ref = mx.stack(outs, axis=0)
 
     variance = mx.var(keys.astype(mx.float32), axis=1)
     hi_mask = hi_mask_from_variance_batched(variance, hi_fraction)
-    batched = quantize_mixed_channels_batched(keys, hi_mask, hi_bit=hi_bit, lo_bit=lo_bit, group_size=gs)
+    batched = quantize_mixed_channels_batched(
+        keys, hi_mask, hi_bit=hi_bit, lo_bit=lo_bit, group_size=gs
+    )
 
     mx.eval(ref, batched)
     assert mx.array_equal(ref, batched).item()
@@ -114,7 +118,9 @@ def test_batched_decode_ranking_matches_looped(
     var_full = compute_running_variance(key_sum, key_sq_sum, n)
     variance = mx.broadcast_to(var_full[None, :, :], (B, H, D)).reshape(B * H, D)
     hi_mask = hi_mask_from_variance_batched(variance, hi_fraction)
-    batched = quantize_mixed_channels_batched(flat, hi_mask, hi_bit=hi_bit, lo_bit=lo_bit, group_size=gs)
+    batched = quantize_mixed_channels_batched(
+        flat, hi_mask, hi_bit=hi_bit, lo_bit=lo_bit, group_size=gs
+    )
 
     mx.eval(ref, batched)
     assert mx.array_equal(ref, batched).item()
@@ -145,7 +151,9 @@ def test_batched_decode_ranking_matches_looped_tie_heavy() -> None:
 
     variance = mx.broadcast_to(var_full[None, :, :], (B, H, D)).reshape(B * H, D)
     hi_mask = hi_mask_from_variance_batched(variance, hi_fraction)
-    batched = quantize_mixed_channels_batched(flat, hi_mask, hi_bit=hi_bit, lo_bit=lo_bit, group_size=gs)
+    batched = quantize_mixed_channels_batched(
+        flat, hi_mask, hi_bit=hi_bit, lo_bit=lo_bit, group_size=gs
+    )
 
     mx.eval(ref, batched)
     assert mx.array_equal(ref, batched).item()
