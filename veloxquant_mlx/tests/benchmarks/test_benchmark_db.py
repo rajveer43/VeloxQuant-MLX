@@ -34,8 +34,12 @@ def _record(**kw) -> BenchmarkRecord:
 
 def _model(model_id: str = "llama-7b", architecture: str = "llama") -> ModelProfile:
     return ModelProfile(
-        model_id=model_id, architecture=architecture, num_layers=32,
-        num_query_heads=32, num_kv_heads=8, head_dim=128,
+        model_id=model_id,
+        architecture=architecture,
+        num_layers=32,
+        num_query_heads=32,
+        num_kv_heads=8,
+        head_dim=128,
     )
 
 
@@ -111,9 +115,7 @@ def test_to_dict_round_trip():
 
 def test_match_score_perfect_match():
     rec = _record(chip="M4", mlx_version="0.32.2")
-    query = BenchmarkMatchQuery(
-        method="kivi", model_id="llama-7b", chip="M4", mlx_version="0.32.2"
-    )
+    query = BenchmarkMatchQuery(method="kivi", model_id="llama-7b", chip="M4", mlx_version="0.32.2")
     assert rec.match_score(query) == 1.0
 
 
@@ -149,12 +151,19 @@ def test_match_score_clamped_below_zero():
 def test_find_best_match_happy_path(tmp_path):
     db = BenchmarkDatabase(tmp_path)
     rec = db.add(
-        "kivi", "llama-7b", context_length=8192, batch_size=1,
-        memory_reduction=0.6, chip="M4", mlx_version="0.32.2",
-        architecture="llama", tags=["metal-kernel"],
+        "kivi",
+        "llama-7b",
+        context_length=8192,
+        batch_size=1,
+        memory_reduction=0.6,
+        chip="M4",
+        mlx_version="0.32.2",
+        architecture="llama",
+        tags=["metal-kernel"],
     )
     best = db.find_best_match(
-        _model(), _wl(),
+        _model(),
+        _wl(),
         methods=["kivi"],
         hardware=HardwareProfile(chip="M4", mlx_version="0.32.2"),
     )
@@ -165,7 +174,8 @@ def test_find_best_match_known_chip_penalizes_mismatch(tmp_path):
     db = BenchmarkDatabase(tmp_path)
     db.add("kivi", "llama-7b", context_length=8192, chip="M1", mlx_version="0.32.2")
     best = db.find_best_match(
-        _model(), _wl(),
+        _model(),
+        _wl(),
         methods=["kivi"],
         hardware=HardwareProfile(chip="M4", mlx_version="0.32.2"),
         threshold=0.8,
@@ -186,7 +196,10 @@ def test_threshold_low_allows_fuzzy_chip_match(tmp_path):
     db = BenchmarkDatabase(tmp_path)
     db.add("kivi", "llama-7b", context_length=1_000_000, chip="M4")
     best = db.find_best_match(
-        _model(), _wl(), methods=["kivi"], threshold=0.0,
+        _model(),
+        _wl(),
+        methods=["kivi"],
+        threshold=0.0,
         hardware=HardwareProfile(chip="M4"),
     )
     assert "kivi" in best

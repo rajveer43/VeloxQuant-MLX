@@ -248,7 +248,11 @@ Token-eviction wrapper for a standalone `KVCache`. Applied automatically by `KVC
 
 ```python
 from veloxquant_mlx.cache.registry import (
-    get_method, list_methods, all_method_names, describe_field, field_is_relevant,
+    get_method,
+    list_methods,
+    all_method_names,
+    describe_field,
+    field_is_relevant,
 )
 ```
 

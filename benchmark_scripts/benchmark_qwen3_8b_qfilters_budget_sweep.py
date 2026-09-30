@@ -82,11 +82,15 @@ def _hardware() -> dict:
     try:
         chip = subprocess.run(
             ["sysctl", "-n", "machdep.cpu.brand_string"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout.strip()
         mem = subprocess.run(
             ["sysctl", "-n", "hw.memsize"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout.strip()
         if chip:
             info["chip"] = chip
@@ -100,7 +104,9 @@ def _hardware() -> dict:
 def _gpu_contention_check() -> list[str]:
     suspects = []
     try:
-        out = subprocess.run(["ps", "-Ao", "comm"], capture_output=True, text=True, timeout=5).stdout
+        out = subprocess.run(
+            ["ps", "-Ao", "comm"], capture_output=True, text=True, timeout=5
+        ).stdout
         keywords = ("python", "ollama", "mlx", "llama", "lmstudio")
         for line in out.splitlines():
             low = line.lower()
@@ -125,7 +131,10 @@ def _build_qfilters_caches(model, budget: int, seed: int, filters_per_layer):
         if hd is None:
             hd = args.hidden_size // args.num_attention_heads
         cfg = KVCacheConfig(
-            method="qfilters", head_dim=hd, seed=seed + i, qfilters_budget=budget,
+            method="qfilters",
+            head_dim=hd,
+            seed=seed + i,
+            qfilters_budget=budget,
         )
         caches.append(QFiltersKVCache(cfg, filters=filters_per_layer[i]))
     return caches
@@ -138,12 +147,19 @@ def _build_fp16_caches(model) -> list:
     return [_FallbackCache() for _ in layers]
 
 
-def _generate(model, tokenizer, prompt: str, max_tokens: int, caches: list) -> tuple[str, int, float]:
+def _generate(
+    model, tokenizer, prompt: str, max_tokens: int, caches: list
+) -> tuple[str, int, float]:
     from mlx_lm import generate
 
     t0 = time.time()
     out = generate(
-        model, tokenizer, prompt=prompt, max_tokens=max_tokens, verbose=False, prompt_cache=caches,
+        model,
+        tokenizer,
+        prompt=prompt,
+        max_tokens=max_tokens,
+        verbose=False,
+        prompt_cache=caches,
     )
     elapsed = time.time() - t0
     n_tok = len(tokenizer.encode(out)) if out else 0
@@ -157,7 +173,9 @@ def _word_overlap(a: str, b: str) -> float:
     return len(wa & wb) / len(wa | wb)
 
 
-def _run_once(model, tokenizer, budget: int, prompt: str, max_tokens: int, seed: int, filters) -> dict:
+def _run_once(
+    model, tokenizer, budget: int, prompt: str, max_tokens: int, seed: int, filters
+) -> dict:
     _reset_peak()
     caches = _build_qfilters_caches(model, budget, seed, filters)
     text, n_tok, elapsed = _generate(model, tokenizer, prompt, max_tokens, caches)
@@ -172,8 +190,12 @@ def _run_once(model, tokenizer, budget: int, prompt: str, max_tokens: int, seed:
     compression = (full_bytes / kept_bytes) if kept_bytes else 1.0
 
     return {
-        "text": text, "tokens_generated": n_tok, "elapsed_s": elapsed,
-        "throughput_tok_s": throughput, "peak_mb": peak_mb, "compression_ratio": compression,
+        "text": text,
+        "tokens_generated": n_tok,
+        "elapsed_s": elapsed,
+        "throughput_tok_s": throughput,
+        "peak_mb": peak_mb,
+        "compression_ratio": compression,
     }
 
 
@@ -201,23 +223,33 @@ def _summarize(runs: list[dict], fp16_text: str) -> dict:
 
 def main() -> int:
     _ensure_path()
-    parser = argparse.ArgumentParser(description="Sweep qfilters_budget to find the coherence breaking point")
+    parser = argparse.ArgumentParser(
+        description="Sweep qfilters_budget to find the coherence breaking point"
+    )
     parser.add_argument("--model", default="mlx-community/Qwen3-8B-4bit")
-    parser.add_argument("--calibration", default="figures/qwen3_8b_qfilters_calibrated/qfilters_qwen3_8b.npz")
+    parser.add_argument(
+        "--calibration", default="figures/qwen3_8b_qfilters_calibrated/qfilters_qwen3_8b.npz"
+    )
     parser.add_argument("--max-tokens", type=int, default=120)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument(
-        "--budgets", type=int, nargs="+",
+        "--budgets",
+        type=int,
+        nargs="+",
         default=[512, 768, 1024, 1280, 1536, 1792, 2048, 2304, 2560],
         help="qfilters_budget values to sweep (prompt is ~2238 tokens; "
-             "values above that should show ~no eviction, compression_x~=1.0)",
+        "values above that should show ~no eviction, compression_x~=1.0)",
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", default=None)
     args = parser.parse_args()
 
     model_stem = args.model.split("/")[-1]
-    out_dir = Path(args.output_dir) if args.output_dir else Path("figures/qwen3_8b_qfilters_budget_sweep") / model_stem
+    out_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else Path("figures/qwen3_8b_qfilters_budget_sweep") / model_stem
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     hw = _hardware()
@@ -251,9 +283,13 @@ def main() -> int:
         caches = _build_fp16_caches(model)
         _reset_peak()
         text, n_tok, elapsed = _generate(model, tokenizer, LONG_PROMPT, args.max_tokens, caches)
-        fp16_runs.append({
-            "text": text, "throughput_tok_s": n_tok / max(elapsed, 1e-6), "peak_mb": _peak_mb(),
-        })
+        fp16_runs.append(
+            {
+                "text": text,
+                "throughput_tok_s": n_tok / max(elapsed, 1e-6),
+                "peak_mb": _peak_mb(),
+            }
+        )
     fp16_text = fp16_runs[0]["text"]
     fp16_tput = statistics.median(r["throughput_tok_s"] for r in fp16_runs)
     fp16_peak = statistics.median(r["peak_mb"] for r in fp16_runs)
@@ -265,7 +301,17 @@ def main() -> int:
         runs = []
         for rep in range(args.repeats):
             print(f"  rep {rep + 1}/{args.repeats}", flush=True)
-            runs.append(_run_once(model, tokenizer, budget, LONG_PROMPT, args.max_tokens, args.seed, calibration.filters))
+            runs.append(
+                _run_once(
+                    model,
+                    tokenizer,
+                    budget,
+                    LONG_PROMPT,
+                    args.max_tokens,
+                    args.seed,
+                    calibration.filters,
+                )
+            )
         s = _summarize(runs, fp16_text)
         sweep[str(budget)] = s
         print(
@@ -277,12 +323,17 @@ def main() -> int:
         )
 
     payload = {
-        "model": args.model, "prompt_tokens": prompt_tokens, "max_tokens": args.max_tokens,
-        "repeats": args.repeats, "budgets": args.budgets,
+        "model": args.model,
+        "prompt_tokens": prompt_tokens,
+        "max_tokens": args.max_tokens,
+        "repeats": args.repeats,
+        "budgets": args.budgets,
         "calibration_artifact": args.calibration,
-        "hardware": hw, "gpu_contention_suspects": contenders,
+        "hardware": hw,
+        "gpu_contention_suspects": contenders,
         "fp16": {
-            "throughput_median": fp16_tput, "peak_mb_median": fp16_peak,
+            "throughput_median": fp16_tput,
+            "peak_mb_median": fp16_peak,
             "texts": [r["text"] for r in fp16_runs],
         },
         "sweep": sweep,

@@ -175,9 +175,7 @@ def svd_compress_keys_batched(
         meets = frac >= energy_threshold  # [H, R] bool
         first_true = mx.argmax(meets.astype(mx.int32), axis=-1)  # [H]
         any_true = mx.any(meets, axis=-1)
-        raw_rank = mx.where(
-            any_true, first_true + 1, mx.full((H,), r_max_possible, dtype=mx.int32)
-        )
+        raw_rank = mx.where(any_true, first_true + 1, mx.full((H,), r_max_possible, dtype=mx.int32))
         raw_rank = mx.where(is_near_zero, mx.ones_like(raw_rank), raw_rank)
         mx.eval(raw_rank)
         raw_rank_list: list[int] = raw_rank.tolist()  # type: ignore[assignment]

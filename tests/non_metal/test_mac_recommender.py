@@ -106,9 +106,7 @@ def test_cli_argparse_choices_match_recommender():
     # Regression test for issue #391: cli/recommend.py's argparse choices=
     # for --chip and --ram-gb must not drift from mac_recommender.py's own
     # ChipFamily / ALLOWED_RAM_GB.
-    _CLI_PATH = (
-        Path(__file__).resolve().parents[2] / "veloxquant_mlx" / "cli" / "recommend.py"
-    )
+    _CLI_PATH = Path(__file__).resolve().parents[2] / "veloxquant_mlx" / "cli" / "recommend.py"
     _cli_spec = importlib.util.spec_from_file_location("recommend_cli", _CLI_PATH)
     assert _cli_spec and _cli_spec.loader
     cli_mod = importlib.util.module_from_spec(_cli_spec)

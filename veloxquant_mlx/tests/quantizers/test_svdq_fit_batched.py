@@ -126,7 +126,10 @@ def test_real_cache_prefill_matches_reference_loop(H, seed):
     # per-head algorithm), then project/quantize/reconstruct exactly as the
     # cache's own (already-batched, #562) apply path does — isolating this
     # test to the fit step, which is what #569 batches.
-    from veloxquant_mlx.quantizers.svdq import DEFAULT_BIT_SCHEDULE, project_quantize_reconstruct_batched
+    from veloxquant_mlx.quantizers.svdq import (
+        DEFAULT_BIT_SCHEDULE,
+        project_quantize_reconstruct_batched,
+    )
 
     V_list, K_mean_list = [], []
     for h in range(H):

@@ -109,11 +109,15 @@ def _hardware() -> dict:
     try:
         chip = subprocess.run(
             ["sysctl", "-n", "machdep.cpu.brand_string"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout.strip()
         mem = subprocess.run(
             ["sysctl", "-n", "hw.memsize"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout.strip()
         if chip:
             info["chip"] = chip
@@ -127,7 +131,9 @@ def _hardware() -> dict:
 def _gpu_contention_check() -> list[str]:
     suspects = []
     try:
-        out = subprocess.run(["ps", "-Ao", "comm"], capture_output=True, text=True, timeout=5).stdout
+        out = subprocess.run(
+            ["ps", "-Ao", "comm"], capture_output=True, text=True, timeout=5
+        ).stdout
         keywords = ("python", "ollama", "mlx", "llama", "lmstudio")
         for line in out.splitlines():
             low = line.lower()
@@ -139,8 +145,14 @@ def _gpu_contention_check() -> list[str]:
 
 
 def _calibrate_artifacts(
-    head_dim: int, n_heads: int, key_bits: int, value_bits: int,
-    key_sub_dim: int, value_sub_dim: int, cache_dir: Path, seed: int = 42,
+    head_dim: int,
+    n_heads: int,
+    key_bits: int,
+    value_bits: int,
+    key_sub_dim: int,
+    value_sub_dim: int,
+    cache_dir: Path,
+    seed: int = 42,
 ) -> dict:
     """Synthetic-Gaussian codebook training, reused from benchmark_vecinfer.py.
 
@@ -173,12 +185,25 @@ def _calibrate_artifacts(
     val_cb = train_codebook(v_subs[:n_train], 2**value_bits, max_iter=15, seed=seed + 1)
 
     cache_dir.mkdir(parents=True, exist_ok=True)
-    np.savez(cache_path, smooth=np.asarray(smooth), key_cb=np.asarray(key_cb), value_cb=np.asarray(val_cb))
+    np.savez(
+        cache_path,
+        smooth=np.asarray(smooth),
+        key_cb=np.asarray(key_cb),
+        value_cb=np.asarray(val_cb),
+    )
     return {"smooth": smooth, "key_codebook": key_cb, "value_codebook": val_cb}
 
 
-def _build_vecinfer_caches(model, artifacts: dict, key_bits: int, value_bits: int,
-                            key_sub_dim: int, value_sub_dim: int, seed: int, use_metal) -> list:
+def _build_vecinfer_caches(
+    model,
+    artifacts: dict,
+    key_bits: int,
+    value_bits: int,
+    key_sub_dim: int,
+    value_sub_dim: int,
+    seed: int,
+    use_metal,
+) -> list:
     from veloxquant_mlx import KVCacheConfig
     from veloxquant_mlx.cache.vecinfer_cache import VecInferKVCache
 
@@ -215,27 +240,56 @@ def _build_fp16_caches(model) -> list:
     return [_FallbackCache() for _ in layers]
 
 
-def _generate(model, tokenizer, prompt: str, max_tokens: int, caches: list) -> tuple[str, int, float]:
+def _generate(
+    model, tokenizer, prompt: str, max_tokens: int, caches: list
+) -> tuple[str, int, float]:
     from mlx_lm import generate
 
     t0 = time.time()
     out = generate(
-        model, tokenizer, prompt=prompt, max_tokens=max_tokens, verbose=False, prompt_cache=caches,
+        model,
+        tokenizer,
+        prompt=prompt,
+        max_tokens=max_tokens,
+        verbose=False,
+        prompt_cache=caches,
     )
     elapsed = time.time() - t0
     n_tok = len(tokenizer.encode(out)) if out else 0
     return out, n_tok, elapsed
 
 
-def _run_once(model, tokenizer, arm: str, prompt: str, max_tokens: int, artifacts: dict,
-              key_bits: int, value_bits: int, key_sub_dim: int, value_sub_dim: int, seed: int) -> dict:
+def _run_once(
+    model,
+    tokenizer,
+    arm: str,
+    prompt: str,
+    max_tokens: int,
+    artifacts: dict,
+    key_bits: int,
+    value_bits: int,
+    key_sub_dim: int,
+    value_sub_dim: int,
+    seed: int,
+) -> dict:
     _reset_peak()
     if arm == "fp16":
         caches = _build_fp16_caches(model)
     elif arm == "vecinfer_off":
-        caches = _build_vecinfer_caches(model, artifacts, key_bits, value_bits, key_sub_dim, value_sub_dim, seed, use_metal=False)
+        caches = _build_vecinfer_caches(
+            model,
+            artifacts,
+            key_bits,
+            value_bits,
+            key_sub_dim,
+            value_sub_dim,
+            seed,
+            use_metal=False,
+        )
     elif arm == "vecinfer_on":
-        caches = _build_vecinfer_caches(model, artifacts, key_bits, value_bits, key_sub_dim, value_sub_dim, seed, use_metal=True)
+        caches = _build_vecinfer_caches(
+            model, artifacts, key_bits, value_bits, key_sub_dim, value_sub_dim, seed, use_metal=True
+        )
     else:
         raise ValueError(arm)
 
@@ -251,8 +305,13 @@ def _run_once(model, tokenizer, arm: str, prompt: str, max_tokens: int, artifact
     key_ratio = (key_fp16 / key_compressed) if key_compressed else 1.0
 
     return {
-        "arm": arm, "text": text, "tokens_generated": n_tok, "elapsed_s": elapsed,
-        "throughput_tok_s": throughput, "peak_mb": peak_mb, "key_compression": key_ratio,
+        "arm": arm,
+        "text": text,
+        "tokens_generated": n_tok,
+        "elapsed_s": elapsed,
+        "throughput_tok_s": throughput,
+        "peak_mb": peak_mb,
+        "key_compression": key_ratio,
     }
 
 
@@ -272,16 +331,40 @@ def _summarize(runs: list[dict]) -> dict:
     }
 
 
-def _run_prompt_length(model, tokenizer, prompt_name: str, prompt: str, max_tokens: int, repeats: int,
-                        artifacts: dict, key_bits: int, value_bits: int, key_sub_dim: int,
-                        value_sub_dim: int, seed: int) -> dict:
+def _run_prompt_length(
+    model,
+    tokenizer,
+    prompt_name: str,
+    prompt: str,
+    max_tokens: int,
+    repeats: int,
+    artifacts: dict,
+    key_bits: int,
+    value_bits: int,
+    key_sub_dim: int,
+    value_sub_dim: int,
+    seed: int,
+) -> dict:
     arms = ["fp16", "vecinfer_off", "vecinfer_on"]
     collected: dict[str, list[dict]] = {a: [] for a in arms}
     for rep in range(repeats):
         for arm in arms:
             print(f"  [{prompt_name}] rep {rep + 1}/{repeats} arm={arm}", flush=True)
-            collected[arm].append(_run_once(model, tokenizer, arm, prompt, max_tokens, artifacts,
-                                             key_bits, value_bits, key_sub_dim, value_sub_dim, seed))
+            collected[arm].append(
+                _run_once(
+                    model,
+                    tokenizer,
+                    arm,
+                    prompt,
+                    max_tokens,
+                    artifacts,
+                    key_bits,
+                    value_bits,
+                    key_sub_dim,
+                    value_sub_dim,
+                    seed,
+                )
+            )
 
     summaries = {arm: _summarize(runs) for arm, runs in collected.items()}
     off_texts = set(summaries["vecinfer_off"]["texts"])
@@ -302,8 +385,18 @@ def main() -> int:
     parser.add_argument("--model", default="mlx-community/Qwen3-8B-4bit")
     parser.add_argument("--max-tokens", type=int, default=120)
     parser.add_argument("--repeats", type=int, default=5)
-    parser.add_argument("--key-bits", type=int, default=12, help="key_codebook_bits; default 12 (this method's own default)")
-    parser.add_argument("--value-bits", type=int, default=8, help="value_codebook_bits; default 8 (this method's own default)")
+    parser.add_argument(
+        "--key-bits",
+        type=int,
+        default=12,
+        help="key_codebook_bits; default 12 (this method's own default)",
+    )
+    parser.add_argument(
+        "--value-bits",
+        type=int,
+        default=8,
+        help="value_codebook_bits; default 8 (this method's own default)",
+    )
     parser.add_argument("--key-sub-dim", type=int, default=4)
     parser.add_argument("--value-sub-dim", type=int, default=8)
     parser.add_argument("--seed", type=int, default=42)
@@ -312,9 +405,17 @@ def main() -> int:
     args = parser.parse_args()
 
     model_stem = args.model.split("/")[-1]
-    out_dir = Path(args.output_dir) if args.output_dir else Path("figures/qwen3_8b_vecinfer_honest") / model_stem
+    out_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else Path("figures/qwen3_8b_vecinfer_honest") / model_stem
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
-    calib_dir = Path(args.calib_dir) if args.calib_dir else Path.home() / ".cache" / "veloxquant" / "vecinfer"
+    calib_dir = (
+        Path(args.calib_dir)
+        if args.calib_dir
+        else Path.home() / ".cache" / "veloxquant" / "vecinfer"
+    )
 
     hw = _hardware()
     contenders = _gpu_contention_check()
@@ -334,30 +435,56 @@ def main() -> int:
     layers = getattr(model, "layers", None) or model.model.layers
     margs = getattr(model, "args", None) or model.model.args
     n_layers = len(layers)
-    n_kv_heads = getattr(margs, "num_key_value_heads", None) or getattr(margs, "num_attention_heads", 1)
+    n_kv_heads = getattr(margs, "num_key_value_heads", None) or getattr(
+        margs, "num_attention_heads", 1
+    )
     head_dim = getattr(margs, "head_dim", None) or (margs.hidden_size // margs.num_attention_heads)
     print(f"  n_layers={n_layers} n_kv_heads={n_kv_heads} head_dim={head_dim}")
 
     artifacts = _calibrate_artifacts(
-        head_dim, n_kv_heads, args.key_bits, args.value_bits,
-        args.key_sub_dim, args.value_sub_dim, calib_dir, args.seed,
+        head_dim,
+        n_kv_heads,
+        args.key_bits,
+        args.value_bits,
+        args.key_sub_dim,
+        args.value_sub_dim,
+        calib_dir,
+        args.seed,
     )
 
     results = {}
     for name, prompt in PROMPTS.items():
         print(f"\n=== prompt length: {name} ===", flush=True)
         results[name] = _run_prompt_length(
-            model, tokenizer, name, prompt, args.max_tokens, args.repeats,
-            artifacts, args.key_bits, args.value_bits, args.key_sub_dim, args.value_sub_dim, args.seed,
+            model,
+            tokenizer,
+            name,
+            prompt,
+            args.max_tokens,
+            args.repeats,
+            artifacts,
+            args.key_bits,
+            args.value_bits,
+            args.key_sub_dim,
+            args.value_sub_dim,
+            args.seed,
         )
 
     payload = {
-        "model": args.model, "n_layers": n_layers, "n_kv_heads": n_kv_heads, "head_dim": head_dim,
-        "key_codebook_bits": args.key_bits, "value_codebook_bits": args.value_bits,
-        "key_sub_dim": args.key_sub_dim, "value_sub_dim": args.value_sub_dim,
+        "model": args.model,
+        "n_layers": n_layers,
+        "n_kv_heads": n_kv_heads,
+        "head_dim": head_dim,
+        "key_codebook_bits": args.key_bits,
+        "value_codebook_bits": args.value_bits,
+        "key_sub_dim": args.key_sub_dim,
+        "value_sub_dim": args.value_sub_dim,
         "calibration": "synthetic-gaussian (NOT real model activations, see script docstring)",
-        "max_tokens": args.max_tokens, "repeats": args.repeats,
-        "hardware": hw, "gpu_contention_suspects": contenders, "results": results,
+        "max_tokens": args.max_tokens,
+        "repeats": args.repeats,
+        "hardware": hw,
+        "gpu_contention_suspects": contenders,
+        "results": results,
     }
     json_path = out_dir / "results.json"
     with open(json_path, "w") as f:
@@ -374,7 +501,9 @@ def main() -> int:
                 f"(min={s['peak_mb_min']:.0f} max={s['peak_mb_max']:.0f})  "
                 f"key_x={s['key_compression']:.2f}"
             )
-        print(f"  vecinfer_on vs vecinfer_off identical text: {r['vecinfer_on_vs_off_identical_text']}")
+        print(
+            f"  vecinfer_on vs vecinfer_off identical text: {r['vecinfer_on_vs_off_identical_text']}"
+        )
 
     return 0
 

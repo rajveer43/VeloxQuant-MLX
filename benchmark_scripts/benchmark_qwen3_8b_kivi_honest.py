@@ -66,8 +66,7 @@ _PASSAGE = (
 # Two prompt lengths -- short and long -- so a single short-context reading
 # can't stand in for the whole picture (see module docstring point 3).
 PROMPTS = {
-    "short": (_PASSAGE * 4)
-    + "\n\nSummarize the passage above in two sentences.",
+    "short": (_PASSAGE * 4) + "\n\nSummarize the passage above in two sentences.",
     "long": (_PASSAGE * 40)
     + (
         "\n\nGiven the passage above, explain in simple terms why the KV cache "
@@ -173,7 +172,9 @@ def _build_fp16_caches(model) -> list:
     return [_FallbackCache() for _ in layers]
 
 
-def _generate(model, tokenizer, prompt: str, max_tokens: int, caches: list) -> tuple[str, int, float]:
+def _generate(
+    model, tokenizer, prompt: str, max_tokens: int, caches: list
+) -> tuple[str, int, float]:
     from mlx_lm import generate
 
     t0 = time.time()
@@ -190,8 +191,16 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int, caches: list) -> t
     return out, n_tok, elapsed
 
 
-def _run_once(model, tokenizer, arm: str, prompt: str, max_tokens: int, b: int,
-              group_size: int, residual_length: int) -> dict:
+def _run_once(
+    model,
+    tokenizer,
+    arm: str,
+    prompt: str,
+    max_tokens: int,
+    b: int,
+    group_size: int,
+    residual_length: int,
+) -> dict:
     _reset_peak()
     if arm == "fp16":
         caches = _build_fp16_caches(model)
@@ -246,8 +255,17 @@ def _summarize(runs: list[dict]) -> dict:
     }
 
 
-def _run_prompt_length(model, tokenizer, prompt_name: str, prompt: str, max_tokens: int,
-                        repeats: int, b: int, group_size: int, residual_length: int) -> dict:
+def _run_prompt_length(
+    model,
+    tokenizer,
+    prompt_name: str,
+    prompt: str,
+    max_tokens: int,
+    repeats: int,
+    b: int,
+    group_size: int,
+    residual_length: int,
+) -> dict:
     arms = ["fp16", "kivi_off", "kivi_on"]
     # Interleaved: one full round through all arms, repeated `repeats` times,
     # rather than running all repeats of one arm before moving to the next.
@@ -284,16 +302,24 @@ def main() -> int:
     parser.add_argument("--model", default="mlx-community/Qwen3-8B-4bit")
     parser.add_argument("--max-tokens", type=int, default=120)
     parser.add_argument("--repeats", type=int, default=5)
-    parser.add_argument("--bits", type=int, default=4,
-                         help="KIVI bit_width_inlier; default 4, NOT the KIVI-default 2 "
-                              "(b=2 is documented unsafe for long decode -- see module docstring)")
+    parser.add_argument(
+        "--bits",
+        type=int,
+        default=4,
+        help="KIVI bit_width_inlier; default 4, NOT the KIVI-default 2 "
+        "(b=2 is documented unsafe for long decode -- see module docstring)",
+    )
     parser.add_argument("--group-size", type=int, default=32)
     parser.add_argument("--residual-length", type=int, default=32)
     parser.add_argument("--output-dir", default=None)
     args = parser.parse_args()
 
     model_stem = args.model.split("/")[-1]
-    out_dir = Path(args.output_dir) if args.output_dir else Path("figures/qwen3_8b_kivi_honest") / model_stem
+    out_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else Path("figures/qwen3_8b_kivi_honest") / model_stem
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     hw = _hardware()
@@ -314,7 +340,9 @@ def main() -> int:
     layers = getattr(model, "layers", None) or model.model.layers
     margs = getattr(model, "args", None) or model.model.args
     n_layers = len(layers)
-    n_kv_heads = getattr(margs, "num_key_value_heads", None) or getattr(margs, "num_attention_heads", 1)
+    n_kv_heads = getattr(margs, "num_key_value_heads", None) or getattr(
+        margs, "num_attention_heads", 1
+    )
     head_dim = getattr(margs, "head_dim", None) or (margs.hidden_size // margs.num_attention_heads)
     print(f"  n_layers={n_layers} n_kv_heads={n_kv_heads} head_dim={head_dim}")
 
@@ -322,8 +350,15 @@ def main() -> int:
     for name, prompt in PROMPTS.items():
         print(f"\n=== prompt length: {name} ===", flush=True)
         results[name] = _run_prompt_length(
-            model, tokenizer, name, prompt, args.max_tokens, args.repeats,
-            args.bits, args.group_size, args.residual_length,
+            model,
+            tokenizer,
+            name,
+            prompt,
+            args.max_tokens,
+            args.repeats,
+            args.bits,
+            args.group_size,
+            args.residual_length,
         )
 
     payload = {

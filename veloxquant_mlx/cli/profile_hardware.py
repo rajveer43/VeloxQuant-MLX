@@ -53,16 +53,20 @@ def main(argv: list[str] | None = None) -> None:
     print(f"  chip:              {hw.chip}")
     print(f"  chip generation:   {hw.chip_generation or 'unknown'}")
     print(
-        f"  total memory:      {hw.total_memory_bytes/1024**3:.2f} GiB"
+        f"  total memory:      {hw.total_memory_bytes / 1024**3:.2f} GiB"
         if hw.total_memory_bytes
         else "  total memory:      unknown"
     )
     print(
-        f"  available memory:  {hw.available_memory_bytes/1024**3:.2f} GiB"
+        f"  available memory:  {hw.available_memory_bytes / 1024**3:.2f} GiB"
         if hw.available_memory_bytes
         else "  available memory:  unknown"
     )
-    print(f"  nominal bandwidth: {hw.bandwidth_gbps} GB/s" if hw.bandwidth_gbps else "  nominal bandwidth: unknown")
+    print(
+        f"  nominal bandwidth: {hw.bandwidth_gbps} GB/s"
+        if hw.bandwidth_gbps
+        else "  nominal bandwidth: unknown"
+    )
     print(f"  MLX version:       {hw.mlx_version or 'unknown'}")
     print(f"  macOS version:     {hw.macos_version or 'unknown'}")
     print(f"  Metal available:   {hw.metal_available}")

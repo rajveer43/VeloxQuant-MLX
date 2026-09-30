@@ -711,7 +711,9 @@ def nestedkv_compress_prefill_batched(
     n_sink_eff = min(n_sink, S)
     budget_eff = max(n_sink_eff, min(budget, S))
 
-    scores = nestedkv_score_batched(keys.astype(mx.float32), window=window, beta=beta, tau=tau, kappa=kappa)
+    scores = nestedkv_score_batched(
+        keys.astype(mx.float32), window=window, beta=beta, tau=tau, kappa=kappa
+    )
 
     if n_sink_eff > 0:
         sink_inf = mx.full((bh, n_sink_eff), float("inf"), dtype=mx.float32)

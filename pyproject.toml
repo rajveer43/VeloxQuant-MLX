@@ -67,7 +67,7 @@ test = [
 dev = [
     "VeloxQuant-MLX[test]",
     "pre-commit>=3.7",
-    "ruff>=0.6",
+    "ruff==0.16.7",
     "mypy>=1.11",
 ]
 # Only the release workflow (.github/workflows/release.yml) needs this group.

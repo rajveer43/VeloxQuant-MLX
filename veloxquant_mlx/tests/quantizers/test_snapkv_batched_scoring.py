@@ -192,11 +192,23 @@ def test_compress_batched_end_to_end_parity(
 ) -> None:
     K, V = _rand_kv_batch(B, H, S, D, seed=99)
     k_loop, v_loop, idx_loop = _snapkv_compress_batched(
-        K, V, budget, obs_window, n_sink, backend="mlx", batched_scoring=False,
+        K,
+        V,
+        budget,
+        obs_window,
+        n_sink,
+        backend="mlx",
+        batched_scoring=False,
         return_indices=True,
     )
     k_batch, v_batch, idx_batch = _snapkv_compress_batched(
-        K, V, budget, obs_window, n_sink, backend="mlx", batched_scoring=True,
+        K,
+        V,
+        budget,
+        obs_window,
+        n_sink,
+        backend="mlx",
+        batched_scoring=True,
         return_indices=True,
     )
     assert idx_loop.tolist() == idx_batch.tolist()

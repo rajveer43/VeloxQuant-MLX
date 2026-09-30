@@ -41,9 +41,7 @@ def default_benchmark_dir() -> Path:
     return Path(cache_root) / "veloxquant" / "benchmarks"
 
 
-def benchmark_fingerprint(
-    method: str, model_id: str, context_length: int, batch_size: int
-) -> str:
+def benchmark_fingerprint(method: str, model_id: str, context_length: int, batch_size: int) -> str:
     """Stable record id: same method+model+workload shape -> same key.
 
     Environment is deliberately *not* in the fingerprint, because a record on
@@ -94,9 +92,7 @@ class BenchmarkRecord:
     mlx_version: str = "unknown"
     macos_version: str = "unknown"
     workload: WorkloadProfile = field(default_factory=WorkloadProfile)
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     source: str = "manual"
     tags: list[str] = field(default_factory=list)
 
@@ -292,9 +288,9 @@ class BenchmarkDatabase:
             version fields on the query so chip dissimilarity is *penalized*
             rather than ignored.
         """
-        wanted = set(methods) if methods is not None else {
-            rec.method for rec in self._records.values()
-        }
+        wanted = (
+            set(methods) if methods is not None else {rec.method for rec in self._records.values()}
+        )
         chip = mlx_version = macos_version = "unknown"
         if hardware is not None:
             chip = getattr(hardware, "chip", "unknown") or "unknown"
@@ -365,9 +361,7 @@ class BenchmarkDatabase:
             memory_reduction = 1.0
         if architecture is None and model is not None:
             architecture = model.architecture
-        wl = workload or WorkloadProfile(
-            context_length=context_length, batch_size=batch_size
-        )
+        wl = workload or WorkloadProfile(context_length=context_length, batch_size=batch_size)
         rid = benchmark_fingerprint(method, model_id, context_length, batch_size)
         rec = BenchmarkRecord(
             id=rid,
