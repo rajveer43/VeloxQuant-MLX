@@ -26,7 +26,6 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,9 +42,17 @@ def _warn(msg: str) -> None:
 
 
 def _current_version() -> str:
-    with open(PYPROJECT, "rb") as f:
-        data = tomllib.load(f)
-    return data["project"]["version"]
+    # Parsed with `re`, not `tomllib`: this module is exec'd at collection
+    # time by veloxquant_mlx/tests/core/test_sync_release_badges.py, which
+    # runs on the 3.10 leg of the CI matrix -- `tomllib` is stdlib only from
+    # 3.11 (PEP 680), and a bare `import tomllib` ImportErrors at collection
+    # on exactly that job (#597). Pulling in a `tomli` backport purely for
+    # one scalar field would add a dependency to defend a test-collection
+    # path the script itself never runs (the release workflow pins 3.12).
+    text = PYPROJECT.read_text()
+    m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
+    assert m, "Could not find `version` under [project] in pyproject.toml."
+    return m.group(1)
 
 
 def _live_test_count() -> int:
