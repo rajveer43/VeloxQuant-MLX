@@ -397,10 +397,11 @@ def test_state_tracks_positions_and_next_pos() -> None:
     assert st.next_pos == 3
 
 
-def test_positions_stay_contiguous_and_sorted_under_stress() -> None:
-    """Across many steps, kept positions never have gaps or duplicates, and
-    n_sink leading positions never move — the invariant the RoPE remap must
-    preserve for attention to see a consistent contiguous cache."""
+def test_positions_stay_sorted_with_no_duplicates_under_stress() -> None:
+    """Across many steps, kept positions never have duplicates and sinks
+    never move. Unlike before #609, gaps are EXPECTED once an interior
+    eviction happens — positions are the true, never-renumbered token
+    positions, not a contiguous re-indexed range."""
     D = 16
     n_sink = 2
     budget = 6
@@ -411,27 +412,25 @@ def test_positions_stay_contiguous_and_sorted_under_stress() -> None:
         pos = st.positions.tolist()
         assert pos == sorted(pos), f"step {i}: not sorted: {pos}"
         assert len(set(pos)) == len(pos), f"step {i}: duplicate: {pos}"
-        diffs = [pos[j + 1] - pos[j] for j in range(len(pos) - 1)]
-        assert all(d == 1 for d in diffs), f"step {i}: gap in kept positions: {pos}"
         if len(pos) >= n_sink:
             assert pos[:n_sink] == list(range(n_sink)), f"step {i}: sinks moved: {pos}"
 
 
-def test_interior_eviction_gap_remap_recovers_exact_original_keys() -> None:
-    """The core correctness property of the eviction+remap logic in
-    h2o_update: when a row is dropped from the INTERIOR of the kept set
-    (rows after it shift down by one position and get re-rotated; rows
-    before it are untouched), every surviving key, de-rotated at its new
-    stored position, must exactly recover its original pre-rotation value.
+def test_interior_eviction_leaves_survivors_exactly_unrotated() -> None:
+    """Core correctness property post-#609: when a row is dropped from the
+    INTERIOR of the kept set, every surviving key is returned bit-identical
+    to how it arrived — no re-rotation, no renumbering. Renumbering used to
+    happen here (superseded by #609): it kept the *stored index* contiguous
+    but silently changed each survivor's true distance from any future
+    query, which is the actual bug this test now guards against.
 
     A brand-new arrival always starts at score 0.0 in h2o_update, which
     makes it (almost) always the eviction target in practice — see
     test_new_token_almost_always_evicted_first — so genuine interior
     eviction from realistic inputs is rare. This test instead exercises
-    h2o_update's exact eviction+remap code path (mirroring its
-    keep_indices/shift/rope_remap_positions logic line-for-line) directly on
-    a constructed 5-token state, to verify that logic's correctness
-    independent of how often it fires in practice.
+    h2o_update's exact eviction code path directly on a constructed
+    5-token state, to verify correctness independent of how often interior
+    eviction fires in practice.
     """
     D = 16
     rng = np.random.default_rng(0)
@@ -443,34 +442,28 @@ def test_interior_eviction_gap_remap_recovers_exact_original_keys() -> None:
     positions = mx.arange(5, dtype=mx.int32)
     rotated_keys = a2ats_apply_exact_rope(raw_keys, positions, base=10000.0)
 
-    # Evict the interior token at index 2 (position 2): same keep_indices /
-    # shift / remap steps h2o_update's eviction branch performs.
+    # Evict the interior token at index 2 (position 2): same keep_indices
+    # step h2o_update's eviction branch performs.
     evict_idx = 2
     keep_indices = [j for j in range(5) if j != evict_idx]
-    kept_keys_before = rotated_keys[keep_indices]
-    old_positions_kept = positions[keep_indices]
-    evicted_pos = int(positions[evict_idx].item())
-    shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
-    new_positions = old_positions_kept + shift
-    remapped_keys = rope_remap_positions(
-        kept_keys_before.astype(mx.float32), old_positions_kept, new_positions, base=10000.0
-    )
+    kept_keys = rotated_keys[keep_indices]
+    kept_positions = positions[keep_indices]
 
-    # Positions before the gap (0, 1) are untouched; after it (3, 4 -> 2, 3).
-    assert new_positions.tolist() == [0, 1, 2, 3]
+    # Positions are untouched, including the gap left at position 2 — no
+    # renumbering to [0, 1, 2, 3].
+    assert kept_positions.tolist() == [0, 1, 3, 4]
 
-    # Rows before the gap must be numerically unchanged (no re-rotation
-    # needed — this is the "minimal disturbance" property).
-    for row in (0, 1):
-        err = float(
-            mx.max(mx.abs(remapped_keys[row] - kept_keys_before[row].astype(mx.float32))).item()
-        )
-        assert err < 1e-3, f"row {row} before the gap should be untouched, err={err}"
+    # Every surviving key must be numerically IDENTICAL to the key that
+    # arrived — dropping a row must not change any other row's rotation.
+    for row in range(4):
+        err = float(mx.max(mx.abs(kept_keys[row] - rotated_keys[keep_indices[row]])).item())
+        assert err < 1e-6, f"row {row}: survivor key changed by eviction, err={err}"
 
-    # Every surviving key, de-rotated at its NEW position, must recover its
-    # exact original pre-rotation value.
+    # Sanity: every survivor, de-rotated at its OWN true position, must
+    # still recover its original pre-rotation value (RoPE round-trip,
+    # nothing to do with eviction).
     recovered = rope_remap_positions(
-        remapped_keys, new_positions, mx.zeros_like(new_positions), base=10000.0
+        kept_keys, kept_positions, mx.zeros_like(kept_positions), base=10000.0
     )
     kept_fingerprints = np.array(raw_values.astype(mx.float32))[keep_indices, 0]
     assert 3.0 not in kept_fingerprints  # token originally at index 2 (fp=3.0) is gone
@@ -478,6 +471,39 @@ def test_interior_eviction_gap_remap_recovers_exact_original_keys() -> None:
         orig_idx = int(round(fp)) - 1
         err = float(mx.max(mx.abs(recovered[row] - raw_keys[orig_idx])).item())
         assert err < 1e-2, f"row {row} (orig token {orig_idx}): recon error {err}"
+
+
+def test_h2o_cache_survivors_match_arrived_keys_after_eviction() -> None:
+    """End-to-end regression for #609 (mirrors the issue's own repro): after
+    H2OKVCache evicts through a 48-token prefill plus one decode step, every
+    surviving row's returned key must equal the key that actually arrived
+    for that token — not a re-rotated substitute. Before the fix, most
+    survivors failed this (19/25 differing, max error ~1.7 relative)."""
+    from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
+
+    D, N = 32, 48
+    rng = np.random.default_rng(0)
+    raw = mx.array(rng.standard_normal((1, 1, N, D)).astype(np.float32))
+    k_rot = a2ats_apply_exact_rope(
+        raw[0, 0], mx.arange(N, dtype=mx.int32), base=10000.0
+    )[None, None].astype(mx.float16)
+    v = mx.arange(N, dtype=mx.float32)[None, None, :, None]
+    v = mx.broadcast_to(v, (1, 1, N, D)).astype(mx.float16)
+
+    cache = KVCacheFactory.create(
+        KVCacheConfig(method="h2o", head_dim=D, h2o_budget=24, h2o_n_sink=4)
+    )
+    cache.update_and_fetch(k_rot, v)
+
+    stored_ids = np.array(cache.values[0, 0, :, 0].astype(mx.float32)).round().astype(int)
+    stored_keys = cache.keys[0, 0].astype(mx.float32)
+    arrived_keys = k_rot[0, 0].astype(mx.float32)
+    for row, tok_id in enumerate(stored_ids.tolist()):
+        err = float(mx.max(mx.abs(stored_keys[row] - arrived_keys[tok_id])).item())
+        assert err < 1e-2, (
+            f"row {row} (token {tok_id}): stored key does not match the key that "
+            f"arrived for that token, err={err} — survivor was re-rotated"
+        )
 
 
 def test_new_token_almost_always_evicted_first() -> None:

@@ -92,39 +92,40 @@ distinction none of the methods above can make by construction.
    latency reduction** under aggressive compression) are the **paper's, on
    trained models** — never quoted as this repo's own.
 
-## :warning: Known limitation on Llama-3-family models — read before using
+## RoPE-position bug history (fixed)
 
 Real end-to-end generation testing on `Llama-3.2-1B-Instruct` surfaced (and
-partially fixed) a RoPE-position bug:
+eventually fully fixed) a RoPE-position bug, in two parts:
 
 - **Fixed**: `mlx_lm`'s attention module rotates the next query and incoming
   key using `self.rope(x, offset=cache.offset)` — computed *before*
   `update_and_fetch` is ever called. The cache used to reset `self.offset` to
   the post-eviction *kept-row count* every call, which undercounts the true
   absolute sequence position the moment any eviction has happened. This is
-  now fixed the same way [H2O](../algorithms/h2o) already fixes it:
-  `self.offset` tracks the true absolute step count, and surviving keys are
-  re-rotated on eviction to stay consistent with their shifted storage
-  index. Verified via a synthetic reproduction of `mlx_lm.generate()`'s
-  exact bulk-prefill-then-final-token call split.
-- **Not yet fixed**: that re-rotation uses plain RoPE math
-  (`inv_freq = base^(-i/half)`). Llama-3-family models use
-  `rope_scaling={"rope_type": "llama3", ...}` — a piecewise,
-  per-frequency-band rescaling that plain RoPE does not reproduce, no matter
-  what `curdkv_rope_base` is set to. Confirmed on a real Llama-3.2-1B run:
-  every kept row an eviction re-rotated came out numerically wrong, and
-  generation quality remained degraded even after the offset-desync fix
-  above. Rows an eviction never touched are unaffected and correct.
-  **This affects [H2O](../algorithms/h2o) identically** — same underlying
-  primitive (`rope_remap_positions`), same untested-on-Llama3-scaling gap;
-  not introduced by this fix, but newly confirmed by it.
-
-Practical implication: at the time of writing, expect degraded output
-quality from CurDKV-adapted (and H2O-adapted) whenever eviction actually
-occurs on a Llama-3-family model, independent of budget size — this is a
-correctness gap in RoPE remapping, not a property of the eviction
-mechanism itself. See
-[#148](https://github.com/rajveer43/VeloxQuant-MLX/issues/148) for status.
+  fixed the same way [H2O](../algorithms/h2o) fixes it: `self.offset` now
+  tracks the true absolute step count. Verified via a synthetic reproduction
+  of `mlx_lm.generate()`'s exact bulk-prefill-then-final-token call split.
+- **Fixed, superseding an earlier sub-fix that was itself wrong
+  ([#609](https://github.com/rajveer43/VeloxQuant-MLX/issues/609))**: an
+  earlier version of the fix above additionally re-rotated surviving keys on
+  eviction, to keep their baked-in rotation consistent with a renumbered,
+  gap-free storage index. That re-rotation used plain RoPE math
+  (`inv_freq = base^(-i/half)`), which doesn't reproduce Llama-3-family
+  models' `rope_scaling={"rope_type": "llama3", ...}` piecewise rescaling —
+  confirmed on a real Llama-3.2-1B run, every kept row an eviction
+  re-rotated came out numerically wrong regardless of `curdkv_rope_base`
+  (tracked as [#148](https://github.com/rajveer43/VeloxQuant-MLX/issues/148)).
+  But the re-rotation itself turned out to be the deeper bug, independent of
+  Llama-3 scaling: once `self.offset` reports the *true* step count,
+  renumbering a survivor changes its true distance from every future query,
+  corrupting the RoPE relative angle the offset fix above was meant to
+  protect. Fixed by removing the re-rotation entirely — eviction now only
+  drops the evicted row, and every survivor keeps the exact position and
+  rotation it arrived with (matching how TOVA, KNorm, and Q-Filters already
+  handle eviction in this repo). This also closes #148 for survivors: there
+  is nothing left to re-rotate, so the Llama-3 scaling gap no longer
+  applies. **Affects [H2O](../algorithms/h2o) identically** — same
+  underlying bug, same fix.
 
 ## The planted-geometry observable (pinned)
 

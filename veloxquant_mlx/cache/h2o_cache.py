@@ -77,33 +77,36 @@ behavior exactly.
 RoPE position remapping (a separate, narrower, and now-fixed correctness
 issue found during the same investigation — real, but NOT the cause of the
 freeze above, since interior eviction rarely happens once the freeze sets
-in). Two distinct causes, both fixed, for the case interior eviction *does*
-occur (e.g. with ``h2o_n_sink > 0``, where sink rows are permanently
-protected while later rows can still eventually be evicted, opening a real
-gap):
+in). One real cause, fixed, for the case interior eviction *does* occur
+(e.g. with ``h2o_n_sink > 0``, where sink rows are permanently protected
+while later rows can still eventually be evicted, opening a real gap):
 
-  1. Stored keys arrive already RoPE-rotated for their true absolute
-     position. Dropping a middle row leaves survivors' storage index out of
-     sync with that baked-in rotation. Fixed by de-rotating and re-rotating
-     kept keys to a gap-free layout (``rope_remap_positions``) whenever
-     eviction changes the kept set — see ``h2o_update`` in
-     :mod:`veloxquant_mlx.quantizers.h2o`.
-  2. ``mlx_lm``'s attention module rotates BOTH the query and the incoming
-     key using ``self.rope(x, offset=cache.offset)``, entirely inside the
-     model's forward pass, before ``update_and_fetch`` is ever called — this
-     cache cannot intercept or correct the query's rotation after the fact.
-     The only way to make that rotation correct is for ``self.offset`` itself
-     to always equal the true absolute step count rather than the number of
-     rows this cache has kept. Fixed by managing ``self.keys``/``self.values``/
-     ``self.offset`` directly (not delegating to the base class's
-     append-only buffer, which assumes ``offset == stored row count``) — see
-     ``update_and_fetch`` below.
+  ``mlx_lm``'s attention module rotates BOTH the query and the incoming
+  key using ``self.rope(x, offset=cache.offset)``, entirely inside the
+  model's forward pass, before ``update_and_fetch`` is ever called — this
+  cache cannot intercept or correct the query's rotation after the fact.
+  The only way to make that rotation correct is for ``self.offset`` itself
+  to always equal the true absolute step count rather than the number of
+  rows this cache has kept. Fixed by managing ``self.keys``/``self.values``/
+  ``self.offset`` directly (not delegating to the base class's append-only
+  buffer, which assumes ``offset == stored row count``) — see
+  ``update_and_fetch`` below.
 
-Verified via a synthetic fingerprinted-token test that forces an interior
-eviction and confirms every surviving key de-rotates back to its exact
-original unrotated value. ``h2o_rope_base`` must match the model's own RoPE
-base for cause (1)'s correction to cancel out the original rotation
-correctly.
+SUPERSEDED SUB-FIX, #609: an earlier version of this cache additionally
+de-rotated and re-rotated kept keys to a gap-free contiguous layout
+(``rope_remap_positions``) whenever eviction changed the kept set, on the
+theory that the model's position bookkeeping assumed a contiguous cache.
+That theory was wrong once ``self.offset`` reports the *true* absolute step
+count (the fix directly above): re-rotating a survivor to a new, renumbered
+position changes its true distance from every future query, corrupting the
+RoPE relative angle the same way an offset desync would — confirmed via a
+48-token-prefill-then-decode repro where 19 of 25 survivors' returned keys
+no longer matched the keys that actually arrived (max error 4.40). Fixed by
+dropping the re-rotation entirely: eviction now only drops the evicted row,
+and every survivor keeps the exact position and rotation it arrived with
+(``H2OState.positions`` can be non-contiguous, and that is expected). This
+matches how TOVA, KNorm, and Q-Filters already handle eviction in this
+repo — see ``veloxquant_mlx/tests/cache/test_eviction_rope_contract.py``.
 
 Scalability fix (found while testing long context, independent of the RoPE
 issues above): a genuinely long prefill (~3200 tokens) with no eviction yet
@@ -143,8 +146,10 @@ class H2OKVCache(_MLXKVCache):
             ``h2o_budget`` (int, default 512) — maximum tokens retained at any time,
             ``h2o_n_sink`` (int, default 4)   — leading positions never evicted,
             ``h2o_rope_base`` (float, default 10000.0) — RoPE frequency base,
-            must match the model's own attention RoPE base for post-eviction
-            position remapping to cancel out the original rotation correctly,
+            must match the model's own attention RoPE base for the defensive
+            ``_fix_incoming_rope`` fallback (see that method) to correct an
+            offset/position desync correctly, should one ever occur; no
+            longer used for post-eviction remapping, which was removed (#609),
             ``h2o_grace`` (int, default 16) — most-recently-arrived tokens
             protected from eviction, giving each new token this many update
             steps to accumulate real attention mass before it becomes

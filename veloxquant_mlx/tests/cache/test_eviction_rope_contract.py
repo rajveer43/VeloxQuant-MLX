@@ -19,13 +19,17 @@ matters for benchmark integrity specifically: an arm with a broken offset
 measures position drift rather than eviction quality, which would make
 whichever method is correct look good for the wrong reason (#183).
 
-How each cache satisfies the contract differs, and both ways are valid:
-  - Q-Filters / TOVA / L2Norm PRESERVE original positions (eviction drops rows
-    but never renumbers), so stored keys already carry the right rotation and
-    reporting the true offset is sufficient.
-  - H2O RENUMBERS to a gap-free layout, so it additionally de-rotates and
-    re-rotates survivors; ``h2o_rope_base`` must match the model's RoPE base
-    for that correction to cancel.
+Every cache here satisfies the contract the same way (#609): eviction only
+drops a row. Q-Filters / TOVA / L2Norm / H2O / CurDKV all PRESERVE the
+original position and rotation of every survivor — none of them renumber or
+re-rotate. An earlier version of H2O (and CurDKV) additionally renumbered
+survivors to a gap-free layout and re-rotated their keys to match, on the
+theory that the model's position bookkeeping assumed a contiguous cache.
+That theory was wrong given the fix directly above (``offset`` == true
+position, not row count): renumbering a survivor changes its true distance
+from every future query, corrupting the RoPE relative angle the offset fix
+was meant to protect. See ``veloxquant_mlx/quantizers/h2o.py`` and
+``curdkv.py`` module docstrings for the full incident writeup.
 """
 
 from __future__ import annotations
@@ -48,6 +52,7 @@ ARMS = [
     ("h2o", {"method": "h2o", "h2o_budget": BUDGET, "h2o_n_sink": 4}),
     ("tova", {"method": "tova", "tova_budget": BUDGET, "tova_n_sink": 4}),
     ("knorm", {"method": "knorm", "knorm_budget": BUDGET, "knorm_n_sink": 4}),
+    ("curdkv", {"method": "curdkv", "curdkv_budget": BUDGET, "curdkv_n_sink": 4}),
 ]
 
 # Methods whose update_and_fetch RETURN value is, since #370, deliberately

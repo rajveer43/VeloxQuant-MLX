@@ -34,31 +34,29 @@ Adaptation limitations (stated plainly):
     the paper's specific sketching routine.
   - Uniform budget and n_sink across all heads.
 
-FIXED, CONFIRMED-ON-REAL-MODELS PROBLEM, WITH A KNOWN REMAINING LIMITATION:
-see :mod:`veloxquant_mlx.quantizers.curdkv` module docstring for the full
+FIXED, CONFIRMED-ON-REAL-MODELS PROBLEM: see
+:mod:`veloxquant_mlx.quantizers.curdkv` module docstring for the full
 investigation. In short — this cache used to reset ``self.offset`` to the
 post-eviction kept-row count every call, but ``mlx_lm``'s attention module
 rotates the next query/key using ``self.rope(x, offset=cache.offset)``
 *before* ``update_and_fetch`` is ever called, so that offset must equal the
 true absolute step count, not the kept-row count. Fixed the same way
-H2O-adapted already fixes it: ``self.offset`` now tracks the true absolute
-step count directly, and surviving keys are re-rotated on eviction (see
-``curdkv_update`` / ``rope_remap_positions``) so their baked-in rotation
-stays consistent with their shifted storage index — verified via a
-synthetic reproduction of ``mlx_lm.generate()``'s exact bulk-then-final-
-token call split.
+H2O-adapted fixes it: ``self.offset`` now tracks the true absolute step
+count directly — verified via a synthetic reproduction of
+``mlx_lm.generate()``'s exact bulk-then-final-token call split.
 
-That fix is necessary but NOT sufficient for correct output on Llama-3-family
-models: they use ``rope_scaling={"rope_type": "llama3", ...}``, a piecewise
-per-frequency rescaling that ``rope_remap_positions``'s plain-RoPE math
-doesn't reproduce (regardless of which ``curdkv_rope_base`` is configured).
-Confirmed on a real Llama-3.2-1B run: every row an eviction re-rotated came
-out numerically wrong, and generation was still degraded even with the
-offset-desync bug fixed. This is a real, disclosed gap, not swept under the
-"FIXED" heading above — see the quantizer module docstring and
-https://github.com/rajveer43/VeloxQuant-MLX/issues/148 for the full detail
-and reproduction. Affects H2O-adapted identically (same underlying
-primitive).
+SUPERSEDED, #609: an earlier version of this fix additionally re-rotated
+surviving keys on eviction (``rope_remap_positions``) to keep their baked-in
+rotation consistent with a renumbered, gap-free storage index. That
+re-rotation is removed now — once ``self.offset`` reports the true step
+count, renumbering survivors and re-rotating them to match changes their
+true distance from every future query, which is exactly the bug this
+docstring's "FIXED" paragraph above describes, just reintroduced by the fix
+itself. Survivors now keep the position and rotation they arrived with; see
+the quantizer module docstring's "SUPERSEDED, #609" note for detail,
+including why this also closes the Llama-3 scaled-RoPE gap tracked at
+https://github.com/rajveer43/VeloxQuant-MLX/issues/148 (nothing is
+re-rotated anymore, so that gap no longer applies to survivors).
 
 Byte accounting:
     curdkv_kept_bytes  — fp16 bytes for currently retained K + V tokens
@@ -88,8 +86,10 @@ class CurDKVKVCache(_MLXKVCache):
             ``curdkv_n_sink`` (int, default 4)      — leading positions never evicted,
             ``curdkv_rank_cap`` (int, default 16)   — SVD rank cap for leverage-score estimation,
             ``curdkv_rope_base`` (float, default 10000.0) — RoPE frequency base,
-            must match the model's own attention RoPE base for post-eviction
-            position remapping to cancel out the original rotation correctly.
+            must match the model's own attention RoPE base for the defensive
+            ``_fix_incoming_rope`` fallback (see that method) to correct an
+            offset/position desync correctly, should one ever occur; no
+            longer used for post-eviction remapping, which was removed (#609).
 
     Notes:
         No ``.bits`` attribute — stores and returns fp16 K/V directly.

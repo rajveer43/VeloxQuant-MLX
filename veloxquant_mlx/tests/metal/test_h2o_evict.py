@@ -2,12 +2,15 @@
 
 The kernel must reproduce h2o_update's per-token eviction branch
 (veloxquant_mlx/quantizers/h2o.py) bit-for-bit: sink-protected argmin over
-the "mid" state (n_kept stored rows + 1 appended row), evict the winner,
-and re-rotate exactly the rows whose position shifted (rows before the
-eviction gap are untouched — bit-identical, not just numerically close).
-See paper/research/H2O_METAL_KERNEL_TECH_SPEC.md for the full design and
-the T1-T8 test plan this file implements (T1-T7; T8, the real-model
-regression, lives outside the unit test suite — see the PR/issue writeup).
+the "mid" state (n_kept stored rows + 1 appended row), evict the winner, and
+compact the rest verbatim — no re-rotation, no renumbering (#609: an earlier
+version of both the kernel and this file expected survivors to be
+renumbered to a gap-free layout and re-rotated to match; that behavior was
+removed because it silently changed a survivor's true distance from any
+future query). See paper/research/H2O_METAL_KERNEL_TECH_SPEC.md for the full
+design and the T1-T8 test plan this file implements (T1-T7; T8, the
+real-model regression, lives outside the unit test suite — see the
+PR/issue writeup).
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ import pytest
 
 from veloxquant_mlx.metal import metal_available
 from veloxquant_mlx.metal.kernels import h2o_fused_evict
-from veloxquant_mlx.quantizers.a2ats_rope import a2ats_apply_exact_rope, rope_remap_positions
+from veloxquant_mlx.quantizers.a2ats_rope import a2ats_apply_exact_rope
 
 pytestmark = [
     pytest.mark.metal,
@@ -80,10 +83,11 @@ def test_evict_newest_token_when_it_is_the_minimum():
     assert diff == 0.0
 
 
-def test_interior_eviction_recovers_exact_original_keys():
+def test_interior_eviction_leaves_survivors_exactly_unrotated():
     """Force eviction of an INTERIOR row (index 2 of 5), the rarer but real
-    case (e.g. with n_sink > 0). Every surviving key, de-rotated at its new
-    position, must recover its exact original pre-rotation value."""
+    case (e.g. with n_sink > 0). Every surviving key must come back
+    bit-identical to how it arrived, and its position must stay its true
+    original position — no renumbering to a gap-free range (#609)."""
     D = 8
     raw_keys, raw_values, rotated_keys, positions = _make_fingerprinted(5, D)
     scores_mid = mx.array([[5.0, 5.0, 0.001, 5.0, 5.0]], dtype=mx.float32)
@@ -98,17 +102,17 @@ def test_interior_eviction_recovers_exact_original_keys():
     )
     mx.eval(ko, vo, so, po)
 
-    assert po.tolist() == [[0, 1, 2, 3]]
+    # Position 2 (the evicted token) leaves a real gap — not renumbered.
+    assert po.tolist() == [[0, 1, 3, 4]]
     kept_fp = np.array(vo.astype(mx.float32))[0, :, 0]
     assert 3.0 not in kept_fp  # token originally at index 2 (fp=3.0) is gone
 
-    recovered = rope_remap_positions(
-        ko[0].astype(mx.float32), po[0], mx.zeros_like(po[0]), base=10000.0
-    )
     for row, fp in enumerate(kept_fp):
         orig_idx = int(round(fp)) - 1
-        err = float(mx.max(mx.abs(recovered[row] - raw_keys[orig_idx])).item())
-        assert err < 1e-2, f"row {row} (orig token {orig_idx}): recon error {err}"
+        err = float(
+            mx.max(mx.abs(ko[0, row].astype(mx.float32) - rotated_keys[orig_idx])).item()
+        )
+        assert err < 1e-6, f"row {row} (orig token {orig_idx}): survivor key was altered, err={err}"
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +159,9 @@ def test_sink_protection():
         keys_mid, values_mid, scores_mid, positions_mid, n_sink=2, rope_base=10000.0
     )
     mx.eval(so, po)
-    assert po.tolist() == [[0, 1, 2, 3]]
+    # Position 2 (the evicted, non-sink, real-minimum row) leaves a real
+    # gap — not renumbered (#609).
+    assert po.tolist() == [[0, 1, 3, 4]]
     assert so[0, 0].item() == pytest.approx(0.0001, abs=1e-6)  # sink row survived
 
 
@@ -182,9 +188,9 @@ def test_n_sink_zero_allows_all_evictions():
 def test_untouched_rows_are_exact_copies():
     D = 8
     _, raw_values, rotated_keys, positions = _make_fingerprinted(5, D)
-    # Evict index 3 (interior, not the first or last row) so rows 0,1,2
-    # (before the gap) must be untouched and rows mapping from index 4
-    # (after the gap) must shift + rotate.
+    # Evict index 3 (interior, not the first or last row). Post-#609, EVERY
+    # survivor is an exact copy — rows 0,1,2 (before the gap) and row 4
+    # (after the gap) alike. Nothing is shifted or re-rotated anymore.
     scores_mid = mx.array([[5.0, 5.0, 5.0, 0.001, 5.0]], dtype=mx.float32)
 
     ko, _, _, po = h2o_fused_evict(
@@ -197,13 +203,15 @@ def test_untouched_rows_are_exact_copies():
     )
     mx.eval(ko, po)
 
-    for row in range(3):  # positions 0, 1, 2 — all before the evicted position 3
+    assert po.tolist() == [[0, 1, 2, 4]]  # real gap at the evicted position 3
+    orig_rows = [0, 1, 2, 4]
+    for out_row, orig_row in enumerate(orig_rows):
         diff = float(
             mx.max(
-                mx.abs(ko[0, row].astype(mx.float32) - rotated_keys[row].astype(mx.float32))
+                mx.abs(ko[0, out_row].astype(mx.float32) - rotated_keys[orig_row].astype(mx.float32))
             ).item()
         )
-        assert diff == 0.0, f"row {row} should be bit-identical, got diff={diff}"
+        assert diff == 0.0, f"row {out_row} (orig {orig_row}) should be bit-identical, got diff={diff}"
 
 
 # ---------------------------------------------------------------------------
