@@ -527,6 +527,21 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.91.23 (2026-09-30)
+
+### Bug Fixes
+
+- **eviction**: Stop re-rotating H2O/CurDKV survivors on eviction (#609)
+  ([#664](https://github.com/rajveer43/VeloxQuant-MLX/pull/664),
+  [`5692da4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5692da4ca4f3571c3c0dc75bd0f11b951ecf6715))
+
+### Chores
+
+- **deps**: Bump urllib3 from 2.7.0 to 2.8.0
+  ([#663](https://github.com/rajveer43/VeloxQuant-MLX/pull/663),
+  [`eb1a661`](https://github.com/rajveer43/VeloxQuant-MLX/commit/eb1a661ee0d8003738da7461ddf61efee7fc7db0))
+
+
 ## v0.91.22 (2026-09-30)
 
 ### Bug Fixes
