@@ -798,14 +798,13 @@ computation is identical between arms).
   identical-length prompts and no eviction, real serving traffic differs
   on both counts.
 
-**Disposition:** the multi-request half of Recommendation #2 is
-confirmed as a real, positive lever on a real model, using only the
-already-shipped (non-batched) `scalar_fused_decode_attend` kernel — no
-new kernel work was needed, only the cache/dispatch wiring this repo
-had not yet built for this kernel family. Building a production-grade
-version (a real cache with a residual window, wired through
-`KVCacheBuilder`, tested against variable-length concurrent requests) is
-scoped future work, not attempted here.
+**Disposition (superseded):** this addendum originally concluded that the
+multi-request half of Recommendation #2 was a real, positive lever and
+scoped a production integration as future work. That conclusion does not
+hold against the decode path production actually runs — see "Addendum:
+the fused decode path is slower than the production baseline" below. The
+measurements above are kept as recorded; only the conclusion drawn from
+them is withdrawn.
 
 ## Addendum: intra-threadgroup width (`nsg`) was the untuned occupancy lever
 
@@ -891,7 +890,9 @@ existing harness produces by default and would mislead anyone re-running it.
 The win is real but **context-dependent**, reaching 1.85x over the previously
 shipped default (and 5.31x over the dequant-then-SDPA baseline) at
 `prompt_len=4096`, which is the long-context regime this kernel family exists
-to serve.
+to serve. Both comparisons are internal to the fused path (old vs. new `nsg`,
+and vs. dequantizing every step); neither is a comparison against production
+decode, which the fused path still loses to — see the next addendum.
 
 Correctness: 194/194 tests in `test_scalar_attend.py` pass, including 40
 newly-admissible GQA parity cases at `nsg=8`, restored bit-identical
@@ -908,6 +909,70 @@ family for the end-to-end numbers. `_auto_nsg`'s policy is a static heuristic
 fit to the table above, not a runtime search; shapes far outside it (very large
 `D`, `heads_per_kv > 8`) fall back to conservative values that were not
 separately optimized.
+
+## Addendum: the fused decode path is slower than the production baseline
+
+The multi-request and `nsg` addenda above measured `scalar_fused_decode_attend`
+against **dequantizing the full quantized history to fp16 on every decode
+step**, then running SDPA. No cache in this repo does that. `KIVIKVCache`
+quantizes aged-out tokens and immediately dequantizes them back into its fp16
+buffer (`veloxquant_mlx/cache/kivi_cache.py`, `update_and_fetch`), so its
+decode path is plain fp16 SDPA with no per-step dequant cost — the same
+amortization this document already identified for `fused_sdpa` in the
+SIMD-shuffle addendum. The one earlier data point against plain fp16 (~1.15x,
+isolated single layer, `S_kv≈64`, before `nsg` autotune) was never followed up
+end to end.
+
+Measured end to end on Qwen3-4B-4bit (M4, MLX 0.32.2, 30 decode steps, same
+harness cache and SDPA patch as the multi-request addendum, `nsg=None`), the
+fused path against plain fp16 `KVCache` and against mlx_lm's built-in
+`QuantizedKVCache(group_size=64, bits=4)`:
+
+| B | prompt | fp16 `KVCache` tok/s | mlx `QuantizedKVCache` 4b tok/s | fused KIVI 2b tok/s | fused vs. fp16 | mlx 4b vs. fp16 |
+|---|---|---|---|---|---|---|
+| 1  | 256  | 36.0-36.5 | 34.5-34.7 | 26.3 | **0.72-0.73x** | 0.95-0.96x |
+| 1  | 2048 | 32.7  | 31.2  | 19.2 | **0.59x** | 0.95x |
+| 1  | 4096 | 29.1  | 29.7  | 14.9 | **0.51x** | 1.02x |
+| 4  | 2048 | 61.7  | 87.4  | 29.4 | **0.48x** | 1.42x |
+| 16 | 256  | 141.9 | 134.8 | 89.2 | **0.63x** | 0.95x |
+| 16 | 1024 | 64.9  | 100.2 | 55.0 | **0.85x** | 1.54x |
+
+`B=1, prompt=256` is two runs; every other row is one run, so treat small
+differences as noise — but the fused path's 15-52% deficit is well outside
+it. The fused arm is also favored by construction: the harness cache has no
+fp16 residual, so the fused kernel attends only over whole quantized groups
+(up to 31 fewer tokens than the other arms).
+
+Why, in terms this document already established:
+
+- **It moves more bytes than it needs to.** 2-bit codes are stored one per
+  `uint8`, so K/V reads are halved relative to fp16, not quartered, before
+  adding fp32 scale/zero per group.
+- **It uses a small fraction of the bandwidth.** Even after `nsg` autotune
+  the kernel reaches at most ~40% of calibrated peak (cross-layer addendum),
+  while MLX's `sdpa_vector` streams fp16 near the ceiling. Halving the bytes
+  doesn't recover a >2x utilization gap.
+- **mlx_lm's own quantized path is already better on both axes.**
+  `QuantizedKVCache` packs 4-bit codes and uses MLX's quantized SDPA; it is at
+  parity with fp16 at B=1 and 1.42-1.54x faster at B=4-16 with longer
+  prompts, while actually shrinking the resident cache (lower peak memory at
+  B=16/1024: 10.24 GB vs. 11.07 GB). Peak process memory is dominated by
+  weights and prefill activations at the smaller shapes, so it does not
+  isolate cache size there.
+
+**Disposition:** the production integration scoped in the multi-request
+addendum (residual-window cache, `KVCacheBuilder` wiring, variable-length
+batches) is **not pursued** — it would ship a decode path slower than the
+fp16 path it replaces, and slower than a built-in alternative that saves
+more memory. Making the fused kernel competitive would require packed codes
+and closing the bandwidth-utilization gap to MLX's own SDPA, i.e. rebuilding
+what MLX's quantized attention already provides; that is not justified
+without a reason to beat it. The kernel-level findings above (occupancy
+diagnosis, `nsg` autotune, the rejected packing/two-pass designs) stand.
+Future fused-path benchmarks should compare against plain fp16 `KVCache`
+and `QuantizedKVCache`, not a dequantize-every-step baseline.
+
+Reproduction: `python -m benchmark_scripts.benchmark_fused_decode_vs_production`.
 
 ## Recommendation
 
@@ -931,17 +996,17 @@ separately optimized.
    residual stream makes layer L+1's attention depend on layer L's full
    block output, so real layers' attention can never be grouped into one
    dispatch without changing the model's output (see the addendum
-   immediately above). The multi-*request* half has no such blocker and
-   was **confirmed as a real, positive win on a real model**: routing
-   `mlx_lm` decode-step attention through the existing (non-batched)
-   `scalar_fused_decode_attend` on Qwen3-4B-4bit measured **1.50x-3.83x**
-   real end-to-end decode tokens/sec, growing with concurrent request
-   count `B ∈ {1,4,16,32}` — see the same addendum for the full table,
-   caveats, and the apples-to-apples methodology (both arms verified to
-   produce bit-identical tokens before timing was trusted). A
-   production-grade integration (real residual-window cache, wired
-   through `KVCacheBuilder`, variable-length concurrent requests) remains
-   future work.
+   immediately above). The multi-*request* half has no such structural
+   blocker, and routing `mlx_lm` decode-step attention through
+   `scalar_fused_decode_attend` measured **1.50x-3.83x** end-to-end decode
+   tokens/sec on Qwen3-4B-4bit — but against a dequantize-every-step
+   baseline no cache here runs. Against plain fp16 `KVCache` (what
+   `KIVIKVCache` decode actually costs) the fused path is **0.48-0.85x**,
+   and mlx_lm's `QuantizedKVCache(bits=4)` beats both. The occupancy
+   diagnosis is right, but fixing occupancy doesn't make this kernel
+   faster than production; the production integration is not pursued (see
+   "Addendum: the fused decode path is slower than the production
+   baseline").
 3. **`turboquant_scalar_quantize` is memory-bound; it just needed larger
    N to show it.** The original run measured 52–55% at 16M elements and
    left open whether the per-element centroid scan was leaving headroom.
