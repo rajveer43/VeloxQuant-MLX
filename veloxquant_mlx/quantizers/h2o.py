@@ -48,22 +48,28 @@ stop permanently outranking newer ones. Verified in simulation: with decay,
 the non-sink kept window becomes contiguous (gaps of 1) instead of a uniform
 trickle (gaps of ~2 everywhere).
 
-RoPE position remapping (a separate, narrower, and now-fixed correctness
-issue — real, but NOT the cause of the freeze above):
+RoPE position handling on eviction (#609, superseding an earlier
+renumber-and-re-rotate approach from #171/#175 that turned out to
+contradict itself — see below):
   Incoming keys arrive already RoPE-rotated for their true absolute position
   (rotation happens in the model's attention module, upstream of this cache).
-  Evicting a row from the middle of the sequence leaves the survivors'
-  *storage index* out of sync with the absolute position baked into their
-  rotation — the model's attention math assumes contiguous positions, so this
-  desync would corrupt every subsequent query's relative-position math *if*
-  interior eviction happens (rare given the freeze above, but not impossible,
-  e.g. with ``n_sink > 0`` protecting only the front). Every kept row's true
-  original position is now tracked in ``H2OState.positions``, and
-  ``h2o_update`` de-rotates + re-rotates keys to a gap-free contiguous layout
-  via :func:`veloxquant_mlx.quantizers.a2ats_rope.rope_remap_positions`
-  whenever an eviction actually changes the kept set's positions. Verified
-  via a synthetic fingerprinted-token test forcing an interior eviction and
-  confirming every surviving key de-rotates back to its exact original value.
+  ``H2OKVCache.offset`` is always the true absolute step count (not the
+  kept-row count — see cache/h2o_cache.py), which is what keeps
+  ``mlx_lm``'s ``self.rope(query, offset=cache.offset)`` call rotating the
+  *next* query at the correct position. Given that, evicting a row must
+  leave every surviving key's rotation untouched: dropping row ``i`` simply
+  removes it, survivors keep the exact position (and exact rotation) they
+  arrived with, tracked in ``H2OState.positions``. An earlier version of
+  this code additionally renumbered survivors to a gap-free layout and
+  de-rotated/re-rotated their keys to match — that kept the *stored index*
+  contiguous, but it also changed each survivor's *true* distance from any
+  future query, which desyncs the dot product from the causal mask (built
+  from ``positions`` directly, see ``H2OKVCache.make_mask``) the moment an
+  interior eviction actually happens. Confirmed: 19/25 H2O survivors ended
+  up with a re-rotated key different from the one that arrived (max error
+  4.40) in a 48-token-prefill-then-decode repro. Fixed by dropping the
+  re-rotation entirely, matching how TOVA/knorm/Q-Filters already handle
+  eviction (see ``test_eviction_rope_contract.py``).
 
 Scalability fix (a separate, now-fixed bug found while testing long
 context — independent of both issues above): the original ``h2o_update``
@@ -123,7 +129,6 @@ from veloxquant_mlx.quantizers._eviction_common import (
     full_fp16_kv_bytes,
     get_kv,
 )
-from veloxquant_mlx.quantizers.a2ats_rope import rope_remap_positions
 
 
 @dataclass
@@ -138,10 +143,11 @@ class H2OState:
                    update.
         scores:    [n_kept] cumulative softmax attention mass (float32), or
                    None.
-        positions: [n_kept] int32 absolute positions each kept key is
-                   currently rotated at. Reassigned to a contiguous range
-                   whenever eviction changes which rows survive, and each
-                   key is re-rotated (via ``rope_remap_positions``) to match.
+        positions: [n_kept] int32 true absolute position each kept key is
+                   currently rotated at. Eviction only drops a row — it
+                   never renumbers or re-rotates survivors (see #609), so a
+                   kept set can be non-contiguous (e.g. after an interior
+                   eviction) and that is expected, not a bug.
         n_sink:    Number of leading sink positions — never evicted.
         budget:    Maximum tokens to keep at any time (including sinks).
         rope_base: RoPE frequency base used to de-rotate/re-rotate kept keys.
@@ -431,10 +437,19 @@ def _evict_via_mlx(
     rope_base: float,
     grace: int = 0,
 ) -> tuple[mx.array, mx.array, mx.array, mx.array]:
-    """Pure-MLX eviction: sink- and grace-protected argmin, drop the loser,
-    re-rotate the shifted survivors. Reference implementation — see module
-    docstring for why this exists (the fused Metal path in
-    :func:`_evict_via_metal` must match this bit-for-bit).
+    """Pure-MLX eviction: sink- and grace-protected argmin, drop the loser.
+    Reference implementation — see module docstring for why this exists (the
+    fused Metal path in :func:`_evict_via_metal` must match this bit-for-bit).
+
+    Survivors keep their true original position and the rotation they
+    already carry — they are NOT renumbered or re-rotated (see #609). This
+    cache reports ``offset`` as the true absolute step count (not the kept
+    row count), so ``mlx_lm`` always rotates the query at the token's real
+    distance from every surviving key; re-rotating survivors to a gap-free
+    layout would change that distance and desync attention from the causal
+    mask, which is itself built from the true positions (see
+    ``H2OKVCache.make_mask``). ``rope_base`` is unused here now (kept in the
+    signature for interface parity with :func:`_evict_via_metal`).
 
     Grace protection (``grace > 0``): the last ``grace`` array indices — the
     most recently arrived tokens, since positions are always kept sorted
@@ -445,6 +460,7 @@ def _evict_via_mlx(
     makes it (almost always) the argmin target immediately — see module
     docstring's "KNOWN, CONFIRMED-ON-REAL-MODELS PROBLEM".
     """
+    del rope_base  # unused: survivors are no longer re-rotated (#609)
     n_total = keys_cat.shape[0]
     n_sink_eff = min(n_sink, n_total)
     n_grace_eff = min(grace, n_total)
@@ -457,7 +473,6 @@ def _evict_via_mlx(
         protected = mx.concatenate([protected[: n_total - n_grace_eff], grace_inf], axis=0)
 
     evict_idx = int(mx.argmin(protected).item())
-    evicted_pos = int(positions_cat[evict_idx].item())
 
     def _drop_row(arr: mx.array) -> mx.array:
         return mx.concatenate([arr[:evict_idx], arr[evict_idx + 1 :]], axis=0)
@@ -465,19 +480,8 @@ def _evict_via_mlx(
     keys_kept = _drop_row(keys_cat)
     values_kept = _drop_row(values_cat)
     scores_kept = _drop_row(scores_cat)
-    old_positions_kept = _drop_row(positions_cat)
-
-    # Evicting row `evict_idx` leaves a size-1 gap at `evicted_pos`. Rows
-    # that sat *before* the gap (sinks included) keep their exact original
-    # position — nothing about their true distance from any future query
-    # changes. Rows *after* the gap shift down by exactly one position each,
-    # closing the gap so the model's position bookkeeping (which assumes a
-    # contiguous cache) stays in sync with what is actually stored. Minimal
-    # disturbance: only rows after the gap are re-rotated.
-    shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
-    new_positions = old_positions_kept + shift
-    keys_kept = rope_remap_positions(keys_kept, old_positions_kept, new_positions, base=rope_base)
-    return keys_kept, values_kept, scores_kept, new_positions
+    positions_kept = _drop_row(positions_cat)
+    return keys_kept, values_kept, scores_kept, positions_kept
 
 
 def _evict_via_metal(
@@ -526,11 +530,9 @@ def h2o_update(
       3. Append the new token with score 0 (it starts accumulating next step)
          at its true absolute position (``state.next_pos``).
       4. If total tokens > budget: permanently evict the non-sink token with the
-         lowest cumulative score. Survivors positioned *before* the evicted
-         token's position keep their exact original rotation untouched;
-         survivors *after* it shift down by exactly one position each (closing
-         the gap) and are re-rotated accordingly, so the cache's storage index
-         always matches a contiguous position range (see module docstring).
+         lowest cumulative score. Every survivor keeps its exact original
+         position and rotation untouched — the kept set is simply shorter by
+         one row, and may be non-contiguous (see module docstring, #609).
 
     Performance note: whichever *leading* portion of ``new_keys`` is
     guaranteed not to trigger eviction (because the cache has not yet
@@ -679,14 +681,18 @@ def _evict_via_mlx_batched(
 ) -> tuple[mx.array, mx.array, mx.array, mx.array]:
     """Batched-``[BH,·]`` equivalent of :func:`_evict_via_mlx`.
 
-    Each ``bh`` row's argmin/evict/re-rotate is independent of every other
-    row (same per-row-independence structure as TOVA's batched eviction
-    kernels) — this is a like-for-like vectorization of
-    :func:`_evict_via_mlx`'s per-head-loop math over a leading ``BH`` axis,
-    not a new eviction policy. Verified bit-for-bit equivalent to calling
-    :func:`_evict_via_mlx` once per row (see
-    ``veloxquant_mlx/tests/quantizers/test_h2o.py``).
+    Each ``bh`` row's argmin/evict is independent of every other row (same
+    per-row-independence structure as TOVA's batched eviction kernels) —
+    this is a like-for-like vectorization of :func:`_evict_via_mlx`'s
+    per-head-loop math over a leading ``BH`` axis, not a new eviction
+    policy. Verified bit-for-bit equivalent to calling :func:`_evict_via_mlx`
+    once per row (see ``veloxquant_mlx/tests/quantizers/test_h2o.py``).
+
+    Survivors keep their true original position and rotation — see
+    :func:`_evict_via_mlx` for why (#609). ``rope_base`` is unused here now
+    (kept in the signature for interface parity with the Metal path).
     """
+    del rope_base  # unused: survivors are no longer re-rotated (#609)
     bh, n_total = scores_cat.shape
     n_sink_eff = min(n_sink, n_total)
     n_grace_eff = min(grace, n_total)
@@ -705,15 +711,8 @@ def _evict_via_mlx_batched(
     keys_kept = mx.take_along_axis(keys_cat, source[..., None], axis=1)
     values_kept = mx.take_along_axis(values_cat, source[..., None], axis=1)
     scores_kept = mx.take_along_axis(scores_cat, source, axis=1)
-    old_positions_kept = mx.take_along_axis(positions_cat, source, axis=1)
-    evicted_pos = mx.take_along_axis(positions_cat, evict_idx, axis=1)  # [BH, 1]
-
-    shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
-    new_positions = old_positions_kept + shift
-    keys_kept = _rope_remap_positions_batched(
-        keys_kept, old_positions_kept, new_positions, base=rope_base
-    )
-    return keys_kept, values_kept, scores_kept, new_positions
+    positions_kept = mx.take_along_axis(positions_cat, source, axis=1)
+    return keys_kept, values_kept, scores_kept, positions_kept
 
 
 def _rope_remap_positions_batched(

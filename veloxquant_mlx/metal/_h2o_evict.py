@@ -2,14 +2,14 @@
 
 Replaces the Python per-token loop in ``h2o_update``'s over-budget branch
 (``veloxquant_mlx/quantizers/h2o.py``) — append, sink-protected argmin,
-evict, RoPE-remap the shifted rows — with two GPU dispatches per incoming
-token, batched across all ``(batch, head)`` pairs at once, instead of one
-Python-level iteration per ``(batch, head)`` per token plus ~15 small MLX
-ops each. Design: see ``paper/research/H2O_METAL_KERNEL_TECH_SPEC.md``.
+evict — with two GPU dispatches per incoming token, batched across all
+``(batch, head)`` pairs at once, instead of one Python-level iteration per
+``(batch, head)`` per token plus ~15 small MLX ops each. Design: see
+``paper/research/H2O_METAL_KERNEL_TECH_SPEC.md``.
 
 Two dispatches, not fused into one barrier-synchronized kernel (spec
 decision D4): the eviction decision (``evict_idx``) must be known by every
-thread before the compaction/rotation phase runs, and a single-threadgroup
+thread before the compaction phase runs, and a single-threadgroup
 barrier-fused design would cap the largest ``h2o_budget`` this kernel could
 serve to whatever fits in one threadgroup's grid-stride reduction. Two
 dispatches avoid that ceiling entirely, at the cost of one extra dispatch
@@ -18,9 +18,9 @@ per token — a real but modest cost against the ~15+ ops it replaces.
   1. :func:`_h2o_evict_reduce` — sink-protected argmin over ``n_total``
      candidate rows per ``(batch, head)`` group, one threadgroup per group.
   2. :func:`_h2o_evict_apply` — given ``evict_idx``, compacts the surviving
-     ``n_kept`` rows and re-rotates (NeoX-style RoPE, ``rope_remap_positions``
-     equivalent) exactly the rows whose position shifted, matching
-     ``h2o_update``'s per-token eviction branch bit-for-bit.
+     ``n_kept`` rows verbatim (values, scores, positions, AND keys — no
+     re-rotation; see #609), matching ``h2o_update``'s per-token eviction
+     branch bit-for-bit.
 
 Precondition (spec decision D3): callers MUST only invoke
 :func:`h2o_fused_evict` when every ``(batch, head)`` group is already over
@@ -69,11 +69,10 @@ _H2O_EVICT_REDUCE_SRC = _read_kernel_source("h2o_evict_reduce.metal")
 # Grid:        (BH * n_kept, 1, 1) — one thread per output row.
 # Threadgroup: (min(n_kept, 256), 1, 1).
 #
-# Each thread computes its source row (skipping evict_idx), copies
-# values/scores/positions verbatim, and either copies keys bit-identically
-# (source position <= evicted position) or applies a delta-rotation by -1
-# position (source position > evicted position) — see
-# H2O_METAL_KERNEL_TECH_SPEC.md section 3, step 7.
+# Each thread computes its source row (skipping evict_idx) and copies
+# values/scores/positions/keys verbatim — no rotation, no renumbering (#609).
+# See H2O_METAL_KERNEL_TECH_SPEC.md section 3, step 7 for the historical
+# (now-removed) re-rotation this kernel used to perform.
 
 _H2O_EVICT_APPLY_SRC = _read_kernel_source("h2o_evict_apply.metal")
 
@@ -154,10 +153,8 @@ def h2o_fused_evict(
         n_sink:        Number of leading positions protected from eviction
                        (uniform across all BH groups, matching
                        ``H2OState.n_sink``).
-        rope_base:     RoPE frequency base — must match the model's own, or
-                       the re-rotation of shifted rows will not cancel out
-                       the original rotation correctly (same requirement as
-                       ``rope_remap_positions``).
+        rope_base:     Unused (#609: survivors are no longer re-rotated).
+                       Kept as a parameter for call-site/ABI stability.
         grace:         Number of most-recently-arrived rows (trailing array
                        index — positions are always sorted ascending, see
                        ``H2OState.grace``) protected from eviction, uniform

@@ -484,12 +484,10 @@ def test_high_value_newcomer_not_evicted_on_arrival() -> None:
     leverage (cumulative score / steps survived) instead.
 
     Identifies the newcomer by ``n_updates == 1`` (it has been through
-    exactly one accumulation step) rather than matching raw key values: once
-    RoPE-remapping was added (see the FIXED, CONFIRMED-ON-REAL-MODELS
-    PROBLEM in the module docstring), a survivor whose storage index shifts
-    due to an unrelated eviction gets its key rotated to a new position, so
-    exact fp16 key-value matching is no longer a reliable way to track "the
-    same logical token" across an update call.
+    exactly one accumulation step) rather than matching raw key values,
+    since key values alone don't identify "the same logical token" across
+    an update call in general (survivors are never re-rotated post-#609,
+    but ``n_updates`` is the more direct signal regardless).
     """
     D = 16
     budget = 4
@@ -536,6 +534,74 @@ def test_curdkv_fp16_bytes_formula() -> None:
 def test_curdkv_fp16_bytes_empty_state() -> None:
     st = init_curdkv_state(n_sink=4, budget=16, head_dim=64)
     assert curdkv_fp16_bytes(st) == 0
+
+
+# ---------------------------------------------------------------------------
+# #609 regression: survivors must not be re-rotated on eviction
+# ---------------------------------------------------------------------------
+
+
+def test_interior_eviction_leaves_survivors_exactly_unrotated() -> None:
+    """Core correctness property post-#609: when curdkv_update drops a row
+    from the INTERIOR of the kept set, every surviving key must be returned
+    bit-identical to how it arrived, and its tracked position must stay its
+    true original position — no renumbering, no re-rotation. An earlier
+    version of this code renumbered survivors to a gap-free layout and
+    re-rotated their keys to match, which changed each survivor's true
+    distance from any future query (see module docstring's "SUPERSEDED,
+    #609" note)."""
+    from veloxquant_mlx.quantizers.a2ats_rope import a2ats_apply_exact_rope
+
+    D = 16
+    rng = np.random.default_rng(0)
+    raw_keys = mx.array(rng.standard_normal((5, D)).astype(np.float32))
+    fingerprints = np.zeros((5, D), dtype=np.float32)
+    for i in range(5):
+        fingerprints[i, 0] = i + 1.0
+    positions = mx.arange(5, dtype=mx.int32)
+    rotated_keys = a2ats_apply_exact_rope(raw_keys, positions, base=10000.0)
+
+    evict_idx = 2  # drop the interior token at true position 2
+    keep_indices = [j for j in range(5) if j != evict_idx]
+    kept_keys = rotated_keys[keep_indices]
+    kept_positions = positions[keep_indices]
+
+    assert kept_positions.tolist() == [0, 1, 3, 4], "positions must not be renumbered"
+    for row in range(4):
+        err = float(mx.max(mx.abs(kept_keys[row] - rotated_keys[keep_indices[row]])).item())
+        assert err < 1e-6, f"row {row}: survivor key changed by eviction, err={err}"
+
+
+def test_curdkv_cache_survivors_match_arrived_keys_after_eviction() -> None:
+    """End-to-end regression for #609: after CurDKVKVCache evicts through a
+    prefill, every surviving row's returned key must equal the key that
+    actually arrived for that token — not a re-rotated substitute."""
+    from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
+    from veloxquant_mlx.quantizers.a2ats_rope import a2ats_apply_exact_rope
+
+    D, N = 16, 40
+    rng = np.random.default_rng(0)
+    raw = mx.array(rng.standard_normal((1, 1, N, D)).astype(np.float32))
+    k_rot = a2ats_apply_exact_rope(raw[0, 0], mx.arange(N, dtype=mx.int32), base=10000.0)[
+        None, None
+    ].astype(mx.float16)
+    v = mx.arange(N, dtype=mx.float32)[None, None, :, None]
+    v = mx.broadcast_to(v, (1, 1, N, D)).astype(mx.float16)
+
+    cache = KVCacheFactory.create(
+        KVCacheConfig(method="curdkv", head_dim=D, curdkv_budget=24, curdkv_n_sink=4)
+    )
+    cache.update_and_fetch(k_rot, v)
+
+    stored_ids = np.array(cache.values[0, 0, :, 0].astype(mx.float32)).round().astype(int)
+    stored_keys = cache.keys[0, 0].astype(mx.float32)
+    arrived_keys = k_rot[0, 0].astype(mx.float32)
+    for row, tok_id in enumerate(stored_ids.tolist()):
+        err = float(mx.max(mx.abs(stored_keys[row] - arrived_keys[tok_id])).item())
+        assert err < 1e-2, (
+            f"row {row} (token {tok_id}): stored key does not match the key that "
+            f"arrived for that token, err={err} — survivor was re-rotated"
+        )
 
 
 def test_full_curdkv_fp16_bytes_formula() -> None:

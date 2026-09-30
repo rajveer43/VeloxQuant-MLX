@@ -184,8 +184,8 @@ All claims trace to passing tests in
 - Factory dispatch (`KVCacheFactory.create`) returns `H2OKVCache`
 - `for_model` propagates `h2o_budget` and `h2o_n_sink` to all layer caches
 - Determinism: identical inputs produce identical outputs
-- Position tracking stays gap-free and contiguous under a 60-step stress test; `n_sink` positions never move
-- Interior-eviction RoPE remap recovers each surviving key's exact original pre-rotation value (fingerprinted-token test)
+- Position tracking stays sorted with no duplicates under a 60-step stress test; `n_sink` positions never move (gaps ARE expected once an interior eviction happens — see [#609](https://github.com/rajveer43/VeloxQuant-MLX/issues/609))
+- Interior eviction leaves every surviving key exactly unrotated — bit-identical to the key that arrived (fingerprinted-token test; end-to-end cache-level regression for [#609](https://github.com/rajveer43/VeloxQuant-MLX/issues/609))
 - `cache.offset` tracks the true absolute step count, not the kept-row count, once eviction has occurred
 - The vectorized below-budget batch path matches the sequential per-token loop it replaces bit-for-bit within fp16 rounding, including for a single call whose batch straddles the below-budget/over-budget boundary
 - A 4,000-token single-call absorption (no eviction) completes without error — the regression test for the prefill scalability crash
@@ -247,21 +247,27 @@ implements the paper's Algorithm 1 (verified line-by-line — see
 A second, narrower issue was found and fixed during this investigation:
 K/V arriving at `update_and_fetch` are already RoPE-rotated by the attention
 layer upstream, and `mlx_lm` also rotates the *next* query/key using
-`cache.offset` — both assume a contiguous, gap-free cache. Once *any* row is
-evicted from the interior of the retained set (which the early-token freeze
-above makes rare, but not impossible — e.g. with `h2o_n_sink > 0`, sink rows
-are permanently protected while later rows can still eventually be evicted,
-opening a real interior gap), position bookkeeping desyncs and corrupts
-attention math for every step afterward. Both are now fixed: stored keys are
-de-rotated and re-rotated to a gap-free layout on every eviction
-(`rope_remap_positions`), and `cache.offset` is tracked as the true absolute
-step count rather than the kept-row count, so the model's own query rotation
-stays correct without this cache needing to intercept it. Verified via a
-synthetic fingerprinted-token test that forces an interior eviction and
-confirms every surviving key de-rotates back to its exact original
-unrotated value. This fix is real and independently worth having, but by
-itself it does **not** fix the collapse demonstrated above — the freeze
-happens before interior eviction geometry ever becomes relevant.
+`cache.offset`, entirely inside its own forward pass, before this cache is
+ever called — the only way that rotation can be correct is for
+`cache.offset` to equal the *true absolute step count* at all times, never
+the kept-row count. This is now fixed: `cache.offset` is tracked as the true
+absolute step count rather than the kept-row count, so the model's own query
+rotation stays correct without this cache needing to intercept it.
+
+**A related sub-fix was later found to be wrong and removed ([#609](https://github.com/rajveer43/VeloxQuant-MLX/issues/609)).**
+An earlier version of this fix additionally de-rotated and re-rotated
+surviving keys to a gap-free, renumbered layout on every eviction
+(`rope_remap_positions`), on the theory that the model's position
+bookkeeping assumed a contiguous cache. That theory was wrong: once
+`cache.offset` reports the *true* step count (the fix above), renumbering a
+survivor changes its true distance from every future query, corrupting the
+RoPE relative angle the offset fix was meant to protect in the first place.
+Confirmed on a 48-token-prefill-then-decode repro: 19 of 25 survivors'
+returned keys no longer matched the keys that actually arrived (max error
+4.40, worse than the model attending to nothing at all). Fixed by dropping
+the re-rotation entirely — eviction now only drops the evicted row, and
+every survivor keeps the exact position and rotation it arrived with, the
+same way TOVA, KNorm, and Q-Filters already handle eviction in this repo.
 :::
 
 **This `h2o_grace=0` behavior is no longer the default.** It's preserved

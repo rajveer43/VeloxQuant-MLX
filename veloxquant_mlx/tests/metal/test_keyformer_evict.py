@@ -6,8 +6,15 @@ Gumbel-regularized argmin over the "mid" state (n_kept stored rows + 1
 appended row), evict the winner, and re-rotate exactly the rows whose
 position shifted. Structurally mirrors
 veloxquant_mlx/tests/metal/test_h2o_evict.py, with the Gumbel/tau dimension
-added and a tau=0 cross-check against h2o_fused_evict itself (the honest
-ablation, at the kernel level).
+added and a tau=0 cross-check against h2o_fused_evict's EVICTION DECISION
+(the honest ablation, at the kernel level) — NOT its position/rotation
+handling, which legitimately differs by design (#609): Keyformer's cache
+reports ``offset == n_kept`` (see cache/keyformer_cache.py), so renumbering
++ re-rotating survivors on eviction is correct there, while H2O's cache
+reports ``offset`` as the true absolute step count, where the same
+renumber-and-re-rotate was the #609 bug. See
+veloxquant_mlx/tests/cache/test_eviction_rope_contract.py for the shared
+contract both offset conventions must satisfy.
 """
 
 from __future__ import annotations
@@ -53,6 +60,14 @@ def _make_fingerprinted(n_total: int, D: int, seed: int = 0):
 
 
 def test_tau_zero_matches_h2o_kernel():
+    """At tau=0, both kernels' argmin reduction is identical (Gumbel noise
+    is a no-op), so they must evict the SAME row: same surviving scores and
+    same surviving true positions (i.e. the same set membership — neither
+    renumbers here, since both are fed a plain 0..5 position range).
+    Post-#609, key VALUES are no longer compared: Keyformer legitimately
+    re-rotates survivors (its cache's ``offset == n_kept`` contract) while
+    H2O legitimately does not (its cache's ``offset`` is the true absolute
+    step count) — see module docstring."""
     D = 16
     _, raw_values, rotated_keys, positions = _make_fingerprinted(6, D)
     scores_mid = mx.array([[3.0, 1.0, 4.0, 0.001, 2.0, 5.0]], dtype=mx.float32)
@@ -78,9 +93,19 @@ def test_tau_zero_matches_h2o_kernel():
         recent=0,
     )
     # h2o_out: (keys, values, scores, positions); kf_out adds gumbel at index 3.
-    for a, b in zip(h2o_out, (kf_out[0], kf_out[1], kf_out[2], kf_out[4]), strict=True):
-        mx.eval(a, b)
-        assert float(mx.max(mx.abs(a.astype(mx.float32) - b.astype(mx.float32))).item()) == 0.0
+    # H2O preserves survivors' TRUE positions (a real gap at the evicted
+    # index, #609); Keyformer renumbers to a gap-free range (still correct
+    # for its own offset==n_kept contract). So the raw position arrays
+    # differ by design — compare surviving SCORES (order-preserving, so
+    # this is really a proxy for "same set of rows survived") instead.
+    h2o_scores, h2o_positions = h2o_out[2], h2o_out[3]
+    kf_scores, kf_positions = kf_out[2], kf_out[4]
+    mx.eval(h2o_scores, h2o_positions, kf_scores, kf_positions)
+    assert float(mx.max(mx.abs(h2o_scores - kf_scores)).item()) == 0.0
+    # Position 3 (score 0.001, the true minimum) is the one evicted by both:
+    # H2O keeps the gap ([0,1,2,4,5]); Keyformer closes it ([0,1,2,3,4]).
+    assert h2o_positions.tolist() == [[0, 1, 2, 4, 5]]
+    assert kf_positions.tolist() == [[0, 1, 2, 3, 4]]
 
 
 # ---------------------------------------------------------------------------

@@ -40,38 +40,40 @@ single corrupted row's nearest match in an uncompressed reference cache was
 its true position, but at nonzero distance — a rotation-angle error, not a
 storage or ordering bug (row order and all other row values were bit-exact).
 
-Fixed by adopting H2O-adapted's already-proven pattern (see
+Fixed by adopting H2O-adapted's ``self.offset``-tracking pattern (see
 ``docs-site/docs/algorithms/h2o.md`` and ``cache/h2o_cache.py`` module
 docstring for that original investigation): track each kept row's absolute
-``position`` explicitly, keep ``self.offset`` equal to the *true absolute
-step count* (not the kept-row count) rather than delegating to the base
-class's append-only buffer, and re-rotate (via
-:func:`veloxquant_mlx.quantizers.a2ats_rope.rope_remap_positions`) whichever
-survivors shifted storage index when an eviction closed a gap. Verified via
-a synthetic two-call-split reproduction (mirroring ``mlx_lm.generate()``'s
-bulk-prefill-then-final-token call pattern) that ``self.offset`` now equals
-the true absolute position and that de-rotated/re-rotated keys exactly
-match a single uninterrupted call, across multiple heads.
+``position`` explicitly, and keep ``self.offset`` equal to the *true
+absolute step count* (not the kept-row count) rather than delegating to the
+base class's append-only buffer. Verified via a synthetic two-call-split
+reproduction (mirroring ``mlx_lm.generate()``'s bulk-prefill-then-final-token
+call pattern) that ``self.offset`` now equals the true absolute position
+across multiple heads.
 
-KNOWN, NOT-YET-FIXED LIMITATION found while verifying the fix above on a
-real model: ``rope_remap_positions`` implements plain RoPE
-(``inv_freq = base ** (-i/half)``), matching ``mlx_lm``'s default rotation.
-Llama-3-family models (including every Llama checkpoint used in this
-repo's own testing) instead use ``rope_scaling={"rope_type": "llama3", ...}``
-— a piecewise, per-frequency-band rescaling (see ``mlx_lm.models.rope_utils
-.Llama3RoPE``) that plain RoPE math does not reproduce. Confirmed on a real
-Llama-3.2-1B generation: rows never touched by an eviction remained
-bit-exact against an uncompressed reference cache, but every row that WAS
-re-rotated by an eviction (regardless of which ``rope_base`` value is
-passed to ``curdkv_rope_base``) came out numerically wrong, and generation
-quality was correspondingly still degraded even with the offset-desync bug
-fixed. Passing the model's true ``rope_theta`` alone does not fix this — a
-correct fix needs the same piecewise Llama-3 scaling ``Llama3RoPE`` applies,
-which ``rope_remap_positions`` does not implement. This affects H2O-adapted
-identically (same primitive, same untested-on-Llama3-scaling gap) — not
-introduced by this fix, but newly confirmed by it. Scoped as a separate
-follow-up rather than folded into this fix — see
-https://github.com/rajveer43/VeloxQuant-MLX/issues/148.
+SUPERSEDED, #609: the original version of this fix additionally re-rotated
+(via ``rope_remap_positions``) whichever survivors shifted storage index
+when an eviction closed a gap, to keep the *stored index* contiguous. That
+re-rotation is gone now (see the eviction branch in ``curdkv_update`` /
+``curdkv_update_batched`` below): once ``self.offset`` reports the true
+step count, re-rotating a survivor changes its true distance from any
+future query away from what it actually is, corrupting the RoPE relative
+angle exactly the way this docstring's original bug did. Survivors now
+simply keep the position (and rotation) they arrived with; the kept set is
+not renumbered and can be non-contiguous. This also makes the Llama-3
+scaled-RoPE gap noted below moot for survivors — there is nothing left to
+re-rotate.
+
+FORMERLY-KNOWN LIMITATION (moot after #609, kept for history): while
+verifying the offset fix above on a real model, re-rotated survivors were
+found wrong on Llama-3-family models, because ``rope_remap_positions``
+implements plain RoPE (``inv_freq = base ** (-i/half)``) while Llama-3
+checkpoints use ``rope_scaling={"rope_type": "llama3", ...}`` — a piecewise,
+per-frequency-band rescaling (see ``mlx_lm.models.rope_utils.Llama3RoPE``)
+that plain RoPE math does not reproduce. Tracked as
+https://github.com/rajveer43/VeloxQuant-MLX/issues/148; #609 resolves it for
+survivors by removing the re-rotation these caches performed, though #148
+may still apply wherever ``rope_remap_positions`` is used for another
+purpose (e.g. correcting a genuinely mis-rotated incoming key).
 
 The mechanism gap this closes: every other eviction method in this repo
 (H2O, SnapKV, TOVA, PyramidKV, Keyformer, MorphKV, KVzip, ...) scores a token
@@ -103,8 +105,6 @@ import mlx.core as mx
 import numpy as np
 import scipy.linalg
 
-from veloxquant_mlx.quantizers.a2ats_rope import rope_remap_positions
-
 # Hard wall-clock budget for the scipy `gesvd` fallback in `_robust_svd`.
 # `gesvd` is the numerically-robust remedy for `gesdd` non-convergence (see
 # https://github.com/rajveer43/VeloxQuant-MLX/issues/147), but on some
@@ -134,12 +134,11 @@ class CurDKVState:
                    see honesty crux point 4 in the docs for why a raw
                    cumulative-sum comparison is scale-biased against
                    newcomers. `None` before the first update.
-        positions: [n_kept] int32 absolute positions each kept key is
-                   currently rotated at. Reassigned to a contiguous range
-                   whenever eviction changes which rows survive, and each
-                   key is re-rotated (via ``rope_remap_positions``) to match
-                   — see module docstring's FIXED, CONFIRMED-ON-REAL-MODELS
-                   PROBLEM for why this matters. `None` before first update.
+        positions: [n_kept] int32 true absolute position each kept key is
+                   currently rotated at. Eviction only drops a row — it
+                   never renumbers or re-rotates survivors (see #609), so a
+                   kept set can be non-contiguous. `None` before first
+                   update.
         n_sink: Number of leading sink positions — never evicted.
         budget: Maximum tokens to keep at any time (including sinks).
         rank_cap: SVD rank cap used for leverage-score estimation.
@@ -388,11 +387,10 @@ def curdkv_update(
          anything currently cached could otherwise be evicted on the very
          step it arrives, purely because it hasn't had time to accumulate,
          defeating the point of value-aware retention.
-      5. If eviction happened: re-rotate (RoPE) whichever surviving rows
-         shifted storage index to close the gap left by the evicted row —
-         see module docstring's FIXED, CONFIRMED-ON-REAL-MODELS PROBLEM.
-         Rows before the gap keep their exact original rotation (nothing
-         about their true position changed); only rows after the gap shift.
+      5. If eviction happened: drop the evicted row. Every survivor keeps
+         its exact original position and rotation untouched — the kept set
+         is simply shorter by one row, and may be non-contiguous (see
+         module docstring, #609).
 
     Args:
         state:      Current CurDKVState for this head.
@@ -469,25 +467,19 @@ def curdkv_update(
                 protected = mean_scores
 
             evict_idx = int(mx.argmin(protected).item())
-            evicted_pos = int(positions_cat[evict_idx].item())
             keep_indices = [j for j in range(n_total) if j != evict_idx]
             keys_cat = keys_cat[keep_indices]
             values_cat = values_cat[keep_indices]
             scores_cat = scores_cat[keep_indices]
             n_updates_cat = n_updates_cat[keep_indices]
-            old_positions_kept = positions_cat[keep_indices]
-
-            # Evicting `evict_idx` leaves a size-1 gap at `evicted_pos`. Rows
-            # before the gap keep their exact original position; rows after
-            # shift down by exactly one each, closing the gap so the stored
-            # layout stays contiguous — matching what the model's own
-            # position bookkeeping (offset == next_pos) assumes. Only rows
-            # after the gap need re-rotating.
-            shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
-            positions_cat = old_positions_kept + shift
-            keys_cat = rope_remap_positions(
-                keys_cat, old_positions_kept, positions_cat, base=state.rope_base
-            )
+            # Every survivor keeps its exact original position and rotation
+            # — no renumbering, no re-rotation (#609). ``state.offset``
+            # (managed by CurDKVKVCache) reports the true absolute step
+            # count, not the kept-row count, so mlx_lm always rotates the
+            # next query at each survivor's true distance; re-rotating
+            # survivors to a gap-free layout would change that distance and
+            # desync it from the cache's causal mask.
+            positions_cat = positions_cat[keep_indices]
 
         state = CurDKVState(
             keys=keys_cat,
@@ -608,42 +600,6 @@ def _leverage_scores_batched(
     return mx.array(scores.astype(np.float32))
 
 
-def _rotate_batched(x: mx.array, cos: mx.array, sin: mx.array) -> mx.array:
-    """Same formula as ``a2ats_rope._rotate``, generalized via ellipsis
-    indexing to an arbitrary leading batch rank (here ``[BH, N, D]``)."""
-    half = x.shape[-1] // 2
-    x1, x2 = x[..., :half], x[..., half:]
-    return mx.concatenate([x1 * cos - x2 * sin, x1 * sin + x2 * cos], axis=-1)
-
-
-def _rope_remap_positions_batched(
-    x: mx.array, old_positions: mx.array, new_positions: mx.array, base: float
-) -> mx.array:
-    """Vectorized-over-``BH`` equivalent of
-    :func:`veloxquant_mlx.quantizers.a2ats_rope.rope_remap_positions`.
-
-    Args:
-        x: ``[BH, N, D]`` fp16/fp32 vectors, already RoPE'd at ``old_positions``.
-        old_positions: ``[BH, N]`` absolute positions each row was rotated at.
-        new_positions: ``[BH, N]`` absolute positions to re-rotate each row to.
-        base: RoPE frequency base — shared across rows (see class docstring's
-              ``curdkv_rope_base`` — uniform across heads, same convention as
-              every other per-head config field).
-
-    Returns:
-        ``[BH, N, D]`` fp16 vectors, numerically identical (same one-rotation
-        formula, just batched) to calling ``rope_remap_positions`` once per row.
-    """
-    if x.shape[1] == 0:
-        return x.astype(mx.float16)
-    delta = new_positions.astype(mx.float32) - old_positions.astype(mx.float32)  # [BH, N]
-    half = x.shape[-1] // 2
-    inv_freq = 1.0 / (base ** (mx.arange(0, half, dtype=mx.float32) / half))  # [half]
-    angles = delta[:, :, None] * inv_freq[None, None, :]  # [BH, N, half]
-    cos, sin = mx.cos(angles).astype(mx.float16), mx.sin(angles).astype(mx.float16)
-    return _rotate_batched(x.astype(mx.float16), cos, sin)
-
-
 def curdkv_update_batched(
     keys: mx.array | None,  # [BH, n, D] fp16 or None
     values: mx.array | None,  # [BH, n, D] fp16 or None
@@ -762,7 +718,6 @@ def curdkv_update_batched(
             else:
                 protected = mean_scores
             evict_idx = mx.argmin(protected, axis=-1, keepdims=True).astype(mx.int32)  # [BH, 1]
-            evicted_pos = mx.take_along_axis(positions_cat, evict_idx, axis=1)  # [BH, 1]
 
             # Batched compaction — same take_along_axis trick as
             # h2o_update_batched/cam_update_batched's single-row eviction.
@@ -772,16 +727,10 @@ def curdkv_update_batched(
             values_cat = mx.take_along_axis(values_cat, source[..., None], axis=1)
             scores_cat = mx.take_along_axis(scores_cat, source, axis=1)
             n_updates_cat = mx.take_along_axis(n_updates_cat, source, axis=1)
-            old_positions_kept = mx.take_along_axis(positions_cat, source, axis=1)
-
-            # Rows before the gap keep their exact original position; rows
-            # after shift down by exactly one each, closing the gap. Only
-            # rows after the gap need re-rotating.
-            shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
-            positions_cat = old_positions_kept + shift
-            keys_cat = _rope_remap_positions_batched(
-                keys_cat, old_positions_kept, positions_cat, rope_base
-            )
+            # Every survivor keeps its exact original position and rotation
+            # — no renumbering, no re-rotation (#609). See the per-head loop
+            # variant above for why.
+            positions_cat = mx.take_along_axis(positions_cat, source, axis=1)
 
         keys, values, leverage_scores, n_updates, positions = (
             keys_cat,
