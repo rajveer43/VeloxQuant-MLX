@@ -446,7 +446,8 @@ in the same direction.**
 
 Two-pass decode-once vs. unpacked-redundant, same shapes, `nsg` per
 `_auto_nsg` for the unpacked arm (capped at 16 for `scalar_predecoded_attend`
-— see caveat below):
+— see caveat below; that cap has since been removed and this table
+re-measured, see "Fixed" immediately after the caveat):
 
 | `(H_q,H_kv)` | S_kv | two-pass vs. unpacked |
 |---|---|---|
@@ -499,10 +500,53 @@ oversized request — it crashes at the Metal-compiler level
 (`RuntimeError: Threadgroup memory size (33024) exceeds the maximum
 threadgroup memory allowed (32768)`). The two-pass table above caps
 `nsg` at 16 for this kernel to work around it; 31 is the actual ceiling
-its current buffer layout allows. Filed as a follow-up (not fixed as part of
-this re-measurement) — this document keeps to the original scope of "what
-limits these kernels," and a missing input-validation check is a distinct,
-smaller class of issue from the occupancy findings above.
+its current buffer layout allows. It was worse than a missing validation
+check: `_auto_nsg` sizes its budget for the *packed* kernel's smaller
+buffer, so the default `nsg=None` picks 32 whenever `B*H_q*S_q < 32`
+(e.g. `B=1, H_q=8`) and the default call crashed outright.
+
+**Fixed** by porting #317's buffer shrink to this kernel rather than adding
+a guard: `my_out`/`sh_o` are sized to `DSLOTS_C = ceil(D/32)` (the factory
+now keys on `D`), and `sh_o` is `half`, holding each SIMD-group's partial
+pre-divided by its own `running_d` with the merge re-applying it — the same
+scheme as `scalar_affine_attend.metal`. Every `nsg` in 1..32 now fits at
+every `D <= 256` (worst case `D=256, nsg=32`: 16640B), so no budget check is
+needed and `_auto_nsg`'s formula is now correct for this kernel. The
+parity test covers `nsg ∈ {4, None, 32}` across all three ratios, plus every
+`nsg` at `D=256`.
+
+Re-measured with the cap removed (`nsg=None` for every arm; two independent
+runs each, before = previous code with the 16 cap, same session):
+
+| `(H_q,H_kv)` | S_kv | two-pass ms before | two-pass ms after | two-pass vs. unpacked (after) |
+|---|---|---|---|---|
+| (32,4) | 256   | 0.29-0.30 | 0.27-0.28 | **2.55-2.58x faster** |
+| (32,4) | 1024  | 0.56-0.60 | 0.45      | **2.04-2.05x faster** |
+| (32,4) | 2048  | 0.85-0.89 | 0.81-0.85 | **1.44-1.51x faster** |
+| (32,4) | 4096  | 1.59-1.88 | 1.51      | **1.14-1.17x faster** |
+| (32,4) | 8192  | 2.99-3.46 | 2.78-2.81 | 1.06-1.07x |
+| (32,4) | 16384 | 5.62-5.68 | 5.24-5.29 | 1.06-1.12x |
+| (32,8) | 256   | 0.33      | 0.30      | **2.39-2.60x faster** |
+| (32,8) | 2048  | 1.12-1.14 | 1.08-1.09 | **1.13x faster** |
+| (32,8) | 4096  | 1.99-2.00 | 1.89-1.92 | 0.94-0.96x (slower) |
+| (32,8) | 16384 | 7.00-7.05 | 6.62-6.66 | 0.85-0.91x (slower) |
+| (8,2)  | 1024  | 0.34-0.35 | 0.30      | **1.31-1.32x faster** |
+| (8,2)  | 2048  | 0.48      | 0.39      | **1.22-1.24x faster** |
+| (8,2)  | 4096  | 0.92-0.94 | 0.67-0.68 | 0.96-0.98x (roughly even) |
+| (8,2)  | 8192  | 1.58-1.60 | 1.11-1.13 | 0.91x (slower) |
+| (8,2)  | 16384 | 2.94-2.96 | 1.88-1.91 | 0.90-0.91x (slower) |
+
+The two-pass kernel is faster at every shape. The large gain is at `(8,2)`
+(1.4-1.6x at long context), the one ratio where `nsg` actually changed
+(16 → 32, since `n_tg = 8`). At `(32,4)`/`(32,8)`, `n_tg = 32` saturates and
+`nsg` stays 8, so the 3-28% there is from the smaller buffer alone. The
+`(8,2)` crossover moves from ~S_kv 2048 to ~3000-4000, and its long-context
+loss narrows from 0.58x to 0.90x; `(32,4)` now edges out unpacked at every
+S_kv tested. The disposition above is unchanged — the real-model
+amortization argument (mlx_lm retains a materialized `K_hat`) is
+independent of these numbers — but `(32,4)` is the first ratio where
+two-pass has no measured loss, which is worth knowing if that argument
+ever stops holding.
 
 Reproduction: `python scripts/kv_kernel_gqa_packing_recheck.py` reproduces
 the tables above (see that script's docstring for the exact `nsg=None`
