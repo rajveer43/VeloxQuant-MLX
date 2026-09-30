@@ -277,7 +277,24 @@ class GEARKVCache(_MLXKVCache):
         # test_beats_naive_base_reconstruction, S=128). Restricting the
         # check to small S keeps that quality contract intact for prefill
         # while still fixing the decode-step pathology issue #590 reports.
-        if self._rank == 0:
+        # issue #592: lr_bytes = rank * (S + D) * 2 grows monotonically with
+        # rank, so if even rank=1 can't beat code_bytes, no rank the SVD
+        # could pick (fixed or energy-threshold-selected) will be profitable
+        # either -- the whole correction is forced to 0 below regardless of
+        # what the SVD returns. At decode sizes (S <= _DECODE_S_THRESHOLD)
+        # that's a real, common case (see gear_cache module docstring /
+        # #590), and mx.linalg.svd's CPU-stream dispatch + its mandatory
+        # mx.eval sync is ~59% of this method's wall time even on the
+        # near-degenerate [1, D] matrices decode produces (measured via
+        # cProfile: _truncated_svd_batched at 0.339s of 0.576s total across
+        # 300 decode-shaped calls) -- so skip the dispatch entirely rather
+        # than run it and discard the result.
+        skip_svd_unprofitable = False
+        if self._rank != 0 and S <= self._DECODE_S_THRESHOLD:
+            code_bytes_check = -(-(S * D * self._bits) // 8)  # ceil
+            skip_svd_unprofitable = code_bytes_check <= (S + D) * 2
+
+        if self._rank == 0 or skip_svd_unprofitable:
             L_batched = R_batched = None
             ranks = [0] * (B * H)
         else:
