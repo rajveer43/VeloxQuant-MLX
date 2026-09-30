@@ -95,11 +95,15 @@ def _hardware() -> dict:
     try:
         chip = subprocess.run(
             ["sysctl", "-n", "machdep.cpu.brand_string"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout.strip()
         mem = subprocess.run(
             ["sysctl", "-n", "hw.memsize"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout.strip()
         if chip:
             info["chip"] = chip
@@ -113,7 +117,9 @@ def _hardware() -> dict:
 def _gpu_contention_check() -> list[str]:
     suspects = []
     try:
-        out = subprocess.run(["ps", "-Ao", "comm"], capture_output=True, text=True, timeout=5).stdout
+        out = subprocess.run(
+            ["ps", "-Ao", "comm"], capture_output=True, text=True, timeout=5
+        ).stdout
         keywords = ("python", "ollama", "mlx", "llama", "lmstudio")
         for line in out.splitlines():
             low = line.lower()
@@ -161,12 +167,19 @@ def _build_fp16_caches(model) -> list:
     return [_FallbackCache() for _ in layers]
 
 
-def _generate(model, tokenizer, prompt: str, max_tokens: int, caches: list) -> tuple[str, int, float]:
+def _generate(
+    model, tokenizer, prompt: str, max_tokens: int, caches: list
+) -> tuple[str, int, float]:
     from mlx_lm import generate
 
     t0 = time.time()
     out = generate(
-        model, tokenizer, prompt=prompt, max_tokens=max_tokens, verbose=False, prompt_cache=caches,
+        model,
+        tokenizer,
+        prompt=prompt,
+        max_tokens=max_tokens,
+        verbose=False,
+        prompt_cache=caches,
     )
     elapsed = time.time() - t0
     n_tok = len(tokenizer.encode(out)) if out else 0
@@ -222,8 +235,16 @@ def _summarize(runs: list[dict]) -> dict:
     }
 
 
-def _run_prompt_length(model, tokenizer, prompt_name: str, prompt: str, max_tokens: int,
-                        repeats: int, b: int, seed: int) -> dict:
+def _run_prompt_length(
+    model,
+    tokenizer,
+    prompt_name: str,
+    prompt: str,
+    max_tokens: int,
+    repeats: int,
+    b: int,
+    seed: int,
+) -> dict:
     arms = ["fp16", "rvq_off", "rvq_on"]
     collected: dict[str, list[dict]] = {a: [] for a in arms}
     for rep in range(repeats):
@@ -251,16 +272,24 @@ def main() -> int:
     parser.add_argument("--model", default="mlx-community/Qwen3-8B-4bit")
     parser.add_argument("--max-tokens", type=int, default=120)
     parser.add_argument("--repeats", type=int, default=5)
-    parser.add_argument("--bits", type=int, default=2,
-                         help="TurboQuantRVQ bit_width_inlier; default 2 (this method's "
-                              "own default -- unlike KIVI, no documented quality collapse "
-                              "at this width was found in the cache's docstring)")
+    parser.add_argument(
+        "--bits",
+        type=int,
+        default=2,
+        help="TurboQuantRVQ bit_width_inlier; default 2 (this method's "
+        "own default -- unlike KIVI, no documented quality collapse "
+        "at this width was found in the cache's docstring)",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", default=None)
     args = parser.parse_args()
 
     model_stem = args.model.split("/")[-1]
-    out_dir = Path(args.output_dir) if args.output_dir else Path("figures/qwen3_8b_turboquant_rvq_honest") / model_stem
+    out_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else Path("figures/qwen3_8b_turboquant_rvq_honest") / model_stem
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     hw = _hardware()
@@ -281,7 +310,9 @@ def main() -> int:
     layers = getattr(model, "layers", None) or model.model.layers
     margs = getattr(model, "args", None) or model.model.args
     n_layers = len(layers)
-    n_kv_heads = getattr(margs, "num_key_value_heads", None) or getattr(margs, "num_attention_heads", 1)
+    n_kv_heads = getattr(margs, "num_key_value_heads", None) or getattr(
+        margs, "num_attention_heads", 1
+    )
     head_dim = getattr(margs, "head_dim", None) or (margs.hidden_size // margs.num_attention_heads)
     print(f"  n_layers={n_layers} n_kv_heads={n_kv_heads} head_dim={head_dim}")
 
@@ -292,7 +323,14 @@ def main() -> int:
     for name, prompt in PROMPTS.items():
         print(f"\n=== prompt length: {name} ===", flush=True)
         results[name] = _run_prompt_length(
-            model, tokenizer, name, prompt, args.max_tokens, args.repeats, args.bits, args.seed,
+            model,
+            tokenizer,
+            name,
+            prompt,
+            args.max_tokens,
+            args.repeats,
+            args.bits,
+            args.seed,
         )
 
     payload = {

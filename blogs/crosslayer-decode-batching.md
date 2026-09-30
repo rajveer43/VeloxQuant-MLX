@@ -2,6 +2,8 @@
 
 *Issue #307's own roofline analysis named one unblocked, unattempted lever for `scalar_fused_decode_attend`'s occupancy problem: batch multiple layers' independent decode-attend calls into one Metal dispatch. Building it produced a real, measured kernel-level win — and then a real-model test found the lever can't reach where it matters most, for a reason baked into how every transformer works. The other half of the same lever could, and did, on a real model.*
 
+> **Correction (2026-09-30):** The request-batching speedups in this post (1.50x–3.83x) were measured against a baseline that dequantizes the whole KV history on every decode step. No cache in this repo decodes that way — `KIVIKVCache` keeps fp16 and runs plain attention. Against plain fp16 `KVCache`, the fused path measures 0.48–0.85x end to end on the same model, and mlx_lm's built-in `QuantizedKVCache(bits=4)` is faster than both. Routing decode through `scalar_fused_decode_attend` is not recommended. The cross-layer findings are unaffected. Details: `docs/KV_KERNEL_ROOFLINE_FINDINGS.md`, "Addendum: the fused decode path is slower than the production baseline".
+
 ---
 
 ## The problem this picks up

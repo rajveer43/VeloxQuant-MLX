@@ -191,12 +191,8 @@ def test_append_batched_multi_step_matches_loop_N_gt1() -> None:
 
         expected_max = mx.stack([s.page_max for s in scalar_summaries], axis=0)
         expected_min = mx.stack([s.page_min for s in scalar_summaries], axis=0)
-        np.testing.assert_array_equal(
-            np.array(page_max.tolist()), np.array(expected_max.tolist())
-        )
-        np.testing.assert_array_equal(
-            np.array(page_min.tolist()), np.array(expected_min.tolist())
-        )
+        np.testing.assert_array_equal(np.array(page_max.tolist()), np.array(expected_max.tolist()))
+        np.testing.assert_array_equal(np.array(page_min.tolist()), np.array(expected_min.tolist()))
         assert n_tokens == scalar_summaries[0].n_tokens
 
 

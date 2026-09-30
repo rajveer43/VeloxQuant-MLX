@@ -104,9 +104,7 @@ def main(argv: list[str] | None = None) -> None:
         except Exception as exc:
             empirical = {"_error": str(exc)}
 
-    rows = sorted(
-        estimates.values(), key=lambda e: (e.compressed_bytes, e.method)
-    )[: args.top]
+    rows = sorted(estimates.values(), key=lambda e: (e.compressed_bytes, e.method))[: args.top]
 
     if args.json:
         payload = {

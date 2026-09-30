@@ -84,11 +84,15 @@ def _hardware() -> dict:
     try:
         chip = subprocess.run(
             ["sysctl", "-n", "machdep.cpu.brand_string"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout.strip()
         mem = subprocess.run(
             ["sysctl", "-n", "hw.memsize"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout.strip()
         if chip:
             info["chip"] = chip
@@ -102,7 +106,9 @@ def _hardware() -> dict:
 def _gpu_contention_check() -> list[str]:
     suspects = []
     try:
-        out = subprocess.run(["ps", "-Ao", "comm"], capture_output=True, text=True, timeout=5).stdout
+        out = subprocess.run(
+            ["ps", "-Ao", "comm"], capture_output=True, text=True, timeout=5
+        ).stdout
         keywords = ("python", "ollama", "mlx", "llama", "lmstudio")
         for line in out.splitlines():
             low = line.lower()
@@ -145,12 +151,19 @@ def _build_fp16_caches(model) -> list:
     return [_FallbackCache() for _ in layers]
 
 
-def _generate(model, tokenizer, prompt: str, max_tokens: int, caches: list) -> tuple[str, int, float]:
+def _generate(
+    model, tokenizer, prompt: str, max_tokens: int, caches: list
+) -> tuple[str, int, float]:
     from mlx_lm import generate
 
     t0 = time.time()
     out = generate(
-        model, tokenizer, prompt=prompt, max_tokens=max_tokens, verbose=False, prompt_cache=caches,
+        model,
+        tokenizer,
+        prompt=prompt,
+        max_tokens=max_tokens,
+        verbose=False,
+        prompt_cache=caches,
     )
     elapsed = time.time() - t0
     n_tok = len(tokenizer.encode(out)) if out else 0
@@ -164,19 +177,33 @@ def _word_overlap(a: str, b: str) -> float:
     return len(wa & wb) / len(wa | wb)
 
 
-def _run_once(model, tokenizer, arm: str, prompt: str, max_tokens: int, budget: int, seed: int,
-              calibrated_filters) -> dict:
+def _run_once(
+    model,
+    tokenizer,
+    arm: str,
+    prompt: str,
+    max_tokens: int,
+    budget: int,
+    seed: int,
+    calibrated_filters,
+) -> dict:
     _reset_peak()
     if arm == "fp16":
         caches = _build_fp16_caches(model)
     elif arm == "fallback_off":
-        caches = _build_qfilters_caches(model, budget, seed, use_metal=False, filters_per_layer=None)
+        caches = _build_qfilters_caches(
+            model, budget, seed, use_metal=False, filters_per_layer=None
+        )
     elif arm == "fallback_on":
         caches = _build_qfilters_caches(model, budget, seed, use_metal=True, filters_per_layer=None)
     elif arm == "calibrated_off":
-        caches = _build_qfilters_caches(model, budget, seed, use_metal=False, filters_per_layer=calibrated_filters)
+        caches = _build_qfilters_caches(
+            model, budget, seed, use_metal=False, filters_per_layer=calibrated_filters
+        )
     elif arm == "calibrated_on":
-        caches = _build_qfilters_caches(model, budget, seed, use_metal=True, filters_per_layer=calibrated_filters)
+        caches = _build_qfilters_caches(
+            model, budget, seed, use_metal=True, filters_per_layer=calibrated_filters
+        )
     else:
         raise ValueError(arm)
 
@@ -192,8 +219,13 @@ def _run_once(model, tokenizer, arm: str, prompt: str, max_tokens: int, budget: 
     compression = (full_bytes / kept_bytes) if kept_bytes else 1.0
 
     return {
-        "arm": arm, "text": text, "tokens_generated": n_tok, "elapsed_s": elapsed,
-        "throughput_tok_s": throughput, "peak_mb": peak_mb, "compression_ratio": compression,
+        "arm": arm,
+        "text": text,
+        "tokens_generated": n_tok,
+        "elapsed_s": elapsed,
+        "throughput_tok_s": throughput,
+        "peak_mb": peak_mb,
+        "compression_ratio": compression,
     }
 
 
@@ -215,9 +247,13 @@ def _summarize(runs: list[dict]) -> dict:
 
 def main() -> int:
     _ensure_path()
-    parser = argparse.ArgumentParser(description="Calibrated vs fallback QFilters on Qwen3-8B (long prompt)")
+    parser = argparse.ArgumentParser(
+        description="Calibrated vs fallback QFilters on Qwen3-8B (long prompt)"
+    )
     parser.add_argument("--model", default="mlx-community/Qwen3-8B-4bit")
-    parser.add_argument("--calibration", default="figures/qwen3_8b_qfilters_calibrated/qfilters_qwen3_8b.npz")
+    parser.add_argument(
+        "--calibration", default="figures/qwen3_8b_qfilters_calibrated/qfilters_qwen3_8b.npz"
+    )
     parser.add_argument("--max-tokens", type=int, default=120)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--budget", type=int, default=512)
@@ -226,7 +262,11 @@ def main() -> int:
     args = parser.parse_args()
 
     model_stem = args.model.split("/")[-1]
-    out_dir = Path(args.output_dir) if args.output_dir else Path("figures/qwen3_8b_qfilters_calibrated") / model_stem
+    out_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else Path("figures/qwen3_8b_qfilters_calibrated") / model_stem
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     hw = _hardware()
@@ -252,7 +292,9 @@ def main() -> int:
     layers = getattr(model, "layers", None) or model.model.layers
     margs = getattr(model, "args", None) or model.model.args
     n_layers = len(layers)
-    n_kv_heads = getattr(margs, "num_key_value_heads", None) or getattr(margs, "num_attention_heads", 1)
+    n_kv_heads = getattr(margs, "num_key_value_heads", None) or getattr(
+        margs, "num_attention_heads", 1
+    )
     head_dim = getattr(margs, "head_dim", None) or (margs.hidden_size // margs.num_attention_heads)
     print(f"  n_layers={n_layers} n_kv_heads={n_kv_heads} head_dim={head_dim} budget={args.budget}")
 
@@ -261,20 +303,35 @@ def main() -> int:
     for rep in range(args.repeats):
         for arm in arms:
             print(f"  rep {rep + 1}/{args.repeats} arm={arm}", flush=True)
-            collected[arm].append(_run_once(
-                model, tokenizer, arm, LONG_PROMPT, args.max_tokens, args.budget, args.seed,
-                calibration.filters,
-            ))
+            collected[arm].append(
+                _run_once(
+                    model,
+                    tokenizer,
+                    arm,
+                    LONG_PROMPT,
+                    args.max_tokens,
+                    args.budget,
+                    args.seed,
+                    calibration.filters,
+                )
+            )
 
     summaries = {arm: _summarize(runs) for arm, runs in collected.items()}
 
     fp16_text = summaries["fp16"]["texts"][0]
 
     payload = {
-        "model": args.model, "n_layers": n_layers, "n_kv_heads": n_kv_heads, "head_dim": head_dim,
-        "qfilters_budget": args.budget, "max_tokens": args.max_tokens, "repeats": args.repeats,
-        "calibration_artifact": args.calibration, "calibration_dataset": calibration.dataset,
-        "hardware": hw, "gpu_contention_suspects": contenders,
+        "model": args.model,
+        "n_layers": n_layers,
+        "n_kv_heads": n_kv_heads,
+        "head_dim": head_dim,
+        "qfilters_budget": args.budget,
+        "max_tokens": args.max_tokens,
+        "repeats": args.repeats,
+        "calibration_artifact": args.calibration,
+        "calibration_dataset": calibration.dataset,
+        "hardware": hw,
+        "gpu_contention_suspects": contenders,
         "prompt_tokens": len(tokenizer.encode(LONG_PROMPT)),
         "summaries": summaries,
         "fallback_on_vs_off_identical_text": (
@@ -285,8 +342,12 @@ def main() -> int:
             set(summaries["calibrated_off"]["texts"]) == set(summaries["calibrated_on"]["texts"])
             and len(set(summaries["calibrated_off"]["texts"])) == 1
         ),
-        "fp16_vs_calibrated_word_overlap": _word_overlap(fp16_text, summaries["calibrated_on"]["texts"][0]),
-        "fp16_vs_fallback_word_overlap": _word_overlap(fp16_text, summaries["fallback_on"]["texts"][0]),
+        "fp16_vs_calibrated_word_overlap": _word_overlap(
+            fp16_text, summaries["calibrated_on"]["texts"][0]
+        ),
+        "fp16_vs_fallback_word_overlap": _word_overlap(
+            fp16_text, summaries["fallback_on"]["texts"][0]
+        ),
     }
     json_path = out_dir / "results.json"
     with open(json_path, "w") as f:

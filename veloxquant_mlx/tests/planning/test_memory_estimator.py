@@ -17,8 +17,13 @@ from veloxquant_mlx.profiling.model_profiler import ModelProfile
 
 def _model() -> ModelProfile:
     return ModelProfile(
-        model_id="t", architecture="llama", num_layers=4, num_query_heads=8,
-        num_kv_heads=4, head_dim=128, attention_type="gqa",
+        model_id="t",
+        architecture="llama",
+        num_layers=4,
+        num_query_heads=8,
+        num_kv_heads=4,
+        head_dim=128,
+        attention_type="gqa",
     )
 
 
@@ -83,6 +88,7 @@ def test_method_quant_bits_reports_bits() -> None:
     kb, vb, ev = method_quant_bits("vecinfer")
     assert kb == 4.0
 
+
 def test_unknown_method_defaults_to_fp16_low_confidence() -> None:
     est = estimate_memory("nonexistent_method", _model(), _workload())
     assert est.compressed_bytes == est.baseline_bytes
@@ -132,8 +138,14 @@ def test_estimate_candidate_memory_batch() -> None:
 def test_to_dict_shape() -> None:
     data = estimate_memory("kivi", _model(), _workload()).to_dict()
     for key in (
-        "method", "baseline_bytes", "compressed_bytes", "resident_bytes",
-        "reduction_ratio", "savings_percent", "confidence", "assumptions",
+        "method",
+        "baseline_bytes",
+        "compressed_bytes",
+        "resident_bytes",
+        "reduction_ratio",
+        "savings_percent",
+        "confidence",
+        "assumptions",
     ):
         assert key in data
     assert data["method"] == "kivi"

@@ -87,8 +87,12 @@ def test_compress_prefill_batched_matches_reference(desc, bh, S, D, n_sink, budg
         st = init_nestedkv_state(n_sink)
         st = nestedkv_compress_prefill(st, keys[row], values[row], budget=budget, window=window)
         ref_k, ref_v = nestedkv_get_kv(st)
-        kd = float(mx.max(mx.abs(kept_keys_b[row].astype(mx.float32) - ref_k.astype(mx.float32))).item())
-        vd = float(mx.max(mx.abs(kept_values_b[row].astype(mx.float32) - ref_v.astype(mx.float32))).item())
+        kd = float(
+            mx.max(mx.abs(kept_keys_b[row].astype(mx.float32) - ref_k.astype(mx.float32))).item()
+        )
+        vd = float(
+            mx.max(mx.abs(kept_values_b[row].astype(mx.float32) - ref_v.astype(mx.float32))).item()
+        )
         assert kd < 1e-2, f"{desc}: row {row} keys diverged by {kd}"
         assert vd < 1e-2, f"{desc}: row {row} values diverged by {vd}"
         assert kept_keys_b.dtype == mx.float16
@@ -156,7 +160,9 @@ def test_real_cache_prefill_matches_reference_loop(B, H, seed):
     k = mx.array(rng.standard_normal((B, H, S, D)).astype(np.float32)).astype(mx.float16)
     v = mx.array(rng.standard_normal((B, H, S, D)).astype(np.float32)).astype(mx.float16)
 
-    cache = _make_cache(head_dim=D, nestedkv_budget=budget, nestedkv_n_sink=n_sink, nestedkv_window=window)
+    cache = _make_cache(
+        head_dim=D, nestedkv_budget=budget, nestedkv_n_sink=n_sink, nestedkv_window=window
+    )
     k_out, v_out = cache.update_and_fetch(k, v)
 
     k_out_b, v_out_b = [], []
@@ -184,7 +190,9 @@ def test_real_cache_prefill_then_decode_matches_reference_loop(B, H, seed):
     k = mx.array(rng.standard_normal((B, H, S, D)).astype(np.float32)).astype(mx.float16)
     v = mx.array(rng.standard_normal((B, H, S, D)).astype(np.float32)).astype(mx.float16)
 
-    cache = _make_cache(head_dim=D, nestedkv_budget=budget, nestedkv_n_sink=n_sink, nestedkv_window=window)
+    cache = _make_cache(
+        head_dim=D, nestedkv_budget=budget, nestedkv_n_sink=n_sink, nestedkv_window=window
+    )
     cache.update_and_fetch(k, v)
 
     ref_states = []
@@ -195,8 +203,12 @@ def test_real_cache_prefill_then_decode_matches_reference_loop(B, H, seed):
             ref_states.append(st)
 
     for i in range(5):
-        kd = mx.array(np.random.default_rng(100 + i).standard_normal((B, H, 1, D)).astype(np.float32)).astype(mx.float16)
-        vd = mx.array(np.random.default_rng(200 + i).standard_normal((B, H, 1, D)).astype(np.float32)).astype(mx.float16)
+        kd = mx.array(
+            np.random.default_rng(100 + i).standard_normal((B, H, 1, D)).astype(np.float32)
+        ).astype(mx.float16)
+        vd = mx.array(
+            np.random.default_rng(200 + i).standard_normal((B, H, 1, D)).astype(np.float32)
+        ).astype(mx.float16)
         k_out, v_out = cache.update_and_fetch(kd, vd)
         idx = 0
         for b in range(B):

@@ -35,7 +35,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Check formatting with ruff
-        run: pipx run ruff format --check .
+        run: pipx run "ruff==0.16.7" format --check .
 
   # BLOCKING. Scoped to the shipped package minus tests -- exactly what
   # [tool.setuptools.packages.find] distributes in the wheel. Verified clean
@@ -55,7 +55,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Lint the shipped package (blocking)
-        run: pipx run ruff check veloxquant_mlx --exclude veloxquant_mlx/tests
+        run: pipx run "ruff==0.16.7" check veloxquant_mlx --exclude veloxquant_mlx/tests
 
   # BLOCKING. Scoped D101/D102/D103 (missing-docstring) check for the surfaces
   # #424 named by path: the CLI entry point, the control-panel HTTP/process
@@ -76,7 +76,7 @@ jobs:
           python-version: "3.12"
       - name: Check docstring coverage on CLI/UI/artifact-store surfaces (blocking)
         run: |
-          pipx run ruff check --select D101,D102,D103 \
+          pipx run "ruff==0.16.7" check --select D101,D102,D103 \
             veloxquant_mlx/__main__.py \
             veloxquant_mlx/cli \
             veloxquant_mlx/ui \
@@ -99,7 +99,7 @@ jobs:
           python-version: "3.12"
       - name: Lint developer tooling and tests (non-blocking until cleared)
         continue-on-error: true
-        run: pipx run ruff check scripts benchmark_scripts veloxquant_mlx/tests
+        run: pipx run "ruff==0.16.7" check scripts benchmark_scripts veloxquant_mlx/tests
 
   mypy:
     # macos-14, not ubuntu-latest: `pip install -e ".[dev]"` pulls in the

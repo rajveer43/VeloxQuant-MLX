@@ -239,7 +239,9 @@ def token_delta_batched(codes_flat: mx.array) -> mx.array:
     return mx.concatenate([codes_flat[:, :1], rest], axis=1)
 
 
-def _batched_symbol_entropy_bits(symbols: mx.array, alphabet_min: int, alphabet_size: int) -> mx.array:
+def _batched_symbol_entropy_bits(
+    symbols: mx.array, alphabet_min: int, alphabet_size: int
+) -> mx.array:
     """Shannon entropy (bits/symbol) per leading-axis slice, no host sync.
 
     Args:
