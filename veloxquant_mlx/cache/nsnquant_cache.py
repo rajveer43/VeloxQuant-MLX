@@ -186,6 +186,32 @@ class NSNQuantKVCache(_MLXKVCache):
             self.values[..., : self.offset, :],
         )
 
+    def trim(self, n: int) -> int:
+        """Drop the last ``n`` tokens and roll the chunk-flush frontier and
+        byte accounting back with them.
+
+        The frontier snaps down to a chunk multiple. Rows between it and the
+        new offset were already round-tripped (their chunk's channel mean
+        included discarded tokens) and are quantized again on the next flush.
+        """
+        trimmed = super().trim(n)
+        if not trimmed:
+            return trimmed
+        r = self._residual_length
+        new_q_end = min(self._q_end, (self.offset // r) * r)
+        n_chunks = (self._q_end - new_q_end) // r
+        if n_chunks:
+            self._account_chunk_bytes(self._B, self._H, r, self._D, -n_chunks)
+            self._q_end = new_q_end
+        self._fp16_key_bytes = max(
+            0, self._fp16_key_bytes - self._B * self._H * trimmed * self._D * 2
+        )
+        self._fp16_value_bytes = max(
+            0, self._fp16_value_bytes - self._B * self._H * trimmed * self._D * 2
+        )
+        self._tokens_seen = max(0, self._tokens_seen - trimmed)
+        return trimmed
+
     # ------------------------------------------------------------------
     # Byte accounting
     # ------------------------------------------------------------------

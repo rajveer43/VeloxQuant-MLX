@@ -123,6 +123,7 @@ class SinkProtectedKVCache(KIVIKVCache):
         per-channel key groups (#162).
         """
         B, H, S, D = keys.shape
+        self._shape_bhd = (B, H, D)
         start = self.offset  # absolute position of keys[:, :, 0, :]
 
         sinks_per_batch = self._update_sinks(keys, start)
@@ -188,6 +189,33 @@ class SinkProtectedKVCache(KIVIKVCache):
 
         self._account_bytes_with_sinks(B, H, S, D, n_quant_now, n_sink_in_block)
         return k_all, v_all
+
+    def trim(self, n: int) -> int:
+        """Drop the last ``n`` tokens, rolling back the frontier, the sink
+        candidates and the byte accounting.
+
+        Sink candidates at discarded positions are dropped; candidates that
+        earlier lost the top-``n_sink`` race are gone for good, so the sink
+        set can differ from a fresh cache's by those evicted entries.
+        """
+        old_nq = self._n_quantized
+        trimmed = super(KIVIKVCache, self).trim(n)
+        if not trimmed:
+            return trimmed
+        n_rolled = self._rollback_frontier(self.offset)
+        # Sinks that were counted in the fp16 sink pool for the rolled-back
+        # region (max over batch, mirroring the flush-time accounting).
+        n_sink_rolled = 0
+        for b, norms_b in enumerate(self._sink_norms):
+            n_sink_rolled = max(
+                n_sink_rolled, sum(1 for p in norms_b if self._n_quantized <= p < old_nq)
+            )
+            self._sink_norms[b] = {p: v for p, v in norms_b.items() if p < self.offset}
+        n_sink_rolled = min(n_sink_rolled, n_rolled)
+        B, H, D = self._shape_bhd
+        self._rollback_bytes(trimmed, n_rolled - n_sink_rolled)
+        self._sink_fp16_bytes = max(0, self._sink_fp16_bytes - n_sink_rolled * D * 2 * 2 * H * B)
+        return trimmed
 
     def _account_bytes_with_sinks(
         self, B: int, H: int, S: int, D: int, n_quant_now: int, n_sink: int
