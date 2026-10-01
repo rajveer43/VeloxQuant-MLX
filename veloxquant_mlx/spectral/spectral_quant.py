@@ -35,6 +35,7 @@ QJL sketch bits for the d - d_s = 124 noise dimensions.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import mlx.core as mx
@@ -145,9 +146,14 @@ class SpectralQuantizer(Quantizer):
         Returns:
             EncodedVector. Fields used:
               indices: uint8 (batch, d) — codebook indices for all d dims.
-              norm:    fp16  (batch,)   — per-vector std-dev scale (signal dims).
+              norm:    fp16  (batch,)   — per-vector RMS scale for signal
+                  dims, rescaling them to the codebook's target std of
+                  1/sqrt(d) before quantization (:issue:617).
+              final_radius: fp16 (batch,) — same RMS-scale convention for
+                  noise dims (:issue:617).
               signs:   int8  (batch, m) — QJL signs of signal residual (if apply_qjl).
-              residual_norm: fp16 (batch,) — ‖ε_s‖ (if apply_qjl).
+              residual_norm: fp16 (batch,) — ‖ε_s‖ in the signal block's
+                  rescaled units (if apply_qjl).
         """
         if x.ndim == 1:
             x = x[None]
@@ -157,38 +163,46 @@ class SpectralQuantizer(Quantizer):
         x_f32 = x.astype(mx.float32)
         h_tilde = x_f32 @ self._R.T  # (batch, d); _R is U^T so _R^T = U
 
-        # Step 2: Per-vector std-dev scale so rotated coordinates fit codebook
-        # We scale by the std of the signal dims (the dominant energy).
-        # This matches the paper's normalisation before codebook lookup.
         h_s = h_tilde[:, : self._d_s]  # (batch, d_s)
         h_n = h_tilde[:, self._d_s :]  # (batch, d - d_s)
 
-        # Per-vector abs-max scale for signal dims (matches TurboQuant convention).
-        # Stays on-device (mx.max/mx.abs) instead of round-tripping through numpy --
-        # everything downstream (codebook quantize, QJL) is MLX-native anyway, so
-        # there is no reason to force a sync here.
-        sig_absmax = mx.max(mx.abs(h_s), axis=1, keepdims=True)  # (batch, 1)
-        sig_absmax = mx.where(sig_absmax < 1e-8, mx.array(1.0, dtype=mx.float32), sig_absmax)
-        sig_scale = sig_absmax[:, 0]  # (batch,)
+        # Per-block RMS scale (issue #617): each codebook is Lloyd-Max for
+        # N(0, 1/d) -- i.e. it expects coordinates with per-element std
+        # ~= 1/sqrt(d). A single global per-vector scale is not enough here
+        # because spectral (PCA) rotation concentrates energy unevenly: the
+        # signal sub-block has a much larger per-element std than the noise
+        # sub-block (that uneven spread is the entire point of separating
+        # them into two codebooks). So each sub-block is independently
+        # rescaled by its own RMS to the codebook's target std, rather than
+        # normalising the whole vector by one abs-max (which squeezed every
+        # coordinate toward +-1, far outside the codebook's +-O(1/sqrt(d))
+        # support, clipping nearly everything to the outermost centroid).
+        target_std = 1.0 / math.sqrt(self._d)
 
-        # Noise dims: use noise absmax for independent scaling
+        def _block_scale(h_block: Any) -> Any:
+            rms = mx.sqrt(mx.mean(h_block * h_block, axis=1, keepdims=True))
+            rms = mx.where(rms < 1e-8, mx.array(1.0, dtype=mx.float32), rms)
+            return rms / target_std  # (batch, 1)
+
+        sig_block_scale = _block_scale(h_s)
+        sig_scale = sig_block_scale[:, 0]
+        h_s = h_s / sig_block_scale
+
         if h_n.shape[1] > 0:
-            noise_absmax = mx.max(mx.abs(h_n), axis=1, keepdims=True)
-            noise_absmax = mx.where(
-                noise_absmax < 1e-8, mx.array(1.0, dtype=mx.float32), noise_absmax
-            )
+            noise_block_scale = _block_scale(h_n)
         else:
-            noise_absmax = mx.ones((batch, 1), dtype=mx.float32)
-        noise_scale = noise_absmax[:, 0]
+            noise_block_scale = mx.ones((batch, 1), dtype=mx.float32)
+        noise_scale = noise_block_scale[:, 0]
+        h_n = h_n / noise_block_scale
 
         # Step 3: Quantize signal dims with C_signal
-        h_s_norm = (h_s / sig_absmax).astype(mx.float16)  # normalised
-        idx_s_mx = self._cb_signal.quantize(h_s_norm)  # (batch, d_s) uint8
+        h_s_f16 = h_s.astype(mx.float16)
+        idx_s_mx = self._cb_signal.quantize(h_s_f16)  # (batch, d_s) uint8
 
         # Step 4: Quantize noise dims with C_noise
         if h_n.shape[1] > 0:
-            h_n_norm = (h_n / noise_absmax).astype(mx.float16)
-            idx_n_mx = self._cb_noise.quantize(h_n_norm)  # (batch, d-d_s) uint8
+            h_n_f16 = h_n.astype(mx.float16)
+            idx_n_mx = self._cb_noise.quantize(h_n_f16)  # (batch, d-d_s) uint8
         else:
             idx_n_mx = None
 
@@ -204,7 +218,7 @@ class SpectralQuantizer(Quantizer):
         if self._apply_qjl and self._qjl is not None:
             # Reconstruct signal estimate ĥ_s^(0) to compute residual
             h_s_hat_norm = self._cb_signal.dequantize(idx_s_mx)  # (batch, d_s) fp16
-            h_s_hat = h_s_hat_norm.astype(mx.float32) * sig_absmax
+            h_s_hat = h_s_hat_norm.astype(mx.float32)
             epsilon_s = (h_s - h_s_hat).astype(mx.float16)  # (batch, d_s)
             signs_mx, residual_norm_mx = self._qjl.encode_key(epsilon_s)
 
@@ -265,8 +279,8 @@ class SpectralQuantizer(Quantizer):
             # QJLEncoder.__init__ -- reuse it instead of re-casting ev per call.
             correction = (
                 r_norm * scale_qjl * (ev.signs.astype(mx.float32) @ self._qjl._S_f32)
-            )  # (batch, d_s)
-            h_s_hat = h_s_hat + correction
+            )  # (batch, d_s), in normalised (unit-L2) units -- rescale to match h_s_hat
+            h_s_hat = h_s_hat + correction * sig_scale
 
         # Decode noise dims: ĥ_n = decode(c_n) * scale (no correction)
         if idx_n.shape[1] > 0:
@@ -337,8 +351,8 @@ class SpectralQuantizer(Quantizer):
                 q_rot_s.reshape(1, -1).astype(mx.float16),
                 ev.signs,
                 ev.residual_norm,
-            )  # (batch,) fp16
-            ip_total = ip_total + ip_qjl.astype(mx.float32)
+            )  # (batch,) fp16, in normalised (unit-L2) units -- rescale to match ip_signal
+            ip_total = ip_total + ip_qjl.astype(mx.float32) * sig_scale
 
         return ip_total.astype(mx.float16)
 

@@ -225,6 +225,87 @@ def test_factory_creates_spectral_cache():
     assert isinstance(cache, SpectralQuantKVCache)
 
 
+def test_rel_error_decreases_with_more_bits():
+    """Issue #617: reconstruction error should shrink monotonically as bits
+    increase, and track TurboQuantMSE's error at each bit-width (both use
+    the same N(0, 1/d) codebook convention). Previously, normalising by
+    abs-max squeezed coordinates far outside the codebook's support, so
+    error stayed flat/high (~0.6-0.9) regardless of bit-width."""
+    import mlx.core as mx
+
+    from veloxquant_mlx.quantizers.turboquant_mse import TurboQuantMSE
+    from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
+
+    def rel(a, b):
+        a = a.astype(mx.float32)
+        b = b.astype(mx.float32)
+        return float(mx.linalg.norm(a - b) / mx.linalg.norm(b))
+
+    d = 128
+    x = mx.random.normal((64, d), key=mx.random.key(0)).astype(mx.float16)
+    xu = (x.astype(mx.float32) / mx.linalg.norm(x.astype(mx.float32), axis=-1, keepdims=True)).astype(
+        mx.float16
+    )
+
+    errs = []
+    for b in (2, 3, 4, 8):
+        sq = SpectralQuantizer(d=d, b_signal=b, b_noise=b, seed=SEED)
+        tq = TurboQuantMSE(d=d, b=b)
+        sq_err = rel(sq.decode(sq.encode(x)), x)
+        tq_err = rel(tq.decode(tq.encode(xu)), xu)
+        errs.append(sq_err)
+        # SpectralQuant should track TurboQuantMSE's error at this bit-width
+        # (same codebook convention), not be stuck far above it.
+        assert sq_err < tq_err * 1.5, (
+            f"b={b}: SpectralQuant rel_err={sq_err:.3f} too far above "
+            f"TurboQuantMSE rel_err={tq_err:.3f}"
+        )
+
+    for i in range(len(errs) - 1):
+        assert errs[i + 1] < errs[i], f"Error should decrease with more bits: {errs}"
+
+
+def test_spectral_rotation_beats_random_on_low_rank_after_fix():
+    """Issue #617 regression: with correct per-block scaling, spectral
+    (PCA) rotation on genuinely low-rank data should reconstruct about as
+    well as random rotation, not be crippled by the signal block's larger
+    per-coordinate std exceeding the codebook's support."""
+    import mlx.core as mx
+
+    from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
+
+    rng = np.random.default_rng(0)
+    basis, _ = np.linalg.qr(rng.standard_normal((D, 4)).astype(np.float32))
+    coords = rng.standard_normal((256, 4)).astype(np.float32)
+    noise = rng.standard_normal((256, D)).astype(np.float32) * 0.05
+    x_np = (coords @ basis.T + noise).astype(np.float32)
+    x_np /= np.linalg.norm(x_np, axis=-1, keepdims=True) + 1e-8
+
+    X = x_np - x_np.mean(axis=0)
+    _, _, Vt = np.linalg.svd(X, full_matrices=True)
+    U = Vt.T.astype(np.float32)
+
+    sq_spectral = SpectralQuantizer(d=D, b_signal=3, b_noise=3, rotation=U, d_s=4, seed=SEED)
+    sq_random = SpectralQuantizer(d=D, b_signal=3, b_noise=3, rotation=None, d_s=4, seed=SEED)
+
+    def cos_sim(sq):
+        x = mx.array(x_np, dtype=mx.float16)
+        x_hat = np.array(sq.decode(sq.encode(x)), dtype=np.float32)
+        return float(
+            np.mean(
+                np.sum(x_np * x_hat, axis=1)
+                / (np.linalg.norm(x_np, axis=1) * np.linalg.norm(x_hat, axis=1) + 1e-8)
+            )
+        )
+
+    cs_spectral = cos_sim(sq_spectral)
+    cs_random = cos_sim(sq_random)
+    assert cs_spectral > 0.9, f"Spectral cosine sim too low: {cs_spectral:.4f}"
+    assert cs_spectral >= cs_random * 0.9, (
+        f"Spectral ({cs_spectral:.4f}) should be competitive with random ({cs_random:.4f})"
+    )
+
+
 def test_calibrate_inject_improves_cosine_similarity():
     """Injecting real calibration rotations should improve or maintain quality."""
     import mlx.core as mx
