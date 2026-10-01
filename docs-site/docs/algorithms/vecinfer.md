@@ -117,19 +117,43 @@ response = mlx_lm.generate(
 
 If `smooth_factors`/`key_codebook`/`value_codebook` are left as `None`, `VecInferKVCache` falls back to an identity smoothing factor and a randomly-initialized codebook — usable for testing the plumbing, not for real quality.
 
-## Fused SDPA — current status
+## Fused SDPA and memory-bound mode
 
-`patch_mlx_lm_for_fused_sdpa()` exists and monkey-patches `mlx_lm`'s attention dispatcher to route to a cache's `fused_sdpa()` method when available:
+By default, VecInfer returns materialized K/V tensors and uses ordinary
+attention, even when `fused_sdpa=True`. To compute attention directly from
+compressed indices, opt into `fused_sdpa_memory_bound=True` and patch the
+attention dispatcher **after loading the model**, before constructing caches:
 
 ```python
 from veloxquant_mlx.metal.fused_sdpa import patch_mlx_lm_for_fused_sdpa
 
-patch_mlx_lm_for_fused_sdpa()  # no arguments; patches the mlx_lm module globally
+# Load the target model first so its attention module can be patched.
+patch_mlx_lm_for_fused_sdpa()
+config = KVCacheConfig(
+    method="vecinfer",
+    head_dim=128,
+    key_sub_dim=8,
+    value_sub_dim=8,
+    key_codebook_bits=8,
+    value_codebook_bits=8,
+    fused_sdpa=True,
+    fused_sdpa_memory_bound=True,
+)
+caches = KVCacheBuilder.for_model(model, config)
 ```
 
-:::warning[Currently a no-op for VecInfer's default path]
-The dispatcher's own source comment states that as of the current version it does **not** change VecInfer's live generation loop: `VecInferKVCache.update_and_fetch` already returns a standard fp16 tensor, and profiling on Llama-3.1-8B showed the fused kernel can't beat MLX's SDPA on an already-materialized tensor. `cache.fused_sdpa(q)` remains callable directly for memory-bound configurations that want to skip materializing the fp16 buffer, but the automatic dispatch doesn't currently take that path for VecInfer.
-:::
+Choose dimensions/codebooks compatible with the model and fused kernel caps.
+Memory-bound mode avoids materializing dequantized K/V, with a throughput
+tradeoff. The patched dispatcher accepts `None`, `"causal"`, and explicit
+boolean or additive `0`/`-inf` masks that exactly describe unrestricted,
+causal, or uniform trailing-window attention. It checks all array entries;
+array-mask validation synchronizes MLX and can add overhead.
+
+Attention sinks, attention biases, padding or custom masks that cannot be
+represented by those kernel options raise an error. Use
+`fused_sdpa_memory_bound=False` for these cases. The dispatcher never falls
+back to ordinary attention over the memory-bound cache's placeholder K/V.
+Other cache modes continue to use ordinary attention with their real K/V.
 
 ## Configuration reference
 

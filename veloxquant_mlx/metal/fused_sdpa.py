@@ -329,36 +329,88 @@ _patched: bool = False
 _patched_modules: list = []
 
 
+def _memory_bound_mask_parameters(mask, queries: mx.array, kv_length: int) -> tuple[bool, int]:
+    """Recognize only masks exactly representable by the fused kernel.
+
+    Array masks must be uniform across batch/heads and match a tail-aligned
+    causal mask, optionally bounded by a trailing window, or allow all keys.
+    Validate every entry, rather than inferring semantics from shape alone.
+    Boolean masks and additive 0/-inf masks are accepted. Reading the small
+    validation result synchronizes MLX; memory-bound mode favors storage over
+    throughput, and must not silently ignore padding, biases or custom masks.
+    """
+    if mask is None:
+        return False, 0
+    if isinstance(mask, str) and mask == "causal":
+        return True, 0
+
+    error = (
+        "Memory-bound VecInfer fused SDPA requires an unmasked, causal, or "
+        "uniform sliding-window mask. This mask cannot be represented by the "
+        "fused kernel. Set fused_sdpa_memory_bound=False to use standard SDPA."
+    )
+    if not isinstance(mask, mx.array) or not 1 <= mask.ndim <= 4:
+        raise ValueError(error)
+    B, H, N, _ = queries.shape
+    expected_shape = (B, H, N, kv_length)
+    padded_shape = (1,) * (4 - mask.ndim) + mask.shape
+    if (
+        N < 1
+        or kv_length < N
+        or any(
+            actual not in (1, expected)
+            for actual, expected in zip(padded_shape, expected_shape, strict=True)
+        )
+    ):
+        raise ValueError(error)
+
+    if mask.dtype == mx.bool_:
+        visible = mask
+        valid_entries = mx.array(True)
+    elif mx.issubdtype(mask.dtype, mx.floating):
+        visible = mask == 0
+        valid_entries = mx.all(visible | (mask == float("-inf")))
+    else:
+        raise ValueError(error)
+
+    # The last query aligns with the last key. Its visible count is the
+    # candidate window width; a full comparison below verifies that candidate.
+    shaped = mx.broadcast_to(visible, padded_shape[:-1] + (kv_length,))
+    width = mx.sum(shaped[0, 0, -1].astype(mx.int32))
+    q_positions = mx.arange(kv_length - N, kv_length)[:, None]
+    k_positions = mx.arange(kv_length)[None, :]
+    candidate = (k_positions <= q_positions) & (k_positions > q_positions - width)
+    all_visible, window_width, matches, entries_ok = mx.stack(
+        [
+            mx.all(visible).astype(mx.int32),
+            width,
+            mx.all(visible == candidate).astype(mx.int32),
+            valid_entries.astype(mx.int32),
+        ]
+    ).tolist()
+    if entries_ok:
+        if all_visible:
+            return False, 0
+        if matches and window_width > 0:
+            return True, 0 if window_width == kv_length else window_width
+    raise ValueError(error)
+
+
 def _make_patched_sdpa(original):
     def _patched_sdpa(queries, keys, values, cache, scale, mask, sinks=None):
-        # Route to cache.fused_sdpa() only for a cache actually running in
-        # the memory-bound configuration (VecInferKVCache with fused_sdpa=True
-        # AND fused_sdpa_memory_bound=True). In that mode update_and_fetch
-        # never materializes fp16 K_hat/V_hat — the `keys`/`values` tensors
-        # this function would otherwise receive are sentinel zeros, so
-        # falling through to `original` would silently compute zero-valued
-        # attention. Every other cache (fused_sdpa=False, or fused_sdpa=True
-        # without memory_bound — the throughput-oriented default) still
-        # returns a real, usable fp16 tensor and must keep going through the
-        # standard path: profiling on Llama-3.1-8B showed the fused kernel is
-        # slower per-call than reusing an already-materialized K_hat, since
-        # mlx_lm's persistent cache buffer amortizes the standard path's
-        # dequant cost to near zero.
-        # cache.fused_sdpa()'s kernel only understands a plain causal-or-not
-        # mask plus an optional integer sliding-window width — it cannot
-        # consume an arbitrary mlx_lm mask array (custom masks, attention
-        # sinks, etc.). Take the fused path only for the cases it actually
-        # supports and fall back to the standard (correct, general) path
-        # otherwise, rather than guessing at an unsupported mask shape.
-        is_plain_mask = mask is None or (isinstance(mask, str) and mask == "causal")
-        if (
-            getattr(cache, "_memory_bound", False)
-            and hasattr(cache, "fused_sdpa")
-            and is_plain_mask
-            and sinks is None
-        ):
-            causal = mask == "causal"
-            return cache.fused_sdpa(queries, scale=scale, causal=causal, sliding_window=0)
+        # Memory-bound caches return sentinel K/V, never usable dense tensors.
+        # Every branch here must either dispatch compressed attention or raise.
+        # Other caches retain real K/V and keep the original general SDPA path.
+        if getattr(cache, "_memory_bound", False):
+            if sinks is not None:
+                raise ValueError(
+                    "Memory-bound VecInfer fused SDPA does not support attention sinks. "
+                    "Set fused_sdpa_memory_bound=False to use standard SDPA."
+                )
+            if not callable(getattr(cache, "fused_sdpa", None)):
+                raise RuntimeError("Memory-bound cache requires a callable fused_sdpa method.")
+            causal, window = _memory_bound_mask_parameters(mask, queries, keys.shape[-2])
+            return cache.fused_sdpa(queries, scale=scale, causal=causal, sliding_window=window)
         return original(queries, keys, values, cache=cache, scale=scale, mask=mask, sinks=sinks)
 
     return _patched_sdpa

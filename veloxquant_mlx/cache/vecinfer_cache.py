@@ -412,10 +412,10 @@ class VecInferKVCache(_MLXKVCache):
 
         # Sentinel return values.  The patched SDPA dispatcher routes to
         # cache.fused_sdpa(q, ...) and never reads these tensors.  We use
-        # zeros (cheap, deterministic) so any *un*patched code path that
-        # accidentally consumes them produces zero output rather than
-        # NaN-or-garbage that might be missed.  The construction-time
-        # check above ensures the patch is active before we get here.
+        # zeros as placeholders only: the patched dispatcher must dispatch
+        # compressed attention or reject unsupported masks/sinks (#612),
+        # never fall back to ordinary attention over these tensors. The
+        # construction-time guard requires the patch to be active.
         sentinel_k = mx.zeros((B, H, self._stored_S_kv, D), dtype=kdtype)
         sentinel_v = mx.zeros((B, H, self._stored_S_kv, D), dtype=vdtype)
         return sentinel_k, sentinel_v
