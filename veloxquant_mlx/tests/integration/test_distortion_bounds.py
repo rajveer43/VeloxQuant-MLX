@@ -94,7 +94,7 @@ def test_builder_end_to_end() -> None:
         KVCacheBuilder()
         .with_method("turboquant_prod")
         .with_head_dim(64)
-        .with_bit_width(inlier=2, outlier=3)
+        .with_bit_width(inlier=2)
         .with_jl_dim(64)
         .with_seed(42)
         .build()

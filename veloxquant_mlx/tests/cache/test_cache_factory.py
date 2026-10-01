@@ -76,3 +76,36 @@ def test_registering_a_new_method_only_requires_one_dict_entry(monkeypatch):
     from veloxquant_mlx.cache.h2o_cache import H2OKVCache
 
     assert type(cache) is H2OKVCache
+
+
+def test_create_rejects_observers_as_never_wired(monkeypatch):
+    """:issue:633 -- observers are stored but no cache implementation emits
+    QuantizationEvent, so silently accepting them would make every observer
+    report empty rather than raise a loud, debuggable error.
+    """
+    from veloxquant_mlx.observers import KeyNormObserver
+
+    config = KVCacheConfig(
+        method="turboquant_rvq",
+        head_dim=64,
+        bit_width_inlier=2,
+        seed=0,
+        observers=[KeyNormObserver()],
+    )
+    with pytest.raises(QuantizerConfigError, match="observers"):
+        KVCacheFactory.create(config)
+
+
+def test_create_rejects_bit_width_outlier_as_never_read():
+    """:issue:633 -- bit_width_outlier is accepted but no cache implementation
+    reads it; outlier bit-width is hardcoded per method instead.
+    """
+    config = KVCacheConfig(
+        method="turboquant_rvq",
+        head_dim=64,
+        bit_width_inlier=2,
+        bit_width_outlier=8,
+        seed=0,
+    )
+    with pytest.raises(QuantizerConfigError, match="bit_width_outlier"):
+        KVCacheFactory.create(config)

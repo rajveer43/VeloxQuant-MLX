@@ -917,6 +917,23 @@ class KVCacheFactory:
                 "KVCacheBuilder.for_model(), which dispatches to create() once per layer."
             )
 
+        if config.observers:
+            raise QuantizerConfigError(
+                "KVCacheFactory.create() received a non-empty config.observers, "
+                "but no cache implementation emits QuantizationEvent -- observers "
+                "are stored and never iterated, so they would silently see zero "
+                "events (:issue:633). Remove `observers` from KVCacheConfig until "
+                "event emission is wired into the cache's hot path."
+            )
+        if config.bit_width_outlier is not None:
+            raise QuantizerConfigError(
+                "KVCacheFactory.create() received config.bit_width_outlier="
+                f"{config.bit_width_outlier!r}, but no cache implementation reads "
+                "this field -- outlier bit-width is currently hardcoded per method "
+                "(:issue:633). Remove `bit_width_outlier` from KVCacheConfig; it "
+                "has no effect."
+            )
+
         entry = _CACHE_CLASS_BY_METHOD.get(config.method)
         if entry is None:
             choices = ", ".join(_CACHE_CLASS_BY_METHOD)
