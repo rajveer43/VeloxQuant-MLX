@@ -195,6 +195,41 @@ def test_fit_mapper_recovers_synthetic_linear_map():
         assert 1 in lm.source_layers
 
 
+def test_fit_mapper_records_true_layer_ids_not_list_positions():
+    """Issue #618: source_layers must be actual source-layer ids, not their
+    position in the sorted candidate list. Uses a non-contiguous source
+    layer set ({1, 2, 3, 4}, skipping 0) so position and id diverge --
+    the true best source layer (id 4) sits at list position 3."""
+    mx.random.seed(11)
+    pos = mx.arange(N_TOKENS)
+    src_spec = _spec(6)
+    tgt_spec = _spec(1, base=1e4)
+
+    from veloxquant_mlx.transfer.rope import strip_rope
+
+    source = {
+        li: (
+            mx.random.normal((N_HEADS, N_TOKENS, HEAD_DIM)),
+            mx.random.normal((N_HEADS, N_TOKENS, HEAD_DIM)),
+        )
+        for li in (1, 2, 3, 4)
+    }
+    target = {0: source[4]}  # target layer 0 IS an exact copy of source layer 4
+
+    cfg = MapperConfig(k=1, content_space=False)
+    mapper = fit_mapper(source, target, src_spec, tgt_spec, pos, cfg)
+
+    assert mapper.layers[0].source_layers == [4]
+    assert mapper.layers[0].r2_k > 0.99
+
+    from veloxquant_mlx.transfer.apply import transfer_cache
+
+    out = transfer_cache(source, mapper, unload_after=False)
+    k_hat = out[0][0]
+    err = float(mx.max(mx.abs(k_hat - target[0][0])))
+    assert err < 1e-3, f"transfer_cache should reproduce an exact copy, got max abs err {err}"
+
+
 def test_fit_mapper_records_hyperparameters_and_shapes():
     source, target, src_spec, tgt_spec, pos = _linear_pair(4, 2, driver=0, tgt_base=1e4)
     cfg = MapperConfig(k=3, ridge_lambda=0.05)

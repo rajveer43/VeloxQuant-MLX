@@ -249,6 +249,7 @@ def _fit_layer(
     tgt_k: mx.array,
     tgt_v: mx.array,
     config: MapperConfig,
+    src_layer_ids: Sequence[int],
 ) -> LayerMap:
     """Fit one target layer's K and V maps across all of its heads.
 
@@ -272,6 +273,15 @@ def _fit_layer(
         tgt_k: ``[n_heads, N, head_dim]`` target content-space keys.
         tgt_v: ``[n_heads, N, head_dim]`` target values.
         config: Fit hyperparameters.
+        src_layer_ids: Actual source-layer ids, in the same order as
+            ``source_k``/``source_v`` — i.e. ``src_layer_ids[i]`` is the
+            layer id that ``source_k[i]``/``source_v[i]`` was collected
+            from. Needed to translate :func:`select_source_layers`'
+            *positions* back into real layer ids before they're persisted
+            (:issue:618) — the positions are only meaningful relative to
+            this list, not interchangeable with layer ids whenever the
+            source model's layers are a non-contiguous or offset subset
+            (e.g. ``{1, 2, 3, 4}`` with layer 0 skipped).
 
     Returns:
         A fully-populated :class:`LayerMap`.
@@ -335,7 +345,7 @@ def _fit_layer(
 
     result = LayerMap(
         target_layer=target_layer,
-        source_layers=chosen,
+        source_layers=[src_layer_ids[i] for i in chosen],
         w_k=w_k.astype(dtype),
         b_k=b_k.astype(dtype),
         w_v=w_v.astype(dtype),
@@ -422,7 +432,9 @@ def fit_mapper(
         # iteration's graph is retired here rather than accumulating across
         # all L_t layers — peak memory stays bounded to one layer's working
         # set instead of the whole calibration run's.
-        layers.append(_fit_layer(tl, src_k, src_v, tgt_k_all[pos], target_kv[tl][1], cfg))
+        layers.append(
+            _fit_layer(tl, src_k, src_v, tgt_k_all[pos], target_kv[tl][1], cfg, src_layers)
+        )
         if progress is not None:
             progress(pos + 1, len(tgt_layers))
 
