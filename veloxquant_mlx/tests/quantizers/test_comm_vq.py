@@ -171,6 +171,18 @@ def test_fit_required_before_encode() -> None:
         q.encode(keys)
 
 
+def test_b_over_8_rejected() -> None:
+    """b > 8 implies cb_size > 256, which overflows the uint8 indices used
+    by encode()/decode() (issue #621); must fail fast at construction."""
+    with pytest.raises(ValueError, match="overflows the uint8 indices"):
+        CommVQQuantizer(d=16, b=9, n_codebooks=4)
+
+
+def test_b_equal_8_allowed() -> None:
+    """b=8 -> cb_size=256, the max value representable by uint8 indices."""
+    CommVQQuantizer(d=16, b=8, n_codebooks=4)
+
+
 def test_trained_flag() -> None:
     q = CommVQQuantizer(d=64, b=4, n_codebooks=4)
     assert not q.trained

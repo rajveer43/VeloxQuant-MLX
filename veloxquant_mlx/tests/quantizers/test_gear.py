@@ -81,7 +81,9 @@ def test_base_only_equals_group_quant() -> None:
     comparison must use (:issue:`615`; the default "token" axis transposes
     first and is not directly comparable)."""
     X = _lowrank_plus_outliers()
-    gear = gear_quant_dequant(X, bits=2, rank=0, sparse_frac=0.0, group_size=32, base_axis="channel")
+    gear = gear_quant_dequant(
+        X, bits=2, rank=0, sparse_frac=0.0, group_size=32, base_axis="channel"
+    )
     base = cachegen_quant_dequant(X, 2, 32)
     assert _mse(gear, base) == pytest.approx(0.0, abs=1e-6)
 

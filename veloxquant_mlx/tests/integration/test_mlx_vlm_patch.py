@@ -146,6 +146,34 @@ def test_quantization_method_does_not_warn():
         patch_vlm_kv_cache(model, config)
 
 
+def test_wrapper_layers_do_not_hide_language_model_native_hybrid_cache():
+    """Qwen3.5-style VLM wrappers expose layers but the LM owns cache types."""
+    native_recurrent_cache = object()
+
+    class HybridLanguageModel(SimpleNamespace):
+        def make_cache(self):
+            return [object(), native_recurrent_cache]
+
+    lm = HybridLanguageModel(
+        layers=[
+            SimpleNamespace(self_attn=SimpleNamespace(head_dim=32)),
+            SimpleNamespace(),  # recurrent/non-attention slot
+        ],
+        args=SimpleNamespace(hidden_size=128, num_attention_heads=4),
+    )
+    wrapper = SimpleNamespace(
+        language_model=lm,
+        layers=lm.layers,
+        args=SimpleNamespace(text_config={}),
+    )
+    config = KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)
+
+    caches = patch_vlm_kv_cache(wrapper, config)
+
+    assert type(caches[0]).__name__ == "TurboQuantRVQKVCache"
+    assert caches[1] is native_recurrent_cache
+
+
 def test_real_mlx_vlm_make_prompt_cache_uses_our_caches():
     """With mlx-vlm installed, its real make_prompt_cache must defer to
     the patched hook and hand back VeloxQuant caches."""

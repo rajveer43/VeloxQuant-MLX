@@ -18,7 +18,7 @@ def main() -> None:
         print(
             "Usage: veloxquant "
             "{precompute|benchmark|recommend|auto-config|methods|serve|profile|"
-            "profile-hardware|estimate-memory|panel|worker}"
+            "profile-hardware|estimate-memory|panel|worker|vlm-serve}"
         )
         sys.exit(1)
 
@@ -50,6 +50,10 @@ def main() -> None:
         from veloxquant_mlx.cli.serve import main as _main
 
         _main()
+    elif command == "vlm-serve":
+        from veloxquant_mlx.cli.vlm_serve import main as _main
+
+        _main()
     elif command == "profile":
         from veloxquant_mlx.cli.profile import main as _main
 
@@ -74,7 +78,7 @@ def main() -> None:
         print(
             f"Unknown command: {command!r}. "
             "Choices: precompute, benchmark, recommend, auto-config, methods, "
-            "serve, profile, profile-hardware, estimate-memory, panel, worker"
+            "serve, vlm-serve, profile, profile-hardware, estimate-memory, panel, worker"
         )
         sys.exit(1)
 

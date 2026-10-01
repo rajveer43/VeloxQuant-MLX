@@ -218,6 +218,11 @@ class CommVQQuantizer(Quantizer):
             raise ValueError(
                 f"CommVQQuantizer: d={d} must be divisible by n_codebooks={n_codebooks}"
             )
+        if b > 8:
+            raise ValueError(
+                f"CommVQQuantizer: b={b} implies cb_size={1 << b} > 256, which "
+                "overflows the uint8 indices used by encode()/decode(); use b <= 8"
+            )
 
         self._d = d
         self._b = b

@@ -145,7 +145,9 @@ class TestHadamardRoundTrip:
         reconstructed = mx.hadamard_transform(mx.hadamard_transform(x))
         mx.eval(reconstructed)
         np.testing.assert_allclose(
-            np.array(reconstructed), np.array(x), atol=1e-5,
+            np.array(reconstructed),
+            np.array(x),
+            atol=1e-5,
             err_msg=f"Hadamard round-trip failed for d={d}",
         )
 
