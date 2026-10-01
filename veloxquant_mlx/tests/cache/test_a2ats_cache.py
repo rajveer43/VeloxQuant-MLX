@@ -469,3 +469,62 @@ def test_does_not_double_apply_rope_to_mlx_lm_rotated_keys():
 
     assert err_once < 0.2, f"expected near-lossless match to single rotation, got {err_once}"
     assert err_twice > 1.0, f"expected large mismatch against double rotation, got {err_twice}"
+
+
+# ---------------------------------------------------------------------------
+# trim() leaves _next_position stale (:issue:`614`)
+# ---------------------------------------------------------------------------
+
+
+def test_trim_rewinds_next_position_to_match_offset():
+    """After trim(n), a cache that saw P prefill + E draft tokens then
+    trimmed E must behave exactly like a fresh cache that only ever saw P
+    tokens — same offset, same _next_position, same returned keys for the
+    next update_and_fetch call. Before the fix, _next_position (used for the
+    windowed-RoPE query position and stored absolute positions) stayed ahead
+    by E, corrupting the near/far split and the positions of newly written
+    tokens."""
+    D = 32
+    a = _make(head_dim=D, a2ats_window=8)
+    b = _make(head_dim=D, a2ats_window=8)
+
+    kp = mx.random.normal((1, 2, 20, D)).astype(mx.float16)
+    kd = mx.random.normal((1, 2, 4, D)).astype(mx.float16)
+    kx = mx.random.normal((1, 2, 1, D)).astype(mx.float16)
+
+    a.update_and_fetch(kp, kp)
+    b.update_and_fetch(kp, kp)
+    for t in range(4):
+        a.update_and_fetch(kd[:, :, t : t + 1], kd[:, :, t : t + 1])
+
+    assert a.is_trimmable()
+    assert a.trim(4) == 4
+    assert a.offset == b.offset == 20
+    assert a._next_position == b._next_position == 20
+
+    ka, va = a.update_and_fetch(kx, kx)
+    kb, vb = b.update_and_fetch(kx, kx)
+    assert float(mx.abs(ka.astype(mx.float32) - kb.astype(mx.float32)).max()) == 0.0
+    assert float(mx.abs(va.astype(mx.float32) - vb.astype(mx.float32)).max()) == 0.0
+
+
+def test_trim_rolls_back_byte_accounting():
+    """Byte/token counters must also roll back, or compression_ratio and
+    tokens_seen misreport after a trim."""
+    D = 32
+    a = _make(head_dim=D, a2ats_window=8)
+    b = _make(head_dim=D, a2ats_window=8)
+
+    kp = mx.random.normal((1, 2, 20, D)).astype(mx.float16)
+    kd = mx.random.normal((1, 2, 4, D)).astype(mx.float16)
+
+    a.update_and_fetch(kp, kp)
+    b.update_and_fetch(kp, kp)
+    a.update_and_fetch(kd, kd)
+    a.trim(4)
+
+    assert a.tokens_seen == b.tokens_seen
+    assert a.compressed_key_bytes == b.compressed_key_bytes
+    assert a.compressed_value_bytes == b.compressed_value_bytes
+    assert a.fp16_key_bytes == b.fp16_key_bytes
+    assert a.fp16_value_bytes == b.fp16_value_bytes

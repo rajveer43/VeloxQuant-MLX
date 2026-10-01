@@ -374,6 +374,44 @@ class A2ATSKVCache(_MLXKVCache):
 
         return k_rot, v_all
 
+    def trim(self, n: int) -> int:
+        """Roll back ``n`` trailing tokens — used by speculative decoding
+        (rejected draft tokens) and prefix-cache reuse.
+
+        The inherited base :meth:`mlx_lm.models.cache.KVCache.trim` only
+        rewinds ``self.offset``; it does not touch this cache's own
+        ``_next_position`` counter, which drives both the windowed-RoPE
+        query position (:meth:`update_and_fetch`) and the stored absolute
+        position passed to ``_quantize_head``. Left stale, the next
+        ``update_and_fetch`` call computes the near/far split against a
+        query position that is ``n`` steps ahead of where the trimmed cache
+        actually is, and writes new tokens at the wrong absolute position —
+        confirmed via a drift of up to 5.1 in the returned keys (:issue:`614`).
+
+        Byte-accounting counters are rolled back by the same per-token
+        formula :meth:`_account_bytes` used to add them, so a trim+rewrite
+        reports identical bytes/ratios to a cache that never saw the
+        trimmed tokens.
+        """
+        n = min(self._next_position, super().trim(n))
+        self._next_position -= n
+
+        # _account_bytes' bytes_per_tok folds in H*B scaling at call time;
+        # reverse it per-token using the counters' own recorded totals rather
+        # than re-deriving H*B here (not tracked on self).
+        if self._tokens_seen > 0:
+            per_token_key = self._key_bytes_compressed // self._tokens_seen
+            per_token_value = self._value_bytes_compressed // self._tokens_seen
+            per_token_fp16_key = self._key_bytes_fp16 // self._tokens_seen
+            per_token_fp16_value = self._value_bytes_fp16 // self._tokens_seen
+            self._key_bytes_compressed -= per_token_key * n
+            self._value_bytes_compressed -= per_token_value * n
+            self._key_bytes_fp16 -= per_token_fp16_key * n
+            self._value_bytes_fp16 -= per_token_fp16_value * n
+        self._tokens_seen -= n
+
+        return n
+
     def far_query_rope(self, query: mx.array) -> mx.array:
         """Apply the paper's constant far-token rotation ``R_b`` to a query.
 
