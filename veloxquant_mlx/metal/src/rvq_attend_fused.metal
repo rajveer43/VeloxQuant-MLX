@@ -12,17 +12,20 @@
     uint tg      = threadgroup_position_in_grid.x;
     uint tg_lane = thread_position_in_threadgroup.x;
 
-    uint B     = uint(q_shape[0]);
-    uint H     = uint(q_shape[1]);
-    uint S_q   = uint(q_shape[2]);
-    uint D     = uint(q_shape[3]);
-    uint S_kv  = uint(k_indices1_shape[2]);
-    uint V_SUB = uint(v_codebook_shape[1]);
+    uint B      = uint(q_shape[0]);
+    uint H      = uint(q_shape[1]);
+    uint S_q    = uint(q_shape[2]);
+    uint D      = uint(q_shape[3]);
+    uint H_kv   = uint(k_indices1_shape[1]);
+    uint S_kv   = uint(k_indices1_shape[2]);
+    uint V_SUB  = uint(v_codebook_shape[1]);
     uint n_sub_v = D / V_SUB;
+    uint n_rep  = H / H_kv;
 
-    uint sq_idx = tg % S_q;
-    uint h_idx  = (tg / S_q) % H;
-    uint b_idx  = tg / (S_q * H);
+    uint sq_idx   = tg % S_q;
+    uint h_idx    = (tg / S_q) % H;
+    uint b_idx    = tg / (S_q * H);
+    uint hkv_idx  = h_idx / n_rep;
 
     float inv_sqrt_d = metal::rsqrt(float(D));
     uint  TG         = threads_per_threadgroup.x;
@@ -36,8 +39,8 @@
     uint n_owned = (D + TG - 1) / TG;
 
     uint q_base    = ((b_idx * H + h_idx) * S_q + sq_idx) * D;
-    uint k_base_bh = (b_idx * H + h_idx) * S_kv;
-    uint v_base_bh = (b_idx * H + h_idx) * S_kv;
+    uint k_base_bh = (b_idx * H_kv + hkv_idx) * S_kv;
+    uint v_base_bh = (b_idx * H_kv + hkv_idx) * S_kv;
 
     for (uint sk = 0; sk < S_kv; ++sk) {
         // Decode key + partial dot product (each lane covers its strided dims)

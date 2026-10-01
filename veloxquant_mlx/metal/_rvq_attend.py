@@ -102,12 +102,13 @@ def turboquant_fused_rvq_decode_attend(
     softmax loop — no intermediate K_hat tensor is materialized.
 
     Args:
-        q:          ``[B, H, S_q, D]`` fp16 queries (pre-rotated).
-        k_indices1: ``[B, H, S_kv, D]`` uint8 first-stage key indices.
-        k_indices2: ``[B, H, S_kv, D]`` uint8 second-stage key indices.
+        q:          ``[B, H, S_q, D]`` fp16 queries (pre-rotated). D must be <= 256.
+        k_indices1: ``[B, H_kv, S_kv, D]`` uint8 first-stage key indices. H_kv must
+                    evenly divide H (GQA); H_kv == H is standard MHA.
+        k_indices2: ``[B, H_kv, S_kv, D]`` uint8 second-stage key indices.
         centroids1: ``[2^b1]`` fp32 Gaussian centroids (stage 1).
         centroids2: ``[2^b2]`` fp32 Laplacian centroids (stage 2).
-        v_indices:  ``[B, H, S_kv, D//sub_dim_v]`` uint8 value indices.
+        v_indices:  ``[B, H_kv, S_kv, D//sub_dim_v]`` uint8 value indices.
         v_codebook: ``[2^bv, sub_dim_v]`` fp16 value codebook.
         b1, b2, bv: Bit-widths for key stage 1, stage 2, and values.
 
@@ -117,6 +118,41 @@ def turboquant_fused_rvq_decode_attend(
     if q.ndim != 4:
         raise ValueError(f"turboquant_fused_rvq_decode_attend: q must be 4D, got {q.shape}")
     B, H, S_q, D = q.shape
+
+    if D > 256:
+        raise ValueError(
+            f"turboquant_fused_rvq_decode_attend: D={D} exceeds the maximum supported "
+            "head dimension of 256 (per-lane accumulator is sized for D/TG <= 8)."
+        )
+
+    if k_indices1.ndim != 4 or k_indices2.ndim != 4 or v_indices.ndim != 4:
+        raise ValueError(
+            "turboquant_fused_rvq_decode_attend: k_indices1/k_indices2/v_indices must be 4D, "
+            f"got {k_indices1.shape}, {k_indices2.shape}, {v_indices.shape}"
+        )
+
+    B_kv, H_kv, S_kv, D_k = k_indices1.shape
+    if (B_kv, H_kv, S_kv, D_k) != k_indices2.shape[:4]:
+        raise ValueError(
+            "turboquant_fused_rvq_decode_attend: k_indices1 and k_indices2 shapes must match, "
+            f"got {k_indices1.shape} vs {k_indices2.shape}"
+        )
+    if B_kv != B or D_k != D:
+        raise ValueError(
+            f"turboquant_fused_rvq_decode_attend: k_indices shape {k_indices1.shape} is "
+            f"incompatible with q shape {q.shape} (expected B={B}, D={D})"
+        )
+    if H % H_kv != 0:
+        raise ValueError(
+            f"turboquant_fused_rvq_decode_attend: query head count H={H} must be a multiple "
+            f"of key/value head count H_kv={H_kv} for GQA"
+        )
+    if v_indices.shape[0] != B or v_indices.shape[1] != H_kv or v_indices.shape[2] != S_kv:
+        raise ValueError(
+            f"turboquant_fused_rvq_decode_attend: v_indices shape {v_indices.shape} is "
+            f"incompatible with k_indices shape {k_indices1.shape}"
+        )
+
     TG = min(D, 32)
     n_tg = B * H * S_q
 

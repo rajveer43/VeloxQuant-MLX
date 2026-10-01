@@ -506,6 +506,73 @@ def test_fused_rvq_attend_correctness():
     )
 
 
+def test_fused_rvq_attend_rejects_large_d():
+    """D > 256 overflows the fixed-size per-lane accumulator; must raise, not corrupt output."""
+    rng = np.random.default_rng(1)
+    B, H, S_kv, D = 1, 2, 4, 512
+    b1, b2, bv, sub_dim_v = 2, 2, 2, 8
+
+    q_np, ki1_np, ki2_np, c1_np, c2_np, vi_np, vcb_np = _make_rvq_cache(
+        B, H, S_kv, D, b1, b2, bv, sub_dim_v, rng
+    )
+
+    with pytest.raises(ValueError, match="exceeds the maximum supported head dimension"):
+        turboquant_fused_rvq_decode_attend(
+            mx.array(q_np),
+            mx.array(ki1_np),
+            mx.array(ki2_np),
+            mx.array(c1_np),
+            mx.array(c2_np),
+            mx.array(vi_np),
+            mx.array(vcb_np),
+            b1=b1,
+            b2=b2,
+            bv=bv,
+        )
+
+
+def test_fused_rvq_attend_gqa_correctness():
+    """H_kv < H (GQA) must map query heads to the correct kv group, not read with h_idx."""
+    rng = np.random.default_rng(7)
+    B, H, H_kv, S_kv, D = 1, 4, 2, 16, 64
+    b1, b2, bv, sub_dim_v = 2, 2, 2, 8
+    n_rep = H // H_kv
+
+    q_np, ki1_np, ki2_np, c1_np, c2_np, vi_np, vcb_np = _make_rvq_cache(
+        B, H_kv, S_kv, D, b1, b2, bv, sub_dim_v, rng
+    )
+    # q has H query heads; kv tensors stay at H_kv and are repeat-expanded for the reference.
+    q_full = rng.standard_normal((B, H, 1, D)).astype(np.float16)
+    ki1_full = np.repeat(ki1_np, n_rep, axis=1)
+    ki2_full = np.repeat(ki2_np, n_rep, axis=1)
+    vi_full = np.repeat(vi_np, n_rep, axis=1)
+
+    ref = _ref_rvq_attend(q_full, ki1_full, ki2_full, c1_np, c2_np, vi_full, vcb_np)
+
+    out = turboquant_fused_rvq_decode_attend(
+        mx.array(q_full),
+        mx.array(ki1_np),
+        mx.array(ki2_np),
+        mx.array(c1_np),
+        mx.array(c2_np),
+        mx.array(vi_np),
+        mx.array(vcb_np),
+        b1=b1,
+        b2=b2,
+        bv=bv,
+    )
+    mx.eval(out)
+
+    assert out.shape == (B, H, 1, D)
+    np.testing.assert_allclose(
+        np.array(out, dtype=np.float32),
+        ref.astype(np.float32),
+        atol=1e-2,
+        rtol=1e-2,
+        err_msg="fused_rvq_decode_attend GQA output mismatch",
+    )
+
+
 def test_fused_rvq_attend_bench(capsys):
     rng = np.random.default_rng(0)
     B, H, S_kv, D = 1, 8, 512, 128
