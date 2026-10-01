@@ -138,7 +138,12 @@ def apply_dual_transform_queries(q: mx.array, smooth: mx.array, H: mx.array) -> 
     """Apply ``q_tilde = (q * lambda) @ H`` so q_tilde @ K_tilde.T == q @ K.T.
 
     Args:
-        q: Queries, shape ``[..., head_dim]``.
+        q: Queries, shape ``[..., head_dim]``. Under GQA, the head axis
+            (``-3``) may have ``H_q = H_kv * n_rep`` heads, a multiple of
+            ``smooth``'s per-KV-head row count — each KV head's factor is
+            repeated across its query group (see :issue:`616`), not
+            averaged, so the dual transform still cancels against
+            :func:`apply_dual_transform_keys`'s per-KV-head factors.
         smooth: Same convention as :func:`apply_dual_transform_keys`.
         H: Walsh-Hadamard matrix ``[head_dim, head_dim]``.
 
@@ -152,6 +157,23 @@ def apply_dual_transform_queries(q: mx.array, smooth: mx.array, H: mx.array) -> 
         # >= 4 (#74).
         if q.ndim >= 3 and q.shape[-3] == smooth.shape[0]:
             sm = smooth[:, None, :].astype(q.dtype)
+            q_sm = q * sm
+        elif (
+            q.ndim >= 3
+            and smooth.shape[0] > 0
+            and q.shape[-3] % smooth.shape[0] == 0
+        ):
+            # GQA: smooth is calibrated per KV head (H_kv rows), but q has
+            # H_q = H_kv * n_rep query heads. Averaging smooth across heads
+            # (the old fallback below) breaks the dual-transform identity
+            # q~ @ K~^T == q @ K^T, because keys keep their own per-head
+            # factor while queries get a single averaged one that no longer
+            # cancels (:issue:`616`). Repeating each KV head's factor across
+            # its query group instead keeps every (query, key) pair using
+            # the *same* factor they were calibrated with, so the transform
+            # still cancels exactly.
+            n_rep = q.shape[-3] // smooth.shape[0]
+            sm = mx.repeat(smooth, n_rep, axis=0)[:, None, :].astype(q.dtype)
             q_sm = q * sm
         elif q.shape[-1] == smooth.shape[-1]:
             sm_1d = mx.mean(smooth, axis=0).astype(q.dtype)

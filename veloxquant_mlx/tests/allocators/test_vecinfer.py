@@ -234,3 +234,56 @@ def test_dual_transform_keys_genuine_gqa_head_mismatch_still_averages() -> None:
 
     averaged = (np.asarray(K3d) / np.asarray(smooth2d).mean(axis=0)) @ np.asarray(H)
     assert np.allclose(averaged, np.asarray(out), atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# Regression for #616: GQA queries (H_q = H_kv * n_rep) with smooth factors
+# calibrated per KV head used to fall into the "average across heads"
+# branch, which breaks the dual-transform identity because keys still use
+# their own per-KV-head factor. Queries must instead repeat each KV head's
+# factor across its query group.
+# ---------------------------------------------------------------------------
+def test_dual_transform_queries_gqa_repeats_not_averages() -> None:
+    """q.shape[-3] is a multiple of smooth's head count (GQA) -> repeat per
+    KV group, not average."""
+    d, n_kv_heads, n_rep, seq = 8, 2, 3, 5
+    n_q_heads = n_kv_heads * n_rep
+    rng = np.random.default_rng(5)
+    q3d = mx.array(rng.standard_normal((n_q_heads, seq, d)).astype(np.float32))
+    smooth2d = mx.array(rng.uniform(0.5, 2.0, size=(n_kv_heads, d)).astype(np.float32))
+    H = walsh_hadamard_matrix(d)
+
+    out = apply_dual_transform_queries(q3d, smooth2d, H)
+
+    repeated = (
+        np.asarray(q3d) * np.repeat(np.asarray(smooth2d), n_rep, axis=0)[:, None, :]
+    ) @ np.asarray(H)
+    assert np.allclose(repeated, np.asarray(out), atol=1e-5)
+
+    averaged = (np.asarray(q3d) * np.asarray(smooth2d).mean(axis=0)) @ np.asarray(H)
+    assert not np.allclose(averaged, np.asarray(out), atol=1e-5)
+
+
+def test_dual_transform_gqa_preserves_inner_product() -> None:
+    """End-to-end GQA: q~ @ K~^T (with keys repeated per KV group) must equal
+    q @ K^T (repeated the same way) -- the actual invariant VecInfer's fused
+    SDPA relies on. Before the fix, max error was 4.25 on scores of scale
+    ~33 (:issue:`616`)."""
+    from veloxquant_mlx.allocators.vecinfer import calibrate_smooth_factors
+
+    B, n_kv_heads, n_rep, seq, d = 1, 2, 2, 8, 64
+    n_q_heads = n_kv_heads * n_rep
+    rng = np.random.default_rng(6)
+    outlier = 1 + 4 * (mx.arange(d) % 7 == 0)
+    K = mx.array(rng.standard_normal((B, n_kv_heads, seq, d)).astype(np.float32)) * outlier
+    q = mx.array(rng.standard_normal((B, n_q_heads, 1, d)).astype(np.float32))
+
+    smooth = calibrate_smooth_factors(K[0].transpose(1, 0, 2))
+    H = walsh_hadamard_matrix(d)
+
+    K_t = apply_dual_transform_keys(K, smooth, H)
+    q_t = apply_dual_transform_queries(q, smooth, H)
+
+    ref = q @ mx.repeat(K, n_rep, axis=1).transpose(0, 1, 3, 2)
+    got = q_t @ mx.repeat(K_t, n_rep, axis=1).transpose(0, 1, 3, 2)
+    assert float(mx.max(mx.abs(got - ref))) < 1e-3
