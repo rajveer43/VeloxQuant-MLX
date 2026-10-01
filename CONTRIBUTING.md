@@ -89,6 +89,33 @@ release workflow -- you will not need it for ordinary contributions.
 Fork first if you do not have write access, then add
 `upstream` pointing at `rajveer43/VeloxQuant-MLX`.
 
+### Don't have a Mac?
+
+MLX requires Metal, which only exists on Apple Silicon. There is no Docker
+or container image that can provide this -- GitHub Codespaces and any other
+container-based dev environment run on Linux VMs, and Metal has no
+container passthrough on any host OS. A "macOS Codespace" running in Docker
+is not possible.
+
+Instead, use the **`macos-dev-session`** GitHub Actions workflow: it opens
+an interactive SSH shell on a real hosted `macos-14` runner with MLX and
+Metal available (the same runners `mlx-tests.yml` uses in CI). To use it:
+
+1. Push your branch, then go to the **Actions** tab -> **macos-dev-session**
+   -> **Run workflow**, and pick your branch.
+2. Watch the job log for a `ssh <session>.tmate.io` line, then run that SSH
+   command from any terminal (Windows, Linux, anything).
+3. You now have a real macOS shell with the repo checked out and `pip
+   install -e ".[dev]"` already run. Edit, run tests, iterate.
+4. The session is capped at 45 minutes by default (configurable in the
+   workflow dispatch inputs) since hosted macOS runners are expensive to
+   run idle -- commit/push your work before it expires.
+
+This gets you a correctness-valid Metal device, not representative
+performance numbers -- see `mlx-tests.yml` and
+`docs/BENCHMARK_INFRASTRUCTURE_FEASIBILITY.md` for why wall-clock timings
+from these runners should not be trusted for benchmarking.
+
 ## Documentation layout
 
 Three separate places hold docs, each for a different purpose:

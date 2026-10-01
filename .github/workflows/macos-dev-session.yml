@@ -1,0 +1,53 @@
+name: macos-dev-session
+
+# On-demand interactive macOS dev session for contributors who don't own
+# Apple Silicon hardware. GitHub Codespaces cannot provide this: Codespaces
+# run in Linux Docker containers, and MLX requires Metal, which does not
+# exist in any container (Docker has no path to macOS/Metal passthrough,
+# on any host OS). The actual equivalent is a hosted macOS runner -- see
+# mlx-tests.yml, which already validates that macos-14 runners expose a
+# real, correctness-valid Metal device (issue #395).
+#
+# This workflow checks out a ref and opens a tmate SSH session on a
+# macos-14 runner, so a contributor on Windows/Linux can get a real
+# interactive shell with Metal available, install the package, and run/
+# iterate on Metal-gated code and tests, without owning a Mac.
+#
+# Usage: Actions tab -> "macos-dev-session" -> "Run workflow" -> pick your
+# branch. Watch the job log for the tmate SSH connection string, then
+# `ssh <string>` from any terminal. Session ends after `timeout-minutes`
+# or when you run `touch continue` then exit the shell.
+
+on:
+  workflow_dispatch:
+    inputs:
+      python-version:
+        description: "Python version for the dev session"
+        required: false
+        default: "3.12"
+      timeout-minutes:
+        description: "Max session length in minutes (hosted macOS runners are expensive -- keep this tight)"
+        required: false
+        default: "45"
+
+jobs:
+  dev-session:
+    runs-on: macos-14
+    timeout-minutes: ${{ fromJSON(inputs.timeout-minutes) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install package + dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Confirm Metal is available
+        run: python -c "import mlx.core as mx; print('Metal available:', mx.metal.is_available())"
+
+      - name: Start tmate session
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
