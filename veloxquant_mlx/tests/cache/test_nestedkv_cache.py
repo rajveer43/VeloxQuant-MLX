@@ -81,7 +81,7 @@ def test_output_shape_bounded_by_budget_at_prefill() -> None:
     c = _make(nestedkv_budget=budget, nestedkv_n_sink=2)
     k, v = _rand_kv(S=30, H=2, D=32)
     ko, vo = c.update_and_fetch(k, v)
-    ko, vo = c.state  # Retained state; attention receives pre-eviction rows.
+    ko, vo = c.state[:2]  # Retained state; attention receives pre-eviction rows.
     assert ko.shape[2] <= 30
     # Each head individually should be compressed well below the original S.
     assert ko.shape[2] < 30
@@ -117,7 +117,7 @@ def test_prefill_budget_bounds_only_prefill_output() -> None:
     c = _make(nestedkv_budget=budget, nestedkv_n_sink=1)
     k, v = _rand_kv(S=40, H=H, D=32)
     ko, vo = c.update_and_fetch(k, v)
-    ko, vo = c.state  # Retained state; attention receives pre-eviction rows.
+    ko, vo = c.state[:2]  # Retained state; attention receives pre-eviction rows.
     assert ko.shape[2] <= budget + 2  # small slack for rounding in per-head allocation
 
 
@@ -135,14 +135,14 @@ def test_decode_growth_unbounded_past_prefill_budget() -> None:
     c = _make(nestedkv_budget=budget, nestedkv_n_sink=1)
     k, v = _rand_kv(S=30, H=H, D=32, seed=0)  # prefill
     ko, vo = c.update_and_fetch(k, v)
-    ko, vo = c.state  # Retained state; attention receives pre-eviction rows.
+    ko, vo = c.state[:2]  # Retained state; attention receives pre-eviction rows.
     prefill_size = ko.shape[2]
     assert prefill_size <= budget * H  # total layer budget is the real cap
 
     for i in range(15):
         k, v = _rand_kv(S=1, H=H, D=32, seed=50 + i)  # decode
         ko, vo = c.update_and_fetch(k, v)
-        ko, vo = c.state  # Retained state; attention receives pre-eviction rows.
+        ko, vo = c.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     assert ko.shape[2] == prefill_size + 15, (
         "decode tokens must be appended unconditionally, growing the cache past the prefill budget"
@@ -280,7 +280,7 @@ def test_factory_smoke_compression_ratio_positive_both_kv() -> None:
     c = _make(nestedkv_budget=8, nestedkv_n_sink=2)
     k, v = _rand_kv(S=64, H=2, D=32)
     ko, vo = c.update_and_fetch(k, v)
-    ko, vo = c.state  # Retained state; attention receives pre-eviction rows.
+    ko, vo = c.state[:2]  # Retained state; attention receives pre-eviction rows.
     assert ko.shape[2] <= 30
     assert vo.shape[2] <= 30
     assert c.compression_ratio > 1.0
@@ -313,7 +313,7 @@ def test_prefill_keeps_every_head_at_uniform_length() -> None:
     V = np.stack([rng.standard_normal((S, D)).astype(np.float32) * s for s in scales], axis=0)[None]
     c = _make(nestedkv_budget=budget, nestedkv_n_sink=2)
     ko, vo = c.update_and_fetch(mx.array(K.astype(np.float16)), mx.array(V.astype(np.float16)))
-    ko, vo = c.state  # Retained state; attention receives pre-eviction rows.
+    ko, vo = c.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     assert ko.shape == (1, H, budget, D)
     assert vo.shape == (1, H, budget, D)

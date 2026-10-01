@@ -179,7 +179,7 @@ def test_retained_keys_preserve_true_rope_positions(method, batch, heads, chunks
         ).astype(mx.float16)
         cache.update_and_fetch(incoming, values)
         seen += length
-        kept_k, kept_v = cache.state
+        kept_k, kept_v = cache.state[:2]
         ids = np.array(kept_v[..., 0]).astype(np.int32)
         reference = np.take_along_axis(expected_keys, ids[..., None], axis=2)
         np.testing.assert_allclose(np.array(kept_k), reference, atol=1e-3, rtol=0)

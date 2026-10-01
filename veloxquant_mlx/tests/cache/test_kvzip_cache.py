@@ -68,7 +68,7 @@ def test_budget_respected_decode():
     for i in range(40):
         k, v = _kv(1, 3, 1, 32, seed=i)
         K, V = cache.update_and_fetch(k, v)
-        K, V = cache.state  # Retained state; attention receives pre-eviction rows.
+        K, V = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
         assert K.shape[2] <= 12 and V.shape[2] <= 12
         assert K.shape[:2] == (1, 3) and K.shape[3] == 32
 
@@ -77,7 +77,7 @@ def test_budget_respected_prefill_block():
     cache = _make(kvzip_budget=12, kvzip_n_sink=2, kvzip_probe="context")
     k, v = _kv(2, 4, 50, 32, seed=1)
     K, V = cache.update_and_fetch(k, v)
-    K, V = cache.state  # Retained state; attention receives pre-eviction rows.
+    K, V = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
     assert K.shape == (2, 4, 12, 32)
 
 
@@ -118,12 +118,12 @@ def test_prefill_and_decode_both_within_budget():
 
     pf = _make(kvzip_budget=10, kvzip_n_sink=2, kvzip_probe="context")
     Kp, _ = pf.update_and_fetch(k_all, v_all)
-    Kp, _ = pf.state  # Retained state; attention receives pre-eviction rows.
+    Kp, _ = pf.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     dc = _make(kvzip_budget=10, kvzip_n_sink=2, kvzip_probe="context")
     for t in range(40):
         Kd, _ = dc.update_and_fetch(k_all[:, :, t : t + 1], v_all[:, :, t : t + 1])
-        Kd, _ = dc.state  # Retained state; attention receives pre-eviction rows.
+        Kd, _ = dc.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     assert Kp.shape[2] <= 10 and Kd.shape[2] <= 10
 
@@ -138,7 +138,7 @@ def test_latest_probe_deterministic_at_cache_level():
         cache = _make(kvzip_budget=10, kvzip_n_sink=2, kvzip_probe="latest")
         for k, v in ks:
             K, _ = cache.update_and_fetch(k, v)
-            K, _ = cache.state  # Retained state; attention receives pre-eviction rows.
+            K, _ = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
         return K
 
     a, b = run(), run()

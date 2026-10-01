@@ -89,7 +89,7 @@ def test_budget_enforced_after_long_prefill() -> None:
     cache = _make(qfilters_budget=16)
     k, v = _kv(1, 2, 200, 64, seed=3)
     ko, _ = cache.update_and_fetch(k, v)
-    ko, _ = cache.state  # Retained state; attention receives pre-eviction rows.
+    ko, _ = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
     assert ko.shape[2] == 16
     assert cache.tokens_kept == 16
 
@@ -107,7 +107,7 @@ def test_decode_accumulation_caps_at_budget() -> None:
     for t in range(30):
         k, v = _kv(1, 2, 1, 64, seed=100 + t)
         ko, _ = cache.update_and_fetch(k, v)
-        ko, _ = cache.state  # Retained state; attention receives pre-eviction rows.
+        ko, _ = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
     assert ko.shape[2] == 8
     assert cache.tokens_seen == 30 * 2
 
@@ -121,12 +121,12 @@ def test_prefill_decode_both_valid_not_equivalent() -> None:
 
     block = _make(qfilters_budget=20, qfilters_n_sink=2, head_dim=64)
     ka, _ = block.update_and_fetch(k, v)
-    ka, _ = block.state  # Retained state; attention receives pre-eviction rows.
+    ka, _ = block.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     stream = _make(qfilters_budget=20, qfilters_n_sink=2, head_dim=64)
     for t in range(S):
         kb, _ = stream.update_and_fetch(k[:, :, t : t + 1, :], v[:, :, t : t + 1, :])
-        kb, _ = stream.state  # Retained state; attention receives pre-eviction rows.
+        kb, _ = stream.state[:2]  # Retained state; attention receives pre-eviction rows.
     mx.eval(ka, kb)
 
     assert ka.shape[2] <= 20 and kb.shape[2] <= 20
@@ -140,9 +140,9 @@ def test_sign_differs_and_respects_budget() -> None:
     pos = _make(qfilters_budget=16, qfilters_sign=1)
     neg = _make(qfilters_budget=16, qfilters_sign=-1)
     kp, _ = pos.update_and_fetch(k, v)
-    kp, _ = pos.state  # Retained state; attention receives pre-eviction rows.
+    kp, _ = pos.state[:2]  # Retained state; attention receives pre-eviction rows.
     kn, _ = neg.update_and_fetch(k, v)
-    kn, _ = neg.state  # Retained state; attention receives pre-eviction rows.
+    kn, _ = neg.state[:2]  # Retained state; attention receives pre-eviction rows.
     assert kp.shape[2] == 16 and kn.shape[2] == 16
     assert not np.array_equal(np.array(kp), np.array(kn))
 
@@ -317,13 +317,13 @@ def test_calibrated_filter_evicts_without_warmup() -> None:
 
     calibrated = QFiltersKVCache(cfg, filters=_calibrated_filters(H, D))
     k_out, _ = calibrated.update_and_fetch(k, v)
-    k_out, _ = calibrated.state  # Retained state; attention receives pre-eviction rows.
+    k_out, _ = calibrated.state[:2]  # Retained state; attention receives pre-eviction rows.
     assert k_out.shape[2] == 32
 
     # Fallback: still inside its calibration window, so nothing is evicted.
     fallback = QFiltersKVCache(cfg)
     k_fb, _ = fallback.update_and_fetch(k, v)
-    k_fb, _ = fallback.state  # Retained state; attention receives pre-eviction rows.
+    k_fb, _ = fallback.state[:2]  # Retained state; attention receives pre-eviction rows.
     assert k_fb.shape[2] == S
 
 
@@ -340,13 +340,13 @@ def test_calibrated_filter_is_path_independent() -> None:
 
     prefill = QFiltersKVCache(cfg, filters=filters)
     k_prefill, v_prefill = prefill.update_and_fetch(k, v)
-    k_prefill, v_prefill = prefill.state  # Retained state; attention receives pre-eviction rows.
+    k_prefill, v_prefill = prefill.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     decode = QFiltersKVCache(cfg, filters=filters)
     k_decode = v_decode = None
     for t in range(S):
         k_decode, v_decode = decode.update_and_fetch(k[:, :, t : t + 1], v[:, :, t : t + 1])
-        k_decode, v_decode = decode.state  # Retained state; attention receives pre-eviction rows.
+        k_decode, v_decode = decode.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     assert np.array_equal(np.array(k_prefill), np.array(k_decode))
     assert np.array_equal(np.array(v_prefill), np.array(v_decode))
@@ -369,13 +369,13 @@ def test_calibrated_kept_set_is_invariant_to_prefill_chunk_size(chunk: int) -> N
 
     one_shot = QFiltersKVCache(cfg, filters=filters)
     k_ref, v_ref = one_shot.update_and_fetch(k, v)
-    k_ref, v_ref = one_shot.state  # Retained state; attention receives pre-eviction rows.
+    k_ref, v_ref = one_shot.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     chunked = QFiltersKVCache(cfg, filters=filters)
     k_out = v_out = None
     for i in range(0, S, chunk):
         k_out, v_out = chunked.update_and_fetch(k[:, :, i : i + chunk], v[:, :, i : i + chunk])
-        k_out, v_out = chunked.state  # Retained state; attention receives pre-eviction rows.
+        k_out, v_out = chunked.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     assert np.array_equal(np.array(k_ref), np.array(k_out))
     assert np.array_equal(np.array(v_ref), np.array(v_out))
@@ -410,7 +410,7 @@ def test_recent_window_protects_prompt_tail_at_every_chunk_size(chunk: int) -> N
     k_out = None
     for i in range(0, S, chunk):
         k_out, _ = cache.update_and_fetch(k[:, :, i : i + chunk], v[:, :, i : i + chunk])
-        k_out, _ = cache.state  # Retained state; attention receives pre-eviction rows.
+        k_out, _ = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     assert k_out.shape[2] == 128
     # The final `recent` rows of the window are exactly the prompt's last
@@ -444,7 +444,7 @@ def test_fallback_respects_budget_at_every_prefill_chunk_size(chunk: int) -> Non
     k_out = None
     for i in range(0, S, chunk):
         k_out, _ = cache.update_and_fetch(k[:, :, i : i + chunk], v[:, :, i : i + chunk])
-        k_out, _ = cache.state  # Retained state; attention receives pre-eviction rows.
+        k_out, _ = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
     mx.eval(k_out)
 
     assert k_out.shape[2] == 128
@@ -478,7 +478,7 @@ def test_fallback_kept_set_is_chunk_dependent_calibrated_is_not() -> None:
         out = None
         for i in range(0, S, chunk):
             out, _ = cache.update_and_fetch(k[:, :, i : i + chunk], v[:, :, i : i + chunk])
-            out, _ = cache.state  # Retained state; attention receives pre-eviction rows.
+            out, _ = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
         mx.eval(out)
         return np.array(out)
 
@@ -554,7 +554,7 @@ def test_batched_path_matches_per_head_reference(
 
     cache = QFiltersKVCache(cfg, filters=filters)
     k_out, v_out = cache.update_and_fetch(k, v)
-    k_out, v_out = cache.state  # Retained state; attention receives pre-eviction rows.
+    k_out, v_out = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     k_ref, v_ref = _reference_evict(k, v, filters, budget, n_sink, recent, sign)
     assert np.array_equal(np.array(k_out), k_ref)
@@ -574,7 +574,7 @@ def test_batched_path_state_mirror_stays_consistent() -> None:
 
     cache = QFiltersKVCache(cfg, filters=filters)
     k_out, _ = cache.update_and_fetch(k, v)
-    k_out, _ = cache.state  # Retained state; attention receives pre-eviction rows.
+    k_out, _ = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     assert cache.tokens_kept == budget
     states = cache.states
@@ -609,7 +609,7 @@ def test_calibrated_selection_matches_projection_ranking() -> None:
 
     cache = QFiltersKVCache(cfg, filters=filters)
     k_out, _ = cache.update_and_fetch(k, v)
-    k_out, _ = cache.state  # Retained state; attention receives pre-eviction rows.
+    k_out, _ = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     for h in range(H):
         scores = np.array(k, dtype=np.float32)[0, h] @ np.array(filters, dtype=np.float32)[h]
@@ -716,7 +716,7 @@ def test_use_metal_kernels_false_output_matches_reference() -> None:
 
     cache = QFiltersKVCache(cfg, filters=filters)
     k_out, v_out = cache.update_and_fetch(k, v)
-    k_out, v_out = cache.state  # Retained state; attention receives pre-eviction rows.
+    k_out, v_out = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     k_ref, v_ref = _reference_evict(k, v, filters, budget, n_sink, 0, 1)
     assert np.array_equal(np.array(k_out), k_ref)
@@ -789,9 +789,9 @@ def test_metal_path_matches_pure_mlx_path(
     cache_pure = QFiltersKVCache(cfg_pure, filters=filters)
 
     k_metal, v_metal = cache_metal.update_and_fetch(k, v)
-    k_metal, v_metal = cache_metal.state  # Retained state; attention receives pre-eviction rows.
+    k_metal, v_metal = cache_metal.state[:2]  # Retained state; attention receives pre-eviction rows.
     k_pure, v_pure = cache_pure.update_and_fetch(k, v)
-    k_pure, v_pure = cache_pure.state  # Retained state; attention receives pre-eviction rows.
+    k_pure, v_pure = cache_pure.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     assert np.array_equal(np.array(k_metal), np.array(k_pure))
     assert np.array_equal(np.array(v_metal), np.array(v_pure))

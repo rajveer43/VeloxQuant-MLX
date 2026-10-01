@@ -126,7 +126,7 @@ def test_state_roundtrip():
     cache = PoolBackedKVCache(pool, owner=1, step=8)
     k, v = _step(5)
     cache.update_and_fetch(k, v)
-    keys, values = cache.state
+    keys, values = cache.state[:2]
     assert keys.shape == (B, H, 5, D)
     assert values.shape == (B, H, 5, D)
 

@@ -112,6 +112,18 @@ def _rand_kv(S: int, H: int = 1, D: int = 8, seed: int = 0):
     return K, V
 
 
+def _trimmed_kv(cache):
+    """Trimmed (shape[2] == stored row count) K/V, regardless of whether the
+    cache writes through to mlx_lm's base ``.keys``/``.values`` (where
+    ``.keys_and_values()`` is the trimmed accessor; mlx_lm>=0.32's ``.state``
+    is the untrimmed buffer + offset) or owns its storage end-to-end like
+    PALU/KVTC (whose own ``.state`` already returns the trimmed view)."""
+    kv = getattr(cache, "keys_and_values", None)
+    if kv is not None and cache.keys is not None:
+        return kv()
+    return cache.state[:2]
+
+
 # ---------------------------------------------------------------------------
 # Core crash repro from the issue: .state must not raise after prefill.
 # ---------------------------------------------------------------------------
@@ -125,7 +137,7 @@ def test_state_accessible_after_single_prefill(method: str) -> None:
     k, v = _rand_kv(S=4)
     cache.update_and_fetch(k, v)
 
-    k_state, v_state = cache.state  # must not raise
+    k_state, v_state = cache.state[:2]  # must not raise
     mx.eval(k_state, v_state)
     assert k_state.shape[0] == 1
     assert k_state.shape[-1] == 8
@@ -145,7 +157,7 @@ def test_state_shape_matches_offset(method: str) -> None:
     k, v = _rand_kv(S=6)
     cache.update_and_fetch(k, v)
 
-    k_state, v_state = cache.state
+    k_state, v_state = _trimmed_kv(cache)
     mx.eval(k_state, v_state)
     assert k_state.shape[2] == cache.offset
     assert v_state.shape[2] == cache.offset
@@ -162,7 +174,7 @@ def test_state_shape_at_or_below_offset(method: str) -> None:
     k, v = _rand_kv(S=6)
     cache.update_and_fetch(k, v)
 
-    k_state, v_state = cache.state
+    k_state, v_state = cache.state[:2]
     mx.eval(k_state, v_state)
     assert k_state.shape[2] <= cache.offset
     assert v_state.shape[2] <= cache.offset
@@ -186,7 +198,7 @@ def test_state_accessible_across_chunked_prefill(method: str) -> None:
     for seed in range(3):
         k, v = _rand_kv(S=5, seed=seed)
         cache.update_and_fetch(k, v)
-        k_state, v_state = cache.state
+        k_state, v_state = _trimmed_kv(cache)
         mx.eval(k_state, v_state)
         assert k_state.shape[2] == cache.offset
 
@@ -199,7 +211,7 @@ def test_true_step_offset_state_accessible_across_chunked_prefill(method: str) -
     for seed in range(3):
         k, v = _rand_kv(S=5, seed=seed)
         cache.update_and_fetch(k, v)
-        k_state, v_state = cache.state
+        k_state, v_state = cache.state[:2]
         mx.eval(k_state, v_state)
         assert k_state.shape[2] <= cache.offset
 
@@ -219,7 +231,7 @@ def test_state_accessible_after_decode_steps(method: str) -> None:
     for i in range(3):
         k1, v1 = _rand_kv(S=1, seed=100 + i)
         cache.update_and_fetch(k1, v1)
-        k_state, v_state = cache.state
+        k_state, v_state = _trimmed_kv(cache)
         mx.eval(k_state, v_state)
         assert k_state.shape[2] == cache.offset
 
@@ -238,7 +250,7 @@ def test_true_step_offset_state_accessible_after_decode_steps(method: str) -> No
     for i in range(3):
         k1, v1 = _rand_kv(S=1, seed=100 + i)
         cache.update_and_fetch(k1, v1)
-        k_state, v_state = cache.state
+        k_state, v_state = cache.state[:2]
         mx.eval(k_state, v_state)
         assert k_state.shape[2] <= cache.offset
         assert cache.offset == prev_offset + 1
@@ -276,7 +288,7 @@ def test_case_c_trim_rolls_back_state_and_offset(method: str) -> None:
     assert n_trimmed == 3
     assert cache.offset == 7
 
-    k_state, v_state = cache.state
+    k_state, v_state = cache.state[:2]
     mx.eval(k_state, v_state)
     assert k_state.shape[2] == 7
     assert v_state.shape[2] == 7
@@ -286,7 +298,7 @@ def test_case_c_trim_rolls_back_state_and_offset(method: str) -> None:
     k1, v1 = _rand_kv(S=1, seed=99)
     cache.update_and_fetch(k1, v1)
     assert cache.offset == 8
-    k_state2, v_state2 = cache.state
+    k_state2, v_state2 = cache.state[:2]
     mx.eval(k_state2, v_state2)
     assert k_state2.shape[2] == 8
 
@@ -331,5 +343,5 @@ def test_multi_layer_cache_list_state_eval(method: str) -> None:
             cache.update_and_fetch(k, v)
         mx.eval([c.state for c in caches])  # must not raise
         for cache in caches:
-            k_state, v_state = cache.state
+            k_state, v_state = _trimmed_kv(cache)
             assert k_state.shape[2] == cache.offset

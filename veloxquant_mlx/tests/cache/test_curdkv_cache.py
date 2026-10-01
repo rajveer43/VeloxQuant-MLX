@@ -292,7 +292,7 @@ def test_state_property_returns_exactly_kept_rows() -> None:
     for i in range(10):
         k, v = _rand_kv(S=1, H=1, D=32, seed=i)
         c.update_and_fetch(k, v)
-    keys_state, values_state = c.state
+    keys_state, values_state = c.state[:2]
     assert keys_state.shape[2] == c.keys.shape[2] <= budget
     assert values_state.shape[2] == c.values.shape[2] <= budget
 

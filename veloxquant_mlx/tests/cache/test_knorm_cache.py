@@ -91,7 +91,7 @@ def test_budget_enforced_after_long_prefill() -> None:
     cache = _make(knorm_budget=16)
     k, v = _kv(1, 2, 200, 64, seed=2)
     ko, vo = cache.update_and_fetch(k, v)
-    ko, vo = cache.state  # Retained state; attention receives pre-eviction rows.
+    ko, vo = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
     assert ko.shape[2] == 16
     assert cache.tokens_kept == 16
 
@@ -112,7 +112,7 @@ def test_decode_accumulation_caps_at_budget() -> None:
     for t in range(24):
         k, v = _kv(1, 2, 1, 64, seed=100 + t)
         ko, vo = cache.update_and_fetch(k, v)
-        ko, vo = cache.state  # Retained state; attention receives pre-eviction rows.
+        ko, vo = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
     assert ko.shape[2] == 8
     assert cache.tokens_seen == 24 * 2  # per-head positions summed
 
@@ -125,12 +125,12 @@ def test_prefill_decode_bit_for_bit_equivalence() -> None:
 
     block = _make(knorm_budget=12, knorm_n_sink=2)
     ka, va = block.update_and_fetch(k, v)
-    ka, va = block.state  # Retained state; attention receives pre-eviction rows.
+    ka, va = block.state[:2]  # Retained state; attention receives pre-eviction rows.
 
     stream = _make(knorm_budget=12, knorm_n_sink=2)
     for t in range(S):
         kb, vb = stream.update_and_fetch(k[:, :, t : t + 1, :], v[:, :, t : t + 1, :])
-        kb, vb = stream.state  # Retained state; attention receives pre-eviction rows.
+        kb, vb = stream.state[:2]  # Retained state; attention receives pre-eviction rows.
     mx.eval(ka, va, kb, vb)
     assert np.array_equal(np.array(ka), np.array(kb))
     assert np.array_equal(np.array(va), np.array(vb))
@@ -141,9 +141,9 @@ def test_keep_high_differs_and_respects_budget() -> None:
     lo = _make(knorm_budget=16, knorm_keep="low")
     hi = _make(knorm_budget=16, knorm_keep="high")
     klo, _ = lo.update_and_fetch(k, v)
-    klo, _ = lo.state  # Retained state; attention receives pre-eviction rows.
+    klo, _ = lo.state[:2]  # Retained state; attention receives pre-eviction rows.
     khi, _ = hi.update_and_fetch(k, v)
-    khi, _ = hi.state  # Retained state; attention receives pre-eviction rows.
+    khi, _ = hi.state[:2]  # Retained state; attention receives pre-eviction rows.
     assert klo.shape[2] == 16 and khi.shape[2] == 16
     assert not np.array_equal(np.array(klo), np.array(khi))
 
@@ -187,7 +187,7 @@ def test_keep_low_beats_keep_high_under_paper_geometry() -> None:
     def perturbation(keep: str) -> float:
         cache = _make(knorm_budget=n_imp + 4, knorm_n_sink=0, knorm_keep=keep, head_dim=D)
         ko, vo = cache.update_and_fetch(kk, vv)
-        ko, vo = cache.state  # Retained state; attention receives pre-eviction rows.
+        ko, vo = cache.state[:2]  # Retained state; attention receives pre-eviction rows.
         out = _attn_out(mx.array(q), ko[0, 0].astype(mx.float32), vo[0, 0].astype(mx.float32))
         rn = ref / (mx.sqrt(mx.sum(ref * ref, -1, keepdims=True)) + 1e-8)
         on = out / (mx.sqrt(mx.sum(out * out, -1, keepdims=True)) + 1e-8)

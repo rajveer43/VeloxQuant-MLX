@@ -333,6 +333,23 @@ class TurboQuantRVQKVCache(_MLXKVCache):
         self._head_dim, self._bits, self._seed, self.offset = map(int, v)
         self._build_derived_state()
 
+    @classmethod
+    def from_state(cls, state: Any, meta_state: Any = None) -> TurboQuantRVQKVCache:
+        """Reconstruct a cache from ``.state`` and ``.meta_state``.
+
+        ``meta_state`` defaults to ``None`` only to keep this an LSP-valid
+        override of ``_BaseCache.from_state(cls, state)`` in mlx_lm >=0.32
+        (which dropped the separate ``meta_state`` arg); every actual caller
+        in this codebase (``fetch_nearest_cache``, this module's own tests)
+        still passes it explicitly, and omitting it is not a supported call.
+        """
+        if meta_state is None:
+            raise TypeError("TurboQuantRVQKVCache.from_state() requires meta_state")
+        obj = cls.__new__(cls)
+        obj.state = state
+        obj.meta_state = meta_state
+        return obj
+
     def is_trimmable(self) -> bool:
         """Whether this cache supports trimming."""
         return True

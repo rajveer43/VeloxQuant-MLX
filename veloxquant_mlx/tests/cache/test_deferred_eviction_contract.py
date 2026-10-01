@@ -37,7 +37,7 @@ def test_mask_matches_returned_rows_and_token_positions(method, window, chunks):
     rng = np.random.default_rng(61)
     seen = 0
     for N in chunks:
-        prior_k, prior_v = (None, None) if cache.keys is None else cache.state
+        prior_k, prior_v = (None, None) if cache.keys is None else cache.state[:2]
         # Values carry original token IDs, giving an independent mask oracle.
         keys = mx.array(rng.normal(size=(2, 2, N, 32)).astype(np.float16))
         ids = np.arange(seen, seen + N)
