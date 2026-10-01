@@ -227,9 +227,26 @@ class CrossModelMapper:
 
     # -- lazy weight access ----------------------------------------------
 
+    def _layer_by_id(self, target_layer: int) -> LayerMap:
+        """Find a layer's map by its ``target_layer`` field (:issue:642).
+
+        ``self.layers`` is not guaranteed to be indexed by target layer id —
+        a mapper fit over a non-contiguous or offset target layer set (e.g.
+        ``{1, 2}``) stores ``layers[0].target_layer == 1``, so using
+        ``target_layer`` directly as a list index silently returns the
+        wrong layer (or raises IndexError) instead of looking it up.
+        """
+        for lm in self.layers:
+            if lm.target_layer == target_layer:
+                return lm
+        raise KeyError(
+            f"No layer with target_layer={target_layer} in this mapper. "
+            f"Available target layers: {[lm.target_layer for lm in self.layers]}."
+        )
+
     def load_layer(self, target_layer: int) -> LayerMap:
         """Return a layer's map, reading its weights from disk if needed."""
-        lm = self.layers[target_layer]
+        lm = self._layer_by_id(target_layer)
         if lm.is_loaded:
             return lm
         if self._weights_path is None:
