@@ -166,6 +166,47 @@ class KittyKVCache(_MLXKVCache):
         self._fp16_key_bytes += B * H * S * D * 2
         self._value_fp16_bytes += B * H * S * D * 2
 
+    def _key_bytes_for(self, n_tokens: int, B: int, H: int) -> int:
+        n_hi = max(1, int(self._D * self._hi_fraction))
+        n_lo = self._D - n_hi
+
+        def _channel_bytes(n_ch: int, b: int) -> int:
+            code_bytes = math.ceil(n_tokens * n_ch * b / 8)
+            param_bytes = math.ceil(n_tokens / self._group_size) * n_ch * 2 * 2
+            return (code_bytes + param_bytes) * H * B
+
+        return _channel_bytes(n_hi, self._hi_bit) + _channel_bytes(n_lo, self._lo_bit)
+
+    def trim(self, n: int) -> int:
+        """Drop the last ``n`` tokens and remove them from the running
+        key statistics and byte accounting.
+
+        The accumulators were fed the stored (quantized) keys, so the trimmed
+        rows' contribution is recomputed from storage and subtracted. Byte
+        accounting is rolled back with the same per-call formula, so it can
+        differ from a fresh cache by group-rounding at the seams.
+        """
+        old_offset = self.offset
+        trimmed = min(old_offset, max(int(n), 0))
+        if trimmed and self.keys is not None:
+            gone = self.keys[..., old_offset - trimmed : old_offset, :]
+            B, H = gone.shape[0], gone.shape[1]
+            if self._n_keys - trimmed <= 0:
+                self._key_sum = self._key_sq_sum = None
+                self._n_keys = 0
+            else:
+                g32 = mx.mean(gone.astype(mx.float32), axis=0)  # [H, n, D]
+                self._key_sum = self._key_sum - mx.sum(g32, axis=1)
+                self._key_sq_sum = self._key_sq_sum - mx.sum(g32 * g32, axis=1)
+                mx.eval(self._key_sum, self._key_sq_sum)
+                self._n_keys -= trimmed
+            self._compressed_key_bytes = max(
+                0, self._compressed_key_bytes - self._key_bytes_for(trimmed, B, H)
+            )
+            self._fp16_key_bytes = max(0, self._fp16_key_bytes - B * H * trimmed * self._D * 2)
+            self._value_fp16_bytes = max(0, self._value_fp16_bytes - B * H * trimmed * self._D * 2)
+        return super().trim(n)
+
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------

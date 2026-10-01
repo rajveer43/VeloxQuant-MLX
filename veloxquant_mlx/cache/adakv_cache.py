@@ -114,6 +114,9 @@ class AdaKVCache(_MLXKVCache):
         self._norm_sum: mx.array | None = None  # [H] fp32
         self._norm_sq_sum: mx.array | None = None  # [H] fp32
         self._n_tokens: int = 0  # total tokens seen
+        # Per-call [H, S] batch-mean key norms (fp32). The accumulators above
+        # are sums, so trim() needs the per-token values to subtract from them.
+        self._norm_chunks: list[mx.array] = []
 
         # Last observed per-head attention entropy ([H] fp32), for the
         # "attention_entropy" mode. Unlike norm variance this cannot be folded
@@ -151,6 +154,7 @@ class AdaKVCache(_MLXKVCache):
         k32 = keys.astype(mx.float32)
         norms = mx.sqrt(mx.sum(k32 * k32, axis=-1))  # [B, H, S]
         norms_b = mx.mean(norms, axis=0)  # [H, S] (avg over batch)
+        self._norm_chunks.append(norms_b)
         new_sum = mx.sum(norms_b, axis=-1)  # [H]
         new_sq_sum = mx.sum(norms_b * norms_b, axis=-1)  # [H]
 
@@ -267,16 +271,63 @@ class AdaKVCache(_MLXKVCache):
         self._account_bytes(B, H, S, D)
         return super().update_and_fetch(k_out, values)
 
-    def _account_bytes(self, B: int, H: int, S: int, D: int) -> None:
-        n_groups = math.ceil(S / self._group_size)
+    def _key_bytes_for(self, S: int, B: int, H: int, D: int) -> int:
         assert self._head_bits is not None
+        n_groups = math.ceil(S / self._group_size)
+        total = 0
         for h in range(H):
-            b = self._head_bits[h]
-            code_bytes = math.ceil(S * D * b / 8)
+            code_bytes = math.ceil(S * D * self._head_bits[h] / 8)
             param_bytes = n_groups * D * 2 * 2  # scale + zero, fp16
-            self._compressed_key_bytes += (code_bytes + param_bytes) * B
+            total += (code_bytes + param_bytes) * B
+        return total
+
+    def _account_bytes(self, B: int, H: int, S: int, D: int) -> None:
+        self._compressed_key_bytes += self._key_bytes_for(S, B, H, D)
         self._fp16_key_bytes += B * H * S * D * 2
         self._value_fp16_bytes += B * H * S * D * 2
+
+    def trim(self, n: int) -> int:
+        """Drop the last ``n`` tokens and remove them from the running norm
+        statistics and byte accounting.
+
+        Byte accounting is rolled back with the current per-head bit widths, so
+        it can differ from a fresh cache if the allocation changed meanwhile.
+        ``attention_entropy`` mode keeps its last prefill-block estimate: it is
+        not a sum and cannot be un-folded.
+        """
+        trimmed = super().trim(n)
+        if not trimmed:
+            return trimmed
+        remaining = trimmed
+        while remaining and self._norm_chunks:
+            chunk = self._norm_chunks[-1]
+            take = min(remaining, chunk.shape[-1])
+            gone = chunk[..., chunk.shape[-1] - take :]
+            self._norm_sum = self._norm_sum - mx.sum(gone, axis=-1)
+            self._norm_sq_sum = self._norm_sq_sum - mx.sum(gone * gone, axis=-1)
+            if take == chunk.shape[-1]:
+                self._norm_chunks.pop()
+            else:
+                self._norm_chunks[-1] = chunk[..., : chunk.shape[-1] - take]
+            remaining -= take
+        self._n_tokens -= trimmed
+        if self._n_tokens <= 0:
+            self._norm_sum = self._norm_sq_sum = None
+            self._n_tokens = 0
+            self._head_bits = None
+        else:
+            mx.eval(self._norm_sum, self._norm_sq_sum)
+            # Recompute the allocation from the rolled-back stats next update.
+            self._steps_since_recompute = self._update_interval
+        if self.keys is not None and self._head_bits is not None:
+            B, H = self.keys.shape[0], self.keys.shape[1]
+            D = self.keys.shape[3]
+            self._compressed_key_bytes = max(
+                0, self._compressed_key_bytes - self._key_bytes_for(trimmed, B, H, D)
+            )
+            self._fp16_key_bytes = max(0, self._fp16_key_bytes - B * H * trimmed * D * 2)
+            self._value_fp16_bytes = max(0, self._value_fp16_bytes - B * H * trimmed * D * 2)
+        return trimmed
 
     # ------------------------------------------------------------------
     # Properties

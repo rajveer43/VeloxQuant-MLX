@@ -142,6 +142,8 @@ class KIVIKVCache(_MLXKVCache):
         # the parent cache's storage. Tokens age out of the fp16 residual
         # window based on true cumulative position, not this call's S.
         self._n_quantized = 0
+        # Last-seen (B, H, D) — needed to roll byte accounting back in trim().
+        self._shape_bhd: tuple[int, int, int] = (1, 1, int(config.head_dim))
 
     # ------------------------------------------------------------------
     # Group quant/dequant helpers (asymmetric min/max, deterministic)
@@ -242,6 +244,7 @@ class KIVIKVCache(_MLXKVCache):
         leading slice of that stored buffer that hasn't been quantized yet.
         """
         B, H, S, D = keys.shape
+        self._shape_bhd = (B, H, D)
         k_all, v_all = super().update_and_fetch(keys, values)
 
         new_boundary = self._quantization_boundary()
@@ -257,6 +260,50 @@ class KIVIKVCache(_MLXKVCache):
 
         self._account_bytes(B, H, S, D, n_quant_now)
         return k_all, v_all
+
+    def _rollback_frontier(self, new_offset: int) -> int:
+        """Pull the quantization frontier back to ``new_offset`` after a trim.
+
+        The frontier snaps **down** to a ``group_size`` multiple so later
+        flushes keep whole per-channel key groups.  Rows between the snapped
+        frontier and ``new_offset`` were already round-tripped (with groups that
+        included now-discarded tokens) and are quantized a second time on the
+        next flush; that double rounding is bounded by one quantization step.
+        Returns the number of tokens removed from the quantized region.
+        """
+        gs = self._group_size
+        new_nq = min(self._n_quantized, (max(new_offset, 0) // gs) * gs)
+        n_rolled = self._n_quantized - new_nq
+        self._n_quantized = new_nq
+        return n_rolled
+
+    def _rollback_bytes(self, n_tokens: int, n_rolled: int) -> None:
+        """Undo the accounting of ``n_tokens`` trimmed tokens, ``n_rolled``
+        of which had been counted as quantized."""
+        B, H, D = self._shape_bhd
+        if n_rolled > 0:
+            k, v = self._quantized_bytes(n_rolled, B, H, D)
+            self._key_bytes_compressed = max(0, self._key_bytes_compressed - k)
+            self._value_bytes_compressed = max(0, self._value_bytes_compressed - v)
+        self._key_bytes_fp16 = max(0, self._key_bytes_fp16 - H * B * n_tokens * D * 2)
+        self._value_bytes_fp16 = max(0, self._value_bytes_fp16 - H * B * n_tokens * D * 2)
+        self._tokens_seen = max(0, self._tokens_seen - n_tokens)
+        self._residual_fp16_bytes = (self.offset - self._n_quantized) * D * 2 * 2 * H * B
+
+    def trim(self, n: int) -> int:
+        """Drop the last ``n`` tokens and roll the quantization frontier and
+        byte accounting back with them (see :meth:`_rollback_frontier`)."""
+        trimmed = super().trim(n)
+        if trimmed:
+            self._rollback_bytes(trimmed, self._rollback_frontier(self.offset))
+        return trimmed
+
+    def _quantized_bytes(self, n: int, B: int, H: int, D: int) -> tuple[int, int]:
+        """(key, value) packed-byte cost of ``n`` group-aligned quantized tokens."""
+        gs = self._group_size
+        k = math.ceil(n * D * self._b / 8) * H * B + math.ceil(n / gs) * D * 2 * 2 * H * B
+        v = math.ceil(n * D * self._b / 8) * H * B + n * math.ceil(D / gs) * 2 * 2 * H * B
+        return k, v
 
     def _account_bytes(self, B: int, H: int, S: int, D: int, n_quant_now: int) -> None:
         gs = self._group_size
