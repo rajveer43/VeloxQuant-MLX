@@ -74,11 +74,11 @@ class GEARState(NamedTuple):
         bits:   int base bit-width.
         rank:   int residual low-rank (0 = no low-rank term).
         axis:   str base quant axis — "channel" (KCVT key scheme) or "token"
-            (KCVT value scheme). ``codes``/``scale``/``zero`` are channel-major
-            (transposed, row count == ``d_cols``) when ``axis == "channel"``.
+            (KCVT value scheme). ``codes``/``scale``/``zero`` are transposed
+            (row count == ``d_cols``) when ``axis == "token"``.
         d_cols: int original channel count ``D`` — the row count of ``codes``
-            when ``axis == "channel"`` (unused, equals ``codes.shape[-1]``,
-            when ``axis == "token"``).
+            when ``axis == "token"`` (unused, equals ``codes.shape[-1]``,
+            when ``axis == "channel"``).
     """
 
     codes: mx.array
@@ -114,16 +114,25 @@ def quantize_base(x: mx.array, bits: int, group_size: int = 32, axis: str = "tok
     """
     if axis not in ("channel", "token"):
         raise ValueError(f"quantize_base: axis={axis!r} must be 'channel' or 'token'.")
-    if axis == "token":
+    if axis == "channel":
+        # quantize_to_codes groups along axis 0 (rows) of whatever it is
+        # given. For untransposed x [N, D], groups are runs of tokens, and
+        # scale/zero come out [n_groups, 1, D] — one (scale, zero) per
+        # channel, pooled over each group of tokens. That already IS the
+        # paper's per-channel KCVT scheme (:issue:`615`; previously this
+        # branch transposed first, which groups along channels instead and
+        # produces one (scale, zero) per *token* — the "token" scheme).
         stream = quantize_to_codes(x, bits, group_size)
         return stream, dequant_codes(stream)
-    # channel: transpose so channels become rows, group along them, transpose back.
+    # token: transpose so tokens become rows, group along them (i.e. along
+    # channels per token), transpose back. One (scale, zero) per token.
     stream_t = quantize_to_codes(x.T, bits, group_size)
     recon = dequant_codes(stream_t).T
-    # stream_t is already channel-major: codes [d_groups, group_size, n],
-    # stream_t.n_rows == d (the channel count). Pass it through as-is — the
-    # caller (gear_compress) stores GEARState.d_cols separately so
-    # gear_reconstruct can rebuild this exact channel-major view.
+    # stream_t is already token-major-of-the-transpose: codes
+    # [d_groups, group_size, n], stream_t.n_rows == d (the channel count).
+    # Pass it through as-is — the caller (gear_compress) stores
+    # GEARState.d_cols separately so gear_reconstruct can rebuild this exact
+    # transposed-major view.
     return stream_t, recon
 
 
@@ -135,9 +144,9 @@ def _dequant_axis(stream: CodeStream, axis: str) -> mx.array:
     view with the right count rather than reusing ``GEARState.n_rows`` (which
     is always the original token count, ambiguous for the channel axis).
     """
-    if axis == "token":
+    if axis == "channel":
         return dequant_codes(stream)
-    # channel: stream is channel-major; dequant then transpose back to [N, D].
+    # token: stream is transposed-major; dequant then transpose back to [N, D].
     return dequant_codes(stream).T
 
 
@@ -359,7 +368,7 @@ def gear_reconstruct(state: GEARState, base: mx.array | None = None) -> mx.array
             standalone callers (e.g. :func:`gear_quant_dequant`).
     """
     if base is None:
-        stream_rows = state.d_cols if state.axis == "channel" else state.n_rows
+        stream_rows = state.d_cols if state.axis == "token" else state.n_rows
         stream = _CodeStreamView(state.codes, state.scale, state.zero, stream_rows, state.bits)
         base = _dequant_axis(stream, state.axis).astype(mx.float32)
     else:

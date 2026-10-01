@@ -74,9 +74,14 @@ def test_sparse_alone_helps() -> None:
 
 
 def test_base_only_equals_group_quant() -> None:
-    """rank=0, sparse=0 collapses GEAR exactly to the base group quant."""
+    """rank=0, sparse=0 collapses GEAR exactly to the base group quant.
+
+    base_axis="channel" groups along axis 0 directly (no transpose) — the
+    same thing cachegen_quant_dequant does — so that is the axis this
+    comparison must use (:issue:`615`; the default "token" axis transposes
+    first and is not directly comparable)."""
     X = _lowrank_plus_outliers()
-    gear = gear_quant_dequant(X, bits=2, rank=0, sparse_frac=0.0, group_size=32)
+    gear = gear_quant_dequant(X, bits=2, rank=0, sparse_frac=0.0, group_size=32, base_axis="channel")
     base = cachegen_quant_dequant(X, 2, 32)
     assert _mse(gear, base) == pytest.approx(0.0, abs=1e-6)
 
@@ -195,16 +200,47 @@ def test_channel_axis_differs_from_token_axis() -> None:
     assert _mse(recon_channel, recon_token) > 1e-8
 
 
-def test_channel_axis_matches_transposed_token_axis() -> None:
-    """Per-channel quant of X equals per-token quant of X.T, transposed back.
+def test_token_axis_matches_transposed_channel_axis() -> None:
+    """Per-token quant of X equals per-channel quant of X.T, transposed back.
 
-    This is the defining property of the "channel" axis: it is exactly the
-    "token" axis quantizer applied to the transpose.
+    This is the defining property of the "token" axis: it is exactly the
+    "channel" axis quantizer applied to the transpose (:issue:`615` — before
+    the fix this was backwards: "channel" transposed and "token" did not).
     """
     X = _lowrank_plus_outliers(N=64, D=48, r=6)
-    _, recon_channel = quantize_base(X, bits=3, group_size=16, axis="channel")
-    _, recon_token_t = quantize_base(X.T, bits=3, group_size=16, axis="token")
-    assert _mse(recon_channel, recon_token_t.T) == pytest.approx(0.0, abs=1e-6)
+    _, recon_token = quantize_base(X, bits=3, group_size=16, axis="token")
+    _, recon_channel_t = quantize_base(X.T, bits=3, group_size=16, axis="channel")
+    assert _mse(recon_token, recon_channel_t.T) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_channel_axis_gives_per_channel_quantization() -> None:
+    """axis='channel' must group along axis 0 directly (one scale/zero per
+    channel, pooled over groups of tokens) — matching KIVIQuantizer's own
+    per-channel scheme bit-for-bit, and far outperforming the 'token' axis
+    on data with an outlier channel. Before the fix (:issue:`615`), the
+    "channel" branch transposed first, swapping it with the "token" axis:
+    GEAR 'channel' MSE was 2.66 (per-token) instead of 0.149 (true
+    per-channel, matching KIVI)."""
+    from veloxquant_mlx.quantizers.kivi import KIVIQuantizer
+
+    N, D, gs = 64, 64, 32
+    rng = np.random.default_rng(0)
+    X = rng.standard_normal((N, D)).astype(np.float32)
+    X[:, 0] += 50.0  # one outlier channel, as in real keys
+    X = mx.array(X)
+
+    _, rec_channel = quantize_base(X, bits=2, group_size=gs, axis="channel")
+    _, rec_token = quantize_base(X, bits=2, group_size=gs, axis="token")
+
+    kivi = KIVIQuantizer(d=D, b=2, group_size=gs, axis="channel")
+    rec_kivi = kivi.decode(kivi.encode(X)).astype(mx.float32)
+
+    mse_channel = _mse(rec_channel, X)
+    mse_token = _mse(rec_token, X)
+    mse_kivi = _mse(rec_kivi, X)
+
+    assert mse_channel == pytest.approx(mse_kivi, abs=1e-2)
+    assert mse_channel < mse_token / 10  # outlier channel: ~18x worse under the wrong axis
 
 
 def test_channel_axis_roundtrip_shape_and_state() -> None:

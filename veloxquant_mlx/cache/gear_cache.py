@@ -194,12 +194,15 @@ class GEARKVCache(_MLXKVCache):
         BH = B * H
 
         # Pass 1: ONE batched base-quantize call across all B*H heads,
-        # instead of B*H separate calls into quantize_base. "channel" axis
-        # (keys) groups along D, so transpose to [BH, D, S] before batching
-        # and back to [BH, S, D] after — mirrors quantize_base's own
-        # per-matrix transpose-then-group-then-transpose-back exactly.
+        # instead of B*H separate calls into quantize_base. quantize_base's
+        # "channel" axis (keys) groups along axis 0 directly (one scale/zero
+        # per channel, pooled over groups of tokens) — no transpose needed.
+        # "token" axis (values) groups along channels per token, so transpose
+        # to [BH, D, S] before batching and back to [BH, S, D] after — mirrors
+        # quantize_base's own per-matrix transpose-then-group-then-transpose-
+        # back exactly (:issue:`615`).
         mats32_flat = t.reshape(BH, S, D).astype(mx.float32)
-        if base_axis == "channel":
+        if base_axis == "token":
             group_input = mx.swapaxes(mats32_flat, 1, 2)  # [BH, D, S]
             group_width = D  # stream's own row count (channels)
         else:
@@ -222,7 +225,7 @@ class GEARKVCache(_MLXKVCache):
         # identical, but skipping this fp16 round-trip alone shifted
         # reconstruction by up to ~0.18 on synthetic data.
         base_recon_flat = base_recon_flat.astype(mx.float16).astype(mx.float32)
-        if base_axis == "channel":
+        if base_axis == "token":
             base_recon_flat = mx.swapaxes(base_recon_flat, 1, 2)  # back to [BH, S, D]
 
         mats32 = [mats32_flat[i] for i in range(BH)]
