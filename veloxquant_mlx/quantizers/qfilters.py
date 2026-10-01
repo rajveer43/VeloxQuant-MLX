@@ -229,8 +229,8 @@ def qfilters_update(
     across chunkings (see the module docstring). Only the calibrated path is
     path-independent.
     """
-    new_keys = new_keys.astype(mx.float16)
-    new_values = new_values.astype(mx.float16)
+    new_keys = new_keys.astype(new_keys.dtype)
+    new_values = new_values.astype(new_values.dtype)
 
     if state.keys is None:
         keys_cat = new_keys

@@ -147,8 +147,10 @@ class ZipCacheKVCache(_MLXKVCache):
         recon = c * s + z
         return recon.reshape(BH, n_groups * gs, d)[:, :n]
 
-    def _compress_and_account(self, t: mx.array, is_key: bool) -> mx.array:
-        """Compress ``[B, H, S, D]`` batched over B*H, accumulate byte accounting, return fp16."""
+    def _compress_and_account(
+        self, t: mx.array, is_key: bool, out_dtype: mx.Dtype = mx.float16
+    ) -> mx.array:
+        """Compress ``[B, H, S, D]`` batched over B*H, accumulate byte accounting, return in ``out_dtype``."""
         B, H, S, D = t.shape
         hi_bits = self._hi_bits
         lo_bits = self._lo_bits if is_key else self._hi_bits
@@ -202,7 +204,7 @@ class ZipCacheKVCache(_MLXKVCache):
         if n_hi:
             hi_idx_e = mx.broadcast_to(hi_idx[..., None], (BH, n_hi, D))
             out = mx.put_along_axis(out, hi_idx_e, hi_recon, axis=1)
-        out = out.reshape(B, H, S, D).astype(mx.float16)
+        out = out.reshape(B, H, S, D).astype(out_dtype)
 
         # Byte accounting: n_hi/n_lo/S/D/bits are identical across every
         # (b, h) slab in this call, so the per-slab byte formula (same as
@@ -232,9 +234,9 @@ class ZipCacheKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
         """Sort key tokens by L2-norm saliency, quantize the top hi_fraction at hi_bits and the rest at lo_bits (values uniformly at hi_bits); return reconstructed fp16 K/V."""
-        k_out = self._compress_and_account(keys, is_key=True)
+        k_out = self._compress_and_account(keys, is_key=True, out_dtype=keys.dtype)
         if self._quant_values:
-            v_out = self._compress_and_account(values, is_key=False)
+            v_out = self._compress_and_account(values, is_key=False, out_dtype=values.dtype)
         else:
             v_out = values
             B, H, S, D = values.shape

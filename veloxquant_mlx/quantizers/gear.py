@@ -306,6 +306,7 @@ def gear_reconstruct_batched(
     R: mx.array | None,
     sp_idx: mx.array | None,
     sp_val: mx.array | None,
+    out_dtype: mx.Dtype = mx.float16,
 ) -> mx.array:
     """Batched-leading-axis equivalent of :func:`gear_reconstruct` (#570).
 
@@ -348,7 +349,7 @@ def gear_reconstruct_batched(
         flat = out.reshape(-1)
         flat = flat.at[combined_idx].add(sp_val.reshape(-1).astype(mx.float32))
         out = flat.reshape(bh, n, d)
-    return out.astype(mx.float16)
+    return out.astype(out_dtype)
 
 
 def gear_reconstruct(state: GEARState, base: mx.array | None = None) -> mx.array:

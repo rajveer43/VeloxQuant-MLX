@@ -340,8 +340,8 @@ def _merge_pair_batched(
         w = mx.clip(cos, 0.0, 1.0)
 
     w_col = w[:, None]
-    v_new = ((1.0 - w_col) * vs + w_col * ve).astype(mx.float16)
-    k_new = ((1.0 - w_col) * ks + w_col * ke).astype(mx.float16) if merge_keys else k_survivor
+    v_new = ((1.0 - w_col) * vs + w_col * ve).astype(v_survivor.dtype)
+    k_new = ((1.0 - w_col) * ks + w_col * ke).astype(k_survivor.dtype) if merge_keys else k_survivor
     return k_new, v_new
 
 
@@ -687,13 +687,16 @@ def cam_update_batched(
     if n_sink >= budget:
         raise ValueError("cam: sinks must leave at least one evictable position")
 
+    k_dtype = new_keys.dtype
+    v_dtype = new_values.dtype
+
     for i in range(s):
         k_i = new_keys[:, i].astype(mx.float32)  # [BH, D]
-        v_i = new_values[:, i].astype(mx.float16)  # [BH, D]
+        v_i = new_values[:, i].astype(v_dtype)  # [BH, D]
         cur_pos = next_pos
 
         if keys is None:
-            keys = new_keys[:, i : i + 1].astype(mx.float16)  # [BH, 1, D]
+            keys = new_keys[:, i : i + 1].astype(k_dtype)  # [BH, 1, D]
             values = v_i[:, None, :]
             scores = mx.ones((bh, 1), dtype=mx.float32)
             positions = mx.full((bh, 1), cur_pos, dtype=mx.int32)
@@ -703,7 +706,7 @@ def cam_update_batched(
         attn = _attention_scores_batched(k_i, keys.astype(mx.float32))  # [BH, n]
         updated_scores = scores + attn
 
-        keys_cat = mx.concatenate([keys, new_keys[:, i : i + 1].astype(mx.float16)], axis=1)
+        keys_cat = mx.concatenate([keys, new_keys[:, i : i + 1].astype(k_dtype)], axis=1)
         values_cat = mx.concatenate([values, v_i[:, None, :]], axis=1)
         scores_cat = mx.concatenate([updated_scores, mx.zeros((bh, 1), dtype=mx.float32)], axis=1)
         positions_cat = mx.concatenate(
@@ -744,7 +747,7 @@ def cam_update_batched(
 
                 k_tgt = mx.take_along_axis(keys_cat, tgt_safe[..., None], axis=1)[:, 0]
                 v_tgt = mx.take_along_axis(values_cat, tgt_safe[..., None], axis=1)[:, 0]
-                k_evicted_row = evicted_key.astype(mx.float16)
+                k_evicted_row = evicted_key.astype(k_dtype)
                 v_evicted_row = mx.take_along_axis(values_cat, evict_idx[..., None], axis=1)[:, 0]
 
                 k_merged, v_merged = _merge_pair_batched(

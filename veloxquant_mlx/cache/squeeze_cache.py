@@ -131,6 +131,15 @@ class SqueezeAttentionCache(_MLXKVCache):
         self._full_seq_bytes: int = 0
         self._tokens_seen_total: int = 0
 
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
+    @property
+    def _storage_dtype(self) -> mx.Dtype:
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
+
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         """Lazily record shape on first call (guards were already validated
@@ -196,17 +205,21 @@ class SqueezeAttentionCache(_MLXKVCache):
             ``n_kept <= layer_budget`` for all heads.
         """
         B, H, S, D = keys.shape
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = (
+                "bfloat16" if keys.dtype == values.dtype == mx.bfloat16 else "float16"
+            )
         self._ensure_states(B, H, D)
 
         # One-shot re-budget at the prefill boundary (before eviction).
         if not self._rebudgeted:
             self._report_and_rebudget(keys)
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16-equivalent accounting
         self._tokens_seen_total += B * H * S
 
-        new_keys_flat = keys.astype(mx.float16).reshape(B * H, S, D)
-        new_values_flat = values.astype(mx.float16).reshape(B * H, S, D)
+        new_keys_flat = keys.astype(self._storage_dtype).reshape(B * H, S, D)
+        new_values_flat = values.astype(self._storage_dtype).reshape(B * H, S, D)
 
         self._bh_keys, self._bh_values, self._bh_scores = squeeze_update_batched(
             self._bh_keys,

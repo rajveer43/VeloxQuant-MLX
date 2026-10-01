@@ -89,6 +89,10 @@ class TurboQuantKVCache(KVCache):
         self._head = 0
 
         self._n_tokens: int = 0
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
         self._enable_vectorized_attend = bool(getattr(config, "enable_vectorized_attend", False))
         self._enable_outlier_two_stream = bool(getattr(config, "enable_outlier_two_stream", False))
         self._n_outliers = int(getattr(config, "n_outlier_channels", 0) or 0)
@@ -105,6 +109,12 @@ class TurboQuantKVCache(KVCache):
         if self._outlier_detector is not None:
             self._outlier_cache = np.zeros((capacity, self._n_outliers), dtype=np.int8)
             self._outlier_scales = np.zeros((capacity,), dtype=np.float16)
+
+    @property
+    def _storage_dtype(self):
+        import mlx.core as mx
+
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
 
     def _physical_slot_for_append(self) -> int:
         if self._size < self._capacity:
@@ -218,6 +228,8 @@ class TurboQuantKVCache(KVCache):
         """
         import mlx.core as mx
 
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = "bfloat16" if v.dtype == mx.bfloat16 else "float16"
         if v.ndim > 1:
             v = v.reshape(-1)
         slot = (self._head + self._size - 1) % self._capacity
@@ -243,7 +255,7 @@ class TurboQuantKVCache(KVCache):
 
         n = self._size
         if n == 0:
-            return mx.zeros((self._d,), dtype=mx.float16)
+            return mx.zeros((self._d,), dtype=self._storage_dtype)
 
         phys = self._physical_indices(n)
         k_indices_np = self._unpack_indices_block(self._k_indices_packed[phys])
@@ -289,11 +301,11 @@ class TurboQuantKVCache(KVCache):
         scores = mx.softmax(scores_raw / scale, axis=0)  # (n,)
 
         # Decode values
-        v_scales = mx.array(self._v_scales[phys], dtype=mx.float16)  # (n,)
+        v_scales = mx.array(self._v_scales[phys], dtype=self._storage_dtype)  # (n,)
         v_int8 = mx.array(self._v_cache[phys], dtype=mx.int8)  # (n, d)
-        v_hat = v_int8.astype(mx.float16) * v_scales[:, None]
+        v_hat = v_int8.astype(self._storage_dtype) * v_scales[:, None]
 
-        return (scores[:, None] * v_hat).sum(axis=0)
+        return (scores[:, None] * v_hat).sum(axis=0).astype(self._storage_dtype)
 
     def memory_bytes(self) -> int:
         """Return actual memory of bit-packed key-value storage.

@@ -131,12 +131,22 @@ class AnchorKVKVCache(_MLXKVCache):
         self._tokens_total: int = 0
         self._n_anchor_total: int = 0
         self._n_residual_total: int = 0
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
+    @property
+    def _storage_dtype(self) -> mx.Dtype:
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
 
     # ------------------------------------------------------------------
     def _head_idx(self, b: int, h: int) -> int:
         return b * self._H + h
 
-    def _compress_all_heads(self, keys_bh: Any, values_bh: Any) -> tuple[Any, Any]:
+    def _compress_all_heads(
+        self, keys_bh: Any, values_bh: Any, out_dtype: mx.Dtype = mx.float16
+    ) -> tuple[Any, Any]:
         """Compress every ``(batch, head)`` row's ``[S, D]`` K/V at once;
         returns reconstructed fp16 ``(K, V)``, each ``[BH, S, D]``.
 
@@ -223,7 +233,7 @@ class AnchorKVKVCache(_MLXKVCache):
         key_recon = self._reconstruct_side_batched(keys_bh, key_assign, key_mask, codec)
         value_recon = self._reconstruct_side_batched(values_bh, value_assign, value_mask, codec)
 
-        return key_recon.astype(mx.float16), value_recon.astype(mx.float16)
+        return key_recon.astype(out_dtype), value_recon.astype(out_dtype)
 
     @staticmethod
     def _reconstruct_side_batched(x: Any, assign, mask: Any, codec: ResidualCodec) -> Any:
@@ -252,7 +262,9 @@ class AnchorKVKVCache(_MLXKVCache):
         keys_bh = keys.reshape(bh, S, D)
         values_bh = values.reshape(bh, S, D)
 
-        k_recon, v_recon = self._compress_all_heads(keys_bh, values_bh)
+        k_recon, v_recon = self._compress_all_heads(
+            keys_bh, values_bh, out_dtype=self._storage_dtype
+        )
 
         self._reconstructed_keys = k_recon.reshape(B, H, S, D)
         self._reconstructed_values = v_recon.reshape(B, H, S, D)
@@ -260,9 +272,9 @@ class AnchorKVKVCache(_MLXKVCache):
         return self._reconstructed_keys, self._reconstructed_values
 
     def _process_decode(self, keys: Any, values: Any):
-        """Append decode tokens exactly (fp16) — never anchored, never dropped."""
-        k_new = keys.astype(mx.float16)
-        v_new = values.astype(mx.float16)
+        """Append decode tokens exactly (storage dtype) — never anchored, never dropped."""
+        k_new = keys.astype(self._storage_dtype)
+        v_new = values.astype(self._storage_dtype)
         self._reconstructed_keys = mx.concatenate([self._reconstructed_keys, k_new], axis=2)
         self._reconstructed_values = mx.concatenate([self._reconstructed_values, v_new], axis=2)
 
@@ -283,6 +295,10 @@ class AnchorKVKVCache(_MLXKVCache):
             always the full token count seen so far, never reduced.
         """
         B, H, S, D = keys.shape
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = (
+                "bfloat16" if keys.dtype == values.dtype == mx.bfloat16 else "float16"
+            )
         self._full_seq_bytes += B * H * S * D * 2 * 2
         self._tokens_total += B * H * S
 

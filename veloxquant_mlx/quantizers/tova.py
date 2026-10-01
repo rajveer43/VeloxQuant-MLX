@@ -100,8 +100,8 @@ def init_tova_state(n_sink: int, budget: int, head_dim: int) -> TovaState:  # no
 
 def _tova_update_reference(
     state: TovaState,
-    new_keys: mx.array,  # [S, D] fp16
-    new_values: mx.array,  # [S, D] fp16
+    new_keys: mx.array,  # [S, D]
+    new_values: mx.array,  # [S, D]
     positions: mx.array | None = None,  # [n] int32, parallel to state.keys
     new_positions: mx.array | None = None,  # [S] int32, parallel to new_keys
 ) -> tuple[TovaState, mx.array | None]:
@@ -119,8 +119,8 @@ def _tova_update_reference(
 
     Args:
         state:      Current TovaState for this head.
-        new_keys:   [S, D] fp16 new key rows.
-        new_values: [S, D] fp16 new value rows.
+        new_keys:   [S, D] new key rows, stored in their own dtype.
+        new_values: [S, D] new value rows, stored in their own dtype.
         positions:  Optional ``[n]`` int32 true absolute positions parallel to
             ``state.keys``. Must be ``None`` iff ``state.keys`` is ``None``
             (mirrors K/V's own bootstrap contract) while ``new_positions``
@@ -149,8 +149,8 @@ def _tova_update_reference(
         if state.keys is None:
             # Bootstrap: first token ever — no eviction needed.
             state = TovaState(
-                keys=k_i[None].astype(mx.float16),
-                values=v_i[None].astype(mx.float16),
+                keys=k_i[None].astype(new_keys.dtype),
+                values=v_i[None].astype(new_values.dtype),
                 n_sink=state.n_sink,
                 budget=state.budget,
             )
@@ -159,8 +159,8 @@ def _tova_update_reference(
             continue
 
         # --- append new token ----------------------------------------------
-        keys_cat = mx.concatenate([state.keys, k_i[None].astype(mx.float16)], axis=0)
-        values_cat = mx.concatenate([state.values, v_i[None].astype(mx.float16)], axis=0)
+        keys_cat = mx.concatenate([state.keys, k_i[None].astype(state.keys.dtype)], axis=0)
+        values_cat = mx.concatenate([state.values, v_i[None].astype(state.values.dtype)], axis=0)
         if track:
             positions = mx.concatenate([positions, p_i], axis=0)
 
@@ -340,6 +340,11 @@ def _tova_update_batched(
         raise ValueError("tova: new K/V must have matching [BH,S,D] shapes")
     bh, s, d = new_keys.shape
     backend = _resolve_backend(backend, n_tokens=s)
+    if backend == "metal" and new_keys.dtype != mx.float16:
+        # The fused eviction kernels only accept float16 K/V (see
+        # _tova_evict.py). Non-fp16 input (bf16/fp32 callers preserving their
+        # own dtype) falls back to the MLX eviction path instead of raising.
+        backend = "mlx"
     if bh < 1 or d < 1:
         raise ValueError("tova: batch-head count and head dimension must be positive")
     if keys is not None and (keys.shape != values.shape or keys.shape[::2] != (bh, d)):
@@ -390,9 +395,11 @@ def _tova_update_batched(
             if positions is None
             else mx.concatenate([positions, new_positions[:, :prefix]], axis=1)
         )
+    k_dtype = new_keys.dtype
+    v_dtype = new_values.dtype
     if prefix:
-        k = new_keys[:, :prefix].astype(mx.float16)
-        v = new_values[:, :prefix].astype(mx.float16)
+        k = new_keys[:, :prefix].astype(k_dtype)
+        v = new_values[:, :prefix].astype(v_dtype)
         keys = k if keys is None else mx.concatenate([keys, k], axis=1)
         values = v if values is None else mx.concatenate([values, v], axis=1)
         if deferred:
@@ -411,7 +418,7 @@ def _tova_update_batched(
     # position_new and _evict_mlx_indices's lineage, which position tracking
     # here reuses unmodified for the deferred path).
     for i in range(prefix, s):
-        keys = mx.concatenate([keys, new_keys[:, i : i + 1].astype(mx.float16)], axis=1)
+        keys = mx.concatenate([keys, new_keys[:, i : i + 1].astype(k_dtype)], axis=1)
         proxy = new_keys[:, i].astype(mx.float32)
         logits = (keys.astype(mx.float32) @ proxy[..., None])[..., 0] * (1.0 / math.sqrt(float(d)))
         weights = mx.softmax(logits, axis=-1)
@@ -434,7 +441,7 @@ def _tova_update_batched(
             else:
                 keys, lineage = _evict_mlx_indices(keys, lineage, weights, n_sink)
         else:
-            incoming_v = new_values[:, i].astype(mx.float16)
+            incoming_v = new_values[:, i].astype(v_dtype)
             if track_positions:
                 source = _eviction_source_row(weights, n_sink)
                 old_n = source.shape[1]

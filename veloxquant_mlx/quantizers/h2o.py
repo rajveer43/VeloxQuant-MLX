@@ -504,6 +504,7 @@ def _evict_via_metal(
     """
     from veloxquant_mlx.metal import h2o_fused_evict
 
+    k_dtype, v_dtype = keys_cat.dtype, values_cat.dtype
     keys_out, values_out, scores_out, positions_out = h2o_fused_evict(
         keys_cat[None],
         values_cat[None],
@@ -513,7 +514,12 @@ def _evict_via_metal(
         rope_base=rope_base,
         grace=grace,
     )
-    return keys_out[0], values_out[0], scores_out[0], positions_out[0]
+    return (
+        keys_out[0].astype(k_dtype),
+        values_out[0].astype(v_dtype),
+        scores_out[0],
+        positions_out[0],
+    )
 
 
 def h2o_update(
@@ -731,7 +737,8 @@ def _rope_remap_positions_batched(
     ``traditional=True`` models).
     """
     if x.shape[1] == 0:
-        return x.astype(mx.float16)
+        return x.astype(x.dtype)
+    out_dtype = x.dtype
     D = x.shape[-1]
     half = D // 2
     delta = (new_positions.astype(mx.float32) - old_positions.astype(mx.float32))[
@@ -739,9 +746,9 @@ def _rope_remap_positions_batched(
     ]  # [BH,n,1]
     inv_freq = 1.0 / (base ** (mx.arange(0, half, dtype=mx.float32) / half))  # [half]
     angles = delta * inv_freq[None, None, :]  # [BH, n, half]
-    cos = mx.cos(angles).astype(mx.float16)
-    sin = mx.sin(angles).astype(mx.float16)
-    xh = x.astype(mx.float16)
+    cos = mx.cos(angles).astype(out_dtype)
+    sin = mx.sin(angles).astype(out_dtype)
+    xh = x.astype(out_dtype)
     x1, x2 = xh[..., :half], xh[..., half:]
     return mx.concatenate([x1 * cos - x2 * sin, x1 * sin + x2 * cos], axis=-1)
 
@@ -762,7 +769,8 @@ def _metal_evict_batched(
     """
     from veloxquant_mlx.metal import h2o_fused_evict
 
-    return h2o_fused_evict(
+    k_dtype, v_dtype = keys_cat.dtype, values_cat.dtype
+    keys_out, values_out, scores_out, positions_out = h2o_fused_evict(
         keys_cat,
         values_cat,
         scores_cat,
@@ -771,6 +779,7 @@ def _metal_evict_batched(
         rope_base=rope_base,
         grace=grace,
     )
+    return keys_out.astype(k_dtype), values_out.astype(v_dtype), scores_out, positions_out
 
 
 def h2o_update_batched(
@@ -820,14 +829,16 @@ def h2o_update_batched(
         raise ValueError("h2o: sinks must leave at least one evictable position")
 
     use_metal = _metal_evict_available()
+    k_dtype = new_keys.dtype
+    v_dtype = new_values.dtype
 
     for i in range(s):
         k_i = new_keys[:, i].astype(mx.float32)  # [BH, D]
-        v_i = new_values[:, i].astype(mx.float16)  # [BH, D]
+        v_i = new_values[:, i].astype(v_dtype)  # [BH, D]
         cur_pos = next_pos
 
         if keys is None:
-            keys = new_keys[:, i : i + 1].astype(mx.float16)  # [BH, 1, D]
+            keys = new_keys[:, i : i + 1].astype(k_dtype)  # [BH, 1, D]
             values = v_i[:, None, :]
             scores = mx.ones((bh, 1), dtype=mx.float32)
             positions = mx.full((bh, 1), cur_pos, dtype=mx.int32)
@@ -838,7 +849,7 @@ def h2o_update_batched(
         decayed_scores = scores * decay if decay != 1.0 else scores
         updated_scores = decayed_scores + attn
 
-        keys_cat = mx.concatenate([keys, new_keys[:, i : i + 1].astype(mx.float16)], axis=1)
+        keys_cat = mx.concatenate([keys, new_keys[:, i : i + 1].astype(k_dtype)], axis=1)
         values_cat = mx.concatenate([values, v_i[:, None, :]], axis=1)
         scores_cat = mx.concatenate([updated_scores, mx.zeros((bh, 1), dtype=mx.float32)], axis=1)
         positions_cat = mx.concatenate(

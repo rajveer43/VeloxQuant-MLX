@@ -172,17 +172,17 @@ def test_rank_mask_zero_rank_zeros_everything() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_quantize_tier_16bit_is_passthrough_fp16() -> None:
+def test_quantize_tier_16bit_is_passthrough() -> None:
     x = mx.array(np.array([[1.5, -2.5]], dtype=np.float32))
     out = amc_quantize_tier(x, bits=16)
-    assert out.dtype == mx.float16
+    assert out.dtype == x.dtype
 
 
 def test_quantize_tier_4bit_reduces_precision() -> None:
     rng = np.random.default_rng(11)
     x = mx.array(rng.standard_normal((32, 8)).astype(np.float32))
     out = amc_quantize_tier(x, bits=4, group_size=32)
-    assert out.dtype == mx.float16
+    assert out.dtype == x.dtype
     # Quantized values should differ from the original (lossy).
     assert not np.allclose(np.array(out), np.array(x), atol=1e-4)
 

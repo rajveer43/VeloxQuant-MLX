@@ -111,6 +111,15 @@ class KVzipKVCache(DeferredEvictionMixin, _MLXKVCache):
         self._full_seq_bytes: int = 0
         self._tokens_seen_total: int = 0
 
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
+    @property
+    def _storage_dtype(self) -> mx.Dtype:
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
+
     # ------------------------------------------------------------------
     # `mlx_lm.server`'s `ModelProvider.load()` decides whether to route
     # requests through `BatchGenerator` (continuous batching) purely by
@@ -158,14 +167,20 @@ class KVzipKVCache(DeferredEvictionMixin, _MLXKVCache):
             Only the state stored for the next call is compressed.
         """
         B, H, S, D = keys.shape
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = (
+                "bfloat16" if keys.dtype == values.dtype == mx.bfloat16 else "float16"
+            )
         self._ensure_states(B, H, D)
-        full_k, full_v, positions = self._prepare_attention(keys, values)
+        full_k, full_v, positions = self._prepare_attention(
+            keys, values, key_dtype=self._storage_dtype, value_dtype=self._storage_dtype
+        )
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16-equivalent accounting
         self._tokens_seen_total += B * H * S
 
-        new_keys_flat = keys.astype(mx.float16).reshape(B * H, S, D)
-        new_values_flat = values.astype(mx.float16).reshape(B * H, S, D)
+        new_keys_flat = keys.astype(self._storage_dtype).reshape(B * H, S, D)
+        new_values_flat = values.astype(self._storage_dtype).reshape(B * H, S, D)
 
         self._bh_keys, self._bh_values, indices = kvzip_update_batched(
             self._bh_keys,

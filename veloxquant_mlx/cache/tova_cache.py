@@ -124,6 +124,15 @@ class TOVAKVCache(_MLXKVCache):
         # an empty chunk mid-generation.
         self._last_returned: tuple[mx.array, mx.array] | None = None
 
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
+    @property
+    def _storage_dtype(self) -> mx.Dtype:
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
+
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         """Lazily initialise per-head TovaState list on first call."""
@@ -173,22 +182,26 @@ class TOVAKVCache(_MLXKVCache):
             raise ValueError("tova cache: batch/head/dimension must be positive")
         if self._states and (self._B, self._H, self._head_dim) != (B, H, D):
             raise ValueError("tova cache: batch/head/dimension cannot change after initialization")
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = (
+                "bfloat16" if keys.dtype == values.dtype == mx.bfloat16 else "float16"
+            )
         self._ensure_states(B, H, D)
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16-equivalent accounting
         self._tokens_seen_total += B * H * S
 
         if S == 0:
             if self._last_returned is not None:
                 return self._last_returned
             if self.keys is None:
-                return keys.astype(mx.float16), values.astype(mx.float16)
+                return keys.astype(self._storage_dtype), values.astype(self._storage_dtype)
             return self.keys, self.values
 
         previous_k = None if self.keys is None else self.keys.reshape(B * H, -1, D)
         previous_v = None if self.values is None else self.values.reshape(B * H, -1, D)
-        keys_fixed = keys.astype(mx.float16).reshape(B * H, S, D)
-        values_fixed = values.astype(mx.float16).reshape(B * H, S, D)
+        keys_fixed = keys.astype(self._storage_dtype).reshape(B * H, S, D)
+        values_fixed = values.astype(self._storage_dtype).reshape(B * H, S, D)
 
         new_positions = mx.arange(self._true_offset, self._true_offset + S, dtype=mx.int32)
         new_positions = mx.broadcast_to(new_positions[None, :], (B * H, S))

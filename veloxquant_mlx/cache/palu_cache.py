@@ -100,6 +100,14 @@ class _TensorLowRank:
         # reconstruct() (#561).
         self._latents: list[mx.array] | None = None
         self._fitted = False
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
+    @property
+    def _storage_dtype(self) -> mx.Dtype:
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
 
     # ------------------------------------------------------------------
     def fit_prefill(self, x: mx.array) -> None:
@@ -147,7 +155,7 @@ class _TensorLowRank:
                 hi_fraction=self.hi_fraction,
                 group_size=self.group_size,
             )
-        return L.astype(mx.float16)
+        return L.astype(self._storage_dtype)
 
     def append(self, x: mx.array) -> None:
         """Project + quantize ``x`` [B, H, S, D] and grow the latent buffers.
@@ -155,6 +163,8 @@ class _TensorLowRank:
         One batched call per head-group (``len(self._bounds)``, typically
         2-4) instead of one call per head.
         """
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = "bfloat16" if x.dtype == mx.bfloat16 else "float16"
         encoded = [
             self._encode_group(x[0, lo:hi].astype(mx.float32), g)
             for g, (lo, hi) in enumerate(self._bounds)
@@ -174,7 +184,9 @@ class _TensorLowRank:
         """
         assert self._latents is not None
         groups = [
-            reconstruct_from_latent_batched(L, self._V[g], self._mu[g])  # [G, S, D]
+            reconstruct_from_latent_batched(
+                L, self._V[g], self._mu[g], out_dtype=self._storage_dtype
+            )  # [G, S, D]
             for g, L in enumerate(self._latents)
         ]
         return mx.concatenate(groups, axis=0)[None]  # [1, H, S, D]

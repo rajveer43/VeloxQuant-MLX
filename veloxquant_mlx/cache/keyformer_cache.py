@@ -166,6 +166,15 @@ class KeyformerKVCache(_MLXKVCache):
         # Chronological positions for masking, independent of RoPE renumbering.
         self._kept_positions: mx.array | None = None
 
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
+    @property
+    def _storage_dtype(self) -> mx.Dtype:
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
+
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         if not self._initialised:
@@ -194,12 +203,16 @@ class KeyformerKVCache(_MLXKVCache):
         """
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = (
+                "bfloat16" if keys.dtype == values.dtype == mx.bfloat16 else "float16"
+            )
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16-equivalent accounting
         self._tokens_seen_total += B * H * S
 
-        new_keys_flat = keys.astype(mx.float16).reshape(B * H, S, D)
-        new_values_flat = values.astype(mx.float16).reshape(B * H, S, D)
+        new_keys_flat = keys.astype(self._storage_dtype).reshape(B * H, S, D)
+        new_values_flat = values.astype(self._storage_dtype).reshape(B * H, S, D)
 
         # Preserve current attention inputs before updating retained state.
         prev_keys_flat = self._bh_keys
@@ -258,7 +271,7 @@ class KeyformerKVCache(_MLXKVCache):
         self._kept_positions = mx.take_along_axis(positions, indices.reshape(B, H, n_kept), axis=2)
 
         if prev_keys_flat is None:
-            return keys.astype(mx.float16), values.astype(mx.float16)
+            return keys.astype(self._storage_dtype), values.astype(self._storage_dtype)
         full_keys_flat = mx.concatenate([prev_keys_flat, new_keys_flat], axis=1)
         full_values_flat = mx.concatenate([prev_values_flat, new_values_flat], axis=1)
         n_full = full_keys_flat.shape[1]

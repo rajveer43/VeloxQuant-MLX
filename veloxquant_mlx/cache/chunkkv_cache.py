@@ -156,6 +156,15 @@ class ChunkKVCache(_MLXKVCache):
         # call must return this unchanged.
         self._last_returned: tuple[mx.array, mx.array] | None = None
 
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
+    @property
+    def _storage_dtype(self) -> mx.Dtype:
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
+
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         """Lazily record shape on first call."""
@@ -197,16 +206,20 @@ class ChunkKVCache(_MLXKVCache):
         """
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = (
+                "bfloat16" if keys.dtype == values.dtype == mx.bfloat16 else "float16"
+            )
 
         # Cast the whole [B, H, S, D] tensor once up front (a no-op when
-        # already fp16, which is the common case on this MLX/Metal target)
-        # instead of re-issuing `.astype(mx.float16)` per (b, h) slice below
-        # — avoids B*H redundant cast ops per call for input that's already
-        # the target dtype.
-        if keys.dtype != mx.float16:
-            keys = keys.astype(mx.float16)
-        if values.dtype != mx.float16:
-            values = values.astype(mx.float16)
+        # already the storage dtype, which is the common case) instead of
+        # re-issuing `.astype(...)` per (b, h) slice below — avoids B*H
+        # redundant cast ops per call for input that's already the target
+        # dtype.
+        if keys.dtype != self._storage_dtype:
+            keys = keys.astype(self._storage_dtype)
+        if values.dtype != self._storage_dtype:
+            values = values.astype(self._storage_dtype)
 
         if S == 0:
             if self._last_returned is not None:

@@ -45,7 +45,10 @@ def _make_fingerprinted(n_total: int, D: int, seed: int = 0):
         fingerprints[i, 0] = i + 1.0
     raw_values = mx.array(fingerprints)
     positions = mx.arange(n_total, dtype=mx.int32)
-    rotated_keys = a2ats_apply_exact_rope(raw_keys, positions, base=10000.0)
+    # This suite checks the fp16 kernel's bit-exactness against a fp16
+    # reference, so fix the rotation's own dtype here rather than relying on
+    # a2ats_apply_exact_rope's (correct, since #622) input-dtype passthrough.
+    rotated_keys = a2ats_apply_exact_rope(raw_keys, positions, base=10000.0).astype(mx.float16)
     return raw_keys, raw_values, rotated_keys, positions
 
 
@@ -109,9 +112,7 @@ def test_interior_eviction_leaves_survivors_exactly_unrotated():
 
     for row, fp in enumerate(kept_fp):
         orig_idx = int(round(fp)) - 1
-        err = float(
-            mx.max(mx.abs(ko[0, row].astype(mx.float32) - rotated_keys[orig_idx])).item()
-        )
+        err = float(mx.max(mx.abs(ko[0, row].astype(mx.float32) - rotated_keys[orig_idx])).item())
         assert err < 1e-6, f"row {row} (orig token {orig_idx}): survivor key was altered, err={err}"
 
 
@@ -208,10 +209,14 @@ def test_untouched_rows_are_exact_copies():
     for out_row, orig_row in enumerate(orig_rows):
         diff = float(
             mx.max(
-                mx.abs(ko[0, out_row].astype(mx.float32) - rotated_keys[orig_row].astype(mx.float32))
+                mx.abs(
+                    ko[0, out_row].astype(mx.float32) - rotated_keys[orig_row].astype(mx.float32)
+                )
             ).item()
         )
-        assert diff == 0.0, f"row {out_row} (orig {orig_row}) should be bit-identical, got diff={diff}"
+        assert diff == 0.0, (
+            f"row {out_row} (orig {orig_row}) should be bit-identical, got diff={diff}"
+        )
 
 
 # ---------------------------------------------------------------------------

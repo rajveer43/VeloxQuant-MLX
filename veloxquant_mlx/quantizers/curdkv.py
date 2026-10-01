@@ -664,13 +664,16 @@ def curdkv_update_batched(
             "the cache fills"
         )
 
+    k_dtype = new_keys.dtype
+    v_dtype = new_values.dtype
+
     for i in range(s):
-        k_i = new_keys[:, i]  # [BH, D] fp16
-        v_i = new_values[:, i].astype(mx.float16)  # [BH, D]
+        k_i = new_keys[:, i]  # [BH, D]
+        v_i = new_values[:, i].astype(v_dtype)  # [BH, D]
         cur_pos = next_pos
 
         if keys is None:
-            keys = k_i[:, None, :].astype(mx.float16)  # [BH, 1, D]
+            keys = k_i[:, None, :].astype(k_dtype)  # [BH, 1, D]
             values = v_i[:, None, :]
             leverage_scores = mx.ones((bh, 1), dtype=mx.float32)
             n_updates = mx.ones((bh, 1), dtype=mx.float32)
@@ -690,7 +693,7 @@ def curdkv_update_batched(
 
         # --- append new token, seeded with its own leverage within the
         # resulting (existing + new) block (see curdkv_update docstring) ---
-        keys_cat = mx.concatenate([keys, k_i[:, None, :].astype(mx.float16)], axis=1)
+        keys_cat = mx.concatenate([keys, k_i[:, None, :].astype(k_dtype)], axis=1)
         values_cat = mx.concatenate([values, v_i[:, None, :]], axis=1)
         self_lev = _leverage_scores_batched(
             k_i.astype(mx.float32),

@@ -238,7 +238,7 @@ class VecInferKVCache(_MLXKVCache):
                 H_mat=self._H,
                 smooth=self._smooth,
             )
-            return k_hat_fp16, k_idx
+            return k_hat_fp16.astype(keys.dtype), k_idx
 
         # Pure-MLX fallback path (identical to _update_and_fetch_standard)
         k32 = keys.astype(mx.float32)
@@ -275,7 +275,7 @@ class VecInferKVCache(_MLXKVCache):
                 v_codebook=self._value_codebook,
                 sub_dim=self._value_sub_dim,
             )
-            return v_hat_fp16, v_idx.astype(mx.int32)
+            return v_hat_fp16.astype(values.dtype), v_idx.astype(mx.int32)
 
         # Pure-MLX fallback
         v32 = values.astype(mx.float32)

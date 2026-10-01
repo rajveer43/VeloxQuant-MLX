@@ -137,7 +137,9 @@ class KVQuantKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     # Batched (over B*H) NUQ application
     # ------------------------------------------------------------------
-    def _quant_keys_batched(self, k_bh: mx.array, levels: mx.array | None):
+    def _quant_keys_batched(
+        self, k_bh: mx.array, levels: mx.array | None, out_dtype: mx.Dtype = mx.float16
+    ):
         """Keys: per-channel NUQ, batched over BH. ``k_bh``: [BH, S, D].
 
         Returns (recon_fp16 [BH, S, D], levels_used [BH, L, D]).
@@ -173,9 +175,9 @@ class KVQuantKVCache(_MLXKVCache):
             vals = mx.where(mask, k32, mx.zeros_like(k32))
         recon = mx.where(mask, vals, recon)
         self._outlier_count += int(mx.sum(mask).item())
-        return recon.astype(mx.float16), levels
+        return recon.astype(out_dtype), levels
 
-    def _quant_values_batched(self, v_bh: mx.array):
+    def _quant_values_batched(self, v_bh: mx.array, out_dtype: mx.Dtype = mx.float16):
         """Values: per-token NUQ, batched over BH. ``v_bh``: [BH, S, D].
 
         Transposes S<->D per row so tokens are columns (per-token levels),
@@ -194,7 +196,7 @@ class KVQuantKVCache(_MLXKVCache):
         recon = dequant_nuq_batched(codes, levels).astype(mx.float32)
         recon = mx.where(ds.outlier_mask, ds.outlier_vals, recon)
         self._outlier_count += int(mx.sum(ds.outlier_mask).item())
-        return mx.swapaxes(recon.astype(mx.float16), 1, 2), levels  # back to [BH, S, D]
+        return mx.swapaxes(recon.astype(out_dtype), 1, 2), levels  # back to [BH, S, D]
 
     def _capture_key_thresholds(self, keys: mx.array) -> None:
         """Freeze the per-channel outlier threshold from the prefill keys.
@@ -273,8 +275,8 @@ class KVQuantKVCache(_MLXKVCache):
             assert self._key_levels is not None
             key_levels = mx.tile(self._key_levels, (B, 1, 1))
 
-        k_out_bh, klev_used = self._quant_keys_batched(keys_bh, key_levels)
-        v_out_bh, vlev_used = self._quant_values_batched(values_bh)
+        k_out_bh, klev_used = self._quant_keys_batched(keys_bh, key_levels, out_dtype=keys.dtype)
+        v_out_bh, vlev_used = self._quant_values_batched(values_bh, out_dtype=values.dtype)
 
         if refit_keys:
             # Store per-head levels (first B-tile is representative — frozen
@@ -293,10 +295,10 @@ class KVQuantKVCache(_MLXKVCache):
         # prefill call (n_tokens == 0), never to mid-stream decode tokens.
         if n_sink > 0:
             k_out = mx.concatenate(
-                [keys[:, :, :n_sink, :].astype(mx.float16), k_out[:, :, n_sink:, :]], axis=2
+                [keys[:, :, :n_sink, :].astype(keys.dtype), k_out[:, :, n_sink:, :]], axis=2
             )
             v_out = mx.concatenate(
-                [values[:, :, :n_sink, :].astype(mx.float16), v_out[:, :, n_sink:, :]], axis=2
+                [values[:, :, :n_sink, :].astype(values.dtype), v_out[:, :, n_sink:, :]], axis=2
             )
             self._sink_kept = n_sink
 

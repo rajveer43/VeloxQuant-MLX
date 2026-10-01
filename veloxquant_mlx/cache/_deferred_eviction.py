@@ -20,13 +20,17 @@ class DeferredEvictionMixin:
         self._positions: mx.array | None = None
 
     def _prepare_attention(
-        self, keys: mx.array, values: mx.array
+        self,
+        keys: mx.array,
+        values: mx.array,
+        key_dtype: mx.Dtype = mx.float16,
+        value_dtype: mx.Dtype = mx.float16,
     ) -> tuple[mx.array, mx.array, mx.array]:
         B, H, S, _ = keys.shape
         positions = mx.broadcast_to(
             mx.arange(self.offset, self.offset + S, dtype=mx.int32)[None, None], (B, H, S)
         )
-        keys, values = keys.astype(mx.float16), values.astype(mx.float16)
+        keys, values = keys.astype(key_dtype), values.astype(value_dtype)
         if self._positions is not None:
             n = self._positions.shape[-1]
             keys = mx.concatenate([self.keys[:, :, :n], keys], axis=2)
