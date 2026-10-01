@@ -527,6 +527,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.92.1 (2026-10-01)
+
+### Bug Fixes
+
+- **cache**: Roll back quantization frontier and stats on trim() (#623)
+  ([#683](https://github.com/rajveer43/VeloxQuant-MLX/pull/683),
+  [`94d0742`](https://github.com/rajveer43/VeloxQuant-MLX/commit/94d0742ea08f89037f2ad7a7848eea92adb6d6a6))
+
+
 ## v0.92.0 (2026-10-01)
 
 ### Bug Fixes
