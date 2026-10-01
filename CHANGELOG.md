@@ -527,6 +527,90 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.92.0 (2026-10-01)
+
+### Bug Fixes
+
+- Harden system prompt server integration
+  ([#671](https://github.com/rajveer43/VeloxQuant-MLX/pull/671),
+  [`ec73c70`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ec73c7055cb223fba78f93db699c7c8dd047b922))
+
+- **a2ats**: De-rotate incoming keys before quantization (#613)
+  ([#669](https://github.com/rajveer43/VeloxQuant-MLX/pull/669),
+  [`9cdd8b7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9cdd8b795de2d0b1f61fd1f4d8b14adfe7060c33))
+
+- **a2ats**: Override trim() to rewind _next_position and byte counters (#614)
+  ([#670](https://github.com/rajveer43/VeloxQuant-MLX/pull/670),
+  [`7fe6856`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7fe68566ee2e3c23c5b17e1d51697aa658d5fc58))
+
+- **cache**: Adapt to mlx_lm 0.32's state/from_state contract change
+  ([`77d975e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/77d975e7eef51bdd908989bc8bdd90f92e7fcea9))
+
+- **cache**: Preserve input dtype instead of hardcoding fp16 storage (#622)
+  ([#682](https://github.com/rajveer43/VeloxQuant-MLX/pull/682),
+  [`57eccab`](https://github.com/rajveer43/VeloxQuant-MLX/commit/57eccab532cc21b9fd972022e4795fd88a6fed54))
+
+- **cache**: Reject unwired observers/bit_width_outlier in KVCacheFactory.create (#633)
+  ([#677](https://github.com/rajveer43/VeloxQuant-MLX/pull/677),
+  [`5e0a382`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5e0a382fc2c2d3758d63b1534ce940acd539bb3a))
+
+- **gear**: Swap quantize_base axis branches — keys get per-channel quant (#615)
+  ([#672](https://github.com/rajveer43/VeloxQuant-MLX/pull/672),
+  [`4d1996e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4d1996e191f720a918a282e11e6235751c41d7ef))
+
+- **metal**: Guard D>256 and fix GQA head mapping in fused RVQ attend (#619)
+  ([#678](https://github.com/rajveer43/VeloxQuant-MLX/pull/678),
+  [`3ccb9bb`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3ccb9bb2f6567adadb7186d95f3f4b86739edc49))
+
+- **planning**: Stop crediting phantom memory savings in the estimator (#620)
+  ([#680](https://github.com/rajveer43/VeloxQuant-MLX/pull/680),
+  [`b9b3765`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b9b376538206b6581c83df1454d8e4880ba2a4ec))
+
+- **quantizers**: Reject codebook sizes that overflow uint8 indices (#621)
+  ([#681](https://github.com/rajveer43/VeloxQuant-MLX/pull/681),
+  [`a76862a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a76862af7eb60bddcf569bdeb19292479a875241))
+
+- **spectral**: Rescale per-block RMS to codebook std instead of abs-max (#617)
+  ([#674](https://github.com/rajveer43/VeloxQuant-MLX/pull/674),
+  [`fe12cf4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fe12cf471cf0e92379c2528bd51b337b4b39555b))
+
+- **transfer**: Look up CrossModelMapper layers by target_layer id (#642)
+  ([#676](https://github.com/rajveer43/VeloxQuant-MLX/pull/676),
+  [`b653020`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b653020bb50240f222e0c51cf77b16aaf79085f5))
+
+- **transfer**: Map selected source-layer positions back to layer ids (#618)
+  ([#675](https://github.com/rajveer43/VeloxQuant-MLX/pull/675),
+  [`13a622b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/13a622b2479badc350510c69d759f61951182947))
+
+- **vecinfer**: Handle memory-bound attention masks (#612)
+  ([#668](https://github.com/rajveer43/VeloxQuant-MLX/pull/668),
+  [`b23c5b2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b23c5b27fa039202acea2b731e3ac52f2e70cb51))
+
+- **vecinfer**: Repeat smooth factors per KV group for GQA queries (#616)
+  ([#673](https://github.com/rajveer43/VeloxQuant-MLX/pull/673),
+  [`9cb7b3a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9cb7b3ac31add5afce9cc596eddf8b9bdaf16dd1))
+
+### Code Style
+
+- Format system prompt server changes ([#671](https://github.com/rajveer43/VeloxQuant-MLX/pull/671),
+  [`ec73c70`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ec73c7055cb223fba78f93db699c7c8dd047b922))
+
+- Restore ruff baseline after rebase ([#671](https://github.com/rajveer43/VeloxQuant-MLX/pull/671),
+  [`ec73c70`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ec73c7055cb223fba78f93db699c7c8dd047b922))
+
+### Features
+
+- Support native system prompts in servers
+  ([#671](https://github.com/rajveer43/VeloxQuant-MLX/pull/671),
+  [`ec73c70`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ec73c7055cb223fba78f93db699c7c8dd047b922))
+
+### Testing
+
+- **cache**: Cover post-eviction RoPE positions for issue 611
+  ([#666](https://github.com/rajveer43/VeloxQuant-MLX/pull/666),
+  [`272b4cf`](https://github.com/rajveer43/VeloxQuant-MLX/commit/272b4cf2d7508399ace781ab8ff26eb136c6cac8))
+
+
 ## v0.91.24 (2026-09-30)
 
 ### Bug Fixes
