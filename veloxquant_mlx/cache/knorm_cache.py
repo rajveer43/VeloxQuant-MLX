@@ -117,6 +117,15 @@ class L2NormKVCache(DeferredEvictionMixin, _MLXKVCache):
         # after tokens are dropped (see #171 and update_and_fetch).
         self._true_offset: int = 0
 
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
+    @property
+    def _storage_dtype(self) -> mx.Dtype:
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
+
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         if self._keys is None:
@@ -124,8 +133,8 @@ class L2NormKVCache(DeferredEvictionMixin, _MLXKVCache):
             self._H = H
             self._head_dim = D
             N = B * H
-            self._keys = mx.zeros((N, 0, D), dtype=mx.float16)
-            self._values = mx.zeros((N, 0, D), dtype=mx.float16)
+            self._keys = mx.zeros((N, 0, D), dtype=self._storage_dtype)
+            self._values = mx.zeros((N, 0, D), dtype=self._storage_dtype)
             self._norms = mx.zeros((N, 0), dtype=mx.float32)
 
     def _head_idx(self, b: int, h: int) -> int:
@@ -144,14 +153,20 @@ class L2NormKVCache(DeferredEvictionMixin, _MLXKVCache):
             Only the state stored for the next call is compressed.
         """
         B, H, S, D = keys.shape
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = (
+                "bfloat16" if keys.dtype == values.dtype == mx.bfloat16 else "float16"
+            )
         self._ensure_states(B, H, D)
-        full_k, full_v, positions = self._prepare_attention(keys, values)
+        full_k, full_v, positions = self._prepare_attention(
+            keys, values, key_dtype=self._storage_dtype, value_dtype=self._storage_dtype
+        )
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16-equivalent accounting
         self._tokens_seen_total += B * H * S
 
-        keys_flat = keys.reshape(B * H, S, D)
-        values_flat = values.reshape(B * H, S, D)
+        keys_flat = keys.astype(self._storage_dtype).reshape(B * H, S, D)
+        values_flat = values.astype(self._storage_dtype).reshape(B * H, S, D)
         self._keys, self._values, self._norms, indices = knorm_update_batched(
             self._keys,
             self._values,

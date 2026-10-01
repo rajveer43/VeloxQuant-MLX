@@ -102,6 +102,15 @@ class StreamingLLMKVCache(_MLXKVCache):
         # unchanged (mirrors TOVAKVCache/H2OKVCache's equivalent handling).
         self._last_returned: tuple[mx.array, mx.array] | None = None
 
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
+    @property
+    def _storage_dtype(self) -> mx.Dtype:
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
+
     # ------------------------------------------------------------------
     def _ensure_windows(self, B: int, H: int, D: int) -> None:
         """Initialise per-head window list on first call."""
@@ -109,7 +118,10 @@ class StreamingLLMKVCache(_MLXKVCache):
             self._B = B
             self._H = H
             self._D = D
-            self._windows = [init_streaming_window(self._n_sink, D) for _ in range(B * H)]
+            self._windows = [
+                init_streaming_window(self._n_sink, D, dtype=self._storage_dtype)
+                for _ in range(B * H)
+            ]
 
     def _window_idx(self, b: int, h: int) -> int:
         return b * self._H + h
@@ -145,12 +157,16 @@ class StreamingLLMKVCache(_MLXKVCache):
         correctly.
         """
         B, H, S, D = keys.shape
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = (
+                "bfloat16" if keys.dtype == values.dtype == mx.bfloat16 else "float16"
+            )
         self._ensure_windows(B, H, D)
 
         if S == 0:
             if self._last_returned is not None:
                 return self._last_returned
-            return keys.astype(mx.float16), values.astype(mx.float16)
+            return keys.astype(self._storage_dtype), values.astype(self._storage_dtype)
 
         # Byte accounting for this batch
         fp16_new = B * H * S * D * 2 * 2  # K + V, fp16
@@ -169,8 +185,8 @@ class StreamingLLMKVCache(_MLXKVCache):
             for h in range(H):
                 idx = self._window_idx(b, h)
                 w_old = self._windows[idx]
-                new_k_bh = keys[b, h].astype(mx.float16)
-                new_v_bh = values[b, h].astype(mx.float16)
+                new_k_bh = keys[b, h].astype(self._storage_dtype)
+                new_v_bh = values[b, h].astype(self._storage_dtype)
                 if w_old.n_sink == 0 and w_old.n_recent == 0:
                     # Nothing stored yet for this head — stream_get_kv would
                     # return a degenerate (0,1)-shaped placeholder, not

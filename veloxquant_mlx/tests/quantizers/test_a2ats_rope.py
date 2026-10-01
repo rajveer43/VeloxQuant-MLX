@@ -34,7 +34,7 @@ def test_exact_rope_preserves_shape_and_dtype() -> None:
     x = _mat(6, 16)
     out = a2ats_apply_exact_rope(x, mx.arange(6))
     assert out.shape == (6, 16)
-    assert out.dtype == mx.float16
+    assert out.dtype == x.dtype
 
 
 def test_exact_rope_position_zero_is_near_identity() -> None:
@@ -158,7 +158,7 @@ def test_windowed_rope_shape_dtype_preserved() -> None:
     x = _mat(4, 12, seed=9)
     out = a2ats_apply_windowed_rope(x, mx.arange(4), query_position=3, window=2)
     assert out.shape == (4, 12)
-    assert out.dtype == mx.float16
+    assert out.dtype == x.dtype
 
 
 def test_windowed_rope_no_nan_at_boundaries() -> None:

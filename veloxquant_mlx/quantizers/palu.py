@@ -193,7 +193,9 @@ def project_to_latent_batched(x: mx.array, V: mx.array, mu: mx.array) -> mx.arra
     return (x.astype(mx.float32) - mu[None, None, :]) @ V[None]
 
 
-def reconstruct_from_latent_batched(L: mx.array, V: mx.array, mu: mx.array) -> mx.array:
+def reconstruct_from_latent_batched(
+    L: mx.array, V: mx.array, mu: mx.array, out_dtype: mx.Dtype = mx.float16
+) -> mx.array:
     """Batched-leading-axis equivalent of :func:`reconstruct_from_latent`.
 
     Args:
@@ -202,10 +204,10 @@ def reconstruct_from_latent_batched(L: mx.array, V: mx.array, mu: mx.array) -> m
         mu: ``[D]`` — this group's shared mean.
 
     Returns:
-        ``[G, S, D]`` fp16.
+        ``[G, S, D]``, cast to ``out_dtype`` (default fp16).
     """
     out = L.astype(mx.float32) @ mx.swapaxes(V, -1, -2)[None] + mu[None, None, :]
-    return out.astype(mx.float16)
+    return out.astype(out_dtype)
 
 
 def quantize_latent_batched(

@@ -728,17 +728,19 @@ def keyformer_update_batched(
 
     use_metal = _metal_evict_available()
     no_anneal = tau_end == tau_init or anneal_steps <= 0
+    k_dtype = new_keys.dtype
+    v_dtype = new_values.dtype
 
     for i in range(s):
         if return_indices:
             indices = mx.concatenate([indices, mx.full((bh, 1), n_prior + i)], axis=1)
-        k_i = new_keys[:, i].astype(mx.float16)  # [BH, D]
-        v_i = new_values[:, i].astype(mx.float16)  # [BH, D]
+        k_i = new_keys[:, i].astype(k_dtype)  # [BH, D]
+        v_i = new_values[:, i].astype(v_dtype)  # [BH, D]
         g_i = _gumbel_at_batched(seeds, pos)  # [BH]
         cur_pos = next_pos
 
         if keys is None:
-            keys = new_keys[:, i : i + 1].astype(mx.float16)  # [BH, 1, D]
+            keys = new_keys[:, i : i + 1].astype(k_dtype)  # [BH, 1, D]
             values = v_i[:, None, :]
             scores = mx.ones((bh, 1), dtype=mx.float32)
             gumbel = g_i[:, None]

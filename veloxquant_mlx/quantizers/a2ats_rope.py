@@ -50,7 +50,9 @@ from __future__ import annotations
 import mlx.core as mx
 
 
-def _rope_cos_sin(positions: mx.array, head_dim: int, base: float) -> tuple:
+def _rope_cos_sin(
+    positions: mx.array, head_dim: int, base: float, dtype: mx.Dtype = mx.float16
+) -> tuple:
     """Per-position RoPE cos/sin tables.
 
     Args:
@@ -60,12 +62,12 @@ def _rope_cos_sin(positions: mx.array, head_dim: int, base: float) -> tuple:
         base: RoPE frequency base.
 
     Returns:
-        ``(cos, sin)`` each ``[N, D // 2]`` float16.
+        ``(cos, sin)`` each ``[N, D // 2]``, cast to ``dtype`` (default float16).
     """
     half = head_dim // 2
     inv_freq = 1.0 / (base ** (mx.arange(0, half, dtype=mx.float32) / half))  # [half]
     angles = positions.astype(mx.float32)[:, None] * inv_freq[None, :]  # [N, half]
-    return mx.cos(angles).astype(mx.float16), mx.sin(angles).astype(mx.float16)
+    return mx.cos(angles).astype(dtype), mx.sin(angles).astype(dtype)
 
 
 def _rotate(x: mx.array, cos: mx.array, sin: mx.array) -> mx.array:
@@ -91,9 +93,9 @@ def a2ats_apply_exact_rope(
         ``[N, D]`` fp16 rotated vectors.
     """
     if x.shape[0] == 0:
-        return x.astype(mx.float16)
-    cos, sin = _rope_cos_sin(positions, x.shape[-1], base)
-    return _rotate(x.astype(mx.float16), cos, sin)
+        return x.astype(x.dtype)
+    cos, sin = _rope_cos_sin(positions, x.shape[-1], base, dtype=x.dtype)
+    return _rotate(x.astype(x.dtype), cos, sin)
 
 
 def rope_remap_positions(
@@ -135,10 +137,10 @@ def rope_remap_positions(
     interleaving) are not handled by this function.
     """
     if x.shape[0] == 0:
-        return x.astype(mx.float16)
+        return x.astype(x.dtype)
     delta = new_positions.astype(mx.float32) - old_positions.astype(mx.float32)
-    cos, sin = _rope_cos_sin(delta, x.shape[-1], base)
-    return _rotate(x.astype(mx.float16), cos, sin)
+    cos, sin = _rope_cos_sin(delta, x.shape[-1], base, dtype=x.dtype)
+    return _rotate(x.astype(x.dtype), cos, sin)
 
 
 def a2ats_apply_windowed_rope(
@@ -194,18 +196,18 @@ def a2ats_apply_windowed_rope(
         (pre-RoPE) for far tokens.
     """
     if x.shape[0] == 0:
-        return x.astype(mx.float16)
+        return x.astype(x.dtype)
 
-    x16 = x.astype(mx.float16)
+    x_native = x.astype(x.dtype)
     distance = mx.array(query_position, dtype=mx.float32) - positions.astype(mx.float32)
     near_mask = distance < float(window)  # [N] bool; window<=0 -> all False
 
-    exact = a2ats_apply_exact_rope(x16, positions, base=base)
+    exact = a2ats_apply_exact_rope(x_native, positions, base=base)
 
     # Eq. (12): far keys stay in their pre-RoPE frame. The constant R_b that
     # encodes "far" relative position lives on the query side instead — see
     # a2ats_apply_far_query_rope.
-    return mx.where(near_mask[:, None], exact, x16)
+    return mx.where(near_mask[:, None], exact, x_native)
 
 
 def a2ats_apply_far_query_rope(
@@ -238,11 +240,11 @@ def a2ats_apply_far_query_rope(
     squeeze = q.ndim == 1
     q2 = q[None, :] if squeeze else q
     if q2.shape[0] == 0:
-        return q.astype(mx.float16)
+        return q.astype(q.dtype)
 
     offset = mx.array([float(b)], dtype=mx.float32)
-    cos, sin = _rope_cos_sin(offset, q2.shape[-1], base)  # [1, half]
-    out = _rotate(q2.astype(mx.float16), cos, sin)  # broadcasts over N
+    cos, sin = _rope_cos_sin(offset, q2.shape[-1], base, dtype=q.dtype)  # [1, half]
+    out = _rotate(q2.astype(q.dtype), cos, sin)  # broadcasts over N
     return out[0] if squeeze else out
 
 

@@ -197,13 +197,13 @@ class CaMKVCache(_MLXKVCache):
         if S == 0:
             if self._last_returned is not None:
                 return self._last_returned
-            return keys.astype(mx.float16), values.astype(mx.float16)
+            return keys.astype(keys.dtype), values.astype(values.dtype)
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16-equivalent accounting
         self._tokens_seen_total += B * H * S
 
-        new_keys_flat = keys.astype(mx.float16).reshape(B * H, S, D)
-        new_values_flat = values.astype(mx.float16).reshape(B * H, S, D)
+        new_keys_flat = keys.reshape(B * H, S, D)
+        new_values_flat = values.reshape(B * H, S, D)
 
         # This call's own (deferred) attention return gets the full
         # pre-eviction concatenation — captured before cam_update_batched

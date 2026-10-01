@@ -383,12 +383,15 @@ def squeeze_update_batched(
     if n_sink >= budget:
         raise ValueError("squeeze: n_sink must be < budget — no evictable positions remain")
 
+    k_dtype = new_keys.dtype
+    v_dtype = new_values.dtype
+
     for i in range(s):
         k_i = new_keys[:, i].astype(mx.float32)  # [BH, D]
-        v_i = new_values[:, i].astype(mx.float16)  # [BH, D]
+        v_i = new_values[:, i].astype(v_dtype)  # [BH, D]
 
         if keys is None:
-            keys = new_keys[:, i : i + 1].astype(mx.float16)  # [BH, 1, D]
+            keys = new_keys[:, i : i + 1].astype(k_dtype)  # [BH, 1, D]
             values = v_i[:, None, :]
             scores = mx.ones((bh, 1), dtype=mx.float32)
             continue
@@ -396,7 +399,7 @@ def squeeze_update_batched(
         attn = _attention_scores_batched(k_i, keys.astype(mx.float32))  # [BH, n]
         updated_scores = scores + attn
 
-        keys_cat = mx.concatenate([keys, new_keys[:, i : i + 1].astype(mx.float16)], axis=1)
+        keys_cat = mx.concatenate([keys, new_keys[:, i : i + 1].astype(k_dtype)], axis=1)
         values_cat = mx.concatenate([values, v_i[:, None, :]], axis=1)
         scores_cat = mx.concatenate([updated_scores, mx.zeros((bh, 1), dtype=mx.float32)], axis=1)
 

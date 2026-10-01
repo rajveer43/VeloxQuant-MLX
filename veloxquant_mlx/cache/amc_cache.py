@@ -129,6 +129,14 @@ class AMCKVCache(_MLXKVCache):
         self._full_seq_bytes: int = 0
         self._tokens_seen_total: int = 0
         self._tier_counts: dict[int, int] = {HIGH: 0, MID: 0, LOW: 0}
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
+    @property
+    def _storage_dtype(self) -> mx.Dtype:
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
 
     # ------------------------------------------------------------------
     def _ensure_state(self, B: int, H: int) -> None:
@@ -178,13 +186,17 @@ class AMCKVCache(_MLXKVCache):
         """
         B, H, S, D = keys.shape
         self._ensure_state(B, H)
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = (
+                "bfloat16" if keys.dtype == values.dtype == mx.bfloat16 else "float16"
+            )
 
         self._full_seq_bytes += full_amc_fp16_bytes(B * H * S, D)
         self._tokens_seen_total += B * H * S
 
         G = B * H
-        k_flat = keys.reshape(G, S, D).astype(mx.float16)  # [G, S, D]
-        v_flat = values.reshape(G, S, D).astype(mx.float16)
+        k_flat = keys.reshape(G, S, D).astype(self._storage_dtype)  # [G, S, D]
+        v_flat = values.reshape(G, S, D).astype(self._storage_dtype)
 
         if self._use_query_saliency:
             query = mx.mean(k_flat.astype(mx.float32), axis=1)  # [G, D]

@@ -162,7 +162,9 @@ class GEARKVCache(_MLXKVCache):
         self._err_after_sq = 0.0
 
     # ------------------------------------------------------------------
-    def _compress_and_account(self, t: mx.array, is_key: bool) -> mx.array:
+    def _compress_and_account(
+        self, t: mx.array, is_key: bool, out_dtype: mx.Dtype = mx.float16
+    ) -> mx.array:
         """Compress [B, H, S, D] per head with GEAR, accumulate accounting, return fp16.
 
         Two real, measured costs on this class's decode hot path, both
@@ -331,8 +333,8 @@ class GEARKVCache(_MLXKVCache):
 
         sp_idx_b, sp_val_b = sparse_outliers_batched(E_after_batched, self._sparse_frac)
         recon_batched = gear_reconstruct_batched(
-            base_batched, L_batched, R_batched, sp_idx_b, sp_val_b
-        )  # [B*H, S, D] fp16
+            base_batched, L_batched, R_batched, sp_idx_b, sp_val_b, out_dtype=out_dtype
+        )  # [B*H, S, D]
 
         # Byte accounting and the error-recovery accumulator still need a
         # per-row GEARState (each head's own rank/nnz determine its stored
@@ -397,10 +399,12 @@ class GEARKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
-        """Compress K (and V, unless disabled) with GEAR's base group quant + low-rank residual + sparse outlier correction; return reconstructed fp16 K/V."""
-        k_out = self._compress_and_account(keys, is_key=True)
+        """Compress K (and V, unless disabled) with GEAR's base group quant + low-rank residual + sparse outlier correction; return reconstructed K/V in the input dtype."""
+        k_dtype = mx.bfloat16 if keys.dtype == mx.bfloat16 else mx.float16
+        v_dtype = mx.bfloat16 if values.dtype == mx.bfloat16 else mx.float16
+        k_out = self._compress_and_account(keys, is_key=True, out_dtype=k_dtype)
         if self._quant_values:
-            v_out = self._compress_and_account(values, is_key=False)
+            v_out = self._compress_and_account(values, is_key=False, out_dtype=v_dtype)
         else:
             v_out = values
             B, H, S, D = values.shape

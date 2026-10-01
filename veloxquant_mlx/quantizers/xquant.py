@@ -259,7 +259,9 @@ def compute_reuse_params_batched(
     return GroupParams(scale=scale, zero=gmin, n_rows=n, bits=bits)
 
 
-def dequant_with_params_batched(codes: mx.array, params: GroupParams) -> mx.array:
+def dequant_with_params_batched(
+    codes: mx.array, params: GroupParams, out_dtype: mx.Dtype = mx.float16
+) -> mx.array:
     """Batched :func:`dequant_with_params` over an arbitrary leading batch shape.
 
     Args:
@@ -267,16 +269,16 @@ def dequant_with_params_batched(codes: mx.array, params: GroupParams) -> mx.arra
         params: GroupParams (scale, zero, n_rows), broadcastable to ``codes``.
 
     Returns:
-        Reconstructed ``[..., n_rows, D]`` fp16.
+        Reconstructed ``[..., n_rows, D]``, cast to ``out_dtype`` (default fp16).
     """
     recon = codes * params.scale + params.zero
     lead = recon.shape[:-3]
     n_groups, gs, d = recon.shape[-3:]
-    return recon.reshape(*lead, n_groups * gs, d)[..., : params.n_rows, :].astype(mx.float16)
+    return recon.reshape(*lead, n_groups * gs, d)[..., : params.n_rows, :].astype(out_dtype)
 
 
 def quantize_residual_batched(
-    x: mx.array, recon: mx.array, bits: int, group_size: int = 32
+    x: mx.array, recon: mx.array, bits: int, group_size: int = 32, out_dtype: mx.Dtype = mx.float16
 ) -> mx.array:
     """Batched :func:`quantize_residual` over an arbitrary leading batch shape.
 
@@ -287,7 +289,8 @@ def quantize_residual_batched(
         group_size: Tokens per group.
 
     Returns:
-        ``[..., N, D]`` fp16 quantized residual to add back to ``recon``.
+        ``[..., N, D]`` quantized residual to add back to ``recon``, cast to
+        ``out_dtype`` (default fp16).
     """
     res = x.astype(mx.float32) - recon.astype(mx.float32)
     res32, n_groups, n = _pad_to_groups_batched(res, group_size)
@@ -300,7 +303,7 @@ def quantize_residual_batched(
     scale = mx.maximum((gmax - gmin) / levels, eps)
     codes = mx.clip(mx.round((rg - gmin) / scale), 0, levels)
     recon_res = (codes * scale + gmin).reshape(*lead, n_groups * group_size, d)[..., :n, :]
-    return recon_res.astype(mx.float16)
+    return recon_res.astype(out_dtype)
 
 
 def cross_layer_similarity(a: mx.array, b: mx.array) -> dict:

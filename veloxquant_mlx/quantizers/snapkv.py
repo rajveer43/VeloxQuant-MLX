@@ -170,6 +170,7 @@ def snapkv_compress(
     n_sink: int = 4,
     *,
     backend: str = "auto",
+    output_dtype: mx.Dtype = mx.float16,
 ) -> SnapKVState:
     """Compress ``[S, D]`` K and V to a budget-token subset via obs-window scoring.
 
@@ -188,8 +189,8 @@ def snapkv_compress(
     S, D = keys.shape
     scores = obs_window_attention_scores(keys, obs_window) if S else mx.zeros((0,))
     indices = snap_select_indices(scores, budget, n_sink, backend=backend)
-    kept_k = mx.take(keys, indices, axis=0).astype(mx.float16)
-    kept_v = mx.take(values, indices, axis=0).astype(mx.float16)
+    kept_k = mx.take(keys, indices, axis=0).astype(output_dtype)
+    kept_v = mx.take(values, indices, axis=0).astype(output_dtype)
 
     return SnapKVState(
         kept_keys=kept_k,

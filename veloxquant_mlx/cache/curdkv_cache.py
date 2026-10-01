@@ -147,6 +147,15 @@ class CurDKVKVCache(_MLXKVCache):
         # deferred-eviction docstrings. None before the first update.
         self._kept_positions: mx.array | None = None
 
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
+    @property
+    def _storage_dtype(self) -> mx.Dtype:
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
+
     # ------------------------------------------------------------------
     def _ensure_states(self, B: int, H: int, D: int) -> None:
         """Record B/H/D on first call (state itself is lazily created by
@@ -208,21 +217,27 @@ class CurDKVKVCache(_MLXKVCache):
         """
         B, H, S, D = keys.shape
         self._ensure_states(B, H, D)
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = (
+                "bfloat16" if keys.dtype == values.dtype == mx.bfloat16 else "float16"
+            )
 
         offset_before = self.offset
         next_pos = self._next_pos  # identical across heads (see class docstring)
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16-equivalent accounting
         self._tokens_seen_total += B * H * S
 
-        keys_fixed = self._fix_incoming_rope(keys.astype(mx.float16), offset_before, next_pos)
+        keys_fixed = self._fix_incoming_rope(
+            keys.astype(self._storage_dtype), offset_before, next_pos
+        )
         # Cast the whole [B, H, S, D] values tensor once up front (a no-op
-        # when already fp16, the common case) instead of re-issuing
-        # `.astype(mx.float16)` per (b, h) slice below — avoids B*H
+        # when already the storage dtype, the common case) instead of
+        # re-issuing `.astype(...)` per (b, h) slice below — avoids B*H
         # redundant cast ops per call for input that's already the target
         # dtype (same pattern as the ChunkKV cache fix, PR #525).
-        if values.dtype != mx.float16:
-            values = values.astype(mx.float16)
+        if values.dtype != self._storage_dtype:
+            values = values.astype(self._storage_dtype)
 
         bh = B * H
         new_keys_bh = keys_fixed.reshape(bh, S, D)

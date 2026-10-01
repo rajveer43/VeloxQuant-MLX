@@ -196,7 +196,9 @@ class A2ATSKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     # Core per-(batch, head) compression step
     # ------------------------------------------------------------------
-    def _quantize_head(self, k_bh: mx.array, positions: mx.array) -> mx.array:
+    def _quantize_head(
+        self, k_bh: mx.array, positions: mx.array, out_dtype: mx.Dtype = mx.float16
+    ) -> mx.array:
         """Compress + reconstruct one head's keys ``[S, D]``, **pre-RoPE**.
 
         ``positions`` are this head's absolute token positions. ``k_bh`` must
@@ -257,7 +259,7 @@ class A2ATSKVCache(_MLXKVCache):
                 mx.stack(idx_parts, axis=1) if S > 0 else mx.zeros((0, self._n_sub), dtype=mx.int32)
             )
 
-        return dequantize_vq(indices, self._codebook).astype(mx.float16)  # [S, D], pre-RoPE
+        return dequantize_vq(indices, self._codebook).astype(out_dtype)  # [S, D], pre-RoPE
 
     # ------------------------------------------------------------------
     # mlx_lm protocol
@@ -325,7 +327,9 @@ class A2ATSKVCache(_MLXKVCache):
         for b in range(B):
             per_head = []
             for h in range(H):
-                per_head.append(self._quantize_head(keys_pre_rope[b, h], positions))
+                per_head.append(
+                    self._quantize_head(keys_pre_rope[b, h], positions, out_dtype=keys.dtype)
+                )
             out_heads_k.append(mx.stack(per_head, axis=0))
         k_out = mx.stack(out_heads_k, axis=0)  # [B, H, S, D]
 
@@ -347,7 +351,7 @@ class A2ATSKVCache(_MLXKVCache):
             if v_reshaped.shape[0] > 0
             else mx.zeros((0, self._n_sub), dtype=mx.int32)
         )
-        v_hat = dequantize_vq(v_indices, self._codebook).astype(mx.float16)
+        v_hat = dequantize_vq(v_indices, self._codebook).astype(values.dtype)
         v_out = v_hat.reshape(v_flat_shape)
 
         self._account_bytes(B, H, S, D)

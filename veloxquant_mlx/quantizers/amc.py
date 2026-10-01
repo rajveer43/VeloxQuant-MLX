@@ -432,11 +432,11 @@ def amc_quantize_tier(x: mx.array, bits: int, group_size: int = 32) -> mx.array:
         group_size: Token-axis group size for min/max quantization.
 
     Returns:
-        ``[N, D]`` fp16 quantized-then-dequantized activations.
+        ``[N, D]`` quantized-then-dequantized activations, in ``x.dtype``.
     """
     if bits >= 16:
-        return x.astype(mx.float16)
-    return _group_quant_dequant(x, bits, group_size)
+        return x
+    return _group_quant_dequant(x, bits, group_size).astype(x.dtype)
 
 
 def amc_compress_tokens_batched(
@@ -478,7 +478,7 @@ def amc_compress_tokens_batched(
 
     g, n, d = x.shape
     if n == 0:
-        out = x.astype(mx.float16)
+        out = x.astype(x.dtype)
         return out[0] if squeeze else out
 
     tiers_mx = tiers if isinstance(tiers, mx.array) else mx.array(tiers)
@@ -487,10 +487,10 @@ def amc_compress_tokens_batched(
     for tier_id, cfg in tier_configs.items():
         masked = amc_apply_rank_mask(x, cfg.rank)  # [G, N, D]
         if cfg.bits >= 16:
-            q = masked.astype(mx.float16)
+            q = masked.astype(x.dtype)
         else:
             q = _group_quant_dequant_batched(masked.reshape(g * n, 1, d), cfg.bits, 1)
-            q = q.reshape(g, n, d)
+            q = q.reshape(g, n, d).astype(x.dtype)
         sel = (tiers_mx == tier_id)[:, :, None]
         out = q if out is None else mx.where(sel, q, out)
     return out[0] if squeeze else out

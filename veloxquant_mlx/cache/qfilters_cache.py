@@ -236,6 +236,11 @@ class QFiltersKVCache(DeferredEvictionMixin, _MLXKVCache):
         self._batched_filters: mx.array | None = None
         self._states_stale: bool = False
 
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
         self._qfilters_kept_bytes: int = 0
         self._full_seq_bytes: int = 0
         self._tokens_seen_total: int = 0
@@ -279,6 +284,10 @@ class QFiltersKVCache(DeferredEvictionMixin, _MLXKVCache):
     def _head_idx(self, b: int, h: int) -> int:
         return b * self._H + h
 
+    @property
+    def _storage_dtype(self) -> mx.Dtype:
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
+
     # ------------------------------------------------------------------
     def _can_batch(self) -> bool:
         """True when every group can be evicted in one vectorized selection.
@@ -303,8 +312,8 @@ class QFiltersKVCache(DeferredEvictionMixin, _MLXKVCache):
         slices are lazy in MLX and cost nothing until read.
         """
         BH = B * H
-        new_k = keys.reshape(BH, -1, D).astype(mx.float16)
-        new_v = values.reshape(BH, -1, D).astype(mx.float16)
+        new_k = keys.reshape(BH, -1, D).astype(self._storage_dtype)
+        new_v = values.reshape(BH, -1, D).astype(self._storage_dtype)
 
         if self._batched_keys is None:
             keys_cat, values_cat = new_k, new_v
@@ -333,6 +342,10 @@ class QFiltersKVCache(DeferredEvictionMixin, _MLXKVCache):
                 sign=self._sign,
                 return_indices=True,
             )
+            # The fused kernel always emits float16 (see _qfilters_evict.py);
+            # cast back so Metal and pure-MLX branches agree on storage dtype.
+            keys_out = keys_out.astype(self._storage_dtype)
+            values_out = values_out.astype(self._storage_dtype)
         else:
             keys_out, values_out, scores_out, indices = qfilters_update_batched(
                 keys_cat,
@@ -391,10 +404,16 @@ class QFiltersKVCache(DeferredEvictionMixin, _MLXKVCache):
             Only the state stored for the next call is compressed.
         """
         B, H, S, D = keys.shape
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = (
+                "bfloat16" if keys.dtype == values.dtype == mx.bfloat16 else "float16"
+            )
         self._ensure_states(B, H, D)
-        full_k, full_v, positions = self._prepare_attention(keys, values)
+        full_k, full_v, positions = self._prepare_attention(
+            keys, values, key_dtype=self._storage_dtype, value_dtype=self._storage_dtype
+        )
 
-        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
+        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16-equivalent accounting
         self._tokens_seen_total += B * H * S
 
         if self._can_batch():
@@ -408,8 +427,8 @@ class QFiltersKVCache(DeferredEvictionMixin, _MLXKVCache):
                     idx = self._head_idx(b, h)
                     st, indices = qfilters_update(
                         self._states[idx],
-                        keys[b, h].astype(mx.float16),
-                        values[b, h].astype(mx.float16),
+                        keys[b, h].astype(self._storage_dtype),
+                        values[b, h].astype(self._storage_dtype),
                         return_indices=True,
                     )
                     pos_h.append(positions[b, h, indices])

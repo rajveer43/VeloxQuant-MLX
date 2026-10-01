@@ -206,8 +206,8 @@ def knorm_update_batched(
     """
     new_norms = mx.sqrt(mx.sum(new_keys.astype(mx.float32) ** 2, axis=-1))  # [N, S]
 
-    keys_cat = mx.concatenate([prior_keys, new_keys.astype(mx.float16)], axis=1)
-    values_cat = mx.concatenate([prior_values, new_values.astype(mx.float16)], axis=1)
+    keys_cat = mx.concatenate([prior_keys, new_keys.astype(prior_keys.dtype)], axis=1)
+    values_cat = mx.concatenate([prior_values, new_values.astype(prior_values.dtype)], axis=1)
     norms_cat = mx.concatenate([prior_norms, new_norms], axis=1)
 
     n_total = int(keys_cat.shape[1])

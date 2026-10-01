@@ -45,6 +45,16 @@ class PolarQuantKVCache(KVCache):
 
         self._d = d
         self._n_tokens: int = 0
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
+    @property
+    def _storage_dtype(self):
+        import mlx.core as mx
+
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
 
     def append_key(self, k: Any) -> None:
         """Encode and cache a single key vector.
@@ -69,13 +79,15 @@ class PolarQuantKVCache(KVCache):
         """
         import mlx.core as mx
 
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = "bfloat16" if v.dtype == mx.bfloat16 else "float16"
         if v.ndim > 1:
             v = v.reshape(-1)
         abs_max = float(mx.max(mx.abs(v)))
         scale = max(abs_max / INT8_MAX, 1e-8)
         v_int8 = mx.clip(mx.round(v / scale), -INT8_MAX, INT8_MAX).astype(mx.int8)
         self._v_cache.append(v_int8)
-        self._v_scales.append(mx.array(scale, dtype=mx.float16))
+        self._v_scales.append(mx.array(scale, dtype=self._storage_dtype))
 
     def attend(self, q: Any) -> Any:
         """Compute attention output for a query.
@@ -90,7 +102,7 @@ class PolarQuantKVCache(KVCache):
 
         n = len(self._k_angles)
         if n == 0:
-            return mx.zeros((self._d,), dtype=mx.float16)
+            return mx.zeros((self._d,), dtype=self._storage_dtype)
 
         # Reconstruct batch EncodedVector from stored per-token encodings
         n_levels = len(self._k_angles[0]) if n > 0 else 0
@@ -115,9 +127,9 @@ class PolarQuantKVCache(KVCache):
 
         v_scales = mx.stack([self._v_scales[i] for i in range(n)])
         v_int8 = mx.stack([self._v_cache[i] for i in range(n)])
-        v_hat = v_int8.astype(mx.float16) * v_scales[:, None]
+        v_hat = v_int8.astype(self._storage_dtype) * v_scales[:, None]
 
-        return (scores[:, None] * v_hat).sum(axis=0)
+        return (scores[:, None] * v_hat).sum(axis=0).astype(self._storage_dtype)
 
     def memory_bytes(self) -> int:
         """Estimate memory footprint."""

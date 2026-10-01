@@ -106,7 +106,9 @@ class XQuantKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     # Anchor / reuse quantization (batched across (B, H))
     # ------------------------------------------------------------------
-    def _quantize_anchor(self, t: mx.array) -> tuple[mx.array, mx.array]:
+    def _quantize_anchor(
+        self, t: mx.array, out_dtype: mx.Dtype = mx.float16
+    ) -> tuple[mx.array, mx.array]:
         """Quantize a [B, H, S, D] tensor. Returns (recon_fp16, codes_stacked).
 
         codes_stacked: [B, H, n_groups, gs, D] fp32 codes for coordinator storage.
@@ -122,20 +124,24 @@ class XQuantKVCache(_MLXKVCache):
         once for the whole [B, H, S, D] tensor.
         """
         codes, params = quantize_codes_batched(t, self._base_bits, self._gqs)
-        recon = dequant_with_params_batched(codes, params)
+        recon = dequant_with_params_batched(codes, params, out_dtype=out_dtype)
         return recon, codes
 
-    def _reconstruct_reuse(self, t: mx.array, codes_stacked: mx.array) -> mx.array:
+    def _reconstruct_reuse(
+        self, t: mx.array, codes_stacked: mx.array, out_dtype: mx.Dtype = mx.float16
+    ) -> mx.array:
         """Reconstruct a [B, H, S, D] tensor from shared anchor codes.
 
         Fits this layer's own params to the codes; optionally adds a residual.
         Batched the same way as :meth:`_quantize_anchor` — see its docstring.
         """
         params = compute_reuse_params_batched(t, codes_stacked, self._base_bits, self._gqs)
-        recon = dequant_with_params_batched(codes_stacked, params)
+        recon = dequant_with_params_batched(codes_stacked, params, out_dtype=out_dtype)
         if self._residual_bits > 0:
-            residual = quantize_residual_batched(t, recon, self._residual_bits, self._gqs)
-            recon = (recon.astype(mx.float32) + residual.astype(mx.float32)).astype(mx.float16)
+            residual = quantize_residual_batched(
+                t, recon, self._residual_bits, self._gqs, out_dtype=out_dtype
+            )
+            recon = (recon.astype(mx.float32) + residual.astype(mx.float32)).astype(out_dtype)
         return recon
 
     # ------------------------------------------------------------------
@@ -147,8 +153,8 @@ class XQuantKVCache(_MLXKVCache):
         tok_start = self._token_offset
 
         if self._role == "anchor":
-            k_out, k_codes = self._quantize_anchor(keys)
-            v_out, v_codes = self._quantize_anchor(values)
+            k_out, k_codes = self._quantize_anchor(keys, out_dtype=keys.dtype)
+            v_out, v_codes = self._quantize_anchor(values, out_dtype=values.dtype)
             if self._coord is not None:
                 # Store keys+values codes together (tuple in .codes slot).
                 self._coord.register_anchor(
@@ -165,13 +171,13 @@ class XQuantKVCache(_MLXKVCache):
             if seg is None:
                 # Anchor hasn't published this step (mis-ordered) — fall back to
                 # self-quantization so correctness never depends on iteration order.
-                k_out, _ = self._quantize_anchor(keys)
-                v_out, _ = self._quantize_anchor(values)
+                k_out, _ = self._quantize_anchor(keys, out_dtype=keys.dtype)
+                v_out, _ = self._quantize_anchor(values, out_dtype=values.dtype)
                 self._account_anchor(B, H, S, D)
             else:
                 k_codes, v_codes = seg.codes
-                k_out = self._reconstruct_reuse(keys, k_codes)
-                v_out = self._reconstruct_reuse(values, v_codes)
+                k_out = self._reconstruct_reuse(keys, k_codes, out_dtype=keys.dtype)
+                v_out = self._reconstruct_reuse(values, v_codes, out_dtype=values.dtype)
                 self._account_reuse(B, H, S, D)
 
         self._token_offset += S

@@ -64,9 +64,9 @@ class StreamingWindow(NamedTuple):
     tokens_seen: int
 
 
-def init_streaming_window(n_sink: int, D: int) -> StreamingWindow:
+def init_streaming_window(n_sink: int, D: int, dtype: mx.Dtype = mx.float16) -> StreamingWindow:
     """Create an empty streaming window with the given sink count and head dimension."""
-    empty = mx.zeros((0, D), dtype=mx.float16)
+    empty = mx.zeros((0, D), dtype=dtype)
     return StreamingWindow(
         sink_keys=empty,
         sink_values=empty,
@@ -103,8 +103,8 @@ def stream_update(
         Updated :class:`StreamingWindow`.
     """
     S = int(new_keys.shape[0])
-    nk = new_keys.astype(mx.float16)
-    nv = new_values.astype(mx.float16)
+    nk = new_keys.astype(new_keys.dtype)
+    nv = new_values.astype(new_values.dtype)
 
     tokens_seen_before = window.tokens_seen
     sink_k = window.sink_keys

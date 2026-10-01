@@ -233,6 +233,8 @@ def pyramid_update(
     if backend == "auto":
         backend = "mlx"
     S = new_keys.shape[0]
+    k_dtype = new_keys.dtype
+    v_dtype = new_values.dtype
 
     for i in range(S):
         k_i = new_keys[i]  # [D]
@@ -241,8 +243,8 @@ def pyramid_update(
         if state.keys is None:
             # Bootstrap: first token ever — no eviction needed.
             state = PyramidState(
-                keys=k_i[None].astype(mx.float16),
-                values=v_i[None].astype(mx.float16),
+                keys=k_i[None].astype(k_dtype),
+                values=v_i[None].astype(v_dtype),
                 scores=mx.ones((1,), dtype=mx.float32),
                 n_sink=state.n_sink,
                 budget=state.budget,
@@ -254,8 +256,8 @@ def pyramid_update(
         updated_scores = state.scores + attn  # [n_kept]
 
         # --- append new token (score = 0; begins accumulating next step) ---
-        keys_cat = mx.concatenate([state.keys, k_i[None].astype(mx.float16)], axis=0)
-        values_cat = mx.concatenate([state.values, v_i[None].astype(mx.float16)], axis=0)
+        keys_cat = mx.concatenate([state.keys, k_i[None].astype(k_dtype)], axis=0)
+        values_cat = mx.concatenate([state.values, v_i[None].astype(v_dtype)], axis=0)
         scores_cat = mx.concatenate([updated_scores, mx.zeros((1,), dtype=mx.float32)], axis=0)
 
         n_total = keys_cat.shape[0]
@@ -326,9 +328,11 @@ def pyramid_update_heads(states, new_keys, new_values, *, backend):
             pyramid_update(st, new_keys[g], new_values[g], backend=backend)
             for g, st in enumerate(states)
         ]
+    k_dtype = new_keys.dtype
+    v_dtype = new_values.dtype
     if states[0].keys is None:
-        k = new_keys[:, :1].astype(mx.float16)
-        v = new_values[:, :1].astype(mx.float16)
+        k = new_keys[:, :1].astype(k_dtype)
+        v = new_values[:, :1].astype(v_dtype)
         scores = mx.ones((bh, 1), dtype=mx.float32)
         start = 1
     else:
@@ -342,8 +346,8 @@ def pyramid_update_heads(states, new_keys, new_values, *, backend):
         logits = mx.matmul(k.astype(mx.float32), q[:, :, None])[:, :, 0] * scale  # [bh, n]
         attention = mx.softmax(logits, axis=-1)
         scores = mx.concatenate([scores + attention, mx.zeros((bh, 1), dtype=mx.float32)], axis=1)
-        k = mx.concatenate([k, new_keys[:, step : step + 1].astype(mx.float16)], axis=1)
-        v = mx.concatenate([v, new_values[:, step : step + 1].astype(mx.float16)], axis=1)
+        k = mx.concatenate([k, new_keys[:, step : step + 1].astype(k_dtype)], axis=1)
+        v = mx.concatenate([v, new_values[:, step : step + 1].astype(v_dtype)], axis=1)
         n = k.shape[1]
         if n > budget:
             if backend == "metal":

@@ -42,11 +42,11 @@ def test_default_age_tiers_bits() -> None:
     assert by_id[OLD] == 2
 
 
-def test_age_tier_quantize_roundtrips_to_fp16() -> None:
+def test_age_tier_quantize_preserves_input_dtype() -> None:
     rng = np.random.default_rng(0)
     x = mx.array(rng.standard_normal((16, 32)).astype(np.float32))
     out = age_tier_quantize(x, bits=4, group_size=8)
-    assert out.dtype == mx.float16
+    assert out.dtype == x.dtype
     assert out.shape == x.shape
 
 

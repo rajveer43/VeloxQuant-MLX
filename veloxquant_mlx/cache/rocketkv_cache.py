@@ -251,6 +251,15 @@ class RocketKVKVCache(DeferredEvictionMixin, _MLXKVCache):
         self._row_offset: int = 0
         self._true_offset: int = 0
 
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
+    @property
+    def _storage_dtype(self) -> mx.Dtype:
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
+
     @property
     def offset(self) -> int:
         """True absolute token position (NOT the retained row count).
@@ -308,7 +317,12 @@ class RocketKVKVCache(DeferredEvictionMixin, _MLXKVCache):
         S = int(keys.shape[0])
         budget = max(1, int(round(S / self._stage1_ratio)))
         state = snapkv_compress(
-            keys, values, budget=budget, obs_window=self._obs_window, n_sink=self._n_sink
+            keys,
+            values,
+            budget=budget,
+            obs_window=self._obs_window,
+            n_sink=self._n_sink,
+            output_dtype=self._storage_dtype,
         )
         return state.kept_keys, state.kept_values, state.n_kept, state.kept_indices
 
@@ -342,6 +356,7 @@ class RocketKVKVCache(DeferredEvictionMixin, _MLXKVCache):
             self._obs_window,
             self._n_sink,
             return_indices=True,
+            output_dtype=self._storage_dtype,
         )
         n_kept = int(k_out.shape[2])
 
@@ -399,12 +414,18 @@ class RocketKVKVCache(DeferredEvictionMixin, _MLXKVCache):
         self._full_fp16_bytes += B * H * S * D * 2 * 2
         self._tokens_kept += B * H * S
         self._tokens_total += B * H * S
-        return keys.astype(mx.float16), values.astype(mx.float16)
+        return keys.astype(self._storage_dtype), values.astype(self._storage_dtype)
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
         """Prefill: run stage-1 SnapKV eviction per head and build paged HSA summaries. Decode: append tokens exactly and update summaries incrementally."""
-        full_k, full_v, positions = self._prepare_attention(keys, values)
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = (
+                "bfloat16" if keys.dtype == values.dtype == mx.bfloat16 else "float16"
+            )
+        full_k, full_v, positions = self._prepare_attention(
+            keys, values, key_dtype=self._storage_dtype, value_dtype=self._storage_dtype
+        )
         is_prefill = keys.shape[2] > 1 or not self._prefill_done
         if is_prefill:
             if not self._prefill_done:

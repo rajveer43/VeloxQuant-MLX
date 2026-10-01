@@ -45,7 +45,10 @@ def _make_fingerprinted(n_total: int, D: int, seed: int = 0):
         fingerprints[i, 0] = i + 1.0
     raw_values = mx.array(fingerprints)
     positions = mx.arange(n_total, dtype=mx.int32)
-    rotated_keys = a2ats_apply_exact_rope(raw_keys, positions, base=10000.0)
+    # This suite checks the fp16 kernel's bit-exactness against a fp16
+    # reference, so fix the rotation's own dtype here rather than relying on
+    # a2ats_apply_exact_rope's (correct, since #622) input-dtype passthrough.
+    rotated_keys = a2ats_apply_exact_rope(raw_keys, positions, base=10000.0).astype(mx.float16)
     return raw_keys, raw_values, rotated_keys, positions
 
 

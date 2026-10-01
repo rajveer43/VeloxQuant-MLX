@@ -135,6 +135,14 @@ class AgeTieredKVCache(_MLXKVCache):
         self._current_position: int = 0
         self._age_tiered_bytes: int = 0
         self._full_seq_bytes: int = 0
+        # Stored as a name, not an mx.Dtype, because mlx_lm.server deepcopies
+        # cache entries per request and mx.Dtype objects raise TypeError from
+        # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
+        self._storage_dtype_name: str | None = None
+
+    @property
+    def _storage_dtype(self) -> mx.Dtype:
+        return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
 
     # ------------------------------------------------------------------
     def _ensure_state(self, B: int, H: int) -> None:
@@ -156,14 +164,18 @@ class AgeTieredKVCache(_MLXKVCache):
         """
         B, H, S, D = keys.shape
         self._ensure_state(B, H)
+        if self._storage_dtype_name is None:
+            self._storage_dtype_name = (
+                "bfloat16" if keys.dtype == values.dtype == mx.bfloat16 else "float16"
+            )
 
         self._full_seq_bytes += full_fp16_bytes(B * H * S, D)
         self._tokens_seen_total += B * H * S
         self._current_position += S
 
         G = B * H
-        k_step = keys.reshape(G, S, D).astype(mx.float16)
-        v_step = values.reshape(G, S, D).astype(mx.float16)
+        k_step = keys.reshape(G, S, D).astype(self._storage_dtype)
+        v_step = values.reshape(G, S, D).astype(self._storage_dtype)
 
         raw_k = (
             k_step if self._raw_keys is None else mx.concatenate([self._raw_keys, k_step], axis=1)
@@ -273,7 +285,7 @@ class AgeTieredKVCache(_MLXKVCache):
         """
         n = raw.shape[1]
         if n == 0:
-            return raw.astype(mx.float16), []
+            return raw.astype(self._storage_dtype), []
         gs = self._group_size
         n_groups = (n + gs - 1) // gs
 

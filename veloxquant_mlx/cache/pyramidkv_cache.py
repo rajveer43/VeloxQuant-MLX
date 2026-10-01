@@ -142,8 +142,8 @@ class PyramidKVCache(_MLXKVCache):
         if batched:
             self._states = pyramid_update_heads(
                 self._states,
-                keys.reshape(B * H, S, D).astype(mx.float16),
-                values.reshape(B * H, S, D).astype(mx.float16),
+                keys.reshape(B * H, S, D).astype(keys.dtype),
+                values.reshape(B * H, S, D).astype(values.dtype),
                 backend=self._backend,
             )
             n_kept = self._states[0].keys.shape[0]
@@ -157,8 +157,8 @@ class PyramidKVCache(_MLXKVCache):
                     idx = self._head_idx(b, h)
                     st = pyramid_update(
                         self._states[idx],
-                        keys[b, h].astype(mx.float16),
-                        values[b, h].astype(mx.float16),
+                        keys[b, h].astype(keys.dtype),
+                        values[b, h].astype(values.dtype),
                         backend=self._backend,
                     )
                     self._states[idx] = st

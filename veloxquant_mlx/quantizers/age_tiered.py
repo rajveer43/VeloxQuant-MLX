@@ -101,17 +101,17 @@ def age_tier_quantize(x: mx.array, bits: int, group_size: int = 32) -> mx.array:
 
     Args:
         x: ``[N, D]`` activations, a contiguous same-tier slice.
-        bits: Target bit-width. ``bits >= 16`` is a no-op (cast to fp16 only).
+        bits: Target bit-width. ``bits >= 16`` is a no-op (returned as-is).
         group_size: Token-axis group size for the shared min/max quantizer.
 
     Returns:
-        ``[N, D]`` fp16 quantized-then-dequantized activations.
+        ``[N, D]`` quantized-then-dequantized activations, in ``x.dtype``.
     """
     if x.shape[0] == 0:
         return x
     if bits >= 16:
-        return x.astype(mx.float16)
-    return _group_quant_dequant(x, bits, group_size)
+        return x
+    return _group_quant_dequant(x, bits, group_size).astype(x.dtype)
 
 
 def age_tier_quantize_batched(
@@ -153,7 +153,7 @@ def age_tier_quantize_batched(
     """
     g, n, d = raw.shape
     if n == 0:
-        return raw.astype(mx.float16)
+        return raw.astype(raw.dtype)
 
     gs = group_size
     token_tier: list[int] = []
@@ -166,9 +166,9 @@ def age_tier_quantize_batched(
     out = None
     for cfg in tiers_config:
         if cfg.bits >= 16:
-            q = raw.astype(mx.float16)
+            q = raw.astype(raw.dtype)
         else:
-            q = _group_quant_dequant_batched(raw, cfg.bits, gs)  # [G, N, D]
+            q = _group_quant_dequant_batched(raw, cfg.bits, gs).astype(raw.dtype)  # [G, N, D]
         sel = (tiers_mx == cfg.tier)[None, :, None]  # [1, N, 1]
         out = q if out is None else mx.where(sel, q, out)
     return out

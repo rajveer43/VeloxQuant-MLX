@@ -328,16 +328,19 @@ def morphkv_update_batched(
             f"budget ({budget}) — no evictable positions remain"
         )
 
+    k_dtype = new_keys.dtype
+    v_dtype = new_values.dtype
+
     for i in range(s):
         if return_indices:
             indices = mx.concatenate([indices, mx.full((bh, 1), n_prior + i)], axis=1)
         if keys is None:
-            keys = new_keys[:, i : i + 1].astype(mx.float16)  # [BH, 1, D]
-            values = new_values[:, i : i + 1].astype(mx.float16)
+            keys = new_keys[:, i : i + 1].astype(k_dtype)  # [BH, 1, D]
+            values = new_values[:, i : i + 1].astype(v_dtype)
             continue
 
-        keys_cat = mx.concatenate([keys, new_keys[:, i : i + 1].astype(mx.float16)], axis=1)
-        values_cat = mx.concatenate([values, new_values[:, i : i + 1].astype(mx.float16)], axis=1)
+        keys_cat = mx.concatenate([keys, new_keys[:, i : i + 1].astype(k_dtype)], axis=1)
+        values_cat = mx.concatenate([values, new_values[:, i : i + 1].astype(v_dtype)], axis=1)
 
         n_total = keys_cat.shape[1]
         if n_total > budget:
