@@ -34,6 +34,7 @@ import sys
 from typing import Any
 
 from veloxquant_mlx.cache.registry import DEFAULT_SERVE_METHOD, get_method
+from veloxquant_mlx.integration.chat_templates import ensure_initial_system_prompt_support
 
 try:
     from mlx_lm.utils import _parse_size
@@ -410,7 +411,9 @@ def run_server(args: argparse.Namespace) -> None:
     calling ``load_default()`` from within ``_generate``; hooking ``_load``
     puts our patch on that same thread.
     """
-    from mlx_lm.server import ModelProvider, run
+    import mlx_lm.server as mlx_server
+
+    ModelProvider = mlx_server.ModelProvider
 
     server_args = _mlx_server_args(args)
     config = build_config(args)
@@ -430,6 +433,8 @@ def run_server(args: argparse.Namespace) -> None:
 
             _warn(f"loading model {args.model!r} ...")
             super()._load(args.model, args.adapter_path, None)
+            if ensure_initial_system_prompt_support(self.tokenizer, args.model):
+                _warn("installed Mistral system-message chat template")
 
             n_layers, self.is_batchable = attach_cache(self.model, config)
 
@@ -464,7 +469,10 @@ def run_server(args: argparse.Namespace) -> None:
         _warn("bound to 0.0.0.0 — reachable from your local network, with no auth.")
 
     try:
-        run(args.host, args.port, _Provider(server_args))
+        # The tokenizer is prepared during ModelProvider._load, before the
+        # stock API handler renders the OpenAI messages. No request middleware
+        # or custom handler is needed.
+        mlx_server.run(args.host, args.port, _Provider(server_args))
     except KeyboardInterrupt:
         _warn("shutting down.")
 

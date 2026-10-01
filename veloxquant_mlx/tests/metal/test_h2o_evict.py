@@ -109,9 +109,7 @@ def test_interior_eviction_leaves_survivors_exactly_unrotated():
 
     for row, fp in enumerate(kept_fp):
         orig_idx = int(round(fp)) - 1
-        err = float(
-            mx.max(mx.abs(ko[0, row].astype(mx.float32) - rotated_keys[orig_idx])).item()
-        )
+        err = float(mx.max(mx.abs(ko[0, row].astype(mx.float32) - rotated_keys[orig_idx])).item())
         assert err < 1e-6, f"row {row} (orig token {orig_idx}): survivor key was altered, err={err}"
 
 
@@ -208,10 +206,14 @@ def test_untouched_rows_are_exact_copies():
     for out_row, orig_row in enumerate(orig_rows):
         diff = float(
             mx.max(
-                mx.abs(ko[0, out_row].astype(mx.float32) - rotated_keys[orig_row].astype(mx.float32))
+                mx.abs(
+                    ko[0, out_row].astype(mx.float32) - rotated_keys[orig_row].astype(mx.float32)
+                )
             ).item()
         )
-        assert diff == 0.0, f"row {out_row} (orig {orig_row}) should be bit-identical, got diff={diff}"
+        assert diff == 0.0, (
+            f"row {out_row} (orig {orig_row}) should be bit-identical, got diff={diff}"
+        )
 
 
 # ---------------------------------------------------------------------------

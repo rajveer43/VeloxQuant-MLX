@@ -14,6 +14,10 @@ import pytest
 from veloxquant_mlx.cache.base import KVCacheConfig
 from veloxquant_mlx.cache.registry import DEFAULT_SERVE_METHOD, ServeTier, probe_serve_tier
 from veloxquant_mlx.cli import serve as serve_cli
+from veloxquant_mlx.integration.chat_templates import (
+    MISTRAL_INITIAL_SYSTEM_TEMPLATE,
+    ensure_initial_system_prompt_support,
+)
 
 
 def _make_fake_model(n_layers: int = 4, n_heads: int = 4, head_dim: int = 32) -> SimpleNamespace:
@@ -37,6 +41,62 @@ def test_default_method_is_the_servable_one():
     assert args.method == DEFAULT_SERVE_METHOD
     assert args.host == "127.0.0.1"
     assert args.port == 8000
+
+
+class _StrictMistralTokenizer:
+    """Small model of Mistral's stock template rejecting a system role."""
+
+    def __init__(self):
+        self.chat_template = "stock-template"
+        self.calls = []
+
+    def apply_chat_template(self, messages, **kwargs):
+        self.calls.append(messages)
+        if self.chat_template != MISTRAL_INITIAL_SYSTEM_TEMPLATE:
+            raise ValueError("Conversation roles must alternate user/assistant")
+        return "rendered"
+
+
+def test_server_installs_template_without_rewriting_messages():
+    tokenizer = _StrictMistralTokenizer()
+    assert ensure_initial_system_prompt_support(tokenizer, "mlx-community/Mistral-7B") is True
+    assert tokenizer.chat_template == MISTRAL_INITIAL_SYSTEM_TEMPLATE
+
+    messages = [
+        {"role": "system", "content": "Be concise."},
+        {"role": "user", "content": "Say hello."},
+    ]
+    tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    assert tokenizer.calls[-1] is messages
+    assert messages[0]["role"] == "system"
+
+
+def test_server_leaves_native_system_template_untouched():
+    class _NativeTokenizer:
+        chat_template = "native-template"
+
+        def apply_chat_template(self, messages, **kwargs):
+            return "native-rendered"
+
+    tokenizer = _NativeTokenizer()
+    assert ensure_initial_system_prompt_support(tokenizer, "Qwen/Qwen3.5-9B") is False
+    assert tokenizer.chat_template == "native-template"
+
+
+def test_server_applies_template_to_mistral_derived_model_name():
+    tokenizer = _StrictMistralTokenizer()
+    assert ensure_initial_system_prompt_support(tokenizer, "acme/strict-chat-finetune") is True
+
+
+def test_server_does_not_hide_tokenizer_plumbing_errors():
+    class _BrokenTokenizer:
+        chat_template = "stock-template"
+
+        def apply_chat_template(self, messages, **kwargs):
+            raise TypeError("unexpected tokenizer argument")
+
+    with pytest.raises(TypeError, match="unexpected tokenizer argument"):
+        ensure_initial_system_prompt_support(_BrokenTokenizer(), "acme/strict-chat-finetune")
 
 
 def test_validate_method_rejects_crash_tier():

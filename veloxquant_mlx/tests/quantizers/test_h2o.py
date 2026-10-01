@@ -484,9 +484,9 @@ def test_h2o_cache_survivors_match_arrived_keys_after_eviction() -> None:
     D, N = 32, 48
     rng = np.random.default_rng(0)
     raw = mx.array(rng.standard_normal((1, 1, N, D)).astype(np.float32))
-    k_rot = a2ats_apply_exact_rope(
-        raw[0, 0], mx.arange(N, dtype=mx.int32), base=10000.0
-    )[None, None].astype(mx.float16)
+    k_rot = a2ats_apply_exact_rope(raw[0, 0], mx.arange(N, dtype=mx.int32), base=10000.0)[
+        None, None
+    ].astype(mx.float16)
     v = mx.arange(N, dtype=mx.float32)[None, None, :, None]
     v = mx.broadcast_to(v, (1, 1, N, D)).astype(mx.float16)
 

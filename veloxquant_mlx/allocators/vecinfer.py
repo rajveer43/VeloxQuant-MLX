@@ -158,11 +158,7 @@ def apply_dual_transform_queries(q: mx.array, smooth: mx.array, H: mx.array) -> 
         if q.ndim >= 3 and q.shape[-3] == smooth.shape[0]:
             sm = smooth[:, None, :].astype(q.dtype)
             q_sm = q * sm
-        elif (
-            q.ndim >= 3
-            and smooth.shape[0] > 0
-            and q.shape[-3] % smooth.shape[0] == 0
-        ):
+        elif q.ndim >= 3 and smooth.shape[0] > 0 and q.shape[-3] % smooth.shape[0] == 0:
             # GQA: smooth is calibrated per KV head (H_kv rows), but q has
             # H_q = H_kv * n_rep query heads. Averaging smooth across heads
             # (the old fallback below) breaks the dual-transform identity
