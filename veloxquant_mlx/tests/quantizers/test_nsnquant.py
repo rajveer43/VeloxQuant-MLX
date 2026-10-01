@@ -144,6 +144,17 @@ def test_codebook_rejects_unknown_kind() -> None:
         build_universal_codebook(kind="bogus")
 
 
+def test_codebook_rejects_size_over_256() -> None:
+    """codebook_size > 256 overflows the uint8 indices _nearest_centroid()
+    produces (issue #621); must fail fast instead of silently wrapping."""
+    with pytest.raises(ValueError, match="overflows the uint8"):
+        build_universal_codebook(codebook_size=512, n_samples=1024, iters=1)
+
+
+def test_codebook_size_256_allowed() -> None:
+    build_universal_codebook(codebook_size=256, n_samples=1024, iters=1, seed=99)
+
+
 # ------------------------------------------------------------------
 # VQ round-trips (floors calibrated empirically once, then pinned)
 # ------------------------------------------------------------------
