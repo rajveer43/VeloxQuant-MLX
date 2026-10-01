@@ -153,6 +153,11 @@ def build_universal_codebook(
     """
     if kind not in ("signed", "magnitude"):
         raise ValueError(f"build_universal_codebook: unknown kind {kind!r}")
+    if codebook_size > 256:
+        raise ValueError(
+            f"build_universal_codebook: codebook_size={codebook_size} > 256 "
+            "overflows the uint8 centroid indices produced by _nearest_centroid()"
+        )
     key = (codebook_size, subvector_dim, seed, kind)
     cached = _CODEBOOK_CACHE.get(key)
     if cached is not None:

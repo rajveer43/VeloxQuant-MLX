@@ -100,6 +100,12 @@ class NSNQuantKVCache(_MLXKVCache):
                 "NSNQuantKVCache: nsn_residual_length must be >= 2 (a chunk "
                 "must contain enough tokens for a meaningful channel mean)"
             )
+        if self._codebook_size > 256:
+            raise QuantizerConfigError(
+                f"NSNQuantKVCache: nsn_codebook_size={self._codebook_size} > 256 "
+                "overflows the uint8 centroid indices used by vq_encode()/"
+                "vq_decode(); use nsn_codebook_size <= 256"
+            )
 
         # Universal codebook — model/data independent (synthetic Gaussian),
         # deterministic per (size, sub_d, seed, kind); cached module-wide.

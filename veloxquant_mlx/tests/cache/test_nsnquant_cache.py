@@ -245,6 +245,8 @@ def test_build_time_validation() -> None:
         _make(head_dim=72)  # divisible by 8 but not Hadamard-compatible
     with pytest.raises(ValueError, match="nsn_residual_length"):
         _make(nsn_residual_length=1)
+    with pytest.raises(ValueError, match="nsn_codebook_size"):
+        _make(nsn_codebook_size=512)
 
 
 # ------------------------------------------------------------------
