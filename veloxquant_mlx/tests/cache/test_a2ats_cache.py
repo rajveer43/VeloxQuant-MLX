@@ -428,3 +428,44 @@ def test_merge_guard_short_circuits_mlx_lm_merge_caches():
 
     with pytest.raises(ValueError, match="does not yet support batching with history"):
         gen_mod._merge_caches([[cache]])
+
+
+# ---------------------------------------------------------------------------
+# Double-RoPE under mlx_lm's post-RoPE key delivery (:issue:`613`)
+# ---------------------------------------------------------------------------
+
+
+def test_does_not_double_apply_rope_to_mlx_lm_rotated_keys():
+    """mlx_lm's attention module rotates keys with self.rope(k, offset=cache.offset)
+    BEFORE calling update_and_fetch (e.g. mlx_lm/models/llama.py:90-92) — this
+    cache must de-rotate incoming keys back to its internal pre-RoPE frame
+    before quantizing, or "near" keys come back rotated twice. A near-lossless
+    codebook (sub_dim=2, dense grid) keeps VQ error from masking the effect."""
+    import mlx.nn as nn
+
+    D = 32
+    grid = np.linspace(-4, 4, 64, dtype=np.float32)
+    codebook = np.stack(np.meshgrid(grid, grid, indexing="ij"), -1).reshape(-1, 2)
+    cache = _make(
+        a2ats_sub_dim=2,
+        a2ats_codebook_bits=12,
+        a2ats_codebook=codebook,
+        a2ats_window=128,
+        a2ats_use_query_aware=False,
+    )
+    rope = nn.RoPE(D, traditional=False, base=10000.0)
+    mx.random.seed(0)
+    raw = mx.random.normal((1, 1, 30, D))
+
+    k_out = None
+    for t in range(30):
+        k = rope(raw[:, :, t : t + 1], offset=cache.offset).astype(mx.float16)
+        k_out, _ = cache.update_and_fetch(k, k)
+
+    once = rope(raw, offset=0)
+    twice = rope(rope(raw, offset=0), offset=0)
+    err_once = float(mx.abs(k_out.astype(mx.float32) - once).max())
+    err_twice = float(mx.abs(k_out.astype(mx.float32) - twice).max())
+
+    assert err_once < 0.2, f"expected near-lossless match to single rotation, got {err_once}"
+    assert err_twice > 1.0, f"expected large mismatch against double rotation, got {err_twice}"

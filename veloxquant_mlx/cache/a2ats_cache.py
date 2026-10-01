@@ -24,6 +24,14 @@ nearest-centroid for the bulk). No token is ever dropped — a
 compression-only method, not an eviction method (same family framing as
 AMC-adapted).
 
+**Incoming keys are de-rotated before quantization.** ``mlx_lm`` always
+rotates keys with ``self.rope(k, offset=cache.offset)`` inside the model's
+attention module before calling ``update_and_fetch`` — this cache never
+receives truly pre-RoPE keys. ``update_and_fetch`` undoes that rotation via
+:func:`~veloxquant_mlx.quantizers.a2ats_rope.rope_remap_positions` before
+quantizing, so the rest of this cache's logic (below) can assume a pre-RoPE
+frame as documented (:issue:`613`).
+
 **Windowed RoPE is applied at fetch time, every step.** The parent buffer
 holds the *pre-RoPE* reconstruction; ``update_and_fetch`` re-applies windowed
 RoPE to the whole accumulated cache against the current decode position on
@@ -73,6 +81,7 @@ from veloxquant_mlx.quantizers.a2ats import (
 from veloxquant_mlx.quantizers.a2ats_rope import (
     a2ats_apply_far_query_rope,
     a2ats_apply_windowed_rope,
+    rope_remap_positions,
 )
 
 
@@ -190,9 +199,12 @@ class A2ATSKVCache(_MLXKVCache):
     def _quantize_head(self, k_bh: mx.array, positions: mx.array) -> mx.array:
         """Compress + reconstruct one head's keys ``[S, D]``, **pre-RoPE**.
 
-        ``positions`` are this head's absolute token positions (pre-RoPE
-        keys are assumed — the cache never sees RoPE applied upstream in
-        this repo's convention, matching CommVQ-adapted).
+        ``positions`` are this head's absolute token positions. ``k_bh`` must
+        already be pre-RoPE — ``mlx_lm`` hands ``update_and_fetch`` keys that
+        it has already rotated at the caller's offset, so the caller
+        (:meth:`update_and_fetch`) de-rotates them via
+        :func:`~veloxquant_mlx.quantizers.a2ats_rope.rope_remap_positions`
+        before calling this method (:issue:`613`).
 
         Windowed RoPE is deliberately *not* applied here. It is applied in
         :meth:`update_and_fetch` to the whole accumulated cache against the
@@ -254,6 +266,15 @@ class A2ATSKVCache(_MLXKVCache):
         """Quantize, store pre-RoPE, and return keys rotated against the
         *current* decode position.
 
+        ``mlx_lm`` rotates ``keys`` at ``offset=cache.offset`` inside the
+        model's attention module before this method is ever called (e.g.
+        ``mlx_lm/models/llama.py:90-92``), so the incoming ``keys`` arrive
+        already post-RoPE. They are de-rotated back to the pre-RoPE frame
+        this cache's windowed-RoPE logic requires before quantization, and
+        the windowed rotation is re-applied on return — see
+        :func:`~veloxquant_mlx.quantizers.a2ats_rope.rope_remap_positions`
+        and :issue:`613`.
+
         The parent :class:`mlx_lm.models.cache.KVCache` concatenates whatever
         it is handed and never revisits it. Writing rotated keys into it
         therefore freezes each token's near/far class at the moment it was
@@ -277,11 +298,34 @@ class A2ATSKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         positions = mx.arange(self._next_position, self._next_position + S)
 
+        # mlx_lm's attention module rotates incoming keys with
+        # self.rope(k, offset=cache.offset) BEFORE calling update_and_fetch
+        # (e.g. mlx_lm/models/llama.py:90-92) — this cache's quantization and
+        # windowed-RoPE re-application (below) require pre-RoPE keys (see
+        # _quantize_head's and this method's docstrings), so de-rotate first.
+        # (:issue:`613`)
+        zero_positions = mx.zeros((S,), dtype=mx.float32)
+        keys_pre_rope = mx.stack(
+            [
+                mx.stack(
+                    [
+                        rope_remap_positions(
+                            keys[b, h], positions, zero_positions, base=self._rope_base
+                        )
+                        for h in range(H)
+                    ],
+                    axis=0,
+                )
+                for b in range(B)
+            ],
+            axis=0,
+        )
+
         out_heads_k = []
         for b in range(B):
             per_head = []
             for h in range(H):
-                per_head.append(self._quantize_head(keys[b, h], positions))
+                per_head.append(self._quantize_head(keys_pre_rope[b, h], positions))
             out_heads_k.append(mx.stack(per_head, axis=0))
         k_out = mx.stack(out_heads_k, axis=0)  # [B, H, S, D]
 
