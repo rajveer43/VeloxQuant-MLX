@@ -16,13 +16,20 @@ as eviction. Keyformer keeps separate chronological positions because its
 quantizer also shifts RoPE positions. Its existing RoPE offset policy is
 unchanged. MorphKV, KVzip, and NestedKV now advance the model-facing offset by
 the number of input tokens, keeping incoming RoPE positions on the same axis
-as retained keys. RocketKV's `state` excludes capacity padding.
+as retained keys. This also fixes the offset drift reported for those three
+methods in issue #611. RocketKV's `state` excludes capacity padding.
 
 The regression suite in
 `veloxquant_mlx/tests/cache/test_deferred_eviction_contract.py` covers initial
 prefill, chunks smaller and larger than the budget, single-token-first input,
 decode, sliding-window visibility, batched GQA, calibrated QFilters on MLX and
 Metal, and full-prefill logits against a tiny uncompressed Llama model.
+
+The shared contract in `veloxquant_mlx/tests/cache/test_eviction_rope_contract.py`
+also covers MorphKV, KVzip, and NestedKV offsets after eviction. Its #611
+regressions follow the model's RoPE-before-cache call order and use token IDs
+in values to compare each retained key against its independently rotated
+original token, including batched decode and chunked prefill.
 
 ## Remaining limitations
 

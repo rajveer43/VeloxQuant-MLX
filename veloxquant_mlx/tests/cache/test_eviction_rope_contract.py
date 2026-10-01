@@ -1,4 +1,4 @@
-"""Cross-cache RoPE contract for eviction caches (#171, #174, #183).
+"""Cross-cache RoPE contract for eviction caches (#171, #174, #183, #611).
 
 ``mlx_lm``'s attention module rotates BOTH the query and the incoming key with
 ``self.rope(x, offset=cache.offset)`` *before* ``update_and_fetch`` is called.
@@ -35,6 +35,7 @@ was meant to protect. See ``veloxquant_mlx/quantizers/h2o.py`` and
 from __future__ import annotations
 
 import mlx.core as mx
+import mlx.nn as nn
 import numpy as np
 import pytest
 
@@ -46,13 +47,16 @@ from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
 BUDGET = 64
 HEAD_DIM = 32
 
-# (id, config kwargs) — every eviction cache used as a Q-Filters benchmark arm.
+# (id, config kwargs): benchmark arms plus the #611 regression methods.
 ARMS = [
     ("qfilters", {"method": "qfilters", "qfilters_budget": BUDGET, "qfilters_n_sink": 4}),
     ("h2o", {"method": "h2o", "h2o_budget": BUDGET, "h2o_n_sink": 4}),
     ("tova", {"method": "tova", "tova_budget": BUDGET, "tova_n_sink": 4}),
     ("knorm", {"method": "knorm", "knorm_budget": BUDGET, "knorm_n_sink": 4}),
     ("curdkv", {"method": "curdkv", "curdkv_budget": BUDGET, "curdkv_n_sink": 4}),
+    ("morphkv", {"method": "morphkv", "morphkv_budget": BUDGET, "morphkv_n_sink": 4}),
+    ("kvzip", {"method": "kvzip", "kvzip_budget": BUDGET, "kvzip_n_sink": 4}),
+    ("nestedkv", {"method": "nestedkv", "nestedkv_budget": BUDGET, "nestedkv_n_sink": 4}),
 ]
 
 
@@ -138,3 +142,51 @@ def test_offset_is_independent_of_retained_row_count(name, cfg) -> None:
     n_large = _stored_or_returned_count(name, large, kl)
     assert n_small != n_large, f"{name}: budgets did not change the retained count"
     assert small.offset == large.offset == S
+
+
+@pytest.mark.parametrize("method", ["morphkv", "kvzip", "nestedkv"])
+@pytest.mark.parametrize("batch,heads", [(1, 1), (2, 3)])
+@pytest.mark.parametrize(
+    "chunks",
+    [[1] * 48, [32] + [1] * 16, [16, 16, 1, 7, 8]],
+    ids=["decode", "prefill-decode", "chunked-prefill"],
+)
+def test_retained_keys_preserve_true_rope_positions(method, batch, heads, chunks):
+    """Reproduce model call order and verify rotations, not just offset metadata.
+
+    Value rows encode token IDs independently of cache position tracking.
+    Every retained key must match the original token rotated at its absolute
+    position, including tokens admitted after eviction. NestedKV compresses
+    only its first multi-token prefill, so decode-only input need not evict.
+    """
+    budget = 12
+    options = {f"{method}_budget": budget, f"{method}_n_sink": 2}
+    if method == "morphkv":
+        options["morphkv_window"] = 2
+    cache = _make({"method": method, **options})
+    rng = np.random.default_rng(611)
+    total = sum(chunks)
+    raw = mx.array(rng.standard_normal((batch, heads, total, HEAD_DIM)).astype(np.float32))
+    rope = nn.RoPE(HEAD_DIM, traditional=False, base=10000.0)
+    expected_keys = np.array(rope(raw, offset=0).astype(mx.float16))
+    seen = 0
+    evicted = False
+    for length in chunks:
+        # mlx_lm rotates new keys before update_and_fetch, using this offset.
+        incoming = rope(raw[:, :, seen : seen + length], offset=cache.offset).astype(mx.float16)
+        values = mx.broadcast_to(
+            mx.arange(seen, seen + length)[None, None, :, None], incoming.shape
+        ).astype(mx.float16)
+        cache.update_and_fetch(incoming, values)
+        seen += length
+        kept_k, kept_v = cache.state
+        ids = np.array(kept_v[..., 0]).astype(np.int32)
+        reference = np.take_along_axis(expected_keys, ids[..., None], axis=2)
+        np.testing.assert_allclose(np.array(kept_k), reference, atol=1e-3, rtol=0)
+        assert np.all(ids < seen)
+        evicted |= kept_k.shape[2] < seen
+
+    assert cache.offset == total
+    if method != "nestedkv" or max(chunks) > 1:
+        assert evicted, "Regression must exercise eviction, not just append-only storage"
+    assert np.any(ids >= budget), "Check rotations of rows admitted after reaching the budget"
