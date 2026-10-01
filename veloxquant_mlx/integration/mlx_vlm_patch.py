@@ -100,10 +100,14 @@ def patch_vlm_kv_cache(model: Any, config: KVCacheConfig) -> list[Any]:
             stacklevel=2,
         )
 
-    # KVCacheBuilder.for_model resolves VLM wrappers itself when the
-    # wrapper exposes .layers (Qwen2-VL style); otherwise build straight
-    # from the language model.
-    target = model if getattr(model, "layers", None) is not None else lm
+    # Always build against the language model.  Some VLM wrappers re-expose
+    # ``.layers`` (Qwen2-VL style), but Qwen3.5's wrapper does so while its
+    # hybrid text model owns the *native* make_cache() needed for recurrent
+    # slots.  Building against the wrapper loses that factory and falls back
+    # to mlx_lm.models.cache.KVCache, whose make_mask signature is invalid
+    # for GatedDeltaNet layers.  The language model has the decoder layers
+    # for both wrapper shapes and preserves its native hybrid cache types.
+    target = lm
 
     caches = KVCacheBuilder.for_model(target, config)
 

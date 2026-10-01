@@ -136,6 +136,55 @@ Pick a model and a method, press **Start Server**, and point any OpenAI-compatib
 client (Claude Code, Cursor, the OpenAI SDK) at the URL it gives you. It drives
 `veloxquant serve`, usable directly too — see [docs/control-panel.md](docs/control-panel.md).
 
+### Qwen3.5 VLM server (256K context)
+
+Qwen3.5 is served through MLX-VLM, not the text-only `veloxquant serve`
+launcher. Use `veloxquant vlm-serve` so its language-model KV cache is replaced
+by VeloxQuant's cache implementation:
+
+```bash
+uv sync --extra vlm
+
+uv run --extra vlm veloxquant vlm-serve \
+  --method turboquant_rvq \
+  --bits 2 \
+  --model mlx-community/Qwen3.5-9B-MLX-4bit \
+  --host 127.0.0.1 \
+  --port 1337 \
+  --prefill-step-size 1024 \
+  --max-tokens 512
+```
+
+`Qwen3.5-9B` natively supports a 262,144-token context; the model's own
+context limit applies to prompt tokens plus generated tokens. The `--bits 2`
+setting above is VeloxQuant's KV-cache compression level, not the model-weight
+quantization level.
+
+#### Leading system messages are accepted automatically
+
+Some tokenizer chat templates require strict `user`/`assistant` alternation and
+reject `system` as the first role. VeloxQuant accepts OpenAI-style leading
+`system` messages without a separate server flag. For Mistral, it installs a
+compatible Jinja chat template when the model loads; the HTTP request remains
+a separate `system` message followed by a `user` message. Qwen3.5's native
+template already supports this role and is left unchanged. This standard
+request works:
+
+```json
+{
+  "messages": [
+    {"role": "system", "content": "You are a concise technical assistant."},
+    {"role": "user", "content": "Explain KV-cache compression."}
+  ]
+}
+```
+
+Mistral has no separate system token, so the compatibility template renders
+the system content in its first `[INST]` block—the instruction format on which
+the model was trained—without mutating the OpenAI message array. Confirm
+VeloxQuant is active by looking for
+`Wired … layer cache(s)` in its startup log.
+
 Next: the [5-minute quickstart](https://veloxquant.dev/docs/getting-started/quickstart) ·
 [mixed-precision guide](https://veloxquant.dev/docs/guides/mixed-precision) ·
 [mlx_lm integration](https://veloxquant.dev/docs/guides/mlx-lm-integration)

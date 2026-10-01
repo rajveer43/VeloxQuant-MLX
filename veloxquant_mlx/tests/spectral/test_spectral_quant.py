@@ -243,9 +243,9 @@ def test_rel_error_decreases_with_more_bits():
 
     d = 128
     x = mx.random.normal((64, d), key=mx.random.key(0)).astype(mx.float16)
-    xu = (x.astype(mx.float32) / mx.linalg.norm(x.astype(mx.float32), axis=-1, keepdims=True)).astype(
-        mx.float16
-    )
+    xu = (
+        x.astype(mx.float32) / mx.linalg.norm(x.astype(mx.float32), axis=-1, keepdims=True)
+    ).astype(mx.float16)
 
     errs = []
     for b in (2, 3, 4, 8):

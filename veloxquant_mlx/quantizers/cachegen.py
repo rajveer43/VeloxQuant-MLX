@@ -269,8 +269,9 @@ def _batched_symbol_entropy_bits(
     p = counts / float(n)
     nz = p > 0
     p_nz = mx.where(nz, p, mx.ones_like(p))
-    ent = -mx.sum(mx.where(nz, p * (mx.log(p_nz) / math.log(2.0)), mx.zeros_like(p)), axis=1)
-    return ent  # [G]
+    return -mx.sum(
+        mx.where(nz, p * (mx.log(p_nz) / math.log(2.0)), mx.zeros_like(p)), axis=1
+    )  # [G]
 
 
 def entropy_coded_bytes_batched(

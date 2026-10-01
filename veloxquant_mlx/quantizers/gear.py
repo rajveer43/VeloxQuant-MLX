@@ -342,7 +342,6 @@ def gear_reconstruct_batched(
         out = out + (L @ R)
     if sp_idx is not None and sp_val is not None:
         bh, n, d = out.shape
-        nnz = sp_idx.shape[1]
         row_base = (mx.arange(bh, dtype=mx.int32) * (n * d))[:, None]  # [BH, 1]
         combined_idx = (row_base + sp_idx).reshape(-1)  # [BH * nnz]
         flat = out.reshape(-1)
