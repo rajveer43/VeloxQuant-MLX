@@ -179,6 +179,32 @@ def test_load_layer_without_backing_file_errors(pair):
         mapper.load_layer(0)
 
 
+def test_load_layer_looks_up_by_target_id_not_list_position():
+    """Issue #642: a mapper fit over a non-contiguous target layer set
+    ({1, 2}, skipping 0) must look layers up by their target_layer field,
+    not by treating the id as a list index into mapper.layers."""
+    mx.random.seed(1)
+    pos = mx.arange(N_TOKENS)
+    src_spec = ModelKVSpec(SRC_LAYERS, N_HEADS, HEAD_DIM, 10000.0, model_type="src")
+    tgt_spec = ModelKVSpec(TGT_LAYERS, N_HEADS, HEAD_DIM, 1000000.0, model_type="tgt")
+    source = {
+        i: (
+            mx.random.normal((N_HEADS, N_TOKENS, HEAD_DIM)),
+            mx.random.normal((N_HEADS, N_TOKENS, HEAD_DIM)),
+        )
+        for i in range(SRC_LAYERS)
+    }
+    target = {1: source[0], 2: source[1]}  # target layer ids start at 1, not 0
+    mapper = fit_mapper(source, target, src_spec, tgt_spec, pos, MapperConfig(k=2))
+
+    assert [lm.target_layer for lm in mapper.layers] == [1, 2]
+    assert mapper.load_layer(1).target_layer == 1
+    assert mapper.load_layer(2).target_layer == 2
+
+    with pytest.raises(KeyError, match="No layer with target_layer"):
+        mapper.load_layer(0)
+
+
 def test_parameter_accounting_matches_stored_shapes(pair):
     """n_parameters is derived from config, so it must match the real tensors."""
     _, _, mapper, _ = pair
