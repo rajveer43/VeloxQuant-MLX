@@ -42,14 +42,53 @@ _WORKSPACE_BYTES_PER_LAYER = 16 * 1024
 #: absent from this table falls back to a no-compression fp16 model with
 #: ``confidence="low"``, so the planner still *can* recommend it — just with a
 #: documented caveat.
+#: Methods whose ``update_and_fetch`` quantizes keys/values but immediately
+#: dequantizes back to a full fp16 buffer that is kept resident for every
+#: token in the context (quantize-then-reconstruct-in-place) — verified
+#: against ``mx.get_active_memory()`` for issue #620. Their ``key_bits``/
+#: ``value_bits`` describe the *codec*, not what stays resident, so the
+#: memory estimate for these methods must *not* apply the bit-width ratio;
+#: only the real resident-reducing methods below do.
+_QUANTIZE_THEN_DEQUANTIZE_RESIDENT_FP16 = frozenset(
+    {
+        "kivi",
+        "kivi_sink",
+        "kitty",
+        "adakv",
+        "kvquant",
+        "cachegen",
+        "nsnquant",
+        "svdq",
+        "amc",
+        "age_tiered",
+        "kvtc",
+        "nestedkv",
+        "a2ats",
+        "anchorkv",
+        "vecinfer",
+        "palu",
+        "xquant",
+        "minicache",
+        "gear",
+        "rocketkv",
+        "zipcache",
+        "skvq",
+    }
+)
+
 _METHOD_MEMORY_MODEL: dict[str, dict[str, Any]] = {
     # --- Key-only quantization, at the width the docs present as the norm ---
+    # (verified: these store packed/compressed bytes, not a dequantized fp16
+    # shadow, so the bit-width ratio reflects real resident memory)
     "turboquant_prod": {"key_bits": 3},
     "turboquant_mse": {"key_bits": 4},
     "turboquant_rvq": {"key_bits": 3},
     "polar": {"key_bits": 2},
     "qjl": {"key_bits": 1},
     "spectral": {"key_bits": 3},
+    # --- Quantize-then-dequantize methods: codec bits only, resident = fp16 -
+    # (see _QUANTIZE_THEN_DEQUANTIZE_RESIDENT_FP16; kept here so
+    # method_quant_bits() still reports the codec width for the quality proxy)
     "kivi": {"key_bits": 2},
     "kivi_sink": {"key_bits": 2},
     "kitty": {"key_bits": 2},
@@ -64,7 +103,8 @@ _METHOD_MEMORY_MODEL: dict[str, dict[str, Any]] = {
     "nestedkv": {"key_bits": 2, "value_bits": 2},
     "a2ats": {"key_bits": 2},
     "anchorkv": {"key_bits": 2},
-    # --- Codebook / latent methods: keys to offsets; values stay fp16 -------
+    # --- Codebook / latent methods: default serving path dequantizes to a
+    # resident fp16 K_hat/V_hat buffer (memory_bound opt-in is not the default)
     "vecinfer": {"key_bits": 4},
     "palu": {"key_bits": 16, "value_bits": 2},
     # --- Cross-layer reuse: store one anchor per group, residuals fp16 ------
@@ -73,7 +113,9 @@ _METHOD_MEMORY_MODEL: dict[str, dict[str, Any]] = {
     # --- GEAR: 2-bit + low-rank residual on keys AND values -----------------
     "gear": {"key_bits": 2, "value_bits": 2, "residual_fraction": 0.1},
     "rocketkv": {"key_bits": 2, "value_bits": 2},
-    "kvzip": {"key_bits": 4, "value_bits": 4},
+    # --- kvzip: real eviction (kvzip_budget, default 512 + 4 sink tokens); -
+    # codec bits describe the kept window, not a resident-fp16 shadow --------
+    "kvzip": {"key_bits": 4, "value_bits": 4, "eviction": True, "budget": 516},
     # --- Eviction-only: fp16 but bounded steady state -----------------------
     "snapkv": {"eviction": True, "budget": 512},
     "streaming_llm": {"eviction": True, "budget": 516},  # 4 sink + 512 window
@@ -83,15 +125,18 @@ _METHOD_MEMORY_MODEL: dict[str, dict[str, Any]] = {
     "squeeze": {"eviction": True, "budget": 512},
     "chunkkv": {"eviction": True, "budget": 512},
     "cam": {"eviction": True, "budget": 512},
-    "xkv": {"eviction": True, "budget": 512},
     "knorm": {"eviction": True, "budget": 512},
     "qfilters": {"eviction": True, "budget": 512},
     "keyformer": {"eviction": True, "budget": 512},
     "morphkv": {"eviction": True, "budget": 512},
     "curdkv": {"eviction": True, "budget": 512},
-    # --- Hybrid: compression AND a bounded window ---------------------------
-    "zipcache": {"key_bits": 4, "value_bits": 8, "eviction": True, "budget": 512},
-    "skvq": {"key_bits": 3, "eviction": True, "budget": 516},
+    # --- xkv: keys are projected/reconstructed to resident fp16, values are -
+    # untouched fp16; no eviction — there is no budget parameter in production
+    "xkv": {"key_bits": _BITS_PER_FP16, "value_bits": _BITS_PER_FP16},
+    # --- zipcache / skvq: quantize-then-dequantize in place every window; ---
+    # window size only controls re-quantization cadence, not a token cap -----
+    "zipcache": {"key_bits": 4, "value_bits": 8},
+    "skvq": {"key_bits": 3},
 }
 
 
@@ -239,9 +284,19 @@ def estimate_memory(
     else:
         confidence = "high"
 
-    key_ratio = _bits_ratio(float(model_row.get("key_bits", _BITS_PER_FP16)))
-    value_ratio = _bits_ratio(float(model_row.get("value_bits", _BITS_PER_FP16)))
-    residual_fraction = float(model_row.get("residual_fraction", 0.0))
+    resident_fp16 = method in _QUANTIZE_THEN_DEQUANTIZE_RESIDENT_FP16
+    if resident_fp16:
+        key_ratio = 1.0
+        value_ratio = 1.0
+        residual_fraction = 0.0
+        assumptions.append(
+            f"{method} quantizes then dequantizes back to fp16 in place; "
+            "resident memory is not reduced despite the lower-bit codec"
+        )
+    else:
+        key_ratio = _bits_ratio(float(model_row.get("key_bits", _BITS_PER_FP16)))
+        value_ratio = _bits_ratio(float(model_row.get("value_bits", _BITS_PER_FP16)))
+        residual_fraction = float(model_row.get("residual_fraction", 0.0))
     eviction = bool(model_row.get("eviction", False))
     budget = int(model_row.get("budget", 0))
 
@@ -270,13 +325,16 @@ def estimate_memory(
     peak = max(baseline, workspace + compressed)
     resident = max(compressed, workspace)
 
-    if model_row.get("key_bits", _BITS_PER_FP16) == _BITS_PER_FP16 and not eviction:
-        assumptions.append("keys estimated at fp16 (16-bit); request lower-bit config for savings")
-    if model_row.get("value_bits"):
-        assumptions.append(
-            f"values quantized to {model_row['value_bits']}-bit — most methods "
-            "keep values fp16 by default"
-        )
+    if not resident_fp16:
+        if model_row.get("key_bits", _BITS_PER_FP16) == _BITS_PER_FP16 and not eviction:
+            assumptions.append(
+                "keys estimated at fp16 (16-bit); request lower-bit config for savings"
+            )
+        if model_row.get("value_bits"):
+            assumptions.append(
+                f"values quantized to {model_row['value_bits']}-bit — most methods "
+                "keep values fp16 by default"
+            )
 
     return MemoryEstimate(
         method=method,

@@ -33,7 +33,7 @@ def test_estimate_memory_top_limit(capsys):
 def test_estimate_memory_plain_text(capsys):
     estimate_memory_cli.main([*_args(), "--top", "3"])
     out = capsys.readouterr().out
-    assert "method" in out and "zipcache" in out
+    assert "method" in out and "cam" in out
 
 
 def test_estimate_memory_batch_scales(capsys):

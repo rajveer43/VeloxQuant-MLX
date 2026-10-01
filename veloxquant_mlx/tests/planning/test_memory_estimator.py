@@ -101,11 +101,14 @@ def test_high_confidence_for_curated_method() -> None:
 
 
 def test_gear_residual_adds_back() -> None:
+    # gear's update_and_fetch quantizes then dequantizes back to a resident
+    # fp16 buffer every call (see issue #620), same as kivi -- the low-rank
+    # residual it adds is reconstructed into the same fp16 shadow, not extra
+    # compressed bytes on top of a smaller base, so both report full fp16.
     plain = estimate_memory("kivi", _model(), _workload())
     gear = estimate_memory("gear", _model(), _workload())
-    # gear adds a low-rank residual on top of 2-bit keys+values
     assert gear.compressed_bytes > 0
-    assert gear.compressed_bytes < plain.compressed_bytes
+    assert gear.compressed_bytes == plain.compressed_bytes == gear.baseline_bytes
 
 
 def test_workspace_scales_with_layers() -> None:
@@ -121,6 +124,34 @@ def test_peak_is_at_least_baseline() -> None:
 def test_resident_never_negative() -> None:
     est = estimate_memory("zipcache", _model(), _workload())
     assert est.resident_bytes >= 0
+
+
+def test_zipcache_does_not_evict() -> None:
+    # zipcache's update_and_fetch quantizes-then-dequantizes every window but
+    # never drops tokens; mismodeling it as `eviction: True` (issue #620)
+    # let it claim a bounded steady-state footprint it never actually has.
+    est = estimate_memory("zipcache", _model(), _workload())
+    assert est.compressed_bytes == est.baseline_bytes
+
+
+@pytest.mark.parametrize("method", ["zipcache", "skvq", "xkv"])
+def test_quantize_then_dequantize_methods_report_fp16_resident(method: str) -> None:
+    """kivi/gear/xquant/cachegen/nsnquant/zipcache/skvq/xkv/vecinfer all
+    quantize then immediately dequantize back to a resident fp16 buffer in
+    production (verified against mx.get_active_memory() for issue #620) --
+    the planner must not credit their codec bit-width as a memory saving."""
+    est = estimate_memory(method, _model(), _workload())
+    assert est.compressed_bytes == est.baseline_bytes
+    assert est.reduction_ratio == pytest.approx(1.0)
+
+
+def test_kvzip_models_real_eviction() -> None:
+    # kvzip is the inverse mismodel from zipcache/skvq/xkv: it genuinely
+    # evicts down to a fixed token budget in production but had no
+    # `eviction` flag in the table (issue #620).
+    est = estimate_memory("kvzip", _model(), _workload(context_length=4096, generation_length=0))
+    assert est.compressed_bytes < est.baseline_bytes
+    assert any("eviction cache bounded" in note for note in est.assumptions)
 
 
 def test_invalid_model_geometry_raises() -> None:
