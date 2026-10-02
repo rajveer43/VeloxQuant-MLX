@@ -41,15 +41,20 @@ def default_benchmark_dir() -> Path:
     return Path(cache_root) / "veloxquant" / "benchmarks"
 
 
-def benchmark_fingerprint(method: str, model_id: str, context_length: int, batch_size: int) -> str:
-    """Stable record id: same method+model+workload shape -> same key.
+def benchmark_fingerprint(
+    method: str, model_id: str, context_length: int, batch_size: int, chip: str = "unknown"
+) -> str:
+    """Stable record id: same method+model+workload shape+chip -> same key.
 
-    Environment is deliberately *not* in the fingerprint, because a record on
-    a different chip is a different *matching* record, not a different *key*
-    — the store keeps both and matching scores closeness.
+    The chip is part of the key so a measurement taken on another chip does not
+    overwrite the first (the store keeps both and matching scores closeness).
+    An unknown chip hashes exactly as before, so ids of records written
+    without a chip are unchanged (#639).
     """
-    raw = f"{method}\x00{model_id}\x00{context_length}\x00{batch_size}".encode()
-    return hashlib.sha1(raw).hexdigest()[:16]
+    raw = f"{method}\x00{model_id}\x00{context_length}\x00{batch_size}"
+    if chip and chip != "unknown":
+        raw += f"\x00{chip}"
+    return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 
 @dataclass
@@ -65,6 +70,8 @@ class BenchmarkRecord:
         memory_bytes: Measured resident KV-cache footprint in bytes.
         memory_reduction: Measured ratio of ``memory_bytes`` to the fp16
             baseline at the same context/batch (0..1; ``0.19`` = 81% savings).
+            ``None`` means *not measured* (distinct from ``1.0``, which is a
+            measured "no savings"), so the planner keeps its analytic estimate.
         throughput_tok_s: Decode throughput in tokens/second.
         latency_ms_per_token: Mean per-token latency in milliseconds.
         perplexity_delta: PPL change vs fp16 baseline, when measured (None = n/a).
@@ -84,7 +91,7 @@ class BenchmarkRecord:
     context_length: int = 4096
     batch_size: int = 1
     memory_bytes: int = 0
-    memory_reduction: float = 1.0
+    memory_reduction: float | None = None
     throughput_tok_s: float = 0.0
     latency_ms_per_token: float = 0.0
     perplexity_delta: float | None = None
@@ -111,7 +118,12 @@ class BenchmarkRecord:
 
     @property
     def savings_percent(self) -> float:
-        """Memory savings vs the fp16 baseline, as a percentage (0..100)."""
+        """Memory savings vs the fp16 baseline, as a percentage (0..100).
+
+        0.0 when no memory reduction was measured.
+        """
+        if self.memory_reduction is None:
+            return 0.0
         return max(0.0, (1.0 - self.memory_reduction) * 100.0)
 
     def match_score(self, other: BenchmarkRecord | BenchmarkMatchQuery) -> float:
@@ -310,6 +322,8 @@ class BenchmarkDatabase:
         for rec in self._records.values():
             if rec.method not in wanted:
                 continue
+            if "corrupt" in rec.tags:
+                continue  # unparseable placeholder: carries no measurement
             if not (rec.model_id == query.model_id or rec.architecture == query.architecture):
                 continue
             score = rec.match_score(query)
@@ -329,7 +343,11 @@ class BenchmarkDatabase:
     def upsert(self, record: BenchmarkRecord) -> BenchmarkRecord:
         """Insert or replace a record by its id, then persist."""
         record.id = record.id or benchmark_fingerprint(
-            record.method, record.model_id, record.context_length, record.batch_size
+            record.method,
+            record.model_id,
+            record.context_length,
+            record.batch_size,
+            record.chip,
         )
         self._records[record.id] = record
         self.save()
@@ -357,12 +375,10 @@ class BenchmarkDatabase:
         model: ModelProfile | None = None,
     ) -> BenchmarkRecord:
         """Build, persist, and return a new record (keyed by fingerprint)."""
-        if memory_reduction is None:
-            memory_reduction = 1.0
         if architecture is None and model is not None:
             architecture = model.architecture
         wl = workload or WorkloadProfile(context_length=context_length, batch_size=batch_size)
-        rid = benchmark_fingerprint(method, model_id, context_length, batch_size)
+        rid = benchmark_fingerprint(method, model_id, context_length, batch_size, chip)
         rec = BenchmarkRecord(
             id=rid,
             method=method,
