@@ -213,6 +213,14 @@ def method_quant_bits(method: str) -> tuple[float, float, bool]:
     return key_bits, value_bits, bool(row.get("eviction", False))
 
 
+def method_token_budget(method: str) -> int | None:
+    """Steady-state token budget of an eviction method, or ``None`` when
+    the method does not evict (or is unmodeled)."""
+    row = _METHOD_MEMORY_MODEL.get(method, {})
+    budget = int(row.get("budget", 0))
+    return budget if row.get("eviction", False) and budget > 0 else None
+
+
 def estimate_memory(
     method: str,
     model: ModelProfile,
