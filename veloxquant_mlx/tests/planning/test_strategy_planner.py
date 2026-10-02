@@ -316,3 +316,28 @@ def test_recommendation_currently_invariant_to_bandwidth(bandwidth_gbps):
     assert [s.method for s in result.ranked] == [s.method for s in baseline.ranked]
     for a, b in zip(result.ranked, baseline.ranked, strict=True):
         assert a.score == pytest.approx(b.score, abs=1e-9)
+
+
+@pytest.mark.parametrize(
+    ("method", "budget"), [("h2o", 512), ("snapkv", 512), ("kvzip", 516), ("streaming_llm", 516)]
+)
+def test_retention_uses_the_methods_token_budget(method, budget):
+    """Quantize+evict methods (kvzip) must not have their kept-token count
+    derived from codec-scaled bytes (#648)."""
+    from veloxquant_mlx.planning.memory_estimator import estimate_memory
+    from veloxquant_mlx.planning.strategy_planner import _retention
+
+    model = ModelProfile(num_layers=28, num_kv_heads=8, head_dim=128)
+    wl = WorkloadProfile(context_length=4096, generation_length=0)
+    est = estimate_memory(method, model, wl)
+    assert _retention(method, est, model, wl) == pytest.approx(budget / 4096)
+
+
+def test_retention_is_one_for_non_evicting_methods():
+    from veloxquant_mlx.planning.memory_estimator import estimate_memory
+    from veloxquant_mlx.planning.strategy_planner import _retention
+
+    model = ModelProfile(num_layers=28, num_kv_heads=8, head_dim=128)
+    wl = WorkloadProfile(context_length=4096, generation_length=0)
+    for m in ("zipcache", "skvq", "kivi"):
+        assert _retention(m, estimate_memory(m, model, wl), model, wl) == 1.0
