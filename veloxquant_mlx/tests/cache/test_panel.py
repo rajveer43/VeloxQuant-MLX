@@ -139,7 +139,7 @@ def test_log_buffer_is_bounded():
     supervisor = ServerSupervisor()
     for i in range(LOG_CAPACITY + 120):
         supervisor._log("stdout", f"line {i}")
-    assert supervisor.logs()["total"] == LOG_CAPACITY
+    assert len(supervisor.logs()["lines"]) == LOG_CAPACITY
 
 
 def test_ready_handshake_promotes_to_running():
