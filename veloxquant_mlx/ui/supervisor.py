@@ -74,6 +74,10 @@ class ServerSupervisor:
         self._proc: subprocess.Popen | None = None
         self._lock = threading.Lock()
         self._logs: deque[LogLine] = deque(maxlen=LOG_CAPACITY)
+        # Lifetime count of lines ever logged (never reset, not bounded by
+        # LOG_CAPACITY): the deque evicts old lines, so ``logs(since)`` needs
+        # a monotonic cursor to stay correct once it wraps (#635).
+        self._log_total = 0
         self._state = "stopped"
         self._ready: dict[str, Any] | None = None
         self._error: str | None = None
@@ -110,18 +114,22 @@ class ServerSupervisor:
         }
 
     def logs(self, since: int = 0) -> dict[str, Any]:
-        """Return log lines captured after index ``since`` (bounded by ``LOG_CAPACITY``).
+        """Return log lines logged after cursor ``since``.
 
-        The panel polls this every second, passing back the previous
-        response's ``total`` as the next call's ``since`` to fetch only new
-        lines. ``deque`` has no slice support, so ``itertools.islice`` is
-        used to walk straight to ``since`` instead of materializing the
-        whole (up to ``LOG_CAPACITY``) deque into a list just to slice it —
-        each poll then costs work proportional to the *new* lines, not the
-        full buffer.
+        ``since`` and the returned ``total`` are positions in a monotonically
+        increasing line counter, not indexes into the bounded buffer: the
+        panel polls this every second, passing back the previous ``total``.
+        The deque keeps only the last ``LOG_CAPACITY`` lines, so the cursor is
+        translated to a buffer offset by subtracting the index of the oldest
+        retained line; a cursor older than that returns everything retained.
+        ``itertools.islice`` walks straight to the offset instead of
+        materializing the buffer, so each poll costs work proportional to the
+        *new* lines.
         """
-        total = len(self._logs)
-        new_lines = itertools.islice(self._logs, since, None)
+        total = self._log_total
+        oldest = total - len(self._logs)
+        offset = max(0, since - oldest)
+        new_lines = itertools.islice(self._logs, offset, None)
         return {
             "lines": [entry.to_dict() for entry in new_lines],
             "total": total,
@@ -353,6 +361,7 @@ class ServerSupervisor:
 
     def _log(self, stream: str, text: str) -> None:
         self._logs.append(LogLine(stream=stream, text=text))
+        self._log_total += 1
 
     def _reap(self) -> None:
         """Detect a child that died on its own (bad port, OOM, external kill)."""
