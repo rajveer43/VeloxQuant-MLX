@@ -40,9 +40,9 @@
     constexpr uint BQT = BQ / 8u;                            // BQ in units of 8x8 row-tiles
     constexpr float kLog2E = 1.4426950408889634f;
 
-    threadgroup half  q_tile[NSG_C * BQ * MAX_D];            // scale-folded Q rows
+    threadgroup half  q_tile[NSG_C * BQ * MAX_D];            // raw Q rows (scale applied in fp32, #624)
     threadgroup half  kv_tile[BK * MAX_D];                   // shared K, then V (plain fp16)
-    threadgroup half  s_tile[NSG_C][BQ * BK];                // raw QK^T scores
+    threadgroup float s_tile[NSG_C][BQ * BK];                // raw QK^T scores (fp32 accumulate, #624)
     threadgroup half  w_tile[NSG_C][BQ * BK];                // softmax weights
     threadgroup half  p_tile[NSG_C][BQ * PDT * 8u];          // W.V chunk partial (PDT dt-tiles)
     threadgroup float out_tile[NSG_C][BQ * MAX_D];           // running output
@@ -86,11 +86,15 @@
     // Queries align to the tail of the KV cache (fused_sdpa.metal convention).
     int q_align = int(S_kv) - int(S_q);
 
-    // ---- Stage the Q block (scale folded; rows past S_q zeroed) ----
+    // ---- Stage the Q block (rows past S_q zeroed) ----
+    // The scale is NOT folded into the half Q tile: rounding Q*scale to half
+    // and accumulating Q.K^T in half costs 100x+ MLX's fp16 SDPA error at
+    // realistic logit magnitudes (#624). Q stays exact; the product is
+    // accumulated in fp32 and scaled in fp32 at the softmax.
     for (uint idx = tid; idx < BQ_TG * D; idx += N_THREADS) {
         uint gq = qblk * BQ_TG + idx / D;
         q_tile[idx] = (gq < S_q)
-            ? half(float(q[q_base + gq * D + (idx % D)]) * sc)
+            ? q[q_base + gq * D + (idx % D)]
             : half(0.0f);
     }
     for (uint idx = lane; idx < BQ * D; idx += 32u) out_tile[sg][idx] = 0.0f;
@@ -130,8 +134,8 @@
         //    branching. acc is flattened row-major [BQT][BKT] into a
         //    1D array (Metal disallows multi-dim fixed arrays of
         //    simdgroup matrices cleanly across all toolchains).
-        simdgroup_half8x8 acc[BQT * BKT];
-        for (uint i = 0; i < BQT * BKT; ++i) acc[i] = make_filled_simdgroup_matrix<half, 8, 8>(half(0.0f));
+        simdgroup_float8x8 acc[BQT * BKT];
+        for (uint i = 0; i < BQT * BKT; ++i) acc[i] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
         for (uint kt = 0; kt < D / 8u; ++kt) {
             simdgroup_half8x8 qf[BQT];
             for (uint rt = 0; rt < BQT; ++rt) simdgroup_load(qf[rt], my_q + rt * 8u * D + kt * 8u, ulong(D));
@@ -162,7 +166,7 @@
             for (uint j = 0; j < BK; ++j) {
                 uint slot = s0 + j;
                 bool valid = slot < S_kv && int(slot) <= q_abs;
-                s_j[j] = valid ? float(s_tile[sg][r * BK + j]) : -INFINITY;
+                s_j[j] = valid ? s_tile[sg][r * BK + j] * sc : -INFINITY;
                 chunk_max = metal::max(chunk_max, s_j[j]);
             }
             float m_old = m_local;
