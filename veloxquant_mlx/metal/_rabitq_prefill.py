@@ -68,10 +68,12 @@ _cache = KernelCache()
 # accumulate) round-trips through threadgroup memory via
 # simdgroup_store.
 #
-# Precision: Q/K̂/V̂ tiles and 8×8 MAC fragments are half (a QK̂ᵀ dot
-# spans D<=128 scale-folded terms; a W·V̂ partial spans 8), the running
-# output accumulator and softmax state are float. ~28 KB threadgroup
-# memory at D=128; all-float tiles would exceed the 32 KB budget.
+# Precision: Q/K̂/V̂ tiles are half, but the QK̂ᵀ MAC accumulates in float
+# and the scale is applied to the float scores (half accumulation cost
+# 100x+ MLX's fp16 SDPA error at realistic logit scales, #624). W·V̂
+# partials (8-term dots) stay half; the running output accumulator and
+# softmax state are float. ~28.5 KB threadgroup memory at D=128;
+# all-float tiles would exceed the 32 KB budget.
 
 _RABITQ_PREFILL_SRC = _read_kernel_source("rabitq_prefill.metal")
 

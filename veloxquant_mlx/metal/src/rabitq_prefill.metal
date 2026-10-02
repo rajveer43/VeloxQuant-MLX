@@ -10,9 +10,9 @@
     constexpr uint BK = 8u;                                 // kv slots per chunk
     constexpr uint NB = uint(N_BYTES);
 
-    threadgroup half  q_tile[NSG_C * BQ * MAX_D];           // 32 scale-folded rows
+    threadgroup half  q_tile[NSG_C * BQ * MAX_D];           // 32 raw Q rows (scale applied in fp32, #624)
     threadgroup half  kv_tile[BK * MAX_D];                  // shared K̂, then V̂
-    threadgroup half  s_tile[NSG_C][BQ * BK];               // raw QK̂ᵀ scores
+    threadgroup float s_tile[NSG_C][BQ * BK];               // raw QK̂ᵀ scores (fp32 accumulate, #624)
     threadgroup half  w_tile[NSG_C][BQ * BK];               // softmax weights
     threadgroup half  p_tile[NSG_C][BQ * BK];               // W·V̂ chunk partial
     threadgroup float out_tile[NSG_C][BQ * MAX_D];          // running output
@@ -47,11 +47,11 @@
     // already-cached prefix (S_kv - S_q).
     int   q_align = int(S_kv) - int(S_q);
 
-    // ---- Stage the 32-row Q block (scale folded; rows past S_q zeroed) ----
+    // ---- Stage the 32-row Q block (rows past S_q zeroed; scale applied in fp32 at softmax, #624) ----
     for (uint idx = tid; idx < BQ_TG * D; idx += N_THREADS) {
         uint gq = qblk * BQ_TG + idx / D;
         q_tile[idx] = (gq < S_q)
-            ? half(float(q[q_base + gq * D + (idx % D)]) * sc)
+            ? q[q_base + gq * D + (idx % D)]
             : half(0.0f);
     }
     // ---- Init this sg's accumulator + softmax state ----
@@ -83,7 +83,7 @@
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
         // 2. QK̂ᵀ on the matrix units: acc(8 rows x 8 slots) over D/8 tiles.
-        simdgroup_half8x8 acc = make_filled_simdgroup_matrix<half, 8, 8>(half(0.0f));
+        simdgroup_float8x8 acc = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
         for (uint kt = 0; kt < D / 8u; ++kt) {
             simdgroup_half8x8 qf, kf;
             simdgroup_load(qf, my_q + kt * 8u, ulong(D));
@@ -103,7 +103,7 @@
                 uint slot = s0 + j;
                 bool valid = slot < S_kv && (!causal || int(slot) <= q_abs);
                 s_j[j] = valid
-                    ? float(s_tile[sg][r * BK + j]) + k_const[kv_base + slot]
+                    ? s_tile[sg][r * BK + j] * sc + k_const[kv_base + slot]
                     : -INFINITY;
                 chunk_max = metal::max(chunk_max, s_j[j]);
             }

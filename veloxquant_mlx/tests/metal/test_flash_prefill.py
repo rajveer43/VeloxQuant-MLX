@@ -136,3 +136,16 @@ def test_flash_prefill_rejects_bad_inputs():
             mx.array(np.zeros((1, 1, 1, 64), np.float16)),
             mx.array(scale),
         )
+
+
+def test_flash_prefill_large_logit_scale_precision():
+    """Q.K^T must accumulate in fp32 (#624): at logit std ~ 9 the half
+    accumulator was ~0.13 off (MLX's fp16 SDPA: ~0.002)."""
+    D, S = 128, 512
+    rng = np.random.default_rng(1)
+    q, k = (rng.standard_normal((1, 2, S, D)).astype(np.float16) * 3 for _ in range(2))
+    v = rng.standard_normal((1, 2, S, D)).astype(np.float16)
+    scale = np.array([D**-0.5], dtype=np.float32)
+    expected = _reference_flash(q, k, v, scale)
+    got = _run_kernel(q, k, v, scale)
+    assert np.abs(got - expected).max() < 2e-2

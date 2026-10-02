@@ -176,3 +176,16 @@ def test_prefill_rejects_bad_inputs():
             mx.array(v_idx),
             mx.array(v_cents),
         )
+
+
+def test_prefill_large_logit_scale_precision():
+    """QK̂ᵀ must accumulate in fp32 (#624): the half accumulator drifted
+    badly once logits reached std ~ 9."""
+    D, S = 128, 512
+    q, scale, k_bits, k_mag, k_const, v_idx, v_cents = _make_inputs(1, 2, S, S, D, seed=3)
+    q = (q.astype(np.float32) * 6).astype(np.float16)
+    k_mag = (k_mag * 10).astype(np.float32)
+    args = (q, scale, k_bits, k_mag, k_const, v_idx, v_cents)
+    expected = _reference_prefill(*args, causal=True)
+    got = _run_kernel(*args, causal=True)
+    assert np.abs(got - expected).max() < 2e-2
