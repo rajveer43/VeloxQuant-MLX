@@ -22,7 +22,8 @@ class InMemoryArtifactStore(ArtifactStore):
     """In-memory artifact store for testing — performs no disk I/O.
 
     All artifacts are stored in plain Python dicts keyed by descriptor tuples.
-    Arrays are stored as float16 numpy arrays and wrapped in MLX on load.
+    Rotation and JL matrices are stored as float16 and codebooks as float32
+    numpy arrays, wrapped in MLX on load.
 
     Args:
         None.
@@ -64,8 +65,11 @@ class InMemoryArtifactStore(ArtifactStore):
         return mx.array(self._codebooks[key])
 
     def save_codebook(self, cb: Any, distribution: str, b: int, d: int) -> None:
-        """Store ``cb`` (cast to fp16) under ``(distribution, b, d)``, silently overwriting any prior entry."""
-        self._codebooks[(distribution, b, d)] = np.array(cb, dtype=np.float16)
+        """Store ``cb`` (as fp32) under ``(distribution, b, d)``, silently overwriting any prior entry.
+
+        Kept in fp32 so a warm load encodes identically to the cold run (#659).
+        """
+        self._codebooks[(distribution, b, d)] = np.array(cb, dtype=np.float32)
 
     # ------------------------------------------------------------------
     # JL matrix

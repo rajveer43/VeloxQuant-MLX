@@ -26,7 +26,8 @@ class TestRoundtrip:
         cb = np.arange(16, dtype=np.float32).reshape(4, 4)
         store.save_codebook(cb, distribution="gaussian", b=2, d=4)
         loaded = np.asarray(store.load_codebook(distribution="gaussian", b=2, d=4))
-        assert np.allclose(loaded, cb.astype(np.float16))
+        assert loaded.dtype == np.float32
+        np.testing.assert_array_equal(loaded, cb)
 
     def test_jl_matrix_roundtrip(self, tmp_path: Path) -> None:
         store = NpyArtifactStore(tmp_path)
@@ -142,3 +143,36 @@ class TestAtomicSave:
         final = np.load(path)
         assert np.array_equal(final, arr_a) or np.array_equal(final, arr_b)
         assert [p.name for p in tmp_path.iterdir() if p.name != "shared.npy"] == []
+
+
+class TestColdWarmParity:
+    """A quantizer built on a warm store must encode like the cold one (#659)."""
+
+    @pytest.mark.parametrize("store_kind", ["npy", "mem"])
+    def test_codebook_survives_store_unrounded(self, tmp_path: Path, store_kind: str) -> None:
+        from veloxquant_mlx.artifacts import InMemoryArtifactStore
+
+        store = NpyArtifactStore(tmp_path) if store_kind == "npy" else InMemoryArtifactStore()
+        cb = np.random.default_rng(0).standard_normal(16).astype(np.float32)
+        assert not np.array_equal(cb, cb.astype(np.float16).astype(np.float32))
+        store.save_codebook(cb, distribution="gaussian", b=4, d=8)
+        np.testing.assert_array_equal(
+            np.asarray(store.load_codebook(distribution="gaussian", b=4, d=8)), cb
+        )
+
+    @pytest.mark.parametrize("store_kind", ["npy", "mem"])
+    def test_polarquantizer_cold_and_warm_encode_identically(
+        self, tmp_path: Path, store_kind: str
+    ) -> None:
+        import mlx.core as mx
+
+        from veloxquant_mlx.artifacts import InMemoryArtifactStore
+        from veloxquant_mlx.quantizers.polarquant import PolarQuantizer
+
+        store = NpyArtifactStore(tmp_path) if store_kind == "npy" else InMemoryArtifactStore()
+        x = mx.random.normal((512, 128), key=mx.random.key(0)).astype(mx.float16)
+        cold = PolarQuantizer(d=128, b=4, seed=42, store=store)
+        warm = PolarQuantizer(d=128, b=4, seed=42, store=store)
+        np.testing.assert_array_equal(
+            np.array(cold.decode(cold.encode(x))), np.array(warm.decode(warm.encode(x)))
+        )
