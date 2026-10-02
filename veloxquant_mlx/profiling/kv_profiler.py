@@ -109,8 +109,12 @@ class ProfileReport:
 
     @property
     def total_tokens(self) -> int:
-        """Sum of tokens written across all profiled layers."""
-        return sum(layer.tokens_written for layer in self.layers)
+        """Tokens processed by the model (not summed across layers).
+
+        Every layer sees every token, so summing per-layer counts would
+        overstate the total by the layer count (#629); take the max instead.
+        """
+        return max((layer.tokens_written for layer in self.layers), default=0)
 
     @property
     def tokens_per_sec(self) -> float:
