@@ -48,8 +48,8 @@ tokens are protected from eviction the same way sink tokens are (treated as
 to accumulate real attention mass before it becomes eviction-eligible at
 all. Implemented identically in both the pure-MLX eviction path
 (:func:`veloxquant_mlx.quantizers.h2o._evict_via_mlx`) and the fused Metal
-kernel (:func:`veloxquant_mlx.metal.h2o_fused_evict`) — verified bit-for-bit
-equivalent between the two. ``h2o_grace=0`` reproduces the original
+kernel (:func:`veloxquant_mlx.metal.h2o_fused_evict`) — verified equivalent between the two
+(keys to within 1 fp16 ULP). ``h2o_grace=0`` reproduces the original
 (paper-faithful, freeze-prone) behavior exactly, for anyone who wants to
 study or reproduce that failure mode.
 

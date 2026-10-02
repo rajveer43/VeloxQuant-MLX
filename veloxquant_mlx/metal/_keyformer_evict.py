@@ -24,7 +24,7 @@ phase runs.
   2. :func:`_keyformer_evict_apply` — given ``evict_idx``, compacts the
      surviving ``n_kept`` rows (including gumbel) and re-rotates (NeoX-style
      RoPE) exactly the rows whose position shifted, matching
-     ``keyformer_update``'s per-token eviction branch bit-for-bit.
+     ``keyformer_update``'s per-token eviction branch (keys to within 1 fp16 ULP).
 
 Precondition (mirrors H2O's D3): callers MUST only invoke
 :func:`keyformer_fused_evict` when every ``(batch, head)`` group is already
@@ -143,7 +143,9 @@ def keyformer_fused_evict(
     With ``return_indices=True``, append chronological indices into the
     supplied prior + new rows (or the supplied candidate rows for eviction).
 
-    Matches ``keyformer_update``'s per-token eviction branch bit-for-bit.
+    Matches ``keyformer_update``'s per-token eviction branch: values, scores,
+    gumbel and positions exactly, keys to within 1 fp16 ULP (the kernel rotates
+    in fp32, the MLX twin in fp16; #652).
     Caller must have already computed the "mid" state — the ``n_kept``
     currently-stored rows with the one new token conceptually appended
     (score 0, its own frozen Gumbel draw, its own position) — and must only

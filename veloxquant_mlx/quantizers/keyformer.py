@@ -65,8 +65,8 @@ evict, RoPE-remap — can optionally be replaced with two fused Metal
 dispatches via :func:`veloxquant_mlx.metal.keyformer_fused_evict`, structurally
 identical to :func:`veloxquant_mlx.metal.h2o_fused_evict` with one addition: a
 per-row frozen Gumbel value is threaded through both dispatches and folded
-into the reduction as ``score + tau * gumbel``. Verified bit-for-bit
-equivalent to the MLX eviction branch it replaces (see
+into the reduction as ``score + tau * gumbel``. Equivalent to the MLX eviction branch it replaces (keys within 1 fp16 ULP;
+the kernel rotates in fp32) (see
 ``veloxquant_mlx/tests/metal/test_keyformer_evict.py``). Used automatically
 when ``veloxquant_mlx.metal.metal_available()`` is true; falls back to the
 pure-MLX loop otherwise.
@@ -366,7 +366,7 @@ def _evict_via_mlx(
     """Pure-MLX eviction: sink/recent-protected Gumbel-regularized argmin,
     drop the loser, re-rotate the shifted survivors. Reference implementation
     — see module docstring for why this exists (the fused Metal path in
-    :func:`_evict_via_metal` must match this bit-for-bit).
+    :func:`_evict_via_metal` must match this; keys to within 1 fp16 ULP).
     """
     n_total = keys_cat.shape[0]
     sel = scores_cat + tau * gumbel_cat
@@ -411,8 +411,8 @@ def _evict_via_metal(
     rope_base: float,
 ) -> tuple[mx.array, mx.array, mx.array, mx.array, mx.array]:
     """Fused-Metal-kernel eviction — see
-    :func:`veloxquant_mlx.metal.keyformer_fused_evict`. Bit-for-bit
-    equivalent to :func:`_evict_via_mlx` (verified in
+    :func:`veloxquant_mlx.metal.keyformer_fused_evict`. Equivalent (keys to
+    within 1 fp16 ULP) to :func:`_evict_via_mlx` (verified in
     ``veloxquant_mlx/tests/metal/test_keyformer_evict.py``); single-
     (batch*head) call here (``BH=1``), since ``keyformer_update`` operates on
     one head's state at a time, same as H2O-adapted's ``_evict_via_metal``.

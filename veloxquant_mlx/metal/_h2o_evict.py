@@ -20,7 +20,7 @@ per token — a real but modest cost against the ~15+ ops it replaces.
   2. :func:`_h2o_evict_apply` — given ``evict_idx``, compacts the surviving
      ``n_kept`` rows verbatim (values, scores, positions, AND keys — no
      re-rotation; see #609), matching ``h2o_update``'s per-token eviction
-     branch bit-for-bit.
+     branch (values, scores and positions exactly; keys to within 1 fp16 ULP).
 
 Precondition (spec decision D3): callers MUST only invoke
 :func:`h2o_fused_evict` when every ``(batch, head)`` group is already over
@@ -135,8 +135,10 @@ def h2o_fused_evict(
 ) -> tuple[mx.array, mx.array, mx.array, mx.array]:
     """Fused sink+grace-protected argmin + evict + RoPE-remap, batched over (batch*head).
 
-    Matches ``h2o_update``'s per-token eviction branch bit-for-bit (see
-    ``H2O_METAL_KERNEL_TECH_SPEC.md`` section 3). Caller must have already
+    Matches ``h2o_update``'s per-token eviction branch (see
+    ``H2O_METAL_KERNEL_TECH_SPEC.md`` section 3): values, scores and positions
+    exactly, keys to within 1 fp16 ULP — the kernel rotates in fp32 whereas the
+    MLX twin rotates in fp16, so cached keys can differ in the last bit (#652). Caller must have already
     computed the "mid" state — the ``n_kept`` currently-stored rows with the
     one new token conceptually appended (score 0, its own position) — and
     must only call this when every group is over budget
