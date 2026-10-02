@@ -249,3 +249,33 @@ def test_deterministic_across_fresh_processes_equivalent_call():
         dp_allocate_bits(v1, total_bit_budget=9),
         dp_allocate_bits(v2, total_bit_budget=9),
     )
+
+
+@pytest.mark.parametrize("budget", [64, 160])
+@pytest.mark.parametrize("scale", [1e-2, 1e-6, 1e-8, 1e6])
+def test_allocation_is_invariant_under_uniform_variance_scaling(budget, scale):
+    """The tie-break penalty must not override real distortion gaps at small
+    variances (#658)."""
+    spectrum = np.exp(-np.arange(32) / 6.0)
+    np.testing.assert_array_equal(
+        dp_allocate_bits(spectrum * scale, budget), dp_allocate_bits(spectrum, budget)
+    )
+
+
+@pytest.mark.parametrize("scale", [1e-6, 1e-8])
+def test_small_variances_match_brute_force_optimum(scale):
+    rng = np.random.default_rng(0)
+    for _ in range(100):
+        n = int(rng.integers(1, 5))
+        v = rng.exponential(1.0, n) * scale
+        budget = int(rng.integers(0, 20))
+        got = dp_allocate_bits(v, budget)
+
+        def cost(bits, v=v):
+            return sum(_distortion(x, b, DEFAULT_BETA) for x, b in zip(v, bits, strict=True))
+
+        best = min(
+            cost(c) for c in itertools.product(DEFAULT_BIT_CHOICES, repeat=n) if sum(c) <= budget
+        )
+        assert got.sum() <= budget
+        assert cost(got) <= best * (1 + 1e-9)
