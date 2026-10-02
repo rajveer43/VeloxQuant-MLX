@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from veloxquant_mlx.cli import recommend as recommend_cli
 from veloxquant_mlx.tools import mac_recommender
 
@@ -170,3 +172,37 @@ def test_cli_argparse_choices_match_recommender():
     assert set(recommend_cli._CHIP_CHOICES) == {"M1", "M2", "M3", "M4"}
     assert set(recommend_cli.ALLOWED_RAM_GB) == set(mac_recommender.ALLOWED_RAM_GB)
     assert set(recommend_cli.MODEL_WEIGHT_GB_4BIT) == set(mac_recommender.MODEL_WEIGHT_GB_4BIT)
+
+
+_CONFIG_KNOBS = {
+    "bit_width_inlier",
+    "kivi_group_size",
+    "stream_n_sink",
+    "stream_window_size",
+    "seed",
+}
+
+
+@pytest.mark.parametrize("model_class", ["1B", "7B", "14B"])
+@pytest.mark.parametrize("ram_gb", [16, 24, 64])
+@pytest.mark.parametrize("goal", mac_recommender.ruleset_dict()["goals"])
+def test_every_goal_recommends_a_servable_method(goal, ram_gb, model_class):
+    """The recommender must only name methods the package can build and serve (#632)."""
+    from veloxquant_mlx.cache.base import KVCacheConfig, KVCacheFactory
+    from veloxquant_mlx.cache.registry import get_method
+
+    req = mac_recommender.RecommendRequest(
+        chip="M4", ram_gb=ram_gb, model_class=model_class, goal=goal
+    )
+    r = mac_recommender.recommend(req)
+    assert get_method(r.method).serve_tier.is_servable
+    cfg = {"method": r.method, **{k: v for k, v in r.knobs.items() if k in _CONFIG_KNOBS}}
+    if r.method != "vecinfer":  # vecinfer needs a calibration pass before create()
+        KVCacheFactory.create(KVCacheConfig(**cfg))
+
+
+def test_ruleset_defaults_are_registered_methods():
+    from veloxquant_mlx.cache.registry import get_method
+
+    for entry in mac_recommender.ruleset_dict()["defaults"].values():
+        assert get_method(entry["method"]).serve_tier.is_servable

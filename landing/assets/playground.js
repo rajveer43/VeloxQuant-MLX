@@ -86,7 +86,7 @@ function recommend(req) {
     if (tight && ["7B", "14B", "32B"].includes(req.model_class)) {
       warnings.push(
         "RAM is tight for a model this size. For long prompts you will get " +
-        "more out of 'Fit the longest conversation' (rabitq), which " +
+        "more out of 'Fit the longest conversation' (kivi), which " +
         "compresses the whole cache, or 'Never grow past a fixed memory " +
         "limit' (streaming_llm), which caps it outright."
       );
@@ -113,33 +113,30 @@ function recommend(req) {
       );
     }
   } else if (req.goal === "best_quality") {
-    method = "spectral";
-    knobs = {
-      bit_width_inlier: 3,
-      note: "Needs a one-time setup pass over sample data before first use",
-    };
-    ratio = 5.3;
+    method = "kivi";
+    knobs = { bit_width_inlier: 4, kivi_group_size: 32 };
+    ratio = 3.0;
     resident = false;
     rationale =
-      "Compresses less (about 5.3x) but reconstructs the cache more " +
-      "faithfully, so answers stay closest to the uncompressed model. " +
-      "Needs a one-time setup pass over sample data.";
+      "Compresses less (about 3x, measured on both halves of the cache at " +
+      "4 bits) but keeps answers closest to the uncompressed model. It " +
+      "works out of the box with no setup step.";
   } else if (req.goal === "max_context") {
-    method = "rabitq";
-    ratio = 6.0;
-    resident = true;
+    method = "kivi";
+    knobs = { bit_width_inlier: 2, kivi_group_size: 32 };
+    ratio = 4.7;
+    resident = false;
+    rationale =
+      "Compresses both halves of the cache (about 4.7x at 2 bits, measured), " +
+      "not just the keys, so it gets the most out of a long conversation. " +
+      "It unpacks values back to full precision as they are read, so the " +
+      "figure measures how well the data compresses rather than RAM freed.";
     if (tight) {
-      knobs = { note: "Compresses the whole cache; turn on the Metal kernels if available" };
-      rationale =
-        "Compresses both halves of the cache, so it genuinely gives RAM " +
-        "back rather than only measuring smaller. That matters most on a " +
-        "machine as tight as this one.";
-    } else {
-      knobs = { note: "Compresses the whole cache, for longer chats in the same memory" };
-      rationale =
-        "Compresses both halves of the cache, not just the keys, so the " +
-        "space it frees is real. That makes it the better choice when you " +
-        "want the longest possible conversation in the RAM you have.";
+      warnings.push(
+        "RAM is tight for this setup. If memory must stay flat however " +
+        "long the chat runs, the 'constant_memory' goal (streaming_llm) " +
+        "caps it outright."
+      );
     }
   } else if (req.goal === "constant_memory") {
     method = "streaming_llm";

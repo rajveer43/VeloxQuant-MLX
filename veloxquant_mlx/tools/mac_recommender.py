@@ -156,7 +156,7 @@ def recommend(req: RecommendRequest) -> RecommendResult:
         if tight and req.model_class in ("7B", "14B", "32B", "70B", "120B", "235B", "671B"):
             warnings.append(
                 "RAM is tight for a model this size. For long prompts you will get "
-                "more out of 'Fit the longest conversation' (rabitq), which "
+                "more out of 'Fit the longest conversation' (kivi), which "
                 "compresses the whole cache, or 'Never grow past a fixed memory "
                 "limit' (streaming_llm), which caps it outright."
             )
@@ -186,39 +186,32 @@ def recommend(req: RecommendRequest) -> RecommendResult:
             )
 
     elif req.goal == "best_quality":
-        method = "spectral"
-        knobs = {
-            "bit_width_inlier": 3,
-            "note": "Needs a one-time setup pass over sample data before first use",
-        }
-        ratio = 5.3
+        method = "kivi"
+        knobs = {"bit_width_inlier": 4, "kivi_group_size": 32}
+        ratio = 3.0
         resident = False
         rationale = (
-            "Compresses less (about 5.3x) but reconstructs the cache more "
-            "faithfully, so answers stay closest to the uncompressed model. "
-            "Needs a one-time setup pass over sample data."
+            "Compresses less (about 3x, measured on both halves of the cache at "
+            "4 bits) but keeps answers closest to the uncompressed model. It "
+            "works out of the box with no setup step."
         )
 
     elif req.goal == "max_context":
+        method = "kivi"
+        knobs = {"bit_width_inlier": 2, "kivi_group_size": 32}
+        ratio = 4.7
+        resident = False
+        rationale = (
+            "Compresses both halves of the cache (about 4.7x at 2 bits, measured), "
+            "not just the keys, so it gets the most out of a long conversation. "
+            "It unpacks values back to full precision as they are read, so the "
+            "figure measures how well the data compresses rather than RAM freed."
+        )
         if tight:
-            method = "rabitq"
-            knobs = {"note": "Compresses the whole cache; turn on the Metal kernels if available"}
-            ratio = 6.0
-            resident = True
-            rationale = (
-                "Compresses both halves of the cache, so it genuinely gives RAM "
-                "back rather than only measuring smaller. That matters most on a "
-                "machine as tight as this one."
-            )
-        else:
-            method = "rabitq"
-            knobs = {"note": "Compresses the whole cache, for longer chats in the same memory"}
-            ratio = 6.0
-            resident = True
-            rationale = (
-                "Compresses both halves of the cache, not just the keys, so the "
-                "space it frees is real. That makes it the better choice when you "
-                "want the longest possible conversation in the RAM you have."
+            warnings.append(
+                "RAM is tight for this setup. If memory must stay flat however "
+                "long the chat runs, the 'constant_memory' goal (streaming_llm) "
+                "caps it outright."
             )
 
     elif req.goal == "constant_memory":
@@ -308,8 +301,8 @@ def ruleset_dict() -> dict[str, Any]:
         "defaults": {
             "everyday": {"method": "turboquant_rvq", "bit_width_inlier": 1, "ratio": 7.5},
             "max_key_accounting": {"method": "vecinfer", "ratio": 16.0},
-            "best_quality": {"method": "spectral", "ratio": 5.3},
-            "max_context": {"method": "rabitq", "ratio": 6.0, "resident_likely": True},
+            "best_quality": {"method": "kivi", "bit_width_inlier": 4, "ratio": 3.0},
+            "max_context": {"method": "kivi", "bit_width_inlier": 2, "ratio": 4.7},
             "constant_memory": {
                 "method": "streaming_llm",
                 "ratio": 1.0,
