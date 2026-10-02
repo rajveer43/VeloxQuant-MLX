@@ -18,6 +18,7 @@ with a clear error rather than failing deep inside generation.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import importlib
 import warnings
 from dataclasses import dataclass, field
@@ -858,22 +859,20 @@ class KVCacheConfig:
 
     def __post_init__(self) -> None:
         # Read-through: an `options` instance populates its matching flat
-        # fields (e.g. H2OOptions.budget -> self.h2o_budget) for any flat
-        # field still at its dataclass default, so KVCacheFactory/cache
-        # classes -- which read flat fields via getattr(config,
-        # "h2o_budget", ...) -- see the options-supplied values without
-        # changes. A flat field passed explicitly to KVCacheConfig(...)
-        # still wins over `options` (matches the field's own default check,
-        # not `options`' priority) so existing direct-kwarg construction is
-        # unaffected by adding `options` support.
+        # fields (e.g. H2OOptions.h2o_budget -> self.h2o_budget) unless the
+        # flat field was passed explicitly to KVCacheConfig(...), so
+        # KVCacheFactory/cache classes -- which read flat fields via
+        # getattr(config, "h2o_budget", ...) -- see the options-supplied
+        # values. "Explicit" means named in the constructor call (tracked by
+        # _track_explicit_fields below), not "differs from the default": an
+        # explicit value equal to the default still beats `options` (#662).
         if self.options is not None and dataclasses.is_dataclass(self.options):
-            defaults = {f.name: f.default for f in dataclasses_fields(self)}
+            explicit = getattr(self, "_explicit_fields", frozenset())
             for opt_field in dataclasses_fields(self.options):
                 flat_name = opt_field.name
-                if flat_name not in _FIELD_TO_OPTIONS_CLASS:
+                if flat_name not in _FIELD_TO_OPTIONS_CLASS or flat_name in explicit:
                     continue
-                if getattr(self, flat_name, defaults.get(flat_name)) == defaults.get(flat_name):
-                    object.__setattr__(self, flat_name, getattr(self.options, opt_field.name))
+                object.__setattr__(self, flat_name, getattr(self.options, opt_field.name))
         object.__setattr__(self, "_post_init_done", True)
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -889,6 +888,23 @@ class KVCacheConfig:
                 stacklevel=2,
             )
         object.__setattr__(self, name, value)
+
+
+def _track_explicit_fields(cls: type) -> type:
+    """Record which fields the caller named, before ``__post_init__`` runs."""
+    init = cls.__init__
+    names = [f.name for f in dataclasses_fields(cls) if f.init]
+
+    @functools.wraps(init)
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        object.__setattr__(self, "_explicit_fields", frozenset(names[: len(args)]) | kwargs.keys())
+        init(self, *args, **kwargs)
+
+    cls.__init__ = __init__  # type: ignore[method-assign]
+    return cls
+
+
+_track_explicit_fields(KVCacheConfig)
 
 
 class KVCacheFactory:
