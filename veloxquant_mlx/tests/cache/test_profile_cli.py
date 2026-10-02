@@ -55,3 +55,18 @@ def test_parse_overrides_rejects_reserved_fields():
 def test_parse_overrides_rejects_malformed_pair():
     with pytest.raises(SystemExit):
         profile_cli.parse_overrides(["not-a-kv-pair"])
+
+
+def test_profile_set_parses_array_fields_like_serve():
+    """--set svdq_bit_schedule / kvtc_bit_choices must become int tuples (#637)."""
+    from veloxquant_mlx.cli import serve
+
+    pair = ["svdq_bit_schedule=8,4,2,1,1,0,0,0"]
+    assert profile_cli.parse_overrides(pair) == {"svdq_bit_schedule": (8, 4, 2, 1, 1, 0, 0, 0)}
+    assert profile_cli.parse_overrides(pair) == serve.parse_overrides(pair)
+    assert profile_cli.parse_overrides(["kvtc_bit_choices=2,4"]) == {"kvtc_bit_choices": (2, 4)}
+
+
+def test_profile_set_array_rejects_non_integers():
+    with pytest.raises(SystemExit, match="expects array"):
+        profile_cli.parse_overrides(["svdq_bit_schedule=8,x"])

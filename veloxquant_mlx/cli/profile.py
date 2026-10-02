@@ -112,46 +112,16 @@ def _warn(message: str) -> None:
     print(f"[veloxquant profile] {message}", file=sys.stderr)
 
 
-def parse_overrides(pairs: list[str]) -> dict:
-    """Same FIELD=VALUE parsing as ``serve.py``'s ``parse_overrides``."""
-    import dataclasses
+def parse_overrides(pairs: list[str], method: str | None = None) -> dict:
+    """FIELD=VALUE parsing, shared with ``serve.py`` (single source of truth).
 
-    from veloxquant_mlx.cache.base import KVCacheConfig
-    from veloxquant_mlx.cache.registry import describe_field
+    A private copy here drifted: it lacked the ``array`` branch added for
+    ``svdq_bit_schedule`` / ``kvtc_bit_choices``, so those reached the cache
+    as raw strings (#637).
+    """
+    from veloxquant_mlx.cli.serve import parse_overrides as _serve_parse_overrides
 
-    valid = {f.name for f in dataclasses.fields(KVCacheConfig)}
-    overrides: dict = {}
-
-    for pair in pairs:
-        if "=" not in pair:
-            raise SystemExit(f"error: --set expects FIELD=VALUE, got {pair!r}")
-
-        name, _, raw = pair.partition("=")
-        name, raw = name.strip(), raw.strip()
-
-        if name not in valid:
-            raise SystemExit(f"error: unknown config field {name!r}")
-        if name in ("method", "store", "observers", "dtype"):
-            raise SystemExit(f"error: {name!r} cannot be set with --set")
-
-        schema = describe_field(name)
-        if raw == "" and schema["optional"]:
-            overrides[name] = None
-            continue
-
-        try:
-            if schema["type"] == "int":
-                overrides[name] = int(raw)
-            elif schema["type"] == "float":
-                overrides[name] = float(raw)
-            elif schema["type"] == "bool":
-                overrides[name] = raw.lower() in ("1", "true", "yes", "on")
-            else:
-                overrides[name] = raw
-        except ValueError:
-            raise SystemExit(f"error: {name!r} expects {schema['type']}, got {raw!r}") from None
-
-    return overrides
+    return _serve_parse_overrides(pairs, method=method)
 
 
 def build_config(args: argparse.Namespace) -> Any:
