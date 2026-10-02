@@ -72,3 +72,22 @@ def test_explicit_residual_scale_bypasses_default_derivation_but_still_caches():
 
     q3 = TurboQuantRVQ(d=128, b=2, seed=42, use_hadamard=True, residual_scale=0.1)
     assert q1._codebook2 is not q3._codebook2
+
+
+@pytest.mark.parametrize("b", [1, 2, 3])
+def test_default_residual_scale_matches_actual_stage1_residual_std(b):
+    """Default Laplacian std must track the real stage-1 residual std (#625)."""
+    import math
+
+    import mlx.core as mx
+    import numpy as np
+
+    d = 128
+    X = np.random.default_rng(0).standard_normal((4096, d)).astype(np.float32)
+    X /= np.linalg.norm(X, axis=1, keepdims=True)
+    q = TurboQuantRVQ(d=d, b=b, seed=0, use_hadamard=True)
+    y = q._rotation.apply(mx.array(X.astype(np.float16)))
+    r1 = (y - q._codebook1.dequantize(q._codebook1.quantize(y))).astype(mx.float32)
+    actual = float(mx.sqrt(mx.mean(r1 * r1)).item())
+    default_std = q._residual_scale * math.sqrt(2)
+    assert 0.7 < default_std / actual < 1.4
