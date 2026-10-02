@@ -100,6 +100,31 @@ def estimate_kv_fp16_mb(
     return bytes_ / (1024**2)
 
 
+_KEY_ONLY_GOALS = ("everyday", "max_key_accounting")
+
+
+def _estimate_compressed_mb(
+    req: RecommendRequest, kv_fp16: float, ratio: float, knobs: dict[str, Any]
+) -> float:
+    """Estimated stored KV size for the recommended method, in MB.
+
+    Key-only methods (everyday, max_key_accounting) shrink only the key half
+    by ``ratio`` and keep fp16 values, so the estimate is ``K/ratio + V``.
+    ``streaming_llm`` caps the cache at ``n_sink + window`` tokens, so its
+    size is that fraction of the fp16 cache; the other goals compress both
+    halves by ``ratio`` (#638).
+    """
+    if req.goal == "constant_memory":
+        kept = min(req.seq_len, int(knobs["stream_n_sink"]) + int(knobs["stream_window_size"]))
+        return kv_fp16 * kept / req.seq_len
+    if ratio <= 0:
+        return kv_fp16
+    if req.goal in _KEY_ONLY_GOALS:
+        half = kv_fp16 / 2
+        return half / ratio + half
+    return kv_fp16 / ratio
+
+
 def recommend(req: RecommendRequest) -> RecommendResult:
     """Return a transparent method recommendation for Apple Silicon."""
     if req.ram_gb not in ALLOWED_RAM_GB:
@@ -261,7 +286,7 @@ def recommend(req: RecommendRequest) -> RecommendResult:
             "headroom for the KV cache or macOS itself."
         )
 
-    compressed_mb = kv_fp16 / ratio if ratio > 0 else kv_fp16
+    compressed_mb = _estimate_compressed_mb(req, kv_fp16, ratio, knobs)
     # Resident estimate is only meaningful when resident_savings_likely
     if not resident:
         warnings.append(

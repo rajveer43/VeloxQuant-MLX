@@ -165,7 +165,19 @@ function recommend(req) {
     );
   }
 
-  const compressedMb = ratio > 0 ? kvFp16 / ratio : kvFp16;
+  // Key-only methods keep fp16 values (K/ratio + V); streaming_llm is capped
+  // at n_sink + window tokens; other goals compress both halves (#638).
+  let compressedMb;
+  if (req.goal === "constant_memory") {
+    const kept = Math.min(req.seq_len, knobs.stream_n_sink + knobs.stream_window_size);
+    compressedMb = (kvFp16 * kept) / req.seq_len;
+  } else if (ratio <= 0) {
+    compressedMb = kvFp16;
+  } else if (req.goal === "everyday" || req.goal === "max_key_accounting") {
+    compressedMb = kvFp16 / 2 / ratio + kvFp16 / 2;
+  } else {
+    compressedMb = kvFp16 / ratio;
+  }
   if (!resident) {
     warnings.push(
       "This method measures smaller but may not free much actual RAM on " +
