@@ -330,7 +330,10 @@ def test_inherited_merge_on_populated_cache_would_crash() -> None:
     vals = mx.random.normal((1, 2, 5, 128)).astype(mx.float16)
     cache.update_and_fetch(keys, vals)
 
-    with pytest.raises(ValueError, match="max\\(\\) iterable argument is empty"):
+    # CPython words the empty-max() error differently across versions
+    # ("iterable argument is empty" vs "arg is an empty sequence", #598), so
+    # match only the stable "max()" prefix.
+    with pytest.raises(ValueError, match=r"max\(\)"):
         _MLXKVCache.merge([cache])
 
 
