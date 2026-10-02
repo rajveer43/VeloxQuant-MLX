@@ -222,12 +222,9 @@ def test_logs_since_at_or_past_total_returns_empty():
     assert past_end["total"] == 1
 
 
-def test_logs_total_matches_capacity_once_the_buffer_wraps():
-    """Once the deque hits ``LOG_CAPACITY`` and evicts old lines, ``total``
-    reflects what's actually *retained* (the deque is bounded, not a lifetime
-    counter) — this pins the ``itertools.islice`` rewrite to the exact same
-    semantics as the original ``list(self._logs)[since:]``.
-    """
+def test_logs_total_is_a_lifetime_counter_once_the_buffer_wraps():
+    """``total`` counts every line ever logged, while only the last
+    ``LOG_CAPACITY`` are retained (#635)."""
     from veloxquant_mlx.ui.supervisor import LOG_CAPACITY
 
     supervisor = ServerSupervisor()
@@ -235,10 +232,32 @@ def test_logs_total_matches_capacity_once_the_buffer_wraps():
         supervisor._log("panel", f"line {i}")
 
     result = supervisor.logs(since=0)
-    assert result["total"] == LOG_CAPACITY  # capped, not a lifetime count
+    assert result["total"] == LOG_CAPACITY + 10
     assert len(result["lines"]) == LOG_CAPACITY  # only what's retained
     assert result["lines"][0]["text"] == "line 10"  # oldest 10 evicted
     assert result["lines"][-1]["text"] == f"line {LOG_CAPACITY + 9}"
+
+
+def test_logs_polling_keeps_receiving_after_buffer_wraps():
+    """A client following the panel protocol (since = previous total) must
+    receive every line, including those past ``LOG_CAPACITY`` (#635)."""
+    from veloxquant_mlx.ui.supervisor import LOG_CAPACITY
+
+    supervisor = ServerSupervisor()
+    cursor, received = 0, []
+
+    def poll():
+        nonlocal cursor
+        data = supervisor.logs(since=cursor)
+        received.extend(line["text"] for line in data["lines"])
+        cursor = data["total"]
+
+    for i in range(LOG_CAPACITY + 50):
+        supervisor._log("stderr", f"line {i}")
+        if i % 7 == 0 or i == LOG_CAPACITY - 1:
+            poll()
+    poll()
+    assert received == [f"line {i}" for i in range(LOG_CAPACITY + 50)]
 
 
 # --- memory ---------------------------------------------------------------
