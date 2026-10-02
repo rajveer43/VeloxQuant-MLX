@@ -182,3 +182,18 @@ class TestLevel1AngleRange:
         # At b=4, error should be small relative to signal magnitude (~0.78
         # for unit-Gaussian coordinates), not comparable to it.
         assert errors[1] < 0.2, f"b=4 mean abs error {errors[1]:.4f} too large"
+
+
+@pytest.mark.parametrize("v", [[0, 0, 3, 4], [1, 0, 0, 0], [0, 0, 1, 0], [3, 4, 0, 0]])
+def test_exact_half_pi_angle_roundtrips_at_level_2(v) -> None:
+    """An all-zero pair gives a level-2 angle of exactly pi/2; it must not wrap to 0 (#657)."""
+    import mlx.core as mx
+
+    from veloxquant_mlx.transforms.polar import RecursivePolarTransform
+
+    t = RecursivePolarTransform(n_levels=2)
+    x = mx.array([v], dtype=mx.float32)
+    r = t.forward(x)
+    recon = np.array(t.inverse(r)).ravel()
+    np.testing.assert_allclose(recon, np.array(v, dtype=np.float32), atol=1e-5)
+    assert 0.0 <= float(np.array(r.angles[1]).max()) <= math.pi / 2 + 1e-6
