@@ -528,3 +528,22 @@ def test_keyformer_evict_benchmark(capsys):
         print(f"| Python loop (keyformer_update) | {t_mlx:.4f} |")
         print(f"| fused Metal kernel              | {t_kernel:.4f} |")
         print(f"| speedup | {t_mlx / t_kernel:.2f}x |")
+
+
+def test_keyformer_no_candidate_stays_in_group() -> None:
+    """All-protected and NaN-score groups must not use index -1 (#650)."""
+    mx.random.seed(0)
+    k = mx.random.normal((2, 6, 8)).astype(mx.float16)
+    v = mx.random.normal((2, 6, 8)).astype(mx.float16)
+    pos = mx.array([[0, 1, 2, 3, 4, 5], [10, 11, 12, 13, 14, 15]], dtype=mx.int32)
+    g = mx.zeros((2, 6))
+    for s, sink, recent in (
+        (mx.random.uniform(shape=(2, 6)), 2, 4),
+        (mx.full((2, 6), float("nan")), 1, 0),
+    ):
+        _, _, _, _, po = keyformer_fused_evict(
+            k, v, s, g, pos, n_sink=sink, rope_base=10000.0, recent=recent
+        )
+        assert po[0].tolist()[0] == 0 and po[1].tolist()[0] == 10
+        assert all(0 <= p <= 5 for p in po[0].tolist())
+        assert all(10 <= p <= 15 for p in po[1].tolist())

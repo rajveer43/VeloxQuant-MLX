@@ -60,8 +60,10 @@
 
     for (uint i = tid; i < n_total; i += TG) {
         bool protected_row = (i < n_sink) || (i >= grace_start);
-        float v = protected_row ? INFINITY : scores_mid[bh * n_total + i];
-        if (v < local_min) {
+        if (protected_row) continue;  // never a candidate (#650)
+        float v = scores_mid[bh * n_total + i];
+        if (isnan(v)) v = INFINITY;  // NaN stays evictable, ranked last
+        if (local_idx == 0xFFFFFFFFu || v < local_min) {
             local_min = v;
             local_idx = i;
         }
@@ -99,5 +101,6 @@
                 best_idx = sh_idx[s];
             }
         }
-        evict_idx[bh] = int(best_idx);
+        // No evictable row (all protected): never hand apply an index of -1.
+        evict_idx[bh] = (best_idx == 0xFFFFFFFFu) ? 0 : int(best_idx);
     }
