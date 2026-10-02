@@ -25,9 +25,10 @@
 // break the cache's size guarantee. So rows are admitted in two tiers:
 //   - strictly greater than the threshold: always kept;
 //   - exactly equal to the threshold: kept only while the remaining quota
-//     lasts, scanning low index -> high index.
-// This reproduces mx.argsort's lowest-index-first tie-break, matching the
-// pure-MLX path's selection on tied scores.
+//     lasts, preferring the HIGHEST indices (the lowest-index equal rows are
+//     skipped); survivors are still emitted in ascending index order.
+// The pure-MLX path takes the tail of a stable ascending argsort, which keeps
+// the highest indices among ties; this reproduces that selection (#649).
 //
 // Grid:        (BH * TG_SIZE, 1, 1) — one threadgroup per (batch*head) group.
 // Threadgroup: (TG_SIZE, 1, 1).
@@ -58,11 +59,17 @@
 
     if (lane == 0u) {
         uint n_strict = 0u;
-        // Count strictly-greater rows first to size the equal-tier quota.
+        uint n_eq = 0u;
+        // Count strictly-greater and tied rows first to size the equal-tier
+        // quota and how many low-index ties to skip.
         for (uint i = 0u; i < n_total; ++i) {
-            if (scores[bh * n_total + i] > thresh) n_strict += 1u;
+            float si = scores[bh * n_total + i];
+            if (si > thresh) n_strict += 1u;
+            else if (si == thresh) n_eq += 1u;
         }
         uint eq_quota = (budget > n_strict) ? (budget - n_strict) : 0u;
+        eq_quota = min(eq_quota, n_eq);
+        uint eq_skip = n_eq - eq_quota;
 
         uint w = 0u;
         for (uint i = 0u; i < n_total && w < budget; ++i) {
@@ -70,9 +77,12 @@
             bool take = false;
             if (s > thresh) {
                 take = true;
-            } else if (s == thresh && eq_quota > 0u) {
-                take = true;
-                eq_quota -= 1u;
+            } else if (s == thresh) {
+                if (eq_skip > 0u) {
+                    eq_skip -= 1u;
+                } else {
+                    take = true;
+                }
             }
             if (take) {
                 keep_idx[w] = i;
