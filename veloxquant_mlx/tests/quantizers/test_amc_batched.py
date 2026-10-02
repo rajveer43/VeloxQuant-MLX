@@ -24,6 +24,10 @@ import mlx.core as mx
 import numpy as np
 import pytest
 
+# ---------------------------------------------------------------------------
+# 1. Tier assignment: heap-based (looped) vs. argsort-based (batched)
+# ---------------------------------------------------------------------------
+from veloxquant_mlx.quantizers._quant_utils import _group_quant_dequant  # noqa: E402
 from veloxquant_mlx.quantizers.amc import (
     HIGH,
     LOW,
@@ -33,15 +37,19 @@ from veloxquant_mlx.quantizers.amc import (
     amc_assign_tiers,
     amc_assign_tiers_batched,
     amc_compress_tokens_batched,
-    amc_quantize_tier,
     amc_query_aware_saliency,
     amc_query_aware_saliency_batched,
     amc_saliency,
 )
 
-# ---------------------------------------------------------------------------
-# 1. Tier assignment: heap-based (looped) vs. argsort-based (batched)
-# ---------------------------------------------------------------------------
+
+def _quantize_kept_channels(row: mx.array, cfg) -> mx.array:
+    """Per-token reference: min/max over the token's own kept channels (#626)."""
+    if cfg.bits >= 16:
+        return row
+    r = max(1, min(cfg.rank, row.shape[-1]))
+    q = _group_quant_dequant(row[:, :r].T, cfg.bits, r).T.astype(row.dtype)
+    return mx.concatenate([q, mx.zeros((row.shape[0], row.shape[-1] - r), dtype=row.dtype)], -1)
 
 
 @pytest.mark.parametrize(
@@ -102,7 +110,7 @@ def test_batched_compression_matches_looped_tie_free(G: int, N: int, D: int) -> 
             cfg = tier_configs[tiers[i]]
             row = x[g, i : i + 1]
             row = amc_apply_rank_mask(row, cfg.rank)
-            row = amc_quantize_tier(row, cfg.bits, 32)
+            row = _quantize_kept_channels(row, cfg)
             out_rows.append(row)
         ref_groups.append(mx.concatenate(out_rows, axis=0))
     ref = mx.stack(ref_groups, axis=0)
@@ -128,7 +136,7 @@ def test_batched_compression_2d_single_group() -> None:
         cfg = tier_configs[tiers[i]]
         row = x[i : i + 1]
         row = amc_apply_rank_mask(row, cfg.rank)
-        row = amc_quantize_tier(row, cfg.bits, 32)
+        row = _quantize_kept_channels(row, cfg)
         out_rows.append(row)
     ref = mx.concatenate(out_rows, axis=0)
 
@@ -160,3 +168,18 @@ def test_batched_query_aware_saliency_matches_looped(G: int, N: int, D: int, alp
     # Batched matmul reduction order differs slightly from per-row dot
     # products (fp32 accumulation order) -- verified tight, not bit-exact.
     assert mx.max(mx.abs(ref.astype(mx.float32) - batched.astype(mx.float32))).item() < 1e-5
+
+
+def test_mid_low_tiers_are_actually_lossy() -> None:
+    """MID/LOW tiers must differ from the rank-masked input (#626)."""
+    D = 128
+    cfgs = {t: _tier_config_for_dim(t, D) for t in (HIGH, MID, LOW)}
+    x = mx.random.normal((2, 6, D), key=mx.random.key(0)).astype(mx.float16)
+    tiers = mx.array([[LOW] * 6, [MID] * 6], dtype=mx.int32)
+    out = amc_compress_tokens_batched(x, tiers, cfgs)
+    for g, t in ((0, LOW), (1, MID)):
+        ref = amc_apply_rank_mask(x[g], cfgs[t].rank)
+        err = float(mx.max(mx.abs(out[g].astype(mx.float32) - ref.astype(mx.float32))).item())
+        assert err > 0.0
+        if t == LOW:
+            assert err < 0.5
