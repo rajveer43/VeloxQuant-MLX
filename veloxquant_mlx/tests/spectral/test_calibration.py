@@ -164,3 +164,66 @@ def test_collect_kv_vectors_samples_every_head():
     assert (energy > 0).all(), f"some heads contributed no energy: {energy}"
     # Heads are sampled evenly: no head holds more than twice another's energy share.
     assert energy.max() < 2 * energy.min()
+
+
+class _FakeAttnModel:
+    """n_layers attention layers with the given head_dim (#644)."""
+
+    def __init__(self, n_layers: int, head_dim: int) -> None:
+        import types
+
+        self.layers = [
+            types.SimpleNamespace(self_attn=types.SimpleNamespace(head_dim=head_dim))
+            for _ in range(n_layers)
+        ]
+
+    def __call__(self, tokens, cache):
+        import mlx.core as mx
+
+        s = tokens.shape[-1]
+        d = self.layers[0].self_attn.head_dim
+        k = mx.random.normal((1, 2, s, d), key=mx.random.key(0))
+        for c in cache:
+            c.update_and_fetch(k, k)
+        return mx.zeros((1, s, 4))
+
+
+def test_cached_rotations_for_a_different_model_are_not_reused(tmp_path: Path, monkeypatch):
+    """Two models sharing the default model_name must not share rotations (#644)."""
+    import mlx.core as mx
+
+    import veloxquant_mlx.spectral.calibrate as calib_mod
+
+    monkeypatch.setattr(calib_mod, "_CACHE_ROOT", tmp_path)
+    toks = mx.arange(64)
+    r1 = calib_mod.calibrate_spectral_rotation(_FakeAttnModel(2, 16), toks)
+    assert sorted(r1) == [0, 1] and r1[0][0].shape == (16, 16)
+
+    r2 = calib_mod.calibrate_spectral_rotation(_FakeAttnModel(3, 32), toks)
+    assert sorted(r2) == [0, 1, 2]
+    assert r2[0][0].shape == (32, 32)
+
+
+def test_matching_cache_is_still_reused(tmp_path: Path, monkeypatch):
+    import mlx.core as mx
+
+    import veloxquant_mlx.spectral.calibrate as calib_mod
+
+    monkeypatch.setattr(calib_mod, "_CACHE_ROOT", tmp_path)
+    toks = mx.arange(64)
+    first = calib_mod.calibrate_spectral_rotation(_FakeAttnModel(2, 16), toks)
+    again = calib_mod.calibrate_spectral_rotation(_FakeAttnModel(2, 16), toks)
+    np.testing.assert_array_equal(first[0][0], again[0][0])
+
+
+def test_cache_recomputed_when_calibration_budget_changes(tmp_path: Path, monkeypatch):
+    import mlx.core as mx
+
+    import veloxquant_mlx.spectral.calibrate as calib_mod
+
+    monkeypatch.setattr(calib_mod, "_CACHE_ROOT", tmp_path)
+    toks = mx.arange(64)
+    calib_mod.calibrate_spectral_rotation(_FakeAttnModel(2, 16), toks, n_tokens=32)
+    assert calib_mod._cached_n_tokens("model") == 32
+    calib_mod.calibrate_spectral_rotation(_FakeAttnModel(2, 16), toks, n_tokens=48)
+    assert calib_mod._cached_n_tokens("model") == 48

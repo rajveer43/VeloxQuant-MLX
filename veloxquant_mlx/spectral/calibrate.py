@@ -67,6 +67,7 @@ def load_cached_rotations(model_name: str) -> dict | None:
 def save_rotations(
     model_name: str,
     rotations: dict[int, tuple],
+    n_tokens: int | None = None,
 ) -> None:
     """Persist rotation matrices and eigenvalues to disk.
 
@@ -74,10 +75,15 @@ def save_rotations(
         model_name: Model identifier (used as cache key).
         rotations: Dict mapping layer_idx -> (key_U, val_U, key_ev, val_ev,
             key_ds, val_ds).
+        n_tokens: Calibration token budget the rotations were fit with;
+            recorded so a later call with a different budget recomputes
+            instead of reusing them.
     """
     path = _rotation_path(model_name)
     path.parent.mkdir(parents=True, exist_ok=True)
     arrays: dict[str, np.ndarray] = {}
+    if n_tokens is not None:
+        arrays["meta_n_tokens"] = np.array(n_tokens, dtype=np.int64)
     for layer_idx, entry in rotations.items():
         key_U, val_U, key_ev, val_ev, key_ds, val_ds = entry
         arrays[f"layer_{layer_idx}_key_U"] = key_U.astype(np.float32)
@@ -244,6 +250,49 @@ def collect_kv_vectors_mlx(
     return key_out, val_out
 
 
+def _cached_n_tokens(model_name: str) -> int | None:
+    """Calibration budget recorded with the cached rotations, if any."""
+    path = _rotation_path(model_name)
+    if not path.exists():
+        return None
+    data = np.load(path, allow_pickle=False)
+    return int(data["meta_n_tokens"]) if "meta_n_tokens" in data.files else None
+
+
+def _layer_head_dim(model: Any, layer: Any) -> int | None:
+    """Head dim of one attention layer (None if it has no attention)."""
+    attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+    if attn is None:
+        return None
+    hd = getattr(attn, "head_dim", None)
+    if hd is None:
+        args = getattr(model, "args", None)
+        if args is not None:
+            hd = getattr(args, "head_dim", None)
+            if hd is None and hasattr(args, "hidden_size"):
+                hd = args.hidden_size // args.num_attention_heads
+    return hd
+
+
+def _cache_matches_model(cached: dict, model: Any) -> bool:
+    """True if cached rotations have this model's layers and head dims.
+
+    The disk cache is keyed on ``model_name`` alone (default ``"model"``), so a
+    different model reusing the name would silently get the first model's
+    rotations; this guards against that (#644).
+    """
+    layers = getattr(model, "layers", None) or model.model.layers
+    expected = {i: _layer_head_dim(model, layer) for i, layer in enumerate(layers)}
+    expected = {i: hd for i, hd in expected.items() if hd is not None}
+    if set(cached) != set(expected):
+        return False
+    return all(
+        entry[0].shape == (expected[i], expected[i])
+        and entry[1].shape == (expected[i], expected[i])
+        for i, entry in cached.items()
+    )
+
+
 def calibrate_spectral_rotation(
     model: Any,
     calibration_tokens: Any,
@@ -273,7 +322,11 @@ def calibrate_spectral_rotation(
     """
     if not force_recompute:
         cached = load_cached_rotations(model_name)
-        if cached is not None:
+        if (
+            cached is not None
+            and _cache_matches_model(cached, model)
+            and _cached_n_tokens(model_name) in (None, n_tokens)
+        ):
             return cached
 
     key_vecs, val_vecs = collect_kv_vectors_mlx(
@@ -284,18 +337,7 @@ def calibrate_spectral_rotation(
     rotations: dict[int, tuple] = {}
 
     for i, layer in enumerate(layers):
-        attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
-        if attn is None:
-            continue
-
-        # Determine head_dim
-        hd = getattr(attn, "head_dim", None)
-        if hd is None:
-            args = getattr(model, "args", None)
-            if args is not None:
-                hd = getattr(args, "head_dim", None)
-                if hd is None and hasattr(args, "hidden_size"):
-                    hd = args.hidden_size // args.num_attention_heads
+        hd = _layer_head_dim(model, layer)
         if hd is None:
             continue
 
@@ -327,7 +369,7 @@ def calibrate_spectral_rotation(
 
         rotations[i] = (key_U, val_U, key_ev, val_ev, key_ds, val_ds)
 
-    save_rotations(model_name, rotations)
+    save_rotations(model_name, rotations, n_tokens=n_tokens)
     return rotations
 
 
