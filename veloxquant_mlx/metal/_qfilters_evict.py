@@ -258,6 +258,10 @@ def qfilters_fused_evict(
         output_shapes=[(bh, budget, d), (bh, budget, d), (bh, budget), (bh, budget)],
         output_dtypes=[mx.float16, mx.float16, mx.float32, mx.int32],
     )
+    # The kernel's scores carry +inf on protected rows (needed for the
+    # threshold only); report the raw projection scores like the MLX path.
+    raw = sign * mx.einsum("gnd,gd->gn", keys_mid.astype(mx.float32), filter_dir)
+    scores_out = mx.take_along_axis(raw, indices_out, axis=-1)
     if return_indices:
         return keys_out, values_out, scores_out, indices_out
     return keys_out, values_out, scores_out

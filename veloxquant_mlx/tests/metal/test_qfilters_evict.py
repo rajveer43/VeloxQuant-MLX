@@ -240,3 +240,31 @@ def test_rejects_non_3d_keys() -> None:
             mx.zeros((1, 8), dtype=mx.float32),
             budget=4,
         )
+
+
+def _tied_inputs():
+    # Rows 1..6 tie at the keep threshold; row id is stored in the values.
+    n, d = 8, 4
+    k = mx.zeros((1, n, d), dtype=mx.float16) + mx.array([1, 0, 0, 0], dtype=mx.float16)
+    k[:, 0] = mx.array([5, 0, 0, 0], dtype=mx.float16)
+    k[:, 7] = mx.array([3, 0, 0, 0], dtype=mx.float16)
+    v = mx.broadcast_to(mx.arange(n, dtype=mx.float16)[None, :, None], (1, n, d))
+    f = mx.array([[1.0, 0, 0, 0]])
+    return k, v, f
+
+
+def test_ties_keep_the_same_rows_as_the_mlx_path() -> None:
+    """Among tied scores the kernel must keep the highest indices, like the
+    tail of a stable ascending argsort (#649)."""
+    from veloxquant_mlx.quantizers.qfilters import qfilters_update_batched
+
+    k, v, f = _tied_inputs()
+    _, vo, _ = qfilters_fused_evict(k, v, f, budget=4, n_sink=1, recent=0, sign=1)
+    _, vm, _ = qfilters_update_batched(k, v, f, 4, 1, 0, 1)
+    assert vo[0, :, 0].tolist() == vm[0, :, 0].tolist() == [0.0, 5.0, 6.0, 7.0]
+
+
+def test_returned_scores_are_raw_projections_not_inf() -> None:
+    k, v, f = _tied_inputs()
+    _, _, so = qfilters_fused_evict(k, v, f, budget=4, n_sink=1, recent=0, sign=1)
+    assert so[0].tolist() == [5.0, 1.0, 1.0, 3.0]
