@@ -109,14 +109,19 @@ class NpyArtifactStore(ArtifactStore):
                 f"Run `python -m veloxquant_mlx precompute --head_dim {d} --bits {b}` first."
             )
         arr = np.load(path)
-        if arr.dtype != np.float16:
-            arr = arr.astype(np.float16)
+        if arr.dtype != np.float32:
+            arr = arr.astype(np.float32)
         return mx.array(arr)
 
     def save_codebook(self, cb: Any, distribution: str, b: int, d: int) -> None:
-        """Atomically write ``cb`` (cast to fp16) to ``codebook_{distribution}_b{b}_d{d}.npy``, silently overwriting any prior file."""
+        """Atomically write ``cb`` (as fp32) to ``codebook_{distribution}_b{b}_d{d}.npy``, silently overwriting any prior file.
+
+        Kept in fp32: fp16 rounding of tightly spaced centroids changes the
+        nearest-centroid choice, so a warm store would encode differently
+        from the cold run that computed the codebook (#659).
+        """
         path = self._codebook_path(distribution, b, d)
-        arr = np.array(cb, dtype=np.float16)
+        arr = np.array(cb, dtype=np.float32)
         _atomic_save(path, arr)
 
     # ------------------------------------------------------------------
