@@ -304,10 +304,15 @@ class CacheRoutePlanner:
         self.warm_slots_per_shard = warm_slots_per_shard
 
     def _assignment_count(self, rate: float) -> int:
-        """``kb`` from Eq. 1: destinations needed to keep per-shard load <= qcap."""
+        """``kb`` from Eq. 1: destinations needed to keep per-shard load <= qcap.
+
+        Clamped to ``n_shards``: a session cannot occupy more warm slots than
+        there are shards, so admission must charge the same clamped count
+        that placement uses (#646).
+        """
         if rate <= 0:
             return 1
-        return max(1, math.ceil(rate / self.qcap))
+        return min(self.n_shards, max(1, math.ceil(rate / self.qcap)))
 
     def plan(self, rates: list[SessionRate]) -> RoutingTable:
         """Compute a fresh routing table from the given session rates.
@@ -345,7 +350,6 @@ class CacheRoutePlanner:
 
         shards: dict[int, tuple[int, ...]] = {}
         for r, kb in admitted:
-            kb = min(kb, self.n_shards)
             chosen = sorted(range(self.n_shards), key=lambda s: (load[s], s))[:kb]
             per_shard_load = r.rate / kb
             for s in chosen:
