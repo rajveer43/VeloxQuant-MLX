@@ -265,6 +265,11 @@ def vecinfer_encode_decode_metal(
         has_smooth = 1
         smooth_2d = smooth.reshape(1, D) if smooth.ndim == 1 else smooth
         smooth_2d = smooth_2d.astype(mx.float32)
+        if smooth_2d.shape[0] not in (1, H_dim):
+            # Row count doesn't match the KV heads (e.g. GQA smooth calibrated
+            # on Q heads): average to one row, as apply_dual_transform_keys
+            # does, instead of wrapping the head index modulo the row count.
+            smooth_2d = mx.mean(smooth_2d, axis=0, keepdims=True)
         smooth_rows = smooth_2d.shape[0]
     else:
         smooth_2d = mx.ones((1, D), dtype=mx.float32)

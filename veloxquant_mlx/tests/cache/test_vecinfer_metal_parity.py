@@ -135,3 +135,33 @@ def test_metal_path_works_with_head_dim_256() -> None:
     # Sanity: no NaNs (would signal an int-overflow or alignment bug)
     assert not bool(mx.any(mx.isnan(k.astype(mx.float32))).item())
     assert not bool(mx.any(mx.isnan(v.astype(mx.float32))).item())
+
+
+@pytest.mark.parametrize("rows", [4, 2])
+def test_smooth_rows_not_matching_heads_agree_across_backends(rows):
+    """smooth with a row count != H_kv must give the same codes on both
+    backends: the twin averages rows, so the kernel must too (#651)."""
+    from types import SimpleNamespace
+
+    from veloxquant_mlx.cache.vecinfer_cache import VecInferKVCache
+
+    mx.random.seed(0)
+    sm = mx.random.uniform(0.5, 2.0, (rows, 64))
+
+    def cfg(use_metal):
+        return SimpleNamespace(
+            head_dim=64,
+            key_sub_dim=4,
+            value_sub_dim=8,
+            key_codebook_bits=8,
+            value_codebook_bits=8,
+            smooth_factors=sm,
+            use_metal_kernels=use_metal,
+        )
+
+    k = mx.random.normal((1, 2, 7, 64))
+    k_metal, i_metal = VecInferKVCache(cfg(True))._encode_decode_keys(k)
+    k_mlx, i_mlx = VecInferKVCache(cfg(False))._encode_decode_keys(k)
+    assert int((i_metal != i_mlx).sum().item()) == 0
+    diff = mx.abs(k_metal.astype(mx.float32) - k_mlx.astype(mx.float32)).max().item()
+    assert diff < 1e-2
