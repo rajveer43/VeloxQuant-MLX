@@ -1107,3 +1107,23 @@ def test_detect_hardware_info_caps_total_at_metal_working_set(monkeypatch):
     )
     monkeypatch.setattr(mx, "get_active_memory", lambda: 0)
     assert detect_hardware_info().total_memory_bytes == 18 * 2**30
+
+
+def test_fp16_kv_bytes_includes_kv_heads():
+    spec = WorkloadSpec(head_dim=128, seq_len=1000, n_layers=4, batch_size=2, n_kv_heads=8)
+    assert spec.fp16_kv_bytes() == 2 * 2 * 4 * 8 * 1000 * 128 * 2
+
+
+def test_n_kv_heads_must_be_positive():
+    with pytest.raises(QuantizerConfigError):
+        WorkloadSpec(n_kv_heads=0)
+
+
+def test_kv_heads_trigger_memory_pressure_selection():
+    """Llama-3.1-8B @ 128k on 24 GiB: true KV is 16 GiB, 88% pressure (#631)."""
+    hw = HardwareInfo(total_memory_bytes=24 * 2**30, active_memory_bytes=5 * 2**30)
+    base = {"head_dim": 128, "seq_len": 131072, "n_layers": 32}
+    low = select_kv_cache_config(WorkloadSpec(**base), hw)
+    high = select_kv_cache_config(WorkloadSpec(**base, n_kv_heads=8), hw)
+    assert high.config.method != low.config.method
+    assert hw.pressure_fraction(WorkloadSpec(**base, n_kv_heads=8).fp16_kv_bytes()) > 0.75

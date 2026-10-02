@@ -74,12 +74,18 @@ class WorkloadSpec:
             defaults to 1 (single-layer estimate).
         batch_size: Number of concurrent sequences. Used only to size the
             memory-pressure estimate; defaults to 1.
+        n_kv_heads: Number of KV heads per layer. Multiplies the fp16 K+V
+            footprint used by the memory-pressure rule, so set it to the
+            model's real value (e.g. 8 for Llama-3-8B); the default of 1
+            keeps the older single-head estimate and *undercounts* by this
+            factor for multi-head models (#631).
     """
 
     head_dim: int = 128
     seq_len: int = 4_096
     n_layers: int = 1
     batch_size: int = 1
+    n_kv_heads: int = 1
 
     def __post_init__(self) -> None:
         d = self.head_dim
@@ -91,6 +97,8 @@ class WorkloadSpec:
             raise QuantizerConfigError(f"WorkloadSpec: n_layers={self.n_layers} must be >= 1.")
         if self.batch_size < 1:
             raise QuantizerConfigError(f"WorkloadSpec: batch_size={self.batch_size} must be >= 1.")
+        if self.n_kv_heads < 1:
+            raise QuantizerConfigError(f"WorkloadSpec: n_kv_heads={self.n_kv_heads} must be >= 1.")
 
     def fp16_kv_bytes(self) -> int:
         """Estimated fp16 footprint of the full K+V cache for this workload."""
@@ -98,6 +106,7 @@ class WorkloadSpec:
             2  # K and V
             * self.batch_size
             * self.n_layers
+            * self.n_kv_heads
             * self.seq_len
             * self.head_dim
             * _BYTES_PER_FP16_ELEMENT
@@ -190,7 +199,7 @@ def select_kv_cache_config(
        elements to amortize per-group scale/zero-point overhead.
 
     Args:
-        workload: Description of the job (head_dim, seq_len, n_layers, batch_size).
+        workload: Description of the job (head_dim, seq_len, n_layers, batch_size, n_kv_heads).
         hardware: Description of the target machine. If None, auto-detects
             via :func:`detect_hardware_info`.
 
