@@ -438,3 +438,34 @@ def test_h2o_evict_benchmark(capsys):
         print(f"| Python loop (h2o_update) | {t_mlx:.4f} |")
         print(f"| fused Metal kernel       | {t_kernel:.4f} |")
         print(f"| speedup | {t_mlx / t_kernel:.2f}x |")
+
+
+def _no_candidate_inputs():
+    mx.random.seed(0)
+    k = mx.random.normal((2, 6, 8)).astype(mx.float16)
+    v = mx.random.normal((2, 6, 8)).astype(mx.float16)
+    pos = mx.array([[0, 1, 2, 3, 4, 5], [10, 11, 12, 13, 14, 15]], dtype=mx.int32)
+    return k, v, pos
+
+
+def test_h2o_all_protected_matches_mlx_and_stays_in_group() -> None:
+    """With no evictable row the kernel must not use index -1 (#650)."""
+    from veloxquant_mlx.quantizers import h2o
+
+    k, v, pos = _no_candidate_inputs()
+    s = mx.random.uniform(shape=(2, 6))
+    _, _, _, po = h2o_fused_evict(k, v, s, pos, n_sink=2, rope_base=10000.0, grace=4)
+    _, _, _, pr = h2o._evict_via_mlx_batched(k, v, s, pos, 2, 10000.0, 4)
+    assert po.tolist() == pr.tolist()
+
+
+def test_h2o_nan_scores_evict_an_unprotected_row() -> None:
+    k, v, pos = _no_candidate_inputs()
+    s = mx.full((2, 6), float("nan"))
+    ko, _, _, po = h2o_fused_evict(k, v, s, pos, n_sink=1, rope_base=10000.0)
+    # First eligible row (index 1) is evicted; the sink survives.
+    assert po.tolist() == [[0, 2, 3, 4, 5], [10, 12, 13, 14, 15]]
+    assert po[0].tolist()[0] == 0 and po[1].tolist()[0] == 10
+    assert all(0 <= p <= 5 for p in po[0].tolist())
+    assert all(10 <= p <= 15 for p in po[1].tolist())
+    assert bool(mx.all(mx.isfinite(ko.astype(mx.float32))).item())
