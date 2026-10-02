@@ -498,3 +498,35 @@ def test_rate_estimator_forget_still_frees_memory_under_a_cap():
     # Room is now available without needing to evict anyone else.
     estimator.record(99)
     assert set(estimator._counts) == {0, 1, 3, 4, 99}
+
+
+def test_rate_estimator_tracks_relative_arrival_rate():
+    """An owner sending 20x more requests must read ~20x the rate (#645)."""
+    estimator = RateEstimator(half_life=20.0)
+    for i in range(2000):
+        estimator.record(0)
+        if i % 20 == 0:
+            estimator.record(1)
+    ratio = estimator.rate(0) / estimator.rate(1)
+    assert 12.0 < ratio < 30.0, ratio
+
+
+def test_rate_estimator_silent_owner_decays():
+    estimator = RateEstimator(half_life=20.0)
+    for _ in range(200):
+        estimator.record(7)
+    before = estimator.rate(7)
+    for _ in range(5000):
+        estimator.record(8)  # owner 7 goes silent
+    assert estimator.rate(7) < before * 1e-6
+    assert estimator.rate(8) > 10.0
+    assert [r.owner for r in estimator.rates() if r.rate > 1.0] == [8]
+
+
+def test_rate_estimator_reading_does_not_advance_the_clock():
+    estimator = RateEstimator(half_life=10.0)
+    estimator.record(1)
+    first = estimator.rate(1)
+    assert estimator.rate(1) == first
+    estimator.record(2)  # one global tick later
+    assert estimator.rate(1) == pytest.approx(first * 0.5 ** (1 / 10.0))

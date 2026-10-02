@@ -155,7 +155,7 @@ class RateEstimator:
     aggregate statistics as in the paper's telemetry-derived workload.
 
     Memory is bounded by the number of distinct owners tracked (one float in
-    ``_counts`` each), not by how many requests have been recorded — an
+    ``_counts`` and one int in ``_last_seen`` each), not by how many requests have been recorded — an
     owner's whole contribution to memory is released by :meth:`forget`. That
     bound is only enforced if the *caller* calls :meth:`forget` on session
     close; nothing here does it automatically. A caller that can't guarantee
@@ -164,8 +164,8 @@ class RateEstimator:
     without limit.
 
     Args:
-        half_life: Number of :meth:`record` calls for an owner's rate
-            contribution to decay by half. Smaller values track bursts
+        half_life: Number of :meth:`record` calls (from *any* owner) for an
+            owner's rate contribution to decay by half. Smaller values track bursts
             faster but are noisier; larger values are stable but slow to
             react to a session going cold or hot.
         max_owners: Maximum distinct owners to track at once. ``None`` (the
@@ -181,6 +181,12 @@ class RateEstimator:
     half_life: float = 20.0
     max_owners: int | None = None
     _counts: dict[int, float] = field(default_factory=dict)
+    # Global arrival clock (total record() calls across all owners) and each
+    # owner's clock value at its last update. Decay is applied by elapsed
+    # *global* time, so an owner's estimate tracks its share of arrivals and a
+    # silent owner fades while others keep sending (#645).
+    _last_seen: dict[int, int] = field(default_factory=dict)
+    _clock: int = 0
     _decay: float = field(init=False)
 
     def __post_init__(self) -> None:
@@ -194,36 +200,47 @@ class RateEstimator:
             )
         self._decay = math.pow(0.5, 1.0 / self.half_life)
 
+    def _decayed(self, owner: int) -> float:
+        """``owner``'s estimate decayed to the current global clock."""
+        count = self._counts.get(owner)
+        if count is None:
+            return 0.0
+        return count * math.pow(self._decay, self._clock - self._last_seen[owner])
+
     def record(self, owner: int) -> None:
         """Record one request arrival for ``owner``.
 
-        This is the hottest call in the module — once per incoming request,
-        for potentially every concurrent session — so it does the minimum
-        work needed for the EWMA: one dict lookup and one float update, no
-        per-request allocation, for any owner already being tracked. The
-        eviction check below only runs for a new owner when ``max_owners``
-        is set, so it costs nothing on the common path.
+        The estimate is an exponentially weighted count of the owner's
+        arrivals on a global clock that ticks once per recorded request (from
+        any owner), so it is proportional to the owner's arrival rate and
+        decays while the owner is silent. Cost is one dict lookup, one
+        ``pow`` and two dict writes for an already-tracked owner; the
+        eviction scan only runs for a new owner when ``max_owners`` is set.
         """
         if (
             self.max_owners is not None
             and owner not in self._counts
             and len(self._counts) >= self.max_owners
         ):
-            coldest = min(self._counts, key=lambda o: self._counts[o])
+            coldest = min(self._counts, key=self._decayed)
             del self._counts[coldest]
-        self._counts[owner] = self._counts.get(owner, 0.0) * self._decay + 1.0
+            del self._last_seen[coldest]
+        self._counts[owner] = self._decayed(owner) + 1.0
+        self._last_seen[owner] = self._clock
+        self._clock += 1
 
     def rate(self, owner: int) -> float:
         """Current smoothed rate estimate for ``owner`` (0.0 if never seen)."""
-        return self._counts.get(owner, 0.0)
+        return self._decayed(owner)
 
     def rates(self) -> list[SessionRate]:
         """Snapshot every tracked owner's current rate as a :class:`SessionRate` list."""
-        return [SessionRate(owner=o, rate=r) for o, r in self._counts.items()]
+        return [SessionRate(owner=o, rate=self._decayed(o)) for o in self._counts]
 
     def forget(self, owner: int) -> None:
         """Drop all tracked state for ``owner`` (e.g. on session close)."""
         self._counts.pop(owner, None)
+        self._last_seen.pop(owner, None)
 
 
 class CacheRoutePlanner:
