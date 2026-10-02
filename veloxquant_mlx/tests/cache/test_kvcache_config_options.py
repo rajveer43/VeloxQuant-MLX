@@ -66,3 +66,48 @@ def test_kv_cache_factory_create_reads_options_through_to_cache() -> None:
     cache = KVCacheFactory.create(config)
     assert cache._budget == 128
     assert cache._n_sink == 2
+
+
+# --- #662: defaults aligned, explicit flat kwargs win even when equal to default ---
+
+
+def test_every_options_default_matches_kvcache_config_default():
+    import dataclasses
+
+    import veloxquant_mlx.cache.options as opts
+    from veloxquant_mlx.cache.base import _FIELD_TO_OPTIONS_CLASS, KVCacheConfig
+
+    flat = {f.name: f.default for f in dataclasses.fields(KVCacheConfig)}
+    for cls_name in set(_FIELD_TO_OPTIONS_CLASS.values()):
+        for f in dataclasses.fields(getattr(opts, cls_name)):
+            if f.name in flat:
+                assert f.default == flat[f.name], f"{cls_name}.{f.name}"
+
+
+def test_snapkv_options_keep_batched_scoring_default():
+    from veloxquant_mlx.cache.base import KVCacheConfig
+    from veloxquant_mlx.cache.options import SnapKVOptions
+
+    cfg = KVCacheConfig(method="snapkv", options=SnapKVOptions(snap_budget=64))
+    assert cfg.snap_budget == 64
+    assert cfg.snap_batched_scoring is KVCacheConfig(method="snapkv").snap_batched_scoring
+
+
+def test_explicit_flat_kwarg_equal_to_default_beats_options():
+    from veloxquant_mlx.cache.base import KVCacheConfig
+    from veloxquant_mlx.cache.options import SnapKVOptions
+
+    default_budget = SnapKVOptions().snap_budget
+    cfg = KVCacheConfig(
+        method="snapkv", snap_budget=default_budget, options=SnapKVOptions(snap_budget=64)
+    )
+    assert cfg.snap_budget == default_budget
+
+
+def test_explicit_flat_kwarg_beats_options_and_options_fill_the_rest():
+    from veloxquant_mlx.cache.base import KVCacheConfig
+    from veloxquant_mlx.cache.options import H2OOptions
+
+    cfg = KVCacheConfig(method="h2o", h2o_budget=512, options=H2OOptions(h2o_budget=1024))
+    assert cfg.h2o_budget == 512
+    assert KVCacheConfig(method="h2o", options=H2OOptions(h2o_budget=1024)).h2o_budget == 1024
