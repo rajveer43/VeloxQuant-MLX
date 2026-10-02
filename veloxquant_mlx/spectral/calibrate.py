@@ -120,6 +120,24 @@ def _svd_rotation(X: np.ndarray) -> tuple[np.ndarray, np.ndarray, int]:
     return U, eigenvalues, d_s
 
 
+def _sample_per_head(x: np.ndarray, budget: int) -> np.ndarray:
+    """Flatten ``(..., S, D)`` to ``(N, D)`` with at most ``budget`` rows.
+
+    The budget is split evenly across the leading (batch × head) slices and
+    each slice contributes evenly spaced token positions, so no head is
+    dropped when ``budget`` is smaller than the total row count.
+    """
+    if x.ndim < 3:
+        return x.reshape(-1, x.shape[-1])[:budget]
+    s, d = x.shape[-2], x.shape[-1]
+    flat = x.reshape(-1, s, d)  # (B*H, S, D)
+    per_head = max(1, budget // flat.shape[0])
+    if per_head >= s:
+        return flat.reshape(-1, d)  # fits the budget: H * S <= budget
+    idx = np.linspace(0, s - 1, per_head).round().astype(int)
+    return flat[:, idx, :].reshape(-1, d)
+
+
 def collect_kv_vectors_mlx(
     model: Any,
     calibration_tokens: Any,
@@ -165,11 +183,12 @@ def collect_kv_vectors_mlx(
             # Cast to float32 first — bfloat16 PEP 3118 buffer is incompatible with numpy
             k_np = np.array(keys.astype(mx.float32))
             v_np = np.array(values.astype(mx.float32))
-            # Collapse batch × heads × seq into (N, head_dim)
-            k_np = k_np.reshape(-1, k_np.shape[-1])
-            v_np = v_np.reshape(-1, v_np.shape[-1])
-            key_vecs.setdefault(self.layer_idx, []).append(k_np[:n_tokens_per_run])
-            val_vecs.setdefault(self.layer_idx, []).append(v_np[:n_tokens_per_run])
+            # Collapse batch × heads × seq into (N, head_dim), subsampling
+            # tokens *per head* first so every head is represented: flattening
+            # first puts all of head 0's rows ahead of head 1's, and a plain
+            # ``[:n_tokens_per_run]`` then kept head 0 only (#643).
+            key_vecs.setdefault(self.layer_idx, []).append(_sample_per_head(k_np, n_tokens_per_run))
+            val_vecs.setdefault(self.layer_idx, []).append(_sample_per_head(v_np, n_tokens_per_run))
             self.offset += keys.shape[-2]
             self.is_empty = False
             # Delegate to the real cache (e.g. RotatingKVCache) if present,
