@@ -17,8 +17,9 @@ the same heuristics.
 
 - **Key accounting** ratios (7.5× RVQ, 16× VecInfer) are packed-byte counters.
 - Default RVQ / VecInfer often **dequantize into fp16** parent storage.
-- **Resident** savings are more likely for full-KV (`rabitq`) or eviction
-  (`streaming_llm` / `h2o`), especially at long context.
+- **Resident** savings are more likely for eviction (`streaming_llm` / `h2o`),
+  especially at long context.
+- Every recommended method is registered and servable (`veloxquant serve`).
 
 ## CLI
 
@@ -42,8 +43,8 @@ veloxquant recommend --dump-ruleset > docs-site/static/mac-recommender-ruleset.j
 | --- | --- | ---: | --- |
 | `everyday` | `turboquant_rvq` b=1 | ~7.5× | No (default dequant path) |
 | `max_key_accounting` | `vecinfer` 1-bit | ~16× | No (default dequant path) |
-| `best_quality` | `spectral` | ~5.3× | No |
-| `max_context` | `rabitq` | ~6× full KV | Yes (more likely) |
+| `best_quality` | `kivi` 4-bit | ~3× full KV | No |
+| `max_context` | `kivi` 2-bit | ~4.7× full KV | No (default dequant path) |
 | `constant_memory` | `streaming_llm` | n/a (eviction) | Yes (bounded tokens) |
 
 ## RAM fit warnings (rule of thumb)
