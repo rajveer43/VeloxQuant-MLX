@@ -124,3 +124,20 @@ def test_measure_bandwidth_gbps_returns_plausible_value_or_none():
     bw = measure_bandwidth_gbps(iterations=4, bytes_per_transfer=4 * 1024**2)
     if bw is not None:
         assert 0.0 < bw < 2000.0
+
+
+def test_available_memory_capped_at_metal_working_set(monkeypatch):
+    """available = min(RAM, working-set limit) - active, not RAM - active (#630)."""
+    from veloxquant_mlx.profiling import hardware_profiler as hp
+
+    monkeypatch.setattr(
+        hp,
+        "_mlx_device_info",
+        lambda: {
+            "device_name": "Apple M4",
+            "memory_size": 24 * 2**30,
+            "max_recommended_working_set_size": 18 * 2**30,
+            "_active_memory": 2**30,
+        },
+    )
+    assert hp.detect_hardware_profile().available_memory_bytes == 17 * 2**30

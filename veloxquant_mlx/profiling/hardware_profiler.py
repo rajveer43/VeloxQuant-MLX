@@ -165,7 +165,7 @@ def detect_hardware_profile() -> HardwareProfile:
     1. Call :func:`_mlx_device_info()` for chip, memory, active allocation
     2. Call :func:`_stdlib_chip()` as fallback if MLX unavailable
     3. Extract chip generation from chip name (M1–M4)
-    4. Calculate available memory (total - active)
+    4. Calculate available memory (min(total, Metal working-set limit) - active)
     5. Probe MLX version, macOS version, Metal availability
     6. Look up nominal peak bandwidth from chip generation table
 
@@ -180,7 +180,7 @@ def detect_hardware_profile() -> HardwareProfile:
         - chip: Detected Apple Silicon model (e.g., "Apple M4")
         - chip_generation: Integer 1–4 (0 if unknown)
         - total_memory_bytes: GB from MLX (None if unavailable)
-        - available_memory_bytes: total - active usage
+        - available_memory_bytes: min(total, Metal working-set limit) - active usage
         - mlx_version: MLX package version (None if not installed)
         - macos_version: macOS version string
         - metal_available: Whether Metal GPU support is available
@@ -203,7 +203,11 @@ def detect_hardware_profile() -> HardwareProfile:
     active = info.get("_active_memory", 0)
     available = 0
     if isinstance(total, int) and total > 0:
-        available = max(0, total - (int(active) if isinstance(active, int) else 0))
+        # Metal cannot allocate beyond max_recommended_working_set_size, so
+        # that (not physical RAM) bounds what a KV cache can use (#630).
+        ws = info.get("max_recommended_working_set_size")
+        limit = min(total, ws) if isinstance(ws, int) and ws > 0 else total
+        available = max(0, limit - (int(active) if isinstance(active, int) else 0))
 
     has_metal = _metal_available()
     return HardwareProfile(

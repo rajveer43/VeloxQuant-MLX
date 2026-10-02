@@ -1094,3 +1094,16 @@ def test_bulk_sequential_calls_are_isolated_from_each_other():
     assert results[1].config.method == "gear"
     assert results[2].config.method == "kvquant"
     assert results[3].config.method == "kivi"  # confirms result[1]'s pressure didn't leak
+
+
+def test_detect_hardware_info_caps_total_at_metal_working_set(monkeypatch):
+    """Budget is bounded by max_recommended_working_set_size, not RAM (#630)."""
+    import mlx.core as mx
+
+    monkeypatch.setattr(
+        mx,
+        "device_info",
+        lambda: {"memory_size": 24 * 2**30, "max_recommended_working_set_size": 18 * 2**30},
+    )
+    monkeypatch.setattr(mx, "get_active_memory", lambda: 0)
+    assert detect_hardware_info().total_memory_bytes == 18 * 2**30

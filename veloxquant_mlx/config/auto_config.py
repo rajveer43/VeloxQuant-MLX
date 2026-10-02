@@ -141,6 +141,11 @@ def detect_hardware_info() -> HardwareInfo:
 
         info = mx.device_info()
         total = info.get("memory_size")
+        # Budget against Metal's recommended working set, not physical RAM:
+        # a cache larger than that cannot be allocated (#630).
+        ws = info.get("max_recommended_working_set_size")
+        if isinstance(total, int) and isinstance(ws, int) and 0 < ws < total:
+            total = ws
         active = mx.get_active_memory()
         return HardwareInfo(total_memory_bytes=total, active_memory_bytes=active)
     except Exception:
