@@ -451,12 +451,8 @@ def amc_compress_tokens_batched(
     tier (there are always exactly 3: HIGH/MID/LOW) over the whole
     ``[G, N, D]`` array (``G`` = flattened ``B*H``), selected per token with
     :func:`mlx.core.where`. Each token is quantized independently of every
-    other token — the original calls ``_group_quant_dequant`` on a single
-    ``[1, D]`` row, so its "group" always contains only that row (padding
-    rows are broadcast copies of it, which don't change the group's min/max)
-    — equivalent to
-    :func:`~veloxquant_mlx.quantizers._quant_utils._group_quant_dequant_batched`
-    with ``group_size=1``, verified bit-for-bit against the per-token loop.
+    other token, with min/max taken over that token's own kept channels
+    (``rank`` leading channels), so MID/LOW tiers are genuinely lossy.
 
     Args:
         x: ``[G, N, D]`` activations (fp16 or fp32), or ``[N, D]`` for a
@@ -489,8 +485,16 @@ def amc_compress_tokens_batched(
         if cfg.bits >= 16:
             q = masked.astype(x.dtype)
         else:
-            q = _group_quant_dequant_batched(masked.reshape(g * n, 1, d), cfg.bits, 1)
-            q = q.reshape(g, n, d).astype(x.dtype)
+            # Per-token quantization across the kept channels: group along the
+            # channel axis (min/max over the token's own channels). Grouping
+            # along the token axis with a 1-row group made min == max, so the
+            # round-trip was lossless while bytes were still charged (#626).
+            r = max(1, min(cfg.rank, d))
+            kept = masked[..., :r].reshape(g * n, r, 1)
+            qk = _group_quant_dequant_batched(kept, cfg.bits, r).reshape(g, n, r)
+            if r < d:
+                qk = mx.concatenate([qk, mx.zeros((g, n, d - r), dtype=qk.dtype)], axis=-1)
+            q = qk.astype(x.dtype)
         sel = (tiers_mx == tier_id)[:, :, None]
         out = q if out is None else mx.where(sel, q, out)
     return out[0] if squeeze else out
