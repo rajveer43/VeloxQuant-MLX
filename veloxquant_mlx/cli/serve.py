@@ -454,11 +454,9 @@ def run_server(args: argparse.Namespace) -> None:
             from veloxquant_mlx.cache.registry import ServeTier, probe_serve_tier
 
             if probe_serve_tier(args.method) is ServeTier.NOT_TRIMMABLE:
-                _warn(
-                    f"method {args.method!r} does not support prefix-cache "
-                    "trimming (NOT_TRIMMABLE); only exact full-prompt repeats "
-                    "will be reused, not partial-prefix overlap."
-                )
+                from veloxquant_mlx.integration.prefix_cache import _NOT_TRIMMABLE_NOTE
+
+                _warn(_NOT_TRIMMABLE_NOTE.format(method=args.method))
 
             if not state["announced"]:
                 emit_ready(args, n_layers)

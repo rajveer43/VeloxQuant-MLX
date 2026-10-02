@@ -141,6 +141,45 @@ def test_not_trimmable_config_warns_at_construction(capsys) -> None:
     assert "does not support prefix-cache trimming" in out
 
 
+def test_not_trimmable_notice_matches_actual_reuse_behaviour(capsys) -> None:
+    """The notice must not promise that repeats of the same prompt are
+    reused: the entry is stored under prompt + generated tokens, so reaching
+    it from the bare prompt needs a trim (#661). Only an extending prompt hits."""
+    model = _make_fake_model(n_layers=2)
+    pc = PrefixCache(_NOT_TRIMMABLE_CONFIG)
+    out_text = capsys.readouterr().out
+    assert "exact full-prompt repeats" not in out_text
+    assert "extends" in out_text
+
+    import mlx.core as mx
+    import numpy as np
+
+    prompt = list(range(1, 7))
+    generated = [20, 21]
+    stored_cache, _ = pc.fetch(model, prompt)
+    for _tok in prompt + generated:
+        k = mx.array(np.zeros((1, 4, 1, 32), dtype=np.float16))
+        for c in stored_cache:
+            c.update_and_fetch(k, k)
+    pc.insert(model, prompt + generated, stored_cache)
+
+    _, rest = pc.fetch(model, prompt)  # repeat of the bare prompt: a miss
+    assert rest == prompt
+    _, rest = pc.fetch(model, prompt + generated + [30])  # extending prompt: a hit
+    assert rest == [30]
+
+
+def test_serve_notice_uses_the_same_text() -> None:
+    from veloxquant_mlx.integration import prefix_cache
+
+    assert "exact full-prompt repeats" not in prefix_cache._NOT_TRIMMABLE_NOTE
+    import inspect
+
+    from veloxquant_mlx.cli import serve
+
+    assert "exact full-prompt repeats" not in inspect.getsource(serve)
+
+
 def test_trimmable_config_does_not_warn_at_construction(capsys) -> None:
     PrefixCache(_TRIMMABLE_CONFIG)
     out = capsys.readouterr().out
