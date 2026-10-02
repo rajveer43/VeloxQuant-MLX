@@ -11,7 +11,8 @@ readers/writers targeting the same artifact never observe a partial file.
 
 from __future__ import annotations
 
-import threading
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -21,16 +22,6 @@ import numpy as np
 from veloxquant_mlx.core.abstractions import ArtifactStore
 from veloxquant_mlx.core.exceptions import ArtifactNotFoundError
 
-_save_lock = threading.Lock()
-_save_id = 0
-
-
-def _get_save_id() -> int:
-    global _save_id
-    with _save_lock:
-        _save_id += 1
-        return _save_id
-
 
 def _atomic_save(path: Path, arr: np.ndarray) -> None:
     """Write ``arr`` to ``path`` via a temp file + atomic rename.
@@ -39,12 +30,15 @@ def _atomic_save(path: Path, arr: np.ndarray) -> None:
     workers lazily constructing the same quantizer config) from observing a
     partially-written ``.npy`` file: ``np.save`` writes directly to the
     destination and is not atomic, but ``Path.replace`` is atomic on POSIX
-    and Windows. The temp name uses a monotonic counter to avoid collisions
-    under concurrent multi-process writes.
+    and Windows. The temp file comes from ``tempfile.mkstemp`` in the same
+    directory, so its name is unique across processes and threads (a
+    per-process counter is not: every process starts at 1, #634).
     """
-    tmp_path = path.with_name(f".{path.name}.tmp-{_get_save_id()}.npy")
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    tmp_path = Path(tmp_name)
     try:
-        np.save(tmp_path, arr)
+        with os.fdopen(fd, "wb") as f:
+            np.save(f, arr)
         tmp_path.replace(path)
     finally:
         tmp_path.unlink(missing_ok=True)

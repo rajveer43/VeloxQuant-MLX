@@ -176,3 +176,47 @@ class TestColdWarmParity:
         np.testing.assert_array_equal(
             np.array(cold.decode(cold.encode(x))), np.array(warm.decode(warm.encode(x)))
         )
+
+
+# --- #634: temp names must be unique across processes ---
+
+
+def _save_in_subprocess(root: str, seed: int) -> str:
+    import pathlib
+    import tempfile
+
+    import numpy as np
+
+    from veloxquant_mlx.artifacts import npy_store
+
+    names: list[str] = []
+    real = tempfile.mkstemp
+
+    def spy(*a, **k):
+        fd, name = real(*a, **k)
+        names.append(pathlib.Path(name).name)
+        return fd, name
+
+    tempfile.mkstemp = spy
+    npy_store._atomic_save(pathlib.Path(root) / "x.npy", np.full(4, seed))
+    return names[0]
+
+
+def test_atomic_save_temp_names_differ_across_processes(tmp_path):
+    import multiprocessing as mp
+
+    with mp.get_context("spawn").Pool(2) as pool:
+        names = pool.starmap(_save_in_subprocess, [(str(tmp_path), 0), (str(tmp_path), 1)])
+    assert len(set(names)) == 2
+    assert [p.name for p in tmp_path.iterdir()] == ["x.npy"]
+
+
+def test_atomic_save_leaves_no_temp_files_and_roundtrips(tmp_path):
+    import numpy as np
+
+    from veloxquant_mlx.artifacts.npy_store import _atomic_save
+
+    for i in range(5):
+        _atomic_save(tmp_path / "a.npy", np.arange(8) + i)
+    assert [p.name for p in tmp_path.iterdir()] == ["a.npy"]
+    np.testing.assert_array_equal(np.load(tmp_path / "a.npy"), np.arange(8) + 4)
