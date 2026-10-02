@@ -88,6 +88,15 @@ def test_compression_ratio_positive():
     assert ratio > 1.0  # 2-bit inlier quantization should compress vs fp16
 
 
+def test_fp16_baseline_counts_keys_and_values():
+    cache = _raw_cache()
+    profiled = KVCacheProfiler(cache, head_dim=HEAD_DIM, layer_id=0)
+    for i in range(3):
+        k, v = _kv(i)
+        profiled.append(k, v)
+    assert profiled.profile().fp16_baseline_bytes == 3 * 2 * 2 * HEAD_DIM  # K+V, fp16 (#628)
+
+
 def test_reset_clears_stats():
     cache = _raw_cache()
     profiled = KVCacheProfiler(cache, head_dim=HEAD_DIM, layer_id=0)

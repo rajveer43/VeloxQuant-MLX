@@ -53,8 +53,9 @@ class LayerProfile:
             peak — read lazily at report time rather than after every call.
         tokens_written: Number of append_key (or update_and_fetch) calls,
             a proxy for tokens stored.
-        fp16_baseline_bytes: What tokens_written * 2 * head_dim would cost in fp16,
-            used to derive compression_ratio.
+        fp16_baseline_bytes: What the incoming K+V would cost uncompressed
+            (4 * head_dim bytes per token standalone; the actual K+V tensor
+            bytes for MLXCacheProfiler), used to derive compression_ratio.
         is_fused: True when quantize_ms_total is a combined measurement
             (MLXCacheProfiler) rather than quantize-only (KVCacheProfiler).
     """
@@ -172,7 +173,8 @@ class KVCacheProfiler(KVCache):
         self._profile.n_quantize_calls += 1
         self._profile.quantize_ms_total += elapsed_ms
         self._profile.tokens_written += 1
-        self._profile.fp16_baseline_bytes += 2 * self._head_dim
+        # K + V: the wrapped cache's memory_bytes() counts both streams (#628).
+        self._profile.fp16_baseline_bytes += 2 * 2 * self._head_dim
 
     def append_value(self, v: Any) -> None:
         """Append a value to the wrapped cache, timing it as a write call."""
@@ -241,6 +243,11 @@ class KVCacheProfiler(KVCache):
         return getattr(self._cache, name)
 
 
+def _tensor_nbytes(x: Any) -> int:
+    """Bytes of an incoming K/V tensor; 0 if it has no array-like size."""
+    return int(getattr(x, "nbytes", 0))
+
+
 class MLXCacheProfiler:
     """Wraps an ``mlx_lm.models.cache.KVCache``-style cache's update_and_fetch.
 
@@ -280,7 +287,9 @@ class MLXCacheProfiler:
         self._profile.n_quantize_calls += 1
         self._profile.quantize_ms_total += elapsed_ms
         self._profile.tokens_written += n_tokens
-        self._profile.fp16_baseline_bytes += n_tokens * 2 * self._head_dim
+        # Actual incoming K+V bytes (all heads): the wrapped cache's ``nbytes``
+        # covers keys and values for every head, so the baseline must too (#628).
+        self._profile.fp16_baseline_bytes += _tensor_nbytes(keys) + _tensor_nbytes(values)
         return out
 
     def _update_peak_memory(self) -> None:
