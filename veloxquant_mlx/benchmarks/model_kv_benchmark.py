@@ -118,6 +118,28 @@ class KVMemoryTracker:
 # ---------------------------------------------------------------------------
 
 
+def _teacher_forced_logits(model, input_ids, chunk_size: int = 64):
+    """Logits for every position of ``input_ids`` ([1, T]), run through the
+    model's KV cache in chunks.
+
+    ``model(ids)`` with no cache never consults ``make_cache``, so a patched
+    (quantized) cache would be ignored and every method would report fp16
+    perplexity (#660). Chunking lets later chunks attend to the cache's
+    stored (quantized) prefix, as in real prefill.
+    """
+    from mlx_lm.models.cache import make_prompt_cache
+
+    cache = make_prompt_cache(model)
+    outs = []
+    for start in range(0, input_ids.shape[1], chunk_size):
+        out = model(input_ids[:, start : start + chunk_size], cache=cache)
+        if isinstance(out, tuple):
+            out = out[0]
+        mx.eval(out)
+        outs.append(out)
+    return mx.concatenate(outs, axis=1)
+
+
 def compute_perplexity(model, tokenizer, text: str, max_tokens: int = 256) -> float:
     """Compute perplexity of model on text (causal LM, stride = 1)."""
 
@@ -134,9 +156,7 @@ def compute_perplexity(model, tokenizer, text: str, max_tokens: int = 256) -> fl
     targets = tokens[1:]
 
     try:
-        logits = model(input_ids)
-        if isinstance(logits, tuple):
-            logits = logits[0]
+        logits = _teacher_forced_logits(model, input_ids)
         mx.eval(logits)
         logits_np = np.array(logits[0], dtype=np.float32)  # [T-1, vocab]
         for t, tgt in enumerate(targets):
@@ -164,9 +184,7 @@ def compute_perplexity_stable(model, tokenizer, text: str, max_tokens: int = 256
     targets = tokens[1:]
 
     try:
-        logits = model(input_ids)
-        if isinstance(logits, tuple):
-            logits = logits[0]
+        logits = _teacher_forced_logits(model, input_ids)
         mx.eval(logits)
         logits_np = np.array(logits[0], dtype=np.float32)  # [T-1, vocab]
 
@@ -191,21 +209,26 @@ def compute_perplexity_stable(model, tokenizer, text: str, max_tokens: int = 256
 
 def measure_latency(model, tokenizer, prompt: str, n_new_tokens: int = 32) -> dict:
     """Measure prefill + decode latency."""
-    from mlx_lm import generate
+    from mlx_lm import stream_generate
 
     prompt_tokens = tokenizer.encode(prompt)
     n_prompt = len(prompt_tokens)
 
     # Warm-up
-    _ = generate(model, tokenizer, prompt=prompt, max_tokens=4, verbose=False)
+    for _ in stream_generate(model, tokenizer, prompt=prompt_tokens, max_tokens=4):
+        pass
     mx.eval()
 
+    # Count generated tokens from the stream: ``generate`` returns only the
+    # completion text, so subtracting the prompt length from its re-encoding
+    # undercounted the tokens and inflated ms/token (#660).
     t0 = time.perf_counter()
-    out = generate(model, tokenizer, prompt=prompt, max_tokens=n_new_tokens, verbose=False)
+    n_out = 0
+    for _ in stream_generate(model, tokenizer, prompt=prompt_tokens, max_tokens=n_new_tokens):
+        n_out += 1
     mx.eval()
     elapsed = time.perf_counter() - t0
 
-    n_out = len(tokenizer.encode(out)) - n_prompt
     n_out = max(n_out, 1)
 
     return {
