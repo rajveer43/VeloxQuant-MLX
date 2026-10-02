@@ -102,7 +102,7 @@ class CacheGenKVCache(_MLXKVCache):
         """Group-quantize K/V (KIVI-style), reporting entropy-coded byte estimates in addition to the fixed-width baseline; return dequantized K/V."""
         k_out = self._quant_and_account(keys, is_key=True)
         v_out = self._quant_and_account(values, is_key=False)
-        return super().update_and_fetch(k_out, v_out)
+        return super().update_and_fetch(k_out.astype(keys.dtype), v_out.astype(values.dtype))
 
     # ------------------------------------------------------------------
     # Reporting

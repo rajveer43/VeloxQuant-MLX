@@ -207,11 +207,11 @@ class XKVCache(_MLXKVCache):
             self._value_fp16_bytes += B * H * S * D * 2
             self._tokens_seen += S
             self._token_offset += S
-            return super().update_and_fetch(k_out, values)
+            return super().update_and_fetch(k_out.astype(keys.dtype), values)
 
         self._account_key_bytes(B, H, S, D)
         self._token_offset += S
-        return super().update_and_fetch(k_out, values)
+        return super().update_and_fetch(k_out.astype(keys.dtype), values)
 
     # ------------------------------------------------------------------
     # Byte accounting

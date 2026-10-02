@@ -269,7 +269,7 @@ class AdaKVCache(_MLXKVCache):
         k_out = self._quantize_per_head(keys)
 
         self._account_bytes(B, H, S, D)
-        return super().update_and_fetch(k_out, values)
+        return super().update_and_fetch(k_out.astype(keys.dtype), values)
 
     def _key_bytes_for(self, S: int, B: int, H: int, D: int) -> int:
         assert self._head_bits is not None
