@@ -283,12 +283,17 @@ def zipcache_reconstruct(state: ZipCacheState) -> mx.array:
     return out.astype(mx.float16)
 
 
-def zipcache_bytes(state: ZipCacheState, group_size: int = 32) -> int:
+def zipcache_bytes(state: ZipCacheState, group_size: int | None = None) -> int:
     """Honest stored size (bytes) of a ZipCacheState.
 
     Counts: packed codes (ceil(n * D * bits / 8)) + fp32 params (scale + zero).
     The saliency mask is stored as bool (1 byte/token).
+
+    ``group_size`` defaults to ``state.group_size`` (the size the state was
+    compressed with); pass it only to model a different grouping (#641).
     """
+    if group_size is None:
+        group_size = state.group_size
     S, D = state.seq_len, state.head_dim
     n_hi = int(state.hi_codes.shape[0])
     n_lo = int(state.lo_codes.shape[0])

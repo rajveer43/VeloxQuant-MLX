@@ -272,3 +272,12 @@ def test_channel_quant_uses_shared_group_quant_codes_helper() -> None:
     assert "_group_quant_codes" in src
     src = inspect.getsource(zipcache_module.channel_dequant)
     assert "_group_dequant_codes" in src
+
+
+def test_zipcache_bytes_defaults_to_the_state_group_size():
+    """zipcache_bytes(state) must use state.group_size, not a hard-coded 32 (#641)."""
+    x = mx.array(np.random.default_rng(0).standard_normal((64, 16)).astype(np.float32))
+    state = zipcache_compress(x, group_size=8)
+    assert state.group_size == 8
+    assert zipcache_bytes(state) == zipcache_bytes(state, group_size=8)
+    assert zipcache_bytes(state) != zipcache_bytes(state, group_size=32)
