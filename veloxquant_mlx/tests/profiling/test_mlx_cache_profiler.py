@@ -106,8 +106,8 @@ def test_profile_layers_and_format_table():
     report = profile_layers(profilers, elapsed_s=0.5)
     assert isinstance(report, ProfileReport)
     assert len(report.layers) == 2
-    assert report.total_tokens == 12
-    assert report.tokens_per_sec == pytest.approx(12 / 0.5)
+    assert report.total_tokens == 6  # every layer sees the same 6 tokens (#629)
+    assert report.tokens_per_sec == pytest.approx(6 / 0.5)
     assert all(layer.is_fused for layer in report.layers)
 
     table = format_profile_table(report)
