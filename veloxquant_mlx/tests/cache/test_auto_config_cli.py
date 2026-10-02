@@ -17,6 +17,7 @@ def test_defaults_produce_mid_band_kivi(capsys):
         "seq_len": 4096,
         "n_layers": 1,
         "batch_size": 1,
+        "n_kv_heads": 1,
     }
     assert payload["config"]["method"] == "kivi"
     assert payload["config"]["head_dim"] == 128
@@ -107,3 +108,21 @@ def test_config_dict_omits_fields_not_relevant_to_selected_method():
     result = auto_config_cli._config_to_dict(config)
     assert "kivi_group_size" not in result
     assert "gear_bits" not in result
+
+
+def test_n_kv_heads_flag_drives_memory_pressure(capsys):
+    """--n-kv-heads scales the KV estimate used by the pressure rule (#631)."""
+    args = [
+        "--json",
+        "--head-dim", "128",
+        "--seq-len", "131072",
+        "--n-layers", "32",
+        "--total-memory-bytes", str(24 * 2**30),
+        "--active-memory-bytes", str(5 * 2**30),
+    ]  # fmt: skip
+    auto_config_cli.main(args)
+    low = json.loads(capsys.readouterr().out)
+    auto_config_cli.main([*args, "--n-kv-heads", "8"])
+    high = json.loads(capsys.readouterr().out)
+    assert high["workload"]["n_kv_heads"] == 8
+    assert high["config"] != low["config"]

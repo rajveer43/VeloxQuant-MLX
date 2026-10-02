@@ -57,6 +57,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--n-layers", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument(
+        "--n-kv-heads",
+        type=int,
+        default=1,
+        help="KV heads per layer (scales the fp16 KV estimate; default 1).",
+    )
+    parser.add_argument(
         "--total-memory-bytes",
         type=int,
         default=None,
@@ -80,6 +86,7 @@ def main(argv: list[str] | None = None) -> None:
         seq_len=args.seq_len,
         n_layers=args.n_layers,
         batch_size=args.batch_size,
+        n_kv_heads=args.n_kv_heads,
     )
 
     if args.total_memory_bytes is not None:
@@ -98,6 +105,7 @@ def main(argv: list[str] | None = None) -> None:
             "seq_len": workload.seq_len,
             "n_layers": workload.n_layers,
             "batch_size": workload.batch_size,
+            "n_kv_heads": workload.n_kv_heads,
         },
         "hardware": {
             "total_memory_bytes": hardware.total_memory_bytes,
@@ -114,7 +122,7 @@ def main(argv: list[str] | None = None) -> None:
     print("VeloxQuant-MLX auto-config")
     print(
         f"  head_dim={workload.head_dim}  seq_len={workload.seq_len}  "
-        f"n_layers={workload.n_layers}  batch_size={workload.batch_size}"
+        f"n_layers={workload.n_layers}  batch_size={workload.batch_size}  n_kv_heads={workload.n_kv_heads}"
     )
     print(f"  method={payload['config']['method']}")
     print(f"  config={payload['config']}")
