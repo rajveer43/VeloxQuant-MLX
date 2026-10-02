@@ -40,10 +40,13 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="Path to a HF-style config.json (needs num_hidden_layers, attention heads, head_dim)",
     )
-    parser.add_argument("--n-layers", type=int, default=32)
+    # Geometry flags default to None so a --model-config's values are not
+    # overridden by flag defaults; without a config they fall back to
+    # 32 layers / 8 KV heads / head_dim 128.
+    parser.add_argument("--n-layers", type=int, default=None, help="Layers (default 32)")
     parser.add_argument("--n-query-heads", type=int, default=None)
-    parser.add_argument("--n-kv-heads", type=int, default=8)
-    parser.add_argument("--head-dim", type=int, default=128)
+    parser.add_argument("--n-kv-heads", type=int, default=None, help="KV heads (default 8)")
+    parser.add_argument("--head-dim", type=int, default=None, help="Head dim (default 128)")
     parser.add_argument("--context", type=int, default=4096, help="Context tokens")
     parser.add_argument("--generation", type=int, default=512, help="Generation tokens")
     parser.add_argument("--batch", type=int, default=1, help="Attention batch")
@@ -74,13 +77,23 @@ def main(argv: list[str] | None = None) -> None:
     else:
         config = None
 
-    model = profile_model_from_config(
-        config,
-        num_layers=args.n_layers,
-        num_query_heads=args.n_query_heads or args.n_kv_heads,
-        num_kv_heads=args.n_kv_heads,
-        head_dim=args.head_dim,
-    )
+    if config is None:
+        n_kv = args.n_kv_heads or 8
+        overrides = {
+            "num_layers": args.n_layers or 32,
+            "num_query_heads": args.n_query_heads or n_kv,
+            "num_kv_heads": n_kv,
+            "head_dim": args.head_dim or 128,
+        }
+    else:
+        # Only explicitly passed flags override the config's geometry.
+        overrides = {
+            "num_layers": args.n_layers,
+            "num_query_heads": args.n_query_heads,
+            "num_kv_heads": args.n_kv_heads,
+            "head_dim": args.head_dim,
+        }
+    model = profile_model_from_config(config, **overrides)
     workload = WorkloadProfile(
         context_length=args.context,
         generation_length=args.generation,

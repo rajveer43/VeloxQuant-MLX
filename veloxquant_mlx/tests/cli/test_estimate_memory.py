@@ -73,3 +73,50 @@ def test_estimate_memory_mha_vs_gqa_baseline(capsys):
     gqa = json.loads(capsys.readouterr().out)["strategies"]
     base = lambda d: max(e["baseline_bytes"] for e in d.values())  # noqa: E731
     assert base(mha) > base(gqa)
+
+
+def test_model_config_geometry_is_not_overridden_by_flag_defaults(capsys, tmp_path):
+    """#627: Qwen2.5-0.5B-style config (24 layers, 14 q / 2 kv heads, hd 64)."""
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "architectures": ["Qwen2ForCausalLM"],
+                "num_hidden_layers": 24,
+                "num_attention_heads": 14,
+                "num_key_value_heads": 2,
+                "hidden_size": 896,
+            }
+        )
+    )
+    estimate_memory_cli.main(["--model-config", str(config), "--top", "1", "--json"])
+    model = json.loads(capsys.readouterr().out)["model"]
+    assert (model["num_layers"], model["num_query_heads"], model["num_kv_heads"]) == (24, 14, 2)
+    assert model["head_dim"] == 64
+    assert model["attention_type"] == "gqa"
+
+
+def test_explicit_flag_overrides_model_config(capsys, tmp_path):
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "num_hidden_layers": 24,
+                "num_attention_heads": 14,
+                "num_key_value_heads": 2,
+                "hidden_size": 896,
+            }
+        )
+    )
+    estimate_memory_cli.main(
+        ["--model-config", str(config), "--n-layers", "12", "--top", "1", "--json"]
+    )
+    model = json.loads(capsys.readouterr().out)["model"]
+    assert model["num_layers"] == 12
+    assert model["num_kv_heads"] == 2
+
+
+def test_no_config_keeps_documented_defaults(capsys):
+    estimate_memory_cli.main(["--top", "1", "--json"])
+    model = json.loads(capsys.readouterr().out)["model"]
+    assert (model["num_layers"], model["num_kv_heads"], model["head_dim"]) == (32, 8, 128)
