@@ -148,7 +148,7 @@ class KittyKVCache(_MLXKVCache):
         self._update_accumulators(k_out)
 
         self._account_bytes(B, H, S, D)
-        return super().update_and_fetch(k_out, values)
+        return super().update_and_fetch(k_out.astype(keys.dtype), values)
 
     def _account_bytes(self, B: int, H: int, S: int, D: int) -> None:
         n_hi = max(1, int(D * self._hi_fraction))

@@ -290,7 +290,7 @@ class NestedKVKVCache(DeferredEvictionMixin, _MLXKVCache):
         # Only persisted state is evicted; current attention uses every new row.
         self.keys, self.values = K_out, V_out
         self.offset += S
-        return full_k, full_v
+        return full_k.astype(keys.dtype), full_v.astype(values.dtype)
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:

@@ -365,8 +365,8 @@ class KVTCKVCache(_MLXKVCache):
             k_out_b.append(mx.stack(k_out_h, axis=0))
             v_out_b.append(mx.stack(v_out_h, axis=0))
 
-        K_out = mx.stack(k_out_b, axis=0)
-        V_out = mx.stack(v_out_b, axis=0)
+        K_out = mx.stack(k_out_b, axis=0).astype(keys.dtype)
+        V_out = mx.stack(v_out_b, axis=0).astype(values.dtype)
 
         self._kvtc_offset += S
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
