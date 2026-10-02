@@ -21,7 +21,8 @@ class OutlierSplitHandler(QuantizationHandler):
     """Split input coordinates into outlier and inlier channels.
 
     On encode:
-        Stores ctx.outlier_idx and separate x_outlier/x_inlier in metadata.
+        Stores ctx.outlier_idx and separate x_outlier/x_inlier (plus the full
+        width ``d``) in metadata.
         ctx.x_current is set to the inlier portion.
 
     On decode:
@@ -46,16 +47,26 @@ class OutlierSplitHandler(QuantizationHandler):
         """
         import mlx.core as mx
 
-        d = ctx.x_current.shape[-1]
-        all_idx = np.arange(d)
-        inlier_idx = np.setdiff1d(all_idx, self._outlier_idx)
-
         ctx.outlier_idx = self._outlier_idx
 
         if ctx.mode == "encode":
-            ctx.metadata["x_outlier"] = ctx.x_current[:, self._outlier_idx]
-            ctx.metadata["x_inlier"] = ctx.x_current[:, inlier_idx]
+            x = mx.array(ctx.x_current)  # accept mx.array or np.ndarray
+            d = x.shape[-1]
+            if self._outlier_idx.size and (
+                self._outlier_idx.min() < 0 or self._outlier_idx.max() >= d
+            ):
+                raise ValueError(
+                    f"OutlierSplitHandler: outlier_idx out of range for width {d}: "
+                    f"{self._outlier_idx.tolist()}"
+                )
+            inlier_idx = np.setdiff1d(np.arange(d), self._outlier_idx)
+            # MLX cannot index with a numpy int array; take with an mx index.
+            ctx.metadata["x_outlier"] = mx.take(x, mx.array(self._outlier_idx), axis=-1)
+            ctx.metadata["x_inlier"] = mx.take(x, mx.array(inlier_idx), axis=-1)
             ctx.metadata["inlier_idx"] = inlier_idx
+            # The full width must be remembered: on decode ``x_current`` is
+            # only the inlier slice, so its width is not the original d (#636).
+            ctx.metadata["d"] = d
             ctx.x_current = ctx.metadata["x_inlier"]
         else:
             # decode: recombine
@@ -64,6 +75,7 @@ class OutlierSplitHandler(QuantizationHandler):
                 x_out = ctx.metadata["x_outlier"]
                 x_inlier = ctx.x_current
 
+                d = ctx.metadata.get("d", len(inlier_idx) + len(self._outlier_idx))
                 batch = x_inlier.shape[0]
                 result = np.zeros((batch, d), dtype=np.float32)
                 result[:, inlier_idx] = np.array(x_inlier)
