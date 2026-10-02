@@ -530,3 +530,25 @@ def test_rate_estimator_reading_does_not_advance_the_clock():
     assert estimator.rate(1) == first
     estimator.record(2)  # one global tick later
     assert estimator.rate(1) == pytest.approx(first * 0.5 ** (1 / 10.0))
+
+
+def test_admission_charges_the_clamped_shard_count():
+    """A session needing more shards than exist is charged n_shards slots, not kb (#646)."""
+    planner = CacheRoutePlanner(n_shards=1, qcap=10.0, warm_slots_per_shard=4.0)
+    table = planner.plan([SessionRate(owner=0, rate=100.0), SessionRate(owner=1, rate=1.0)])
+    assert table.is_admitted(0)  # hottest session must not be rejected
+    assert table.is_admitted(1)  # capacity 4 slots covers both
+
+
+def test_hot_session_does_not_crowd_out_others_beyond_its_real_footprint():
+    # 2 shards x 3 slots = 6 capacity; owner 0 occupies 2 slots (clamped), owners 1-2 fit.
+    planner = CacheRoutePlanner(n_shards=2, qcap=10.0, warm_slots_per_shard=3.0)
+    table = planner.plan(
+        [
+            SessionRate(owner=0, rate=100.0),
+            SessionRate(owner=1, rate=5.0),
+            SessionRate(owner=2, rate=5.0),
+        ]
+    )
+    assert all(table.is_admitted(o) for o in (0, 1, 2))
+    assert len(table.shards[0]) == 2
