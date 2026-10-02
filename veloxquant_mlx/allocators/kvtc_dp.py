@@ -176,7 +176,16 @@ def dp_allocate_bits(
     # choice_used[i][b] = bit-width chosen for component i-1 to reach dp[i][b]
     choice_used = np.full((n + 1, B_cap + 1), -1, dtype=np.int64)
 
-    per_choice_distortion = [[(_distortion(v[i], c, beta), c) for c in choices] for i in range(n)]
+    # D(v, b) is linear in v, so dividing by the largest variance leaves the
+    # optimum unchanged while making the absolute tie-break penalty below
+    # relative to the spectrum -- otherwise at small variances real
+    # distortion gaps fall under eps and the allocation changes (#658).
+    v_max = float(v.max())
+    v_norm = v / v_max if v_max > 0.0 else v
+
+    per_choice_distortion = [
+        [(_distortion(v_norm[i], c, beta), c) for c in choices] for i in range(n)
+    ]
 
     eps = 1e-9 / max(n, 1)
 
@@ -209,10 +218,9 @@ def dp_allocate_bits(
             choice_row[c : c + valid_len][mask] = c
 
     # Best total budget usage <= B_cap (spending less than the cap is fine).
-    # The penalty term only disambiguates exact distortion ties (scaled to
-    # be far smaller than any genuine distortion gap at float64 precision
-    # for the variance/beta ranges this module is used at) — it never flips
-    # a real optimum.
+    # The penalty term only disambiguates exact distortion ties (variances
+    # are normalised to max 1 above, so it is far smaller than any genuine
+    # distortion gap at float64 precision) — it never flips a real optimum.
     final_row = dp[n]
     best_b = int(np.argmin(final_row))
     if final_row[best_b] == INF:
