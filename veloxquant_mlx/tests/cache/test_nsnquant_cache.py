@@ -15,14 +15,15 @@ import pytest
 from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig, KVCacheFactory
 from veloxquant_mlx.cache.nsnquant_cache import NSNQuantKVCache
 
-# Fast codebook for tests: seed the module cache once so every wrapper below
-# reuses it instead of building the default-size codebook.
+# Fast codebook for tests: deliberately install a cheaper codebook under the
+# DEFAULT request's cache key (the key includes n_samples/iters, #653) so every
+# wrapper below reuses it instead of building the default-size codebook.
 from veloxquant_mlx.quantizers import nsnquant as _nsn_mod
 
 _TEST_SEED = 1234
 for _kind in ("signed", "magnitude"):
     cb = _nsn_mod.build_universal_codebook(seed=_TEST_SEED, n_samples=131_072, iters=15, kind=_kind)
-    _nsn_mod._CODEBOOK_CACHE[(256, 8, _TEST_SEED, _kind)] = cb
+    _nsn_mod._CODEBOOK_CACHE[(256, 8, _TEST_SEED, 262_144, 25, _kind)] = cb
 
 
 def _kv(B, H, S, D, seed=0):
