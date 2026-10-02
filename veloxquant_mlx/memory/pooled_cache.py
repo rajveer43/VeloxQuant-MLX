@@ -139,6 +139,7 @@ class PooledKVCache(KVCache):
     def reset(self) -> None:
         """Return all held blocks to the pool and clear the inner cache."""
         self.release()
+        self._n_tokens = 0
         self._inner.reset()
 
     def __len__(self) -> int:

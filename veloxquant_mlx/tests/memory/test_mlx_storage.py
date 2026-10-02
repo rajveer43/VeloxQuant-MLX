@@ -82,6 +82,16 @@ def test_resident_bytes_reflects_materialized_buffers_only():
     assert storage.resident_bytes() == expected
 
 
+@pytest.mark.parametrize("fmt", ["fp16", "int8", "int4", "int2", "int1"])
+def test_resident_bytes_matches_actual_buffer_nbytes(fmt):
+    pool = _pool(n_blocks=4)
+    storage = MLXBlockStorage(pool, head_dim=HEAD_DIM)
+    (block,) = pool.allocate(stream="kv", n_tokens=1, owner=1, format=fmt)
+    buf = storage.buffer_for(block)
+    mx.eval(buf)
+    assert storage.resident_bytes() == buf.nbytes
+
+
 def test_release_drops_buffer():
     pool = _pool(n_blocks=4)
     storage = MLXBlockStorage(pool, head_dim=HEAD_DIM)
