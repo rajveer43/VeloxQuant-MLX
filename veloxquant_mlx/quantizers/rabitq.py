@@ -101,6 +101,10 @@ def _kmeans_np(data: np.ndarray, k: int, n_iter: int = 30, seed: int = 42) -> np
 # ev.norm     : [N, 3] float32   — columns: [centroid_id, Cx, L1_norm]
 
 
+#: Per-key metadata stored beside the packed bits: 3 x float32 (centroid id, Cx, L1).
+_META_BYTES_PER_KEY = 3 * 4
+
+
 @QuantizerRegistry.register("rabitq")
 class RaBitQQuantizer(Quantizer):
     """1-bit IVF-RaBitQ quantizer for KV-cache key vectors.
@@ -178,8 +182,13 @@ class RaBitQQuantizer(Quantizer):
 
     @property
     def compression_ratio(self) -> float:
-        """Memory ratio vs fp16: (D*2 bytes) / (D//8 bytes) = 16×."""
-        return float(self._d * 2) / float(self._n_bytes)
+        """Memory ratio vs fp16, counting the per-key metadata.
+
+        Each key stores ``D//8`` bytes of sign bits plus three float32 scalars
+        (centroid id, Cx, L1) that decode()/search() need, so at D=128 this is
+        256 / (16 + 12) = 9.14×, not the 16× the bit codes alone would give.
+        """
+        return float(self._d * 2) / float(self._n_bytes + _META_BYTES_PER_KEY)
 
     # ------------------------------------------------------------------
     # Rotation helpers

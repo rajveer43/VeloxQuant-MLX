@@ -67,17 +67,27 @@ def test_decode_shape_dtype() -> None:
 
 
 def test_compression_ratio() -> None:
-    """16× vs fp16 at D=128: (128*2) / (128//8) = 256/16 = 16×."""
+    """D=128: 256 fp16 bytes / (16 code bytes + 12 metadata bytes) = 9.14x (#640)."""
     d = 128
     q = RaBitQQuantizer(d=d, nlist=16)
-    assert q.compression_ratio == 16.0, f"Expected 16×, got {q.compression_ratio}"
+    assert q.compression_ratio == pytest.approx(256 / 28)
 
 
 def test_compression_ratio_d64() -> None:
-    """16× at D=64: (64*2) / (64//8) = 128/8 = 16×."""
+    """D=64: 128 / (8 + 12) = 6.4x."""
     d = 64
     q = RaBitQQuantizer(d=d, nlist=8)
-    assert q.compression_ratio == 16.0
+    assert q.compression_ratio == pytest.approx(128 / 20)
+
+
+def test_compression_ratio_matches_actual_stored_bytes() -> None:
+    d, n = 128, 256
+    x = mx.array(np.random.default_rng(0).standard_normal((n, d)).astype(np.float32))
+    q = RaBitQQuantizer(d=d, nlist=8)
+    q.fit(x)
+    ev = q.encode(x)
+    stored = ev.indices.nbytes + ev.norm.nbytes
+    assert q.compression_ratio == pytest.approx(n * d * 2 / stored)
 
 
 def test_inner_product_shape() -> None:
