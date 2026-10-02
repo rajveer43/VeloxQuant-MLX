@@ -527,6 +527,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.92.2 (2026-10-02)
+
+### Bug Fixes
+
+- **metal**: Accumulate Q.K^T in fp32 in flash/rabitq prefill kernels (#624)
+  ([#684](https://github.com/rajveer43/VeloxQuant-MLX/pull/684),
+  [`044bb4b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/044bb4b24a0a7526c507aa1b4e2787b6d9294e07))
+
+
 ## v0.92.1 (2026-10-01)
 
 ### Bug Fixes
