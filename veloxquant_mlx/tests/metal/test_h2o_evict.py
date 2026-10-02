@@ -469,3 +469,22 @@ def test_h2o_nan_scores_evict_an_unprotected_row() -> None:
     assert all(0 <= p <= 5 for p in po[0].tolist())
     assert all(10 <= p <= 15 for p in po[1].tolist())
     assert bool(mx.all(mx.isfinite(ko.astype(mx.float32))).item())
+
+
+def test_batched_metal_matches_mlx_twin_within_one_fp16_ulp():
+    """Documented contract (#652): values/scores/positions exact, keys within
+    1 fp16 ULP — the kernel rotates in fp32, the MLX twin in fp16."""
+    from veloxquant_mlx.quantizers import h2o
+
+    BH, N, D = 3, 300, 128
+    mx.random.seed(1)
+    k = mx.random.normal((BH, N, D)).astype(mx.float16)
+    v = mx.random.normal((BH, N, D)).astype(mx.float16)
+    s = mx.random.uniform(shape=(BH, N))
+    pos = (mx.arange(N)[None] + 1000).astype(mx.int32) * mx.ones((BH, 1), dtype=mx.int32)
+    ref = h2o._evict_via_mlx_batched(k, v, s, pos, 0, 500000.0, 0)
+    got = h2o._metal_evict_batched(k, v, s, pos, 0, 500000.0, 0)
+    for a, b in zip(ref[1:], got[1:], strict=True):  # values, scores, positions
+        assert mx.array_equal(a, b).item()
+    a, b = ref[0].astype(mx.float32), got[0].astype(mx.float32)
+    assert bool(mx.all(mx.abs(a - b) <= 2.0**-9 * mx.maximum(mx.abs(a), mx.abs(b)) + 1e-6).item())

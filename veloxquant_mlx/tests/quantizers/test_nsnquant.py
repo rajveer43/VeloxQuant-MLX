@@ -226,3 +226,13 @@ def test_full_pipeline_single_token() -> None:
     # A single token is fully described by (s1, o, s2) + its unit direction,
     # so reconstruction is near-exact regardless of the codebook.
     assert _mean_cosine(out, x) > 0.999
+
+
+def test_codebook_cache_key_includes_n_samples_and_iters():
+    """A cheap codebook must not be returned for a different (default)
+    n_samples/iters request (#653)."""
+    cheap = build_universal_codebook(seed=4321, n_samples=2048, iters=1, kind="magnitude")
+    other = build_universal_codebook(seed=4321, n_samples=4096, iters=2, kind="magnitude")
+    assert not np.array_equal(cheap, other)
+    # Same arguments still hit the cache (same object).
+    assert build_universal_codebook(seed=4321, n_samples=2048, iters=1, kind="magnitude") is cheap

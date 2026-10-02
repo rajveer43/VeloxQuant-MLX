@@ -45,9 +45,15 @@ from mlx_lm.models.cache import LRUPromptCache
 from veloxquant_mlx.cache.base import KVCacheBuilder, KVCacheConfig
 from veloxquant_mlx.cache.registry import ServeTier, probe_serve_tier
 
+# A finished request is stored under prompt + generated tokens. Reaching that
+# entry from a shorter key (the bare prompt, or any shared prefix) needs a
+# trim, which these caches refuse -- so a repeat of the same prompt misses too
+# (#661). Only a new prompt that extends a stored one is reused.
 _NOT_TRIMMABLE_NOTE = (
     "method {method!r} does not support prefix-cache trimming (NOT_TRIMMABLE); "
-    "only exact full-prompt repeats will be reused, not partial-prefix overlap."
+    "a cached entry is reused only when a new prompt extends it (e.g. a "
+    "follow-up turn). Repeats of the same prompt and shared-prefix overlap "
+    "are prefilled again."
 )
 
 

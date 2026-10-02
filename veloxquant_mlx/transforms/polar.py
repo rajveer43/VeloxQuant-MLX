@@ -88,8 +88,10 @@ class RecursivePolarTransform(Transform):
             # codebook/PDF (distributions.py, strategies.py) assume
             # [0, 2*pi) -- fold negative angles up so forward() actually
             # produces the range the rest of the pipeline expects (#69).
-            # For level >= 2, fold angles into [0, pi/2] instead.
-            a = a % (2 * math.pi) if ell == 0 else mx.abs(a % (math.pi / 2))
+            # For level >= 2 the inputs are radii (>= 0), so atan2 already
+            # lies in [0, pi/2]; clip rather than fold, since a modulo wraps
+            # an exact pi/2 (an all-zero first element) to 0 (#657).
+            a = a % (2 * math.pi) if ell == 0 else mx.clip(a, 0.0, math.pi / 2)
 
             angles.append(a.astype(x.dtype))
 

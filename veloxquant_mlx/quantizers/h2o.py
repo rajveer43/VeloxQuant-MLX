@@ -96,8 +96,8 @@ sink-protected argmin, evict, RoPE-remap — is still a Python loop, but each
 iteration's ~15 small MLX ops (concat x4, argmin, boolean-index x4, remap)
 can optionally be replaced with two fused Metal dispatches via
 :func:`veloxquant_mlx.metal.h2o_fused_evict` (design:
-``paper/research/H2O_METAL_KERNEL_TECH_SPEC.md``). Verified bit-for-bit
-equivalent to the MLX eviction branch it replaces (18 parity tests in
+``paper/research/H2O_METAL_KERNEL_TECH_SPEC.md``). Equivalent to the MLX eviction branch it replaces (values, scores and
+positions exactly; keys within 1 fp16 ULP, since the kernel rotates in fp32) (18 parity tests in
 ``veloxquant_mlx/tests/metal/test_h2o_evict.py``, including sink protection,
 interior eviction, tie-break-matches-``mx.argmin``, and untouched-rows-are-
 exact-copies). Measured ~3.4x faster than the pure-MLX per-token branch at
@@ -439,7 +439,7 @@ def _evict_via_mlx(
 ) -> tuple[mx.array, mx.array, mx.array, mx.array]:
     """Pure-MLX eviction: sink- and grace-protected argmin, drop the loser.
     Reference implementation — see module docstring for why this exists (the
-    fused Metal path in :func:`_evict_via_metal` must match this bit-for-bit).
+    fused Metal path in :func:`_evict_via_metal` must match this; keys to within 1 fp16 ULP).
 
     Survivors keep their true original position and the rotation they
     already carry — they are NOT renumbered or re-rotated (see #609). This
@@ -495,7 +495,7 @@ def _evict_via_metal(
 ) -> tuple[mx.array, mx.array, mx.array, mx.array]:
     """Fused-Metal-kernel eviction — see
     :func:`veloxquant_mlx.metal.h2o_fused_evict` and
-    ``paper/research/H2O_METAL_KERNEL_TECH_SPEC.md``. Bit-for-bit equivalent
+    ``paper/research/H2O_METAL_KERNEL_TECH_SPEC.md``. Equivalent (keys to within 1 fp16 ULP)
     to :func:`_evict_via_mlx` (verified in
     ``veloxquant_mlx/tests/metal/test_h2o_evict.py``, including grace
     protection); single-(batch*head) call here (``BH=1``), since

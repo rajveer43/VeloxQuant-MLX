@@ -158,7 +158,7 @@ def build_universal_codebook(
             f"build_universal_codebook: codebook_size={codebook_size} > 256 "
             "overflows the uint8 centroid indices produced by _nearest_centroid()"
         )
-    key = (codebook_size, subvector_dim, seed, kind)
+    key = (codebook_size, subvector_dim, seed, n_samples, iters, kind)
     cached = _CODEBOOK_CACHE.get(key)
     if cached is not None:
         return cached
