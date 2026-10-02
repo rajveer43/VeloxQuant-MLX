@@ -124,3 +124,43 @@ def test_calibrate_from_vectors_detects_low_d_eff():
 
     # For nearly rank-4 data, d_s should be in range [1, 15]
     assert 1 <= key_ds <= 15, f"Expected d_s ≈ 4 for rank-4 data, got {key_ds}"
+
+
+class _MultiHeadFakeModel:
+    """n_layers attention layers; KV head h puts all its energy on channel h."""
+
+    def __init__(self, n_layers: int, n_heads: int, head_dim: int) -> None:
+        import types
+
+        self.n_heads, self.head_dim = n_heads, head_dim
+        self.layers = [
+            types.SimpleNamespace(self_attn=types.SimpleNamespace(head_dim=head_dim))
+            for _ in range(n_layers)
+        ]
+
+    def __call__(self, tokens, cache):
+        import mlx.core as mx
+
+        s = tokens.shape[-1]
+        k = mx.zeros((1, self.n_heads, s, self.head_dim))
+        for h in range(self.n_heads):
+            k[:, h, :, h] = mx.random.normal((s,), key=mx.random.key(h)) * 10
+        for c in cache:
+            c.update_and_fetch(k, k)
+        return mx.zeros((1, s, 4))
+
+
+def test_collect_kv_vectors_samples_every_head():
+    """With more rows than the budget, no KV head may be dropped (#643)."""
+    import mlx.core as mx
+
+    from veloxquant_mlx.spectral.calibrate import collect_kv_vectors_mlx
+
+    model = _MultiHeadFakeModel(n_layers=2, n_heads=4, head_dim=16)
+    keys, _ = collect_kv_vectors_mlx(model, mx.arange(600), n_tokens_per_run=512)
+    k = keys[0]
+    assert k.shape[0] <= 512
+    energy = (k[:, :4] ** 2).sum(axis=0)
+    assert (energy > 0).all(), f"some heads contributed no energy: {energy}"
+    # Heads are sampled evenly: no head holds more than twice another's energy share.
+    assert energy.max() < 2 * energy.min()
