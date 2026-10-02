@@ -87,9 +87,14 @@ class TestFitDistortionCurve:
         assert beta > 1.0
 
     def test_rvq_beta_near_paper_value(self) -> None:
-        """Paper reports β ≈ 3.5 for TurboQuant on head_dim=128."""
+        """Paper reports β ≈ 3.5 for TurboQuant on head_dim=128.
+
+        The measured fit is steeper than the paper's once the stage-2
+        codebook is correctly scaled (#625): the RVQ MSE falls ~6x then ~9x
+        per extra bit, so only a loose sanity band is asserted.
+        """
         _, beta = fit_distortion_curve(head_dim=128)
-        assert 2.0 < beta < 6.0, f"beta={beta} far from paper-reported ~3.5"
+        assert 2.0 < beta < 10.0, f"beta={beta} implausible vs paper-reported ~3.5"
 
 
 class TestKVCacheConfigListBitWidth:
