@@ -22,6 +22,7 @@ from veloxquant_mlx.planning.memory_estimator import (
     MemoryEstimate,
     estimate_candidate_memory,
     method_quant_bits,
+    method_token_budget,
 )
 from veloxquant_mlx.planning.workload import WorkloadObjective, WorkloadProfile
 from veloxquant_mlx.profiling.hardware_profiler import HardwareProfile
@@ -105,11 +106,12 @@ def _retention(
     context they drop most tokens — that is a quality loss *by definition*,
     not a caveat. Quantization methods retain everything (retention 1.0).
     """
-    _, _, evicts = method_quant_bits(method)
-    if not evicts:
+    # Read the budget from the method table: ``estimate.compressed_bytes``
+    # is already scaled by the codec's bit ratio, so dividing it by fp16
+    # bytes/token undercounts kept tokens for quantize+evict methods.
+    budget_tokens = method_token_budget(method)
+    if budget_tokens is None:
         return 1.0
-    per_token = model.baseline_kv_bytes_per_token * model.num_layers * workload.effective_batch
-    budget_tokens = max(1, estimate.compressed_bytes // max(1, per_token))
     return min(1.0, budget_tokens / max(1, workload.total_tokens_per_request))
 
 
