@@ -206,3 +206,37 @@ def test_ruleset_defaults_are_registered_methods():
 
     for entry in mac_recommender.ruleset_dict()["defaults"].values():
         assert get_method(entry["method"]).serve_tier.is_servable
+
+
+def test_key_only_goals_keep_fp16_values_in_the_estimate():
+    """everyday/max_key_accounting shrink only keys: estimate = K/ratio + V (#638)."""
+    for goal in ("everyday", "max_key_accounting"):
+        r = mac_recommender.recommend(
+            mac_recommender.RecommendRequest(
+                chip="M4", ram_gb=24, model_class="7B", goal=goal, seq_len=32768
+            )
+        )
+        half = r.kv_fp16_mb / 2
+        assert r.kv_compressed_mb_estimate == pytest.approx(
+            half / r.key_accounting_ratio + half, rel=1e-3
+        )
+        assert r.kv_compressed_mb_estimate > half  # values are not compressed
+
+
+def test_streaming_estimate_models_the_fixed_window():
+    r = mac_recommender.recommend(
+        mac_recommender.RecommendRequest(
+            chip="M4", ram_gb=24, model_class="7B", goal="constant_memory", seq_len=32768
+        )
+    )
+    kept = r.knobs["stream_n_sink"] + r.knobs["stream_window_size"]
+    assert r.kv_compressed_mb_estimate == pytest.approx(r.kv_fp16_mb * kept / 32768, rel=1e-3)
+
+
+def test_streaming_estimate_never_exceeds_fp16_for_short_contexts():
+    r = mac_recommender.recommend(
+        mac_recommender.RecommendRequest(
+            chip="M4", ram_gb=24, model_class="7B", goal="constant_memory", seq_len=100
+        )
+    )
+    assert r.kv_compressed_mb_estimate == pytest.approx(r.kv_fp16_mb, rel=1e-3)
