@@ -113,3 +113,15 @@ def test_profile_layers_and_format_table():
     table = format_profile_table(report)
     assert "Layer 0" in table
     assert "Layer 1" in table
+
+
+def test_fp16_baseline_counts_keys_values_and_all_heads():
+    """Baseline must be the real incoming K+V bytes, not key-only/one-head (#628)."""
+    cache = _FakeMLXCache()
+    profiled = MLXCacheProfiler(cache, layer_id=0)
+    rng = np.random.default_rng(0)
+    shape = (1, 4, 6, HEAD_DIM)  # 4 KV heads, 6 tokens
+    k = mx.array(rng.standard_normal(shape).astype(np.float16))
+    v = mx.array(rng.standard_normal(shape).astype(np.float16))
+    profiled.update_and_fetch(k, v)
+    assert profiled.profile().fp16_baseline_bytes == 2 * 4 * 6 * HEAD_DIM * 2
