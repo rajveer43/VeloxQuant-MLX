@@ -149,11 +149,13 @@ class TurboQuantRVQ(Quantizer):
         self._codebook1 = CodebookFactory.create(distribution, b=b, d=d)
 
         # Stage 2 codebook: Laplacian on the residual.
-        # The std of Lloyd-Max error on N(0, 1/d) at b bits is roughly
-        # sigma_q ≈ sqrt(1/d) * (sqrt(3*pi)/2) * 4^(-b). Use a Laplacian
-        # whose scale matches that std (Laplacian std = scale * sqrt(2)).
+        # Lloyd-Max distortion (MSE) on N(0, 1/d) at b bits is roughly
+        # (sqrt(3*pi)/2) * 4^(-b) for a unit vector, i.e. per-coordinate
+        # variance (sqrt(3*pi)/2) * 4^(-b) / d. The residual std is the
+        # square root of that variance. Use a Laplacian whose scale matches
+        # that std (Laplacian std = scale * sqrt(2)).
         if residual_scale is None:
-            sigma_q = math.sqrt(1.0 / d) * (math.sqrt(3.0 * math.pi) / 2.0) * (4.0**-b)
+            sigma_q = math.sqrt((math.sqrt(3.0 * math.pi) / 2.0) * (4.0**-b) / d)
             residual_scale = max(sigma_q / math.sqrt(2.0), 1e-6)
         self._residual_scale = float(residual_scale)
         self._codebook2 = _stage2_codebook(b, self._residual_scale)
