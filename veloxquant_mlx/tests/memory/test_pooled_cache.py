@@ -132,3 +132,4 @@ def test_reset_releases_blocks_and_clears_inner():
     assert cache.n_blocks_held() == 0
     assert len(inner.keys) == 0
     assert len(inner.values) == 0
+    assert len(cache) == 0

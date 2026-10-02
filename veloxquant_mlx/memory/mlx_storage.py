@@ -5,7 +5,7 @@ per block id (lazily, on first write) and reuses that buffer in place
 whenever the pool recycles the block id, so no new allocation happens
 during steady-state generation. The pool decides *which* block ids are
 free/owned; this module owns the actual memory those ids point to and
-tracks per-format (fp16/int8/int4/int2/int1) resident byte accounting.
+reports the resident bytes of the buffers it actually holds.
 """
 
 from __future__ import annotations
@@ -13,21 +13,6 @@ from __future__ import annotations
 from typing import Any
 
 from veloxquant_mlx.memory.block_pool import Block, BlockPoolAllocator
-
-# Bytes per element for the compression formats a pool is expected to host
-# side by side. "fp16" blocks store raw vectors; the int* formats store
-# packed codes plus the fixed per-block scale/zero-point overhead is
-# accounted for by the caller (the packed byte count already reflects the
-# code width; this table only disambiguates same-block-size formats for
-# stats/reporting).
-_BYTES_PER_ELEMENT: dict[str, float] = {
-    "fp16": 2.0,
-    "fp32": 4.0,
-    "int8": 1.0,
-    "int4": 0.5,
-    "int2": 0.25,
-    "int1": 0.125,
-}
 
 
 class MLXBlockStorage:
@@ -66,8 +51,8 @@ class MLXBlockStorage:
         if format == "fp32":
             return mx.float32
         if format in ("int8", "int4", "int2", "int1"):
-            # Sub-byte formats are packed by the caller's codec; the pool
-            # stores packed codes as uint8 regardless of bit-width.
+            # One uint8 per code regardless of bit-width; no bit-packing
+            # happens in this storage layer.
             return mx.uint8
         raise ValueError(f"MLXBlockStorage: unsupported format {format!r}")
 
@@ -128,12 +113,9 @@ class MLXBlockStorage:
         first write/read) — this is the actual resident footprint, not the
         pool's full pre-allocated capacity.
         """
-        total = 0.0
-        for block_id, buf in self._buffers.items():
-            fmt = self._dtypes[block_id]
-            per_elem = _BYTES_PER_ELEMENT.get(fmt, buf.dtype.size)
-            total += buf.shape[0] * buf.shape[1] * per_elem
-        return int(total)
+        # Buffers are real uint8/fp16 arrays: sub-byte formats are not
+        # bit-packed here, so the true footprint is the array's own nbytes.
+        return sum(int(buf.nbytes) for buf in self._buffers.values())
 
     def release(self, block: Block) -> None:
         """Drop the buffer for a freed block, letting MLX reclaim its memory.
