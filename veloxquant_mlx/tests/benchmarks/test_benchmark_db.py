@@ -217,3 +217,55 @@ def test_savings_percent_clamped():
     assert _record(memory_reduction=0.0).savings_percent == 100.0
     assert _record(memory_reduction=0.2).savings_percent == 80.0
     assert _record(memory_reduction=5.0).savings_percent == 0.0
+
+
+# --- #639 -------------------------------------------------------------------
+
+
+def test_records_on_different_chips_do_not_overwrite(tmp_path):
+    db = BenchmarkDatabase(tmp_path)
+    db.add("kivi", "m", context_length=4096, memory_reduction=0.2, chip="Apple M1")
+    db.add("kivi", "m", context_length=4096, memory_reduction=0.9, chip="Apple M4")
+    assert sorted(r.chip for r in db.records.values()) == ["Apple M1", "Apple M4"]
+
+
+def test_fingerprint_unchanged_when_chip_unknown():
+    old = benchmark_fingerprint("kivi", "m", 4096, 1)
+    assert benchmark_fingerprint("kivi", "m", 4096, 1, "unknown") == old
+    assert benchmark_fingerprint("kivi", "m", 4096, 1, "Apple M4") != old
+
+
+def test_add_without_memory_reduction_stays_unmeasured(tmp_path):
+    db = BenchmarkDatabase(tmp_path)
+    rec = db.add("kivi", "m", context_length=4096, latency_ms_per_token=3.0)
+    assert rec.memory_reduction is None
+    assert rec.savings_percent == 0.0
+    assert BenchmarkDatabase(tmp_path).records[rec.id].memory_reduction is None
+
+
+def test_latency_only_record_keeps_analytic_memory_estimate(tmp_path):
+    """A latency-only record must not be applied as 'measured 0% savings'."""
+    from veloxquant_mlx.planning import AutoOptimizer, AutoOptimizerOptions
+
+    model = _model("toy")
+    wl = WorkloadProfile(context_length=4096)
+    base = AutoOptimizer(AutoOptimizerOptions(probe_top_n=0)).estimate_memory(wl, model=model)
+    db = BenchmarkDatabase(tmp_path)
+    db.add(
+        "turboquant_rvq", "toy", context_length=4096, latency_ms_per_token=3.0, architecture="llama"
+    )
+    opt = AutoOptimizer(AutoOptimizerOptions(probe_top_n=0, benchmark_db_dir=str(tmp_path)))
+    res = opt.recommend_strategy(None, model=model, workload=wl)
+    item = next(i for i in res.ranked if i.method == "turboquant_rvq")
+    assert item.memory_estimate.savings_percent == base["turboquant_rvq"].savings_percent
+
+
+def test_corrupt_record_is_never_matched(tmp_path):
+    db = BenchmarkDatabase(tmp_path)
+    rec = db.add("h2o", "toy", context_length=4096, memory_reduction=0.1, architecture="llama")
+    (tmp_path / "records" / f"{rec.id}.json").write_text("{not json")
+    reloaded = BenchmarkDatabase(tmp_path)
+    assert "corrupt" in reloaded.records[rec.id].tags
+    assert "h2o" not in reloaded.find_best_match(
+        _model("toy"), WorkloadProfile(context_length=4096)
+    )

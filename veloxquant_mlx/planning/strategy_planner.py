@@ -317,7 +317,7 @@ def plan_strategy(
         if record is None:
             continue
         notes = evidence_notes[name]
-        if record.memory_reduction and 0.0 < record.memory_reduction <= 1.0:
+        if record.memory_reduction is not None and 0.0 < record.memory_reduction <= 1.0:
             estimates[name] = _patched_estimate(estimates[name], record)
             notes.append(f"measured {record.savings_percent:.1f}% memory savings")
             evidence_kind[name] = "empirical"
