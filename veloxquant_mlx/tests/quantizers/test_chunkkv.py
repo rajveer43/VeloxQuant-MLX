@@ -253,3 +253,15 @@ def test_apply_reuse_indices_bootstraps_first_token():
     st = chunkkv_apply_reuse_indices(st, k, v, kept_positions=[[0]])
     assert int(st.keys.shape[0]) == 1
     assert bool(mx.all(st.keys[0] == k[0].astype(mx.float16)).item())
+
+
+def test_init_rejects_chunk_larger_than_budget_without_sinks():
+    """n_sink=0 with chunk_size > budget would evict every row (#654)."""
+    with pytest.raises(ValueError, match="chunk_size"):
+        init_chunkkv_state(n_sink=0, budget=3, head_dim=8, chunk_size=4)
+
+
+def test_init_allows_boundary_and_disabled_configs():
+    init_chunkkv_state(n_sink=0, budget=4, head_dim=8, chunk_size=4)
+    init_chunkkv_state(n_sink=0, budget=0, head_dim=8, chunk_size=8)  # disabled cache
+    init_chunkkv_state(n_sink=2, budget=4, head_dim=8, chunk_size=4)  # sinks keep rows

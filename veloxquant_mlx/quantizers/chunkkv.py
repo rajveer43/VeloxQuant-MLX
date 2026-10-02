@@ -269,8 +269,10 @@ def init_chunkkv_state(
     Raises:
         ValueError: if ``chunk_size < 1``, ``score_mode`` is unknown, or there
             are sink positions to protect but they leave no evictable room
-            within ``budget`` (``n_sink=0, budget=0`` remains a valid
-            "disabled cache" configuration).
+            within ``budget``, or ``n_sink=0`` with ``0 < budget <
+            chunk_size`` (eviction would drop every row);
+            ``n_sink=0, budget=0`` remains a valid "disabled cache"
+            configuration).
     """
     if chunk_size < 1:
         raise ValueError(f"init_chunkkv_state: chunk_size must be >= 1, got {chunk_size}.")
@@ -283,6 +285,11 @@ def init_chunkkv_state(
             f"chunkkv: n_sink ({n_sink}) must be < budget ({budget}) — no "
             "evictable positions remain, so sinks would be evicted once "
             "the cache fills"
+        )
+    if n_sink == 0 and 0 < budget < chunk_size:
+        raise ValueError(
+            f"chunkkv: chunk_size ({chunk_size}) must be <= budget ({budget}) when "
+            "n_sink=0 — an eviction would drop every row and empty the cache"
         )
     return ChunkKVState(
         keys=None,
