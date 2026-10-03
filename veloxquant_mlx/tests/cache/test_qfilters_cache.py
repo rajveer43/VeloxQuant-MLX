@@ -340,13 +340,17 @@ def test_calibrated_filter_is_path_independent() -> None:
 
     prefill = QFiltersKVCache(cfg, filters=filters)
     k_prefill, v_prefill = prefill.update_and_fetch(k, v)
-    k_prefill, v_prefill = prefill.state[:2]  # Retained state; attention receives pre-eviction rows.
+    k_prefill, v_prefill = prefill.state[
+        :2
+    ]  # Retained state; attention receives pre-eviction rows.
 
     decode = QFiltersKVCache(cfg, filters=filters)
     k_decode = v_decode = None
     for t in range(S):
         k_decode, v_decode = decode.update_and_fetch(k[:, :, t : t + 1], v[:, :, t : t + 1])
-        k_decode, v_decode = decode.state[:2]  # Retained state; attention receives pre-eviction rows.
+        k_decode, v_decode = decode.state[
+            :2
+        ]  # Retained state; attention receives pre-eviction rows.
 
     assert np.array_equal(np.array(k_prefill), np.array(k_decode))
     assert np.array_equal(np.array(v_prefill), np.array(v_decode))
@@ -789,7 +793,9 @@ def test_metal_path_matches_pure_mlx_path(
     cache_pure = QFiltersKVCache(cfg_pure, filters=filters)
 
     k_metal, v_metal = cache_metal.update_and_fetch(k, v)
-    k_metal, v_metal = cache_metal.state[:2]  # Retained state; attention receives pre-eviction rows.
+    k_metal, v_metal = cache_metal.state[
+        :2
+    ]  # Retained state; attention receives pre-eviction rows.
     k_pure, v_pure = cache_pure.update_and_fetch(k, v)
     k_pure, v_pure = cache_pure.state[:2]  # Retained state; attention receives pre-eviction rows.
 
