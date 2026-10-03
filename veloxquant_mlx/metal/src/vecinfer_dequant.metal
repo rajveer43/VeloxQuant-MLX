@@ -10,7 +10,8 @@
     if (flat_idx >= N_total) return;
 
     uint sub_dim  = codebook_shape[1];
-    uint code_idx = indices[flat_idx];
+    // Clamp so a corrupt code reads a valid centroid instead of past the codebook.
+    uint code_idx = min(uint(indices[flat_idx]), uint(codebook_shape[0]) - 1u);
     uint cb_base  = code_idx * sub_dim;
     uint out_base = flat_idx * sub_dim;
 
