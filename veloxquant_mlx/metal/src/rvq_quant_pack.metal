@@ -20,7 +20,7 @@
 //      on ties as well, since both reduce the same `>` comparisons in the
 //      same left-to-right order over sorted boundaries.)
 //   2. y_hat1 = centroids1[idx1]
-//   3. r1 = y - y_hat1
+//   3. r1 = half(y - y_hat1)   -- fp16 residual, as in the MLX path
 //   4. idx2 = count(r1 > boundaries2[k])  for k in [0, K2-1)   -- stage-2 code
 //   5. Each lane's (idx1, idx2) is a BITS-bit code. Lanes cooperatively pack
 //      ELEMS_PER_WORD = 32 / BITS consecutive lanes' codes into one uint32,
@@ -50,7 +50,9 @@
         idx1 += uint(y > float(boundaries1[k]));
     }
     float y_hat1 = float(centroids1[idx1]);
-    float r1 = y - y_hat1;
+    // The MLX reference computes the residual in fp16 (y, y_hat1 are fp16), so
+    // round it to half here; an fp32 residual flips stage-2 codes on near-ties.
+    float r1 = float(half(y - y_hat1));
 
     uint idx2 = 0u;
     for (uint k = 0; k < K2; ++k) {
