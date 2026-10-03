@@ -94,3 +94,16 @@ def test_float16_storage_remains_forceable():
     mx.eval(kept_k, kept_v)
     assert kept_k.dtype == mx.float16
     assert kept_v.dtype == mx.float16
+
+
+def test_metal_gather_clamps_out_of_range_indices():
+    from veloxquant_mlx.metal._snapkv_select import gather_kv
+
+    keys = mx.arange(2 * 4 * 8, dtype=mx.float32).reshape(2, 4, 8)
+    values = keys + 1000
+    indices = mx.array([[0, 3, -1, 99], [1, 2, 4, -7]], mx.int32)
+    k, v = gather_kv(keys, values, indices, mx.float32)
+    src = np.clip(np.array(indices), 0, 3)
+    expected = np.stack([np.array(keys)[g][src[g]] for g in range(2)])
+    assert np.array_equal(np.array(k), expected)
+    assert np.array_equal(np.array(v), expected + 1000)

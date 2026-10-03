@@ -6,6 +6,7 @@ if (gid >= groups * count * d) return;
 uint dim = gid % d;
 uint row = gid / d;
 uint g = row / count;
-uint src = uint(indices[row]);
+// Clamp so a corrupt index reads a valid row of this group, never another group's.
+uint src = min(uint(max(indices[row], 0)), n - 1);
 keys_out[gid] = keys[(g*n + src)*d + dim];
 values_out[gid] = values[(g*n + src)*d + dim];
