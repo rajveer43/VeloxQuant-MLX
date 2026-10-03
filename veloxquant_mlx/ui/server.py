@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -64,13 +65,16 @@ class PanelHandler(BaseHTTPRequestHandler):
 
     def _send_static(self, path: str) -> None:
         name = "index.html" if path in ("/", "") else path.lstrip("/")
-        target = (STATIC_DIR / name).resolve()
 
-        # Contain traversal: refuse anything resolving outside STATIC_DIR.
-        static_root = STATIC_DIR.resolve()
-        if (target != static_root and static_root not in target.parents) or not target.is_file():
+        # Contain traversal: normalise, then refuse anything outside STATIC_DIR.
+        # os.path (not pathlib) on purpose: this normpath+startswith form is the
+        # sanitizer CodeQL's py/path-injection query recognises.
+        static_root = os.path.realpath(STATIC_DIR)
+        fullpath = os.path.realpath(os.path.normpath(os.path.join(static_root, name)))  # noqa: PTH118
+        if not fullpath.startswith(static_root + os.sep) or not os.path.isfile(fullpath):  # noqa: PTH113
             self.send_error(404, "not found")
             return
+        target = Path(fullpath)
 
         ctype = {
             ".html": "text/html; charset=utf-8",
