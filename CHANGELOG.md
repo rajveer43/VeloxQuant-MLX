@@ -527,6 +527,193 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.92.3 (2026-10-03)
+
+### Bug Fixes
+
+- **amc**: Quantize MID/LOW tiers per token across kept channels (#626)
+  ([#686](https://github.com/rajveer43/VeloxQuant-MLX/pull/686),
+  [`d4c3362`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d4c3362ba33a29193c237d693ec24f5336680bb3))
+
+- **artifacts**: Store codebooks as fp32 so cold and warm stores encode identically (#659)
+  ([#713](https://github.com/rajveer43/VeloxQuant-MLX/pull/713),
+  [`6fd530f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6fd530f69ea456bd3e4879b99f0db6c7ce1d3148))
+
+- **artifacts**: Unique temp files for NpyArtifactStore saves across processes (#634)
+  ([#717](https://github.com/rajveer43/VeloxQuant-MLX/pull/717),
+  [`4a99b0b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4a99b0b2ffec6a2b9ec8e0d6ee0ca578afb55354))
+
+- **benchmarks**: Keep per-chip records, distinguish unmeasured memory, skip corrupt matches (#639)
+  ([#696](https://github.com/rajveer43/VeloxQuant-MLX/pull/696),
+  [`a5a2972`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a5a2972b58746eabd4062a329620d71d38526696))
+
+- **benchmarks**: Perplexity runs through the KV cache; latency counts streamed tokens (#660)
+  ([#714](https://github.com/rajveer43/VeloxQuant-MLX/pull/714),
+  [`c1518e2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c1518e2af4516dcd9dfd4c1d7ff862593ea6b3f9))
+
+- **cache**: Options= no longer flips snap_batched_scoring; explicit flat kwargs always win (#662)
+  ([#716](https://github.com/rajveer43/VeloxQuant-MLX/pull/716),
+  [`8b7fbaf`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8b7fbaf331f574232d0c8eb89af961ce4b75750f))
+
+- **cache**: Svdq/kitty/adakv/cachegen/xkv/kvtc/nestedkv return K/V in the input dtype (#622)
+  ([#719](https://github.com/rajveer43/VeloxQuant-MLX/pull/719),
+  [`d31fd81`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d31fd816da071deb74bb7fb3c32e5069eb6d7227))
+
+- **chunkkv**: Reject chunk_size > budget when n_sink=0 at init (#654)
+  ([#710](https://github.com/rajveer43/VeloxQuant-MLX/pull/710),
+  [`4ea2027`](https://github.com/rajveer43/VeloxQuant-MLX/commit/4ea202716ccbc6b54a9138ed18642e3fdcd34f60))
+
+- **cli**: Estimate-memory --model-config no longer overridden by flag defaults (#627)
+  ([#718](https://github.com/rajveer43/VeloxQuant-MLX/pull/718),
+  [`5430f7f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5430f7f9f3399763fbfaff417a8b3e0454d57c6c))
+
+- **cli**: Make profile --set reuse serve's parse_overrides (#637)
+  ([#694](https://github.com/rajveer43/VeloxQuant-MLX/pull/694),
+  [`983c00e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/983c00e86e144d43514fbba59d144bf4633914ec))
+
+- **config**: Include KV-head count in WorkloadSpec.fp16_kv_bytes (#631)
+  ([#690](https://github.com/rajveer43/VeloxQuant-MLX/pull/690),
+  [`8fb83c7`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8fb83c7087ce8683cd41373579008ccbffa556d2))
+
+- **handlers**: Make OutlierSplitHandler round-trip mx and np inputs (#636)
+  ([#693](https://github.com/rajveer43/VeloxQuant-MLX/pull/693),
+  [`059add2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/059add2cda16202c86f6bb37a2a70c8d751a3e93))
+
+- **kvtc_dp**: Make dp_allocate_bits invariant under uniform variance scaling (#658)
+  ([#712](https://github.com/rajveer43/VeloxQuant-MLX/pull/712),
+  [`a596f39`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a596f3981bb011dfb5383ca48fed641736ecbf2b))
+
+- **landing**: Escape benchmark caption, source and chart labels before innerHTML (CodeQL
+  js/xss-through-dom #11) ([#723](https://github.com/rajveer43/VeloxQuant-MLX/pull/723),
+  [`e2c8590`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e2c8590a4527f797894bc1dfaaba2d0a30e19c37))
+
+- **memory**: Report real buffer bytes in resident_bytes; zero len on reset (#647)
+  ([#703](https://github.com/rajveer43/VeloxQuant-MLX/pull/703),
+  [`60f15b4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/60f15b461df6e0b406063d42f83987b1fbaea7a6))
+
+- **metal**: Clamp snapkv gather indices to the group's rows
+  ([#725](https://github.com/rajveer43/VeloxQuant-MLX/pull/725),
+  [`729ad13`](https://github.com/rajveer43/VeloxQuant-MLX/commit/729ad1352ac328413c358fc8d8f8c8a0832fc0f5))
+
+- **metal**: Clamp vecinfer dequant codes to the codebook
+  ([#727](https://github.com/rajveer43/VeloxQuant-MLX/pull/727),
+  [`c5c76e9`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c5c76e9f154385094145d143ea3b9c1901c156bd))
+
+- **metal**: H2o/keyformer eviction no longer uses index -1 with no candidate (#650)
+  ([#706](https://github.com/rajveer43/VeloxQuant-MLX/pull/706),
+  [`e03bc9a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e03bc9afdd350c9cccf654c831ee2a926d47e426))
+
+- **metal**: Round RVQ residual to fp16 in fused quant+pack kernel
+  ([#726](https://github.com/rajveer43/VeloxQuant-MLX/pull/726),
+  [`aac63cb`](https://github.com/rajveer43/VeloxQuant-MLX/commit/aac63cb05a57b63a2d2a420c0f8f685dab1f5030))
+
+- **nsnquant**: Include n_samples and iters in the codebook cache key (#653)
+  ([#709](https://github.com/rajveer43/VeloxQuant-MLX/pull/709),
+  [`704fc40`](https://github.com/rajveer43/VeloxQuant-MLX/commit/704fc40d0135cd3d5fdf06eb2ccc02cf5248d2ab))
+
+- **planning**: Bound the memory budget by Metal's working-set limit (#630)
+  ([#689](https://github.com/rajveer43/VeloxQuant-MLX/pull/689),
+  [`7751d24`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7751d24dae70ff124d063a742f43d51ec33d5827))
+
+- **planning**: Read the token budget from the method table for retention (#648)
+  ([#704](https://github.com/rajveer43/VeloxQuant-MLX/pull/704),
+  [`ae5ace8`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ae5ace8a7ecd20dcd3976d89470aacedc85af551))
+
+- **polar**: Clip level>=2 angles to [0, pi/2] instead of folding (#657)
+  ([#711](https://github.com/rajveer43/VeloxQuant-MLX/pull/711),
+  [`9e743f5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9e743f535c73a99bc43a7fcdc1a11ca30ac86793))
+
+- **prefix-cache**: NOT_TRIMMABLE notice no longer claims exact repeats are reused (#661)
+  ([#715](https://github.com/rajveer43/VeloxQuant-MLX/pull/715),
+  [`9b26223`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9b26223fcacb277635654b20d7da6b7ae0af8520))
+
+- **profiling**: Count K+V and all heads in the fp16 compression baseline (#628)
+  ([#687](https://github.com/rajveer43/VeloxQuant-MLX/pull/687),
+  [`b3ca084`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b3ca084e0f516ff760942234ace9ad1f7ff5947d))
+
+- **profiling**: Stop counting each token once per layer in total_tokens (#629)
+  ([#688](https://github.com/rajveer43/VeloxQuant-MLX/pull/688),
+  [`829febc`](https://github.com/rajveer43/VeloxQuant-MLX/commit/829febc1fba4074b329eefd002cb737536102005))
+
+- **qfilters**: Metal eviction breaks ties toward high indices and returns raw scores (#649)
+  ([#705](https://github.com/rajveer43/VeloxQuant-MLX/pull/705),
+  [`afe2043`](https://github.com/rajveer43/VeloxQuant-MLX/commit/afe2043f39e503e5e3d0c2dfaadccbc33e34e905))
+
+- **quantizers**: Derive RVQ default residual scale from MSE variance (#625)
+  ([#685](https://github.com/rajveer43/VeloxQuant-MLX/pull/685),
+  [`2b2060b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2b2060ba43142c1a71f5632dd426c99e0e15546d))
+
+- **rabitq**: Count per-key metadata in compression_ratio (#640)
+  ([#697](https://github.com/rajveer43/VeloxQuant-MLX/pull/697),
+  [`84e7327`](https://github.com/rajveer43/VeloxQuant-MLX/commit/84e732793154682094a0d8f3ad2e14b19e4cdfae))
+
+- **recommend**: Model key-only ratios and streaming window in KV estimate (#638)
+  ([#695](https://github.com/rajveer43/VeloxQuant-MLX/pull/695),
+  [`fedb339`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fedb3394f4b6501306b395173dcfe3d94935fced))
+
+- **recommend**: Only recommend registered, servable methods (#632)
+  ([#691](https://github.com/rajveer43/VeloxQuant-MLX/pull/691),
+  [`28e267d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/28e267d7d5d14eb6f2405698affbc56de901556d))
+
+- **routing**: Charge the clamped shard count at CacheRoute admission (#646)
+  ([#702](https://github.com/rajveer43/VeloxQuant-MLX/pull/702),
+  [`6e87361`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6e873616f4a7aeea868e8903ced9003960e514f2))
+
+- **routing**: Decay RateEstimator by global time so it measures arrival rate (#645)
+  ([#701](https://github.com/rajveer43/VeloxQuant-MLX/pull/701),
+  [`76470a6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/76470a67ecc16f1575ee885c06e9fb6e5d3ee1b2))
+
+- **spectral**: Sample every KV head during calibration (#643)
+  ([#699](https://github.com/rajveer43/VeloxQuant-MLX/pull/699),
+  [`16dc4d5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/16dc4d54aa548bf3707834a7b3a0d81c9938b9d0))
+
+- **spectral**: Validate cached rotations against the model before reuse (#644)
+  ([#700](https://github.com/rajveer43/VeloxQuant-MLX/pull/700),
+  [`60117ad`](https://github.com/rajveer43/VeloxQuant-MLX/commit/60117ad73c91320c27d80d6366fc61993bb111f3))
+
+- **tests**: Skip model_kv_benchmark tests without matplotlib
+  ([#724](https://github.com/rajveer43/VeloxQuant-MLX/pull/724),
+  [`9f1ceb2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9f1ceb2a5eb4170b97464b6f9b4865b6d7c4fbc2))
+
+- **ui**: Normalise static path with os.path containment check (CodeQL py/path-injection #14)
+  ([#722](https://github.com/rajveer43/VeloxQuant-MLX/pull/722),
+  [`d90fc89`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d90fc895a6fce59c3fb2794e9ae82232eb1dbdb2))
+
+- **ui**: Use a monotonic cursor for panel log polling (#635)
+  ([#692](https://github.com/rajveer43/VeloxQuant-MLX/pull/692),
+  [`e6ea8ed`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e6ea8ed109443f94dee5f79938435d9775885ad6))
+
+- **vecinfer**: Metal key path averages smooth rows like the MLX twin (#651)
+  ([#707](https://github.com/rajveer43/VeloxQuant-MLX/pull/707),
+  [`fe7cdcc`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fe7cdcc9bd853e5b450bbb20067bc6f2ecf9df96))
+
+- **zipcache**: Default zipcache_bytes group_size to the state's (#641)
+  ([#698](https://github.com/rajveer43/VeloxQuant-MLX/pull/698),
+  [`18f6cb4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/18f6cb495217c39cc7a48a152081e60cfc892d41))
+
+### Code Style
+
+- **tests**: Ruff-format two test files
+  ([#724](https://github.com/rajveer43/VeloxQuant-MLX/pull/724),
+  [`9f1ceb2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9f1ceb2a5eb4170b97464b6f9b4865b6d7c4fbc2))
+
+### Documentation
+
+- Copyright year is 2026 (first commit is 2026)
+  ([#721](https://github.com/rajveer43/VeloxQuant-MLX/pull/721),
+  [`bc1f5b0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bc1f5b004570e6c27b4c6e209b13dcb880937e24))
+
+- **evict**: H2O/Keyformer Metal path matches the MLX twin to 1 fp16 ULP, not bit-for-bit (#652)
+  ([#708](https://github.com/rajveer43/VeloxQuant-MLX/pull/708),
+  [`6de2ba3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6de2ba32830c9efa81c63459a284859e8c3cd4ca))
+
+### Testing
+
+- **cache**: Don't depend on CPython's exact empty-max() wording (#598)
+  ([#720](https://github.com/rajveer43/VeloxQuant-MLX/pull/720),
+  [`3ad1712`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3ad1712ece78ada4ec274305aa7b6dd24b965c66))
+
+
 ## v0.92.2 (2026-10-02)
 
 ### Bug Fixes
