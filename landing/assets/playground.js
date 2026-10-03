@@ -1552,10 +1552,10 @@ function svgBarChart({ groups, series, width = 640, height = 300, yLabel, valFmt
       const x = x0 + si * barW;
       const y = pad.t + ih - bh;
       const baseY = pad.t + ih;
-      bars += `<rect class="pg-bar" x="${x.toFixed(1)}" y="${baseY.toFixed(1)}" width="${barW.toFixed(1)}" height="0" data-y="${y.toFixed(1)}" data-h="${bh.toFixed(1)}" rx="2" fill="${colors[si % colors.length]}"><title>${g.label} · ${s.label}: ${valFmt(v)}</title></rect>`;
+      bars += `<rect class="pg-bar" x="${x.toFixed(1)}" y="${baseY.toFixed(1)}" width="${barW.toFixed(1)}" height="0" data-y="${y.toFixed(1)}" data-h="${bh.toFixed(1)}" rx="2" fill="${colors[si % colors.length]}"><title>${esc(g.label)} · ${esc(s.label)}: ${valFmt(v)}</title></rect>`;
       bars += `<text class="pg-bar-val" x="${(x + barW / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="10" fill="${text}" opacity="0">${valFmt(v)}</text>`;
     });
-    bars += `<text x="${(pad.l + gi * bandW + bandW / 2).toFixed(1)}" y="${height - pad.b + 16}" text-anchor="middle" font-size="11" fill="${muted}">${g.label}</text>`;
+    bars += `<text x="${(pad.l + gi * bandW + bandW / 2).toFixed(1)}" y="${height - pad.b + 16}" text-anchor="middle" font-size="11" fill="${muted}">${esc(g.label)}</text>`;
   });
 
   // axes + rotated y label
@@ -1564,7 +1564,7 @@ function svgBarChart({ groups, series, width = 640, height = 300, yLabel, valFmt
     <text x="14" y="${pad.t + ih / 2}" transform="rotate(-90 14 ${pad.t + ih / 2})" text-anchor="middle" font-size="11" fill="${muted}">${yLabel}</text>`;
 
   const legend = series
-    .map((s, si) => `<span class="pg-legend-item"><span class="pg-legend-swatch" style="background:${colors[si % colors.length]}"></span>${s.label}</span>`)
+    .map((s, si) => `<span class="pg-legend-item"><span class="pg-legend-swatch" style="background:${colors[si % colors.length]}"></span>${esc(s.label)}</span>`)
     .join("");
 
   return `<div class="pg-legend">${legend}</div>
@@ -1714,8 +1714,8 @@ async function runBenchViewer() {
   out.innerHTML = `${renderBand("Measured results", "chart", chart)}
     <p class="pg-provenance"><span class="pg-prov-dot" aria-hidden="true"></span>
       Measured on a real Mac, not estimated · you can check the raw numbers in
-      <code>${source}</code></p>
-    <p class="pg-caption">${caption}</p>
+      <code>${esc(source)}</code></p>
+    <p class="pg-caption">${esc(caption)}</p>
     <p class="visually-hidden">${esc(srSummary)}</p>`;
 
   growBars(out);
