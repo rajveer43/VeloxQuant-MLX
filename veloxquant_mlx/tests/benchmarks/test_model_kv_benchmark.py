@@ -7,7 +7,10 @@ import math
 import mlx.core as mx
 import pytest
 
-from veloxquant_mlx.benchmarks import model_kv_benchmark as mkb
+# matplotlib is the optional [plots] extra; the release gate installs only [test].
+pytest.importorskip("matplotlib")
+
+from veloxquant_mlx.benchmarks import model_kv_benchmark as mkb  # noqa: E402
 
 _VOCAB = 11
 
