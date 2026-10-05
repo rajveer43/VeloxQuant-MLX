@@ -123,9 +123,7 @@ def _encode_decode_full_kernel(D: int, n_sub: int, sub_dim: int, n_centroids: in
 
 def _encode_decode_simple_kernel(D: int, n_sub: int, sub_dim: int, n_centroids: int):
     def _build():
-        header = (
-            f"#pragma METAL fp math_mode(relaxed)\n#define MAX_D {D}\n#define MAX_N_SUB {n_sub}\n"
-        )
+        header = "#pragma METAL fp math_mode(relaxed)\n"
         return mx.fast.metal_kernel(
             name=f"vecinfer_enc_dec_simple_d{D}_ns{n_sub}_sd{sub_dim}_nc{n_centroids}",
             input_names=["values", "v_codebook", "params"],
@@ -324,6 +322,11 @@ def vecinfer_encode_decode_simple_metal(
         )
     if D > 512:
         raise ValueError(f"vecinfer_encode_decode_simple_metal: D={D} > 512 (threadgroup limit)")
+    if n_centroids == 0 or v_codebook.ndim != 2 or v_codebook.shape[1] != sub_dim:
+        raise ValueError(
+            f"vecinfer_encode_decode_simple_metal: codebook must be non-empty "
+            f"[n_centroids, {sub_dim}], got {v_codebook.shape}"
+        )
 
     values_f32 = values.astype(mx.float32) if values.dtype != mx.float32 else values
     cb_f32 = v_codebook.astype(mx.float32) if v_codebook.dtype != mx.float32 else v_codebook
@@ -335,10 +338,9 @@ def vecinfer_encode_decode_simple_metal(
         inputs=[values_f32, cb_f32, params],
         output_shapes=[(B, H, S, D), (B, H, S, n_sub)],
         output_dtypes=[mx.float16, mx.uint32],
-        # grid is in threads, not threadgroups — see matching comment in
-        # vecinfer_encode_decode_metal.
-        grid=(n_tokens * D, 1, 1),
-        threadgroup=(D, 1, 1),
+        # grid is in threads, not threadgroups: one thread per sub-vector.
+        grid=(n_tokens * n_sub, 1, 1),
+        threadgroup=(min(256, max(1, n_tokens * n_sub)), 1, 1),
     )
     return outputs[0], outputs[1]
 
