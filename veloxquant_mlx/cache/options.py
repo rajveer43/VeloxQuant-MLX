@@ -454,6 +454,8 @@ class A2ATSOptions:
     a2ats_beta: float = 0.5  # query/reconstruction blend, in [0, 1]
     a2ats_retrieval_fraction: float = 0.20  # fraction of tokens routed to query-aware assignment
     a2ats_rope_base: float = 10000.0  # RoPE frequency base
+    # model's rope_scaling dict (Llama 3.x needs it for exact de-rotation); None = plain RoPE
+    a2ats_rope_scaling: Any = None
     # [sub_dim, sub_dim] query second-moment H (Eq. 10); enables the paper's Eq. 14 assignment
     a2ats_query_h: Any = None
     a2ats_codebook: Any = None  # mx.array | np.ndarray | None (random init if absent)

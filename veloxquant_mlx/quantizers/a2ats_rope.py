@@ -50,8 +50,56 @@ from __future__ import annotations
 import mlx.core as mx
 
 
+def rope_freqs_from_scaling(head_dim: int, base: float, scaling: dict | None) -> mx.array | None:
+    """Per-pair RoPE wavelength table for a model's ``rope_scaling`` config.
+
+    Returns ``None`` for plain RoPE (no scaling, or ``rope_type`` ``default``),
+    which :func:`_rope_cos_sin` treats as ``base ** (2i / D)``. For the Llama 3.x
+    scheme (``rope_type == "llama3"``) it returns the same table
+    ``mlx_lm.models.rope_utils.Llama3RoPE`` builds, so de-rotating a key and
+    re-rotating it here reproduces the rotation the model actually applied.
+
+    The returned ``freqs`` follow the ``mx.fast.rope(..., freqs=...)`` convention:
+    the angle at position ``p`` for pair ``i`` is ``p / freqs[i]``.
+
+    Raises:
+        ValueError: for a scaling scheme this module cannot reproduce (yarn,
+            linear, longrope, ...). Raising is deliberate: silently falling back
+            to plain RoPE would de-rotate with the wrong frequencies.
+    """
+    if not scaling:
+        return None
+    kind = scaling.get("rope_type", scaling.get("type", "default"))
+    if kind in (None, "default"):
+        return None
+    if kind != "llama3":
+        raise ValueError(
+            f"A2ATS RoPE: unsupported rope_scaling type {kind!r}; only plain RoPE and "
+            "'llama3' are supported (de-rotation would not invert the model's rotation)."
+        )
+    factor = scaling["factor"]
+    low_freq_factor = scaling.get("low_freq_factor", 1.0)
+    high_freq_factor = scaling.get("high_freq_factor", 4.0)
+    old_context_len = scaling.get("original_max_position_embeddings", 8192)
+
+    low_freq_wavelen = old_context_len / low_freq_factor
+    high_freq_wavelen = old_context_len / high_freq_factor
+
+    freqs = base ** (mx.arange(0, head_dim, 2, dtype=mx.float32) / head_dim)
+    wavelens = 2 * mx.pi * freqs
+    freqs = mx.where(wavelens > low_freq_wavelen, freqs * factor, freqs)
+    is_medium = (wavelens > high_freq_wavelen) & (wavelens < low_freq_wavelen)
+    smooth = (old_context_len / wavelens - low_freq_factor) / (high_freq_factor - low_freq_factor)
+    smooth_freqs = freqs / ((1 - smooth) / factor + smooth)
+    return mx.where(is_medium, smooth_freqs, freqs)
+
+
 def _rope_cos_sin(
-    positions: mx.array, head_dim: int, base: float, dtype: mx.Dtype = mx.float16
+    positions: mx.array,
+    head_dim: int,
+    base: float,
+    dtype: mx.Dtype = mx.float16,
+    freqs: mx.array | None = None,
 ) -> tuple:
     """Per-position RoPE cos/sin tables.
 
@@ -60,12 +108,17 @@ def _rope_cos_sin(
             sorted — each token supplies its own absolute position).
         head_dim: Even hidden dimension ``D``.
         base: RoPE frequency base.
+        freqs: Optional ``[D // 2]`` wavelength table (see
+            :func:`rope_freqs_from_scaling`); overrides ``base`` when given.
 
     Returns:
         ``(cos, sin)`` each ``[N, D // 2]``, cast to ``dtype`` (default float16).
     """
     half = head_dim // 2
-    inv_freq = 1.0 / (base ** (mx.arange(0, half, dtype=mx.float32) / half))  # [half]
+    if freqs is not None:
+        inv_freq = 1.0 / freqs.astype(mx.float32)  # [half]
+    else:
+        inv_freq = 1.0 / (base ** (mx.arange(0, half, dtype=mx.float32) / half))  # [half]
     angles = positions.astype(mx.float32)[:, None] * inv_freq[None, :]  # [N, half]
     return mx.cos(angles).astype(dtype), mx.sin(angles).astype(dtype)
 
@@ -81,6 +134,7 @@ def a2ats_apply_exact_rope(
     x: mx.array,
     positions: mx.array,
     base: float = 10000.0,
+    freqs: mx.array | None = None,
 ) -> mx.array:
     """Apply exact RoPE to each token at its own absolute position.
 
@@ -88,13 +142,15 @@ def a2ats_apply_exact_rope(
         x: ``[N, D]`` fp16/fp32 token vectors (dequantized, pre-RoPE).
         positions: ``[N]`` int/float absolute positions, one per token.
         base: RoPE frequency base.
+        freqs: Optional wavelength table for scaled RoPE (see
+            :func:`rope_freqs_from_scaling`).
 
     Returns:
         ``[N, D]`` fp16 rotated vectors.
     """
     if x.shape[0] == 0:
         return x.astype(x.dtype)
-    cos, sin = _rope_cos_sin(positions, x.shape[-1], base, dtype=x.dtype)
+    cos, sin = _rope_cos_sin(positions, x.shape[-1], base, dtype=x.dtype, freqs=freqs)
     return _rotate(x.astype(x.dtype), cos, sin)
 
 
@@ -103,6 +159,7 @@ def rope_remap_positions(
     old_positions: mx.array,
     new_positions: mx.array,
     base: float = 10000.0,
+    freqs: mx.array | None = None,
 ) -> mx.array:
     """De-rotate already-RoPE'd vectors from ``old_positions`` and re-rotate
     them at ``new_positions`` — used to fix up stored keys after an eviction
@@ -125,6 +182,9 @@ def rope_remap_positions(
             layout).
         base: RoPE frequency base — must match the base the model's attention
             module actually used, or the de-rotation will not cancel out.
+        freqs: Optional wavelength table for scaled RoPE (Llama 3.x); see
+            :func:`rope_freqs_from_scaling`. Required for models whose RoPE is
+            not plain ``base ** (2i / D)``.
 
     Returns:
         ``[N, D]`` fp16 vectors, equivalent to having been generated fresh and
@@ -139,7 +199,7 @@ def rope_remap_positions(
     if x.shape[0] == 0:
         return x.astype(x.dtype)
     delta = new_positions.astype(mx.float32) - old_positions.astype(mx.float32)
-    cos, sin = _rope_cos_sin(delta, x.shape[-1], base, dtype=x.dtype)
+    cos, sin = _rope_cos_sin(delta, x.shape[-1], base, dtype=x.dtype, freqs=freqs)
     return _rotate(x.astype(x.dtype), cos, sin)
 
 
@@ -149,6 +209,7 @@ def a2ats_apply_windowed_rope(
     query_position: int,
     window: int = 128,
     base: float = 10000.0,
+    freqs: mx.array | None = None,
 ) -> mx.array:
     """Windowed RoPE on the **key** side (paper Eq. 11-12).
 
@@ -190,6 +251,8 @@ def a2ats_apply_windowed_rope(
         query_position: Absolute position of the current decode step.
         window: Trailing distance (in positions) treated as "near"/exact.
         base: RoPE frequency base.
+        freqs: Optional wavelength table for scaled RoPE (see
+            :func:`rope_freqs_from_scaling`).
 
     Returns:
         ``[N, D]`` fp16 vectors: exact-rotated for near tokens, unrotated
@@ -202,7 +265,7 @@ def a2ats_apply_windowed_rope(
     distance = mx.array(query_position, dtype=mx.float32) - positions.astype(mx.float32)
     near_mask = distance < float(window)  # [N] bool; window<=0 -> all False
 
-    exact = a2ats_apply_exact_rope(x_native, positions, base=base)
+    exact = a2ats_apply_exact_rope(x_native, positions, base=base, freqs=freqs)
 
     # Eq. (12): far keys stay in their pre-RoPE frame. The constant R_b that
     # encodes "far" relative position lives on the query side instead — see
@@ -214,6 +277,7 @@ def a2ats_apply_far_query_rope(
     q: mx.array,
     b: int = 2048,
     base: float = 10000.0,
+    freqs: mx.array | None = None,
 ) -> mx.array:
     """Apply the paper's constant far-token rotation ``R_b`` to the query.
 
@@ -233,6 +297,8 @@ def a2ats_apply_far_query_rope(
         q: ``[D]`` or ``[N, D]`` query vector(s), pre-RoPE.
         b: Constant relative position representing the "far" distance class.
         base: RoPE frequency base.
+        freqs: Optional wavelength table for scaled RoPE (see
+            :func:`rope_freqs_from_scaling`).
 
     Returns:
         Same shape as ``q``, fp16, rotated by the constant ``R_b``.
@@ -243,12 +309,13 @@ def a2ats_apply_far_query_rope(
         return q.astype(q.dtype)
 
     offset = mx.array([float(b)], dtype=mx.float32)
-    cos, sin = _rope_cos_sin(offset, q2.shape[-1], base, dtype=q.dtype)  # [1, half]
+    cos, sin = _rope_cos_sin(offset, q2.shape[-1], base, dtype=q.dtype, freqs=freqs)  # [1, half]
     out = _rotate(q2.astype(q.dtype), cos, sin)  # broadcasts over N
     return out[0] if squeeze else out
 
 
 __all__ = [
+    "rope_freqs_from_scaling",
     "a2ats_apply_exact_rope",
     "a2ats_apply_windowed_rope",
     "a2ats_apply_far_query_rope",

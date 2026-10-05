@@ -109,7 +109,10 @@ response = mlx_lm.generate(
 ```
 
 You only need to set two things yourself: `head_dim`, which comes from the
-model, and `a2ats_codebook`, which comes from calibration. Everything else
+model, and `a2ats_codebook`, which comes from calibration. If your model is Llama 3.x, also pass
+`a2ats_rope_base=model.args.rope_theta` and
+`a2ats_rope_scaling=model.args.rope_scaling`; without them the position
+bookkeeping does not match the model and even the "exact" recent tokens drift. Everything else
 defaults to the values the original paper used, and those are sensible to start
 with.
 
@@ -257,6 +260,7 @@ Most people set the first three and leave the rest alone.
 | `a2ats_retrieval_fraction` | What share of tokens get the special treatment, `0` to `1`. Default `0.20` |
 | `a2ats_b` | Stand-in distance used for old tokens. Default `2048` |
 | `a2ats_rope_base` | Position-tracking frequency. Match your model's if you change it. Default `10000.0` |
+| `a2ats_rope_scaling` | Your model's `rope_scaling` setting. **Set it for Llama 3.x** (`model.args.rope_scaling`); other models can leave it unset. Unsupported scaling types raise an error. Default `None` |
 
 You get one cache per layer of the model, and `KVCacheBuilder.for_model` builds
 them all for you.

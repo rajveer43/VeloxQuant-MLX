@@ -81,6 +81,7 @@ from veloxquant_mlx.quantizers.a2ats import (
 from veloxquant_mlx.quantizers.a2ats_rope import (
     a2ats_apply_far_query_rope,
     a2ats_apply_windowed_rope,
+    rope_freqs_from_scaling,
     rope_remap_positions,
 )
 
@@ -94,6 +95,11 @@ class A2ATSKVCache(_MLXKVCache):
                 ``head_dim`` (int, required) — must be even (RoPE requirement)
                     and divisible by ``a2ats_sub_dim``.
                 ``a2ats_codebook_bits`` (int, default 8) — codebook size 2^bits.
+                ``a2ats_rope_scaling`` (dict | None) — the model's ``rope_scaling``
+                    config (``model.args.rope_scaling``). Required for Llama 3.x:
+                    without it the cache de-rotates keys with plain RoPE, which does
+                    not invert Llama 3's scaled rotation. Unsupported scaling types
+                    raise rather than silently mis-rotating.
                 ``a2ats_sub_dim`` (int, default 8) — VQ sub-vector width.
                 ``a2ats_window`` (int, default 128) — trailing exact-RoPE
                     window ``w``.
@@ -129,6 +135,16 @@ class A2ATSKVCache(_MLXKVCache):
         self._beta = float(getattr(config, "a2ats_beta", 0.5))
         self._retrieval_fraction = float(getattr(config, "a2ats_retrieval_fraction", 0.20))
         self._rope_base = float(getattr(config, "a2ats_rope_base", 10000.0))
+        try:
+            # Llama 3.x scales RoPE frequencies; de-rotating with plain RoPE
+            # would not invert what the model applied (see rope_freqs_from_scaling).
+            self._rope_freqs = rope_freqs_from_scaling(
+                int(config.head_dim),
+                self._rope_base,
+                getattr(config, "a2ats_rope_scaling", None),
+            )
+        except ValueError as exc:
+            raise QuantizerConfigError(f"A2ATSKVCache: {exc}") from exc
 
         if self._head_dim % 2 != 0:
             raise QuantizerConfigError(
@@ -312,7 +328,11 @@ class A2ATSKVCache(_MLXKVCache):
                 mx.stack(
                     [
                         rope_remap_positions(
-                            keys[b, h], positions, zero_positions, base=self._rope_base
+                            keys[b, h],
+                            positions,
+                            zero_positions,
+                            base=self._rope_base,
+                            freqs=self._rope_freqs,
                         )
                         for h in range(H)
                     ],
@@ -374,6 +394,7 @@ class A2ATSKVCache(_MLXKVCache):
             query_position=query_position,
             window=self._window,
             base=self._rope_base,
+            freqs=self._rope_freqs,
         ).reshape(B, H, total, D)
 
         return k_rot, v_all
@@ -431,7 +452,9 @@ class A2ATSKVCache(_MLXKVCache):
         A caller with real query access applies this before scoring far
         tokens; the proxy-query paths inside this cache cannot.
         """
-        return a2ats_apply_far_query_rope(query, b=self._b, base=self._rope_base)
+        return a2ats_apply_far_query_rope(
+            query, b=self._b, base=self._rope_base, freqs=self._rope_freqs
+        )
 
     def _account_bytes(self, B: int, H: int, S: int, D: int) -> None:
         bits_per_tok = self._n_sub * self._bits
