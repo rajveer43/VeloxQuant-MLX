@@ -527,6 +527,27 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.92.4 (2026-10-05)
+
+### Bug Fixes
+
+- **a2ats**: Support Llama 3.x scaled RoPE in key de-rotation
+  ([#730](https://github.com/rajveer43/VeloxQuant-MLX/pull/730),
+  [`0b0d23c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0b0d23c408b8ab4803de088083af4a4f02614c97))
+
+### Chores
+
+- **deps**: Bump datasets from 5.0.0 to 5.0.1 in /scripts
+  ([#729](https://github.com/rajveer43/VeloxQuant-MLX/pull/729),
+  [`3ab6e04`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3ab6e04a0f6a41637cae31bc563f9aa7c693139d))
+
+### Performance Improvements
+
+- **metal**: One thread per sub-vector in vecinfer value encode+decode
+  ([#728](https://github.com/rajveer43/VeloxQuant-MLX/pull/728),
+  [`08cb293`](https://github.com/rajveer43/VeloxQuant-MLX/commit/08cb2932464966e7226dca3bf33986c80c358bb1))
+
+
 ## v0.92.3 (2026-10-03)
 
 ### Bug Fixes
