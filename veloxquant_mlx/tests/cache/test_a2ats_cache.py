@@ -528,3 +528,70 @@ def test_trim_rolls_back_byte_accounting():
     assert a.compressed_value_bytes == b.compressed_value_bytes
     assert a.fp16_key_bytes == b.fp16_key_bytes
     assert a.fp16_value_bytes == b.fp16_value_bytes
+
+
+# ---------------------------------------------------------------------------
+# Scaled RoPE (Llama 3.x)
+# ---------------------------------------------------------------------------
+
+_LLAMA3 = {
+    "rope_type": "llama3",
+    "factor": 32.0,
+    "high_freq_factor": 4.0,
+    "low_freq_factor": 1.0,
+    "original_max_position_embeddings": 8192,
+}
+
+
+def test_unsupported_rope_scaling_rejected() -> None:
+    from veloxquant_mlx.core.exceptions import QuantizerConfigError
+
+    with pytest.raises(QuantizerConfigError, match="unsupported rope_scaling"):
+        _make(a2ats_rope_scaling={"rope_type": "yarn", "factor": 4.0})
+
+
+def _llama3_exact_roundtrip_setup():
+    """Keys produced by mlx_lm's real Llama3RoPE, plus a codebook that contains
+    every pre-RoPE sub-vector, so quantization is lossless and any remaining
+    difference is purely the cache's RoPE handling."""
+    from mlx_lm.models.rope_utils import Llama3RoPE
+
+    d, s, sub = 32, 10, 8
+    base = 500000.0
+    rng = np.random.default_rng(7)
+    pre = mx.array(rng.standard_normal((1, 1, s, d)).astype(np.float32))
+    model_rope = Llama3RoPE(dims=d, base=base, scaling_config=_LLAMA3)
+    post = model_rope(pre, offset=0)
+    entries = np.array(pre[0, 0]).reshape(-1, sub)  # [s * d/sub, sub]
+    reps = 256 // len(entries) + 1
+    codebook = mx.array(np.tile(entries, (reps, 1))[:256].astype(np.float32))
+    return pre, post, codebook, base
+
+
+def test_llama3_scaling_keeps_window_keys_exact() -> None:
+    _, post, codebook, base = _llama3_exact_roundtrip_setup()
+    cache = _make(
+        a2ats_window=10_000,  # every token is "near" -> exact RoPE
+        a2ats_codebook_bits=8,
+        a2ats_use_query_aware=False,
+        a2ats_codebook=codebook,
+        a2ats_rope_base=base,
+        a2ats_rope_scaling=_LLAMA3,
+    )
+    k_out, _ = cache.update_and_fetch(post, post)
+    np.testing.assert_allclose(np.array(k_out), np.array(post), atol=5e-4)
+
+
+def test_plain_rope_assumption_breaks_window_keys_on_llama3() -> None:
+    """Without a2ats_rope_scaling the same setup is wrong — the bug this fixes."""
+    _, post, codebook, base = _llama3_exact_roundtrip_setup()
+    cache = _make(
+        a2ats_window=10_000,
+        a2ats_codebook_bits=8,
+        a2ats_use_query_aware=False,
+        a2ats_codebook=codebook,
+        a2ats_rope_base=base,
+    )
+    k_out, _ = cache.update_and_fetch(post, post)
+    # 4x above the tolerance the scaled path meets (5e-4) at this small head_dim.
+    assert float(mx.max(mx.abs(k_out - post))) > 2e-3

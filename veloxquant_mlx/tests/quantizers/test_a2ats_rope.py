@@ -233,3 +233,77 @@ def test_far_query_rope_reconstructs_paper_attention_score() -> None:
     want = float(q_ref @ np.array(k.astype(mx.float32))[0])
 
     assert abs(got - want) < 1e-1, (got, want)
+
+
+# ---------------------------------------------------------------------------
+# Scaled RoPE (Llama 3.x)
+# ---------------------------------------------------------------------------
+
+_LLAMA3 = {
+    "rope_type": "llama3",
+    "factor": 32.0,
+    "high_freq_factor": 4.0,
+    "low_freq_factor": 1.0,
+    "original_max_position_embeddings": 8192,
+}
+
+
+def _llama3_rope(dims, base):
+    from mlx_lm.models.rope_utils import Llama3RoPE
+
+    return Llama3RoPE(dims=dims, base=base, scaling_config=_LLAMA3)
+
+
+def test_llama3_freqs_match_mlx_lm() -> None:
+    from veloxquant_mlx.quantizers.a2ats_rope import rope_freqs_from_scaling
+
+    ours = rope_freqs_from_scaling(64, 500000.0, _LLAMA3)
+    ref = _llama3_rope(64, 500000.0)._freqs
+    np.testing.assert_allclose(np.array(ours), np.array(ref), rtol=1e-6)
+
+
+def test_plain_scaling_configs_return_none() -> None:
+    from veloxquant_mlx.quantizers.a2ats_rope import rope_freqs_from_scaling
+
+    assert rope_freqs_from_scaling(64, 10000.0, None) is None
+    assert rope_freqs_from_scaling(64, 10000.0, {}) is None
+    assert rope_freqs_from_scaling(64, 10000.0, {"rope_type": "default"}) is None
+
+
+def test_unsupported_scaling_type_raises() -> None:
+    import pytest
+
+    from veloxquant_mlx.quantizers.a2ats_rope import rope_freqs_from_scaling
+
+    with pytest.raises(ValueError, match="unsupported rope_scaling"):
+        rope_freqs_from_scaling(64, 10000.0, {"rope_type": "yarn", "factor": 4.0})
+
+
+def test_exact_rope_with_freqs_matches_mlx_lm_llama3_rope() -> None:
+    from veloxquant_mlx.quantizers.a2ats_rope import rope_freqs_from_scaling
+
+    d, n = 64, 24
+    x = _mat(n, d)
+    model_rope = _llama3_rope(d, 500000.0)
+    ref = model_rope(x[None, None], offset=0)[0, 0]
+    freqs = rope_freqs_from_scaling(d, 500000.0, _LLAMA3)
+    ours = a2ats_apply_exact_rope(x, mx.arange(n), base=500000.0, freqs=freqs)
+    np.testing.assert_allclose(np.array(ours), np.array(ref), atol=2e-4)
+    # Without the scaled table the rotation is measurably wrong — the bug this fixes.
+    plain = a2ats_apply_exact_rope(x, mx.arange(n), base=500000.0)
+    assert float(mx.max(mx.abs(plain - ref))) > 1e-2
+
+
+def test_remap_with_freqs_inverts_llama3_rope() -> None:
+    from veloxquant_mlx.quantizers.a2ats_rope import rope_freqs_from_scaling, rope_remap_positions
+
+    d, n = 64, 24
+    x = _mat(n, d, seed=3)
+    post = _llama3_rope(d, 500000.0)(x[None, None], offset=0)[0, 0]
+    pos = mx.arange(n)
+    zero = mx.zeros((n,), dtype=mx.float32)
+    freqs = rope_freqs_from_scaling(d, 500000.0, _LLAMA3)
+    back = rope_remap_positions(post, pos, zero, base=500000.0, freqs=freqs)
+    np.testing.assert_allclose(np.array(back), np.array(x), atol=2e-4)
+    wrong = rope_remap_positions(post, pos, zero, base=500000.0)
+    assert float(mx.max(mx.abs(wrong - x))) > 1e-2
