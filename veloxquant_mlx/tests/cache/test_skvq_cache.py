@@ -398,3 +398,11 @@ def test_trim_would_desync_flush_frontier_if_trimmable() -> None:
     assert c.offset - c._q_end < 4  # loop ran to completion, masking the desync
     assert c._q_end == c.offset  # every token, including stale pre-trim rows,
     # now reads as "already flushed" -- the corruption is silent, not a crash.
+
+
+def test_default_has_no_context_cap():
+    """#734: the default config must not crash generation past 8192 tokens."""
+    cache = _make()
+    cache.update_and_fetch(mx.zeros((1, 1, 8192, 64)), mx.zeros((1, 1, 8192, 64)))
+    keys, _ = cache.update_and_fetch(mx.zeros((1, 1, 1, 64)), mx.zeros((1, 1, 1, 64)))
+    assert keys.shape[2] == 8193

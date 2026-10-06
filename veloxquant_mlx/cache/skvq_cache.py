@@ -71,7 +71,9 @@ class SKVQKVCache(_MLXKVCache):
             ``skvq_window`` (fp16 sliding window == flush chunk size),
             ``skvq_n_sink`` (leading tokens restored to fp16, the paper's
             filter), ``skvq_reorder``, ``skvq_clip_search``,
-            ``skvq_clip_alpha`` (used when search is off), ``skvq_max_ctx``.
+            ``skvq_clip_alpha`` (used when search is off), ``skvq_max_ctx``
+            (optional hard cap on context length; ``None``, the default, is
+            unlimited).
 
     Notes:
         Never exposes ``.bits`` — mlx_lm's SDPA checks
@@ -90,7 +92,8 @@ class SKVQKVCache(_MLXKVCache):
         self._reorder = bool(getattr(config, "skvq_reorder", True))
         self._clip_search = bool(getattr(config, "skvq_clip_search", True))
         self._clip_alpha = float(getattr(config, "skvq_clip_alpha", 1.0))
-        self._max_ctx = int(getattr(config, "skvq_max_ctx", 8192))
+        max_ctx = getattr(config, "skvq_max_ctx", None)
+        self._max_ctx: int | None = None if max_ctx is None else int(max_ctx)
 
         # Fail at build time, not on the first update (clear messages).
         for name, b in (("skvq_bits_key", self._bits_k), ("skvq_bits_value", self._bits_v)):
@@ -198,7 +201,7 @@ class SKVQKVCache(_MLXKVCache):
         and computes the frozen channel permutations.
         """
         B, H, S, D = keys.shape
-        if self.offset + S > self._max_ctx:
+        if self._max_ctx is not None and self.offset + S > self._max_ctx:
             raise ValueError(
                 f"SKVQKVCache: context {self.offset + S} exceeds skvq_max_ctx={self._max_ctx}"
             )

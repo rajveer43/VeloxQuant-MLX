@@ -687,7 +687,7 @@ class KVCacheConfig:
     skvq_reorder: bool = True  # channel reordering (False = identity ablation)
     skvq_clip_search: bool = True  # per-group clip-factor grid search at flush time
     skvq_clip_alpha: float = 1.0  # fixed clip factor when search is off
-    skvq_max_ctx: int = 8192  # per-layer token budget
+    skvq_max_ctx: int | None = None  # optional per-layer token cap (None = unlimited)
     # --- Q-Filters-adapted configuration (query-agnostic projection eviction) -
     qfilters_budget: int = 512  # max tokens kept (incl. sinks)
     qfilters_n_sink: int = 4  # leading positions never evicted
