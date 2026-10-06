@@ -392,6 +392,50 @@ class KVQuantKVCache(_MLXKVCache):
         self._fp16_value_bytes += B * H * S * D * 2
 
     # ------------------------------------------------------------------
+    # Trimming
+    # ------------------------------------------------------------------
+    def trim(self, n: int) -> int:
+        """Drop the last ``n`` tokens and keep this cache's own state in step.
+
+        The inherited ``trim`` only moves ``offset``.  Left alone, ``_n_tokens``
+        stays at its old value, so after trimming to empty the next prefill
+        would not get its sink tokens (``n_sink`` applies only at
+        ``_n_tokens == 0``) and would reuse the previous sequence's frozen key
+        levels and outlier thresholds.
+
+        Trimming to empty resets everything (a new sequence starts from
+        scratch).  A partial trim keeps the levels fit on the surviving prefix
+        and scales the byte accounting down with the token count (an estimate:
+        per-call table and outlier bytes are not tracked per token).
+        """
+        old_tokens = self._n_tokens
+        trimmed = super().trim(n)
+        if not trimmed:
+            return trimmed
+        if self.offset <= 0:
+            self._key_outlier_thresh = None
+            self._key_levels = None
+            self._value_levels = None
+            self._sink_kept = 0
+            self._n_tokens = 0
+            self._outlier_count = 0
+            self._prev_outlier_count = 0
+            self._compressed_key_bytes = 0
+            self._compressed_value_bytes = 0
+            self._fp16_key_bytes = 0
+            self._fp16_value_bytes = 0
+            return trimmed
+        self._n_tokens = self.offset
+        self._sink_kept = min(self._sink_kept, self.offset)
+        if old_tokens > 0:
+            keep = self._n_tokens / old_tokens
+            self._compressed_key_bytes = int(self._compressed_key_bytes * keep)
+            self._compressed_value_bytes = int(self._compressed_value_bytes * keep)
+            self._fp16_key_bytes = int(self._fp16_key_bytes * keep)
+            self._fp16_value_bytes = int(self._fp16_value_bytes * keep)
+        return trimmed
+
+    # ------------------------------------------------------------------
     # `mlx_lm.server`'s `ModelProvider.load()` decides whether to route
     # requests through `BatchGenerator` (continuous batching) purely by
     # `hasattr(c, "merge")` on a probe cache — see #15/#357. The base

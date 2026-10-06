@@ -589,3 +589,39 @@ def test_decode_steps_do_not_recharge_key_level_table():
     # Codes only: ceil(1 * 64 * 3 / 8) = 24 bytes per token per head (2 heads).
     assert grown == steps * 24 * 2
     assert cache.effective_bits < 16.0
+
+
+# ---------------------------------------------------------------------------
+# #733 — trim() keeps cache-side state in step with the offset
+# ---------------------------------------------------------------------------
+def test_trim_to_empty_resets_sequence_state():
+    cache = KVQuantKVCache(_cfg())
+    k = _laplace(1, 2, 32, 64)
+    cache.update_and_fetch(k, k)
+    assert cache.key_levels is not None
+    assert cache.trim(32) == 32
+    assert cache.key_levels is None
+    assert cache.compressed_key_bytes == 0 and cache.fp16_key_bytes == 0
+
+    # A new sequence is treated as a fresh prefill: sink kept exact, levels refit.
+    k2 = _laplace(1, 2, 32, 64, seed=7)
+    out, _ = cache.update_and_fetch(k2, k2)
+    assert cache.key_levels is not None
+    assert cache.sink_kept == 1
+    assert bool(mx.all(out[:, :, 0] == k2[:, :, 0].astype(out.dtype)).item())
+
+
+def test_partial_trim_rolls_back_token_count_and_keeps_levels():
+    cache = KVQuantKVCache(_cfg())
+    k = _laplace(1, 2, 40, 64)
+    cache.update_and_fetch(k, k)
+    levels = np.array(cache.key_levels.tolist())
+    before = cache.compressed_key_bytes
+    assert cache.trim(10) == 10
+    assert cache._n_tokens == cache.offset == 30
+    np.testing.assert_array_equal(levels, np.array(cache.key_levels.tolist()))
+    assert 0 < cache.compressed_key_bytes < before
+    # Decode continues against the surviving levels.
+    t = _laplace(1, 2, 1, 64, seed=9)
+    out, _ = cache.update_and_fetch(t, t)
+    assert out.shape[2] == 31
