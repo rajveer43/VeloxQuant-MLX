@@ -173,3 +173,13 @@ def test_inner_product_tracks_exact() -> None:
     # b=8 ⇒ estimate should track exact dot products closely.
     corr = float(np.corrcoef(est, exact)[0, 1])
     assert corr >= 0.999, f"IP correlation {corr:.5f} too low"
+
+
+@pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan")])
+def test_encode_rejects_non_finite_input(bad: float) -> None:
+    """#735: one Inf/NaN used to turn the whole group's reconstruction to NaN."""
+    q = KIVIQuantizer(d=8, b=2, group_size=4)
+    x = mx.random.normal((4, 8))
+    x = mx.concatenate([x[:3], mx.full((1, 8), bad)])
+    with pytest.raises(QuantizerConfigError, match="NaN or Inf"):
+        q.encode(x)

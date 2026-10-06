@@ -156,6 +156,10 @@ class KIVIQuantizer(Quantizer):
         n, d = x.shape
         if d != self._d:
             raise QuantizerConfigError(f"KIVIQuantizer.encode: expected dim {self._d}, got {d}.")
+        if not bool(mx.all(mx.isfinite(x)).item()):
+            # An Inf makes the group's scale inf and its codes NaN (undefined
+            # on the uint8 cast), corrupting the finite rows of that group too.
+            raise QuantizerConfigError("KIVIQuantizer.encode: input contains NaN or Inf.")
         if self._axis == "channel":
             codes, scale, zero = self._quantize_groups(x.astype(mx.float32))
         else:  # token: quantize along channel axis → operate on x.T
