@@ -131,6 +131,10 @@ class KVQuantKVCache(_MLXKVCache):
         self._n_tokens: int = 0
         self._outlier_count: int = 0
         self._prev_outlier_count: int = 0
+        # Set by _apply(): the key level table was (re)fit this call (charged to
+        # the byte accounting only then), or keys were kept exact (no levels yet).
+        self._key_levels_fit_this_call: bool = False
+        self._keys_exact_this_call: bool = False
 
         # Byte accounting
         self._compressed_key_bytes: int = 0
@@ -305,6 +309,8 @@ class KVQuantKVCache(_MLXKVCache):
             assert self._key_levels is not None
             key_levels = mx.tile(self._key_levels, (B, 1, 1))
 
+        self._key_levels_fit_this_call = refit_keys and not pending_fit
+        self._keys_exact_this_call = pending_fit
         if pending_fit:
             k_out_bh, klev_used = keys_bh, None  # too few samples to fit: keep exact
         else:
@@ -358,7 +364,11 @@ class KVQuantKVCache(_MLXKVCache):
         # Codes: bits per element. Level table: L fp16 per channel (keys) / per
         # token (values). Outlier side-channel: fp16 value + ~index bits.
         code_bytes = math.ceil(s_q * D * self._bits / 8)
-        key_table_bytes = L * D * 2  # per-channel table
+        # Keys held exact while too few samples exist to fit levels cost fp16.
+        key_code_bytes = s_q * D * 2 if self._keys_exact_this_call else code_bytes
+        # The per-channel key table is stored once per (re)fit; decode steps
+        # that reuse the frozen levels add no table bytes.
+        key_table_bytes = L * D * 2 if self._key_levels_fit_this_call else 0
         val_table_bytes = L * s_q * 2  # per-token table (one per coded token)
         idx_bits = max(1, math.ceil(math.log2(max(2, max(1, s_q) * D))))
         # Charge the outliers actually produced this call, not the nominal
@@ -373,7 +383,7 @@ class KVQuantKVCache(_MLXKVCache):
         sink_bytes = n_sink * D * 2  # exact fp16 sink rows
 
         self._compressed_key_bytes += (
-            (code_bytes + key_table_bytes + outlier_bytes + sink_bytes) * B * H
+            (key_code_bytes + key_table_bytes + outlier_bytes + sink_bytes) * B * H
         )
         self._compressed_value_bytes += (
             (code_bytes + val_table_bytes + outlier_bytes + sink_bytes) * B * H

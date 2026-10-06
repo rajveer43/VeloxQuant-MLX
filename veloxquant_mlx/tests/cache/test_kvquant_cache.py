@@ -572,3 +572,20 @@ def test_refit_uses_a_window_not_one_token():
     # A refit from the lone incoming token gave ~0.65 mean error between
     # refits; a windowed refit stays near the prefill-fit quality.
     assert max(errs) < 0.5
+
+
+# ---------------------------------------------------------------------------
+# #732 — frozen key level table is charged once, not on every decode step
+# ---------------------------------------------------------------------------
+def test_decode_steps_do_not_recharge_key_level_table():
+    cache = KVQuantKVCache(_cfg(kvquant_bits=3, kvquant_outlier_fraction=0.0))
+    cache.update_and_fetch(_laplace(1, 2, 512, 64), _laplace(1, 2, 512, 64, seed=1))
+    before = cache.compressed_key_bytes
+    steps = 100
+    for i in range(steps):
+        t = _laplace(1, 2, 1, 64, seed=300 + i)
+        cache.update_and_fetch(t, t)
+    grown = cache.compressed_key_bytes - before
+    # Codes only: ceil(1 * 64 * 3 / 8) = 24 bytes per token per head (2 heads).
+    assert grown == steps * 24 * 2
+    assert cache.effective_bits < 16.0
