@@ -536,3 +536,39 @@ def test_outlier_count_matches_between_batched_and_manual_sum():
     # (keys + values), not blow up or vanish from a batching indexing bug.
     expected_order = 1 * 4 * 64 * 64 * 0.05 * 2
     assert 0.1 * expected_order < cache.outlier_count < 10 * expected_order
+
+
+# ---------------------------------------------------------------------------
+# #731 — key levels must never be fit (and frozen) from a single token
+# ---------------------------------------------------------------------------
+def _decode_key_error(cache, steps=8, seed0=500):
+    errs = []
+    for i in range(steps):
+        t = _laplace(1, 2, 1, 64, seed=seed0 + i)
+        out, _ = cache.update_and_fetch(t, t)
+        errs.append(float(mx.mean(mx.abs(out[:, :, -1].astype(mx.float32) - t[:, :, 0]))))
+    return errs
+
+
+def test_single_token_first_call_does_not_freeze_degenerate_levels():
+    cache = KVQuantKVCache(_cfg(kvquant_bits=3, kvquant_outlier_fraction=0.0))
+    t0 = _laplace(1, 2, 1, 64, seed=499)
+    cache.update_and_fetch(t0, t0)
+    assert cache.key_levels is None  # 1 sample < 2**bits: stay unfit
+    errs = _decode_key_error(cache, steps=140)
+    # Once enough samples exist the levels are fit from real data, so decode
+    # keys are no longer collapsed onto one token's value (error was ~3.7).
+    assert cache.key_levels is not None
+    assert max(errs[-3:]) < 0.5
+    lv = np.array(cache.key_levels.tolist())  # [H, L, D]
+    assert (lv.max(axis=1) - lv.min(axis=1)).min() > 0.0  # levels are distinct
+
+
+def test_refit_uses_a_window_not_one_token():
+    cache = KVQuantKVCache(_cfg(kvquant_refit_interval=4, kvquant_outlier_fraction=0.0))
+    k = _laplace(1, 2, 256, 64)
+    cache.update_and_fetch(k, k)
+    errs = _decode_key_error(cache, steps=8)
+    # A refit from the lone incoming token gave ~0.65 mean error between
+    # refits; a windowed refit stays near the prefill-fit quality.
+    assert max(errs) < 0.5
