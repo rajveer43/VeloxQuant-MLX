@@ -527,6 +527,31 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.92.5 (2026-10-06)
+
+### Bug Fixes
+
+- **kivi**: Reject non-finite input in KIVIQuantizer.encode (#735)
+  ([#740](https://github.com/rajveer43/VeloxQuant-MLX/pull/740),
+  [`281ea18`](https://github.com/rajveer43/VeloxQuant-MLX/commit/281ea18815cd239ca6174cca225f23444edc1bc2))
+
+- **kvquant**: Charge key level table once per fit, not every decode step (#732)
+  ([#737](https://github.com/rajveer43/VeloxQuant-MLX/pull/737),
+  [`cf426a2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cf426a22148e8f2d49d2a43553114a30a31127d2))
+
+- **kvquant**: Don't fit key NUQ levels from a single token (#731)
+  ([#736](https://github.com/rajveer43/VeloxQuant-MLX/pull/736),
+  [`be96fa8`](https://github.com/rajveer43/VeloxQuant-MLX/commit/be96fa891a43e8c0c34ac6878035c74aa275df3b))
+
+- **kvquant**: Keep levels, sink and accounting state in step with trim() (#733)
+  ([#739](https://github.com/rajveer43/VeloxQuant-MLX/pull/739),
+  [`51952c3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/51952c3113f2cfdf7143124143bce98aa59110d3))
+
+- **skvq**: Make skvq_max_ctx opt-in so default config doesn't crash past 8192 tokens (#734)
+  ([#738](https://github.com/rajveer43/VeloxQuant-MLX/pull/738),
+  [`408b539`](https://github.com/rajveer43/VeloxQuant-MLX/commit/408b53995a8cc863b9cdbe5477696a41b8d231e9))
+
+
 ## v0.92.4 (2026-10-05)
 
 ### Bug Fixes
