@@ -96,6 +96,10 @@ class KVQuantKVCache(_MLXKVCache):
     attribute this cache doesn't have. We expose ``.nuq_bits`` instead.
     """
 
+    # Samples per NUQ level required before a fit is assembled from small
+    # (e.g. S=1) calls; see ``_apply``.
+    _FIT_SAMPLES_PER_LEVEL = 16
+
     def __init__(self, config: Any) -> None:
         super().__init__()
         self._bits: int = int(getattr(config, "kvquant_bits", 3))
@@ -239,8 +243,34 @@ class KVQuantKVCache(_MLXKVCache):
         # derived for every other token.
         n_sink = min(self._n_sink, S) if self._n_tokens == 0 else 0
         fit_slice = slice(n_sink, None) if n_sink > 0 and n_sink < S else slice(None)
+
+        # A per-channel level fit needs more than one sample: from a single
+        # token every level collapses onto that token's value, and (frozen, or
+        # until the next refit) every later key would snap to it. So the fit
+        # sees the incoming tokens plus a tail of already-cached ones, and
+        # while fewer than ``2**bits`` samples exist at all the keys are kept
+        # exact and the levels stay unfit (``pending_fit``).
+        n_levels = 1 << self._bits
+        fit_keys = keys[:, :, fit_slice, :]
+        pending_fit = False
         if refit_keys:
-            self._capture_key_thresholds(keys[:, :, fit_slice, :])
+            n_have = fit_keys.shape[2]
+            # Fitting 2**bits levels from barely 2**bits samples just memorises
+            # them (every sample its own level), so a fit that has to be
+            # assembled from small calls waits for a few samples per level.
+            # A normal prefill that already brings 2**bits is fit as-is.
+            enough = n_levels if n_have >= n_levels else self._FIT_SAMPLES_PER_LEVEL * n_levels
+            want = enough if is_prefill else max(self._refit_interval, enough)
+            if self.keys is not None and self.offset > 0 and n_have < want:
+                lo = max(self._sink_kept, self.offset - (want - n_have))
+                if lo < self.offset:
+                    fit_keys = mx.concatenate(
+                        [self.keys[..., lo : self.offset, :].astype(keys.dtype), fit_keys],
+                        axis=2,
+                    )
+            pending_fit = is_prefill and fit_keys.shape[2] < enough
+            if not pending_fit:
+                self._capture_key_thresholds(fit_keys)
 
         # Flatten (B, H) into one leading axis — every batched primitive
         # below operates on this axis instead of a Python for-b/for-h loop
@@ -249,7 +279,9 @@ class KVQuantKVCache(_MLXKVCache):
         keys_bh = keys.reshape(B * H, S, D)
         values_bh = values.reshape(B * H, S, D)
 
-        if refit_keys:
+        if pending_fit:
+            key_levels = None
+        elif refit_keys:
             # Matches prior behaviour exactly: key levels are fit ONLY from
             # batch element 0's data (keys[0]), then shared across every
             # batch element — never fit independently per b, even though
@@ -257,10 +289,8 @@ class KVQuantKVCache(_MLXKVCache):
             # mirrors the old per-head loop, which fit `new_klev[h]` once
             # at b==0 and reused it (unchanged) for b==1..B-1 (see #504
             # investigation notes — verified against the pre-batching code).
-            keys_h0 = keys[0].reshape(H, S, D)  # [H, S, D], batch element 0 only
-            fit_inliers = split_dense_sparse_batched(
-                keys_h0[:, fit_slice, :], self._outlier_fraction
-            ).inliers
+            keys_h0 = fit_keys[0]  # [H, n_fit, D], batch element 0 only
+            fit_inliers = split_dense_sparse_batched(keys_h0, self._outlier_fraction).inliers
             key_levels_h = fit_nuq_levels_batched(
                 fit_inliers, self._bits, self._lloyd_iters
             )  # [H, L, D]
@@ -275,10 +305,15 @@ class KVQuantKVCache(_MLXKVCache):
             assert self._key_levels is not None
             key_levels = mx.tile(self._key_levels, (B, 1, 1))
 
-        k_out_bh, klev_used = self._quant_keys_batched(keys_bh, key_levels, out_dtype=keys.dtype)
+        if pending_fit:
+            k_out_bh, klev_used = keys_bh, None  # too few samples to fit: keep exact
+        else:
+            k_out_bh, klev_used = self._quant_keys_batched(
+                keys_bh, key_levels, out_dtype=keys.dtype
+            )
         v_out_bh, vlev_used = self._quant_values_batched(values_bh, out_dtype=values.dtype)
 
-        if refit_keys:
+        if refit_keys and not pending_fit:
             # Store per-head levels (first B-tile is representative — frozen
             # levels are shared across the batch by construction above).
             self._key_levels = klev_used[:H]
