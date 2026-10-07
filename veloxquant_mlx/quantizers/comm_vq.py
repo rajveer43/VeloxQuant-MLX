@@ -4,23 +4,22 @@
    What is implemented is plain *product* quantization: each of the
    ``n_codebooks`` sub-codebooks owns a disjoint slice of the head dimension,
    and decoding concatenates the slices. It is not the paper's additive /
-   residual scheme (no stage sees an earlier stage's error), and the
-   "commuting" projection averages adjacent dims of each sub-vector, not the
-   RoPE pairs ``(i, i + d/2)``, so it does not enforce RoPE commutativity
-   (measured effect on reconstruction MSE is negligible). The paper's
-   quality/compression trade-off therefore does not apply. See issue #756.
+   residual scheme (no stage sees an earlier stage's error), and no RoPE
+   commutativity is enforced: codebooks are trained on pre-RoPE keys and RoPE
+   is applied once after decoding. (An earlier "commuting" projection averaged
+   adjacent dims of each sub-vector, not the RoPE pairs ``(i, i + d/2)``; it was
+   removed because it did not do what its name said and changed MSE negligibly.)
+   The paper's quality/compression trade-off therefore does not apply. See #756.
 
 Original description of the paper:
 
 Based on: "CommVQ: Commutative Vector Quantization for KV Cache Compression"
 arXiv 2506.18879 (Apple ML Research / UMass)
 
-Key insight (Section 3.2): Standard product VQ fails with RoPE because
-  quantize(rotate(x)) ≠ rotate(quantize(x))
-The fix: each 2×2 block of each centroid in the RoPE rotation plane must
-satisfy the commuting form [[a, -b], [b, a]] — i.e., the centroid acts like
-a scalar×rotation in each paired dimension. After each EM M-step, project
-centroids onto this constraint.
+Paper's key insight (Section 3.2, NOT implemented here): standard product VQ
+fails with RoPE because quantize(rotate(x)) ≠ rotate(quantize(x)). The paper's
+fix constrains each 2×2 block of each centroid in the RoPE rotation plane to
+the commuting form [[a, -b], [b, a]].
 
 Public API:
   CommVQQuantizer — encode / decode / estimate_inner_product
@@ -69,74 +68,6 @@ def _apply_rope_np(x: np.ndarray, cos: np.ndarray, sin: np.ndarray) -> np.ndarra
 
 
 # ---------------------------------------------------------------------------
-# RoPE-commutativity projection (the key contribution of CommVQ)
-# ---------------------------------------------------------------------------
-
-
-def _project_commuting_np(centroids: np.ndarray) -> np.ndarray:
-    """Project centroids onto the RoPE-commuting subspace.
-
-    Each centroid is a D-dimensional vector. The commutativity constraint
-    says: in each RoPE dimension pair (2i, 2i+1), the centroid must satisfy
-        c[2i]   →  a   (real part)
-        c[2i+1] →  b   (imaginary part)
-    where a = (c[2i] + c[2i+1]) / 2  (symmetric projection, equal real/imag)
-
-    Actually the constraint is simpler: the centroid is treated as a complex
-    number c[2i] + j*c[2i+1].  A rotation R(θ) multiplies it by e^{jθ}.
-    For the centroid to commute with all rotations it must be real, i.e.,
-    c[2i+1] = 0.  But that would collapse too much.
-
-    The correct CommVQ formulation (paper eq. 4): the codebook is trained in
-    the *unrotated* (position-0) frame. At inference, the centroid for position
-    p is obtained by applying R(p·θ_i) to each 2D pair.  So:
-      1. Train centroids on position-0 keys (i.e. keys before RoPE).
-      2. At decode time, apply RoPE to the reconstructed centroid sum.
-
-    This is the "pre-RoPE codebook" formulation from Section 3.2.  No special
-    per-centroid projection is needed; the projection is just ensuring we train
-    on pre-RoPE vectors.
-
-    For the additive case (n_codebooks > 1) the same logic applies per
-    sub-codebook: train on pre-RoPE subvectors, decode by summing centroids
-    then applying RoPE once.
-
-    This function implements the optional "block-diagonal commuting projection"
-    from Appendix A for improved quality:
-        For each 2D pair (2i, 2i+1), set both components to their mean
-        magnitude, preserving the sign of the dominant component.
-
-    Shape: centroids [n_centroids, D]
-    """
-    half = centroids.shape[-1] // 2
-    c = centroids.copy()
-    for i in range(half):
-        a, b = c[:, 2 * i], c[:, 2 * i + 1]
-        # Project onto the closest "commuting" form: [[a,-b],[b,a]] block
-        # Closest commuting vector to (a, b) is ( (a+b)/2, (b-a)/2 ) ... no,
-        # the correct Procrustes projection: given a 2-vector [a, b], the
-        # nearest vector of the form r*[cos θ, sin θ] (i.e. norm-preserving
-        # rotation) has r = sqrt(a²+b²).  But for a SCALAR codebook entry
-        # (not a rotation matrix) the constraint simply means the two paired
-        # dimensions are treated as a single complex magnitude:
-        #   keep magnitude = sqrt(a² + b²), project to (a, 0) form
-        # That discards the imaginary part, which is too lossy.
-        #
-        # The lightest correct interpretation: keep [a, b] as-is but
-        # symmetrize across sign so the centroid distribution is symmetric
-        # in the rotation plane — this is equivalent to what the paper calls
-        # "soft commutativity".  We implement the simplest useful version:
-        # average the two components to reduce bias in the rotation plane.
-        mean_val = (a + b) * 0.5
-        # Only symmetrize if both have the same sign (typical for trained
-        # centroids); otherwise leave them to avoid destroying structure.
-        same_sign = (a * b) >= 0
-        c[:, 2 * i] = np.where(same_sign, mean_val, a)
-        c[:, 2 * i + 1] = np.where(same_sign, mean_val, b)
-    return c
-
-
-# ---------------------------------------------------------------------------
 # EM training for one sub-codebook
 # ---------------------------------------------------------------------------
 
@@ -146,7 +77,6 @@ def _train_sub_codebook(
     n_centroids: int,
     n_iters: int = 50,
     seed: int = 42,
-    project: bool = True,
 ) -> np.ndarray:
     """K-means / Lloyd iteration for one sub-codebook.
 
@@ -186,10 +116,6 @@ def _train_sub_codebook(
             n_dead = int(dead.sum())
             new_centroids[dead] = data[rng.choice(N, size=n_dead, replace=n_dead > N)]
         centroids = new_centroids
-
-        # Projection step: enforce approximate RoPE commutativity
-        if project and centroids.shape[1] >= 2:
-            centroids = _project_commuting_np(centroids)
 
     return centroids
 
@@ -336,7 +262,6 @@ class CommVQQuantizer(Quantizer):
                 n_centroids=self._cb_size,
                 n_iters=self._n_em_iters,
                 seed=self._seed + cb_i,
-                project=(self._sub_dim >= 2),
             )
             codebooks[cb_i] = cb
 
