@@ -69,6 +69,13 @@ class VecInferKVCache(_MLXKVCache):
         self._value_bits = int(getattr(config, "value_codebook_bits", 8))
         self._residual_length = int(getattr(config, "residual_length", 128))
 
+        if self._head_dim < 1 or (self._head_dim & (self._head_dim - 1)) != 0:
+            raise QuantizerConfigError(
+                f"VecInferKVCache requires a power-of-2 head_dim (the Walsh-Hadamard "
+                f"transform needs it); got head_dim={self._head_dim}. Models with "
+                "head_dim 80/96 (e.g. Phi-2, Phi-3-mini) are not supported; use "
+                "another method such as kivi or turboquant_rvq."
+            )
         if self._head_dim % self._key_sub_dim != 0:
             raise QuantizerConfigError(
                 f"VecInferKVCache: head_dim={self._head_dim} not divisible "
@@ -221,8 +228,8 @@ class VecInferKVCache(_MLXKVCache):
         """Fused smooth+WHT+VQ+dequant+inv-WHT+smooth in one Metal dispatch.
 
         Returns ``(k_hat_fp16, k_indices_uint32)``.  Falls back to the
-        7-node pure-MLX pipeline when Metal is unavailable or D is not a
-        power-of-2 (e.g. D=64 is fine, D=96 is not).
+        7-node pure-MLX pipeline when Metal is unavailable or D > 512
+        (D is always a power of 2; the constructor rejects anything else).
         """
         D = keys.shape[-1]
         can_fuse = (
