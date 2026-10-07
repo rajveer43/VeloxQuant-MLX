@@ -62,8 +62,11 @@ class QJLKVCache(KVCache):
         Args:
             k: Key vector, shape (d,), fp16.
         """
-        if k.ndim == 1:
-            k = k[None]
+        if k.size != self._d:
+            raise ValueError(
+                f"append_key expects one key vector of size {self._d}, got shape {tuple(k.shape)}."
+            )
+        k = k.reshape(1, self._d)
         ev = self._key_quantizer.encode(k)
         self._k_signs.append(ev.signs[0])
         self._k_norms.append(ev.norm[0])
@@ -79,8 +82,11 @@ class QJLKVCache(KVCache):
 
         if self._storage_dtype_name is None:
             self._storage_dtype_name = "bfloat16" if v.dtype == mx.bfloat16 else "float16"
-        if v.ndim > 1:
-            v = v.reshape(-1)
+        if v.size != self._d:
+            raise ValueError(
+                f"append_value expects one value vector of size {self._d}, got shape {tuple(v.shape)}."
+            )
+        v = v.reshape(-1)
         abs_max = float(mx.max(mx.abs(v)))
         scale = max(abs_max / INT8_MAX, 1e-8)
         v_int8 = mx.clip(mx.round(v / scale), -INT8_MAX, INT8_MAX).astype(mx.int8)
