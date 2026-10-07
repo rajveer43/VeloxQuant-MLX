@@ -170,7 +170,7 @@ All the compression math in the world doesn't help if the quantisation itself is
 | `vecinfer_quantize_metal` | Fused nearest-centroid product VQ | **13×** |
 | `rabitq_hamming_score` | XOR + popcount Hamming distance | **11×** |
 | `turboquant_hadamard_quantize` | WHT rotation + scalar quant fused | **8.6×** |
-| `turboquant_fused_rvq_decode_attend` | RVQ decode + attention in one dispatch | **6.9×** |
+| `turboquant_fused_rvq_decode_attend` | RVQ decode + attention in one dispatch (prototype: not wired to the RVQ cache; no key norms, mask or custom scale) | **6.9×** (kernel only) |
 | `metal_fused_sdpa` | Dequant + scaled dot-product attention | avoids fp16 materialisation |
 
 The fused SDPA kernel is the most impactful. Without fusion, dequantisation creates a full fp16 key matrix in memory before attention — which defeats much of the point of compression. The fused path keeps the cache compressed all the way until attention scores are computed.
