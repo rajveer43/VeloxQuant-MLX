@@ -188,10 +188,12 @@ class VecInferKVCache(_MLXKVCache):
                 )
         self._memory_bound: bool = memory_bound_req
 
-        # Ring-buffer storage for fused path.  Pre-allocated at first
-        # update so we know B and H_kv; size = fused_sdpa_max_ctx.
-        # Layout: [B, H_kv, max_ctx, n_sub] uint32.
-        self._max_ctx: int = int(getattr(config, "fused_sdpa_max_ctx", 8192))
+        # Index buffers for fused path, allocated at first update (so we know
+        # B and H_kv) and grown geometrically.  Layout: [B, H_kv, cap, n_sub]
+        # uint32.  ``fused_sdpa_max_ctx`` is an optional hard cap; None (the
+        # default) means no cap.
+        _cap = getattr(config, "fused_sdpa_max_ctx", None)
+        self._max_ctx: int | None = None if _cap is None else int(_cap)
         self._n_sub_k: int = self._head_dim // self._key_sub_dim
         self._n_sub_v: int = self._head_dim // self._value_sub_dim
         self._stored_k_indices: mx.array | None = None
@@ -314,6 +316,38 @@ class VecInferKVCache(_MLXKVCache):
             return self._update_and_fetch_standard_and_stash(keys, values)
         return self._update_and_fetch_standard(keys, values)
 
+    def _ensure_index_capacity(self, B: int, H: int, S: int) -> None:
+        """Make the index buffers hold ``_stored_S_kv + S`` tokens, growing geometrically up to the optional cap."""
+        needed = self._stored_S_kv + S
+        if self._max_ctx is not None and needed > self._max_ctx:
+            raise RuntimeError(
+                f"VecInferKVCache: context length {needed} exceeded "
+                f"fused_sdpa_max_ctx={self._max_ctx}.  Raise or unset "
+                "KVCacheConfig.fused_sdpa_max_ctx."
+            )
+        if self._stored_k_indices is None:
+            cap = max(needed, 256)
+            if self._max_ctx is not None:
+                cap = min(cap, self._max_ctx)
+            self._stored_k_indices = mx.zeros((B, H, cap, self._n_sub_k), dtype=mx.uint32)
+            self._stored_v_indices = mx.zeros((B, H, cap, self._n_sub_v), dtype=mx.uint32)
+            return
+        cur = self._stored_k_indices.shape[2]
+        if needed <= cur:
+            return
+        cap = max(needed, 2 * cur)
+        if self._max_ctx is not None:
+            cap = min(cap, self._max_ctx)
+        extra = cap - cur
+        self._stored_k_indices = mx.concatenate(
+            [self._stored_k_indices, mx.zeros((B, H, extra, self._n_sub_k), dtype=mx.uint32)],
+            axis=2,
+        )
+        self._stored_v_indices = mx.concatenate(
+            [self._stored_v_indices, mx.zeros((B, H, extra, self._n_sub_v), dtype=mx.uint32)],
+            axis=2,
+        )
+
     def _update_and_fetch_standard_and_stash(self, keys, values):
         """Run the standard dequant path AND stash indices for fused_sdpa().
 
@@ -332,14 +366,7 @@ class VecInferKVCache(_MLXKVCache):
         v_hat, v_idx = self._encode_decode_values(values)
 
         # Also stash indices so decode steps can use the fused path
-        if self._stored_k_indices is None:
-            self._stored_k_indices = mx.zeros((B, H, self._max_ctx, self._n_sub_k), dtype=mx.uint32)
-            self._stored_v_indices = mx.zeros((B, H, self._max_ctx, self._n_sub_v), dtype=mx.uint32)
-        if self._stored_S_kv + S > self._max_ctx:
-            raise RuntimeError(
-                f"VecInferKVCache: prefill length {self._stored_S_kv + S} "
-                f"exceeded fused_sdpa_max_ctx={self._max_ctx}."
-            )
+        self._ensure_index_capacity(B, H, S)
         new_end = self._stored_S_kv + S
         self._stored_k_indices[:, :, self._stored_S_kv : new_end, :] = k_idx.astype(mx.uint32)
         self._stored_v_indices[:, :, self._stored_S_kv : new_end, :] = v_idx.astype(mx.uint32)
@@ -384,17 +411,7 @@ class VecInferKVCache(_MLXKVCache):
         v32 = values.astype(mx.float32)
         v_idx = self._quantize(v32, self._value_codebook, self._value_sub_dim)
 
-        # Lazy ring-buffer allocation on first update
-        if self._stored_k_indices is None:
-            self._stored_k_indices = mx.zeros((B, H, self._max_ctx, self._n_sub_k), dtype=mx.uint32)
-            self._stored_v_indices = mx.zeros((B, H, self._max_ctx, self._n_sub_v), dtype=mx.uint32)
-
-        if self._stored_S_kv + S > self._max_ctx:
-            raise RuntimeError(
-                f"VecInferKVCache: context length "
-                f"{self._stored_S_kv + S} exceeded fused_sdpa_max_ctx="
-                f"{self._max_ctx}.  Increase KVCacheConfig.fused_sdpa_max_ctx."
-            )
+        self._ensure_index_capacity(B, H, S)
 
         # Slice-write into the pre-allocated buffer.  MLX supports
         # in-place slice assignment on arrays.

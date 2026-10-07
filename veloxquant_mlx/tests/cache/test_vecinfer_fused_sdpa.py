@@ -513,3 +513,28 @@ def test_nbytes_counts_every_live_buffer_in_stash_mode() -> None:
     assert index_bytes > 0
     assert stash.nbytes == plain.nbytes + index_bytes
     assert stash.nbytes > plain.nbytes
+
+
+def test_index_buffers_grow_past_old_default_cap() -> None:
+    c = _build_cache(fused_sdpa=True)
+    k = mx.random.normal((1, 2, 300, 128)).astype(mx.float16)
+    for _ in range(30):  # 9000 tokens, past the old 8192 default
+        c.update_and_fetch(k, k)
+    mx.eval(c._stored_k_indices)
+    assert c.offset == 9000 and c._stored_S_kv == 9000
+    assert c._stored_k_indices.shape[2] >= 9000
+
+
+def test_growth_preserves_earlier_indices_and_cap_still_enforced() -> None:
+    c = _build_cache(fused_sdpa=True)
+    k1 = mx.random.normal((1, 2, 200, 128)).astype(mx.float16)
+    c.update_and_fetch(k1, k1)
+    first = mx.array(c._stored_k_indices[:, :, :200, :])
+    k2 = mx.random.normal((1, 2, 400, 128)).astype(mx.float16)  # forces growth
+    c.update_and_fetch(k2, k2)
+    assert mx.array_equal(c._stored_k_indices[:, :, :200, :], first).item()
+
+    capped = _build_memory_bound_cache(max_ctx=64)
+    kk = mx.random.normal((1, 8, 65, 128)).astype(mx.float16)
+    with pytest.raises(RuntimeError, match="fused_sdpa_max_ctx=64"):
+        capped.update_and_fetch(kk, kk)

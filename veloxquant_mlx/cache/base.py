@@ -834,12 +834,11 @@ class KVCacheConfig:
     #   True  → require, raise if Metal/shape unsupported
     #   False → run the standard dequant→SDPA path (current 0.5.x default)
     fused_sdpa: bool | None = False
-    # Pre-allocated index ring-buffer capacity (in tokens) when
-    # fused_sdpa=True.  At construction time we allocate
-    # [B, H_kv, fused_sdpa_max_ctx, n_sub] uint32 once and slice-write
-    # into it on each update_and_fetch — avoids O(S²) per-step concat.
-    # If a generation exceeds this length, the cache raises RuntimeError.
-    fused_sdpa_max_ctx: int = 8192
+    # Optional hard cap (in tokens) on the fused-path index buffers.  The
+    # buffers grow geometrically as tokens arrive; None (default) means no
+    # cap.  If a cap is set and a generation exceeds it, the cache raises
+    # RuntimeError.
+    fused_sdpa_max_ctx: int | None = None
     # When True (requires fused_sdpa=True), update_and_fetch skips fp16
     # K_hat/V_hat materialization entirely — this is the actual memory
     # reduction: the cache holds only uint32 codebook indices
