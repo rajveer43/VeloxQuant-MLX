@@ -3,13 +3,21 @@ id: commvq
 title: CommVQ
 sidebar_label: CommVQ
 slug: /algorithms/commvq
-description: CommVQ is a RoPE-commutative residual vector quantizer that encodes rotated keys so rotary position embeddings can be applied to quantized codes at decode time without dequantizing first, via a fused Metal kernel.
-keywords: [commvq, rope-commutative quantization, residual vq, rotary position embeddings, metal kernel, quantizer-level api]
+description: CommVQ-style RoPE-aware product vector quantizer for keys. Each codebook owns a disjoint slice of the head dimension. It is not the paper's additive scheme and does not enforce RoPE commutativity.
+keywords: [commvq, product vq, rotary position embeddings, rotary position embeddings, metal kernel, quantizer-level api]
 ---
 
 # CommVQ
 
-CommVQ (Commutative VQ) is designed for models using **Rotary Position Embeddings (RoPE)**. Standard quantization loses positional information because RoPE is applied after keys are written to the cache. CommVQ uses a residual VQ structure that **commutes with RoPE** — so position embeddings can be applied to quantized codes without dequantizing first.
+CommVQ here is a **RoPE-aware product vector quantizer** for keys. It is inspired by the CommVQ paper but is not a faithful port.
+
+:::caution[What is and is not implemented]
+- It is plain **product quantization**: each of the `n_codebooks` sub-codebooks owns a disjoint slice of the head dimension, and decoding concatenates the slices. The paper's additive/residual scheme (each stage encoding the previous stage's error) is not implemented.
+- Codebooks are trained on **pre-RoPE** keys and RoPE is applied once after decoding. No commutativity constraint is enforced. An earlier projection step claimed to do this but acted on the wrong dimension pairs, and was removed (reconstruction MSE rose about 2% on Gaussian data).
+- `compression_ratio` counts the index bytes only. `stored_compression_ratio` also counts the 4-byte position that `encode()` returns (16x vs 32x at d=64, 4 codebooks). Codebook bytes are excluded from both.
+
+Tracking issue: #756.
+:::
 
 :::note[Quantizer-level API only]
 `CommVQQuantizer` is not yet wired into `KVCacheConfig`/`KVCacheBuilder` — there is no `method="comm_vq"` cache option. Use the quantizer directly, as shown below.
@@ -27,7 +35,7 @@ CommVQ flow:
 k_raw → apply_rope → CommVQ_encode → cache → CommVQ_decode → attention
 ```
 
-CommVQ encodes the RoPE-rotated key directly via a multi-codebook residual VQ. The codebook is structured so that applying a rotation to the centroid approximates the rotation of the residual — making position-aware decoding possible without storing per-token position metadata beyond the token index itself.
+CommVQ encodes pre-RoPE keys with one codebook per slice of the head dimension, and RoPE is applied once to the decoded vector at the stored position.
 
 The Metal kernel `comm_vq_decode_metal` fuses centroid gathering and RoPE application in a single GPU pass.
 
@@ -35,7 +43,7 @@ The Metal kernel `comm_vq_decode_metal` fuses centroid gathering and RoPE applic
 
 | Property | Value |
 |---|---|
-| Calibration | One-time `fit()` to train the residual codebooks |
+| Calibration | One-time `fit()` to train the sub-codebooks |
 | Key bits | `b` bits per codebook × `n_codebooks` (e.g. `b=4, n_codebooks=4` on `head_dim=128` ≈ 4-bit keys) |
 | Value bits | Not handled by this quantizer (pair with another value quantizer or keep fp16) |
 | RoPE compatible | Yes — position applied at decode time |
@@ -52,7 +60,7 @@ d = 128  # head_dim (must be even)
 
 quantizer = CommVQQuantizer(d=d, b=4, n_codebooks=4, seed=42)
 
-# One-time calibration: train the residual codebooks on a representative
+# One-time calibration: train the sub-codebooks on a representative
 # sample of PRE-RoPE keys
 rng = np.random.default_rng(0)
 calib_keys = rng.standard_normal((2048, d)).astype(np.float16)
