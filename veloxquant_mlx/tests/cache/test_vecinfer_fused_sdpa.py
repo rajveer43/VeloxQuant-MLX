@@ -538,3 +538,19 @@ def test_growth_preserves_earlier_indices_and_cap_still_enforced() -> None:
     kk = mx.random.normal((1, 8, 65, 128)).astype(mx.float16)
     with pytest.raises(RuntimeError, match="fused_sdpa_max_ctx=64"):
         capped.update_and_fetch(kk, kk)
+
+
+@pytest.mark.parametrize("head_dim", [80, 96, 100])
+def test_non_power_of_two_head_dim_rejected_with_clear_message(head_dim: int) -> None:
+    from veloxquant_mlx.core.exceptions import QuantizerConfigError
+
+    cfg = KVCacheConfig(
+        method="vecinfer",
+        head_dim=head_dim,
+        key_sub_dim=4,
+        value_sub_dim=4,
+        key_codebook_bits=4,
+        value_codebook_bits=4,
+    )
+    with pytest.raises(QuantizerConfigError, match="power-of-2 head_dim"):
+        KVCacheFactory.create(cfg)
