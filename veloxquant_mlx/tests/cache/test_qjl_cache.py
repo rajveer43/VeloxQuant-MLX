@@ -162,3 +162,19 @@ def test_multi_row_append_raises_instead_of_dropping_rows():
         c.append_value(one)
         assert len(c) == 1
         assert c.attend(one[0]).shape == (64,)
+
+
+def test_repr_reports_live_token_count_after_ring_buffer_wrap():
+    """#774: repr used a monotonically growing counter and disagreed with len()."""
+    import mlx.core as mx
+
+    from veloxquant_mlx.cache.base import KVCacheConfig
+    from veloxquant_mlx.cache.qjl_cache import QJLKVCache
+
+    c = QJLKVCache(KVCacheConfig(head_dim=64, capacity=4))
+    for _ in range(10):
+        v = mx.random.normal((64,)).astype(mx.float16)
+        c.append_key(v)
+        c.append_value(v)
+    assert len(c) == 4
+    assert "n_tokens=4" in repr(c)

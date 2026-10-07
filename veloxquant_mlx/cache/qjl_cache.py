@@ -24,7 +24,11 @@ class QJLKVCache(KVCache):
     """Minimal KV cache using pure 1-bit QJL for key compression.
 
     Args:
-        config: KVCacheConfig instance.
+        config: KVCacheConfig instance. ``jl_dim`` sets the sketch size ``m``; when unset
+            it defaults to ``head_dim``. The estimator is unbiased but its variance falls
+            as ``1/m``, so ``m = head_dim`` gives noisy scores (correlation with exact
+            ``q.k`` ~0.64 at d=128, ~0.88 at ``m = 4 * head_dim``). Set ``jl_dim``
+            higher when attention quality matters.
     """
 
     def __init__(self, config: Any) -> None:
@@ -153,4 +157,4 @@ class QJLKVCache(KVCache):
         return len(self._k_signs)
 
     def __repr__(self) -> str:
-        return f"QJLKVCache(d={self._d}, m={self._m}, n_tokens={self._n_tokens})"
+        return f"QJLKVCache(d={self._d}, m={self._m}, n_tokens={len(self)})"

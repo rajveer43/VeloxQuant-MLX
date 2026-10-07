@@ -476,7 +476,9 @@ class KVCacheConfig:
             as a list, ``KVCacheBuilder.for_model()`` consumes element ``i``
             for layer ``i``; ``KVCacheFactory.create()`` requires an int.
         bit_width_outlier: Bit-width for outlier channels (None → same as inlier).
-        jl_dim: JL projection dimension m.
+        jl_dim: JL projection dimension m. ``None`` means ``m = head_dim`` for QJL, which is
+            cheap but noisy (score correlation ~0.64 at d=128 vs ~0.88 at m=4d); raise it
+            when attention quality matters. See #774.
         n_outlier_channels: Number of outlier channels to detect.
         seed: Random seed.
         dtype: MLX dtype for computations.
