@@ -274,7 +274,9 @@ def test_fused_sdpa_multi_token_prefill() -> None:
 # ===========================================================================
 # memory_bound wiring: update_and_fetch skip + dispatcher routing
 # ===========================================================================
-def _build_memory_bound_cache(*, head_dim: int = 128, key_sub_dim: int = 8, seed: int = 0):
+def _build_memory_bound_cache(
+    *, head_dim: int = 128, key_sub_dim: int = 8, seed: int = 0, max_ctx: int | None = None
+):
     from veloxquant_mlx.metal.fused_sdpa import patch_mlx_lm_for_fused_sdpa, unpatch_mlx_lm
 
     unpatch_mlx_lm()  # start clean regardless of prior test state
@@ -295,6 +297,7 @@ def _build_memory_bound_cache(*, head_dim: int = 128, key_sub_dim: int = 8, seed
         value_codebook=cb_v,
         fused_sdpa=True,
         fused_sdpa_memory_bound=True,
+        **({} if max_ctx is None else {"fused_sdpa_max_ctx": max_ctx}),
     )
     return KVCacheFactory.create(cfg)
 
@@ -336,9 +339,10 @@ def test_memory_bound_requires_fused_sdpa_flag() -> None:
 
 
 def test_memory_bound_update_and_fetch_does_not_materialize_fp16() -> None:
-    """The actual point of this fix: nbytes must reflect uint32 indices
-    only, not a full fp16 K_hat/V_hat buffer."""
-    c = _build_memory_bound_cache()
+    """nbytes must be the pre-allocated uint32 index buffers only, with no
+    fp16 K_hat/V_hat buffer. max_ctx is kept small because the index buffers
+    are allocated at fused_sdpa_max_ctx, not at the live length."""
+    c = _build_memory_bound_cache(max_ctx=32)
     B, H_kv, S, D = 1, 8, 16, 128
     keys = mx.random.normal((B, H_kv, S, D)).astype(mx.float16)
     vals = mx.random.normal((B, H_kv, S, D)).astype(mx.float16)
@@ -349,6 +353,7 @@ def test_memory_bound_update_and_fetch_does_not_materialize_fp16() -> None:
         f"nbytes={c.nbytes} should be well under the fp16-equivalent "
         f"{fp16_equivalent_bytes} bytes in memory_bound mode"
     )
+    assert c.nbytes == c._stored_k_indices.nbytes + c._stored_v_indices.nbytes
 
     from veloxquant_mlx.metal.fused_sdpa import unpatch_mlx_lm
 
@@ -495,3 +500,16 @@ def test_trim_rolls_back_byte_accounting() -> None:
     assert 0 < c.compressed_key_bytes < before[0]
     assert c.trim(0) == 0
     assert c.trim(1000) == 30 and c.offset == 0 and c._stored_S_kv == 0
+
+
+def test_nbytes_counts_every_live_buffer_in_stash_mode() -> None:
+    plain = _build_cache(fused_sdpa=False)
+    stash = _build_cache(fused_sdpa=True)
+    k = mx.random.normal((1, 2, 40, 128)).astype(mx.float16)
+    plain.update_and_fetch(k, k)
+    stash.update_and_fetch(k, k)
+    # Stash mode holds the same fp16 K_hat/V_hat plus the index buffers.
+    index_bytes = stash._stored_k_indices.nbytes + stash._stored_v_indices.nbytes
+    assert index_bytes > 0
+    assert stash.nbytes == plain.nbytes + index_bytes
+    assert stash.nbytes > plain.nbytes
