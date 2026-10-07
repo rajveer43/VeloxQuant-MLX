@@ -124,7 +124,11 @@ class QJLKVCache(KVCache):
         return (scores[:, None] * v_hat).sum(axis=0).astype(self._storage_dtype)
 
     def memory_bytes(self) -> int:
-        """Estimate memory footprint."""
+        """Bytes held for all cached tokens.
+
+        Signs are stored one per int8 (``m`` bytes per key), not bit-packed, so the
+        key side is 8x what a true 1-bit store would need.
+        """
         n = len(self._k_signs)
         if n == 0:
             return 0

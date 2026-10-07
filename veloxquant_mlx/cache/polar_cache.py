@@ -132,19 +132,19 @@ class PolarQuantKVCache(KVCache):
         return (scores[:, None] * v_hat).sum(axis=0).astype(self._storage_dtype)
 
     def memory_bytes(self) -> int:
-        """Estimate memory footprint."""
+        """Bytes held for all cached tokens (angle codes, radii, int8 values and scales).
+
+        Angle codes are stored one uint8 per angle, not packed to ``b`` bits.
+        """
         n = len(self._k_angles)
         if n == 0:
             return 0
-        d = self._d
-        n_levels = 4
-        # Angle indices: uint8 per level
-        angle_bytes = n * n_levels * (d // 2) * 1
-        # Final radius: fp16
-        radius_bytes = n * 2
-        # Value cache
-        v_bytes = n * (d + 2)
-        return angle_bytes + radius_bytes + v_bytes
+        # Per-token size read from what is actually stored: every token has the same
+        # layout (one uint8 index per angle at each level, d / 2^n_levels fp16 radii).
+        angle_bytes = sum(int(a.nbytes) for a in self._k_angles[0])
+        radius_bytes = int(self._k_radii[0].nbytes)
+        v_bytes = int(self._v_cache[0].nbytes) + int(self._v_scales[0].nbytes)
+        return n * (angle_bytes + radius_bytes + v_bytes)
 
     def reset(self) -> None:
         """Clear all stored tokens; the key quantizer (seeded, deterministic

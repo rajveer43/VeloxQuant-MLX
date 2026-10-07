@@ -144,3 +144,25 @@ def test_reset_returns_to_empty_state() -> None:
     out = cache.attend(_rand_vec(seed=999))
     mx.eval(out)
     assert out.shape == (_D,)
+
+
+def test_memory_bytes_matches_bytes_actually_held():
+    """#773: memory_bytes() was hard-coded (4 levels, one radius) and off by ~46% at d=128."""
+    import mlx.core as mx
+
+    from veloxquant_mlx.cache.base import KVCacheConfig
+    from veloxquant_mlx.cache.polar_cache import PolarQuantKVCache
+
+    for d in (64, 128):
+        c = PolarQuantKVCache(KVCacheConfig(head_dim=d))
+        for _ in range(10):
+            c.append_key(mx.random.normal((d,)).astype(mx.float16))
+            c.append_value(mx.random.normal((d,)).astype(mx.float16))
+        held = sum(
+            sum(int(a.nbytes) for a in c._k_angles[i])
+            + int(c._k_radii[i].nbytes)
+            + int(c._v_cache[i].nbytes)
+            + int(c._v_scales[i].nbytes)
+            for i in range(10)
+        )
+        assert c.memory_bytes() == held
