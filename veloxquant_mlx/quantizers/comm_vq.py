@@ -16,6 +16,7 @@ Public API:
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import mlx.core as mx
@@ -23,6 +24,7 @@ import numpy as np
 
 from veloxquant_mlx.core.abstractions import Quantizer
 from veloxquant_mlx.core.context import EncodedVector
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.core.registry import QuantizerRegistry
 
 # Target size of the largest per-chunk temporary in _encode_batch ([rows, K, sub_dim] fp32).
@@ -143,7 +145,9 @@ def _train_sub_codebook(
 
     # Initialise from random data points (K-means++ would be better but
     # random is sufficient and avoids the O(N·K) init cost)
-    idx = rng.choice(N, size=n_centroids, replace=False)
+    # With fewer samples than centroids (small calibration set) draw with
+    # replacement: duplicate centroids simply go unused (#755).
+    idx = rng.choice(N, size=n_centroids, replace=n_centroids > N)
     centroids = data[idx].copy()
 
     for _ in range(n_iters):
@@ -168,7 +172,7 @@ def _train_sub_codebook(
         dead = ~mask
         if dead.any():
             n_dead = int(dead.sum())
-            new_centroids[dead] = data[rng.choice(N, size=n_dead, replace=False)]
+            new_centroids[dead] = data[rng.choice(N, size=n_dead, replace=n_dead > N)]
         centroids = new_centroids
 
         # Projection step: enforce approximate RoPE commutativity
@@ -264,19 +268,47 @@ class CommVQQuantizer(Quantizer):
         Returns:
             self (fluent).
         """
+        if max_samples < 1:
+            raise QuantizerConfigError(
+                f"CommVQQuantizer.fit: max_samples={max_samples} must be >= 1."
+            )
         if isinstance(keys_pre_rope, mx.array):
-            data_np = np.array(keys_pre_rope, dtype=np.float32)
+            # Via fp32 first: numpy cannot import an MLX bfloat16 buffer.
+            data_np = np.array(keys_pre_rope.astype(mx.float32), dtype=np.float32)
         elif isinstance(keys_pre_rope, np.ndarray):
             data_np = keys_pre_rope.astype(np.float32)
         else:
             data_np = np.asarray(keys_pre_rope, dtype=np.float32)
 
+        # A mismatched last dim would otherwise be silently re-chunked into
+        # d-sized rows by the reshape below, e.g. (4, 32) -> (2, 64).
+        if data_np.ndim >= 2 and data_np.shape[-1] != self._d:
+            raise QuantizerConfigError(
+                f"CommVQQuantizer.fit: expected last dim {self._d}, got {data_np.shape[-1]}."
+            )
+        if data_np.size % self._d != 0:
+            raise QuantizerConfigError(
+                f"CommVQQuantizer.fit: {data_np.size} values cannot be split into "
+                f"vectors of dim {self._d}."
+            )
         data_np = data_np.reshape(-1, self._d)
         N = data_np.shape[0]
+        if N == 0:
+            raise QuantizerConfigError("CommVQQuantizer.fit: no calibration vectors were given.")
         if max_samples < N:
             rng = np.random.default_rng(self._seed)
             idx = rng.choice(N, size=max_samples, replace=False)
             data_np = data_np[idx]
+            N = max_samples
+        # Counted after the max_samples cap: that is what actually gets trained on.
+        if self._cb_size > N:
+            warnings.warn(
+                f"CommVQQuantizer.fit: only {N} calibration vectors for codebooks of "
+                f"{self._cb_size} entries; the surplus entries will be duplicates and the "
+                f"codebooks will overfit. Use at least {self._cb_size} vectors (more is better).",
+                UserWarning,
+                stacklevel=2,
+            )
 
         # Train one sub-codebook per segment via residual VQ
         codebooks = np.zeros((self._n_cb, self._cb_size, self._sub_dim), dtype=np.float32)
