@@ -362,3 +362,14 @@ def test_small_fit_is_deterministic_per_seed() -> None:
         books.append(q._codebooks)
     assert np.array_equal(books[0], books[1])
     assert not np.array_equal(books[0], books[2])
+
+
+def test_stored_compression_ratio_counts_the_position_field() -> None:
+    q = CommVQQuantizer(d=64, b=8, n_codebooks=4, seed=0)
+    assert q.compression_ratio == 32.0
+    assert q.stored_compression_ratio == 16.0  # 128 bytes / (4 idx + 4 position)
+    x = mx.random.normal((300, 64)).astype(mx.float16)
+    q.fit(x)
+    ev = q.encode(x[:3])
+    per_vec = (ev.indices.nbytes + ev.norm.nbytes) / 3
+    assert q.stored_compression_ratio == 128 / per_vec
