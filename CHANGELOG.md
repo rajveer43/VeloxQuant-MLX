@@ -527,6 +527,101 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.92.6 (2026-10-07)
+
+### Bug Fixes
+
+- **comm_vq**: Chunk encode() over rows so it no longer needs N*K*sub_dim fp32 (#754)
+  ([#760](https://github.com/rajveer43/VeloxQuant-MLX/pull/760),
+  [`ddbaa16`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ddbaa1624565cb23e06951f2b62fbee4a67bb9ff))
+
+- **comm_vq**: Fit() input validation, max_samples-aware warning, bf16 input
+  ([#761](https://github.com/rajveer43/VeloxQuant-MLX/pull/761),
+  [`6b82595`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6b8259589deeac2596fbbbdd7bc3cba9b9691adf))
+
+- **comm_vq**: Fit() no longer crashes with fewer calibration vectors than codebook entries
+  ([#761](https://github.com/rajveer43/VeloxQuant-MLX/pull/761),
+  [`6b82595`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6b8259589deeac2596fbbbdd7bc3cba9b9691adf))
+
+- **comm_vq**: Fit() works (with a warning) when calibration vectors < 2**b (#755)
+  ([#761](https://github.com/rajveer43/VeloxQuant-MLX/pull/761),
+  [`6b82595`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6b8259589deeac2596fbbbdd7bc3cba9b9691adf))
+
+- **rvq**: Key norms no longer overflow fp16 (#747)
+  ([#758](https://github.com/rajveer43/VeloxQuant-MLX/pull/758),
+  [`87f1fc6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/87f1fc62a2f49be4f02000ff69ebcfdcf2be8962))
+
+- **rvq**: Store key norms as bf16 so fp16 keys with ||k|| > 65504 stay finite
+  ([#758](https://github.com/rajveer43/VeloxQuant-MLX/pull/758),
+  [`87f1fc6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/87f1fc62a2f49be4f02000ff69ebcfdcf2be8962))
+
+- **rvq**: Trim() rolls back byte accounting; from_state() sets keys=None (#748)
+  ([#763](https://github.com/rajveer43/VeloxQuant-MLX/pull/763),
+  [`5e7bbac`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5e7bbacd3d0fc18175e06f2e12ab117da095da97))
+
+- **vecinfer**: Grow fused index buffers instead of capping at 8192 tokens (#757)
+  ([#764](https://github.com/rajveer43/VeloxQuant-MLX/pull/764),
+  [`d23cb5d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d23cb5da4ef02d9086df3ab27df8dba2f5291327))
+
+- **vecinfer**: Keep fused index buffers and accounting in step with trim() (#752)
+  ([#759](https://github.com/rajveer43/VeloxQuant-MLX/pull/759),
+  [`b582135`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b582135939e4e684087caf796413d545803dff90))
+
+- **vecinfer**: Nbytes counts every live buffer in fused stash mode (#753)
+  ([#762](https://github.com/rajveer43/VeloxQuant-MLX/pull/762),
+  [`fc95818`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fc958188aa76169285b17c9d78476c7a61f1282e))
+
+- **vecinfer**: Reject non-power-of-2 head_dim with a clear config error (#751)
+  ([#765](https://github.com/rajveer43/VeloxQuant-MLX/pull/765),
+  [`1a947ad`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1a947ad32ddcab30f3d900e64b952a91b99fe51d))
+
+- **vecinfer**: Warn when built without codebooks (random N(0,1) fallback) (#750)
+  ([#767](https://github.com/rajveer43/VeloxQuant-MLX/pull/767),
+  [`d245be4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d245be49249e38f64cd6d26434cccf2961990faf))
+
+### Chores
+
+- **deps**: Bump compression from 1.8.1 to 1.8.2 in /docs-site
+  ([#743](https://github.com/rajveer43/VeloxQuant-MLX/pull/743),
+  [`09831bc`](https://github.com/rajveer43/VeloxQuant-MLX/commit/09831bc4def76490aa54e39f764db32ea9d0d862))
+
+- **deps**: Bump fsspec from 2026.4.0 to 2026.6.0 in /scripts
+  ([#741](https://github.com/rajveer43/VeloxQuant-MLX/pull/741),
+  [`41bdc8e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/41bdc8e61dce00c727bf8635dca089d2ce347db4))
+
+- **deps**: Bump multidict from 6.7.1 to 6.9.1 in /scripts
+  ([#742](https://github.com/rajveer43/VeloxQuant-MLX/pull/742),
+  [`84abc3d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/84abc3ddc9b6be8dc18efce4b106c8f0e067138e))
+
+- **deps**: Bump proxy-addr from 2.0.7 to 2.0.8 in /docs-site
+  ([#745](https://github.com/rajveer43/VeloxQuant-MLX/pull/745),
+  [`1956ffb`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1956ffb3e660594910f145e8cfdac0e9aa9cfb2b))
+
+- **deps**: Bump shell-quote from 1.10.0 to 1.12.0 in /docs-site
+  ([#744](https://github.com/rajveer43/VeloxQuant-MLX/pull/744),
+  [`81c4b5b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/81c4b5b88051ac8095aea500f6b19c76f7bea6b9))
+
+- **deps**: Bump source-map-js from 1.2.1 to 1.2.2 in /docs-site
+  ([#746](https://github.com/rajveer43/VeloxQuant-MLX/pull/746),
+  [`cbf7c7b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cbf7c7bd60f6e4469ffee05fc3934d028b3ffab9))
+
+### Documentation
+
+- **comm_vq**: Describe it as product VQ; add stored_compression_ratio (#756)
+  ([#768](https://github.com/rajveer43/VeloxQuant-MLX/pull/768),
+  [`bcc1dc0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bcc1dc06587ad4cd6db9e70ba4bdd2a243fd670a))
+
+- **rvq**: Mark fused RVQ attend kernel as a prototype; reject empty KV (#749)
+  ([#766](https://github.com/rajveer43/VeloxQuant-MLX/pull/766),
+  [`c6fedfa`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c6fedfa209d2e56e52cd93478fbbf077e72daad3))
+
+### Performance Improvements
+
+- **rvq**: Fuse fp16 norm handling with mx.compile; test all key dtypes
+  ([#758](https://github.com/rajveer43/VeloxQuant-MLX/pull/758),
+  [`87f1fc6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/87f1fc62a2f49be4f02000ff69ebcfdcf2be8962))
+
+
 ## v0.92.5 (2026-10-06)
 
 ### Bug Fixes
