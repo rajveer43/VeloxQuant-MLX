@@ -50,7 +50,7 @@ mlx-lm @ git+https://github.com/ml-explore/mlx-lm.git@df1d3f3c9a7aae402dcbb8f41d
 mlx-metal==0.32.0
 mlx-vlm==0.6.5
 more-itertools==11.0.2
-multidict==6.7.1
+multidict==6.9.1
 multiprocess==0.70.19
 nh3==0.3.5
 numpy==2.4.6
