@@ -377,3 +377,20 @@ def test_key_norm_above_fp16_range_stays_finite(dtype) -> None:
         * mx.linalg.norm(keys.astype(mx.float32), axis=-1)
     )
     assert float(mx.min(cos)) > 0.9
+
+
+def test_trim_rolls_back_byte_accounting_and_from_state_has_keys() -> None:
+    c = _build(bits=2, head_dim=64)
+    k = mx.random.normal((1, 2, 40, 64)).astype(mx.float16)
+    c.update_and_fetch(k, k)
+    comp, fp = c.compressed_key_bytes, c.fp16_key_bytes
+    assert c.trim(10) == 10
+    assert c.fp16_key_bytes == fp * 30 // 40
+    assert c.compressed_key_bytes == comp * 30 // 40
+    assert c.trim(1000) == 30
+    assert c.compressed_key_bytes == 0 and c.fp16_key_bytes == 0
+
+    c2 = _build(bits=2, head_dim=64)
+    c2.update_and_fetch(k, k)
+    r = TurboQuantRVQKVCache.from_state(c2.state, c2.meta_state)
+    assert r.keys is None

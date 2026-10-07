@@ -379,6 +379,7 @@ class TurboQuantRVQKVCache(_MLXKVCache):
         if meta_state is None:
             raise TypeError("TurboQuantRVQKVCache.from_state() requires meta_state")
         obj = cls.__new__(cls)
+        obj.keys = None  # __init__ is bypassed; keys stay unused (see __init__)
         obj.state = state
         obj.meta_state = meta_state
         return obj
@@ -389,8 +390,13 @@ class TurboQuantRVQKVCache(_MLXKVCache):
 
     def trim(self, n: int) -> int:
         """Drop the ``n`` most-recently-added tokens; returns the number actually dropped."""
-        n = min(self.offset, n)
+        old_offset = self.offset
+        n = min(old_offset, n)
         self.offset -= n
+        if n and old_offset:
+            keep = self.offset / old_offset
+            self._key_bytes_compressed = int(self._key_bytes_compressed * keep)
+            self._key_bytes_fp16 = int(self._key_bytes_fp16 * keep)
         return n
 
     def make_mask(self, *args: Any, **kwargs: Any) -> Any:
