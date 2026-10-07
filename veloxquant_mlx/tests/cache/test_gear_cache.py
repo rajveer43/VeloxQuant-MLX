@@ -387,3 +387,25 @@ def test_batched_cache_matches_per_head_reference_for_b_gt_1():
 
     np.testing.assert_allclose(np.array(ref_k), np.array(k_out), atol=1e-3)
     np.testing.assert_allclose(np.array(ref_v), np.array(v_out), atol=1e-3)
+
+
+def test_trim_rolls_back_byte_accounting_and_error_stats():
+    """#769: trim() must shrink the counters along with the token count."""
+    import mlx.core as mx
+
+    from veloxquant_mlx.cache.base import KVCacheConfig
+    from veloxquant_mlx.cache.gear_cache import GEARKVCache
+
+    mx.random.seed(0)
+    c = GEARKVCache(KVCacheConfig(head_dim=64, gear_bits=2))
+    x = mx.random.normal((1, 2, 64, 64)).astype(mx.float16)
+    c.update_and_fetch(x, x)
+    before = (c.compressed_key_bytes, c.fp16_key_bytes, c.compressed_value_bytes)
+    assert c.trim(32) == 32
+    assert c.offset == 32
+    assert c.fp16_key_bytes == before[1] // 2
+    assert c.compressed_key_bytes == before[0] // 2
+    assert c.compressed_value_bytes == before[2] // 2
+    assert c.assigned_avg_bits == 16.0 * before[0] / before[1]
+    assert c.trim(100) == 32
+    assert c.fp16_key_bytes == 0
