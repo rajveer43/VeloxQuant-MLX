@@ -554,3 +554,19 @@ def test_non_power_of_two_head_dim_rejected_with_clear_message(head_dim: int) ->
     )
     with pytest.raises(QuantizerConfigError, match="power-of-2 head_dim"):
         KVCacheFactory.create(cfg)
+
+
+def test_missing_codebooks_warn_and_supplied_codebooks_do_not() -> None:
+    import warnings
+
+    kw = dict(method="vecinfer", head_dim=64, key_sub_dim=4, value_sub_dim=4)
+    with pytest.warns(UserWarning, match="random N\\(0,1\\) codebooks"):
+        KVCacheFactory.create(KVCacheConfig(**kw, key_codebook_bits=4, value_codebook_bits=4))
+    cb = mx.random.normal((16, 4))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        KVCacheFactory.create(
+            KVCacheConfig(
+                **kw, key_codebook_bits=4, value_codebook_bits=4, key_codebook=cb, value_codebook=cb
+            )
+        )

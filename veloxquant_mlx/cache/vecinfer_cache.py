@@ -22,6 +22,7 @@ codebook cost of ``2**b_k * d_k * 2`` bytes shared across all tokens.
 from __future__ import annotations
 
 import math
+import warnings
 from typing import Any
 
 import mlx.core as mx
@@ -103,6 +104,20 @@ class VecInferKVCache(_MLXKVCache):
         n_kc = 2**self._key_bits
         n_vc = 2**self._value_bits
         seed = int(getattr(config, "seed", 42))
+
+        missing = [
+            n for n in ("key_codebook", "value_codebook") if getattr(config, n, None) is None
+        ]
+        if missing:
+            warnings.warn(
+                f"VecInferKVCache: no {' / '.join(missing)} given, so random N(0,1) "
+                "codebooks are used. They are only meant for shape/wiring tests and "
+                "distort real keys/values badly (nothing in the cache calibrates them). "
+                "Train codebooks with veloxquant_mlx.allocators.vecinfer.train_codebook "
+                "and pass them via KVCacheConfig(key_codebook=..., value_codebook=...).",
+                UserWarning,
+                stacklevel=2,
+            )
 
         key_cb = getattr(config, "key_codebook", None)
         if key_cb is None:
