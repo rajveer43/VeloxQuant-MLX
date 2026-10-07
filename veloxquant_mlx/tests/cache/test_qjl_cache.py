@@ -138,3 +138,27 @@ def test_reset_returns_to_empty_state() -> None:
     out = cache.attend(_rand_vec(seed=999))
     mx.eval(out)
     assert out.shape == (8,)
+
+
+def test_multi_row_append_raises_instead_of_dropping_rows():
+    """#772: a (n, d) input used to keep only row 0 (keys) / flatten (values)."""
+    import mlx.core as mx
+    import pytest
+
+    from veloxquant_mlx.cache.base import KVCacheConfig
+    from veloxquant_mlx.cache.polar_cache import PolarQuantKVCache
+    from veloxquant_mlx.cache.qjl_cache import QJLKVCache
+
+    for cls in (QJLKVCache, PolarQuantKVCache):
+        c = cls(KVCacheConfig(head_dim=64))
+        bad = mx.random.normal((4, 64)).astype(mx.float16)
+        with pytest.raises(ValueError, match="append_key"):
+            c.append_key(bad)
+        with pytest.raises(ValueError, match="append_value"):
+            c.append_value(bad)
+        assert len(c) == 0
+        one = mx.random.normal((1, 64)).astype(mx.float16)  # (1, d) is still fine
+        c.append_key(one)
+        c.append_value(one)
+        assert len(c) == 1
+        assert c.attend(one[0]).shape == (64,)
