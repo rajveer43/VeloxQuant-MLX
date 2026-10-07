@@ -114,8 +114,8 @@ def test_values_off_keeps_values_fp16() -> None:
     ko, vo = c.update_and_fetch(k, v)
     # values pass through unchanged (lossless)
     assert float(mx.mean((vo.astype(mx.float32) - v.astype(mx.float32)) ** 2).item()) == 0.0
-    assert c.compressed_value_bytes == 0
-    assert c.fp16_value_bytes > 0
+    # uncompressed values cost their full fp16 bytes (#771)
+    assert c.compressed_value_bytes == c.fp16_value_bytes > 0
 
 
 # ------------------------------------------------------------------
