@@ -387,6 +387,12 @@ class GEARKVCache(_MLXKVCache):
         out = recon_batched.reshape(B, H, S, D)
 
         fp16 = B * H * S * D * 2
+        if is_key and S == 1:
+            # Per-channel groups run along the token axis, so a single token
+            # per call gives min == max and the base quant is lossless: the
+            # key is stored exactly. Charge what is held (fp16), not 2-bit
+            # codes plus a scale/zero pair per channel (#770).
+            comp = base = fp16
         if is_key:
             self._compressed_key_bytes += comp
             self._base_only_key_bytes += base
