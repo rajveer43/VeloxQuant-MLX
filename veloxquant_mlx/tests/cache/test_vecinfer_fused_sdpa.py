@@ -449,3 +449,49 @@ def test_dispatcher_patch_is_idempotent_and_reversible() -> None:
     unpatch_mlx_lm()
     assert not is_patched()
     assert _base.scaled_dot_product_attention is original
+
+
+# ---------------------------------------------------------------------------
+# #752 — trim() keeps the fused index buffers in step with offset
+# ---------------------------------------------------------------------------
+def test_trim_keeps_fused_index_buffers_in_sync() -> None:
+    mx.random.seed(0)
+    H, D = 2, 128
+    k = mx.random.normal((1, H, 40, D)).astype(mx.float16)
+    v = mx.random.normal((1, H, 40, D)).astype(mx.float16)
+    nk = mx.random.normal((1, H, 1, D)).astype(mx.float16)
+    nv = mx.random.normal((1, H, 1, D)).astype(mx.float16)
+    q = mx.random.normal((1, H, 1, D)).astype(mx.float16)
+    scale = D**-0.5
+
+    trimmed = _build_cache(fused_sdpa=True)
+    trimmed.update_and_fetch(k, v)
+    assert trimmed.trim(10) == 10
+    assert trimmed.offset == trimmed._stored_S_kv == 30
+    trimmed.update_and_fetch(nk, nv)
+    assert trimmed.offset == trimmed._stored_S_kv == 31
+
+    # Same tokens fed to a fresh cache without the trim: attention must agree,
+    # i.e. the 10 trimmed tokens no longer take part.
+    fresh = _build_cache(fused_sdpa=True)
+    fresh.update_and_fetch(k[:, :, :30], v[:, :, :30])
+    fresh.update_and_fetch(nk, nv)
+    out_trim = trimmed.fused_sdpa(q, scale=scale)
+    out_fresh = fresh.fused_sdpa(q, scale=scale)
+    np.testing.assert_allclose(
+        np.array(out_trim.astype(mx.float32)),
+        np.array(out_fresh.astype(mx.float32)),
+        atol=2e-3,
+    )
+
+
+def test_trim_rolls_back_byte_accounting() -> None:
+    c = _build_cache(fused_sdpa=True)
+    k = mx.random.normal((1, 2, 40, 128)).astype(mx.float16)
+    c.update_and_fetch(k, k)
+    before = (c.compressed_key_bytes, c.fp16_key_bytes)
+    c.trim(10)
+    assert c.fp16_key_bytes == before[1] * 30 // 40
+    assert 0 < c.compressed_key_bytes < before[0]
+    assert c.trim(0) == 0
+    assert c.trim(1000) == 30 and c.offset == 0 and c._stored_S_kv == 0

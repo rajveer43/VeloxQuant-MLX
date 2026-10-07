@@ -465,6 +465,30 @@ class VecInferKVCache(_MLXKVCache):
             return super().empty()
         return self._stored_k_indices is None or self._stored_S_kv == 0
 
+    def trim(self, n: int) -> int:
+        """Drop the last ``n`` tokens, keeping every parallel buffer in step.
+
+        The inherited ``trim`` only lowers ``offset``.  In fused mode the index
+        ring buffers are advanced by ``_stored_S_kv`` instead, so left alone
+        they keep the trimmed tokens: the next token is written ``n`` slots
+        past ``offset`` and ``fused_sdpa`` attends over the stale tail.  The
+        byte accounting is scaled back with the token count (an estimate: it
+        is tracked per call, not per token).
+        """
+        old_offset = self.offset
+        trimmed = super().trim(n)
+        if not trimmed:
+            return trimmed
+        self._stored_S_kv = min(self._stored_S_kv, self.offset)
+        keep = self.offset / old_offset
+        self._key_bytes_compressed = int(self._key_bytes_compressed * keep)
+        self._value_bytes_compressed = int(self._value_bytes_compressed * keep)
+        self._key_bytes_fp16 = int(self._key_bytes_fp16 * keep)
+        self._value_bytes_fp16 = int(self._value_bytes_fp16 * keep)
+        self._tokens_seen = int(self._tokens_seen * keep)
+        self._tokens_quantized = int(self._tokens_quantized * keep)
+        return trimmed
+
     def size(self) -> int:  # type: ignore[override]
         """Number of tokens currently stored."""
         # Both standard and fused tracks self.offset; just defer to it.
