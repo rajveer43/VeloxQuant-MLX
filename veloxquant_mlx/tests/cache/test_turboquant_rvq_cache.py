@@ -360,15 +360,17 @@ def test_merge_on_populated_cache_fails_cleanly_via_guard() -> None:
         gen_mod._merge_caches([[cache]])
 
 
-def test_key_norm_above_fp16_range_stays_finite() -> None:
-    """#747: finite fp16 keys with ||k|| > 65504 used to overflow the stored
-    fp16 norm to inf, making every reconstructed element inf/NaN."""
+@pytest.mark.parametrize("dtype", [mx.float16, mx.bfloat16, mx.float32])
+def test_key_norm_above_fp16_range_stays_finite(dtype) -> None:
+    """#747: the per-vector norm was stored in an fp16 buffer whatever the key
+    dtype, so ||k|| > 65504 became inf for fp16, bf16 and fp32 keys alike."""
     mx.random.seed(0)
     c = _build(bits=2, head_dim=64)
-    keys = mx.random.uniform(-30000, 30000, (1, 2, 4, 64)).astype(mx.float16)
+    keys = mx.random.uniform(-30000, 30000, (1, 2, 4, 64)).astype(dtype)
     assert bool(mx.all(mx.isfinite(keys)).item())
     assert float(mx.max(mx.linalg.norm(keys.astype(mx.float32), axis=-1))) > 65504
     k_out, _ = c.update_and_fetch(keys, keys)
+    assert k_out.dtype == dtype
     assert bool(mx.all(mx.isfinite(k_out)).item())
     cos = mx.sum(k_out.astype(mx.float32) * keys.astype(mx.float32), axis=-1) / (
         mx.linalg.norm(k_out.astype(mx.float32), axis=-1)

@@ -43,6 +43,7 @@ universal claim.
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 import mlx.core as mx
@@ -56,6 +57,26 @@ _WORD_BITS = 32
 # rvq_quant_pack's threadgroup-per-vector kernel needs a power-of-two D that
 # fits a whole vector's coordinates in one Metal threadgroup (<= 1024).
 _MAX_FUSED_D = 1024
+
+
+# fp16 keys need fp32 intermediates (a norm can exceed fp16's range, #747), but
+# run eagerly those cost a full-size fp32 round trip per op on the whole cached
+# history every decode step. Compiled, they fuse into one pass. shapeless=True
+# because the history length changes every step (no recompile per length).
+@partial(mx.compile, shapeless=True)
+def _unit_fp16_from_fp16(k: Any) -> Any:
+    """Unit direction and fp32 norm of fp16 rows, safe past ||k|| > 65504."""
+    k32 = k.astype(mx.float32)
+    norms = mx.sqrt(mx.sum(k32 * k32, axis=-1, keepdims=True))
+    safe = mx.maximum(norms, 1e-4)
+    return (k32 / safe).astype(mx.float16), norms
+
+
+@partial(mx.compile, shapeless=True)
+def _rescale_fp16(k_unit_hat: Any, norms: Any) -> Any:
+    """``k_unit_hat * norms`` in fp32, saturated to fp16's range."""
+    k_hat = k_unit_hat.astype(mx.float32) * norms.astype(mx.float32)
+    return mx.clip(k_hat, -65504.0, 65504.0).astype(mx.float16)
 
 
 def _pack_indices(idx: Any, bits: int) -> Any:
@@ -227,9 +248,12 @@ class TurboQuantRVQKVCache(_MLXKVCache):
         # The norm is computed in fp32 and stored as bf16: an fp16 norm
         # overflows to inf once ||k|| > 65504, which finite fp16 keys can
         # reach (#747); bf16 has the same 2-byte size and fp32's range.
-        norms = mx.linalg.norm(k_flat.astype(mx.float32), axis=-1, keepdims=True)
-        safe = mx.maximum(norms, mx.array(1e-4, dtype=mx.float32))
-        k_unit = (k_flat.astype(mx.float32) / safe).astype(mx.float16)
+        if kdtype == mx.float16:
+            k_unit, norms = _unit_fp16_from_fp16(k_flat)
+        else:
+            norms = mx.linalg.norm(k_flat.astype(mx.float32), axis=-1, keepdims=True)
+            safe = mx.maximum(norms, mx.array(1e-4, dtype=mx.float32))
+            k_unit = (k_flat / safe.astype(kdtype)).astype(mx.float16)
 
         if self._use_metal_pack:
             try:
@@ -303,13 +327,13 @@ class TurboQuantRVQKVCache(_MLXKVCache):
             signs=idx2.astype(mx.int8),
         )
         k_unit_hat = self._quantizer.decode(ev)  # (B*H*n, D) fp16
-        k_hat = k_unit_hat.astype(mx.float32) * norms.astype(mx.float32)
-        if kdtype in (mx.float16, mx.bfloat16):
-            # Quantization error can nudge an element of a near-limit key just
-            # past the dtype's range; saturate rather than emit inf.
-            lim = 65504.0 if kdtype == mx.float16 else 3.38e38
-            k_hat = mx.clip(k_hat, -lim, lim)
-        return k_hat.astype(kdtype).reshape(B, H, n, self._head_dim)
+        if kdtype == mx.float16:
+            # A bf16 norm can exceed fp16's range, so multiply in fp32, and
+            # saturate: quantization error can nudge an element of a near-limit
+            # key just past 65504 and fp16 would turn that into inf.
+            return _rescale_fp16(k_unit_hat, norms).reshape(B, H, n, self._head_dim)
+        # bf16 / fp32 share (or exceed) the norm's range: no overflow possible.
+        return (k_unit_hat.astype(kdtype) * norms.astype(kdtype)).reshape(B, H, n, self._head_dim)
 
     @property
     def state(self) -> Any:
