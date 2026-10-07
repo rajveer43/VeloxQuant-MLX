@@ -496,19 +496,11 @@ class VecInferKVCache(_MLXKVCache):
 
     @property
     def nbytes(self) -> int:  # type: ignore[override]
-        """Realized stored bytes: parent fp16 buffer size in standard mode, or the live-portion uint32 index buffers in fused mode."""
-        if not self._fused_enabled:
-            return super().nbytes
-        if self._stored_k_indices is None:
-            return 0
-        # uint32 indices, live portion only
-        n = self._stored_S_kv
-        # nbytes = B * H_kv * n * n_sub * 4 bytes for both k and v
-        ki = self._stored_k_indices
-        vi = self._stored_v_indices
-        per_tok_k = ki.shape[0] * ki.shape[1] * ki.shape[3] * 4
-        per_tok_v = vi.shape[0] * vi.shape[1] * vi.shape[3] * 4
-        return n * (per_tok_k + per_tok_v)
+        """Bytes actually held: the parent fp16 K_hat/V_hat buffers plus, in fused mode, the pre-allocated uint32 index buffers (stash mode holds both, so it uses more memory than plain fp16)."""
+        total = super().nbytes
+        if self._fused_enabled and self._stored_k_indices is not None:
+            total += self._stored_k_indices.nbytes + self._stored_v_indices.nbytes
+        return total
 
     def _account_bytes(self, B: int, H: int, S: int, D: int) -> None:
         k_bits_per_tok = (D // self._key_sub_dim) * self._key_bits
@@ -594,7 +586,7 @@ class VecInferKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def compressed_key_bytes(self) -> int:
-        """Realized stored bytes for the compressed key cache (product-VQ codes, all heads/batches; excludes amortized codebook)."""
+        """Estimated packed bytes for the compressed key cache (product-VQ codes at ``bits`` each, all heads/batches; excludes codebook). Not what is held in memory: see ``nbytes``."""
         return self._key_bytes_compressed
 
     @property
@@ -604,7 +596,7 @@ class VecInferKVCache(_MLXKVCache):
 
     @property
     def compressed_value_bytes(self) -> int:
-        """Realized stored bytes for the compressed value cache (product-VQ codes, all heads/batches; excludes amortized codebook)."""
+        """Estimated packed bytes for the compressed value cache (product-VQ codes at ``bits`` each, all heads/batches; excludes codebook). Not what is held in memory: see ``nbytes``."""
         return self._value_bytes_compressed
 
     @property
