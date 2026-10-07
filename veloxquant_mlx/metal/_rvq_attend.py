@@ -101,6 +101,13 @@ def turboquant_fused_rvq_decode_attend(
     Decodes keys on-the-fly from two-stage RVQ indices using an online
     softmax loop — no intermediate K_hat tensor is materialized.
 
+    .. warning::
+       Prototype, not wired into :class:`TurboQuantRVQKVCache`. The kernel has
+       no per-vector key-norm input (the cache stores unit keys plus a norm, so
+       scores here would be ``q.k_unit / sqrt(D)``), no attention mask or
+       sliding window, and a fixed ``rsqrt(D)`` softmax scale. Benchmark
+       speedups for this kernel do not carry over to the cache's decode path.
+
     Args:
         q:          ``[B, H, S_q, D]`` fp16 queries (pre-rotated). D must be <= 256.
         k_indices1: ``[B, H_kv, S_kv, D]`` uint8 first-stage key indices. H_kv must
@@ -118,6 +125,12 @@ def turboquant_fused_rvq_decode_attend(
     if q.ndim != 4:
         raise ValueError(f"turboquant_fused_rvq_decode_attend: q must be 4D, got {q.shape}")
     B, H, S_q, D = q.shape
+
+    if k_indices1.ndim == 4 and k_indices1.shape[2] == 0:
+        raise ValueError(
+            "turboquant_fused_rvq_decode_attend: S_kv == 0 (empty key/value cache); "
+            "the softmax denominator would be 0."
+        )
 
     if D > 256:
         raise ValueError(

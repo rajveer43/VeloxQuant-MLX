@@ -389,6 +389,10 @@ Fused randomized-Hadamard preconditioner + scalar quantize in one Metal dispatch
 
 ### `turboquant_fused_rvq_decode_attend`
 
+:::caution Prototype
+This kernel is not wired into `TurboQuantRVQKVCache`. It takes no per-vector key norms, supports no attention mask or sliding window, and hard-codes the softmax scale to `1/sqrt(D)`. Benchmark speedups do not carry over to the cache's decode path.
+:::
+
 ```python
 def turboquant_fused_rvq_decode_attend(
     q: mx.array,
