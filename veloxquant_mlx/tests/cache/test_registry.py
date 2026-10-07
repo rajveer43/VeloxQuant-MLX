@@ -26,8 +26,8 @@ from veloxquant_mlx.cache.registry import (
 )
 
 # Locked against the audit in issue #27, re-verified by probe.
-# 43 as of age_tiered (issue #256): position/age-gated 3-tier precision.
-EXPECTED_TOTAL = 43
+# 44 as of comm_vq (issue #756); 43 as of age_tiered (issue #256).
+EXPECTED_TOTAL = 44
 EXPECTED_CRASHING = {
     "turboquant_prod",
     "turboquant_mse",

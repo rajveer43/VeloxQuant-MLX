@@ -53,7 +53,10 @@ def _get(base, path):
 
 
 def test_coverage_split_is_stable():
-    """Locks the measured 14/5/19 split; drift should be a deliberate change.
+    """Locks the measured 14/6/19 split; drift should be a deliberate change.
+
+    comm_vq (issue #756) joined KEYS_ONLY (5 -> 6): keys are compressed, values
+    stay fp16 and are not reported as compressed.
 
     age_tiered (issue #256) joined the NONE bucket in the earlier 20/13/5 ->
     the only place a fourth split component (13/5/20) added a servable
@@ -68,7 +71,7 @@ def test_coverage_split_is_stable():
         counts[info.coverage] += 1
 
     assert counts[TelemetryCoverage.KEYS_AND_VALUES] == 14
-    assert counts[TelemetryCoverage.KEYS_ONLY] == 5
+    assert counts[TelemetryCoverage.KEYS_ONLY] == 6
     assert counts[TelemetryCoverage.NONE] == 19
 
 

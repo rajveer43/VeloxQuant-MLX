@@ -284,6 +284,7 @@ _FAMILY: dict[str, MethodFamily] = {
     "cachegen": MethodFamily.QUANTIZATION,
     "minicache": MethodFamily.HYBRID,
     "gear": MethodFamily.QUANTIZATION,
+    "comm_vq": MethodFamily.QUANTIZATION,
     "zipcache": MethodFamily.HYBRID,
     "snapkv": MethodFamily.EVICTION,
     "streaming_llm": MethodFamily.EVICTION,
@@ -330,6 +331,7 @@ _BLURB: dict[str, str] = {
     "cachegen": "CacheGen: entropy-coded cache representation.",
     "minicache": "MiniCache: merges similar KV state across adjacent layers.",
     "gear": "GEAR: quantization plus a low-rank error-correction term.",
+    "comm_vq": "CommVQ-style product vector quantization of keys (values stay fp16).",
     "zipcache": "ZipCache: saliency-weighted mixed-precision compression.",
     "snapkv": "SnapKV: keeps tokens an observation window attends to most.",
     "streaming_llm": "StreamingLLM: attention sinks plus a sliding window.",
@@ -527,6 +529,8 @@ _CAPABILITIES: dict[str, dict[str, Any]] = {
     "minicache": {"uses_merging": True},
     # --- GEAR: quantization + low-rank residual over keys AND values ---------
     "gear": {"compresses_values": True, "supported_bits": [2, 4]},
+    # --- CommVQ: product VQ over keys only (values kept fp16) -----------------
+    "comm_vq": {"supported_bits": [4, 6, 8]},
     # --- Transform coding ----------------------------------------------------
     "kvtc": {"compresses_values": True},
     "nestedkv": {"compresses_values": True, "supported_bits": [1, 2, 3, 4]},

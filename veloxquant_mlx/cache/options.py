@@ -171,6 +171,15 @@ class GEAROptions:
 
 
 @dataclass
+class CommVQOptions:
+    """CommVQ configuration (product-VQ key compression; see #756)."""
+
+    comm_vq_bits: int = 8  # bits per sub-codebook index (codebook size 2^bits, max 8)
+    comm_vq_n_codebooks: int = 4  # sub-codebooks; head_dim must be divisible by this
+    comm_vq_n_em_iters: int = 20  # k-means iterations when training on the first prefill
+
+
+@dataclass
 class ZipCacheOptions:
     """ZipCache-adapted configuration (saliency-adaptive per-token mixed-precision)."""
 

@@ -76,6 +76,7 @@ MethodName = Literal[
     "cachegen",
     "minicache",
     "gear",
+    "comm_vq",
     "zipcache",
     "snapkv",
     "streaming_llm",
@@ -135,6 +136,7 @@ _CACHE_CLASS_BY_METHOD: dict[str, tuple[str, str]] = {
     # shared MiniCacheCoordinator and assigns primary/merge roles.
     "minicache": ("veloxquant_mlx.cache.minicache_cache", "MiniCacheKVCache"),
     "gear": ("veloxquant_mlx.cache.gear_cache", "GEARKVCache"),
+    "comm_vq": ("veloxquant_mlx.cache.comm_vq_cache", "CommVQKVCache"),
     "zipcache": ("veloxquant_mlx.cache.zipcache_cache", "ZipCacheKVCache"),
     "snapkv": ("veloxquant_mlx.cache.snapkv_cache", "SnapKVKVCache"),
     "streaming_llm": ("veloxquant_mlx.cache.streaming_llm_cache", "StreamingLLMKVCache"),
@@ -300,6 +302,9 @@ _FIELD_TO_OPTIONS_CLASS: dict[str, str] = {
     "gear_sparse_fraction": "GEAROptions",
     "gear_group_size": "GEAROptions",
     "gear_quantize_values": "GEAROptions",
+    "comm_vq_bits": "CommVQOptions",
+    "comm_vq_n_codebooks": "CommVQOptions",
+    "comm_vq_n_em_iters": "CommVQOptions",
     "zipcache_hi_bits": "ZipCacheOptions",
     "zipcache_lo_bits": "ZipCacheOptions",
     "zipcache_hi_fraction": "ZipCacheOptions",
@@ -600,6 +605,10 @@ class KVCacheConfig:
     gear_sparse_fraction: float = 0.01  # top-|residual| fraction kept exact (0 = pure low-rank)
     gear_group_size: int = 32  # base group-quant token group size
     gear_quantize_values: bool = True  # apply GEAR to values too (False = keys only)
+    # --- CommVQ configuration (product-VQ key compression; see #756) ---
+    comm_vq_bits: int = 8  # bits per sub-codebook index (codebook size 2^bits, max 8)
+    comm_vq_n_codebooks: int = 4  # sub-codebooks; head_dim must be divisible by this
+    comm_vq_n_em_iters: int = 20  # k-means iterations when training on the first prefill
     # --- ZipCache-adapted configuration (saliency-adaptive per-token mixed-precision) ---
     zipcache_hi_bits: int = 4  # bit-width for salient (high-norm) tokens
     zipcache_lo_bits: int = 2  # bit-width for non-salient tokens
