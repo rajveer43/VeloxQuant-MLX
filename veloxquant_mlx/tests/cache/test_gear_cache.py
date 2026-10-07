@@ -409,3 +409,15 @@ def test_trim_rolls_back_byte_accounting_and_error_stats():
     assert c.assigned_avg_bits == 16.0 * before[0] / before[1]
     assert c.trim(100) == 32
     assert c.fp16_key_bytes == 0
+
+
+def test_single_token_key_decode_is_charged_fp16_not_inflated_2bit():
+    import mlx.core as mx
+
+    from veloxquant_mlx.cache.gear_cache import GEARKVCache
+
+    c = GEARKVCache(KVCacheConfig(head_dim=128, gear_bits=2))
+    k = mx.random.normal((1, 2, 1, 128)).astype(mx.float16)
+    out, _ = c.update_and_fetch(k, mx.random.normal((1, 2, 1, 128)).astype(mx.float16))
+    assert float(mx.max(mx.abs(out - k))) < 1e-2  # stored exactly
+    assert c.compressed_key_bytes == c.fp16_key_bytes == 512
