@@ -202,3 +202,49 @@ def test_various_configs(d: int, n_cb: int) -> None:
     out = q.decode(ev)
     mx.eval(out)
     assert out.shape == (8, d)
+
+
+# ---------------------------------------------------------------------------
+# #754 — encode() is chunked over rows
+# ---------------------------------------------------------------------------
+
+
+def _install_random_codebooks(q: CommVQQuantizer, seed: int = 0) -> CommVQQuantizer:
+    """Skip EM training: a trained-looking random codebook is enough for encode()."""
+    rng = np.random.default_rng(seed)
+    q._codebooks = rng.standard_normal((q._n_cb, q._cb_size, q._sub_dim)).astype(np.float32)
+    q._codebooks_mx = mx.array(q._codebooks).astype(mx.float16)
+    q._trained = True
+    return q
+
+
+def test_encode_chunking_does_not_change_indices(monkeypatch) -> None:
+    import veloxquant_mlx.quantizers.comm_vq as cv
+
+    q = _install_random_codebooks(CommVQQuantizer(d=64, b=6, n_codebooks=4))
+    x = mx.array(np.random.default_rng(1).standard_normal((300, 64)).astype(np.float16))
+    reference = q._encode_batch(x)
+
+    monkeypatch.setattr(cv, "_ENCODE_CHUNK_BYTES", 1)  # forces 1-row chunks
+    chunked = q._encode_batch(x)
+    assert chunked.shape == (300, 4)
+    assert bool(mx.array_equal(reference, chunked).item())
+
+
+def test_encode_empty_input() -> None:
+    q = _install_random_codebooks(CommVQQuantizer(d=64, b=6, n_codebooks=4))
+    out = q._encode_batch(mx.zeros((0, 64), dtype=mx.float16))
+    assert out.shape == (0, 4) and out.dtype == mx.uint8
+
+
+def test_encode_peak_memory_is_bounded() -> None:
+    """The unchunked [N, K, sub_dim] difference tensor needed ~5.4 GB for these
+    20k rows (~16 GB at 60k); chunked it stays a few hundred MB."""
+    q = _install_random_codebooks(CommVQQuantizer(d=128, b=8, n_codebooks=4))
+    x = mx.random.normal((20000, 128)).astype(mx.float16)
+    mx.eval(x)
+    mx.clear_cache()
+    mx.reset_peak_memory()
+    base = mx.get_peak_memory()
+    mx.eval(q._encode_batch(x))
+    assert (mx.get_peak_memory() - base) < 1.5e9

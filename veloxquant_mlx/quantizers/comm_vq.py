@@ -25,6 +25,9 @@ from veloxquant_mlx.core.abstractions import Quantizer
 from veloxquant_mlx.core.context import EncodedVector
 from veloxquant_mlx.core.registry import QuantizerRegistry
 
+# Target size of the largest per-chunk temporary in _encode_batch ([rows, K, sub_dim] fp32).
+_ENCODE_CHUNK_BYTES = 32 * 1024 * 1024
+
 # ---------------------------------------------------------------------------
 # RoPE helpers (pure NumPy, used during EM training only)
 # ---------------------------------------------------------------------------
@@ -330,39 +333,47 @@ class CommVQQuantizer(Quantizer):
     # ------------------------------------------------------------------
 
     def _encode_batch(self, x: mx.array) -> mx.array:
-        """Residual VQ encode [N, D] → indices [N, n_cb] uint8."""
+        """Residual VQ encode [N, D] → indices [N, n_cb] uint8.
+
+        Rows are processed in chunks: the distance computation materialises a
+        ``[rows, cb_size, sub_dim]`` fp32 difference tensor, which for the
+        default ``b=8`` is 16 GB at N=60k rows, so an
+        unchunked call ran out of memory on realistic prefill sizes (#754).
+        Chunks are evaluated one at a time so their temporaries are not all
+        alive at once.
+        """
         self._require_trained()
         N = x.shape[0]
-        indices = mx.zeros((N, self._n_cb), dtype=mx.uint8)
-        residual = x.astype(mx.float32)
         cb_mx = self._codebooks_mx.astype(mx.float32)  # [n_cb, K, sub_dim]
+        x32 = x.astype(mx.float32)
+        rows = max(1, _ENCODE_CHUNK_BYTES // (self._cb_size * self._sub_dim * 4))
 
-        idx_list = []
-        for cb_i in range(self._n_cb):
-            start = cb_i * self._sub_dim
-            end = start + self._sub_dim
-            sub_r = residual[:, start:end]  # [N, sub_dim]
-            cb = cb_mx[cb_i]  # [K, sub_dim]
-            # [N, K] distances
-            diff = sub_r[:, None, :] - cb[None, :, :]  # [N, K, sub_dim]
-            dists = mx.sum(diff * diff, axis=-1)  # [N, K]
-            best = mx.argmin(dists, axis=-1)  # [N]
-            idx_list.append(best.astype(mx.uint8))
+        out = []
+        for lo in range(0, N, rows):
+            residual = x32[lo : lo + rows]
+            idx_list = []
+            for cb_i in range(self._n_cb):
+                start = cb_i * self._sub_dim
+                end = start + self._sub_dim
+                sub_r = residual[:, start:end]  # [rows, sub_dim]
+                cb = cb_mx[cb_i]  # [K, sub_dim]
+                diff = sub_r[:, None, :] - cb[None, :, :]  # [rows, K, sub_dim]
+                best = mx.argmin(mx.sum(diff * diff, axis=-1), axis=-1)  # [rows]
+                idx_list.append(best.astype(mx.uint8))
 
-            # Update residual
-            recon = mx.take(cb, best, axis=0)  # [N, sub_dim]
-            residual = mx.concatenate(
-                [
-                    residual[:, :start],
-                    residual[:, start:end] - recon,
-                    residual[:, end:],
-                ],
-                axis=1,
-            )
+                # Update residual
+                recon = mx.take(cb, best, axis=0)  # [rows, sub_dim]
+                residual = mx.concatenate(
+                    [residual[:, :start], residual[:, start:end] - recon, residual[:, end:]],
+                    axis=1,
+                )
+            chunk_idx = mx.stack(idx_list, axis=1)  # [rows, n_cb]
+            mx.eval(chunk_idx)
+            out.append(chunk_idx)
 
-        indices = mx.stack(idx_list, axis=1)  # [N, n_cb]
-        mx.eval(indices)
-        return indices
+        if not out:
+            return mx.zeros((0, self._n_cb), dtype=mx.uint8)
+        return out[0] if len(out) == 1 else mx.concatenate(out, axis=0)
 
     def _decode_batch(self, indices: mx.array) -> mx.array:
         """Decode [N, n_cb] uint8 → [N, D] fp16 (pre-RoPE reconstruction)."""
