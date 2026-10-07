@@ -14,7 +14,8 @@ plain fp16, unchanged from earlier versions of this wrapper.
 
 Per-vector key storage at bit-width ``b`` and head-dim ``d``:
     ``2 * ceil(d * b / 32) * 4`` bytes (two packed uint32 index streams)
-    plus a shared fp16 per-vector norm, amortized across the whole cache.
+    plus a bf16 per-vector norm (2 bytes; unlike fp16 it cannot overflow
+    past ``||k|| > 65504``, at the cost of ~0.2% relative scale error).
 
 For ``d=128, b=1`` this is 32 bytes/vector vs 256 bytes fp16 → 8x compression.
 For ``d=128, b=2`` this is 64 bytes/vector vs 256 bytes fp16 → 4x compression.
@@ -42,6 +43,7 @@ universal claim.
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 import mlx.core as mx
@@ -55,6 +57,26 @@ _WORD_BITS = 32
 # rvq_quant_pack's threadgroup-per-vector kernel needs a power-of-two D that
 # fits a whole vector's coordinates in one Metal threadgroup (<= 1024).
 _MAX_FUSED_D = 1024
+
+
+# fp16 keys need fp32 intermediates (a norm can exceed fp16's range, #747), but
+# run eagerly those cost a full-size fp32 round trip per op on the whole cached
+# history every decode step. Compiled, they fuse into one pass. shapeless=True
+# because the history length changes every step (no recompile per length).
+@partial(mx.compile, shapeless=True)
+def _unit_fp16_from_fp16(k: Any) -> Any:
+    """Unit direction and fp32 norm of fp16 rows, safe past ||k|| > 65504."""
+    k32 = k.astype(mx.float32)
+    norms = mx.sqrt(mx.sum(k32 * k32, axis=-1, keepdims=True))
+    safe = mx.maximum(norms, 1e-4)
+    return (k32 / safe).astype(mx.float16), norms
+
+
+@partial(mx.compile, shapeless=True)
+def _rescale_fp16(k_unit_hat: Any, norms: Any) -> Any:
+    """``k_unit_hat * norms`` in fp32, saturated to fp16's range."""
+    k_hat = k_unit_hat.astype(mx.float32) * norms.astype(mx.float32)
+    return mx.clip(k_hat, -65504.0, 65504.0).astype(mx.float16)
 
 
 def _pack_indices(idx: Any, bits: int) -> Any:
@@ -141,12 +163,12 @@ class TurboQuantRVQKVCache(_MLXKVCache):
         self._seed = int(config.seed)
         self._build_derived_state()
 
-        # Packed key storage: two uint32 index streams + a shared fp16 norm.
+        # Packed key storage: two uint32 index streams + a bf16 norm.
         # values stay plain fp16 (self.values, inherited slot from _BaseCache
         # via the parent __init__, unused for keys in this subclass).
         self._packed1: Any = None  # (B, H, cap, n_words) uint32
         self._packed2: Any = None  # (B, H, cap, n_words) uint32
-        self._norms: Any = None  # (B, H, cap, 1) fp16
+        self._norms: Any = None  # (B, H, cap, 1) bf16
         # self.keys is intentionally left unused (None) -- keys never exist
         # as a dequantized fp16 tensor at rest; only self.values is used from
         # the parent class's storage.
@@ -201,7 +223,7 @@ class TurboQuantRVQKVCache(_MLXKVCache):
         n_grow_steps = -(-(self.step + num_steps - 1) // self.step) * self.step
         new_p1 = mx.zeros((B, H, n_grow_steps, self._n_words), dtype=mx.uint32)
         new_p2 = mx.zeros((B, H, n_grow_steps, self._n_words), dtype=mx.uint32)
-        new_norms = mx.zeros((B, H, n_grow_steps, 1), dtype=mx.float16)
+        new_norms = mx.zeros((B, H, n_grow_steps, 1), dtype=mx.bfloat16)
 
         if self._packed1 is not None:
             if prev % self.step != 0:
@@ -223,10 +245,15 @@ class TurboQuantRVQKVCache(_MLXKVCache):
         self._grow(B, H, S)
 
         k_flat = keys.reshape(-1, D)
-        # fp32 norm computation preserves bfloat16 dynamic range
-        norms = mx.linalg.norm(k_flat.astype(mx.float32), axis=-1, keepdims=True).astype(kdtype)
-        safe = mx.maximum(norms, mx.array(1e-4, dtype=kdtype))
-        k_unit = (k_flat / safe).astype(mx.float16)
+        # The norm is computed in fp32 and stored as bf16: an fp16 norm
+        # overflows to inf once ||k|| > 65504, which finite fp16 keys can
+        # reach (#747); bf16 has the same 2-byte size and fp32's range.
+        if kdtype == mx.float16:
+            k_unit, norms = _unit_fp16_from_fp16(k_flat)
+        else:
+            norms = mx.linalg.norm(k_flat.astype(mx.float32), axis=-1, keepdims=True)
+            safe = mx.maximum(norms, mx.array(1e-4, dtype=mx.float32))
+            k_unit = (k_flat / safe.astype(kdtype)).astype(mx.float16)
 
         if self._use_metal_pack:
             try:
@@ -253,9 +280,9 @@ class TurboQuantRVQKVCache(_MLXKVCache):
         self.offset += S
         self._packed1[..., prev : self.offset, :] = p1
         self._packed2[..., prev : self.offset, :] = p2
-        self._norms[..., prev : self.offset, :] = norms_bhs1
+        self._norms[..., prev : self.offset, :] = norms_bhs1.astype(mx.bfloat16)
 
-        # Byte accounting: two packed uint32 streams + shared fp16 norm.
+        # Byte accounting: two packed uint32 streams + one bf16 norm.
         per_tok_bytes = (2 * self._n_words * 4 + 2) * H * B
         self._key_bytes_compressed += per_tok_bytes * S
         self._key_bytes_fp16 += H * B * S * self._head_dim * 2
@@ -300,6 +327,12 @@ class TurboQuantRVQKVCache(_MLXKVCache):
             signs=idx2.astype(mx.int8),
         )
         k_unit_hat = self._quantizer.decode(ev)  # (B*H*n, D) fp16
+        if kdtype == mx.float16:
+            # A bf16 norm can exceed fp16's range, so multiply in fp32, and
+            # saturate: quantization error can nudge an element of a near-limit
+            # key just past 65504 and fp16 would turn that into inf.
+            return _rescale_fp16(k_unit_hat, norms).reshape(B, H, n, self._head_dim)
+        # bf16 / fp32 share (or exceed) the norm's range: no overflow possible.
         return (k_unit_hat.astype(kdtype) * norms.astype(kdtype)).reshape(B, H, n, self._head_dim)
 
     @property

@@ -136,12 +136,16 @@ def test_packed_storage_matches_direct_encode_decode() -> None:
 
     quantizer = TurboQuantRVQ(d=D, b=bits, seed=0, use_hadamard=True)
     k_flat = keys.reshape(-1, D)
-    norms = mx.linalg.norm(k_flat.astype(mx.float32), axis=-1, keepdims=True).astype(keys.dtype)
-    safe = mx.maximum(norms, mx.array(1e-4, dtype=keys.dtype))
-    k_unit = (k_flat / safe).astype(mx.float16)
+    norms = mx.linalg.norm(k_flat.astype(mx.float32), axis=-1, keepdims=True)
+    safe = mx.maximum(norms, mx.array(1e-4, dtype=mx.float32))
+    k_unit = (k_flat.astype(mx.float32) / safe).astype(mx.float16)
     ev = quantizer.encode(k_unit)
     k_hat_direct = quantizer.decode(ev)
-    k_hat_direct = (k_hat_direct.astype(keys.dtype) * safe).reshape(B, H, S, D)
+    # The cache stores the norm as bf16; mirror that rounding.
+    safe_stored = safe.astype(mx.bfloat16).astype(mx.float32)
+    k_hat_direct = (
+        (k_hat_direct.astype(mx.float32) * safe_stored).astype(keys.dtype).reshape(B, H, S, D)
+    )
 
     assert np.array(mx.abs(k_out - k_hat_direct)).max() == 0.0
 
@@ -354,3 +358,22 @@ def test_merge_on_populated_cache_fails_cleanly_via_guard() -> None:
 
     with pytest.raises(ValueError, match="does not yet support batching with history"):
         gen_mod._merge_caches([[cache]])
+
+
+@pytest.mark.parametrize("dtype", [mx.float16, mx.bfloat16, mx.float32])
+def test_key_norm_above_fp16_range_stays_finite(dtype) -> None:
+    """#747: the per-vector norm was stored in an fp16 buffer whatever the key
+    dtype, so ||k|| > 65504 became inf for fp16, bf16 and fp32 keys alike."""
+    mx.random.seed(0)
+    c = _build(bits=2, head_dim=64)
+    keys = mx.random.uniform(-30000, 30000, (1, 2, 4, 64)).astype(dtype)
+    assert bool(mx.all(mx.isfinite(keys)).item())
+    assert float(mx.max(mx.linalg.norm(keys.astype(mx.float32), axis=-1))) > 65504
+    k_out, _ = c.update_and_fetch(keys, keys)
+    assert k_out.dtype == dtype
+    assert bool(mx.all(mx.isfinite(k_out)).item())
+    cos = mx.sum(k_out.astype(mx.float32) * keys.astype(mx.float32), axis=-1) / (
+        mx.linalg.norm(k_out.astype(mx.float32), axis=-1)
+        * mx.linalg.norm(keys.astype(mx.float32), axis=-1)
+    )
+    assert float(mx.min(cos)) > 0.9
