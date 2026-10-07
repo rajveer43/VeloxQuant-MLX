@@ -1,4 +1,16 @@
-"""CommVQ — RoPE-commutative additive codebook VQ for KV cache keys.
+"""CommVQ-style RoPE-aware product VQ for KV cache keys.
+
+.. note::
+   What is implemented is plain *product* quantization: each of the
+   ``n_codebooks`` sub-codebooks owns a disjoint slice of the head dimension,
+   and decoding concatenates the slices. It is not the paper's additive /
+   residual scheme (no stage sees an earlier stage's error), and the
+   "commuting" projection averages adjacent dims of each sub-vector, not the
+   RoPE pairs ``(i, i + d/2)``, so it does not enforce RoPE commutativity
+   (measured effect on reconstruction MSE is negligible). The paper's
+   quality/compression trade-off therefore does not apply. See issue #756.
+
+Original description of the paper:
 
 Based on: "CommVQ: Commutative Vector Quantization for KV Cache Compression"
 arXiv 2506.18879 (Apple ML Research / UMass)
@@ -189,12 +201,12 @@ def _train_sub_codebook(
 
 @QuantizerRegistry.register("comm_vq")
 class CommVQQuantizer(Quantizer):
-    """RoPE-commutative additive codebook VQ for KV cache keys.
+    """RoPE-aware product VQ for KV cache keys (CommVQ-inspired; see module note).
 
     Trains n_codebooks sub-codebooks of size cb_size on pre-RoPE key vectors.
-    At encode time, applies residual VQ: encode x_0 = x (pre-RoPE), then
-    encode the residual x_1 = x_0 - decode(idx_0), etc.
-    At decode time, sums centroids across sub-codebooks and applies RoPE.
+    Each sub-codebook quantizes its own disjoint slice of the head dimension
+    (product quantization, not additive/residual); decoding concatenates the
+    slices and then applies RoPE at the stored positions.
 
     Args:
         d:            Head dimension (must be even).
@@ -527,10 +539,24 @@ class CommVQQuantizer(Quantizer):
 
     @property
     def compression_ratio(self) -> float:
-        """Memory compression vs fp16 storage."""
+        """Index-only compression vs fp16 (``d*2 / n_codebooks``).
+
+        Excludes the float32 position that ``encode()`` also returns and the
+        codebook bytes; see :attr:`stored_compression_ratio`.
+        """
         fp16_bytes = self._d * 2
         comm_bytes = self._n_cb * 1  # n_cb uint8 indices
         return fp16_bytes / comm_bytes
+
+    @property
+    def stored_compression_ratio(self) -> float:
+        """Compression vs fp16 counting everything ``encode()`` returns per vector.
+
+        That is ``n_codebooks`` uint8 indices plus the 4-byte float32 position
+        in the ``norm`` field. Codebook bytes (shared across vectors) are
+        still excluded.
+        """
+        return (self._d * 2) / (self._n_cb + 4)
 
     def __repr__(self) -> str:
         return (
