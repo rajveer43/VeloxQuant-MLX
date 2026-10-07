@@ -416,6 +416,26 @@ class GEARKVCache(_MLXKVCache):
         return super().update_and_fetch(k_out, v_out)
 
     # ------------------------------------------------------------------
+    def trim(self, n: int) -> int:
+        """Drop the ``n`` most-recent tokens and scale the byte/error counters to match."""
+        old_offset = self.offset
+        trimmed = super().trim(n)
+        if trimmed and old_offset:
+            keep = self.offset / old_offset
+            for name in (
+                "_compressed_key_bytes",
+                "_compressed_value_bytes",
+                "_base_only_key_bytes",
+                "_base_only_value_bytes",
+                "_fp16_key_bytes",
+                "_fp16_value_bytes",
+            ):
+                setattr(self, name, int(getattr(self, name) * keep))
+            self._err_base_sq *= keep
+            self._err_after_sq *= keep
+        return trimmed
+
+    # ------------------------------------------------------------------
     # Reporting
     # ------------------------------------------------------------------
     @property
