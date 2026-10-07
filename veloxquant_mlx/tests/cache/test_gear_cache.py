@@ -387,3 +387,19 @@ def test_batched_cache_matches_per_head_reference_for_b_gt_1():
 
     np.testing.assert_allclose(np.array(ref_k), np.array(k_out), atol=1e-3)
     np.testing.assert_allclose(np.array(ref_v), np.array(v_out), atol=1e-3)
+
+
+def test_unquantized_values_are_charged_full_fp16_bytes():
+    """#771: gear_quantize_values=False must not report values as free."""
+    import mlx.core as mx
+
+    from veloxquant_mlx.cache.base import KVCacheConfig
+    from veloxquant_mlx.cache.gear_cache import GEARKVCache
+
+    c = GEARKVCache(KVCacheConfig(head_dim=64, gear_bits=2, gear_quantize_values=False))
+    x = mx.random.normal((1, 2, 64, 64)).astype(mx.float16)
+    c.update_and_fetch(x, x)
+    raw = 1 * 2 * 64 * 64 * 2
+    assert c.fp16_value_bytes == raw
+    assert c.compressed_value_bytes == raw
+    assert c.base_only_value_bytes == raw

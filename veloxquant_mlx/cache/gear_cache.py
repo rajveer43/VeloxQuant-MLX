@@ -408,7 +408,11 @@ class GEARKVCache(_MLXKVCache):
         else:
             v_out = values
             B, H, S, D = values.shape
-            self._fp16_value_bytes += B * H * S * D * 2
+            raw = B * H * S * D * 2
+            # Values kept as-is still cost their full fp16 bytes.
+            self._compressed_value_bytes += raw
+            self._base_only_value_bytes += raw
+            self._fp16_value_bytes += raw
         return super().update_and_fetch(k_out, v_out)
 
     # ------------------------------------------------------------------
