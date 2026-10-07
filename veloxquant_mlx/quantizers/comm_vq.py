@@ -268,17 +268,39 @@ class CommVQQuantizer(Quantizer):
         Returns:
             self (fluent).
         """
+        if max_samples < 1:
+            raise QuantizerConfigError(
+                f"CommVQQuantizer.fit: max_samples={max_samples} must be >= 1."
+            )
         if isinstance(keys_pre_rope, mx.array):
-            data_np = np.array(keys_pre_rope, dtype=np.float32)
+            # Via fp32 first: numpy cannot import an MLX bfloat16 buffer.
+            data_np = np.array(keys_pre_rope.astype(mx.float32), dtype=np.float32)
         elif isinstance(keys_pre_rope, np.ndarray):
             data_np = keys_pre_rope.astype(np.float32)
         else:
             data_np = np.asarray(keys_pre_rope, dtype=np.float32)
 
+        # A mismatched last dim would otherwise be silently re-chunked into
+        # d-sized rows by the reshape below, e.g. (4, 32) -> (2, 64).
+        if data_np.ndim >= 2 and data_np.shape[-1] != self._d:
+            raise QuantizerConfigError(
+                f"CommVQQuantizer.fit: expected last dim {self._d}, got {data_np.shape[-1]}."
+            )
+        if data_np.size % self._d != 0:
+            raise QuantizerConfigError(
+                f"CommVQQuantizer.fit: {data_np.size} values cannot be split into "
+                f"vectors of dim {self._d}."
+            )
         data_np = data_np.reshape(-1, self._d)
         N = data_np.shape[0]
         if N == 0:
             raise QuantizerConfigError("CommVQQuantizer.fit: no calibration vectors were given.")
+        if max_samples < N:
+            rng = np.random.default_rng(self._seed)
+            idx = rng.choice(N, size=max_samples, replace=False)
+            data_np = data_np[idx]
+            N = max_samples
+        # Counted after the max_samples cap: that is what actually gets trained on.
         if self._cb_size > N:
             warnings.warn(
                 f"CommVQQuantizer.fit: only {N} calibration vectors for codebooks of "
@@ -287,10 +309,6 @@ class CommVQQuantizer(Quantizer):
                 UserWarning,
                 stacklevel=2,
             )
-        if max_samples < N:
-            rng = np.random.default_rng(self._seed)
-            idx = rng.choice(N, size=max_samples, replace=False)
-            data_np = data_np[idx]
 
         # Train one sub-codebook per segment via residual VQ
         codebooks = np.zeros((self._n_cb, self._cb_size, self._sub_dim), dtype=np.float32)

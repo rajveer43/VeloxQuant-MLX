@@ -283,3 +283,82 @@ def test_fit_with_no_samples_raises_clear_error() -> None:
     q = CommVQQuantizer(d=64, b=4, n_codebooks=4)
     with pytest.raises(QuantizerConfigError, match="no calibration vectors"):
         q.fit(np.zeros((0, 64), dtype=np.float32))
+
+
+# ---------------------------------------------------------------------------
+# #755 corner cases — input validation and the max_samples interaction
+# ---------------------------------------------------------------------------
+
+
+def test_fit_warns_when_max_samples_cap_leaves_too_few_vectors() -> None:
+    """The warning must count the vectors actually trained on, i.e. after the
+    max_samples cap, not the (large) number passed in."""
+    q = CommVQQuantizer(d=64, b=8, n_codebooks=4, n_em_iters=2)
+    keys = np.random.default_rng(0).standard_normal((2000, 64)).astype(np.float32)
+    with pytest.warns(UserWarning, match="only 100 calibration vectors"):
+        q.fit(keys, max_samples=100)
+
+
+@pytest.mark.parametrize("bad", [0, -5])
+def test_fit_rejects_non_positive_max_samples(bad: int) -> None:
+    from veloxquant_mlx.core.exceptions import QuantizerConfigError
+
+    q = CommVQQuantizer(d=64, b=4, n_codebooks=4)
+    with pytest.raises(QuantizerConfigError, match="max_samples"):
+        q.fit(np.zeros((50, 64), dtype=np.float32), max_samples=bad)
+
+
+def test_fit_rejects_wrong_last_dim_instead_of_rechunking() -> None:
+    """(4, 32) used to be silently reshaped to (2, 64) for d=64."""
+    from veloxquant_mlx.core.exceptions import QuantizerConfigError
+
+    q = CommVQQuantizer(d=64, b=4, n_codebooks=4)
+    with pytest.raises(QuantizerConfigError, match="last dim 64, got 32"):
+        q.fit(np.zeros((4, 32), dtype=np.float32))
+    with pytest.raises(QuantizerConfigError, match="cannot be split"):
+        q.fit(np.zeros(100, dtype=np.float32))
+
+
+def test_fit_accepts_bf16_and_higher_rank_input() -> None:
+    import warnings
+
+    q = CommVQQuantizer(d=64, b=2, n_codebooks=4, n_em_iters=2)
+    rng = np.random.default_rng(0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # 32 vectors >= 2**2: no overfit warning expected
+        q.fit(mx.array(rng.standard_normal((32, 64)).astype(np.float32)).astype(mx.bfloat16))
+        q.fit(rng.standard_normal((2, 4, 4, 64)).astype(np.float32))  # [B, H, S, d]
+    assert q.trained
+
+
+def test_failed_fit_leaves_existing_codebooks_untouched() -> None:
+    from veloxquant_mlx.core.exceptions import QuantizerConfigError
+
+    q = _make_quantizer(d=64, b=4, n_cb=4)
+    before = q._codebooks.copy()
+    with pytest.raises(QuantizerConfigError):
+        q.fit(np.zeros((0, 64), dtype=np.float32))
+    assert q.trained and np.array_equal(before, q._codebooks)
+
+
+@pytest.mark.parametrize("d,n_cb", [(64, 1), (64, 64), (2, 1), (2, 2), (8, 8)])
+def test_small_fit_works_for_extreme_codebook_geometries(d: int, n_cb: int) -> None:
+    """Single codebook, sub_dim=1, and the smallest legal head dim."""
+    q = CommVQQuantizer(d=d, b=3, n_codebooks=n_cb, n_em_iters=2)
+    keys = np.random.default_rng(0).standard_normal((5, d)).astype(np.float32)
+    with pytest.warns(UserWarning, match="calibration vectors"):
+        q.fit(keys)
+    out = q.decode(q.encode(mx.array(keys).astype(mx.float16)))
+    assert out.shape == (5, d) and bool(mx.all(mx.isfinite(out)).item())
+
+
+def test_small_fit_is_deterministic_per_seed() -> None:
+    keys = np.random.default_rng(0).standard_normal((7, 64)).astype(np.float32)
+    books = []
+    for seed in (1, 1, 2):
+        q = CommVQQuantizer(d=64, b=4, n_codebooks=4, seed=seed, n_em_iters=3)
+        with pytest.warns(UserWarning):
+            q.fit(keys)
+        books.append(q._codebooks)
+    assert np.array_equal(books[0], books[1])
+    assert not np.array_equal(books[0], books[2])
