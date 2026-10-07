@@ -248,3 +248,38 @@ def test_encode_peak_memory_is_bounded() -> None:
     base = mx.get_peak_memory()
     mx.eval(q._encode_batch(x))
     assert (mx.get_peak_memory() - base) < 1.5e9
+
+
+# ---------------------------------------------------------------------------
+# #755 — fit() with fewer calibration vectors than codebook entries
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("n_samples", [1, 10, 100, 255])
+def test_fit_with_fewer_samples_than_codebook_size_warns_and_works(n_samples: int) -> None:
+    q = CommVQQuantizer(d=64, b=8, n_codebooks=4, n_em_iters=3)
+    keys = np.random.default_rng(0).standard_normal((n_samples, 64)).astype(np.float32)
+    with pytest.warns(UserWarning, match="calibration vectors"):
+        q.fit(keys)
+    assert q.trained
+    ev = q.encode(mx.array(keys).astype(mx.float16))
+    assert ev.indices.shape == (n_samples, 4)
+    assert q.decode(ev).shape == (n_samples, 64)
+
+
+def test_fit_with_enough_samples_does_not_warn() -> None:
+    import warnings
+
+    q = CommVQQuantizer(d=64, b=4, n_codebooks=4, n_em_iters=3)
+    keys = np.random.default_rng(0).standard_normal((16, 64)).astype(np.float32)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        q.fit(keys)  # exactly 2**b vectors: still the unchanged, warning-free path
+
+
+def test_fit_with_no_samples_raises_clear_error() -> None:
+    from veloxquant_mlx.core.exceptions import QuantizerConfigError
+
+    q = CommVQQuantizer(d=64, b=4, n_codebooks=4)
+    with pytest.raises(QuantizerConfigError, match="no calibration vectors"):
+        q.fit(np.zeros((0, 64), dtype=np.float32))
