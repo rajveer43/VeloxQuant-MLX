@@ -527,6 +527,14 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.92.9 (2026-10-08)
+
+### Bug Fixes
+
+- **palu**: Roll back byte accounting on trim()
+  ([`491bd3f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/491bd3f647e6217cafd4a8b5adc5aaf5e370e847))
+
+
 ## v0.92.8 (2026-10-08)
 
 ### Bug Fixes
