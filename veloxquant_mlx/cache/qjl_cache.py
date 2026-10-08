@@ -24,7 +24,11 @@ class QJLKVCache(KVCache):
     """Minimal KV cache using pure 1-bit QJL for key compression.
 
     Args:
-        config: KVCacheConfig instance.
+        config: KVCacheConfig instance. ``jl_dim`` sets the sketch size ``m``; when unset
+            it defaults to ``head_dim``. The estimator is unbiased but its variance falls
+            as ``1/m``, so ``m = head_dim`` gives noisy scores (correlation with exact
+            ``q.k`` ~0.64 at d=128, ~0.88 at ``m = 4 * head_dim``). Set ``jl_dim``
+            higher when attention quality matters.
     """
 
     def __init__(self, config: Any) -> None:
@@ -62,8 +66,11 @@ class QJLKVCache(KVCache):
         Args:
             k: Key vector, shape (d,), fp16.
         """
-        if k.ndim == 1:
-            k = k[None]
+        if k.size != self._d:
+            raise ValueError(
+                f"append_key expects one key vector of size {self._d}, got shape {tuple(k.shape)}."
+            )
+        k = k.reshape(1, self._d)
         ev = self._key_quantizer.encode(k)
         self._k_signs.append(ev.signs[0])
         self._k_norms.append(ev.norm[0])
@@ -79,8 +86,11 @@ class QJLKVCache(KVCache):
 
         if self._storage_dtype_name is None:
             self._storage_dtype_name = "bfloat16" if v.dtype == mx.bfloat16 else "float16"
-        if v.ndim > 1:
-            v = v.reshape(-1)
+        if v.size != self._d:
+            raise ValueError(
+                f"append_value expects one value vector of size {self._d}, got shape {tuple(v.shape)}."
+            )
+        v = v.reshape(-1)
         abs_max = float(mx.max(mx.abs(v)))
         scale = max(abs_max / INT8_MAX, 1e-8)
         v_int8 = mx.clip(mx.round(v / scale), -INT8_MAX, INT8_MAX).astype(mx.int8)
@@ -151,4 +161,4 @@ class QJLKVCache(KVCache):
         return len(self._k_signs)
 
     def __repr__(self) -> str:
-        return f"QJLKVCache(d={self._d}, m={self._m}, n_tokens={self._n_tokens})"
+        return f"QJLKVCache(d={self._d}, m={self._m}, n_tokens={len(self)})"

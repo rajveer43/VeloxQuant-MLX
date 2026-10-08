@@ -527,6 +527,47 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.92.7 (2026-10-07)
+
+### Bug Fixes
+
+- **comm_vq**: Remove dead commuting projection; correct docs (#756)
+  ([#779](https://github.com/rajveer43/VeloxQuant-MLX/pull/779),
+  [`60e556d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/60e556da3d269dc32edfa10681844eebce905593))
+
+- **gear**: Charge fp16 bytes for unquantized values
+  ([#776](https://github.com/rajveer43/VeloxQuant-MLX/pull/776),
+  [`5c44a23`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5c44a23f8930f87ee2cc4398d05ea35d93aac828))
+
+- **gear**: Charge fp16 bytes for unquantized values (#771)
+  ([#776](https://github.com/rajveer43/VeloxQuant-MLX/pull/776),
+  [`5c44a23`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5c44a23f8930f87ee2cc4398d05ea35d93aac828))
+
+- **gear**: Charge fp16 for single-token key decode, which is stored exactly (#770)
+  ([#781](https://github.com/rajveer43/VeloxQuant-MLX/pull/781),
+  [`cba4242`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cba4242153f8b443ffe8d863f7e1fee41fba01d9))
+
+- **gear**: Roll back byte counters and error stats on trim() (#769)
+  ([#775](https://github.com/rajveer43/VeloxQuant-MLX/pull/775),
+  [`02fde50`](https://github.com/rajveer43/VeloxQuant-MLX/commit/02fde50ebb621e62039abaf7b13c54f94d71131d))
+
+- **qjl,polar**: Reject multi-row append_key/append_value instead of corrupting (#772)
+  ([#777](https://github.com/rajveer43/VeloxQuant-MLX/pull/777),
+  [`60dcd96`](https://github.com/rajveer43/VeloxQuant-MLX/commit/60dcd96881620619f0b63edec5b0c82868f21675))
+
+### Documentation
+
+- **qjl**: Document noisy m=d default; repr uses live length
+  ([#774](https://github.com/rajveer43/VeloxQuant-MLX/pull/774),
+  [`90c21f5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/90c21f5ffa1af48f65a6a29031ce43933e43b129))
+
+### Testing
+
+- **gear**: Update values-off test for fp16 byte charge
+  ([#776](https://github.com/rajveer43/VeloxQuant-MLX/pull/776),
+  [`5c44a23`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5c44a23f8930f87ee2cc4398d05ea35d93aac828))
+
+
 ## v0.92.6 (2026-10-07)
 
 ### Bug Fixes

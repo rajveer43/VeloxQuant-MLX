@@ -200,7 +200,7 @@ def decode(self, ev: EncodedVector) -> Any: ...
 from veloxquant_mlx.quantizers.comm_vq import CommVQQuantizer
 ```
 
-RoPE-commutative residual VQ. Not wired into `KVCacheConfig` — see the [CommVQ algorithm page](../algorithms/commvq).
+RoPE-aware product VQ (CommVQ-inspired, see the algorithm page for what is not implemented). Not wired into `KVCacheConfig` — see the [CommVQ algorithm page](../algorithms/commvq).
 
 ### Constructor
 
