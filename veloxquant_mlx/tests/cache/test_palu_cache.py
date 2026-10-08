@@ -315,3 +315,20 @@ def test_merge_would_crash_on_populated_cache_if_inherited() -> None:
     assert c.keys is None
     with pytest.raises(ValueError):
         _MLXKVCache.merge.__func__(PALUKVCache, [c])
+
+
+def test_trim_rolls_back_byte_accounting():
+    """trim() must shrink the reported bytes to match a fresh cache of the surviving length."""
+    K, V = _rand_kv(S=64, H=4, D=64)
+    c = _make()
+    c.update_and_fetch(K, V)
+    full = (c.compressed_key_bytes, c.compressed_value_bytes)
+
+    assert c.trim(32) == 32
+    assert c.compressed_key_bytes < full[0]
+    assert c.compressed_value_bytes < full[1]
+
+    ref = _make()
+    ref.update_and_fetch(K[:, :, :32], V[:, :, :32])
+    assert c.compressed_key_bytes == ref.compressed_key_bytes
+    assert c.compressed_value_bytes == ref.compressed_value_bytes

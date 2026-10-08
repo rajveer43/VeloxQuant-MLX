@@ -381,6 +381,9 @@ class PALUKVCache(_MLXKVCache):
         self._keys_lr.trim(n)
         self._vals_lr.trim(n)
         self._palu_offset -= n
+        # Latent bytes scale with the surviving token count; recompute so the
+        # reported ratio doesn't keep charging for the trimmed tokens.
+        self._account_bytes(self._H, 0, self._D)
         if self._last_state is not None:
             k, v_ = self._last_state
             self._last_state = (k[:, :, : k.shape[2] - n, :], v_[:, :, : v_.shape[2] - n, :])
