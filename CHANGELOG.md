@@ -527,6 +527,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.92.8 (2026-10-08)
+
+### Bug Fixes
+
+- **polar,qjl**: Report bytes actually held in memory_bytes() (#773)
+  ([#778](https://github.com/rajveer43/VeloxQuant-MLX/pull/778),
+  [`b0266c3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b0266c3d23f923e222db39865f7df36f5b48a430))
+
+
 ## v0.92.7 (2026-10-07)
 
 ### Bug Fixes
