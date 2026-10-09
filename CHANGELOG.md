@@ -527,6 +527,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.93.0 (2026-10-09)
+
+### Features
+
+- **registry**: Add per-method maturity labels and docs badges (#782)
+  ([#788](https://github.com/rajveer43/VeloxQuant-MLX/pull/788),
+  [`b17897b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b17897b8de2beb6ae35bd8d3dab6a70fe2079650))
+
+
 ## v0.92.9 (2026-10-08)
 
 ### Bug Fixes
