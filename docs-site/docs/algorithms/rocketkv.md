@@ -9,6 +9,10 @@ keywords: [rocketkv, two-stage compression, hybrid sparse attention, snapkv evic
 
 # RocketKV-adapted — Two-Stage Compression (SnapKV Eviction + Hybrid Sparse Attention)
 
+<!-- maturity:start -->
+![Maturity: experimental](https://img.shields.io/badge/maturity-experimental-f97316?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `rocketkv` · **New in 0.56.0** · *Inspired by* ["RocketKV:
 Accelerating Long-Context LLM Inference via Two-Stage KV Cache Compression"
 (Behnam, Fu, Zhao, Tsai, Yu, Tumanov; NVIDIA / Georgia Tech; ICML 2025,

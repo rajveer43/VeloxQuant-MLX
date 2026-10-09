@@ -19,6 +19,15 @@ All algorithms use Metal GPU kernels and require macOS on an M-series chip.
 If you haven't decided whether you need cache compression at all, read [VeloxQuant-MLX vs. llama.cpp / plain mlx_lm](../getting-started/comparison) first — it explains what problem these 43 methods solve and when you don't need them.
 :::
 
+## Maturity
+
+Every method page shows a maturity label, generated from the library's registry
+(`veloxquant methods`):
+
+- **stable**: the recommended starting points (`turboquant_rvq`, `kivi`, `snapkv`).
+- **beta**: runs and is tested, but not a recommended default. Some need user-supplied calibration, such as trained codebooks for `vecinfer`.
+- **experimental**: a research port, a known departure from the paper (the "-adapted" methods), or not servable yet.
+
 ## Comparison table
 
 | Algorithm | Key bits | Val bits | Calibration | Compression | Quality | Best for |

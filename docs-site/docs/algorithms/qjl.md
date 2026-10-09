@@ -9,6 +9,10 @@ keywords: [qjl, johnson-lindenstrauss, 1-bit quantization, random projection, si
 
 # QJL
 
+<!-- maturity:start -->
+![Maturity: experimental](https://img.shields.io/badge/maturity-experimental-f97316?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 QJL (Quantized Johnson-Lindenstrauss) is the **simplest algorithm** in VeloxQuant-MLX. It uses a random Johnson-Lindenstrauss projection to reduce each key to a 1-bit sign sketch. No calibration, no codebook, no hyperparameters beyond sketch dimension.
 
 ## How it works

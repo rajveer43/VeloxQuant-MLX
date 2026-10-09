@@ -9,6 +9,10 @@ keywords: [a2ats, windowed rope, query-aware vector quantization, codebook calib
 
 # A2ATS-adapted
 
+<!-- maturity:start -->
+![Maturity: experimental](https://img.shields.io/badge/maturity-experimental-f97316?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 ## The problem this solves
 
 As a language model writes, it keeps notes on every word it has already seen so

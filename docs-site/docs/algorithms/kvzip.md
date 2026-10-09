@@ -7,6 +7,10 @@ keywords: [kvzip, kv cache, token eviction, query-agnostic, reconstruction probe
 
 # KVzip — Context-Reconstruction Reliance Retention
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `kvzip` · **New in 0.34.0** · *Inspired by* ["KVzip:
 Query-Agnostic KV Cache Compression with Context Reconstruction" (Kim et al.,
 NeurIPS 2025 Oral, arXiv:2505.23416)](https://arxiv.org/abs/2505.23416) —

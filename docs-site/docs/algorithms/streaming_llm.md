@@ -7,6 +7,10 @@ keywords: [streaming_llm, kv cache, attention sinks, sliding window, constant me
 
 # StreamingLLM — Sink + Recency-Window Token Eviction
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `streaming_llm` · **New in 0.20.0** · *Inspired by* [StreamingLLM (arXiv:2309.17453)](https://arxiv.org/abs/2309.17453)
 (Xiao et al., ICLR 2024) — **StreamingLLM-adapted (VeloxQuant-MLX implementation)**,
 not a faithful port.

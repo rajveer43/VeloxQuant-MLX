@@ -7,6 +7,10 @@ keywords: [minicache, kv cache, cross-layer compression, slerp, direction mergin
 
 # MiniCache — Cross-Layer Depth-Dimension Merging
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `minicache` · **New in 0.16.0** · *Inspired by* [MiniCache (arXiv:2405.14366,
 NeurIPS 2024)](https://arxiv.org/abs/2405.14366) — **MiniCache-adapted (VeloxQuant-MLX
 implementation)**, faithful to the SLERP-merge + retention core, adapted at the

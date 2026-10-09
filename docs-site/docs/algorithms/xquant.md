@@ -9,6 +9,10 @@ keywords: [xquant, cross-layer kv cache reuse, anchor reuse groups, layer coordi
 
 # XQuant — Cross-Layer KV Cache Reuse
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Available since:** v0.13.0  
 **Paper:** arXiv:2510.11236 (EMNLP 2025, Yang et al.) — VeloxQuant-MLX implementation is faithful to the cross-layer-reuse core, adapted at the integration boundary (see [Adaptation notes](#adaptation-notes)).  
 **Effective key bits:** ≈4.5 bits/element (group_size=2, base_bits=2) at the safe default `residual_bits=4`; sub-2-bit is reachable with `residual_bits=0`, but that setting is unsafe on real models — see the warning below.  

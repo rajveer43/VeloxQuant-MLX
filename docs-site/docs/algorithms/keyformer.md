@@ -7,6 +7,10 @@ keywords: [keyformer, kv cache, token eviction, gumbel noise, h2o, rope remap]
 
 # Keyformer — Gumbel-Regularized Heavy-Hitter Eviction
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `keyformer` · **New in 0.32.0**, annealing/RoPE-remap/Metal
 kernel added later · *Inspired by* ["Keyformer: KV Cache Reduction through Key
 Tokens Selection for Efficient Generative Inference" (Adnan et al., MLSys

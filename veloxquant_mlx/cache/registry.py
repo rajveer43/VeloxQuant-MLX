@@ -32,6 +32,7 @@ from typing import Any, Union, cast
 
 __all__ = [
     "ServeTier",
+    "Maturity",
     "MethodFamily",
     "MethodInfo",
     "StrategyCapabilities",
@@ -119,6 +120,22 @@ class ServeTier(str, Enum):
             ServeTier.NOT_TRIMMABLE: "available (no prompt-cache trimming)",
             ServeTier.CRASHES: "not available yet",
         }[self]
+
+
+class Maturity(str, Enum):
+    """How much a user should trust a method today.
+
+    ``STABLE``: servable, trimmable-or-honestly-not, and the maintainers stand
+    behind it as a starting point. ``BETA``: runs and is tested, but not a
+    recommended default (limited validation, or needs user-supplied
+    calibration). ``EXPERIMENTAL``: a research port, a knowing departure from
+    the paper, or not servable yet. Derived from the registry where the facts
+    exist (serve tier, paper deviation); only the STABLE/BETA split is editorial.
+    """
+
+    STABLE = "stable"
+    BETA = "beta"
+    EXPERIMENTAL = "experimental"
 
 
 class MethodFamily(str, Enum):
@@ -216,6 +233,7 @@ class MethodInfo:
     unsupported_reason: str | None = None
     coverage: TelemetryCoverage = TelemetryCoverage.NONE
     capabilities: StrategyCapabilities = field(default_factory=StrategyCapabilities)
+    maturity: Maturity = Maturity.BETA
 
     @property
     def docs_url(self) -> str | None:
@@ -245,6 +263,7 @@ class MethodInfo:
             "family": self.family.value,
             "serve_tier": self.serve_tier.value,
             "serve_tier_label": self.serve_tier.label,
+            "maturity": self.maturity.value,
             "is_servable": self.serve_tier.is_servable,
             "blurb": self.blurb,
             "config_fields": list(self.config_fields),
@@ -356,6 +375,44 @@ _BLURB: dict[str, str] = {
     "rocketkv": "RocketKV-adapted: SnapKV eviction + hybrid sparse attention selection.",
     "age_tiered": "AgeTieredKV: position/age-gated 3-tier precision (recent/mid/old), no eviction.",
 }
+
+#: Editorial maturity for every method. Deliberately exhaustive (no default):
+#: ``test_every_method_declares_maturity`` fails when a new method is added
+#: without a decision. ``_maturity_for`` demotes to EXPERIMENTAL whatever this
+#: table cannot know is broken (adapted-from-paper, not servable).
+#: STABLE is reserved for the flagship picks in the README "Start here" table.
+_MATURITY: dict[str, Maturity] = {
+    **dict.fromkeys(
+        ["turboquant_rvq", "kivi", "snapkv"],
+        Maturity.STABLE,
+    ),
+    **dict.fromkeys(
+        [
+            "turboquant_prod", "turboquant_mse", "polar", "qjl", "spectral",
+            "a2ats", "adakv", "anchorkv", "rocketkv", "age_tiered", "nestedkv", "amc",
+        ],
+        Maturity.EXPERIMENTAL,
+    ),
+    **dict.fromkeys(
+        [
+            "vecinfer", "kivi_sink", "svdq", "kitty", "xquant", "kvquant", "palu",
+            "cachegen", "minicache", "gear", "zipcache", "streaming_llm", "h2o",
+            "tova", "pyramidkv", "squeeze", "chunkkv", "cam", "xkv", "nsnquant",
+            "knorm", "skvq", "qfilters", "keyformer", "morphkv", "kvzip", "kvtc",
+            "curdkv",
+        ],
+        Maturity.BETA,
+    ),
+}
+
+
+def _maturity_for(name: str, tier: ServeTier) -> Maturity:
+    """Declared maturity, forced down to EXPERIMENTAL when the facts disagree."""
+    declared = _MATURITY.get(name, Maturity.EXPERIMENTAL)
+    if not tier.is_servable or name in _PAPER_DEVIATION:
+        return Maturity.EXPERIMENTAL
+    return declared
+
 
 #: Honest "-adapted" notes. Sourced from open issues that document the
 #: deviation, so the UI cannot claim faithful reproduction where we know better.
@@ -915,6 +972,7 @@ def get_method(name: str) -> MethodInfo:
         # never reports anything.
         coverage=(telemetry_coverage(name) if tier.is_servable else TelemetryCoverage.NONE),
         capabilities=_capabilities_for(name),
+        maturity=_maturity_for(name, tier),
     )
 
 
@@ -941,6 +999,7 @@ def static_method_info(name: str) -> MethodInfo:
         unsupported_reason=None,
         coverage=TelemetryCoverage.NONE,
         capabilities=_capabilities_for(name),
+        maturity=_maturity_for(name, ServeTier.HONEST_BYTES),
     )
 
 

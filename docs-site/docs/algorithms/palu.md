@@ -7,6 +7,10 @@ keywords: [palu, kv cache, low-rank, svd, quantization, group-head decomposition
 
 # PALU — True Low-Rank Latent Storage for Keys *and* Values
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `palu` · **New in 0.15.0** · *Inspired by* [PALU (arXiv:2407.21118,
 ICLR 2025)](https://arxiv.org/abs/2407.21118) — **PALU-adapted (VeloxQuant-MLX
 implementation)**, not a faithful port.

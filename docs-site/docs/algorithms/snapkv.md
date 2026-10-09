@@ -7,6 +7,10 @@ keywords: [snapkv, kv cache, token eviction, prefill compression, attention prox
 
 # SnapKV — Prefill Observation-Window Token Eviction
 
+<!-- maturity:start -->
+![Maturity: stable](https://img.shields.io/badge/maturity-stable-22c55e?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `snapkv` · **New in 0.19.0** · *Inspired by* [SnapKV (arXiv:2404.14469)](https://arxiv.org/abs/2404.14469)
 (Yuan et al., ICLR 2025) — **SnapKV-adapted (VeloxQuant-MLX implementation)**,
 not a faithful port.

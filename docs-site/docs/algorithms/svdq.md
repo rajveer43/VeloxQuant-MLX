@@ -7,6 +7,10 @@ keywords: [svdq, kv cache, quantization, low-rank projection, svd, mixed precisi
 
 # SVDq — Sub-2-bit Key Cache via Offline SVD
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `svdq` · **New in 0.10.0** · *Inspired by* [SVDq (arXiv:2502.15304,
 Feb 2025)](https://arxiv.org/abs/2502.15304) — **SVDq-adapted (VeloxQuant-MLX
 implementation)**, unreviewed preprint, not a faithful port.

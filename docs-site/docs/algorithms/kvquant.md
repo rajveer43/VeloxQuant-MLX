@@ -9,6 +9,10 @@ keywords: [kvquant, non-uniform quantization, lloyd-max, outlier isolation, atte
 
 # KVQuant-NUQ — Non-Uniform Quantization + Outlier Isolation
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Available since:** v0.14.0  
 **Paper:** arXiv:2401.18079 (NeurIPS 2024, Hooper et al.) — VeloxQuant-MLX implements the four cache-observable pillars (per-channel keys / per-token values, NUQ datatype, per-vector dense-and-sparse outlier isolation, and Attention Sink-Aware quantization); pre-RoPE key quantization is documented out of scope.  
 **Effective key bits:** 2–4 (non-uniform) → near-fp16 quality at 3-bit on heavy-tailed K/V  

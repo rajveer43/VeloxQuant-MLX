@@ -9,6 +9,10 @@ keywords: [turboquant rvq, residual vector quantization, hadamard rotation, gaus
 
 # TurboQuant RVQ
 
+<!-- maturity:start -->
+![Maturity: stable](https://img.shields.io/badge/maturity-stable-22c55e?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 TurboQuant RVQ is the **recommended default algorithm** in VeloxQuant-MLX. It uses Residual Vector Quantization with analytical codebooks — no calibration required, works on any model out of the box.
 
 :::warning[Apple Silicon required]

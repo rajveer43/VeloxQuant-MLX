@@ -7,6 +7,10 @@ keywords: [chunkkv, kv cache, token eviction, chunk eviction, attention, index r
 
 # ChunkKV — Chunk-Level (Semantic-Block) Eviction
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `chunkkv` · **New in 0.25.0** (index reuse in a later release) · *Inspired by* [ChunkKV (arXiv:2502.00299)](https://arxiv.org/abs/2502.00299)
 (Liu et al., NeurIPS 2025) — **ChunkKV-adapted (VeloxQuant-MLX implementation)**, not a
 faithful port.

@@ -9,6 +9,10 @@ keywords: [adakv, per-head adaptive bits, kivi, norm variance, attention entropy
 
 # AdaKV-proxy — Per-Head Adaptive Bit Allocation
 
+<!-- maturity:start -->
+![Maturity: experimental](https://img.shields.io/badge/maturity-experimental-f97316?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `adakv` · **Available since:** v0.12.0 · **Calibration:** none —
 works on any model immediately · *Proxy adaptation of* [Ada-KV
 (arXiv:2407.11550, NeurIPS 2025)](https://arxiv.org/abs/2407.11550), not a

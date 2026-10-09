@@ -7,6 +7,10 @@ keywords: [xkv, kv cache, cross-layer compression, low-rank svd, shared subspace
 
 # xKV — Cross-Layer Shared-Subspace Compression
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `xkv` · **New in 0.27.0** · *Inspired by* [xKV (arXiv:2503.18893,
 preprint)](https://arxiv.org/abs/2503.18893) — **xKV-adapted (VeloxQuant-MLX
 implementation)**, faithful to the joint-SVD shared-subspace core, adapted at
