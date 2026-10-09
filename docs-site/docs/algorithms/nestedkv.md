@@ -9,6 +9,10 @@ keywords: [nestedkv, prefill eviction, multi-scale ensembling, head-adaptive ble
 
 # NestedKV-adapted — Multi-Scale Ensembled Prefill Eviction
 
+<!-- maturity:start -->
+![Maturity: experimental](https://img.shields.io/badge/maturity-experimental-f97316?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `nestedkv` · **New in 0.37.0** · *Inspired by* ["NestedKV:
 Nested Memory Routing for Long-Context KV Cache Compression" (Chen, Liu, Gao,
 Fan, Wang, Chu, Lin, Hu; arXiv:2605.26678)](https://arxiv.org/abs/2605.26678)

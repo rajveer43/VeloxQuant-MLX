@@ -9,6 +9,10 @@ keywords: [amc, saliency-driven quantization, tiered rank precision, activation 
 
 # AMC-adapted — Saliency-Driven Tiered Rank + Precision
 
+<!-- maturity:start -->
+![Maturity: experimental](https://img.shields.io/badge/maturity-experimental-f97316?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `amc` · **New in 0.38.0** · *Inspired by* ["Adaptive Model
 Compression (AMC): Saliency-Driven Resource Allocation for Ultra-Low-Power
 Transformer Inference" (Hu, Yuan, Hu, Yin, Li, Suchter — Apple;

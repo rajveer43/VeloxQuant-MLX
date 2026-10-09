@@ -9,6 +9,10 @@ keywords: [vecinfer, product quantization, vector quantization, walsh-hadamard t
 
 # VecInfer
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 VecInfer is VeloxQuant-MLX's highest-compression algorithm. It combines **product vector quantization** with per-channel smooth scaling and Metal GPU kernels.
 
 :::warning[Apple Silicon required]

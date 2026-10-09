@@ -7,6 +7,10 @@ keywords: [tova, kv cache, token eviction, attention, memoryless scoring]
 
 # TOVA — Current-Step Attention-Weight Eviction (Memoryless)
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `tova` · **New in 0.22.0** · *Inspired by* [TOVA / "Transformers are Multi-State RNNs" (arXiv:2401.06104)](https://arxiv.org/abs/2401.06104)
 (Oren et al., 2024) — **TOVA-adapted (VeloxQuant-MLX implementation)**,
 not a faithful port.

@@ -7,6 +7,10 @@ keywords: [squeeze, squeezeattention, kv cache, token eviction, per-layer budget
 
 # SqueezeAttention — 2D Layer×Token Data-Driven Budget Eviction
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `squeeze` · **New in 0.24.0** · *Inspired by* [SqueezeAttention (arXiv:2404.04793)](https://arxiv.org/abs/2404.04793)
 (Wang et al., 2024) — **SqueezeAttention-adapted (VeloxQuant-MLX implementation)**,
 not a faithful port.

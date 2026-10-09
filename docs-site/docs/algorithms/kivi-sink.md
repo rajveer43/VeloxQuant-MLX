@@ -7,6 +7,10 @@ keywords: [kivi_sink, kv cache, quantization, attention sinks, key norm, kivi]
 
 # KVSink-Adapted Sink Protection
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `kivi_sink` · **New in 0.9.0** · *Inspired by* [KVSink (Su & Yuan,
 COLM 2025, arXiv:2508.04257)](https://arxiv.org/abs/2508.04257) — **adapted, not a
 faithful port** (see "Fidelity to the paper" below).

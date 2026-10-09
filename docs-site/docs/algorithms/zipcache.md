@@ -7,6 +7,10 @@ keywords: [zipcache, kv cache, quantization, mixed precision, key norm, saliency
 
 # ZipCache — Saliency-Adaptive Per-Token Mixed Precision
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `zipcache` · **New in 0.18.0** · *Inspired by* [ZipCache (arXiv:2405.14256)](https://arxiv.org/abs/2405.14256)
 (He et al., NeurIPS 2024) — **ZipCache-adapted (VeloxQuant-MLX implementation)**,
 not a faithful port.

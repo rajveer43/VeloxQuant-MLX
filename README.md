@@ -6,7 +6,7 @@
 </picture>
 
 <p>
-  43 compression methods — quantizers, token-eviction caches, cross-layer merging — in MLX
+  Run longer contexts in less memory on Apple Silicon — KV-cache compression for MLX
 </p>
 
 <p>
@@ -193,19 +193,33 @@ Next: the [5-minute quickstart](https://veloxquant.dev/docs/getting-started/quic
 
 ## Method library
 
-Every one of the 43 methods drops in the same way: set `method="<id>"` in
+Every method in the library drops in the same way: set `method="<id>"` in
 `KVCacheConfig`. The [algorithm overview](https://veloxquant.dev/docs/algorithms/overview)
 has the full comparison table, a decision tree, per-model recommendations, and
 for each method its mechanism, config, evidence, and limitations.
 
-If you want a starting point:
-- No calibration, best default → **`turboquant_rvq` b=1** (7.5×, 0.92 cosine)
-- Max compression, Qwen2.5/Gemma → **`vecinfer` 1-bit** (16×, Metal-accelerated)
-- Best quality at moderate compression → **`spectral` b=3** (5.33×, ~5s calibration)
-- Heterogeneous layers (sensitivity ratio >2×) → **RateQuant** on top of RVQ
-- Max context length, fixed RAM → **`rabitq`** keys + MSE-b4 values (6× full KV)
-- RoPE-compatible exact VQ → **`comm_vq`** (ICML 2025, 64× key compression)
-- Hard cap on token count, fixed RAM → **`h2o`** or **`snapkv`** (eviction, reduces resident memory)
+### Start here
+
+Not sure which to pick? Run `python -m veloxquant_mlx recommend --goal everyday` (or
+`auto-config` for a workload shape; the planner is
+[RFC #469](https://github.com/rajveer43/VeloxQuant-MLX/issues/469)), or start with one of
+these `stable` methods. Override the recommendation only when you need a specific
+trade-off, such as a hard token cap (eviction) or a fixed ratio.
+
+| Goal | Method | Maturity |
+|---|---|---|
+| Smaller cache, no calibration | `turboquant_rvq` b=1 | stable |
+| Quality-first quantization | `kivi` | stable |
+| Hard token cap, lower resident memory | `snapkv` | stable |
+
+Measured results for these three will be added with the reproducible benchmark (#786).
+
+### Everything else: research ports
+
+Every other method carries a maturity label, shown by `veloxquant methods` and in
+`list_methods()`: `beta` (tested, not a recommended default), or `experimental` (research
+port, knowing departure from the paper, or not servable yet). Methods like `vecinfer` need
+user-trained codebooks and fall in `beta` for that reason.
 
 The 43 methods fall into three families:
 

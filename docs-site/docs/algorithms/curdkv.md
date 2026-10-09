@@ -9,6 +9,10 @@ keywords: [curdkv, kv cache eviction, leverage score, value-aware, cur decomposi
 
 # CurDKV-adapted — Value-Aware Leverage-Score Eviction
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `curdkv` · **New in 0.36.0** · *Inspired by* ["Value-Guided KV
 Compression for LLMs via Approximated CUR Decomposition" (Sengupta,
 Chaudhary, Chakraborty; **NeurIPS 2025**, confirmed poster,

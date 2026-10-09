@@ -7,6 +7,10 @@ keywords: [cachegen, kv cache, entropy coding, storage compression, quantization
 
 # CacheGen — Entropy-Coded KV Cache Storage
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `cachegen` · **New in 0.16.0**
 
 CacheGen shrinks how much space your KV cache takes up on disk or in

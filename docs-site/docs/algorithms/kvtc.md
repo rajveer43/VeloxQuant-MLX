@@ -9,6 +9,10 @@ keywords: [kvtc, dynamic programming, bit allocation, pca, entropy coding, huffm
 
 # KVTC-adapted — Local PCA + DP-Optimal Bit Allocation + Entropy Coding
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `kvtc` · **New in 0.35.0** · *Inspired by* ["KV Cache Transform
 Coding for Compact Storage in LLM Inference" (NVIDIA, **ICLR 2026**, accepted
 poster, arXiv:2511.01815)](https://arxiv.org/abs/2511.01815) —

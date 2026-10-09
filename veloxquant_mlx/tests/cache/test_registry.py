@@ -17,13 +17,16 @@ import pytest
 from veloxquant_mlx.cache.registry import (
     DEFAULT_SERVE_METHOD,
     MethodFamily,
+    Maturity,
     ServeTier,
     all_method_names,
     field_is_relevant,
     get_method,
     list_methods,
     probe_serve_tier,
+    static_method_info,
 )
+from veloxquant_mlx.cache.registry import _MATURITY
 
 # Locked against the audit in issue #27, re-verified by probe.
 # 43 as of age_tiered (issue #256): position/age-gated 3-tier precision.
@@ -450,3 +453,25 @@ class TestFieldIsRelevant:
         from veloxquant_mlx.cache.base import KVCacheConfig
 
         assert KVCacheConfig(method="xquant", head_dim=64).xquant_residual_bits == 4
+
+
+def test_every_method_declares_maturity():
+    """A new method must be given a maturity on purpose, not inherit one."""
+    assert set(_MATURITY) == set(all_method_names())
+
+
+def test_maturity_is_demoted_by_known_problems():
+    for info in list_methods():
+        if not info.serve_tier.is_servable or info.is_adapted:
+            assert info.maturity is Maturity.EXPERIMENTAL, info.name
+
+
+def test_stable_methods_are_servable_and_few():
+    stable = [i for i in list_methods() if i.maturity is Maturity.STABLE]
+    assert 1 <= len(stable) <= 5
+    assert all(i.serve_tier.is_servable and not i.is_adapted for i in stable)
+
+
+def test_maturity_in_json_and_static_info():
+    assert get_method(DEFAULT_SERVE_METHOD).to_dict()["maturity"] in {m.value for m in Maturity}
+    assert static_method_info("kivi").maturity is Maturity.STABLE

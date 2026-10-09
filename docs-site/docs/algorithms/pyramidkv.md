@@ -7,6 +7,10 @@ keywords: [pyramidkv, kv cache, token eviction, per-layer budget, h2o, attention
 
 # PyramidKV — Layer-Adaptive Budget Attention-Mass Eviction
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `pyramidkv` · **New in 0.23.0** · *Inspired by* [PyramidKV (arXiv:2406.02069)](https://arxiv.org/abs/2406.02069)
 (Cai et al., 2024) — **PyramidKV-adapted (VeloxQuant-MLX implementation)**,
 not a faithful port.

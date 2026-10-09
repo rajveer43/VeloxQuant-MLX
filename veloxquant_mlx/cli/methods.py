@@ -81,7 +81,10 @@ def main() -> None:
     for info in infos:
         mark = "  " if info.serve_tier.is_servable else "✗ "
         adapted = "  [adapted]" if info.is_adapted else ""
-        print(f"{mark}{info.name:<18} {info.family.value:<13} {info.serve_tier.label}{adapted}")
+        print(
+            f"{mark}{info.name:<18} {info.maturity.value:<13} {info.family.value:<13} "
+            f"{info.serve_tier.label}{adapted}"
+        )
         print(f"    {info.blurb}")
         if info.serve_tier.is_servable:
             print(f"    telemetry: {info.coverage.label}")

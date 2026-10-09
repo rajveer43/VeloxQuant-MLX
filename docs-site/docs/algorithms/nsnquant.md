@@ -7,6 +7,10 @@ keywords: [nsnquant, kv cache, vector quantization, hadamard transform, calibrat
 
 # NSNQuant — Calibration-Free Universal-Codebook VQ
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `nsnquant` · **New in 0.28.0** · *Inspired by* [NSNQuant
 (arXiv:2505.18231, NeurIPS 2025)](https://arxiv.org/abs/2505.18231) —
 **NSNQuant-adapted (VeloxQuant-MLX implementation)**, faithful to the

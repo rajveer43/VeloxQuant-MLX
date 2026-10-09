@@ -7,6 +7,10 @@ keywords: [h2o, kv cache, token eviction, cumulative attention, heavy hitters, d
 
 # H2O — Cumulative Attention-Mass Heavy-Hitter Oracle Eviction
 
+<!-- maturity:start -->
+![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 **Method id:** `h2o` · **New in 0.21.0** · *Inspired by* [H2O (arXiv:2306.14048)](https://arxiv.org/abs/2306.14048)
 (Zhang et al., ICLR 2024) — **H2O-adapted (VeloxQuant-MLX implementation)**,
 not a faithful port.

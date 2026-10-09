@@ -9,6 +9,10 @@ keywords: [kivi, kv cache quantization, asymmetric quantization, 2-bit quantizat
 
 # KIVI
 
+<!-- maturity:start -->
+![Maturity: stable](https://img.shields.io/badge/maturity-stable-22c55e?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
+<!-- maturity:end -->
+
 KIVI is VeloxQuant-MLX's re-implementation of the field's most widely-cited
 KV-cache quantization baseline: ["KIVI: A Tuning-Free Asymmetric 2bit
 Quantization for KV Cache"](https://arxiv.org/abs/2402.02750) (Liu, Yuan et
