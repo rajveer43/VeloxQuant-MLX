@@ -85,7 +85,11 @@ def _warm_turboquant_rvq(config: Any) -> None:
         return
     quantizer = TurboQuantRVQ(d=d, b=int(b), seed=int(config.seed), use_hadamard=True)
     dummy = mx.zeros((1, d), dtype=mx.float16)
-    quantizer.encode_pack(dummy)
+    p1, p2 = quantizer.encode_pack(dummy)
+    # Fused packed-key decode (rvq_unpack_decode) compiles on the first
+    # _dequantize_range of the first request otherwise.
+    if getattr(config, "use_metal_kernels", None) is not False and quantizer.supports_fused_decode:
+        quantizer.decode_packed(p1, p2, mx.ones((1, 1), dtype=mx.bfloat16))
 
 
 register_warmer("turboquant_rvq", _warm_turboquant_rvq)

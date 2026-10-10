@@ -161,6 +161,16 @@ class TurboQuantRVQKVCache(_MLXKVCache):
         self._head_dim = int(config.head_dim)
         self._bits = int(b)
         self._seed = int(config.seed)
+        # Three-state Metal switch, matching KIVIKVCache / VecInferKVCache:
+        #   None  -> auto-detect (silent fallback)
+        #   True  -> require (raise if Metal is unavailable)
+        #   False -> forced pure-MLX path
+        self._metal_requested = getattr(config, "use_metal_kernels", None)
+        if self._metal_requested is True and not metal_available():
+            raise RuntimeError(
+                "TurboQuantRVQKVCache: use_metal_kernels=True but Metal kernels "
+                "are not available on this build of mlx."
+            )
         self._build_derived_state()
 
         # Packed key storage: two uint32 index streams + a bf16 norm.
@@ -212,6 +222,15 @@ class TurboQuantRVQKVCache(_MLXKVCache):
             and self._head_dim > 0
             and (self._head_dim & (self._head_dim - 1)) == 0
             and self._head_dim <= _MAX_FUSED_D
+        )
+        # Fused unpack + decode kernel for _dequantize_range. Needs the
+        # Hadamard rotation (the dense-QR rotation keeps the MLX path) and a
+        # power-of-two head_dim <= 1024; fp16 keys only (checked per call).
+        # Same numerics as the MLX path up to fp32 butterfly summation order.
+        self._use_metal_decode: bool = (
+            metal_available()
+            and getattr(self, "_metal_requested", None) is not False
+            and self._quantizer.supports_fused_decode
         )
 
     def _grow(self, B: int, H: int, num_steps: int) -> None:
@@ -311,6 +330,25 @@ class TurboQuantRVQKVCache(_MLXKVCache):
         n = end - start
         if n == 0:
             return mx.zeros((B, H, 0, self._head_dim), dtype=kdtype)
+
+        if self._use_metal_decode and kdtype == mx.float16 and start == 0:
+            try:
+                # Hand the kernel the whole over-allocated buffers plus the live
+                # length: it reads slots [0, n) of each (batch*head) row in place,
+                # so no strided-slice copy of the packed streams precedes it.
+                bh = B * H
+                k_hat = self._quantizer.decode_packed(
+                    self._packed1.reshape(bh, -1, self._n_words),
+                    self._packed2.reshape(bh, -1, self._n_words),
+                    self._norms.reshape(bh, -1, 1),
+                    seq_len=n,
+                )
+                return k_hat.reshape(B, H, n, self._head_dim)
+            except Exception:
+                # Kernel-side failure (compile error, driver issue): degrade
+                # to the MLX path rather than taking down generation, and
+                # latch off so later calls don't re-pay the failure.
+                self._use_metal_decode = False
 
         p1 = self._packed1[..., start:end, :].reshape(-1, self._n_words)
         p2 = self._packed2[..., start:end, :].reshape(-1, self._n_words)

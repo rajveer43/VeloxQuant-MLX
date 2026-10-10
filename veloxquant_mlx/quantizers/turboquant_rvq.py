@@ -224,6 +224,56 @@ class TurboQuantRVQ(Quantizer):
             self._b,
         )
 
+    @property
+    def supports_fused_decode(self) -> bool:
+        """True iff :meth:`decode_packed` applies (Hadamard rotation, power-of-two ``d`` <= 1024)."""
+        return (
+            isinstance(self._rotation, HadamardPreconditioner)
+            and self._d > 0
+            and (self._d & (self._d - 1)) == 0
+            and self._d <= 1024
+        )
+
+    def decode_packed(
+        self, packed1: Any, packed2: Any, norms: Any, seq_len: int | None = None
+    ) -> Any:
+        """Unpack, decode and rescale in one fused Metal dispatch.
+
+        Equivalent to unpacking both index streams, :meth:`decode`, and
+        multiplying by ``norms`` in fp32 with fp16 saturation, but skips every
+        intermediate tensor. Only the unpack + codebook sum is bit-identical to
+        the MLX path; the inverse Hadamard differs in fp32 summation order.
+
+        Args:
+            packed1: ``(batch, ceil(d / (32 // b)))`` uint32 stage-1 stream, or a
+                whole cache buffer ``(bh, cap, n_words)`` read in place together
+                with ``seq_len``.
+            packed2: Same shape, stage-2 (residual) stream.
+            norms: ``(batch,)`` / ``(batch, 1)`` (or ``(bh, cap, 1)``) per-vector norms.
+            seq_len: Live tokens per ``bh`` row when the 3D cache buffers are passed.
+
+        Returns:
+            ``(batch, d)`` (``bh * seq_len`` rows) fp16 reconstructed keys.
+        """
+        from veloxquant_mlx.metal.kernels import rvq_unpack_decode
+
+        if not self.supports_fused_decode:
+            raise ValueError(
+                "TurboQuantRVQ.decode_packed requires use_hadamard=True with a "
+                "power-of-two d <= 1024."
+            )
+        return rvq_unpack_decode(
+            packed1,
+            packed2,
+            norms,
+            self._codebook1.centroids_mx(),
+            self._codebook2.centroids_mx(),
+            self._rotation._D,
+            self._b,
+            self._d,
+            seq_len=seq_len,
+        )
+
     def decode(self, ev: EncodedVector) -> Any:
         """Reconstruct x_hat = unrotate(y_hat1 + y_hat2)."""
         import mlx.core as mx

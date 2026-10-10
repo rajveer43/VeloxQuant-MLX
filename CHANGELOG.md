@@ -8,6 +8,23 @@ one-line-per-entry summary instead, see [RELEASE_NOTES.md](RELEASE_NOTES.md)
 
 ### Added
 
+**`rvq_unpack_decode` Metal kernel for the packed `turboquant_rvq` key cache** —
+`TurboQuantRVQKVCache` stores keys as two bit-packed uint32 index streams, but
+`_dequantize_range` re-decoded the whole cached history on every fetch with
+about ten separate MLX ops (unpack, codebook gather, add, inverse Hadamard,
+fp32 norm rescale), running at 0.8 to 3.5% of the M4's calibrated memory
+bandwidth. `veloxquant_mlx/metal/_rvq_unpack_decode.py` fuses all of it into
+one dispatch that reads the over-allocated cache buffers in place. Kernel
+alone: 3.1x (S=512) to 12.7x (S=32768) faster than the MLX path. End to end on
+`mlx-community/Llama-3.2-1B-Instruct-4bit` (M4), decode tokens/sec improves
+1.3x to 4.6x for 256 to 8192 token prompts (b=1 and b=2) with identical generated text and
+unchanged peak memory; it remains slower than plain fp16 `KVCache`
+(0.67x at 8192 tokens). Applies to fp16 keys with the Hadamard rotation and a
+power-of-two `head_dim` up to 1024; otherwise the MLX path is used. The
+existing `use_metal_kernels` switch (`None` auto, `False` forced MLX, `True`
+require Metal) now also applies to `TurboQuantRVQKVCache`. Benchmarks:
+`scripts/rvq_decode_baseline_bench.py --kernel`, `scripts/rvq_decode_e2e_bench.py`.
+
 **`QFiltersKVCache` warns (or raises) before silently returning degraded output** —
 a benchmark series against `mlx-community/Qwen3-8B-4bit` on a real
 2,238-token prompt (`docs-site/blog/2026-09-17-qwen3-8b-qfilters-*`) found
