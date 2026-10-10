@@ -32,6 +32,7 @@ All Metal kernels require macOS on an M-series chip. On unsupported hardware, Ve
 | `metal/_scalar_quant.py` | `turboquant_scalar_quantize`, `turboquant_scalar_dequantize`, `turboquant_hadamard_quantize` | TurboQuant RVQ |
 | `metal/_rvq_attend.py` | `turboquant_fused_rvq_decode_attend` | RVQ + attention fusion |
 | `metal/_rvq_quant_pack.py` | `rvq_quant_pack` | Fused two-stage RVQ quantize, packed to uint32 |
+| `metal/_rvq_unpack_decode.py` | `rvq_unpack_decode` | Packed-RVQ key decode: unpack both uint32 streams + codebook sum + inverse Hadamard + norm rescale, one dispatch (`TurboQuantRVQKVCache` fetch) |
 | `metal/_qjl.py` | `qjl_encode`, `qjl_inner_product` | QJL |
 | `metal/_bit_packing.py` | `turboquant_bit_pack`, `turboquant_bit_unpack` | All algorithms |
 | `metal/fused_sdpa.py` | `metal_fused_sdpa` | All (fused attention) |
@@ -73,8 +74,26 @@ All numbers below are from this repo's own benchmark scripts on an Apple M4 MacB
 | RaBitQ fused attend (nibble-packed V) | 0.681 ms | 0.481 ms | **1.42×** | same shape, S_kv=2048 |
 | RaBitQ fused attend (nibble-packed V) | 0.309 ms | 0.281 ms | **1.10×** | same shape, S_kv=512 |
 | RaBitQ encode | 4.511 ms | 0.752 ms | **6.0×** | vs numpy round-trip, N=32768 D=128 (`scripts/metal_rabitq_encode_bench.py`); 2.88× vs pure MLX ops |
+| Packed-RVQ key decode (`rvq_unpack_decode`) | 7.707 ms | 0.755 ms | **10.2×** | vs `TurboQuantRVQKVCache._dequantize_range` MLX path, b=2, B=1 H=8 D=128 S=8192 (`scripts/rvq_decode_baseline_bench.py --kernel`) |
+| Packed-RVQ key decode (`rvq_unpack_decode`) | 29.13 ms | 2.446 ms | **11.9×** | same, S=32768 (kernel at 35% of the 98 GB/s calibrated peak; the MLX path is at 3%) |
+| Packed-RVQ key decode (`rvq_unpack_decode`) | 0.843 ms | 0.273 ms | **3.1×** | same, S=512 |
 
 Honest caveats: with *unpacked* (one byte per index) values the fused attend loses at short contexts (0.65× at S_kv=512) — nibble-packing the value indices (two per byte, `rabitq_pack_values`) halves value bandwidth and flips that to a small win. The encoder is a wash below N≈1024. All kernels are built for the long-context / large-batch regime.
+
+### Packed-RVQ key decode: end-to-end
+
+`rvq_unpack_decode` replaces the ~10 MLX dispatches that `TurboQuantRVQKVCache` runs over the whole cached key history on every fetch. Real model, `mlx-community/Llama-3.2-1B-Instruct-4bit`, Apple M4 (10-core GPU, 24 GB), 100 greedy tokens, median of 3 (`scripts/rvq_decode_e2e_bench.py`). Generated text was identical with the kernel on and off in every run.
+
+| Prompt tokens | fp16 `KVCache` (tok/s) | `QuantizedKVCache` 4-bit (tok/s) | RVQ b=2, kernel off (tok/s) | RVQ b=2, kernel on (tok/s) |
+|---|---|---|---|---|
+| 256 | 130.1 | 135.0 | 50.5 | 73.9 |
+| 1024 | 120.0 | 128.2 | 41.6 | 69.3 |
+| 4096 | 88.1 | 106.2 | 19.8 | 56.8 |
+| 8192 | 70.2 | 86.2 | 10.3 | 47.1 |
+
+The kernel makes packed RVQ decode 1.3× to 4.6× faster (b=1 and b=2 swept; the table shows b=2), growing with context, and peak memory is unchanged (within 0.5%). It does not make packed RVQ faster than plain fp16 `KVCache` or `QuantizedKVCache`: at 8192 tokens it reaches 0.67× of fp16 decode speed. What it buys is the packed-storage memory saving (about 1.07 GB vs 1.56 GB peak at 8192 tokens, versus 4.33 GB for `QuantizedKVCache`) at a much smaller speed cost. The 256-token row is noisy between runs (the kernel-off baseline measured 34 to 51 tok/s across sweeps).
+
+In spot checks (D 8 to 256, 1 to 4 bits, plus 524,288 elements at D=128, b=2) the output was identical to the MLX path, but the butterfly sums in a different fp32 order than `mx.hadamard_transform`, so exactness is not guaranteed and the tests allow 2 fp16 ulps. It applies to fp16 keys with the Hadamard rotation and a power-of-two head dim up to 1024; anything else keeps the MLX path. Set `use_metal_kernels=False` to force the MLX path.
 
 ## Fallback behaviour
 
