@@ -544,6 +544,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.0 (2026-10-10)
+
+### Features
+
+- **metal**: Fused rvq_unpack_decode kernel for the packed turboquant_rvq key cache
+  ([#789](https://github.com/rajveer43/VeloxQuant-MLX/pull/789),
+  [`bd90f39`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bd90f39eca98b2499cb700d367e9b8500f8e71be))
+
+
 ## v0.93.0 (2026-10-09)
 
 ### Features
