@@ -22,6 +22,7 @@ let selectedMethod = null;
 let filterFamily = '';
 let filterServable = false;
 let filterQuery = '';
+let actionError = null;   // last failed Start/Stop; survives polling until the next click
 
 /* ── Theme ─────────────────────────────────────────────── */
 $('theme-toggle').addEventListener('click', () => {
@@ -84,6 +85,9 @@ function readForm() {
   const cfg = {};
   for (const [key, id] of Object.entries(FIELDS)) {
     const el = $(id);
+    // A cleared number input is "not set", not 0: Number('') would send
+    // --port 0 / --bits 0 instead of letting the server default apply.
+    if (el.type === 'number' && el.value.trim() === '') continue;
     cfg[key] = el.type === 'number' ? Number(el.value) : el.value;
   }
   cfg.overrides = readKnobs();
@@ -539,6 +543,8 @@ function renderEndpoints(ready) {
 }
 
 /* ── Logs ──────────────────────────────────────────────── */
+const LOG_DOM_LIMIT = 500;
+
 async function refreshLogs() {
   const data = await api(`/api/logs?since=${logCount}`);
   if (!data.lines.length) return;
@@ -554,6 +560,8 @@ async function refreshLogs() {
     span.textContent = line.text;
     box.appendChild(span);
   }
+  // The server keeps the last 500 lines; keep the page to the same bound.
+  while (box.childElementCount > LOG_DOM_LIMIT) box.firstElementChild.remove();
   logCount = data.total;
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
@@ -570,7 +578,16 @@ $('copy-log').addEventListener('click', async (e) => {
 });
 
 /* ── Polling ───────────────────────────────────────────── */
-async function tick() {
+// One poll at a time: the Start/Stop handler also awaits a tick, and two
+// overlapping ticks would both fetch from the same log cursor and append the
+// same lines twice.
+let tickInFlight = null;
+function tick() {
+  if (!tickInFlight) tickInFlight = runTick().finally(() => { tickInFlight = null; });
+  return tickInFlight;
+}
+
+async function runTick() {
   try {
     const status = await api('/api/status');
     const ready = status.ready;
@@ -589,7 +606,9 @@ async function tick() {
     }
 
     renderEndpoints(status.state === 'running' ? ready : null);
-    showError(status.state === 'error' ? status.error : null);
+    // A failed Start leaves the backend 'stopped'; without actionError this
+    // poll would immediately hide the reason the click just failed.
+    showError(status.state === 'error' ? status.error : actionError);
 
     if (status.state === 'running') {
       try { renderMemory(await api('/api/memory')); } catch (e) { renderMemory(null); }
@@ -606,6 +625,7 @@ async function tick() {
 
 /* ── Actions ───────────────────────────────────────────── */
 $('primary-btn').addEventListener('click', async () => {
+  actionError = null;
   showError(null);
   $('primary-btn').disabled = true;
 
@@ -615,17 +635,18 @@ $('primary-btn').addEventListener('click', async () => {
         await api('/api/stop', { method: 'POST' });
       } catch (e) {
         setState('error', 'Could not stop the server.');
-        showError(e.message);
+        actionError = e.message;
+        showError(actionError);
         await tick();
         return;
       }
-      logCount = 0;
+      // Keep logCount: the cursor is a lifetime counter, so resetting it to 0
+      // would make the next poll replay the whole previous session.
       $('log').innerHTML = '<span class="log-empty">No output yet.</span>';
       setState('stopped', 'Pick a model and press Start Server.');
       renderEndpoints(null);
       renderMemory(null);
     } else {
-      logCount = 0;
       $('log').innerHTML = '<span class="log-empty">No output yet.</span>';
       setState('starting', 'Loading model and wiring caches …');
       await api('/api/start', {
@@ -636,7 +657,8 @@ $('primary-btn').addEventListener('click', async () => {
     }
   } catch (e) {
     setState('error', 'Could not start the server.');
-    showError(e.message);
+    actionError = e.message;
+    showError(actionError);
   }
   await tick();
 });

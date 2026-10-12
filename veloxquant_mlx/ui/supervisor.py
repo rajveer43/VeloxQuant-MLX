@@ -73,6 +73,11 @@ class ServerSupervisor:
     def __init__(self) -> None:
         self._proc: subprocess.Popen | None = None
         self._lock = threading.Lock()
+        # Guards ``_logs``/``_log_total``. The two pump threads append while
+        # HTTP threads read, and iterating a deque that another thread appends
+        # to raises ``RuntimeError: deque mutated during iteration``. Separate
+        # from ``_lock`` because stop() holds that one for up to 15s.
+        self._log_lock = threading.Lock()
         self._logs: deque[LogLine] = deque(maxlen=LOG_CAPACITY)
         # Lifetime count of lines ever logged (never reset, not bounded by
         # LOG_CAPACITY): the deque evicts old lines, so ``logs(since)`` needs
@@ -126,10 +131,13 @@ class ServerSupervisor:
         materializing the buffer, so each poll costs work proportional to the
         *new* lines.
         """
-        total = self._log_total
-        oldest = total - len(self._logs)
-        offset = max(0, since - oldest)
-        new_lines = itertools.islice(self._logs, offset, None)
+        # total and the buffer must be read together: a pump thread appending
+        # between the two reads would shift the offset by one and drop a line.
+        with self._log_lock:
+            total = self._log_total
+            oldest = total - len(self._logs)
+            offset = max(0, since - oldest)
+            new_lines = list(itertools.islice(self._logs, offset, None))
         return {
             "lines": [entry.to_dict() for entry in new_lines],
             "total": total,
@@ -153,6 +161,14 @@ class ServerSupervisor:
             if self._state in ("starting", "running"):
                 raise RuntimeError("server is already running; stop it first")
 
+            if not isinstance(config, dict):
+                raise ValueError("config must be an object")
+            for key in ("model", "method"):
+                if not isinstance(config.get(key) or "", str):
+                    raise ValueError(f"{key!r} must be a string")
+            if not isinstance(config.get("overrides") or {}, dict):
+                raise ValueError("'overrides' must be an object")
+
             model = (config.get("model") or "").strip()
             if not model:
                 # #34: cannot start an empty server.
@@ -162,9 +178,14 @@ class ServerSupervisor:
             self._assert_servable(method)
             self._assert_valid_overrides(method, config.get("overrides") or {})
 
-            cmd = self._build_command(config, model, method)
+            try:
+                cmd = self._build_command(config, model, method)
+            except (TypeError, ValueError, OverflowError) as exc:
+                # int()/float() on a bad setting (e.g. bits=1e999, port="x").
+                raise ValueError(f"invalid setting: {exc}") from None
 
-            self._logs.clear()
+            with self._log_lock:
+                self._logs.clear()
             self._ready = None
             self._error = None
             self._config = dict(config)
@@ -360,8 +381,9 @@ class ServerSupervisor:
         )
 
     def _log(self, stream: str, text: str) -> None:
-        self._logs.append(LogLine(stream=stream, text=text))
-        self._log_total += 1
+        with self._log_lock:
+            self._logs.append(LogLine(stream=stream, text=text))
+            self._log_total += 1
 
     def _reap(self) -> None:
         """Detect a child that died on its own (bad port, OOM, external kill)."""
@@ -394,7 +416,8 @@ class ServerSupervisor:
         #34 calls out by name first, and fall back to the exception line rather
         than to interior frames.
         """
-        stderr = [entry.text for entry in self._logs if entry.stream == "stderr"]
+        with self._log_lock:
+            stderr = [entry.text for entry in self._logs if entry.stream == "stderr"]
         blob = "\n".join(stderr)
 
         port = self._config.get("port")

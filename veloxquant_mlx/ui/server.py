@@ -13,10 +13,12 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import signal
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from veloxquant_mlx.ui.config import load_config, save_config
 from veloxquant_mlx.ui.supervisor import ServerSupervisor
@@ -25,6 +27,21 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 #: The panel's own bind address. Loopback only — see module docstring.
 CONTROL_HOST = "127.0.0.1"
+
+#: Host names a legitimate same-machine browser can use to reach the panel.
+#: Anything else in the ``Host`` header is a DNS-rebinding attempt.
+_LOCAL_HOSTS = ("127.0.0.1", "localhost")
+
+#: Largest request body accepted. The API's payloads are a few hundred bytes.
+MAX_BODY_BYTES = 1 << 20
+
+
+class _BadRequest(Exception):
+    """A request the client got wrong; becomes a JSON error with ``status``."""
+
+    def __init__(self, message: str, status: int = 400) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 class PanelHandler(BaseHTTPRequestHandler):
@@ -55,13 +72,63 @@ class PanelHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _read_json(self) -> dict[str, Any]:
-        length = int(self.headers.get("Content-Length") or 0)
+        raw_length = self.headers.get("Content-Length") or "0"
+        try:
+            length = int(raw_length)
+        except ValueError:
+            raise _BadRequest("invalid Content-Length") from None
+        if length < 0:
+            raise _BadRequest("invalid Content-Length")
+        if length > MAX_BODY_BYTES:
+            raise _BadRequest("request body too large", status=413)
         if not length:
             return {}
+
+        content_type = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if content_type != "application/json":
+            raise _BadRequest("Content-Type must be application/json", status=415)
+
         try:
-            return json.loads(self.rfile.read(length))
-        except json.JSONDecodeError:
-            return {}
+            body = json.loads(self.rfile.read(length))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise _BadRequest("request body is not valid JSON") from None
+        if not isinstance(body, dict):
+            raise _BadRequest("request body must be a JSON object")
+        return body
+
+    def _check_origin(self) -> None:
+        """Refuse requests that did not come from the panel page itself.
+
+        The panel binds loopback, but a browser on this machine will happily
+        send a web page's request to ``127.0.0.1``. Two attacks follow:
+        a cross-site form/``fetch`` POST (which needs no CORS preflight when
+        sent as ``text/plain``) can start a server or rewrite the saved
+        config, and DNS rebinding lets a hostile page read the API too.
+        Checking ``Host`` stops rebinding; checking ``Origin`` (sent by
+        browsers on cross-origin requests) stops the cross-site POST.
+        """
+        port = self.server.server_address[1]
+        allowed_hosts = {f"{h}:{port}" for h in _LOCAL_HOSTS}
+
+        host = (self.headers.get("Host") or "").lower()
+        if host not in allowed_hosts:
+            raise _BadRequest("forbidden host", status=403)
+
+        origin = self.headers.get("Origin")
+        if origin is not None and origin.lower() not in {f"http://{h}" for h in allowed_hosts}:
+            raise _BadRequest("forbidden origin", status=403)
+
+    def _dispatch(self, handler: Any) -> None:
+        """Run ``handler`` so every failure becomes a JSON response, never a dropped socket."""
+        try:
+            self._check_origin()
+            handler()
+        except _BadRequest as exc:
+            self._send_json({"error": str(exc)}, status=exc.status)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # client went away mid-response; nothing to send
+        except Exception as exc:  # noqa: BLE001 - the UI needs a body, not a closed socket
+            self._send_json({"error": f"internal error: {exc}"}, status=500)
 
     def _send_static(self, path: str) -> None:
         name = "index.html" if path in ("/", "") else path.lstrip("/")
@@ -94,6 +161,14 @@ class PanelHandler(BaseHTTPRequestHandler):
     # --- routes -----------------------------------------------------------
 
     def do_GET(self) -> None:  # noqa: N802
+        """Serve a GET request; see :meth:`_handle_get` for the route table."""
+        self._dispatch(self._handle_get)
+
+    def do_POST(self) -> None:  # noqa: N802
+        """Serve a POST request; see :meth:`_handle_post` for the route table."""
+        self._dispatch(self._handle_post)
+
+    def _handle_get(self) -> None:
         """Serve a JSON API route under ``/api/*``, or fall back to a static file.
 
         Routes: ``/api/methods`` (available quantization methods),
@@ -131,12 +206,11 @@ class PanelHandler(BaseHTTPRequestHandler):
             return
 
         if route == "/api/logs":
-            since = 0
-            if "?" in self.path:
-                from urllib.parse import parse_qs, urlparse
-
-                qs = parse_qs(urlparse(self.path).query)
+            qs = parse_qs(urlparse(self.path).query)
+            try:
                 since = int(qs.get("since", ["0"])[0])
+            except ValueError:
+                raise _BadRequest("since must be an integer") from None
             self._send_json(self.supervisor.logs(since=since))
             return
 
@@ -151,8 +225,6 @@ class PanelHandler(BaseHTTPRequestHandler):
             return
 
         if route == "/api/models/search":
-            from urllib.parse import parse_qs, urlparse
-
             from veloxquant_mlx.ui.models import search_hub_models
 
             qs = parse_qs(urlparse(self.path).query)
@@ -169,7 +241,7 @@ class PanelHandler(BaseHTTPRequestHandler):
 
         self._send_static(route)
 
-    def do_POST(self) -> None:  # noqa: N802
+    def _handle_post(self) -> None:
         """Handle the panel's mutating routes: start/stop the server, or save config.
 
         Routes: ``/api/start`` (launch ``veloxquant serve`` with the posted
@@ -233,6 +305,20 @@ def serve_panel(port: int = 7860, open_browser: bool = True) -> None:
         with contextlib.suppress(Exception):
             webbrowser.open(url)
 
+    # The child runs in its own session (so stop() can signal its whole tree),
+    # which means a SIGTERM/SIGHUP to the panel -- `kill`, a closed terminal,
+    # launchd -- does not reach it, and the default handlers skip the `finally`
+    # below. Route both through the same path Ctrl-C takes.
+    def _shutdown(signum: int, _frame: Any) -> None:
+        raise KeyboardInterrupt
+
+    previous = {}
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        # signal.signal only works on the main thread; embedders calling
+        # serve_panel from a worker thread keep the default behaviour.
+        with contextlib.suppress(ValueError):
+            previous[sig] = signal.signal(sig, _shutdown)
+
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -241,3 +327,5 @@ def serve_panel(port: int = 7860, open_browser: bool = True) -> None:
         # Never leave an orphaned inference server holding a port.
         supervisor.stop()
         httpd.server_close()
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)

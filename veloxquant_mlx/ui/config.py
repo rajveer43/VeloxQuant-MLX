@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +28,10 @@ DEFAULTS: dict[str, Any] = {
 #: Only these keys are persisted. An allowlist rather than a blocklist so a
 #: field added to the UI cannot silently start being written to disk.
 _PERSISTED = set(DEFAULTS)
+
+#: ThreadingHTTPServer runs each request on its own thread, so two saves can
+#: interleave their load-merge-write and lose one update.
+_save_lock = threading.Lock()
 
 
 def load_config() -> dict[str, Any]:
@@ -55,11 +63,21 @@ def save_config(config: dict[str, Any]) -> None:
     a read-only home directory) — a persistence failure should not block
     starting the server.
     """
-    merged = load_config()
-    merged.update({k: v for k, v in config.items() if k in _PERSISTED})
+    with _save_lock:
+        merged = load_config()
+        merged.update({k: v for k, v in config.items() if k in _PERSISTED})
 
-    try:
-        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG_PATH.write_text(json.dumps(merged, indent=2))
-    except OSError:
-        pass  # a read-only home should not break Start
+        tmp_name = None
+        try:
+            CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            # Write-then-rename so a crash or concurrent reader never sees a
+            # torn file (which load_config would silently treat as "defaults").
+            fd, tmp_name = tempfile.mkstemp(dir=CONFIG_PATH.parent, suffix=".tmp")
+            with os.fdopen(fd, "w") as fh:
+                fh.write(json.dumps(merged, indent=2))
+            Path(tmp_name).replace(CONFIG_PATH)
+        except OSError:
+            # a read-only home should not break Start
+            if tmp_name:
+                with contextlib.suppress(OSError):
+                    Path(tmp_name).unlink()
