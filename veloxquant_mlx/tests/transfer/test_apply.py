@@ -124,6 +124,32 @@ def test_unload_after_releases_layer_weights(pair):
     assert not any(lm.is_loaded for lm in mapper.layers)
 
 
+def test_unload_after_frees_memory_for_a_disk_backed_mapper(pair, tmp_path):
+    """Unloading must drop the tensors, not just the LayerMap references.
+
+    A mapper read via ``load_mapper`` used to keep every evaluated layer alive
+    in a cache on the mapper, so ``unload_after`` freed nothing.
+    """
+    import gc
+
+    source, _, mapper, pos = pair
+    mapper.save(tmp_path)
+    weight_bytes = sum(
+        t.nbytes for lm in mapper.layers for t in (lm.w_k, lm.b_k, lm.w_v, lm.b_v)
+    )
+    del mapper
+    gc.collect()
+    mx.eval(*[a for kv in source.values() for a in kv])
+
+    loaded = load_mapper(tmp_path)
+    before = mx.get_active_memory()
+    out = transfer_cache(source, loaded, pos, unload_after=True)
+    mx.eval(*[a for kv in out.values() for a in kv])
+    del out
+    gc.collect()
+    assert mx.get_active_memory() - before < weight_bytes // 2
+
+
 # --- persistence -------------------------------------------------------
 
 
