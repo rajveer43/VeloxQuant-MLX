@@ -100,3 +100,18 @@ def test_ruleset_export_includes_large_classes():
     rs = ruleset_dict()
     assert "671B" in rs["model_classes"]
     assert 192 in rs["allowed_ram_gb"]
+
+
+def test_1b_warning_does_not_suggest_the_method_already_recommended():
+    r = recommend(RecommendRequest(chip="M4", ram_gb=24, model_class="1B", goal="everyday"))
+    assert r.method == "turboquant_rvq"
+    assert not any("switch to turboquant_rvq" in w for w in r.warnings)
+    r = recommend(RecommendRequest(chip="M4", ram_gb=24, model_class="1B", goal="best_quality"))
+    assert any("switch to turboquant_rvq" in w for w in r.warnings)
+
+
+@pytest.mark.parametrize("field,value", [("model_class", "2B"), ("chip", "M9")])
+def test_unknown_model_class_or_chip_raises_value_error(field, value):
+    kwargs = {"chip": "M4", "ram_gb": 24, "model_class": "7B", "goal": "everyday", field: value}
+    with pytest.raises(ValueError, match=field):
+        recommend(RecommendRequest(**kwargs))

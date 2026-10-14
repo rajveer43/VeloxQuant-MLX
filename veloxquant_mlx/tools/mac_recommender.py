@@ -131,6 +131,12 @@ def recommend(req: RecommendRequest) -> RecommendResult:
         raise ValueError(f"ram_gb must be one of {ALLOWED_RAM_GB}, got {req.ram_gb}")
     if req.seq_len < 1:
         raise ValueError("seq_len must be >= 1")
+    if req.model_class not in MODEL_WEIGHT_GB_4BIT:
+        raise ValueError(
+            f"model_class must be one of {tuple(MODEL_WEIGHT_GB_4BIT)}, got {req.model_class!r}"
+        )
+    if req.chip not in ("M1", "M2", "M3", "M4"):
+        raise ValueError(f"chip must be one of ('M1', 'M2', 'M3', 'M4'), got {req.chip!r}")
 
     warnings: list[str] = []
     weight_gb = MODEL_WEIGHT_GB_4BIT[req.model_class]
@@ -160,10 +166,16 @@ def recommend(req: RecommendRequest) -> RecommendResult:
 
     # Tiny-model Metal overhead warning (chip generation does not remove this)
     if req.model_class == "1B":
+        # The "everyday" pick is already turboquant_rvq, so don't tell the user
+        # to switch to the method they were just given.
+        fallback = (
+            "turn the Metal kernels off"
+            if req.goal == "everyday"
+            else "switch to turboquant_rvq or turn the Metal kernels off"
+        )
         warnings.append(
             "On a model this small the GPU spends more time starting work than "
-            "doing it, so compression can actually slow generation down. If speed "
-            "drops, switch to turboquant_rvq or turn the Metal kernels off."
+            f"doing it, so compression can actually slow generation down. If speed drops, {fallback}."
         )
 
     tight = req.ram_gb <= 16 or headroom_gb < 3.0

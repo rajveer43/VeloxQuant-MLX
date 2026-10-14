@@ -66,7 +66,10 @@ function recommend(req) {
     warnings.push(
       "On a model this small the GPU spends more time starting work than " +
       "doing it, so compression can actually slow generation down. If speed " +
-      "drops, switch to turboquant_rvq or turn the Metal kernels off."
+      "drops, " +
+      (req.goal === "everyday"
+        ? "turn the Metal kernels off."
+        : "switch to turboquant_rvq or turn the Metal kernels off.")
     );
   }
 
