@@ -205,7 +205,6 @@ class CrossModelMapper:
     config: MapperConfig
     layers: list[LayerMap] = field(default_factory=list)
     _weights_path: Path | None = None
-    _weights: dict[str, mx.array] | None = None
 
     # -- introspection ---------------------------------------------------
 
@@ -254,10 +253,10 @@ class CrossModelMapper:
                 f"Layer {target_layer} has no weights and the mapper has no "
                 "backing file to load them from."
             )
-        if self._weights is None:
-            # mx.load on safetensors is lazy per-key on access.
-            self._weights = mx.load(str(self._weights_path))
-        w = self._weights
+        # mx.load on safetensors is lazy per-key on access. The dict is kept
+        # local on purpose: caching it on the mapper would keep every
+        # evaluated layer tensor alive after LayerMap.unload(), defeating it.
+        w = mx.load(str(self._weights_path))
         lm.w_k, lm.b_k = w[f"{target_layer}.w_k"], w[f"{target_layer}.b_k"]
         lm.w_v, lm.b_v = w[f"{target_layer}.w_v"], w[f"{target_layer}.b_v"]
         return lm
@@ -266,7 +265,6 @@ class CrossModelMapper:
         """Drop every layer's weights, releasing memory."""
         for lm in self.layers:
             lm.unload()
-        self._weights = None
 
     # -- persistence -----------------------------------------------------
 

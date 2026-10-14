@@ -544,6 +544,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.2 (2026-10-13)
+
+### Bug Fixes
+
+- **transfer**: Make unload_after actually free disk-backed mapper weights
+  ([#791](https://github.com/rajveer43/VeloxQuant-MLX/pull/791),
+  [`6d58cc5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6d58cc59ce75698c924199d4772cdc5abae8ac83))
+
+
 ## v0.94.1 (2026-10-12)
 
 ### Bug Fixes
