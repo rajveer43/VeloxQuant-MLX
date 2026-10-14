@@ -12,7 +12,7 @@ readers/writers targeting the same artifact never observe a partial file.
 from __future__ import annotations
 
 import os
-import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -30,12 +30,14 @@ def _atomic_save(path: Path, arr: np.ndarray) -> None:
     workers lazily constructing the same quantizer config) from observing a
     partially-written ``.npy`` file: ``np.save`` writes directly to the
     destination and is not atomic, but ``Path.replace`` is atomic on POSIX
-    and Windows. The temp file comes from ``tempfile.mkstemp`` in the same
-    directory, so its name is unique across processes and threads (a
-    per-process counter is not: every process starts at 1, #634).
+    and Windows. The temp name carries a random UUID, so it is unique across
+    processes and threads (a per-process counter is not: every process starts
+    at 1, #634). It is opened with ``os.open(..., 0o666)`` so the umask applies
+    as it would for ``np.save``; ``tempfile.mkstemp`` would force mode 0600 and
+    leave a shared cache directory unreadable to other users.
     """
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    tmp_path = Path(tmp_name)
+    tmp_path = path.parent / f".{path.name}.{uuid.uuid4().hex}.tmp"
+    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
     try:
         with os.fdopen(fd, "wb") as f:
             np.save(f, arr)

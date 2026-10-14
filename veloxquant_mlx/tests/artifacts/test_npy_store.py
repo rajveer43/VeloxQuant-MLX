@@ -182,22 +182,21 @@ class TestColdWarmParity:
 
 
 def _save_in_subprocess(root: str, seed: int) -> str:
+    import os
     import pathlib
-    import tempfile
 
     import numpy as np
 
     from veloxquant_mlx.artifacts import npy_store
 
     names: list[str] = []
-    real = tempfile.mkstemp
+    real = os.open
 
-    def spy(*a, **k):
-        fd, name = real(*a, **k)
-        names.append(pathlib.Path(name).name)
-        return fd, name
+    def spy(path, *a, **k):
+        names.append(pathlib.Path(path).name)
+        return real(path, *a, **k)
 
-    tempfile.mkstemp = spy
+    os.open = spy
     npy_store._atomic_save(pathlib.Path(root) / "x.npy", np.full(4, seed))
     return names[0]
 
@@ -220,3 +219,16 @@ def test_atomic_save_leaves_no_temp_files_and_roundtrips(tmp_path):
         _atomic_save(tmp_path / "a.npy", np.arange(8) + i)
     assert [p.name for p in tmp_path.iterdir()] == ["a.npy"]
     np.testing.assert_array_equal(np.load(tmp_path / "a.npy"), np.arange(8) + 4)
+
+
+def test_atomic_save_honours_umask_instead_of_forcing_0600(tmp_path):
+    """mkstemp creates 0600 files; a shared cache must stay readable (umask applies)."""
+    import os
+    import stat
+
+    old = os.umask(0o022)
+    try:
+        _atomic_save(tmp_path / "a.npy", np.arange(4))
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE((tmp_path / "a.npy").stat().st_mode) == 0o644
