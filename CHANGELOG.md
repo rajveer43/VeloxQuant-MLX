@@ -544,6 +544,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.3 (2026-10-14)
+
+### Bug Fixes
+
+- **recommend**: 1B advice no longer says to switch to the recommended method; validate
+  model_class/chip ([#792](https://github.com/rajveer43/VeloxQuant-MLX/pull/792),
+  [`1e7a5ab`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1e7a5ab3c4f1d6a776e6cd5b309549cd204ea12f))
+
+
 ## v0.94.2 (2026-10-13)
 
 ### Bug Fixes
