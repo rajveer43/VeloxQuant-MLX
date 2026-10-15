@@ -4,6 +4,7 @@ undercounting regression for #65."""
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from veloxquant_mlx.core.context import EncodedVector
 
@@ -107,3 +108,12 @@ class TestMemoryBytesFieldCombinations:
             inner_outlier.memory_bytes() + inner_inlier.memory_bytes() + outer.outlier_idx.nbytes
         )
         assert outer.memory_bytes() == expected
+
+
+@pytest.mark.parametrize("dtype_name", ["uint16", "int16", "int32", "int64", "bool_", "float32"])
+def test_memory_bytes_matches_array_nbytes_for_any_dtype(dtype_name):
+    import mlx.core as mx
+
+    arr = mx.zeros((10,), dtype=getattr(mx, dtype_name))
+    ev = EncodedVector(quantizer_type="x", batch_size=1, dim=10, indices=arr)
+    assert ev.memory_bytes() == arr.nbytes

@@ -115,22 +115,11 @@ class EncodedVector:
                 return 0
             if isinstance(arr, np.ndarray):
                 return arr.nbytes
-            # mx.array
+            # mx.array: nbytes knows every dtype (a lookup table silently
+            # mis-sized int16/uint16/int64/bool as 4 bytes per element).
             try:
-                import mlx.core as mx
-
-                size = 1
-                for s in arr.shape:
-                    size *= s
-                itemsize = {
-                    mx.float16: 2,
-                    mx.float32: 4,
-                    mx.int8: 1,
-                    mx.uint8: 1,
-                    mx.bfloat16: 2,
-                }.get(arr.dtype, 4)
-                return size * itemsize
-            except Exception:
+                return int(arr.nbytes)
+            except AttributeError:
                 return 0
 
         total += _arr_bytes(self.indices)
