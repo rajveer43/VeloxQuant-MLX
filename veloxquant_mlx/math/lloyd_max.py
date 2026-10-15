@@ -28,7 +28,7 @@ def lloyd_max(
 
     Iterates the Lloyd-Max optimality conditions until convergence:
 
-    1. Initialise centroids uniformly over support.
+    1. Initialise centroids at equal-mass quantiles of the PDF over the support.
     2. Loop:
        a. Boundaries = midpoints between adjacent centroids, extended to ±∞.
        b. Update centroids via numerical integration:
@@ -66,8 +66,16 @@ def lloyd_max(
     x_grid = np.linspace(lo, hi, n_quad_points)
     p_grid = pdf_fn(x_grid)
 
-    # Initialise centroids uniformly
-    centroids = np.linspace(lo, hi, n_levels)
+    # Initialise centroids at the equal-probability-mass quantiles. A uniform
+    # grid over a support much wider than the PDF (beta_pdf on (-1, 1) at
+    # d=128) leaves the outermost cells massless; they then never move and the
+    # codebook keeps dead centroids at the support edges.
+    seg = (p_grid[1:] + p_grid[:-1]) / 2.0 * np.diff(x_grid)
+    cdf = np.concatenate([[0.0], np.cumsum(seg)])
+    if cdf[-1] > 0.0:
+        centroids = np.interp((np.arange(n_levels) + 0.5) / n_levels * cdf[-1], cdf, x_grid)
+    else:
+        centroids = np.linspace(lo, hi, n_levels)
 
     for _ in range(n_iter):
         # a. Compute Voronoi boundaries as midpoints

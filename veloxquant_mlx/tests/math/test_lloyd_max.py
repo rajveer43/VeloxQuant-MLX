@@ -116,3 +116,10 @@ def test_lloyd_max_single_level() -> None:
 
     centroids, boundaries = lloyd_max(pdf_fn, (-5.0, 5.0), n_levels=1)
     assert len(centroids) == 1
+
+
+def test_no_dead_centroids_when_support_is_wider_than_the_pdf():
+    """beta_pdf(d=128) on (-1, 1) has std ~0.09; uniform init left centroids stuck at +-1."""
+    centroids, _ = lloyd_max(lambda x: beta_pdf(x, 128), (-1.0 + 1e-6, 1.0 - 1e-6), 16)
+    assert np.abs(centroids).max() < 0.5
+    assert lloyd_max.last_mse_cost < 8.5e-5
