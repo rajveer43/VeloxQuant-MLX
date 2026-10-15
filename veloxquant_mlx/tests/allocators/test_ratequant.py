@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import mlx.core as mx
 import numpy as np
 import pytest
 
@@ -219,3 +220,23 @@ class TestCalibrateLayerSensitivitiesRestoresMakeCache:
         model = _SucceedingModel()
         calibrate_layer_sensitivities(model, _FakeTokenizer(), prompts=["hi"])
         assert not hasattr(model, "make_cache")
+
+
+class TestCalibrationPromptsAreIndependent:
+    """Each calibration prompt must start from an empty cache."""
+
+    def test_every_prompt_sees_offset_zero(self) -> None:
+        seen: list[list[int]] = []
+
+        class _Model:
+            def __init__(self) -> None:
+                self.layers = [1, 2]
+
+            def __call__(self, toks, cache=None):
+                seen.append([c.offset for c in cache])
+                for c in cache:
+                    x = mx.ones((1, 1, toks.shape[1], 4))
+                    c.update_and_fetch(x, x)
+
+        calibrate_layer_sensitivities(_Model(), _FakeTokenizer(), prompts=["abc", "defg", "hi"])
+        assert seen == [[0, 0]] * 3

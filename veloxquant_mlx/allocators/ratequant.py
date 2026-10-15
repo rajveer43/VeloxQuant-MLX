@@ -56,6 +56,17 @@ class _SensitivityProbeCache(_MLXKVCache):
         self._n_tokens += int(k_flat.shape[0])
         return super().update_and_fetch(keys, values)
 
+    def reset_kv(self) -> None:
+        """Drop cached keys/values (and the position offset), keeping the norm statistics.
+
+        Calibration prompts are independent samples; without this, each later
+        prompt would attend to the earlier prompts' keys and run at a shifted
+        RoPE offset, contaminating the deeper layers' activations.
+        """
+        self.keys = None
+        self.values = None
+        self.offset = 0
+
     @property
     def sensitivity(self) -> float:
         """Mean squared key L2 norm observed so far (defaults to 1.0 with no tokens)."""
@@ -112,6 +123,8 @@ def calibrate_layer_sensitivities(
             if len(toks) > seq_len:
                 toks = toks[:seq_len]
             toks_mx = mx.array(toks).reshape(1, -1)
+            for probe in probes:
+                probe.reset_kv()
             _ = model(toks_mx, cache=probes)
             if verbose:
                 print(f"  [calib] {i + 1}/{len(prompts)} (len={len(toks)})")
