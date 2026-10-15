@@ -11,9 +11,9 @@ from jinja2.exceptions import TemplateError
 # instruction block -- the representation the model was trained to consume.
 MISTRAL_INITIAL_SYSTEM_TEMPLATE = (
     "{{ bos_token }}"
-    "{% set system_message = messages[0]['content'] if messages and messages[0]['role'] == "
-    "'system' else '' %}"
-    "{% set chat_messages = messages[1:] if system_message else messages %}"
+    "{% set has_system = messages and messages[0]['role'] == 'system' %}"
+    "{% set system_message = messages[0]['content'] if has_system else '' %}"
+    "{% set chat_messages = messages[1:] if has_system else messages %}"
     "{% for message in chat_messages %}"
     "{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}"
     "{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}"

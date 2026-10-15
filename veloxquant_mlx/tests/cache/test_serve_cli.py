@@ -336,3 +336,27 @@ def test_attach_cache_patched_make_cache_does_not_recurse():
     caches = model.make_cache()
 
     assert len(caches) == 3
+
+
+def _render_mistral_template(messages):
+    from jinja2.sandbox import ImmutableSandboxedEnvironment
+
+    def raise_exception(msg):
+        raise ValueError(msg)
+
+    env = ImmutableSandboxedEnvironment()
+    env.globals["raise_exception"] = raise_exception
+    return env.from_string(MISTRAL_INITIAL_SYSTEM_TEMPLATE).render(
+        messages=messages, bos_token="<s>", eos_token="</s>"
+    )
+
+
+@pytest.mark.parametrize("system", ["Be brief.", ""])
+def test_mistral_template_accepts_initial_system_message_even_if_empty(system):
+    """An empty system prompt ("") used to be treated as absent and then rejected as a bad role."""
+    out = _render_mistral_template(
+        [{"role": "system", "content": system}, {"role": "user", "content": "hi"}]
+    )
+    assert out.startswith("<s> [INST] ")
+    assert out.endswith("hi [/INST]")
+    assert ("Be brief." in out) == bool(system)
