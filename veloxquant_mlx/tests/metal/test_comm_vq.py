@@ -98,3 +98,20 @@ def test_no_out_of_bounds_on_non_multiple_grid():
     out_np = np.array(out)
     assert out_np.shape == (N, D)
     assert np.all(np.isfinite(out_np.astype(np.float32)))
+
+
+def test_rejects_odd_head_dim():
+    import mlx.core as mx
+
+    from veloxquant_mlx.metal.kernels import comm_vq_decode_metal
+
+    with pytest.raises(ValueError, match="must be even"):
+        comm_vq_decode_metal(
+            mx.zeros((2, 3), dtype=mx.uint8),
+            mx.zeros((3, 4, 1), dtype=mx.float16),
+            mx.zeros((2,), dtype=mx.int32),
+            mx.zeros((1,), dtype=mx.float32),
+            3,
+            1,
+            4,
+        )

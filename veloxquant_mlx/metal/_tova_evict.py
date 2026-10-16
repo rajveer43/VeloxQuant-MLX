@@ -131,6 +131,8 @@ def tova_fused_evict_virtual_values(
         raise ValueError("tova_fused_evict_virtual_values: weights must be [BH,N] float32")
     if n < 2 or not isinstance(n_sink, int) or not 0 <= n_sink < n:
         raise ValueError("tova_fused_evict_virtual_values: require N >= 2 and valid n_sink")
+    if bh * n * d >= 2**32:
+        raise ValueError("tova_fused_evict_virtual_values: input exceeds uint32 indexing range")
     if type(nsg) is not int or nsg not in (1, 2, 4, 8):
         raise ValueError("tova_fused_evict_virtual_values: nsg must be 1, 2, 4, or 8")
     (evicted,) = _reduce_kernel(nsg)(
@@ -167,6 +169,8 @@ def tova_fused_evict_indices(keys_mid, lineage_mid, weights, n_sink, *, nsg=4, s
         raise ValueError("tova_fused_evict_indices: weights must be [BH,N] float32")
     if n < 2 or not isinstance(n_sink, int) or not 0 <= n_sink < n:
         raise ValueError("tova_fused_evict_indices: require N >= 2 and valid n_sink")
+    if bh * n * d >= 2**32:
+        raise ValueError("tova_fused_evict_indices: input exceeds uint32 indexing range")
     if type(nsg) is not int or nsg not in (1, 2, 4, 8):
         raise ValueError("tova_fused_evict_indices: nsg must be 1, 2, 4, or 8")
     (evicted,) = _reduce_kernel(nsg)(

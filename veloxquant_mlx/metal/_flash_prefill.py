@@ -201,6 +201,11 @@ def flash_prefill_attend(
     S_kv = k.shape[2]
     if v.shape != (B, H, S_kv, D):
         raise ValueError(f"flash_prefill_attend: v must be {(B, H, S_kv, D)}, got {v.shape}")
+    if S_q > S_kv:
+        raise ValueError(
+            f"flash_prefill_attend: S_q={S_q} exceeds S_kv={S_kv}; queries align to "
+            "the tail of the KV cache, so every query needs a slot to attend to"
+        )
 
     bq = _pick_bq(D)
     bq_tg = _N_SIMDGROUPS * bq

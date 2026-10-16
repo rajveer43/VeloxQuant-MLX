@@ -149,3 +149,10 @@ def test_flash_prefill_large_logit_scale_precision():
     expected = _reference_flash(q, k, v, scale)
     got = _run_kernel(q, k, v, scale)
     assert np.abs(got - expected).max() < 2e-2
+
+
+def test_rejects_more_queries_than_kv_slots():
+    q = mx.zeros((1, 1, 8, 64), dtype=mx.float16)
+    kv = mx.zeros((1, 1, 4, 64), dtype=mx.float16)
+    with pytest.raises(ValueError, match="S_q=8 exceeds S_kv=4"):
+        flash_prefill_attend(q, kv, kv, mx.array([0.125], dtype=mx.float32))

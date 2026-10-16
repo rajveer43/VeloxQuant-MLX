@@ -101,6 +101,8 @@ def comm_vq_decode_metal(
     """
     N = indices.shape[0]
     D = n_cb * sub_dim
+    if D % 2 != 0:
+        raise ValueError(f"comm_vq_decode_metal: D={D} must be even (RoPE rotates dimension pairs)")
     total_threads = N * D  # one thread per output scalar; kernel handles pairs
     tg = min(D, 256)
     grid = ((total_threads + tg - 1) // tg) * tg
