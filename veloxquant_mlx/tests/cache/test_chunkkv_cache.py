@@ -459,3 +459,13 @@ def test_follower_make_mask_matches_leader():
     follower.update_and_fetch(k, v)
 
     assert leader._kept_positions.tolist() == follower._kept_positions.tolist()
+
+
+def test_bfloat16_input_keeps_bfloat16_output_on_decode() -> None:
+    """The fp16 per-head state used to promote bf16 decode output to float32."""
+    cache = KVCacheFactory.create(KVCacheConfig(method="chunkkv", head_dim=32))
+    for n in (40, 1, 1):
+        k = mx.random.normal((1, 2, n, 32)).astype(mx.bfloat16)
+        v = mx.random.normal((1, 2, n, 32)).astype(mx.bfloat16)
+        ko, vo = cache.update_and_fetch(k, v)
+        assert ko.dtype == mx.bfloat16 and vo.dtype == mx.bfloat16
