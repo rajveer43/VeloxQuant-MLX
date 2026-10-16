@@ -127,6 +127,9 @@ def transfer_cache(
             Keeps peak memory at one layer's weights instead of the whole
             multi-GB mapper — the reason this subsystem is usable on Apple
             Silicon at all. Set False when mapping many caches in a row.
+            Only applies to a disk-backed mapper (one from
+            :func:`load_mapper`): an in-memory mapper from ``fit_mapper`` has
+            no file to reload from, so its weights are kept.
 
     Returns:
         ``{target_layer: (keys, values)}`` ready for the target model.
@@ -146,6 +149,8 @@ def transfer_cache(
     out: dict[int, tuple[mx.array, mx.array]] = {}
     for lm in mapper.layers:
         out[lm.target_layer] = transfer_layer(mapper, lm.target_layer, source_kv, positions)
-        if unload_after:
+        # Without a backing file an unloaded layer can never come back, so
+        # unloading would destroy a freshly fitted mapper after one use.
+        if unload_after and mapper._weights_path is not None:
             lm.unload()
     return out

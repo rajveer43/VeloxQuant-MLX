@@ -117,11 +117,23 @@ def test_transfer_rejects_empty_cache(pair):
         transfer_cache({}, mapper)
 
 
-def test_unload_after_releases_layer_weights(pair):
+def test_unload_after_releases_layer_weights(pair, tmp_path):
     """Peak memory must stay at one layer, not the whole mapper."""
     source, _, mapper, pos = pair
-    transfer_cache(source, mapper, pos, unload_after=True)
-    assert not any(lm.is_loaded for lm in mapper.layers)
+    mapper.save(tmp_path)
+    loaded = load_mapper(tmp_path)
+    transfer_cache(source, loaded, pos, unload_after=True)
+    assert not any(lm.is_loaded for lm in loaded.layers)
+
+
+def test_unload_after_keeps_in_memory_mapper_usable(pair):
+    """A freshly fitted mapper has no file to reload from; unloading it would
+    make the second ``transfer_cache`` call raise."""
+    source, _, mapper, pos = pair
+    first = transfer_cache(source, mapper, pos)
+    second = transfer_cache(source, mapper, pos)
+    for t in first:
+        assert mx.allclose(first[t][0], second[t][0]).item()
 
 
 def test_unload_after_frees_memory_for_a_disk_backed_mapper(pair, tmp_path):
