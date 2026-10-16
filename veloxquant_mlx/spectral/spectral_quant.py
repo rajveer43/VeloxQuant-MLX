@@ -179,20 +179,28 @@ class SpectralQuantizer(Quantizer):
         # support, clipping nearly everything to the outermost centroid).
         target_std = 1.0 / math.sqrt(self._d)
 
-        def _block_scale(h_block: Any) -> Any:
-            rms = mx.sqrt(mx.mean(h_block * h_block, axis=1, keepdims=True))
-            rms = mx.where(rms < 1e-8, mx.array(1.0, dtype=mx.float32), rms)
-            return rms / target_std  # (batch, 1)
+        def _block_scale(h_block: Any) -> tuple[Any, Any]:
+            """Return (divisor, stored scale), each (batch, 1).
 
-        sig_block_scale = _block_scale(h_s)
-        sig_scale = sig_block_scale[:, 0]
+            An all-zero block divides by a safe 1 but stores scale 0: the
+            codebooks have no centroid at 0 (even level counts), so storing the
+            safe scale would decode a zero block to a non-zero vector.
+            """
+            rms = mx.sqrt(mx.mean(h_block * h_block, axis=1, keepdims=True))
+            degenerate = rms < 1e-8
+            divisor = mx.where(degenerate, mx.array(1.0, dtype=mx.float32), rms) / target_std
+            stored = mx.where(degenerate, mx.zeros_like(divisor), divisor)
+            return divisor, stored
+
+        sig_block_scale, sig_stored = _block_scale(h_s)
+        sig_scale = sig_stored[:, 0]
         h_s = h_s / sig_block_scale
 
         if h_n.shape[1] > 0:
-            noise_block_scale = _block_scale(h_n)
+            noise_block_scale, noise_stored = _block_scale(h_n)
         else:
-            noise_block_scale = mx.ones((batch, 1), dtype=mx.float32)
-        noise_scale = noise_block_scale[:, 0]
+            noise_block_scale = noise_stored = mx.ones((batch, 1), dtype=mx.float32)
+        noise_scale = noise_stored[:, 0]
         h_n = h_n / noise_block_scale
 
         # Step 3: Quantize signal dims with C_signal

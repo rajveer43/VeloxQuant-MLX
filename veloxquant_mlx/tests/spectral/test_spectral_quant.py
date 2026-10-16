@@ -344,3 +344,13 @@ def test_calibrate_inject_improves_cosine_similarity():
     q = mx.array(rng.standard_normal(D).astype(np.float32), dtype=mx.float16)
     out = cache.attend(q)
     assert out.shape == (D,)
+
+
+def test_all_zero_vectors_decode_to_zero():
+    import mlx.core as mx
+
+    from veloxquant_mlx.spectral.spectral_quant import SpectralQuantizer
+
+    q = SpectralQuantizer(64, b_signal=3, b_noise=3, d_s=4)
+    out = np.array(q.decode(q.encode(mx.zeros((3, 64)))).astype(mx.float32))
+    assert np.abs(out).max() == 0.0
