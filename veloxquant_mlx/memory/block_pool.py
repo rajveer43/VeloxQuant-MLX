@@ -365,7 +365,8 @@ class BlockPoolAllocator:
         n_needed = -(-n_tokens // self.config.block_size)  # ceil div
 
         with self._lock:
-            if owner not in self._active_owners:
+            newly_registered = owner not in self._active_owners
+            if newly_registered:
                 self._register_owner_locked(owner)
 
             free_list = self._free[s]
@@ -373,6 +374,9 @@ class BlockPoolAllocator:
                 self._try_grow_locked(s, n_needed - len(free_list))
 
             if len(free_list) < n_needed:
+                if newly_registered:
+                    # All-or-nothing: don't leave a phantom active owner behind.
+                    self._active_owners.discard(owner)
                 self.stats.n_exhausted += 1
                 self._record_history()
                 raise BlockPoolExhaustedError(

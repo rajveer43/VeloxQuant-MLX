@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from veloxquant_mlx.core.exceptions import BlockPoolExhaustedError
 from veloxquant_mlx.memory.block_pool import BlockPoolAllocator, PoolConfig
 
 
@@ -80,3 +83,13 @@ def test_free_all_scales_linearly_not_superlinearly():
     # A truly O(n) free_all should land near 8x; a superlinear one would
     # be dramatically worse. Generous upper bound to avoid CI flakiness.
     assert large < small * 20 + 0.05
+
+
+def test_failed_allocate_does_not_leave_a_phantom_active_owner():
+    pool = _pool(n_blocks=2)
+    with pytest.raises(BlockPoolExhaustedError):
+        pool.allocate(stream="k", n_tokens=16 * 100, owner=7)
+
+    # The failed call allocated nothing, so the owner must not stay active.
+    pool.register_owner(7)
+    assert pool.allocate(stream="k", n_tokens=16, owner=7)
