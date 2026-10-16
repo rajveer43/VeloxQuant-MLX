@@ -258,20 +258,24 @@ class AutoOptimizer:
 
         # Validate the top picks with the real serve-tier probe and re-run
         # excluding any that crash at request time.
-        if not result.fallback_used and self.options.probe_top_n:
-            dropped = self._probe_and_drop(result)
-            if dropped:
-                excluded.update(dropped)
-                planning = PlanningOptions(
-                    empirical=empirical,
-                    additional_exclusions=excluded,
-                    **{
-                        key: value
-                        for key, value in kwargs.items()
-                        if key in PlanningOptions.__dataclass_fields__
-                    },
-                )
-                result = plan_strategy(model, hardware, workload, options=planning)
+        # Dropping a crash-tier method promotes lower-ranked ones into the top
+        # N, so keep probing until the ranked set is clean. Each pass either
+        # drops at least one more method or stops, so this terminates.
+        while not result.fallback_used and self.options.probe_top_n:
+            dropped = self._probe_and_drop(result) - excluded
+            if not dropped:
+                break
+            excluded.update(dropped)
+            planning = PlanningOptions(
+                empirical=empirical,
+                additional_exclusions=excluded,
+                **{
+                    key: value
+                    for key, value in kwargs.items()
+                    if key in PlanningOptions.__dataclass_fields__
+                },
+            )
+            result = plan_strategy(model, hardware, workload, options=planning)
 
         return result
 
