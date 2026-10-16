@@ -123,6 +123,9 @@ def qjl_encode(x: mx.array, S: mx.array) -> tuple[mx.array, mx.array]:
         raise ValueError(f"qjl_encode: x.d={d} != S.d={d_s}")
     if m % 8 != 0:
         raise ValueError(f"qjl_encode: m={m} must be divisible by 8")
+    if B == 0:
+        # A zero-size grid with ``init_value`` crashes the interpreter in MLX.
+        return mx.zeros((0, m // 8), dtype=mx.uint8), mx.zeros((0,), dtype=mx.float16)
 
     n_simd_per_batch = (m + 31) // 32
     # MLX grid = total threads; threadgroup size = 32

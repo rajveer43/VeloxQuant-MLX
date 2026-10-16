@@ -315,6 +315,20 @@ def test_qjl_encode_sign_correctness():
     assert mismatch < 0.02, f"qjl_encode sign mismatch: {mismatch:.3%}"
 
 
+def test_qjl_encode_empty_batch():
+    """A zero-row batch must return empty outputs, not segfault the process."""
+    from veloxquant_mlx.metal import qjl_encode
+
+    packed, norms = qjl_encode(
+        mx.zeros((0, 16), dtype=mx.float16), mx.zeros((32, 16), dtype=mx.float16)
+    )
+    mx.eval(packed, norms)
+    assert packed.shape == (0, 4)
+    assert packed.dtype == mx.uint8
+    assert norms.shape == (0,)
+    assert norms.dtype == mx.float16
+
+
 def test_qjl_encode_norm_correctness():
     """Stored norms must match ‖x‖₂ within fp16 tolerance."""
     rng = np.random.default_rng(66)
