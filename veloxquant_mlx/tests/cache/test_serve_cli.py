@@ -360,3 +360,15 @@ def test_mistral_template_accepts_initial_system_message_even_if_empty(system):
     assert out.startswith("<s> [INST] ")
     assert out.endswith("hi [/INST]")
     assert ("Be brief." in out) == bool(system)
+
+
+def test_templateless_tokenizer_is_left_alone():
+    class _NoTemplateTokenizer:
+        chat_template = None
+
+        def apply_chat_template(self, messages, **kwargs):
+            raise ValueError("Cannot use chat template functions: chat_template is not set")
+
+    tokenizer = _NoTemplateTokenizer()
+    assert ensure_initial_system_prompt_support(tokenizer, "acme/base-model") is False
+    assert tokenizer.chat_template is None

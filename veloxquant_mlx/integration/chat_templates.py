@@ -36,6 +36,10 @@ def ensure_initial_system_prompt_support(tokenizer: Any, model_id: str) -> bool:
     render a leading system message (such as Qwen3.5's) are intentionally left
     untouched.
     """
+    if not getattr(tokenizer, "chat_template", None):
+        # No template at all (base model): mlx-lm serves the raw prompt.
+        # Installing the Mistral template would wrap it in [INST] tags.
+        return False
     probe = [
         {"role": "system", "content": "system probe"},
         {"role": "user", "content": "user probe"},
