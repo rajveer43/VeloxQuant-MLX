@@ -80,3 +80,9 @@ def test_free_all_scales_linearly_not_superlinearly():
     # A truly O(n) free_all should land near 8x; a superlinear one would
     # be dramatically worse. Generous upper bound to avoid CI flakiness.
     assert large < small * 20 + 0.05
+
+
+def test_odd_n_blocks_is_fully_allocated_across_streams():
+    pool = BlockPoolAllocator(PoolConfig(n_blocks=5))
+    assert pool.n_free("k") + pool.n_free("v") == 5
+    assert pool.stats.n_blocks == 5

@@ -257,12 +257,10 @@ class BlockPoolAllocator:
         self._active_owners: set[int] = set()
         self._next_block_id = 0
 
-        for stream in self._streams:
-            n_per_stream = (
-                self.config.n_blocks
-                if len(self._streams) == 1
-                else (self.config.n_blocks // len(self._streams))
-            )
+        for i, stream in enumerate(self._streams):
+            n_per_stream = self.config.n_blocks // len(self._streams)
+            if i < self.config.n_blocks % len(self._streams):
+                n_per_stream += 1  # an odd block goes to the first ("k") stream
             self._add_blocks(stream, n_per_stream)
 
         self.stats = AllocationStats(n_blocks=len(self._blocks))
