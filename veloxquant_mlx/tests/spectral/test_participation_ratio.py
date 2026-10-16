@@ -68,3 +68,11 @@ def test_participation_ratio_tracks_rank(rank: int, n: int):
     pr = compute_participation_ratio(X)
     # Allow 5x slack but should scale with rank
     assert pr <= rank * 5 + 5, f"rank={rank}: d_eff={pr:.2f} too high"
+
+
+def test_participation_ratio_is_scale_invariant_for_small_data():
+    rng = np.random.default_rng(0)
+    X = rng.standard_normal((500, 64)) * np.linspace(3, 0.1, 64)
+    expected = compute_participation_ratio(X)
+    assert expected > 10
+    assert compute_participation_ratio(X * 1e-4) == pytest.approx(expected, rel=1e-3)

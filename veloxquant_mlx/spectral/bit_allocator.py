@@ -39,7 +39,7 @@ def water_fill_bits(
     ev = np.clip(eigenvalues, 0, None).astype(np.float64)
     ev_sum = ev.sum()
 
-    if ev_sum < 1e-12 or total_bit_budget <= 0:
+    if ev_sum <= 0.0 or total_bit_budget <= 0:
         # No signal to water-fill proportionally to (or nothing to allocate):
         # start from a uniform allocation and fall through to the same
         # "final fix" remainder-distribution below, rather than returning
@@ -60,7 +60,7 @@ def water_fill_bits(
             active_ev = ev.copy()
             active_ev[~active] = 0.0
             active_sum = active_ev.sum()
-            if active_sum < 1e-12:
+            if active_sum <= 0.0:
                 # Distribute remaining bits uniformly across still-active dims
                 active_indices = np.where(active)[0]
                 if len(active_indices) == 0:
@@ -95,7 +95,7 @@ def water_fill_bits(
                 active_ev2 = ev.copy()
                 active_ev2[~active] = 0.0
                 s2 = active_ev2.sum()
-                if s2 > 1e-12:
+                if s2 > 0.0:
                     raw = active_ev2 / s2 * remaining_budget
                     for i in np.where(active)[0]:
                         add = int(round(raw[i]))

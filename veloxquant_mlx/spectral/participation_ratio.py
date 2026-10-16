@@ -29,7 +29,9 @@ def compute_participation_ratio(vectors: np.ndarray) -> float:
     eigenvalues = np.clip(eigenvalues, 0, None)
     sum_sq = float(np.sum(eigenvalues) ** 2)
     sq_sum = float(np.sum(eigenvalues**2))
-    if sq_sum < 1e-12:
+    # Only a truly all-zero spectrum is degenerate. An absolute epsilon here
+    # made the (scale-invariant) ratio collapse to 1.0 for small-magnitude data.
+    if sq_sum <= 0.0:
         return 1.0
     return sum_sq / sq_sum
 

@@ -82,3 +82,10 @@ def test_nondegenerate_eigenvalues_exact_budget():
     ev = np.array([10.0, 5.0, 1.0, 0.1])
     bits = water_fill_bits(ev, total_bit_budget=11, min_bits=1, max_bits=8)
     assert bits.sum() == 11
+
+
+def test_water_fill_is_scale_invariant_for_tiny_eigenvalues():
+    ev = np.linspace(8.0, 1.0, 16)
+    expected = water_fill_bits(ev, 16 * 4)
+    assert expected[0] > expected[-1]
+    np.testing.assert_array_equal(water_fill_bits(ev * 1e-14, 16 * 4), expected)
