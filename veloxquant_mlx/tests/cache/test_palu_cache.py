@@ -332,3 +332,11 @@ def test_trim_rolls_back_byte_accounting():
     ref.update_and_fetch(K[:, :, :32], V[:, :, :32])
     assert c.compressed_key_bytes == ref.compressed_key_bytes
     assert c.compressed_value_bytes == ref.compressed_value_bytes
+
+
+def test_batch_greater_than_one_is_rejected_not_silently_truncated() -> None:
+    """B=2 used to return a batch-1 result built from row 0 only."""
+    c = _make()
+    k = mx.random.normal((2, 4, 16, 64)).astype(mx.float16)
+    with pytest.raises(ValueError, match="batch size 1"):
+        c.update_and_fetch(k, k)

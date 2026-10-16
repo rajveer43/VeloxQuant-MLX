@@ -305,6 +305,11 @@ class PALUKVCache(_MLXKVCache):
     def update_and_fetch(self, keys: mx.array, values: mx.array):
         """Fit group-head SVD projections on prefill, else project + mixed-bit quantize into the latent buffers; return reconstructed fp16 K/V."""
         B, H, S, D = keys.shape
+        if B != 1:
+            # The projections are fit from batch row 0 and the latent buffers
+            # have a single batch axis, so rows 1.. would be silently replaced
+            # by row 0's reconstruction.
+            raise ValueError(f"PALUKVCache supports batch size 1 only, got B={B}")
         self._H = H
 
         if not self._keys_lr._fitted:
