@@ -199,3 +199,24 @@ def test_build_pooled_caches_share_one_owner_release():
     assert pool.stats.blocks_in_use() > 0
     caches[0].release()  # any one cache releases every layer's blocks (shared owner)
     assert pool.stats.blocks_in_use() == 0
+
+
+def test_deepcopy_shares_pool_and_copies_buffers():
+    """mlx_lm's LRUPromptCache deep-copies caches; the pool's Lock can't be copied."""
+    import copy
+
+    pool = _pool(block_size=4, n_blocks=256)
+    cache = PoolBackedKVCache(pool, owner=1, step=8)
+    k, v = _step(3)
+    cache.update_and_fetch(k, v)
+
+    clone = copy.deepcopy(cache)
+    assert clone.pool is pool
+    assert clone.offset == cache.offset
+    assert bool(mx.array_equal(clone.state[0], cache.state[0]))
+
+    # Writing to the clone must not touch the original's buffers.
+    k2, v2 = _step(2, seed=5)
+    clone.update_and_fetch(k2, v2)
+    assert cache.offset == 3
+    assert bool(mx.array_equal(cache.state[0], k))

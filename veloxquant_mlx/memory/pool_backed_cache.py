@@ -136,6 +136,27 @@ class PoolBackedKVCache:
         self.values[..., prev : self.offset, :] = values
         return self.keys[..., : self.offset, :], self.values[..., : self.offset, :]
 
+    def __deepcopy__(self, memo: dict) -> PoolBackedKVCache:
+        """Deep-copy the buffers but share the pool.
+
+        ``mlx_lm``'s ``LRUPromptCache`` deep-copies cached prompt caches. The
+        default deepcopy would also try to copy the pool, whose
+        ``threading.Lock`` cannot be copied (and a private pool copy would
+        defeat the shared accounting anyway). The copy keeps the same pool
+        and owner; the pool is not charged for the copied buffers.
+        """
+        import mlx.core as mx
+
+        new = type(self).__new__(type(self))
+        new.pool = self.pool
+        new.owner = self.owner
+        new.step = self.step
+        new.offset = self.offset
+        new.keys = None if self.keys is None else mx.array(self.keys)
+        new.values = None if self.values is None else mx.array(self.values)
+        memo[id(self)] = new
+        return new
+
     def release(self) -> None:
         """Return every block this cache's growth checked out to the pool.
 

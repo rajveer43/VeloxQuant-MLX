@@ -544,6 +544,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.9 (2026-10-16)
+
+### Bug Fixes
+
+- **handlers**: OutlierSplitHandler decode crashed on bfloat16 input
+  ([#801](https://github.com/rajveer43/VeloxQuant-MLX/pull/801),
+  [`f8b17ac`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f8b17ac06d31cf54e3ee343c219bf8f9ebfcff03))
+
+
 ## v0.94.8 (2026-10-16)
 
 ### Bug Fixes
