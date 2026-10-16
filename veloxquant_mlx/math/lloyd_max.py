@@ -77,32 +77,31 @@ def lloyd_max(
     else:
         centroids = np.linspace(lo, hi, n_levels)
 
-    for _ in range(n_iter):
-        # a. Compute Voronoi boundaries as midpoints
-        boundaries = np.concatenate(
-            [
-                [-np.inf],
-                (centroids[:-1] + centroids[1:]) / 2.0,
-                [np.inf],
-            ]
-        )
+    # Cumulative trapezoid integrals of f, x f and x^2 f on the grid. A cell's
+    # integral is the difference of these evaluated (by linear interpolation)
+    # at its Voronoi boundaries, so the partial grid interval at each cell edge
+    # is counted instead of dropped -- masking whole grid points under-counts
+    # every cell by up to one interval per edge, which is a large relative error
+    # once cells are only a few dozen grid points wide (b = 8).
+    dx = np.diff(x_grid)
+    cum_m = np.concatenate([[0.0], np.cumsum((p_grid[1:] + p_grid[:-1]) / 2.0 * dx)])
+    xp = x_grid * p_grid
+    cum_f = np.concatenate([[0.0], np.cumsum((xp[1:] + xp[:-1]) / 2.0 * dx)])
+    xxp = x_grid * xp
+    cum_s = np.concatenate([[0.0], np.cumsum((xxp[1:] + xxp[:-1]) / 2.0 * dx)])
 
-        # b. Update centroids via trapezoid integration on grid
-        new_centroids = np.empty(n_levels)
-        for i in range(n_levels):
-            b_lo = boundaries[i]
-            b_hi = boundaries[i + 1]
-            mask = (x_grid >= b_lo) & (x_grid <= b_hi)
-            if not np.any(mask):
-                new_centroids[i] = centroids[i]
-                continue
-            xm = x_grid[mask]
-            pm = p_grid[mask]
-            mass = np.trapezoid(pm, xm)
-            if mass < 1e-12:
-                new_centroids[i] = centroids[i]
-            else:
-                new_centroids[i] = np.trapezoid(xm * pm, xm) / mass
+    def _cell_integrals(cents: np.ndarray):
+        inner = (cents[:-1] + cents[1:]) / 2.0
+        edges = np.concatenate([[lo], np.clip(inner, lo, hi), [hi]])
+        m = np.diff(np.interp(edges, x_grid, cum_m))
+        f = np.diff(np.interp(edges, x_grid, cum_f))
+        sq = np.diff(np.interp(edges, x_grid, cum_s))
+        return m, f, sq
+
+    for _ in range(n_iter):
+        mass, first, _ = _cell_integrals(centroids)
+        safe = mass >= 1e-12
+        new_centroids = np.where(safe, first / np.where(safe, mass, 1.0), centroids)
 
         # c. Check convergence
         shift = np.max(np.abs(new_centroids - centroids))
@@ -119,17 +118,9 @@ def lloyd_max(
         ]
     )
 
-    # Compute final MSE cost
-    mse_cost = 0.0
-    for i in range(n_levels):
-        b_lo = boundaries[i]
-        b_hi = boundaries[i + 1]
-        mask = (x_grid >= b_lo) & (x_grid <= b_hi)
-        if not np.any(mask):
-            continue
-        xm = x_grid[mask]
-        pm = p_grid[mask]
-        mse_cost += np.trapezoid((xm - centroids[i]) ** 2 * pm, xm)
+    # Final MSE cost: sum_i (E[x^2] - 2 c_i E[x] + c_i^2 E[1]) over each cell
+    mass, first, second = _cell_integrals(centroids)
+    mse_cost = float(np.sum(second - 2.0 * centroids * first + centroids**2 * mass))
 
     # Store as module-level last_mse_cost for external inspection
     lloyd_max.last_mse_cost = float(mse_cost)  # type: ignore[attr-defined]
