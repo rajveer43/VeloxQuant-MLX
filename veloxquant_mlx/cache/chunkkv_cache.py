@@ -237,13 +237,18 @@ class ChunkKVCache(_MLXKVCache):
         # across every (b,h) row is guaranteed: the previous call's trim
         # (below) always re-aligns every row to the same common length
         # before returning, so this stays a plain rectangular concat.
+        # The per-head state is held in fp16 by the quantizer; cast the slice to
+        # the storage dtype so concatenating with the (bf16) new rows below does
+        # not promote the returned K/V to float32.
         prev_keys_flat = (
-            None if self._bh_keys is None else self._bh_keys[:, : int(self._bh_lengths[0].item())]
+            None
+            if self._bh_keys is None
+            else self._bh_keys[:, : int(self._bh_lengths[0].item())].astype(self._storage_dtype)
         )
         prev_values_flat = (
             None
             if self._bh_values is None
-            else self._bh_values[:, : int(self._bh_lengths[0].item())]
+            else self._bh_values[:, : int(self._bh_lengths[0].item())].astype(self._storage_dtype)
         )
 
         new_keys_flat = keys.reshape(B * H, S, D)
@@ -357,10 +362,10 @@ class ChunkKVCache(_MLXKVCache):
             min_kept,
         )
 
-        K_out = self._bh_keys[:, :min_kept].reshape(
-            B, H, min_kept, D
+        K_out = (
+            self._bh_keys[:, :min_kept].reshape(B, H, min_kept, D).astype(self._storage_dtype)
         )  # [B, H, min_kept, D] — STORAGE
-        V_out = self._bh_values[:, :min_kept].reshape(B, H, min_kept, D)
+        V_out = self._bh_values[:, :min_kept].reshape(B, H, min_kept, D).astype(self._storage_dtype)
 
         if prev_keys_flat is None:
             K_full = new_keys_flat.reshape(B, H, S, D)
