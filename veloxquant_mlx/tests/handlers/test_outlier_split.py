@@ -42,3 +42,17 @@ def test_out_of_range_outlier_index_raises():
     h = OutlierSplitHandler(np.array([1, 9]))
     with pytest.raises(ValueError, match="out of range"):
         h.handle(QuantizationContext(x_original=x, x_current=x, mode="encode"))
+
+
+def test_decode_roundtrips_bfloat16_input():
+    """numpy has no bfloat16, so the decode scatter used to raise on bf16 activations."""
+    x = mx.array(np.random.default_rng(0).standard_normal((3, 16)).astype(np.float32)).astype(
+        mx.bfloat16
+    )
+    handler = OutlierSplitHandler(np.array([1, 5]))
+    ctx = QuantizationContext(x_original=x, mode="encode", x_current=x)
+    handler.handle(ctx)
+    ctx.mode = "decode"
+    handler.handle(ctx)
+    assert ctx.x_current.dtype == mx.bfloat16
+    assert mx.array_equal(ctx.x_current, x).item()

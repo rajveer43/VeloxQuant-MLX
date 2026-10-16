@@ -78,8 +78,9 @@ class OutlierSplitHandler(QuantizationHandler):
                 d = ctx.metadata.get("d", len(inlier_idx) + len(self._outlier_idx))
                 batch = x_inlier.shape[0]
                 result = np.zeros((batch, d), dtype=np.float32)
-                result[:, inlier_idx] = np.array(x_inlier)
-                result[:, self._outlier_idx] = np.array(x_out)
+                # numpy has no bfloat16: widen in MLX before converting.
+                result[:, inlier_idx] = np.array(mx.array(x_inlier).astype(mx.float32))
+                result[:, self._outlier_idx] = np.array(mx.array(x_out).astype(mx.float32))
                 ctx.x_current = mx.array(result).astype(x_inlier.dtype)
 
         return self._pass_to_next(ctx)
