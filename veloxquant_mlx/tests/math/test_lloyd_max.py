@@ -123,3 +123,26 @@ def test_no_dead_centroids_when_support_is_wider_than_the_pdf():
     centroids, _ = lloyd_max(lambda x: beta_pdf(x, 128), (-1.0 + 1e-6, 1.0 - 1e-6), 16)
     assert np.abs(centroids).max() < 0.5
     assert lloyd_max.last_mse_cost < 8.5e-5
+
+
+def _true_mse(centroids, pdf, lo, hi):
+    x = np.linspace(lo, hi, 1_000_001)
+    cells = np.searchsorted((centroids[:-1] + centroids[1:]) / 2.0, x)
+    return np.trapezoid((x - centroids[cells]) ** 2 * pdf(x), x)
+
+
+def test_256_level_fit_is_converged_and_cell_integrals_are_exact():
+    """Masked whole-grid-point integrals plus a 500-iteration cap left the 8-bit
+    codebook at ~1.05e-6 true MSE; the achievable value is below 4e-7."""
+    lo, hi = -1.0 + 1e-6, 1.0 - 1e-6
+    centroids, _ = lloyd_max(lambda x: beta_pdf(x, 128), (lo, hi), 256)
+    assert _true_mse(centroids, lambda x: beta_pdf(x, 128), lo, hi) < 4.5e-7
+
+
+def test_reported_cost_matches_true_cost():
+    lo, hi = -1.0 + 1e-6, 1.0 - 1e-6
+    centroids, _ = lloyd_max(lambda x: beta_pdf(x, 16), (lo, hi), 16)
+    reported = lloyd_max.last_mse_cost
+    assert reported == pytest.approx(
+        _true_mse(centroids, lambda x: beta_pdf(x, 16), lo, hi), rel=1e-3
+    )

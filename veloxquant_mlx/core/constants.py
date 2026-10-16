@@ -21,7 +21,7 @@ UPPER_MSE_FACTOR: float = math.sqrt(3 * math.pi) / 2  # ≈ 2.7207
 LOWER_MSE_FACTOR: float = 1.0
 
 # Lloyd-Max solver defaults
-LLOYD_MAX_N_ITER: int = 500
+LLOYD_MAX_N_ITER: int = 5000
 LLOYD_MAX_TOL: float = 1e-9
 LLOYD_MAX_N_QUAD: int = 10_000
 
