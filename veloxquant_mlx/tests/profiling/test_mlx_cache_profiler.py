@@ -125,3 +125,18 @@ def test_fp16_baseline_counts_keys_values_and_all_heads():
     v = mx.array(rng.standard_normal(shape).astype(np.float16))
     profiled.update_and_fetch(k, v)
     assert profiled.profile().fp16_baseline_bytes == 2 * 4 * 6 * HEAD_DIM * 2
+
+
+@pytest.mark.parametrize("cls_name", ["MLXCacheProfiler", "KVCacheProfiler"])
+def test_profiler_survives_copy_and_deepcopy(cls_name):
+    """__getattr__ forwarding used to recurse forever on a not-yet-initialised copy."""
+    import copy
+    from types import SimpleNamespace
+
+    from veloxquant_mlx.profiling import kv_profiler
+
+    inner = SimpleNamespace(nbytes=3, offset=7)
+    p = getattr(kv_profiler, cls_name)(inner)
+    for dup in (copy.copy(p), copy.deepcopy(p)):
+        assert dup.offset == 7
+        assert dup is not p

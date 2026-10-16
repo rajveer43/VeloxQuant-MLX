@@ -244,7 +244,21 @@ class KVCacheProfiler(KVCache):
     def __getattr__(self, name: str) -> Any:
         # Forward anything not explicitly overridden (method-specific extras
         # like fused_sdpa()) straight to the wrapped cache.
-        return getattr(self._cache, name)
+        return _forward_getattr(self, name)
+
+
+def _forward_getattr(wrapper: Any, name: str) -> Any:
+    """``__getattr__`` body shared by the profilers.
+
+    ``copy``/``pickle`` build the instance with ``__new__`` (no ``__init__``)
+    and then probe it (``__setstate__``, ...); with ``_cache`` unset a naive
+    ``self._cache`` lookup re-enters ``__getattr__`` forever. That broke
+    ``copy.deepcopy`` of a profiled cache list, which mlx_lm's LRUPromptCache
+    does on every fetch.
+    """
+    if name == "_cache":
+        raise AttributeError(name)
+    return getattr(wrapper._cache, name)
 
 
 def _tensor_nbytes(x: Any) -> int:
@@ -322,7 +336,7 @@ class MLXCacheProfiler:
         # Forward anything not explicitly overridden (make_mask, trim,
         # is_trimmable, meta_state, state, ...) straight to the wrapped
         # cache, so this substitutes transparently for it in prompt_cache.
-        return getattr(self._cache, name)
+        return _forward_getattr(self, name)
 
 
 def profile_layers(
