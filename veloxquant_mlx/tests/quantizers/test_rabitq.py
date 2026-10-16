@@ -182,3 +182,16 @@ def test_hamming_kernel_direct() -> None:
     # scores should be non-negative (hamming >= 0) plus Cx which can vary
     # just check it ran without error and has finite values
     assert np.all(np.isfinite(np.array(scores)))
+
+
+def test_bfloat16_inputs_fit_encode_and_search() -> None:
+    """NumPy cannot read an MLX bfloat16 buffer; fit/encode/search used to
+    raise ValueError for bf16 keys or queries."""
+    d = 64
+    q = RaBitQQuantizer(d=d, nlist=16, nprobe=4, seed=42)
+    q.fit(mx.random.normal((512, d)).astype(mx.bfloat16), max_samples=512)
+    keys = mx.random.normal((128, d)).astype(mx.bfloat16)
+    query = mx.random.normal((d,)).astype(mx.bfloat16)
+    ev = q.encode(keys)
+    assert q.decode(ev).shape == (128, d)
+    assert q.search(query, ev, top_k=10).shape == (10,)

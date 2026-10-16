@@ -217,7 +217,7 @@ class RaBitQQuantizer(Quantizer):
             max_samples: Cap on training vectors.
         """
         if isinstance(keys, mx.array):
-            data_np = np.array(keys, dtype=np.float32)
+            data_np = np.array(keys.astype(mx.float32), dtype=np.float32)
         else:
             data_np = np.asarray(keys, dtype=np.float32)
 
@@ -257,7 +257,7 @@ class RaBitQQuantizer(Quantizer):
 
         keys = x
         if isinstance(keys, mx.array):
-            keys_np = np.array(keys, dtype=np.float32)
+            keys_np = np.array(keys.astype(mx.float32), dtype=np.float32)
         else:
             keys_np = np.asarray(keys, dtype=np.float32)
 
@@ -370,7 +370,7 @@ class RaBitQQuantizer(Quantizer):
             raise RuntimeError("RaBitQQuantizer has not been trained — call fit() first")
 
         # --- 1. Rotate query ---
-        q_np = np.array(q.reshape(1, -1), dtype=np.float32)
+        q_np = np.array(q.reshape(1, -1).astype(mx.float32), dtype=np.float32)
         qhat = self._rotate_batch_np(q_np)[0]  # [D]
 
         # --- 2. Probe nProbe nearest centroids ---
