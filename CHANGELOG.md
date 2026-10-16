@@ -544,6 +544,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.8 (2026-10-16)
+
+### Bug Fixes
+
+- **metal**: Reject inputs three kernel wrappers silently mishandled
+  ([#800](https://github.com/rajveer43/VeloxQuant-MLX/pull/800),
+  [`1a7998f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1a7998f293c695c63d84e4ca097d633441128445))
+
+
 ## v0.94.7 (2026-10-16)
 
 ### Bug Fixes
