@@ -120,8 +120,8 @@ class AnchorKVKVCache(_MLXKVCache):
         # Exact anchor K/V and the decoded (anchor-projection + residual) fp16
         # reconstruction are recomputed once per prefill call and then reused;
         # decode tokens are concatenated onto the reconstruction directly.
-        self._reconstructed_keys: list[Any] = []
-        self._reconstructed_values: list[Any] = []
+        self._reconstructed_keys: Any = None
+        self._reconstructed_values: Any = None
 
         self._B: int = 0
         self._H: int = 0
@@ -275,8 +275,12 @@ class AnchorKVKVCache(_MLXKVCache):
         """Append decode tokens exactly (storage dtype) — never anchored, never dropped."""
         k_new = keys.astype(self._storage_dtype)
         v_new = values.astype(self._storage_dtype)
-        self._reconstructed_keys = mx.concatenate([self._reconstructed_keys, k_new], axis=2)
-        self._reconstructed_values = mx.concatenate([self._reconstructed_values, v_new], axis=2)
+        if self._reconstructed_keys is None:
+            # First call is a single token (no prefill): nothing to append to.
+            self._reconstructed_keys, self._reconstructed_values = k_new, v_new
+        else:
+            self._reconstructed_keys = mx.concatenate([self._reconstructed_keys, k_new], axis=2)
+            self._reconstructed_values = mx.concatenate([self._reconstructed_values, v_new], axis=2)
 
         B, H, S, D = keys.shape
         self._anchorkv_bytes += B * H * S * D * 2 * 2  # fp16 K + V, exact
@@ -302,7 +306,7 @@ class AnchorKVKVCache(_MLXKVCache):
         self._full_seq_bytes += B * H * S * D * 2 * 2
         self._tokens_total += B * H * S
 
-        is_prefill = S > 1 and not self._compressed
+        is_prefill = S > 1 and not self._compressed and self._reconstructed_keys is None
         if is_prefill:
             K_out, V_out = self._process_prefill(keys, values)
         else:

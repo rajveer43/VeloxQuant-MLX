@@ -242,3 +242,22 @@ def test_factory_smoke_compression_ratio_positive_both_kv() -> None:
     assert ko.shape[2] == 64
     assert vo.shape[2] == 64
     assert c.compression_ratio > 1.0
+
+
+def test_decode_before_any_prefill() -> None:
+    """A first call of one token (e.g. a 1-token prompt) used to crash."""
+    c = _make()
+    for t in range(3):
+        k, v = _rand_kv(S=1, seed=t)
+        ko, vo = c.update_and_fetch(k, v)
+        assert ko.shape[2] == t + 1 and vo.shape[2] == t + 1
+        assert c.offset == t + 1
+
+
+def test_prefill_after_single_token_keeps_earlier_token() -> None:
+    c = _make()
+    k0, v0 = _rand_kv(S=1, seed=1)
+    c.update_and_fetch(k0, v0)
+    ko, _ = c.update_and_fetch(*_rand_kv(S=20, seed=2))
+    assert ko.shape[2] == 21
+    assert bool(mx.array_equal(ko[:, :, :1], k0))
