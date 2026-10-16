@@ -117,7 +117,9 @@ class QuantizedLinear(nn.Module):
         c = self._centroids.astype(mx.float32)  # (k,)
         dists = mx.abs(w_rot[:, :, None] - c[None, None, :])  # (out, in, k)
         self._w_indices = mx.argmin(dists, axis=-1).astype(mx.uint8)
-        self._w_norms = safe_norms  # (out, 1)
+        # An all-zero row has no direction: its quantized unit vector is arbitrary
+        # (no codebook centroid is 0), so store norm 0 to dequantize it to exactly 0.
+        self._w_norms = mx.where(norms < 1e-8, mx.zeros_like(norms), norms)  # (out, 1)
 
         if bias is not None:
             self._bias = bias.astype(mx.float16)
