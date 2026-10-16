@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import mlx.core as mx
 import numpy as np
 
 from veloxquant_mlx.codebooks.scalar_codebook import ScalarCodebook
@@ -115,6 +116,9 @@ class AdaptiveScalarCodebook:
         """
         if self._is_calibrated:
             return
+        if isinstance(y, mx.array):
+            # NumPy cannot read an MLX bfloat16 buffer; cast on the MLX side.
+            y = y.astype(mx.float32)
         y_np = np.array(y, dtype=np.float32).reshape(-1, self._d)
         self._buffer.append(y_np)
         self._n_observed += y_np.shape[0]

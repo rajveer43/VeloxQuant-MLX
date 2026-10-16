@@ -92,3 +92,18 @@ class TestObserveDoesNotTruncateWithinABatch:
         idx = codebook.quantize(mx.array(y[:5]))
         dequant = codebook.dequantize(idx)
         assert np.asarray(dequant).shape == (5, 16)
+
+
+class TestObserveAcceptsBfloat16:
+    """NumPy cannot read an MLX bfloat16 buffer, so observe() used to raise
+    ValueError for bf16 post-rotation vectors."""
+
+    def test_bfloat16_mlx_input_is_observed(self) -> None:
+        import mlx.core as mx
+
+        codebook = AdaptiveScalarCodebook(b=2, d=8, n_calib=10, n_hist_bins=8)
+        y = mx.random.normal((20, 8)).astype(mx.bfloat16)
+        codebook.observe(y)
+
+        assert codebook.is_calibrated
+        assert codebook._n_observed == 20
