@@ -88,6 +88,16 @@ def _build_quantizer(calib_np: np.ndarray) -> RaBitQQuantizer:
     return q
 
 
+def measured_bytes_per_vector(ev) -> float:
+    """Bytes one encoded vector really occupies (1-bit codes *plus* per-vector scalars).
+
+    The 1-bit codes are only ``D // 8`` bytes, but ``encode`` also stores
+    per-vector correction factors, so the real compression ratio is lower than
+    ``D * 2 / (D // 8)``.
+    """
+    return ev.memory_bytes() / ev.batch_size
+
+
 # ---------------------------------------------------------------------------
 # Main benchmark
 # ---------------------------------------------------------------------------
@@ -114,6 +124,7 @@ def run_benchmark(n_iter: int = 20) -> dict:
         "numpy_exact_ms": [],
         "speedup_vs_numpy": [],
         "recall_at_10": [],
+        "bytes_per_vector": 0.0,
     }
 
     print(
@@ -132,6 +143,7 @@ def run_benchmark(n_iter: int = 20) -> dict:
         # Encode corpus
         ev = q.encode(corpus_mx)
         mx.eval(ev.indices, ev.norm)
+        results["bytes_per_vector"] = measured_bytes_per_vector(ev)
 
         # --- RaBitQ search (Metal) ---
         def _rabitq(query_mx=query_mx, ev=ev):
@@ -239,16 +251,17 @@ def save_figures(results: dict) -> None:
     # Fig 4: Memory comparison bar
     d = results["config"]["D"]
     fp16_bytes = d * 2
-    rbitq_bytes = d // 8
+    # Measured, not d // 8: the per-vector correction factors count too.
+    rbitq_bytes = results.get("bytes_per_vector") or d // 8
     cr = fp16_bytes / rbitq_bytes
     fig, ax = plt.subplots(figsize=(6, 4))
     labels = ["fp16 keys", "RaBitQ 1-bit"]
     values = [fp16_bytes, rbitq_bytes]
     colors = ["#e74c3c", "#2ecc71"]
     bars = ax.bar(labels, values, color=colors, alpha=0.85)
-    ax.bar_label(bars, fmt="%d bytes/token", padding=3)
+    ax.bar_label(bars, fmt="%.0f bytes/token", padding=3)
     ax.set_ylabel("Bytes per token")
-    ax.set_title(f"RaBitQ Memory: {cr:.0f}× compression\n(D={d})")
+    ax.set_title(f"RaBitQ Memory: {cr:.1f}× compression (measured)\n(D={d})")
     ax.grid(True, axis="y", alpha=0.3)
     fig.tight_layout()
     p = FIGURES_DIR / "fig4_memory.png"
