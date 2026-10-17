@@ -33,7 +33,7 @@ Usage::
 
     python -m veloxquant_mlx.benchmarks.workload_replay_benchmark
     python -m veloxquant_mlx.benchmarks.workload_replay_benchmark \\
-        --methods turboquant_mse kivi --workloads single_request cache_growth
+        --methods turboquant_mse polar --workloads single_request cache_growth
     python -m veloxquant_mlx.benchmarks.workload_replay_benchmark \\
         --json-out figures/workload_replay/results.json
 """
@@ -53,7 +53,9 @@ RESULTS_DIR = Path(__file__).parents[2] / "figures" / "workload_replay"
 DEFAULT_HEAD_DIM = 128
 DEFAULT_BITS = 4
 DEFAULT_SEED = 42
-DEFAULT_METHODS = ["turboquant_prod", "turboquant_mse", "turboquant_rvq", "kivi", "qjl"]
+# Only the standalone methods implement the append_key/append_value/attend ABC this
+# replay drives; turboquant_rvq / kivi etc. serve through mlx_lm's update_and_fetch.
+DEFAULT_METHODS = ["turboquant_prod", "turboquant_mse", "polar", "qjl", "spectral"]
 
 
 # ---------------------------------------------------------------------------
@@ -222,8 +224,15 @@ def run_workload(
     import mlx.core as mx
     import numpy as np
 
-    from veloxquant_mlx.cache.base import KVCacheBuilder
+    from veloxquant_mlx.cache.base import STANDALONE_METHODS, KVCacheBuilder
+    from veloxquant_mlx.core.exceptions import QuantizerConfigError
     from veloxquant_mlx.profiling import KVCacheProfiler
+
+    if method not in STANDALONE_METHODS:
+        raise QuantizerConfigError(
+            f"workload replay drives the append_key/append_value/attend interface, "
+            f"which {method!r} does not implement; choose one of {sorted(STANDALONE_METHODS)}"
+        )
 
     rng = np.random.default_rng(seed)
     jl_dim = jl_dim if jl_dim is not None else head_dim
@@ -252,27 +261,39 @@ def run_workload(
     decode_samples: list[float] = []
     snapshots: list[MemorySnapshot] = []
     total_tokens = 0
+    # One entry per set of concurrently-live streams: each cold-start request
+    # (or the single long-lived set when reuse_cache) contributes its profiles.
+    profile_sets: list[list[Any]] = []
+
+    def _replay_request(request_streams: list[KVCacheProfiler], prompt_len: int) -> int:
+        n = 0
+        for stream in request_streams:
+            t0 = time.perf_counter()
+            for _ in range(prompt_len):
+                stream.append(_vec(), _vec())
+            mx.eval(stream.attend(_vec()))
+            ttft_samples.append((time.perf_counter() - t0) * 1000.0)
+            n += prompt_len
+
+            for _ in range(workload.n_new_tokens):
+                t1 = time.perf_counter()
+                stream.append(_vec(), _vec())
+                mx.eval(stream.attend(_vec()))
+                decode_samples.append((time.perf_counter() - t1) * 1000.0)
+                n += 1
+        return n
 
     t_start = time.perf_counter()
     for _ in range(workload.repeat):
-        if not workload.reuse_cache:
-            streams = [_build_stream() for _ in range(workload.n_streams)]
-
         for prompt_len in workload.prompt_lens:
-            for stream in streams:
-                t0 = time.perf_counter()
-                for _ in range(prompt_len):
-                    stream.append(_vec(), _vec())
-                mx.eval(stream.attend(_vec()))
-                ttft_samples.append((time.perf_counter() - t0) * 1000.0)
-                total_tokens += prompt_len
-
-                for _ in range(workload.n_new_tokens):
-                    t1 = time.perf_counter()
-                    stream.append(_vec(), _vec())
-                    mx.eval(stream.attend(_vec()))
-                    decode_samples.append((time.perf_counter() - t1) * 1000.0)
-                    total_tokens += 1
+            if not workload.reuse_cache:
+                # Every request is a cold start with its own fresh cache: reusing
+                # one across prompt_lens made later (longer) requests start on top
+                # of the earlier ones' tokens and inflated their memory/TTFT.
+                streams = [_build_stream() for _ in range(workload.n_streams)]
+            total_tokens += _replay_request(streams, prompt_len)
+            if not workload.reuse_cache:
+                profile_sets.append([s.profile() for s in streams])
 
         if workload.reuse_cache:
             snapshots.append(
@@ -284,12 +305,17 @@ def run_workload(
 
     wall_time_s = time.perf_counter() - t_start
 
-    profiles = [s.profile() for s in streams]
-    peak_memory = sum(p.peak_memory_bytes for p in profiles)
-    fp16_total = sum(p.fp16_baseline_bytes for p in profiles)
+    if workload.reuse_cache:
+        profile_sets = [[s.profile() for s in streams]]
+    # Peak/compression come from the request with the largest concurrent footprint;
+    # the per-token overheads average over every stream of every request.
+    worst = max(profile_sets, key=lambda ps: sum(p.peak_memory_bytes for p in ps))
+    peak_memory = sum(p.peak_memory_bytes for p in worst)
+    fp16_total = sum(p.fp16_baseline_bytes for p in worst)
     compression_ratio = fp16_total / peak_memory if peak_memory > 0 else 0.0
-    quantize_ms = statistics.fmean(p.quantize_ms_mean for p in profiles) if profiles else 0.0
-    dequantize_ms = statistics.fmean(p.dequantize_ms_mean for p in profiles) if profiles else 0.0
+    profiles = [p for ps in profile_sets for p in ps]
+    quantize_ms = statistics.fmean(p.quantize_ms_mean for p in profiles)
+    dequantize_ms = statistics.fmean(p.dequantize_ms_mean for p in profiles)
 
     return WorkloadResult(
         method=method,
