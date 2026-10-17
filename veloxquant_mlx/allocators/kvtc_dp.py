@@ -147,6 +147,11 @@ def dp_allocate_bits(
     B = int(total_bit_budget)
 
     if B == 0:
+        if choices[0] > 0:
+            raise ValueError(
+                "kvtc_dp: no feasible allocation found for the given bit_choices "
+                "and budget — include 0 in bit_choices to guarantee feasibility."
+            )
         return np.zeros(n, dtype=np.int64)
 
     # Cap the DP's budget axis at what could actually be spent (avoids
