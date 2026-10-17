@@ -127,6 +127,15 @@ def turboquant_bit_unpack(packed: mx.array, N: int, b: int) -> mx.array:
     """
     if b not in (1, 2, 4):
         raise ValueError(f"turboquant_bit_unpack: b must be 1, 2, or 4, got {b}")
+    if N < 0:
+        raise ValueError(f"turboquant_bit_unpack: N must be >= 0, got {N}")
+    n_bytes_needed = -(-N * b // 8)
+    if packed.size < n_bytes_needed:
+        # The kernel indexes the buffer unchecked; a short one reads past its end.
+        raise ValueError(
+            f"turboquant_bit_unpack: packed has {packed.size} byte(s) but N={N} "
+            f"at b={b} needs {n_bytes_needed}"
+        )
     flat = packed.reshape(-1).astype(mx.uint8)
     outputs = _unpack_kernel(b)(
         inputs=[flat],
