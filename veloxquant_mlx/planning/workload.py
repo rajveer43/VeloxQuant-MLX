@@ -43,8 +43,13 @@ class WorkloadProfile:
             caches the memory budget must cover).
         objective: One of the :class:`WorkloadObjective` names; the planner
             uses this to weight the memory/latency/throughput/quality axes.
-        max_latency_ms: Hard latency ceiling, when the caller knows one
-            (used to exclude strategies whose analytical proxy exceeds it).
+        max_latency_ms: Hard ceiling on per-decode-token latency, in
+            milliseconds. Enforced against *measured* latency only (benchmark
+            records passed to the planner): a method whose measured
+            ``latency_ms_per_token`` exceeds it is excluded. Methods with no
+            measurement are kept, because the analytical latency proxy is a
+            relative number, not real milliseconds, and cannot be held to an
+            absolute ceiling.
     """
 
     context_length: int = 4096

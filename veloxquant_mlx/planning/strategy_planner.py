@@ -210,6 +210,31 @@ def _weights_for(objective: str, override: dict[str, float] | None) -> dict[str,
     return {k: v / total for k, v in base.items()}
 
 
+def _apply_latency_ceiling(
+    candidates: CandidateFilterResult,
+    max_latency_ms: float | None,
+    empirical: dict[str, Any],
+) -> None:
+    """Drop viable methods whose *measured* per-token latency exceeds the ceiling.
+
+    ``WorkloadProfile.max_latency_ms`` is a per-decode-token ceiling in
+    milliseconds. Only benchmark records carry real milliseconds; the
+    analytical proxy is a relative, bandwidth-normalised number and cannot be
+    held to an absolute ceiling, so methods with no measured latency are kept
+    (never excluded on a guess). Mutates ``candidates`` in place.
+    """
+    if max_latency_ms is None:
+        return
+    for name in list(candidates.viable):
+        record = empirical.get(name)
+        measured = getattr(record, "latency_ms_per_token", None) if record is not None else None
+        if measured and measured > 0 and measured > max_latency_ms:
+            candidates.viable.remove(name)
+            candidates.excluded[name] = (
+                f"measured {measured:.3g} ms/token exceeds max_latency_ms={max_latency_ms:g}"
+            )
+
+
 def plan_strategy(
     model: ModelProfile,
     hardware: HardwareProfile,
@@ -270,6 +295,7 @@ def plan_strategy(
                 candidates.excluded[name] = (
                     "excluded by previous serve-tier probe (crashes at request time)"
                 )
+    _apply_latency_ceiling(candidates, workload.max_latency_ms, opts.empirical)
     if not candidates.viable:
         return RecommendationResult(
             objective=workload.objective,
