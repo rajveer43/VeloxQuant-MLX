@@ -296,8 +296,10 @@ def quantize_vq(x: mx.array, codebook: mx.array, sub_dim: int) -> mx.array:
     # Reshape to [..., n_sub, sub_dim] then flatten leading dims for batched
     # nearest-centroid search.
     x_sub = x.reshape(*leading, n_sub, sub_dim)
-    flat = x_sub.reshape(-1, sub_dim)  # [N * n_sub, sub_dim]
-    cb = codebook.astype(flat.dtype)
+    # Distances in float32: summed squares overflow fp16 (max 65504) once
+    # entries reach ~100, which collapses every index to 0.
+    flat = x_sub.reshape(-1, sub_dim).astype(mx.float32)  # [N * n_sub, sub_dim]
+    cb = codebook.astype(mx.float32)
 
     n_centroids = cb.shape[0]
     # Chunked argmin to keep memory bounded for large codebooks
