@@ -341,3 +341,53 @@ def test_retention_is_one_for_non_evicting_methods():
     wl = WorkloadProfile(context_length=4096, generation_length=0)
     for m in ("zipcache", "skvq", "kivi"):
         assert _retention(m, estimate_memory(m, model, wl), model, wl) == 1.0
+
+
+def test_max_latency_ms_excludes_slow_measured_methods():
+    """Regression: max_latency_ms was documented as a hard ceiling but never read."""
+    from dataclasses import replace
+
+    base = _workload()
+    empirical = {
+        "kivi": _Rec(latency_ms_per_token=50.0),  # over the ceiling
+        "snapkv": _Rec(latency_ms_per_token=2.0),  # under it
+    }
+    free = plan_strategy(
+        _model(), _hw(), base, options=PlanningOptions(empirical=empirical, max_results=100)
+    )
+    capped = plan_strategy(
+        _model(),
+        _hw(),
+        replace(base, max_latency_ms=10.0),
+        options=PlanningOptions(empirical=empirical, max_results=100),
+    )
+    assert "kivi" in {r.method for r in free.ranked}
+    assert "kivi" not in {r.method for r in capped.ranked}
+    assert "max_latency_ms" in capped.candidates.excluded["kivi"]
+    # A method under the ceiling, and ones with no measurement, stay in.
+    assert "snapkv" in {r.method for r in capped.ranked}
+    assert len(capped.ranked) == len(free.ranked) - 1
+
+
+def test_max_latency_ms_unmeasured_methods_are_never_excluded():
+    from dataclasses import replace
+
+    result = plan_strategy(
+        _model(), _hw(), replace(_workload(), max_latency_ms=0.001), options=PlanningOptions()
+    )
+    assert result.best is not None  # no measurements -> nothing to exclude on
+
+
+def test_max_latency_ms_all_measured_over_ceiling_falls_back():
+    from dataclasses import replace
+
+    from veloxquant_mlx.cache.registry import all_method_names
+
+    empirical = {name: _Rec(latency_ms_per_token=99.0) for name in all_method_names()}
+    result = plan_strategy(
+        _model(),
+        _hw(),
+        replace(_workload(), max_latency_ms=1.0),
+        options=PlanningOptions(empirical=empirical),
+    )
+    assert result.fallback_used and result.best is None
