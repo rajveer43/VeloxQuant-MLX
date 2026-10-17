@@ -42,14 +42,19 @@ class NormalizationHandler(QuantizationHandler):
         import mlx.core as mx
 
         if ctx.mode == "encode":
-            norm = mx.sqrt(mx.sum(ctx.x_current * ctx.x_current, axis=-1, keepdims=True))
+            # Squares and the eps clamp in float32: in fp16 the sum of squares
+            # overflows once the norm passes 256 (x/inf -> 0) and the 1e-8
+            # clamp underflows to 0 (0/0 -> NaN).
+            x32 = ctx.x_current.astype(mx.float32)
+            norm = mx.sqrt(mx.sum(x32 * x32, axis=-1, keepdims=True))
             norm_clipped = mx.maximum(norm, self._eps)
-            ctx.norm = norm_clipped[:, 0]  # (batch,)
-            ctx.x_current = ctx.x_current / norm_clipped
+            ctx.norm = norm_clipped[:, 0]  # (batch,) float32
+            ctx.x_current = (x32 / norm_clipped).astype(ctx.x_current.dtype)
         else:
             # decode: restore scale
             if ctx.norm is not None:
-                ctx.x_current = ctx.x_current * ctx.norm[:, None]
+                x32 = ctx.x_current.astype(mx.float32) * ctx.norm.astype(mx.float32)[:, None]
+                ctx.x_current = x32.astype(ctx.x_current.dtype)
 
         return self._pass_to_next(ctx)
 
