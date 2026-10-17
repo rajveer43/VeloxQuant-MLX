@@ -269,3 +269,32 @@ def test_corrupt_record_is_never_matched(tmp_path):
     assert "h2o" not in reloaded.find_best_match(
         _model("toy"), WorkloadProfile(context_length=4096)
     )
+
+
+def test_unknown_architecture_does_not_match_other_models(tmp_path) -> None:
+    """Regression: two models that both lack an architecture slug ("unknown")
+    were treated as the same architecture, so one borrowed the other's numbers."""
+    db = BenchmarkDatabase(tmp_path)
+    db.add("kivi", "some/ModelA", context_length=4096, memory_reduction=0.2)
+    other = ModelProfile(model_id="totally/ModelB", num_layers=8, num_kv_heads=2, head_dim=64)
+    assert other.architecture == "unknown"
+    assert db.find_best_match(other, WorkloadProfile(context_length=4096)) == {}
+
+    # The same model id still matches, and a real shared architecture still matches.
+    same = ModelProfile(model_id="some/ModelA", num_layers=8, num_kv_heads=2, head_dim=64)
+    assert "kivi" in db.find_best_match(same, WorkloadProfile(context_length=4096))
+    db.add("polar", "llama-A", context_length=4096, architecture="llama", memory_reduction=0.3)
+    sibling = ModelProfile(
+        model_id="llama-B", num_layers=8, num_kv_heads=2, head_dim=64, architecture="llama"
+    )
+    assert "polar" in db.find_best_match(sibling, WorkloadProfile(context_length=4096))
+
+
+def test_remove_and_clear_delete_record_files(tmp_path) -> None:
+    db = BenchmarkDatabase(tmp_path)
+    a = db.add("kivi", "m", context_length=1024)
+    b = db.add("polar", "m", context_length=1024)
+    assert db.remove(a.id)
+    assert sorted(p.name for p in db.records_dir.iterdir()) == [f"{b.id}.json"]
+    db.clear()
+    assert list(db.records_dir.iterdir()) == []
