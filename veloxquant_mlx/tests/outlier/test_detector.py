@@ -81,3 +81,14 @@ class TestOutlierDetector:
         channels = det.get_outlier_channels().tolist()
         assert channels == sorted(channels)
         assert channels == [0, 2, 4]
+
+
+def test_observe_accepts_bfloat16_mlx_array() -> None:
+    """A bfloat16 MLX key (the dtype of many models) must not crash observe()."""
+    import mlx.core as mx
+
+    det = OutlierDetector(n_outliers=1, n_calib=1)
+    k = mx.zeros((1, 8), dtype=mx.bfloat16)
+    k[0, 5] = 9.0
+    det.observe(k)
+    assert det.get_outlier_channels().tolist() == [5]
