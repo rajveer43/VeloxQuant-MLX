@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import mlx.core as mx
 import numpy as np
 
 from veloxquant_mlx.core.constants import DEFAULT_N_CALIB_TOKENS, DEFAULT_N_OUTLIER_CHANNELS
@@ -54,6 +55,9 @@ class OutlierDetector:
         Args:
             k: Key vector, shape (d,) or (1, d). Can be an MLX array or numpy array.
         """
+        if isinstance(k, mx.array):
+            # numpy cannot read a bfloat16 buffer (PEP 3118), so widen first.
+            k = k.astype(mx.float32)
         arr = np.array(k, dtype=np.float32).reshape(-1)
         if self._sum_abs is None:
             self._sum_abs = np.abs(arr)
