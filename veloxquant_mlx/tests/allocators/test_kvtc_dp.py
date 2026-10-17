@@ -57,6 +57,13 @@ def test_budget_zero_gives_all_zero_bits():
     assert np.array_equal(bits, np.zeros(3, dtype=bits.dtype))
 
 
+def test_budget_zero_without_zero_choice_raises():
+    # 0 bits is not an allowed width here, so a zero budget has no feasible
+    # allocation; returning zeros would hand back widths outside bit_choices.
+    with pytest.raises(ValueError, match="no feasible allocation"):
+        dp_allocate_bits(np.array([5.0, 1.0]), total_bit_budget=0, bit_choices=(1, 2, 4))
+
+
 # ---------------------------------------------------------------------------
 # uniform-variance collapse — THE pinned reduction
 # ---------------------------------------------------------------------------
