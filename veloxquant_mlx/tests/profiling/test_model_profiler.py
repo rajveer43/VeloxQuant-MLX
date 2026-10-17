@@ -170,3 +170,43 @@ def test_profile_from_model_without_config_raises():
 
     with pytest.raises(ValueError):
         profile_model_from_model(_NoConfig())
+
+
+def test_multimodal_config_reads_geometry_from_text_config():
+    """Regression: VLM configs keep the language model's geometry under
+    text_config; profiling them raised 'missing attention geometry'."""
+    vlm = {
+        "architectures": ["Gemma3ForConditionalGeneration"],
+        "model_type": "gemma3",
+        "text_config": {
+            "num_hidden_layers": 34,
+            "num_attention_heads": 8,
+            "num_key_value_heads": 4,
+            "head_dim": 256,
+            "hidden_size": 2560,
+        },
+        "vision_config": {"num_hidden_layers": 27, "num_attention_heads": 16},
+    }
+    p = profile_model_from_config(vlm, model_id="g3")
+    assert (p.num_layers, p.num_query_heads, p.num_kv_heads, p.head_dim) == (34, 8, 4, 256)
+    assert p.attention_type == "gqa"
+    assert p.hidden_size == 2560  # the vision tower's numbers are not used
+
+
+def test_text_config_object_and_top_level_precedence():
+    from types import SimpleNamespace
+
+    text = SimpleNamespace(
+        num_hidden_layers=10, num_attention_heads=4, num_key_value_heads=2, hidden_size=256
+    )
+    p = profile_model_from_config(SimpleNamespace(text_config=text))
+    assert (p.num_layers, p.num_kv_heads, p.head_dim) == (10, 2, 64)
+
+    # A top-level value still wins over the nested one.
+    both = {
+        "num_hidden_layers": 12,
+        "num_attention_heads": 4,
+        "hidden_size": 256,
+        "text_config": {"num_hidden_layers": 99},
+    }
+    assert profile_model_from_config(both).num_layers == 12

@@ -133,6 +133,21 @@ def _get_attr(obj: Any, *names: str, default: Any = None) -> Any:
     return default
 
 
+def _get_geom(config: Any, *names: str, default: Any = None) -> Any:
+    """Like :func:`_get_attr`, falling back to a nested ``text_config``.
+
+    Multimodal/VLM configs (Gemma-3, LLaVA, Qwen-VL, ...) keep the language
+    model's geometry under ``text_config`` and have none of it at the top
+    level. The top level still wins when it has the key.
+    """
+    value = _get_attr(config, *names)
+    if value is None:
+        text_config = _get_attr(config, "text_config")
+        if text_config is not None:
+            value = _get_attr(text_config, *names)
+    return default if value is None else value
+
+
 def profile_model_from_config(
     config: dict[str, Any] | Any | None = None,
     model_id: str | None = None,
@@ -203,10 +218,10 @@ def profile_model_from_config(
         >>> print(f"Architecture: {profile.architecture}")  # "qwen"
         >>> print(f"Attention: {profile.attention_type}")  # "gqa" or "mha"
     """
-    n_layers = _first_int(num_layers, lambda: _get_attr(config, "num_hidden_layers", "num_layers"))
-    n_q = _first_int(num_query_heads, lambda: _get_attr(config, "num_attention_heads", "num_heads"))
-    hidden = _first_int(hidden_size, lambda: _get_attr(config, "hidden_size"))
-    d = _first_int(head_dim, lambda: _get_attr(config, "head_dim"))
+    n_layers = _first_int(num_layers, lambda: _get_geom(config, "num_hidden_layers", "num_layers"))
+    n_q = _first_int(num_query_heads, lambda: _get_geom(config, "num_attention_heads", "num_heads"))
+    hidden = _first_int(hidden_size, lambda: _get_geom(config, "hidden_size"))
+    d = _first_int(head_dim, lambda: _get_geom(config, "head_dim"))
 
     if d is None and hidden is not None and n_q:
         d = max(1, hidden // n_q)
@@ -230,7 +245,7 @@ def profile_model_from_config(
         )
 
     n_kv = _first_int(
-        num_kv_heads, lambda: _get_attr(config, "num_key_value_heads", "num_kv_heads")
+        num_kv_heads, lambda: _get_geom(config, "num_key_value_heads", "num_kv_heads")
     )
     if n_kv is None:
         n_kv = n_q  # MHA default
@@ -239,7 +254,7 @@ def profile_model_from_config(
     params = parameter_count
     if params is None:
         params = _get_attr(config, "num_parameters", "_num_parameters", default=None)
-    hid = hidden if hidden is not None else _get_attr(config, "hidden_size", default=None)
+    hid = hidden if hidden is not None else _get_geom(config, "hidden_size", default=None)
 
     return ModelProfile(
         model_id=model_id or str(_get_attr(config, "_name_or_path", default="unknown")),
