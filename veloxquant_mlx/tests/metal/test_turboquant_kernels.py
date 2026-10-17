@@ -620,3 +620,18 @@ def test_fused_rvq_attend_bench(capsys):
     )
     with capsys.disabled():
         print(f"\n[bench] fused_rvq_decode_attend  B={B} H={H} S_kv={S_kv} D={D}: {ms:.3f} ms/iter")
+
+
+@pytest.mark.parametrize("b", [1, 2, 4])
+def test_bit_unpack_rejects_short_buffer(b: int) -> None:
+    """A packed buffer too short for N used to be read past its end silently."""
+    packed = mx.zeros((2,), dtype=mx.uint8)
+    n_ok = 2 * 8 // b
+    turboquant_bit_unpack(packed, n_ok, b)  # exactly fits
+    with pytest.raises(ValueError, match="needs"):
+        turboquant_bit_unpack(packed, n_ok + 1, b)
+
+
+def test_bit_unpack_rejects_negative_n() -> None:
+    with pytest.raises(ValueError, match="N must be >= 0"):
+        turboquant_bit_unpack(mx.zeros((1,), dtype=mx.uint8), -4, 1)
