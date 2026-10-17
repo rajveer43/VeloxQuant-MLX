@@ -135,7 +135,7 @@ class QuantizedLinear(nn.Module):
         Re-running the dequantize -> unrotate -> rescale chain on every
         forward pass would redo O(out*in) work per token for a result that
         never changes, so it's memoized in _w_hat_cache and only rebuilt when
-        the underlying quantized weights are (re)assigned.
+        the underlying quantized weights are (re)assigned or the input dtype changes.
 
         Args:
             x: Input of shape (..., in_features).
@@ -143,7 +143,10 @@ class QuantizedLinear(nn.Module):
         Returns:
             Output of shape (..., out_features).
         """
-        if self._w_hat_cache is None:
+        # Run in the input's own dtype, like nn.Linear: forcing fp16 overflows
+        # bf16/fp32 activations above 65504 (-> inf) and changes the output dtype.
+        dtype = x.dtype if mx.issubdtype(x.dtype, mx.floating) else mx.float16
+        if self._w_hat_cache is None or self._w_hat_cache.dtype != dtype:
             # 1. Dequantize + unrotate → unit-norm rows
             w_rot_hat = self._centroids[self._w_indices]  # (out, in) fp16
             w_unit = self._preconditioner.apply_inverse(
@@ -151,14 +154,14 @@ class QuantizedLinear(nn.Module):
             )  # (out, in) fp32
 
             # 2. Rescale rows by their original norms
-            w_hat = (w_unit * self._w_norms).astype(mx.float16)  # (out, in) fp16
+            w_hat = (w_unit * self._w_norms).astype(dtype)  # (out, in)
             mx.eval(w_hat)
             self._w_hat_cache = w_hat
 
         # 3. Linear projection
-        out = x.astype(mx.float16) @ self._w_hat_cache.T
+        out = x.astype(dtype) @ self._w_hat_cache.T
         if self._bias is not None:
-            out = out + self._bias
+            out = out + self._bias.astype(dtype)
         return out
 
     @property
