@@ -164,3 +164,36 @@ def test_results_to_json_is_serializable_and_round_trips():
     assert reloaded["turboquant_prod"]["tiny"]["total_tokens"] == r.total_tokens
     assert reloaded["turboquant_prod"]["tiny"]["compression_ratio"] == r.compression_ratio
     assert len(reloaded["turboquant_prod"]["tiny"]["memory_snapshots"]) == len(r.memory_snapshots)
+
+
+def test_default_methods_all_run():
+    """Regression: DEFAULT_METHODS included turboquant_rvq and kivi, which do not
+    implement append_key/attend, so the default CLI run crashed."""
+    from veloxquant_mlx.benchmarks.workload_replay_benchmark import DEFAULT_METHODS
+
+    for method in DEFAULT_METHODS:
+        result = run_workload(method, _small_scenario(), head_dim=HEAD_DIM, bits=2, seed=1)
+        assert result.total_tokens == 4 + 3
+
+
+def test_non_standalone_method_gets_a_clear_error():
+    import pytest
+
+    from veloxquant_mlx.core.exceptions import QuantizerConfigError
+
+    with pytest.raises(QuantizerConfigError, match="append_key"):
+        run_workload("kivi", _small_scenario(), head_dim=HEAD_DIM, bits=2, seed=1)
+
+
+def test_multi_length_requests_are_independent_cold_starts():
+    """Regression: prompt_lens [a, b] with reuse_cache=False replayed b on top of
+    a's cache, so the longest request's memory included every earlier request."""
+    both = run_workload(
+        "turboquant_mse", _small_scenario(prompt_lens=[4, 16]), head_dim=HEAD_DIM, bits=2, seed=1
+    )
+    longest_alone = run_workload(
+        "turboquant_mse", _small_scenario(prompt_lens=[16]), head_dim=HEAD_DIM, bits=2, seed=1
+    )
+    assert both.peak_memory_bytes == longest_alone.peak_memory_bytes
+    assert both.compression_ratio == longest_alone.compression_ratio
+    assert both.total_tokens == (4 + 3) + (16 + 3)
