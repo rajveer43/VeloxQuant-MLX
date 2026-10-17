@@ -324,7 +324,11 @@ class BenchmarkDatabase:
                 continue
             if "corrupt" in rec.tags:
                 continue  # unparseable placeholder: carries no measurement
-            if not (rec.model_id == query.model_id or rec.architecture == query.architecture):
+            # "unknown" is the absence of an architecture, not a shared one: two
+            # unrelated models that both lack a slug must not borrow each
+            # other's measurements.
+            same_arch = rec.architecture == query.architecture and rec.architecture != "unknown"
+            if not (rec.model_id == query.model_id or same_arch):
                 continue
             score = rec.match_score(query)
             if score < threshold:
@@ -400,15 +404,24 @@ class BenchmarkDatabase:
         )
         return self.upsert(rec)
 
+    def _unlink_record_file(self, record_id: str) -> None:
+        """Delete a removed record's file; save() only ever writes live records."""
+        with contextlib.suppress(OSError):
+            (self.records_dir / f"{record_id}.json").unlink()
+
     def remove(self, record_id: str) -> bool:
         """Delete a record by id and persist. Returns ``False`` if it wasn't found."""
         if record_id not in self._records:
             return False
         del self._records[record_id]
         self.save()
+        self._unlink_record_file(record_id)
         return True
 
     def clear(self) -> None:
         """Delete all records and persist the now-empty store."""
+        removed = list(self._records)
         self._records = {}
         self.save()
+        for rid in removed:
+            self._unlink_record_file(rid)
