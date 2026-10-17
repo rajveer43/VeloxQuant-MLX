@@ -80,3 +80,14 @@ class TestPolarAnglePDF:
     def test_invalid_level(self) -> None:
         with pytest.raises(ValueError):
             polar_angle_pdf(np.array([0.5]), level=0)
+
+
+def test_polar_pdf_works_without_np_trapezoid(monkeypatch: pytest.MonkeyPatch) -> None:
+    """np.trapezoid is NumPy >= 2.0 only; the package supports numpy>=1.26 where
+    only np.trapz exists. Simulate that and check the PDF is unchanged."""
+    psi = np.linspace(0.05, math.pi / 2 - 0.05, 50)
+    expected = polar_angle_pdf(psi, level=3)
+
+    monkeypatch.setattr(np, "trapz", np.trapezoid, raising=False)
+    monkeypatch.delattr(np, "trapezoid")
+    np.testing.assert_allclose(polar_angle_pdf(psi, level=3), expected)

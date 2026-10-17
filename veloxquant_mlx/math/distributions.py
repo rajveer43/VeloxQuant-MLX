@@ -98,7 +98,10 @@ def _polar_angle_normalizer(level: int) -> float:
     k = 2 ** (level - 1) - 1
     psi = np.linspace(0.0, math.pi / 2, 100_000)
     vals = np.sin(2.0 * psi) ** k
-    return float(np.trapezoid(vals, psi))
+    # np.trapezoid only exists on NumPy >= 2.0 (renamed from np.trapz), but the
+    # package supports numpy>=1.26.
+    trapezoid = getattr(np, "trapezoid", None) or np.trapz  # type: ignore[attr-defined]
+    return float(trapezoid(vals, psi))
 
 
 def gaussian_pdf(x: np.ndarray, sigma: float = 1.0) -> np.ndarray:
