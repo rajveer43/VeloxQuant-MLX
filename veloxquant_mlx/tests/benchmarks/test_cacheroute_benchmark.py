@@ -219,3 +219,51 @@ def test_results_to_json_round_trips_policy_fields():
     for name, r in results.items():
         assert payload["policies"][name]["hit_rate"] == pytest.approx(r.hit_rate)
         assert payload["policies"][name]["policy"] == name
+
+
+def test_cacheroute_load_is_realized_arrivals_like_the_baselines():
+    """Regression: cacheroute reported the planner's expected_load (a different unit,
+    ~60 vs ~10000 for the baselines), so its imbalance and max-load were not
+    comparable. It now counts the arrivals actually routed to each shard."""
+    results = _small_run()
+    n_arrivals = results["lru"].n_arrivals
+    assert sum(results["cacheroute"].load_per_shard) == n_arrivals
+
+
+def test_demoted_session_does_not_hit_without_holding_a_slot(monkeypatch):
+    """Regression: a session dropped from the admitted set kept its 'seen' mark, so it
+    hit again on re-admission even though its slot had been given away."""
+    from veloxquant_mlx.benchmarks.cacheroute_benchmark import (
+        SyntheticWorkload,
+        _run_cacheroute,
+    )
+    from veloxquant_mlx.routing import cacheroute as cr
+
+    def table(admitted):
+        return cr.RoutingTable(
+            shards=dict.fromkeys(admitted, (0,)),
+            expected_load=[0.0],
+            n_shards=1,
+            admitted_rate_total=0.0,
+            unadmitted_rate_total=0.0,
+        )
+
+    plans = iter([table({1}), table(set()), table(set()), table({1})])
+
+    class _ScriptedPlanner:
+        def __init__(self, **_kw):
+            pass
+
+        def plan(self, _rates):
+            return next(plans, table({1}))
+
+    monkeypatch.setattr(cr, "CacheRoutePlanner", _ScriptedPlanner)
+    # t0: 1 admitted (cold start, miss). t1: 9 unadmitted (miss, enters cold tail).
+    # t2: 9 again (hit in cold tail). t3: 1 re-admitted after being demoted at t1:
+    # it held no slot in between, so this must be a miss.
+    wl = SyntheticWorkload(n_sessions=10, session_rates=[1.0] * 10, arrivals=[1, 9, 9, 1], gini=0.0)
+    hits, load = _run_cacheroute(
+        wl, n_shards=1, warm_slots_per_shard=1, qcap=1e9, replan_interval=1
+    )
+    assert hits == 1
+    assert sum(load) == 4

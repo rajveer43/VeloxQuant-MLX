@@ -219,7 +219,12 @@ def _run_cacheroute(
     qcap: float,
     replan_interval: int,
 ) -> tuple[int, list[float]]:
-    """CacheRoute needs its own loop: admitted-session hits are membership-based, not LRU."""
+    """CacheRoute needs its own loop: admitted-session hits are membership-based, not LRU.
+
+    Returns ``(hits, load_per_shard)`` where the load is the number of arrivals
+    actually routed to each shard -- the same realized quantity the LRU and
+    sticky baselines report, not the planner's own ``expected_load``.
+    """
     from veloxquant_mlx.routing.cacheroute import CacheRoutePlanner, RateEstimator
 
     planner = CacheRoutePlanner(
@@ -232,10 +237,17 @@ def _run_cacheroute(
     cold_capacity = max(1, n_shards)
 
     hits = 0
+    arrivals_per_shard = [0] * n_shards
     for t, owner in enumerate(workload.arrivals):
         estimator.record(owner)
         if t % replan_interval == 0:
             table = planner.plan(estimator.rates())
+            # A session that left the admitted set was evicted: it only counts as
+            # warm again after it is re-admitted *and* seen once more. Keeping
+            # the old marks let demoted sessions hit without holding a slot.
+            admitted_ever_seen &= set(table.shards)
+
+        arrivals_per_shard[table.preferred_shard(owner, fallback=owner % n_shards)] += 1
 
         if table.is_admitted(owner):
             if owner in admitted_ever_seen or owner in cold_tail:
@@ -253,7 +265,7 @@ def _run_cacheroute(
                 del cold_tail[evict]
             cold_tail[owner] = t
 
-    return hits, list(table.expected_load)
+    return hits, [float(x) for x in arrivals_per_shard]
 
 
 # ---------------------------------------------------------------------------
