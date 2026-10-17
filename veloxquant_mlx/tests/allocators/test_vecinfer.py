@@ -120,6 +120,16 @@ def test_quantize_dequantize_roundtrip_error_decreases_with_b() -> None:
     assert errors[0] > errors[1] > errors[2], f"errors not decreasing: {errors}"
 
 
+def test_quantize_vq_fp16_large_magnitude_matches_fp32() -> None:
+    """Summed squared distances overflow fp16 at ~100 per entry; indices must not collapse."""
+    rng = np.random.default_rng(0)
+    x_np = (rng.standard_normal((2000, 8)) * 300.0).astype(np.float32)
+    cb = train_codebook(mx.array(x_np), n_centroids=64, max_iter=10, seed=0)
+    idx32 = quantize_vq(mx.array(x_np), cb, 8)
+    idx16 = quantize_vq(mx.array(x_np).astype(mx.float16), cb, 8)
+    assert float(mx.mean((idx32 == idx16).astype(mx.float32))) > 0.99
+
+
 def test_compute_query_lut_matches_explicit_dot() -> None:
     """LUT lookup must equal q_tilde @ K_hat.T for the dequantized keys."""
     rng = np.random.default_rng(0)
