@@ -20,7 +20,10 @@ class QJLResidualHandler(QuantizationHandler):
     """Apply QJL to the residual between the original and MSE reconstruction.
 
     On encode:
-        residual = ctx.x_original - ctx.x_current  (x_current is MSE reconstruction)
+        target = ctx.metadata["x_pre_quant"]  (set by ScalarQuantizerHandler: the
+                 vector as it was before quantization, i.e. after any
+                 normalization/rotation). Falls back to ctx.x_original.
+        residual = target - ctx.x_current  (x_current is MSE reconstruction)
         ctx.signs, ctx.residual_norm = qjl.encode_key(residual)
 
     On decode:
@@ -43,7 +46,9 @@ class QJLResidualHandler(QuantizationHandler):
         """Encode or decode the QJL residual.
 
         Args:
-            ctx: Quantization context. ctx.x_original must be set.
+            ctx: Quantization context. Needs ``metadata["x_pre_quant"]`` (set by
+                ScalarQuantizerHandler) or, failing that, ``x_original`` in the
+                same space as the MSE reconstruction in ``x_current``.
 
         Returns:
             Updated context.
@@ -51,7 +56,11 @@ class QJLResidualHandler(QuantizationHandler):
         import mlx.core as mx
 
         if ctx.mode == "encode":
-            residual = ctx.x_original - ctx.x_current
+            # The residual must be taken in the space the MSE stage worked in.
+            # With Normalization/Rotation upstream x_original is in a different
+            # space, so prefer the vector ScalarQuantizerHandler quantized.
+            target = ctx.metadata.get("x_pre_quant", ctx.x_original)
+            residual = target - ctx.x_current
             signs, r_norm = self._encoder.encode_key(residual)
             ctx.signs = signs
             ctx.residual_norm = r_norm

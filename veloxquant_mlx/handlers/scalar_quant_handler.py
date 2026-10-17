@@ -18,6 +18,7 @@ class ScalarQuantizerHandler(QuantizationHandler):
     """Apply scalar codebook quantisation to x_current.
 
     On encode:
+        ctx.metadata["x_pre_quant"] = ctx.x_current        # for QJLResidualHandler
         ctx.indices = codebook.quantize(ctx.x_current)
         ctx.x_current = codebook.dequantize(ctx.indices)   # reconstructed
 
@@ -41,6 +42,9 @@ class ScalarQuantizerHandler(QuantizationHandler):
             Updated context.
         """
         if ctx.mode == "encode":
+            # Remember what was quantized: a later QJL stage needs the residual
+            # against this (normalized / rotated) target, not against x_original.
+            ctx.metadata["x_pre_quant"] = ctx.x_current
             ctx.indices = self._codebook.quantize(ctx.x_current)
             ctx.x_current = self._codebook.dequantize(ctx.indices)
         else:
