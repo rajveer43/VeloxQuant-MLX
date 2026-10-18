@@ -9,9 +9,9 @@ keywords: [kitty, channel-wise mixed precision, dynamic bit allocation, variance
 
 # Kitty — Dynamic Channel-wise Mixed-Precision Keys
 
-<!-- maturity:start -->
+{/* maturity:start */}
 ![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
-<!-- maturity:end -->
+{/* maturity:end */}
 
 **Available since:** v0.11.0  
 **Paper:** arXiv:2511.18643 (Nov 2025, unreviewed preprint) — VeloxQuant-MLX implementation is an adaptation, not a faithful port.  

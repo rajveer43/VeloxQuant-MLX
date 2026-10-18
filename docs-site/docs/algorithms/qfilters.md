@@ -7,9 +7,9 @@ keywords: [qfilters, kv cache, token eviction, projection scorer, query-svd, cal
 
 # Q-Filters — Query-Agnostic Projection Eviction
 
-<!-- maturity:start -->
+{/* maturity:start */}
 ![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
-<!-- maturity:end -->
+{/* maturity:end */}
 
 **Method id:** `qfilters` · **New in 0.31.0** · *Inspired by* ["Q-Filters:
 Leveraging QK Geometry for Efficient KV Cache Compression"

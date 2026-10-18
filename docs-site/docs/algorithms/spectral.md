@@ -9,9 +9,9 @@ keywords: [spectralquant, svd rotation, participation ratio, qjl sign-sketch, wa
 
 # SpectralQuant
 
-<!-- maturity:start -->
+{/* maturity:start */}
 ![Maturity: experimental](https://img.shields.io/badge/maturity-experimental-f97316?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
-<!-- maturity:end -->
+{/* maturity:end */}
 
 SpectralQuant uses **eigenvector rotation** to align the key distribution with the quantizer's assumptions. By rotating keys into the PCA basis, it separates high-variance "signal" dimensions from low-variance "noise" dimensions and applies separate codebooks to each group — achieving high fidelity at long context lengths.
 
