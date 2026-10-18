@@ -9,9 +9,9 @@ keywords: [polarquant, polar coordinate decomposition, spherical key geometry, a
 
 # PolarQuant
 
-<!-- maturity:start -->
+{/* maturity:start */}
 ![Maturity: experimental](https://img.shields.io/badge/maturity-experimental-f97316?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
-<!-- maturity:end -->
+{/* maturity:end */}
 
 PolarQuant uses **recursive polar coordinate decomposition** to represent keys as angles rather than Cartesian coordinates. This is particularly effective for models where keys form geometric clusters on a sphere — a distribution that standard scalar quantizers handle poorly.
 

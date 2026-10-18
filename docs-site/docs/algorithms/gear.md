@@ -9,9 +9,9 @@ keywords: [gear, kv cache compression, low-rank residual, sparse outliers, error
 
 # GEAR
 
-<!-- maturity:start -->
+{/* maturity:start */}
 ![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
-<!-- maturity:end -->
+{/* maturity:end */}
 
 **Method id:** `gear` · *Inspired by* [GEAR: An Efficient KV Cache Compression
 Recipe for Near-Lossless Generative Inference of LLM](https://arxiv.org/abs/2403.05527)

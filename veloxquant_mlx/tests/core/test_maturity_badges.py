@@ -30,4 +30,24 @@ def test_docs_pages_match_registry():
         pytest.skip("docs-site not present")
     for path, method in pages.items():
         want = sync.render(path.read_text(), static_method_info(method).maturity.value)
-        assert path.read_text() == want, f"{path.name} is stale; run scripts/sync_maturity_badges.py"
+        assert path.read_text() == want, (
+            f"{path.name} is stale; run scripts/sync_maturity_badges.py"
+        )
+
+
+def test_badge_uses_mdx_comments_and_migrates_html_comments():
+    """Regression: Docusaurus compiles .md as MDX, which rejects `<!-- -->` and failed the
+    whole Netlify build ("Unexpected character `!` before name")."""
+    text = "# X\n\n<!-- maturity:start -->\nold\n<!-- maturity:end -->\n\nbody\n"
+    out = sync.render(text, "beta")
+    assert "<!--" not in out
+    assert out.count("{/* maturity:start */}") == 1
+    assert "old" not in out and out.endswith("body\n")
+
+
+def test_no_docs_page_contains_an_html_comment():
+    pages = sorted(sync.PAGES.glob("*.md"))
+    if not pages:
+        pytest.skip("docs-site not present")
+    offenders = [p.name for p in pages if "<!--" in p.read_text()]
+    assert not offenders, f"HTML comments break the MDX docs build: {offenders}"

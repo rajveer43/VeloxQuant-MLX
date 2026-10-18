@@ -9,9 +9,9 @@ keywords: [anchorkv, anchor-residual compression, no eviction, anchorkv_theta, r
 
 # AnchorKV-adapted — Anchor-Residual Compression, No Eviction
 
-<!-- maturity:start -->
+{/* maturity:start */}
 ![Maturity: experimental](https://img.shields.io/badge/maturity-experimental-f97316?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
-<!-- maturity:end -->
+{/* maturity:end */}
 
 **Method id:** `anchorkv` · **New in 0.53.0** · *Inspired by* ["AnchorKV:
 Anchor-Residual KV Cache Compression" (Khalaf, Shamshoum, Hodos, Sieradzki,
