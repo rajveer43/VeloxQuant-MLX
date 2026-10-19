@@ -81,6 +81,10 @@ class TurboQuantKVCache(KVCache):
             np.zeros((capacity, self._sign_packed_len), dtype=np.uint8) if use_prod else None
         )
         self._k_residual_norms = np.zeros((capacity,), dtype=np.float16)
+        # Per-key L2 norm: the quantizers' codebooks assume unit-scale
+        # coordinates (N(0, 1/d) post-rotation), so keys are stored as unit
+        # directions and the norm is re-applied to the score in attend().
+        self._k_norms = np.zeros((capacity,), dtype=np.float32)
         self._v_cache = np.zeros((capacity, self._d), dtype=np.int8)
         self._v_scales = np.zeros((capacity,), dtype=np.float16)
 
@@ -178,10 +182,12 @@ class TurboQuantKVCache(KVCache):
         if k.ndim == 1:
             k = k[None]
         slot = self._physical_slot_for_append()
-        k_np = np.array(k, dtype=np.float16).reshape(1, -1)
+        # fp32 intermediates: a bf16 array has no numpy buffer format, and a
+        # norm can exceed fp16's range.
+        k_np = np.array(k.astype(mx.float32), dtype=np.float32).reshape(1, -1)
 
         if self._outlier_detector is not None:
-            self._outlier_detector.observe(k_np)
+            self._outlier_detector.observe(k_np.astype(np.float16))
             if self._outlier_idx is None and self._outlier_detector.is_calibrated:
                 outlier_idx = self._outlier_detector.get_outlier_channels()
                 self._outlier_idx = outlier_idx
@@ -195,15 +201,17 @@ class TurboQuantKVCache(KVCache):
                 out = k_np[:, self._outlier_idx].reshape(-1)
                 abs_max = float(np.max(np.abs(out)))
                 o_scale = max(abs_max / INT8_MAX, 1e-8)
-                q_out = mx.clip(mx.round(out / o_scale), -INT8_MAX, INT8_MAX).astype(mx.int8)
-                self._outlier_cache[slot, :] = np.array(q_out, dtype=np.int8)
+                q_out = np.clip(np.round(out / o_scale), -INT8_MAX, INT8_MAX).astype(np.int8)
+                self._outlier_cache[slot, :] = q_out
                 self._outlier_scales[slot] = np.float16(o_scale)
                 k_np[:, self._outlier_idx] = 0
-                k_for_inlier = mx.array(k_np, dtype=k.dtype)
-            else:
-                k_for_inlier = k
-        else:
-            k_for_inlier = k
+
+        # The quantizers' codebooks assume unit-scale coordinates (N(0, 1/d)
+        # after rotation), so the inlier stream is stored as a unit direction
+        # and its norm is re-applied to the score in attend().
+        norm = float(np.linalg.norm(k_np))
+        self._k_norms[slot] = norm
+        k_for_inlier = mx.array((k_np / max(norm, 1e-4)).astype(np.float16))
 
         ev = self._key_quantizer.encode(k_for_inlier)
         idx_np = np.array(ev.indices[0], dtype=np.uint8)
@@ -285,6 +293,8 @@ class TurboQuantKVCache(KVCache):
 
         # Estimate inner products
         scores_raw = self._key_quantizer.estimate_inner_product(q, ev)  # (n,)
+        # Inlier keys were stored as unit directions: <q, k> = ||k|| * <q, k_unit>.
+        scores_raw = scores_raw.astype(mx.float32) * mx.array(self._k_norms[phys])
         if (
             self._outlier_idx is not None
             and self._outlier_cache is not None
@@ -325,10 +335,12 @@ class TurboQuantKVCache(KVCache):
         rnorm_bytes = n * 2 if self._use_prod else 0
         # Values: int8 + fp16 scale
         v_bytes = n * (d + 2)
+        # Key norms: fp32
+        knorm_bytes = n * 4
         outlier_bytes = 0
         if self._outlier_detector is not None and self._outlier_idx is not None:
             outlier_bytes = n * (self._n_outliers + 2)
-        return idx_bytes + sign_bytes + rnorm_bytes + v_bytes + outlier_bytes
+        return idx_bytes + sign_bytes + rnorm_bytes + knorm_bytes + v_bytes + outlier_bytes
 
     def __len__(self) -> int:
         return self._size
@@ -354,6 +366,7 @@ class TurboQuantKVCache(KVCache):
             np.zeros((capacity, self._sign_packed_len), dtype=np.uint8) if self._use_prod else None
         )
         self._k_residual_norms = np.zeros((capacity,), dtype=np.float16)
+        self._k_norms = np.zeros((capacity,), dtype=np.float32)
         self._v_cache = np.zeros((capacity, self._d), dtype=np.int8)
         self._v_scales = np.zeros((capacity,), dtype=np.float16)
         self._size = 0
