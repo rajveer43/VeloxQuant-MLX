@@ -1,7 +1,10 @@
 """Keep the maturity badge on each per-method docs page in sync with the registry.
 
-The badge is the line between ``<!-- maturity:start -->`` and
-``<!-- maturity:end -->`` directly under the page's H1. Maturity is read from
+The badge is the line between ``{/* maturity:start */}`` and
+``{/* maturity:end */}`` directly under the page's H1. These are MDX comments:
+Docusaurus compiles ``.md`` pages as MDX, which rejects ``<!-- -->`` HTML
+comments and fails the whole site build. Pages still carrying the old HTML
+comment markers are migrated on the next sync. Maturity is read from
 ``veloxquant_mlx.cache.registry`` so the docs cannot disagree with
 ``veloxquant methods``.
 
@@ -30,7 +33,9 @@ _ID_TO_METHOD = {
 }
 
 _COLOR = {"stable": "22c55e", "beta": "eab308", "experimental": "f97316"}
-_BLOCK = re.compile(r"<!-- maturity:start -->.*?<!-- maturity:end -->\n?", re.S)
+_START = r"(?:\{/\* maturity:start \*/\}|<!-- maturity:start -->)"
+_END = r"(?:\{/\* maturity:end \*/\}|<!-- maturity:end -->)"
+_BLOCK = re.compile(_START + r".*?" + _END + r"\n?", re.S)
 _H1 = re.compile(r"^# .+\n", re.M)
 
 
@@ -38,10 +43,10 @@ def badge(maturity: str) -> str:
     """The marked block for one maturity value."""
     img = f"https://img.shields.io/badge/maturity-{maturity}-{_COLOR[maturity]}?style=flat-square"
     return (
-        "<!-- maturity:start -->\n"
+        "{/* maturity:start */}\n"
         f"![Maturity: {maturity}]({img}) "
         "[What do these labels mean?](/docs/algorithms/overview#maturity)\n"
-        "<!-- maturity:end -->\n"
+        "{/* maturity:end */}\n"
     )
 
 

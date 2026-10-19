@@ -7,9 +7,9 @@ keywords: [knorm, l2norm, kv cache, token eviction, key norm, calibration-free]
 
 # L2Norm — Intrinsic Key-Norm Eviction
 
-<!-- maturity:start -->
+{/* maturity:start */}
 ![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
-<!-- maturity:end -->
+{/* maturity:end */}
 
 **Method id:** `knorm` · **New in 0.29.0** · *Inspired by* ["A Simple and
 Effective L2 Norm-Based Strategy for KV Cache Compression" (arXiv:2406.11430,

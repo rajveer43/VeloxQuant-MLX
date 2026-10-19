@@ -9,9 +9,9 @@ keywords: [xquant, cross-layer kv cache reuse, anchor reuse groups, layer coordi
 
 # XQuant — Cross-Layer KV Cache Reuse
 
-<!-- maturity:start -->
+{/* maturity:start */}
 ![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
-<!-- maturity:end -->
+{/* maturity:end */}
 
 **Available since:** v0.13.0  
 **Paper:** arXiv:2510.11236 (EMNLP 2025, Yang et al.) — VeloxQuant-MLX implementation is faithful to the cross-layer-reuse core, adapted at the integration boundary (see [Adaptation notes](#adaptation-notes)).  

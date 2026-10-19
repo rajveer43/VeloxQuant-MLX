@@ -9,9 +9,9 @@ keywords: [age-tiered kv cache, position-based quantization, multi-tier precisio
 
 # AgeTieredKV
 
-<!-- maturity:start -->
+{/* maturity:start */}
 ![Maturity: experimental](https://img.shields.io/badge/maturity-experimental-f97316?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
-<!-- maturity:end -->
+{/* maturity:end */}
 
 AgeTieredKV is this library's own method, not a port of a published paper.
 It exists to answer a specific research question raised in

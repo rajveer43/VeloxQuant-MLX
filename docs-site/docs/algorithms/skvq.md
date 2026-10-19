@@ -7,9 +7,9 @@ keywords: [skvq, kv cache, quantization, channel reordering, clipped quantizatio
 
 # SKVQ — Sliding-Window Reorder + Clip Quantization
 
-<!-- maturity:start -->
+{/* maturity:start */}
 ![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
-<!-- maturity:end -->
+{/* maturity:end */}
 
 **Method id:** `skvq` · **New in 0.30.0** · *Inspired by* ["SKVQ:
 Sliding-window Key and Value Cache Quantization for Large Language Models"

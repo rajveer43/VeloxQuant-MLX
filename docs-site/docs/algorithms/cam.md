@@ -7,9 +7,9 @@ keywords: [cam, kv cache, token eviction, cache merging, h2o, cosine similarity]
 
 # CaM — Cache Merging (Merge Evicted Tokens Instead of Dropping)
 
-<!-- maturity:start -->
+{/* maturity:start */}
 ![Maturity: beta](https://img.shields.io/badge/maturity-beta-eab308?style=flat-square) [What do these labels mean?](/docs/algorithms/overview#maturity)
-<!-- maturity:end -->
+{/* maturity:end */}
 
 **Method id:** `cam` · **New in 0.26.0**
 
