@@ -475,3 +475,19 @@ def test_make_mask_single_query_returns_none() -> None:
 
     h_fake = mx.zeros((1, 1, 4))
     assert create_attention_mask(h_fake, c) is None
+
+
+def test_single_token_call_then_multi_token_call_keeps_earlier_row() -> None:
+    # An S == 1 call first (treated as a decode token) followed by an S > 1
+    # call used to run the "first prefill" path, whose stored result replaced
+    # the earlier row (including the position-0 sink) although nothing was
+    # over budget.
+    c = _make(snap_budget=32, snap_obs_window=8, snap_n_sink=4)
+    k, v = _rand_kv(S=11, H=2, D=128, seed=11)
+    c.update_and_fetch(k[:, :, :1], v[:, :, :1])
+    c.update_and_fetch(k[:, :, 1:], v[:, :, 1:])
+    assert c._row_offset == 11
+    assert c._kept_positions[0].tolist() == list(range(11))
+    k_next, _ = c.update_and_fetch(k[:, :, :1], v[:, :, :1])
+    assert k_next.shape[2] == 12
+    assert mx.allclose(k_next[:, :, 0], k[:, :, 0]).item()
