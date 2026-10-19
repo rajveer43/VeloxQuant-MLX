@@ -35,6 +35,7 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.cache._eviction_mask import eviction_make_mask
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.streaming_llm import (
     StreamingWindow,
     init_streaming_window,
@@ -72,6 +73,11 @@ class StreamingLLMKVCache(_MLXKVCache):
         super().__init__()
         self._n_sink = int(getattr(config, "stream_n_sink", 4))
         self._window_size = int(getattr(config, "stream_window_size", 512))
+        if self._n_sink < 0 or self._window_size < 0 or self._n_sink + self._window_size == 0:
+            raise QuantizerConfigError(
+                f"streaming_llm: stream_n_sink ({self._n_sink}) and stream_window_size "
+                f"({self._window_size}) must be >= 0 and not both 0"
+            )
 
         self._windows: list[StreamingWindow] = []  # one per (B, H)
         self._B: int = 0

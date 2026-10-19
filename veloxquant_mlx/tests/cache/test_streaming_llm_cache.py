@@ -427,3 +427,30 @@ def test_make_mask_single_query_returns_none() -> None:
 
     h_fake = mx.zeros((1, 1, 4))
     assert create_attention_mask(h_fake, c) is None
+
+
+def test_zero_window_keeps_only_sinks() -> None:
+    # stream_window_size=0 used to skip trimming entirely (``x[-0:]`` guard),
+    # so the cache grew without bound instead of keeping sinks only.
+    c = _make(stream_n_sink=4, stream_window_size=0)
+    k, v = _rand_kv(S=50, H=1, D=64, seed=5)
+    c.update_and_fetch(k, v)
+    assert c.tokens_in_window == 4
+    k2, v2 = _rand_kv(S=1, H=1, D=64, seed=6)
+    c.update_and_fetch(k2, v2)
+    assert c.tokens_in_window == 4
+
+
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        {"stream_window_size": -5},
+        {"stream_n_sink": -1},
+        {"stream_n_sink": 0, "stream_window_size": 0},
+    ],
+)
+def test_invalid_sink_window_rejected(cfg) -> None:
+    from veloxquant_mlx.core.exceptions import QuantizerConfigError
+
+    with pytest.raises(QuantizerConfigError):
+        _make(**cfg)
