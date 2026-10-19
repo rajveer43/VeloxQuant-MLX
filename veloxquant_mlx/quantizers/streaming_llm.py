@@ -155,9 +155,12 @@ def stream_update(
             recent_v = new_recent_part_v
 
     # Trim recent window to last window_size tokens
-    if window_size > 0 and int(recent_k.shape[0]) > window_size:
-        recent_k = recent_k[-window_size:]
-        recent_v = recent_v[-window_size:]
+    n_recent_now = int(recent_k.shape[0])
+    if n_recent_now > window_size:
+        # Explicit start index: ``x[-0:]`` is the whole array, so a
+        # ``window_size == 0`` (sink-only) config must not use negative slicing.
+        recent_k = recent_k[n_recent_now - window_size :]
+        recent_v = recent_v[n_recent_now - window_size :]
 
     n_recent = int(recent_k.shape[0])
 
