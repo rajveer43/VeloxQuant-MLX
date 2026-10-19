@@ -340,7 +340,11 @@ class SnapKVKVCache(_MLXKVCache):
             )
         is_prefill = keys.shape[2] > 1
         if is_prefill:
-            if not self._prefill_done:
+            # ``_true_offset > 0`` with ``_prefill_done`` still False means an
+            # S == 1 call (kept as a decode token) arrived first; this S > 1
+            # call must then re-enforce the budget over those stored rows like
+            # any later chunk, not compress in isolation and overwrite them.
+            if not self._prefill_done and self._true_offset == 0:
                 k_out, v_out = self._process_prefill(keys, values)
                 self._prefill_done = True
             else:

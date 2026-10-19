@@ -5768,12 +5768,6 @@ details.faq-accordion-item[open] .faq-chevron {
   box-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
 }
 
-.footer-social-btn.footer-social-linkedin:hover {
-  color: #70b5f9;
-  border-color: #0a66c2;
-  box-shadow: 0 0 12px rgba(10, 102, 194, 0.35);
-}
-
 .footer-social-btn.footer-social-discord:hover {
   color: #cdd4fc;
   border-color: #5865f2;

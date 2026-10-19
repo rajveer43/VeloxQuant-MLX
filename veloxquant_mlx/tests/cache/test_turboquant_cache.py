@@ -320,3 +320,43 @@ def test_reset_clears_storage_and_reinitializes_outlier_detector() -> None:
     out = cache.attend(q)
     mx.eval(out)
     assert out.shape == (64,)
+
+
+@pytest.mark.parametrize("method", ["turboquant_mse", "turboquant_prod"])
+@pytest.mark.parametrize("outlier", [False, True])
+def test_attend_tracks_exact_attention_for_non_unit_keys(method, outlier) -> None:
+    # Keys were fed to the quantizer without normalisation or a stored norm, so
+    # with ||k|| ~ sqrt(d) the codebook saturated and attend() diverged from
+    # exact attention.
+    import mlx.core as mx
+
+    d, n = 64, 120
+    cache = _build_cache_with_flags(
+        method=method,
+        vectorized=True,
+        outlier=outlier,
+        n_outliers=4 if outlier else 0,
+        n_calib=16,
+    )
+    rng = np.random.default_rng(0)
+    K = rng.standard_normal((n, d)).astype(np.float32) * 3.0
+    V = rng.standard_normal((n, d)).astype(np.float32)
+    q = rng.standard_normal(d).astype(np.float32)
+    for i in range(n):
+        cache.append(mx.array(K[i].astype(np.float16)), mx.array(V[i].astype(np.float16)))
+    s = (K @ q) / np.sqrt(d)
+    p = np.exp(s - s.max())
+    p /= p.sum()
+    expected = p @ V
+    got = np.array(cache.attend(mx.array(q.astype(np.float16)))).astype(np.float32)
+    cos = float(got @ expected / (np.linalg.norm(got) * np.linalg.norm(expected)))
+    assert cos > 0.9, cos
+
+
+def test_append_key_accepts_bfloat16() -> None:
+    import mlx.core as mx
+
+    cache = _build_cache_with_flags(method="turboquant_prod", vectorized=False, outlier=False)
+    k = mx.random.normal((64,)).astype(mx.bfloat16)
+    cache.append(k, k)
+    assert cache.attend(k).dtype == mx.bfloat16
