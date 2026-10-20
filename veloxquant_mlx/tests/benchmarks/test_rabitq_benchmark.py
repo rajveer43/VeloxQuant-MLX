@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import mlx.core as mx
 import numpy as np
+import pytest
 
-from veloxquant_mlx.benchmarks import rabitq_benchmark as rb
-from veloxquant_mlx.quantizers.rabitq import RaBitQQuantizer
+pytest.importorskip("matplotlib")
+
+from veloxquant_mlx.benchmarks import rabitq_benchmark as rb  # noqa: E402
+from veloxquant_mlx.quantizers.rabitq import RaBitQQuantizer  # noqa: E402
 
 
 def test_measured_bytes_per_vector_includes_correction_factors():
