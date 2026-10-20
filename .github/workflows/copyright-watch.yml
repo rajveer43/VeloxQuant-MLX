@@ -249,7 +249,15 @@ jobs:
             --arg subject "VeloxQuant-MLX copyright-watch: possible unauthorized copy detected" \
             --arg html "<pre>${html}</pre><p>Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}</p>" \
             '{from: "VeloxQuant Copyright Watch <onboarding@resend.dev>", to: [$to], subject: $subject, html: $html}')
-          curl -fsS -X POST https://api.resend.com/emails \
+          # No -f: with it curl discards Resend's JSON error body, which is the
+          # only thing that says *why* a 403 happened (sandbox sender limited
+          # to the account's own address, restricted key, etc.).
+          status=$(curl -sS -o resend_response.json -w '%{http_code}' -X POST https://api.resend.com/emails \
             -H "Authorization: Bearer $RESEND_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "$payload"
+            -d "$payload")
+          cat resend_response.json; echo
+          if [ "$status" -ge 400 ]; then
+            echo "::error::Resend returned HTTP $status — see response body above."
+            exit 1
+          fi
