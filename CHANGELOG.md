@@ -544,6 +544,65 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.11 (2026-10-20)
+
+### Bug Fixes
+
+- **benchmarks**: Cacheroute benchmark compared planned load to realized load and over-counted hits
+  ([#829](https://github.com/rajveer43/VeloxQuant-MLX/pull/829),
+  [`cd2ac97`](https://github.com/rajveer43/VeloxQuant-MLX/commit/cd2ac978cb15b0d479db892032b449f9baf1e1ba))
+
+- **benchmarks**: Rabitq benchmark overstated compression (16x vs ~9x measured)
+  ([#830](https://github.com/rajveer43/VeloxQuant-MLX/pull/830),
+  [`128a550`](https://github.com/rajveer43/VeloxQuant-MLX/commit/128a550af9f19116f9f4831cf9b21970b0c5b112))
+
+- **benchmarks**: Workload replay crashed by default and merged separate requests
+  ([#828](https://github.com/rajveer43/VeloxQuant-MLX/pull/828),
+  [`735b239`](https://github.com/rajveer43/VeloxQuant-MLX/commit/735b239ecc9d9957a300b259136cf80a63dc663b))
+
+- **cache**: Snapkv dropped earlier rows when an S==1 call preceded an S>1 call
+  ([#834](https://github.com/rajveer43/VeloxQuant-MLX/pull/834),
+  [`ca3fc37`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ca3fc377baa0ba5bd78262c39987f87e96bfc24e))
+
+- **cache**: Streaming_llm window_size<=0 silently disabled eviction
+  ([#835](https://github.com/rajveer43/VeloxQuant-MLX/pull/835),
+  [`8b360d5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8b360d5e2ef7c9800fa0a026b0b05c8e9df976cd))
+
+- **cache**: TurboQuantKVCache quantized un-normalised keys and crashed on bf16
+  ([#833](https://github.com/rajveer43/VeloxQuant-MLX/pull/833),
+  [`a6ba90b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a6ba90b16bea586b3502f61a63c6bab581f391a9))
+
+- **ci**: Copyright-watch showed no reason when the Resend alert failed
+  ([#837](https://github.com/rajveer43/VeloxQuant-MLX/pull/837),
+  [`41e5b48`](https://github.com/rajveer43/VeloxQuant-MLX/commit/41e5b48c7cb3c255677a26f4daa15cd336420436))
+
+- **docs**: Maturity badge markers were HTML comments, breaking the Docusaurus (MDX) build
+  ([#832](https://github.com/rajveer43/VeloxQuant-MLX/pull/832),
+  [`7b1bc18`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7b1bc180df83038a2e165f473ca36261ca80e4d8))
+
+- **math**: Polar_angle_pdf crashed on NumPy 1.x (np.trapezoid is 2.0+)
+  ([#826](https://github.com/rajveer43/VeloxQuant-MLX/pull/826),
+  [`f5fd6c1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f5fd6c1f52323bae43b5e46b553118523d2f792e))
+
+- **profiling**: Profile multimodal configs via text_config
+  ([#827](https://github.com/rajveer43/VeloxQuant-MLX/pull/827),
+  [`01ccec5`](https://github.com/rajveer43/VeloxQuant-MLX/commit/01ccec5578c1087e6ea5a655b9a14760117933db))
+
+- **tests**: Skip rabitq benchmark test when matplotlib is missing
+  ([#836](https://github.com/rajveer43/VeloxQuant-MLX/pull/836),
+  [`8a5d73a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8a5d73a0400b0329def917fb2acf10f5e02e6f21))
+
+### Chores
+
+- **deps**: Bump aiohttp from 3.14.3 to 3.14.4 in /scripts
+  ([#838](https://github.com/rajveer43/VeloxQuant-MLX/pull/838),
+  [`5480600`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5480600b32b3bd8cd6fb384b1921dcbe8608321d))
+
+- **landing**: Remove the LinkedIn badge from the site footer
+  ([#831](https://github.com/rajveer43/VeloxQuant-MLX/pull/831),
+  [`c9081c2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c9081c23bbd43e4b16e4bed674089b6a8a82e63f))
+
+
 ## v0.94.10 (2026-10-16)
 
 ### Bug Fixes
