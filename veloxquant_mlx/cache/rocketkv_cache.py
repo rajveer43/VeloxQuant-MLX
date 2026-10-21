@@ -227,6 +227,9 @@ class RocketKVKVCache(DeferredEvictionMixin, _MLXKVCache):
         self._head_topk1: int = 0
 
         self._prefill_done = False
+        # True prompt tokens consumed across prefill chunks; the stage-1
+        # budget is S_seen / stage1_ratio so it does not depend on chunking.
+        self._prefill_tokens_seen: int = 0
         # Batched paged-summary storage: page_max/page_min are [B*H, n_pages, D]
         # fp32, one flattened row per (b, h) — see _process_decode's docstring
         # for why every row is guaranteed to share the same n_tokens/page
@@ -305,17 +308,16 @@ class RocketKVKVCache(DeferredEvictionMixin, _MLXKVCache):
         return max(1, int(round(head_dim / self._head_dim_ratio)))
 
     def _stage1_head(
-        self, keys: mx.array, values: mx.array
+        self, keys: mx.array, values: mx.array, budget: int
     ) -> tuple[mx.array, mx.array, int, mx.array]:
         """Stage-1 eviction for one head's ``[S, D]`` K/V via SnapKV reuse.
 
-        Only used by the chunked-prefill re-run path below, where the
-        accumulated kept set's length can genuinely differ from call to
-        call. The single-shot prefill path (:meth:`_process_prefill`) uses
-        the batched helper instead — see its docstring.
+        Only used by the chunked-prefill re-run path below. ``budget`` is
+        passed in, derived from the prompt tokens seen so far rather than
+        from ``S`` here: ``S`` is the already-evicted kept rows plus the new
+        chunk, so deriving it from that shrinks the budget again on every
+        chunk (#845).
         """
-        S = int(keys.shape[0])
-        budget = max(1, int(round(S / self._stage1_ratio)))
         state = snapkv_compress(
             keys,
             values,
@@ -377,6 +379,7 @@ class RocketKVKVCache(DeferredEvictionMixin, _MLXKVCache):
         self._tokens_kept += n_kept * B * H
         self._tokens_total += S * B * H
 
+        self._prefill_tokens_seen = S
         self._prefill_done = True
         return k_out, v_out
 
@@ -451,6 +454,8 @@ class RocketKVKVCache(DeferredEvictionMixin, _MLXKVCache):
                 # _process_decode which runs every generated token).
                 B, H, S, D = keys.shape
                 prev_kept = self._row_offset
+                self._prefill_tokens_seen += S
+                budget = max(1, int(round(self._prefill_tokens_seen / self._stage1_ratio)))
                 k_out_b, v_out_b, pos_b = [], [], []
                 page_max_rows: list[mx.array] = []
                 page_min_rows: list[mx.array] = []
@@ -462,7 +467,7 @@ class RocketKVKVCache(DeferredEvictionMixin, _MLXKVCache):
                         prior_v = self.values[b, h, :prev_kept, :]
                         cat_k = mx.concatenate([prior_k, keys[b, h]], axis=0)
                         cat_v = mx.concatenate([prior_v, values[b, h]], axis=0)
-                        k_h, v_h, n_kept, indices = self._stage1_head(cat_k, cat_v)
+                        k_h, v_h, n_kept, indices = self._stage1_head(cat_k, cat_v, budget)
                         pos_h.append(positions[b, h, indices])
                         k_out_h.append(k_h)
                         v_out_h.append(v_h)
@@ -477,10 +482,9 @@ class RocketKVKVCache(DeferredEvictionMixin, _MLXKVCache):
                 k_out = mx.stack(k_out_b, axis=0)
                 v_out = mx.stack(v_out_b, axis=0)
 
-                # Every row's own _stage1_head call uses the SAME formula
-                # (budget = round(S / stage1_ratio), n_kept = min(budget, S))
-                # over the SAME S (this call's shared cat_k length for every
-                # head) -- n_kept, and hence each row's page count, is
+                # Every row's own _stage1_head call uses the SAME budget
+                # (round(prompt tokens seen / stage1_ratio)) over the SAME
+                # cat_k length for every head -- n_kept, and hence each row's page count, is
                 # therefore provably identical across every (b, h) in this
                 # branch, not merely typically so. Padding is consequently a
                 # structural no-op here (max_n_pages tracked above only as a
@@ -490,6 +494,14 @@ class RocketKVKVCache(DeferredEvictionMixin, _MLXKVCache):
                     "RocketKVKVCache: chunked-prefill re-run produced divergent "
                     "per-head page counts -- the shared-n_tokens invariant this "
                     "branch relies on no longer holds; see this branch's comment."
+                )
+                # The re-selected kept set replaces the prior chunk's (it is
+                # chosen from it), so account only the change in what is held.
+                delta_rows = B * H * (int(n_kept) - prev_kept)
+                self._tokens_kept += delta_rows
+                self._stage1_bytes += delta_rows * D * 2 * 2
+                self._stage2_aux_bytes += (
+                    (max_n_pages - int(self._page_max.shape[1])) * D * 2 * 2 * B * H
                 )
                 self._page_max = mx.stack(page_max_rows, axis=0)
                 self._page_min = mx.stack(page_min_rows, axis=0)
