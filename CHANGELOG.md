@@ -544,6 +544,27 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.12 (2026-10-21)
+
+### Bug Fixes
+
+- **cache**: Pyramidkv/squeeze evicted the token they had just received (#839)
+  ([#849](https://github.com/rajveer43/VeloxQuant-MLX/pull/849),
+  [`fdfdce8`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fdfdce8d2e046eca71c90bb3eb0fc68c5735a22b))
+
+- **cache**: Pyramidkv/squeeze reported the retained row count as offset (#389)
+  ([#850](https://github.com/rajveer43/VeloxQuant-MLX/pull/850),
+  [`775e778`](https://github.com/rajveer43/VeloxQuant-MLX/commit/775e7781ee323e02c20d697698ea2bcff2cdf80b))
+
+- **cache**: Snapkv/nestedkv accepted a budget that left nothing evictable (#843)
+  ([#852](https://github.com/rajveer43/VeloxQuant-MLX/pull/852),
+  [`48ba108`](https://github.com/rajveer43/VeloxQuant-MLX/commit/48ba1081433cfa353ce69255d6e8a521e826a906))
+
+- **cache**: Svdq/palu/kvtc/xkv froze a basis fit on a single row (#840)
+  ([#851](https://github.com/rajveer43/VeloxQuant-MLX/pull/851),
+  [`9bfd16a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9bfd16a427a0eeeb6043992bf2a9d79fd7acf7b0))
+
+
 ## v0.94.11 (2026-10-20)
 
 ### Bug Fixes
