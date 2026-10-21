@@ -544,6 +544,65 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.13 (2026-10-21)
+
+### Bug Fixes
+
+- **cache**: Kvtc re-encoded the whole history on every decode step (#841)
+  ([#853](https://github.com/rajveer43/VeloxQuant-MLX/pull/853),
+  [`8cd4bb4`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8cd4bb40609e6d18c8361cf58dc996cda422225d))
+
+- **rocketkv**: Retained rows depended on how prefill was chunked (#845)
+  ([#857](https://github.com/rajveer43/VeloxQuant-MLX/pull/857),
+  [`0e41fe1`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0e41fe14f25846f2f71c65ae196e9e2b7715d663))
+
+- **svdq**: Batch size > 1 raised an opaque broadcast error (#847)
+  ([#859](https://github.com/rajveer43/VeloxQuant-MLX/pull/859),
+  [`39da504`](https://github.com/rajveer43/VeloxQuant-MLX/commit/39da5043e5f7a447e7a27b6ce80b8e6d59357436))
+
+### Chores
+
+- **deps**: Bump certifi from 2026.5.20 to 2026.10.19 in /scripts
+  ([#855](https://github.com/rajveer43/VeloxQuant-MLX/pull/855),
+  [`918abb9`](https://github.com/rajveer43/VeloxQuant-MLX/commit/918abb96c5ad8b872a1efd431a7e8c9567281438))
+
+- **deps**: Bump pillow from 12.3.0 to 13.0.0 in /scripts
+  ([#856](https://github.com/rajveer43/VeloxQuant-MLX/pull/856),
+  [`6a324e0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6a324e08560fb8f0f22b46dd121a1b6f378c2e90))
+
+### Documentation
+
+- **snapkv**: Budget caps the prompt, not total length (#844)
+  ([#858](https://github.com/rajveer43/VeloxQuant-MLX/pull/858),
+  [`1353fad`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1353fadf2b1369f2eea0d9e21c36954d5482ab02))
+
+### Performance Improvements
+
+- **a2ats**: Decode ran a per-head selection and host sync for a one-token retrieval set (#846)
+  ([#864](https://github.com/rajveer43/VeloxQuant-MLX/pull/864),
+  [`81b460f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/81b460fac753012c5bd24e1ec8fda358c20ca63b))
+
+- **age_tiered**: Decode re-quantized the whole history every step (#846)
+  ([#863](https://github.com/rajveer43/VeloxQuant-MLX/pull/863),
+  [`94bf76f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/94bf76f5023a7478bef3a4dca35a19bce4c3544a))
+
+- **chunkkv**: Prefill ran full chunk-eviction machinery on every token (#846)
+  ([#861](https://github.com/rajveer43/VeloxQuant-MLX/pull/861),
+  [`9596ef9`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9596ef9c3aa7a1da84a55f110ecf3bb118d1369a))
+
+- **curdkv**: Leverage scores used a per-token SVD that dominated prefill (#842)
+  ([#854](https://github.com/rajveer43/VeloxQuant-MLX/pull/854),
+  [`feadf08`](https://github.com/rajveer43/VeloxQuant-MLX/commit/feadf0881ec9b3a25251250bf10acc8e086a9e71))
+
+- **palu**: Prefill fit SVD'd the whole token block for a D x D result (#846)
+  ([#862](https://github.com/rajveer43/VeloxQuant-MLX/pull/862),
+  [`f2328b0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f2328b082e97f03f3d2383fe0a5db3b777f18daf))
+
+- **pyramidkv**: Reference eviction synced to the host per evicted token (#846)
+  ([#860](https://github.com/rajveer43/VeloxQuant-MLX/pull/860),
+  [`e4bcc61`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e4bcc61db5f8de653ed633fec74280681e479c0e))
+
+
 ## v0.94.12 (2026-10-21)
 
 ### Bug Fixes
