@@ -55,6 +55,7 @@ Adaptation notes:
 from __future__ import annotations
 
 import mlx.core as mx
+import numpy as np
 
 from veloxquant_mlx.quantizers._quant_utils import (
     _group_quant_dequant,
@@ -108,10 +109,20 @@ def group_head_svd(
     G, S, D = x_group.shape
     x = x_group.astype(mx.float32).reshape(G * S, D)  # stack heads along tokens
     mu = mx.mean(x, axis=0)  # [D]
-    x_centered = x - mu[None, :]
 
-    U, s_vals, Vt = mx.linalg.svd(x_centered, stream=mx.cpu)
-    mx.eval(U, s_vals, Vt)
+    # Only V and the singular values are used, so decompose the D x D Gram
+    # matrix instead of SVD-ing the tall [G*S, D] block (#846). It is formed
+    # and diagonalised in float64: squaring the conditioning is harmless at
+    # that precision, whereas in float32 it would blur the weaker retained
+    # directions.
+    x_np = np.asarray(x, dtype=np.float64)
+    x_np -= x_np.mean(axis=0, keepdims=True)
+    evals, evecs = np.linalg.eigh(x_np.T @ x_np)
+    k = min(G * S, D)  # an SVD of an [N, D] block has min(N, D) singular values
+    order = np.argsort(evals)[::-1][:k]
+    s_vals = mx.array(np.sqrt(np.clip(evals[order], 0.0, None)).astype(np.float32))
+    Vt = mx.array(np.ascontiguousarray(evecs[:, order].T).astype(np.float32))
+    mx.eval(s_vals, Vt)
 
     if rank is None:
         total = float(mx.sum(s_vals).item())
