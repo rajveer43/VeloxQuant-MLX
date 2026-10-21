@@ -259,6 +259,9 @@ def pyramid_update(
     v_dtype = new_values.dtype
 
     for i in range(S):
+        if i and i % 32 == 0:
+            # Bound the lazy graph now that no per-token sync forces it.
+            mx.eval(state.keys, state.values, state.scores)
         k_i = new_keys[i]  # [D]
         v_i = new_values[i]  # [D]
 
@@ -311,11 +314,14 @@ def pyramid_update(
                 inf_block = mx.full((n_sink_eff,), float("inf"), dtype=mx.float32)
                 protected = mx.concatenate([inf_block, protected[n_sink_eff:]], axis=0)
 
-            evict_idx = int(mx.argmin(protected).item())
-            keep_indices = [j for j in range(n_total) if j != evict_idx]
-            keys_cat = keys_cat[keep_indices]
-            values_cat = values_cat[keep_indices]
-            scores_cat = scores_cat[keep_indices]
+            # Index arithmetic on-device: a host ``.item()`` per evicted token
+            # serialised prefill (#846).
+            evict = mx.argmin(protected)
+            rows = mx.arange(n_total - 1)
+            keep = rows + (rows >= evict)
+            keys_cat = keys_cat[keep]
+            values_cat = values_cat[keep]
+            scores_cat = scores_cat[keep]
 
         state = PyramidState(
             keys=keys_cat,
