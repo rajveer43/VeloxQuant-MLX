@@ -324,10 +324,36 @@ class KVTCKVCache(_MLXKVCache):
         """Fit the local PCA basis + DP bit allocation on prefill, else append through the frozen basis; return reconstructed fp16 K/V."""
         B, H, S, D = keys.shape
         self._ensure_states(B, H)
+        n_new = S
 
         is_prefill = not self._keys_states[0]._fitted
 
         if is_prefill:
+            # Rows held so far (single-token calls before any fit) are raw and
+            # live in ``_last_state``. The PCA basis and bit allocation are
+            # frozen after the first fit, and one row gives a degenerate basis
+            # (#840), so keep rows lossless until a call carries more than one,
+            # then fit on everything held.
+            held_k, held_v = self._last_state if self._last_state is not None else (None, None)
+            if S == 1:
+                k_out = (
+                    keys
+                    if held_k is None
+                    else mx.concatenate([held_k, keys.astype(held_k.dtype)], axis=2)
+                )
+                v_out = (
+                    values
+                    if held_v is None
+                    else mx.concatenate([held_v, values.astype(held_v.dtype)], axis=2)
+                )
+                self._kvtc_offset += S
+                self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
+                self._last_state = (k_out, v_out)
+                return k_out, v_out
+            if held_k is not None and self._kvtc_offset > 0:
+                keys = mx.concatenate([held_k.astype(keys.dtype), keys], axis=2)
+                values = mx.concatenate([held_v.astype(values.dtype), values], axis=2)
+                S = keys.shape[2]
             # Batch the local-PCA SVD fit across all B*H rows in one call
             # (VeloxQuant-MLX#569) instead of a Python loop fitting each
             # (b, h) row's SVD separately. DP allocation / quantization /
@@ -368,8 +394,8 @@ class KVTCKVCache(_MLXKVCache):
         K_out = mx.stack(k_out_b, axis=0).astype(keys.dtype)
         V_out = mx.stack(v_out_b, axis=0).astype(values.dtype)
 
-        self._kvtc_offset += S
-        self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
+        self._kvtc_offset += n_new
+        self._full_seq_bytes += B * H * n_new * D * 2 * 2  # K + V, fp16
         self._last_state = (K_out, V_out)
         return K_out, V_out
 
@@ -414,10 +440,12 @@ class KVTCKVCache(_MLXKVCache):
         n = min(self._kvtc_offset, n)
         if n <= 0:
             return 0
-        for ks in self._keys_states:
-            ks.trim(n)
-        for vs in self._vals_states:
-            vs.trim(n)
+        # Before the first fit the rows are raw in ``_last_state`` only (#840).
+        if self._keys_states and self._keys_states[0]._fitted:
+            for ks in self._keys_states:
+                ks.trim(n)
+            for vs in self._vals_states:
+                vs.trim(n)
         self._kvtc_offset -= n
         if self._last_state is not None:
             k, v_ = self._last_state

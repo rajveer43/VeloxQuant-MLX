@@ -311,14 +311,42 @@ class PALUKVCache(_MLXKVCache):
             # by row 0's reconstruction.
             raise ValueError(f"PALUKVCache supports batch size 1 only, got B={B}")
         self._H = H
+        n_new = S
 
         if not self._keys_lr._fitted:
+            # Rows held so far (single-token calls before any fit) are raw and
+            # live in ``_last_state``. A projection fit on one row is rank-1
+            # and frozen for good (#840), so keep them lossless until a call
+            # carries more than one row, then fit on everything held.
+            held_k, held_v = self._last_state if self._last_state is not None else (None, None)
+            if S == 1:
+                k_out = (
+                    keys
+                    if held_k is None
+                    else mx.concatenate([held_k, keys.astype(held_k.dtype)], axis=2)
+                )
+                v_out = (
+                    values
+                    if held_v is None
+                    else mx.concatenate([held_v, values.astype(held_v.dtype)], axis=2)
+                )
+                self._palu_offset += S
+                self._last_state = (k_out, v_out)
+                raw = self._palu_offset * H * D * 2
+                self._compressed_key_bytes = self._compressed_value_bytes = raw
+                self._fp16_key_bytes = self._fp16_value_bytes = raw
+                self._projection_bytes = 0
+                return k_out, v_out
+            if held_k is not None and self._palu_offset > 0:
+                keys = mx.concatenate([held_k.astype(keys.dtype), keys], axis=2)
+                values = mx.concatenate([held_v.astype(values.dtype), values], axis=2)
+                S = keys.shape[2]
             self._keys_lr.fit_prefill(keys)
             self._vals_lr.fit_prefill(values)
 
         self._keys_lr.append(keys)
         self._vals_lr.append(values)
-        self._palu_offset += S
+        self._palu_offset += n_new
 
         k_out = self._keys_lr.reconstruct()  # [1, H, total, D] fp16
         v_out = self._vals_lr.reconstruct()

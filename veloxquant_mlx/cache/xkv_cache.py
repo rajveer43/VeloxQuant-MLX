@@ -90,6 +90,8 @@ class XKVCache(_MLXKVCache):
         self._singular_values: mx.array | None = None  # [r] fp32
         self._r: int = 0
         self._token_offset: int = 0
+        # True until the first call carrying more than one row (#840).
+        self._single_token_only: bool = True
         self._basis_token_start: int | None = None
 
         # Byte accounting
@@ -178,6 +180,21 @@ class XKVCache(_MLXKVCache):
     def update_and_fetch(self, keys: mx.array, values: mx.array):
         """Acquire (or wait on) the group's shared SVD basis, then project + quantize keys into it; values pass through fp16 unchanged."""
         B, H, S, D = keys.shape
+
+        if self._V_g is None and S == 1 and self._single_token_only:
+            # No call so far has carried more than one row, so a basis (the
+            # shared one or the private one-shot below) would be fit on a
+            # single row: rank-1, and frozen for the group (#840). Keep the row
+            # lossless and charge it at fp16; the basis forms on the first
+            # call with S > 1.
+            raw = B * H * S * D * 2
+            self._compressed_key_bytes += raw
+            self._fp16_key_bytes += raw
+            self._value_fp16_bytes += raw
+            self._tokens_seen += S
+            self._token_offset += S
+            return super().update_and_fetch(keys, values)
+        self._single_token_only = False
 
         if self._V_g is None:
             # Publish this call's own keys (needed both so a still-forming
