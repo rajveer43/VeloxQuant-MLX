@@ -213,6 +213,36 @@ def a2ats_query_aware_assignment(
     return mx.argmax(score, axis=-1).astype(mx.int32)
 
 
+def a2ats_query_aware_assignment_rows(
+    x: mx.array,
+    codebook: mx.array,
+    queries: mx.array,
+    beta: float = 0.5,
+) -> mx.array:
+    """:func:`a2ats_query_aware_assignment` with a separate query per row.
+
+    ``x`` and ``queries`` are both ``[N, d]``; row ``i`` is scored against
+    ``queries[i]``. Used to assign every head's single decode token in one
+    call, where each head's proxy query is its own incoming key (#846).
+    """
+    x32 = x.astype(mx.float32)
+    cb32 = codebook.astype(mx.float32)
+    q32 = queries.astype(mx.float32)
+
+    diff = x32[:, None, :] - cb32[None, :, :]  # [N, K, d]
+    sq_err = mx.sum(diff * diff, axis=-1)  # [N, K]
+    max_err = mx.maximum(mx.max(sq_err, axis=-1, keepdims=True), 1e-8)
+    err_term = 1.0 - sq_err / max_err
+
+    cb_norm = mx.sqrt(mx.sum(cb32 * cb32, axis=-1))  # [K]
+    q_norm = mx.sqrt(mx.sum(q32 * q32, axis=-1, keepdims=True))  # [N, 1]
+    denom = mx.maximum(cb_norm[None, :] * q_norm, 1e-8)  # [N, K]
+    cos_sim = mx.clip(((q32 @ cb32.T) / denom + 1.0) * 0.5, 0.0, 1.0)
+
+    score = beta * err_term + (1.0 - beta) * cos_sim
+    return mx.argmax(score, axis=-1).astype(mx.int32)
+
+
 def a2ats_select_retrieval_set(
     keys: mx.array,
     query: mx.array,
@@ -280,5 +310,6 @@ __all__ = [
     "a2ats_cholesky_factor",
     "a2ats_h_weighted_assignment",
     "a2ats_query_aware_assignment",
+    "a2ats_query_aware_assignment_rows",
     "a2ats_select_retrieval_set",
 ]
