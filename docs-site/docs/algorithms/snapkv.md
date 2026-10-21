@@ -191,9 +191,12 @@ with hardware numbers, no throughput or perplexity figures are claimed.
 
 ## When to use it
 
-SnapKV-adapted is a **token-count budget** method: use it when you need a hard cap
-on the number of token positions in the cache (e.g., fixed RAM budget for very long
-prompts where quantization alone is not sufficient). The eviction and compression axes
+SnapKV-adapted is a **token-count budget** method: use it when you need to cap
+the number of token positions kept from the *prompt* (e.g., fixed RAM budget for very
+long prompts where quantization alone is not sufficient). The cap is not on total
+length: decode tokens are always appended, so the cache holds `snap_budget` plus
+every generated token. For a bound that also holds during generation, use
+[StreamingLLM-adapted](./streaming_llm). The eviction and compression axes
 are orthogonal — stack a quantizer cache on the kept tokens for combined eviction +
 compression.
 
@@ -202,7 +205,7 @@ compression.
 | Compress all tokens uniformly | KIVI-2bit |
 | Protect important tokens at full precision | KIVI-Sink |
 | Per-token mixed bit-width | ZipCache-adapted |
-| Hard cap on token count (very long contexts) | SnapKV-adapted |
+| Cap the prompt's token count (very long prompts) | SnapKV-adapted |
 | Recover quality from aggressive quantization | GEAR |
 
 **See also:** [ChunkKV-adapted](./chunkkv) evicts on the same importance idea but at

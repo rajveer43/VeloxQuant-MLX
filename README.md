@@ -204,13 +204,13 @@ Not sure which to pick? Run `python -m veloxquant_mlx recommend --goal everyday`
 `auto-config` for a workload shape; the planner is
 [RFC #469](https://github.com/rajveer43/VeloxQuant-MLX/issues/469)), or start with one of
 these `stable` methods. Override the recommendation only when you need a specific
-trade-off, such as a hard token cap (eviction) or a fixed ratio.
+trade-off, such as a prompt-length cap (eviction) or a fixed ratio.
 
 | Goal | Method | Maturity |
 |---|---|---|
 | Smaller cache, no calibration | `turboquant_rvq` b=1 | stable |
 | Quality-first quantization | `kivi` | stable |
-| Hard token cap, lower resident memory | `snapkv` | stable |
+| Cap the prompt's cache (decode still grows), lower resident memory | `snapkv` | stable |
 
 Measured results for these three will be added with the reproducible benchmark (#786).
 
