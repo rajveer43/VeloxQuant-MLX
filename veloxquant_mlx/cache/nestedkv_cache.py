@@ -74,6 +74,7 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.cache._deferred_eviction import DeferredEvictionMixin
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.nestedkv import (
     NestedKVState,
     init_nestedkv_state,
@@ -127,6 +128,13 @@ class NestedKVKVCache(DeferredEvictionMixin, _MLXKVCache):
         super().__init__()
         self._budget = int(getattr(config, "nestedkv_budget", 512))
         self._n_sink = int(getattr(config, "nestedkv_n_sink", 4))
+        if self._n_sink < 0 or self._n_sink >= self._budget:
+            # Previously clamped silently: budget <= n_sink kept only sinks (#843).
+            raise QuantizerConfigError(
+                f"nestedkv: n_sink ({self._n_sink}) must be >= 0 and < nestedkv_budget "
+                f"({self._budget}) — no evictable positions remain, so the prefill "
+                "would be reduced to its sinks"
+            )
         self._window = int(getattr(config, "nestedkv_window", 64))
         self._beta = float(getattr(config, "nestedkv_beta", 3.0))
         self._tau = float(getattr(config, "nestedkv_tau", 0.60))

@@ -103,6 +103,14 @@ class SnapKVKVCache(_MLXKVCache):
         self._budget = int(getattr(config, "snap_budget", 512))
         self._obs_window = int(getattr(config, "snap_obs_window", 32))
         self._n_sink = int(getattr(config, "snap_n_sink", 4))
+        if self._n_sink < 0 or self._n_sink >= self._budget:
+            # Previously clamped silently: budget <= 0 kept one row and
+            # budget <= n_sink kept only sinks, collapsing the prompt (#843).
+            raise QuantizerConfigError(
+                f"snapkv: n_sink ({self._n_sink}) must be >= 0 and < snap_budget "
+                f"({self._budget}) — no evictable positions remain, so the prefill "
+                "would be reduced to its sinks"
+            )
 
         self._evicted_key_bytes = 0
         self._evicted_value_bytes = 0
