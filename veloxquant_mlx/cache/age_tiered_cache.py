@@ -291,29 +291,45 @@ class AgeTieredKVCache(_MLXKVCache):
 
         new_group_tier = [tiers[g * gs] for g in range(n_groups)]
 
-        recomputed = age_tier_quantize_batched(raw, new_group_tier, self._tiers, gs)
-
-        if prev_out is None or prev_out.shape[1] < n:
-            return recomputed, new_group_tier
-
-        # Splice in unchanged groups' previous output byte-for-byte instead
-        # of the freshly recomputed (but numerically identical) value --
-        # avoids the quantize arithmetic for groups that don't need it.
-        unchanged = [
-            g < len(prev_group_tier) and prev_group_tier[g] == new_group_tier[g]
+        # A group is reusable only if its tier is unchanged AND it was already
+        # full: the last, partial group is padded by repeating its final row,
+        # so its output changes as soon as new tokens land in it.
+        n_prev = 0 if prev_out is None else int(prev_out.shape[1])
+        reusable = [
+            g < len(prev_group_tier)
+            and prev_group_tier[g] == new_group_tier[g]
+            and (g + 1) * gs <= n_prev
             for g in range(n_groups)
         ]
-        if not any(unchanged):
-            return recomputed, new_group_tier
+        if not any(reusable):
+            return (
+                age_tier_quantize_batched(raw, new_group_tier, self._tiers, gs),
+                new_group_tier,
+            )
 
-        token_unchanged: list[bool] = []
-        for g in range(n_groups):
-            start = g * gs
-            end = min(start + gs, n)
-            token_unchanged.extend([unchanged[g]] * (end - start))
-        mask = mx.array(token_unchanged)[None, :, None]  # [1, N, 1]
-        out = mx.where(mask, prev_out[:, :n], recomputed)
-        return out, new_group_tier
+        # Quantize only the runs of groups that need it, from ``raw`` (never
+        # from ``prev_out``, so error does not compound across steps), and
+        # splice the rest in byte-for-byte. Previously the whole buffer was
+        # recomputed first and the splice was skipped whenever the buffer had
+        # grown -- i.e. on every call -- so each decode step re-quantized the
+        # full history (#846).
+        pieces = []
+        g = 0
+        while g < n_groups:
+            end_g = g
+            while end_g < n_groups and reusable[end_g] == reusable[g]:
+                end_g += 1
+            start, end = g * gs, min(end_g * gs, n)
+            if reusable[g]:
+                pieces.append(prev_out[:, start:end])
+            else:
+                pieces.append(
+                    age_tier_quantize_batched(
+                        raw[:, start:end], new_group_tier[g:end_g], self._tiers, gs
+                    )
+                )
+            g = end_g
+        return mx.concatenate(pieces, axis=1), new_group_tier
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:
