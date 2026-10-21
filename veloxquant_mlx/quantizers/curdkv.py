@@ -579,18 +579,21 @@ def _leverage_scores_batched(
     if not np.any(row_nonzero):
         return mx.zeros((bh, n), dtype=mx.float32)
 
-    u, s = _robust_svd_batched(wv_np)  # [BH, n, k], [BH, k]
+    # l_i = sum_{j<k} (s_j^2 / E) U[i,j]^2 and U[i,j] s_j = (W v_j)_i, so the
+    # score is the squared norm of row i of W projected on the top-k right
+    # singular vectors, over their energy. Those vectors are the top
+    # eigenvectors of the [D, D] Gram matrix, which costs a fraction of an
+    # SVD of the [n, D] block (the SVD was ~85% of prefill time).
     k = max(1, min(rank_cap, n, d))
-    u_k = u[:, :, :k]  # [BH, n, k]
-    s_k = s[:, :k]  # [BH, k]
-
-    energy = s_k * s_k  # [BH, k]
-    energy_total = energy.sum(axis=-1, keepdims=True)  # [BH, 1]
+    gram = wv_np.transpose(0, 2, 1) @ wv_np  # [BH, D, D]
+    evals, evecs = np.linalg.eigh(gram)  # ascending
+    energy_k = np.clip(evals[:, -k:], 0.0, None)  # [BH, k]
+    energy_total = energy_k.sum(axis=-1, keepdims=True)  # [BH, 1]
     has_energy = (energy_total[:, 0] > 0) & row_nonzero  # [BH]
     safe_total = np.where(energy_total > 0, energy_total, 1.0)
-    weights = energy / safe_total  # [BH, k]
 
-    scores = np.sum((u_k * u_k) * weights[:, None, :], axis=2)  # [BH, n]
+    proj = wv_np @ evecs[:, :, -k:]  # [BH, n, k]
+    scores = np.sum(proj * proj, axis=2) / safe_total  # [BH, n]
 
     total = scores.sum(axis=-1, keepdims=True)  # [BH, 1]
     safe_row_total = np.where(total > 0, total, 1.0)
