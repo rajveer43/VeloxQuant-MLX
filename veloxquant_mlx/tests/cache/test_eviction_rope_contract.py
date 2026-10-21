@@ -57,11 +57,23 @@ ARMS = [
     ("morphkv", {"method": "morphkv", "morphkv_budget": BUDGET, "morphkv_n_sink": 4}),
     ("kvzip", {"method": "kvzip", "kvzip_budget": BUDGET, "kvzip_n_sink": 4}),
     ("nestedkv", {"method": "nestedkv", "nestedkv_budget": BUDGET, "nestedkv_n_sink": 4}),
+    # #389: these four reset ``offset`` to the retained row count every call.
+    ("pyramidkv", {"method": "pyramidkv", "pyramid_budget": BUDGET, "pyramid_n_sink": 4}),
+    ("squeeze", {"method": "squeeze", "squeeze_budget": BUDGET, "squeeze_n_sink": 4}),
+    ("chunkkv", {"method": "chunkkv", "chunkkv_budget": BUDGET, "chunkkv_n_sink": 4}),
+    ("cam", {"method": "cam", "cam_budget": BUDGET, "cam_n_sink": 4}),
 ]
+
+
+_KEEPS_STATE_IN_BASE_BUFFER = frozenset({"pyramidkv", "squeeze", "chunkkv", "cam"})
 
 
 def _stored_or_returned_count(name: str, cache, k_out) -> int:
     """Budgets constrain retained storage, not current attention inputs (#610)."""
+    if name in _KEEPS_STATE_IN_BASE_BUFFER:
+        # These delegate to mlx_lm's base buffer, which is pre-allocated in
+        # 256-row steps, so ``cache.keys.shape[2]`` does not reflect retention.
+        return cache.tokens_kept
     return cache.keys.shape[2]
 
 

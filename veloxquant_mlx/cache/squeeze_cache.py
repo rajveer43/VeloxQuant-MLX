@@ -105,6 +105,9 @@ class SqueezeAttentionCache(_MLXKVCache):
         override = getattr(config, "squeeze_resolved_budget", None)
         self._budget = int(override) if override is not None else self._avg_budget
         self._n_sink = int(getattr(config, "squeeze_n_sink", 4))
+        # True absolute token position, independent of how many rows survive
+        # eviction; reported as ``self.offset`` after each call (#389).
+        self._true_offset: int = 0
 
         self._layer_id = layer_id
         self._coordinator = coordinator
@@ -247,7 +250,17 @@ class SqueezeAttentionCache(_MLXKVCache):
         self.keys = None
         self.values = None
         self.offset = 0
-        return super().update_and_fetch(K_out, V_out)
+        out = super().update_and_fetch(K_out, V_out)
+
+        # RoPE position correctness (#389). mlx_lm rotates the next query and
+        # key at ``offset=cache.offset`` *before* calling update_and_fetch, and
+        # the base class above just set ``offset`` to the number of RETAINED
+        # rows, which stops advancing once eviction starts. Eviction here only
+        # drops rows (survivors keep the rotation they arrived with), so report
+        # the true absolute position instead, as h2o/streaming_llm do.
+        self._true_offset += S
+        self.offset = self._true_offset
+        return out
 
     # ------------------------------------------------------------------
     def is_trimmable(self) -> bool:
