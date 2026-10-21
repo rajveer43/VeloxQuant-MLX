@@ -207,6 +207,28 @@ def init_pyramid_state(n_sink: int, budget: int, head_dim: int) -> PyramidState:
     return PyramidState(keys=None, values=None, scores=None, n_sink=n_sink, budget=budget)
 
 
+def _fused_evict_keep_newest(keys, values, scores, n_sink):
+    """Fused Metal eviction over ``[BH,N,D]`` that never evicts the last row.
+
+    The kernel evicts the lowest-scoring non-sink row, and the row appended
+    this step always scores 0, so it must be excluded from the candidates
+    (#839): evict from the first ``N-1`` rows, then re-attach the newest one.
+    """
+    from veloxquant_mlx.metal._pyramidkv_evict import pyramidkv_fused_evict
+
+    if keys.shape[1] == 2 and n_sink == 0:
+        # budget == 1: the only candidate is the single older row, which the
+        # kernel (N >= 2) cannot be called on; keeping just the newest row is
+        # the result it would have produced.
+        return keys[:, -1:], values[:, -1:], scores[:, -1:]
+    ko, vo, so = pyramidkv_fused_evict(keys[:, :-1], values[:, :-1], scores[:, :-1], n_sink)
+    return (
+        mx.concatenate([ko, keys[:, -1:]], axis=1),
+        mx.concatenate([vo, values[:, -1:]], axis=1),
+        mx.concatenate([so, scores[:, -1:]], axis=1),
+    )
+
+
 def pyramid_update(
     state: PyramidState,
     new_keys: mx.array,  # [S, D] fp16
@@ -264,28 +286,30 @@ def pyramid_update(
 
         if n_total > state.budget:
             if backend == "metal" and n_total >= 2:
-                from veloxquant_mlx.metal._pyramidkv_evict import pyramidkv_fused_evict
-
-                ko, vo, so = pyramidkv_fused_evict(
+                ko, vo, so = _fused_evict_keep_newest(
                     keys_cat[None], values_cat[None], scores_cat[None], state.n_sink
                 )
                 state = PyramidState(ko[0], vo[0], so[0], state.n_sink, state.budget)
                 continue
             if backend in ("mlx", "metal"):
-                evict = mx.argmin(scores_cat[state.n_sink :]) + state.n_sink
+                evict = mx.argmin(scores_cat[state.n_sink : -1]) + state.n_sink
                 rows = mx.arange(n_total - 1)
                 keep = rows + (rows >= evict)
                 state = PyramidState(
                     keys_cat[keep], values_cat[keep], scores_cat[keep], state.n_sink, state.budget
                 )
                 continue
-            # Build eviction-protected score view: sinks get +inf.
-            n_sink_eff = min(state.n_sink, n_total)
+            # Build eviction-protected score view: sinks get +inf, and the row
+            # appended this step is not a candidate at all. Its score is 0 (it
+            # has had no step to accumulate attention yet) while every older
+            # row has a positive score, so without this it is always the
+            # argmin and the current token is evicted before it can be
+            # attended to (#839).
+            protected = scores_cat[:-1]
+            n_sink_eff = min(state.n_sink, n_total - 1)
             if n_sink_eff > 0:
                 inf_block = mx.full((n_sink_eff,), float("inf"), dtype=mx.float32)
-                protected = mx.concatenate([inf_block, scores_cat[n_sink_eff:]], axis=0)
-            else:
-                protected = scores_cat
+                protected = mx.concatenate([inf_block, protected[n_sink_eff:]], axis=0)
 
             evict_idx = int(mx.argmin(protected).item())
             keep_indices = [j for j in range(n_total) if j != evict_idx]
@@ -351,11 +375,9 @@ def pyramid_update_heads(states, new_keys, new_values, *, backend):
         n = k.shape[1]
         if n > budget:
             if backend == "metal":
-                from veloxquant_mlx.metal._pyramidkv_evict import pyramidkv_fused_evict
-
-                k, v, scores = pyramidkv_fused_evict(k, v, scores, sink)
+                k, v, scores = _fused_evict_keep_newest(k, v, scores, sink)
             else:
-                loser = mx.argmin(scores[:, sink:], axis=1) + sink
+                loser = mx.argmin(scores[:, sink:-1], axis=1) + sink
                 rows = mx.arange(n - 1)[None]
                 keep = rows + (rows >= loser[:, None])
                 k = mx.take_along_axis(k, keep[:, :, None], axis=1)

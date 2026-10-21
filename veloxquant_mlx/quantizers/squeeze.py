@@ -269,13 +269,17 @@ def squeeze_update(
         n_total = keys_cat.shape[0]
 
         if n_total > state.budget:
-            # Build eviction-protected score view: sinks get +inf.
-            n_sink_eff = min(state.n_sink, n_total)
+            # Build eviction-protected score view: sinks get +inf, and the row
+            # appended this step is not a candidate at all. Its score is 0 (it
+            # has had no step to accumulate attention yet) while every older
+            # row has a positive score, so without this it is always the
+            # argmin and the current token is evicted before it can be
+            # attended to (#839).
+            protected = scores_cat[:-1]
+            n_sink_eff = min(state.n_sink, n_total - 1)
             if n_sink_eff > 0:
                 inf_block = mx.full((n_sink_eff,), float("inf"), dtype=mx.float32)
-                protected = mx.concatenate([inf_block, scores_cat[n_sink_eff:]], axis=0)
-            else:
-                protected = scores_cat
+                protected = mx.concatenate([inf_block, protected[n_sink_eff:]], axis=0)
 
             evict_idx = int(mx.argmin(protected).item())
             keep_indices = [j for j in range(n_total) if j != evict_idx]
@@ -332,8 +336,10 @@ def _evict_via_mlx_batched(
     see this module's docstring), so there is nothing to remap.
     """
     bh, n_total = scores_cat.shape
-    n_sink_eff = min(n_sink, n_total)
-    protected = scores_cat
+    # The row appended this step scores 0 and would always be the argmin, so
+    # it is not a candidate (#839); candidates are the first n_total-1 rows.
+    n_sink_eff = min(n_sink, n_total - 1)
+    protected = scores_cat[:, :-1]
     if n_sink_eff > 0:
         sink_inf = mx.full((bh, n_sink_eff), float("inf"), dtype=mx.float32)
         protected = mx.concatenate([sink_inf, protected[:, n_sink_eff:]], axis=1)
