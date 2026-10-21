@@ -110,7 +110,7 @@ Do a small fraction of your tokens have disproportionate attention weight?
 └── Yes, want token-level bit allocation (not fp16 protection) → ZipCache-adapted
 
 Do you need a hard cap on token count (very long context, fixed RAM budget)?
-├── Yes, evict by importance score (score-based) → SnapKV-adapted
+├── Yes, evict by importance score (score-based; caps the prompt only, decode still grows) → SnapKV-adapted
 └── Yes, constant-memory streaming (positional) → StreamingLLM-adapted
 ```
 
