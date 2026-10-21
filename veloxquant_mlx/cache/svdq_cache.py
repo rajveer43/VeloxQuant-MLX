@@ -234,6 +234,10 @@ class SVDqKVCache(_MLXKVCache):
     def update_and_fetch(self, keys: mx.array, values: mx.array):
         """Fit per-head SVD on prefill (or project into the existing basis on decode), mixed-bit quantize the latents; values pass through fp16 unchanged."""
         B, H, S, D = keys.shape
+        if B != 1:
+            # Bases and the latent buffers carry a single batch axis, so B>1
+            # used to die in an opaque broadcast error (#847).
+            raise ValueError(f"SVDqKVCache supports batch size 1 only, got B={B}")
 
         if not self._V and S == 1:
             # A basis fit on a single row is rank-1 and is frozen for every

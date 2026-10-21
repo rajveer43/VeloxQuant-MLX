@@ -457,3 +457,12 @@ def test_merge_on_empty_cache_would_silently_substitute_if_inherited():
     merged = _MLXKVCache.merge.__func__(SVDqKVCache, [c])
     assert isinstance(merged, BatchKVCache)
     assert not isinstance(merged, SVDqKVCache)
+
+
+@pytest.mark.parametrize("S", [1, 200])
+def test_batch_size_above_one_raises_clear_error(S):
+    """B>1 used to fail with an opaque broadcast ValueError (#847)."""
+    cache = _make()
+    k = mx.random.normal((2, 4, S, 64)).astype(mx.float16)
+    with pytest.raises(ValueError, match="batch size 1 only, got B=2"):
+        cache.update_and_fetch(k, k)
