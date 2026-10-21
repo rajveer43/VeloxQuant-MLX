@@ -109,6 +109,8 @@ class _TensorKVTC:
         self._raw_rows: mx.array | None = None  # [S_total, D] fp32, accumulated
         self._artifact: KVTCArtifact | None = None
         self._fitted = False
+        self._L_np: np.ndarray | None = None  # [S_total, r] float64 latents of _raw_rows
+        self._pending: tuple | None = None  # codes not yet entropy-encoded (#841)
 
     def fit_prefill_from_pca(
         self, x0: mx.array, L: mx.array, V: mx.array, mean: mx.array, variances: np.ndarray
@@ -134,6 +136,8 @@ class _TensorKVTC:
             beta=self.beta,
         )
         self._fitted = True
+        self._L_np = None
+        self._pending = None
         return kvtc_decompress(self._artifact)
 
     def append(self, x: mx.array) -> mx.array:
@@ -150,61 +154,94 @@ class _TensorKVTC:
         """
         assert self._fitted and self._artifact is not None and self._raw_rows is not None
         self._raw_rows = mx.concatenate([self._raw_rows, x.astype(mx.float32)], axis=0)
-        return self._requantize()
+        return self._requantize(x.astype(mx.float32))
 
     def trim(self, n: int) -> None:
         """Drop the ``n`` most-recent rows and re-quantize through the frozen basis."""
         assert self._fitted and self._raw_rows is not None
         keep = max(0, self._raw_rows.shape[0] - n)
         self._raw_rows = self._raw_rows[:keep]
+        if self._L_np is not None:
+            self._L_np = self._L_np[:keep]
         if keep > 0:
             self._requantize()
+            self._materialize()
         else:
             self._fitted = False
             self._artifact = None
+            self._L_np = None
+            self._pending = None
 
-    def _requantize(self) -> mx.array:
-        """Re-derive the entropy-coded artifact for the current ``_raw_rows`` through the frozen basis/allocation."""
-        assert self._artifact is not None and self._raw_rows is not None
-        V = self._artifact.V
-        mean = self._artifact.mean
-        bit_alloc = self._artifact.bit_allocation
-
-        # Re-quantize the accumulated rows through the FROZEN basis and
-        # FROZEN bit allocation (only the per-token codes/quant-params grow;
-        # the DP is never re-invoked after prefill).
-        x_centered = self._raw_rows - mean[None, :]
-        L = x_centered @ V
+    def _project(self, x: mx.array) -> np.ndarray:
+        """Project fp32 rows ``x`` [S, D] onto the frozen basis; float64 [S, r]."""
+        assert self._artifact is not None
+        L = (x - self._artifact.mean[None, :]) @ self._artifact.V
         mx.eval(L)
-        L_np = np.asarray(L.tolist(), dtype=np.float64)
+        return np.asarray(L.tolist(), dtype=np.float64).reshape(x.shape[0], -1)
 
-        survived_idx = self._artifact.survived_idx
+    def _requantize(self, new_rows: mx.array | None = None) -> mx.array:
+        """Re-quantize the current rows through the frozen basis/allocation and return the reconstruction.
 
-        all_codes = []
-        mins, scales, bits_per_component = [], [], []
-        for i in survived_idx:
-            bits = int(bit_alloc[i])
+        Only ``new_rows`` are projected (the projection of older rows is
+        cached in ``_L_np``). The per-component min/scale are still refit
+        over all rows, exactly as before, but the entropy-coded artifact is
+        NOT rebuilt here: Huffman/bit-packing is O(n) pure Python and made
+        every decode step cost ~1 ms per cached token (#841). The codes are
+        kept in ``_pending`` and encoded on demand by :meth:`_materialize`
+        (byte accounting, trim). The reconstruction is the same values
+        ``kvtc_decompress`` would return, because the entropy coding is
+        lossless.
+        """
+        assert self._artifact is not None and self._raw_rows is not None
+        art = self._artifact
+        if (
+            self._L_np is None
+            or self._L_np.shape[0] + (0 if new_rows is None else new_rows.shape[0])
+            != self._raw_rows.shape[0]
+        ):
+            self._L_np = self._project(self._raw_rows)
+        elif new_rows is not None:
+            self._L_np = np.concatenate([self._L_np, self._project(new_rows)])
+        L_np = self._L_np
+        n = L_np.shape[0]
+        r = int(art.bit_allocation.shape[0])
+
+        L_hat = np.zeros((n, r), dtype=np.float64)
+        all_codes, mins, scales, bits_per_component = [], [], [], []
+        for i in art.survived_idx:
+            bits = int(art.bit_allocation[i])
             codes, lo, scale = quantize_component(L_np[:, i], bits)
             all_codes.append(codes)
             mins.append(lo)
             scales.append(scale)
             bits_per_component.append(bits)
-        payload, table, is_entropy_coded = _encode_survived_codes(all_codes, bits_per_component)
+            L_hat[:, i] = codes.astype(np.float64) * scale + lo
 
+        self._pending = (all_codes, mins, scales, bits_per_component, n)
+        x_hat = mx.array(L_hat.astype(np.float32)) @ art.V.T + art.mean[None, :]
+        return x_hat.astype(mx.float16)
+
+    def _materialize(self) -> None:
+        """Entropy-encode the pending codes into ``_artifact`` (no-op when current)."""
+        if self._pending is None or self._artifact is None:
+            return
+        all_codes, mins, scales, bits_per_component, n = self._pending
+        payload, table, is_entropy_coded = _encode_survived_codes(all_codes, bits_per_component)
+        old = self._artifact
         self._artifact = KVTCArtifact(
-            V=V,
-            mean=mean,
-            bit_allocation=bit_alloc,
-            S=int(self._raw_rows.shape[0]),
-            n_survived=self._artifact.n_survived,
+            V=old.V,
+            mean=old.mean,
+            bit_allocation=old.bit_allocation,
+            S=int(n),
+            n_survived=old.n_survived,
             entropy_payload=payload,
             entropy_table=table,
             quant_min=np.asarray(mins, dtype=np.float64),
             quant_scale=np.asarray(scales, dtype=np.float64),
-            survived_idx=survived_idx,
+            survived_idx=old.survived_idx,
             is_entropy_coded=is_entropy_coded,
         )
-        return kvtc_decompress(self._artifact)
+        self._pending = None
 
     # ------------------------------------------------------------------
     @property
@@ -212,6 +249,7 @@ class _TensorKVTC:
         """Realized entropy-coded storage size for this tensor's fitted artifact."""
         if self._artifact is None:
             return 0
+        self._materialize()
         return kvtc_fp16_bytes(self._artifact)
 
     @property
@@ -219,6 +257,7 @@ class _TensorKVTC:
         """Fixed-width (pre-entropy-coding) storage size for this tensor's fitted artifact."""
         if self._artifact is None:
             return 0
+        self._materialize()
         return kvtc_pre_entropy_bytes(self._artifact)
 
     @property
@@ -478,6 +517,11 @@ class KVTCKVCache(_MLXKVCache):
     # ``_keys_states``/``_vals_states`` already track K and V independently
     # (unlike ``kvtc_bytes``, which sums both), so no new accounting is
     # needed — these just expose the existing split.
+    @property
+    def nbytes(self) -> int:  # type: ignore[override]
+        """Total realized stored bytes (K + V); the inherited base-buffer size is always 0 here (#841)."""
+        return self.kvtc_bytes
+
     @property
     def compressed_key_bytes(self) -> int:
         """Realized stored bytes for the compressed key cache (entropy-coded payload + table + basis, all heads/batches)."""
