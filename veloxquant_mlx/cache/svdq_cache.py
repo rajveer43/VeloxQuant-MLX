@@ -235,8 +235,19 @@ class SVDqKVCache(_MLXKVCache):
         """Fit per-head SVD on prefill (or project into the existing basis on decode), mixed-bit quantize the latents; values pass through fp16 unchanged."""
         B, H, S, D = keys.shape
 
+        if not self._V and S == 1:
+            # A basis fit on a single row is rank-1 and is frozen for every
+            # later key (#840). Store the row losslessly instead and fit on the
+            # first call that carries more than one; charge it at fp16.
+            raw = B * H * S * D * 2
+            self._compressed_key_bytes += raw
+            self._fp16_key_bytes += raw
+            self._value_fp16_bytes += raw
+            self._tokens_seen += S
+            return super().update_and_fetch(keys, values)
+
         if not self._V:
-            # First call — run SVD on the incoming batch (prefill)
+            # First multi-row call — run SVD on the incoming batch (prefill)
             k_out = self._run_prefill_svd(keys)
         else:
             # Subsequent calls — project into each head's existing V
