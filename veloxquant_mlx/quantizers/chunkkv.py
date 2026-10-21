@@ -761,6 +761,7 @@ def chunkkv_update_batched(
             positions = mx.concatenate([positions, mx.zeros((bh, pad), dtype=mx.int32)], axis=1)
 
     n_max = keys.shape[1]
+    max_len = existing_max_len  # host-side upper bound on any row's valid length
 
     for i in range(s):
         k_i = new_keys[:, i]  # [BH, D]
@@ -790,23 +791,35 @@ def chunkkv_update_batched(
         positions = mx.put_along_axis(positions, write_pos, p_i[:, None], axis=1)
 
         new_lengths = lengths + 1
-        over_budget = new_lengths > budget
+        max_len += 1
 
-        evict_mask = _evict_lowest_chunk_batched(
-            scores, new_lengths, n_sink, chunk_size, over_budget
-        )
+        if max_len <= budget and not record_kept_positions:
+            # No row can be over budget, so the eviction mask would be all
+            # False and the compaction the identity. With chunk eviction
+            # firing only about once per ``chunk_size`` tokens, running that
+            # machinery every step made prefill ~10x slower than h2o (#846).
+            lengths = new_lengths
+        else:
+            over_budget = new_lengths > budget
 
-        if record_kept_positions:
-            keep_mask_np = (~evict_mask).tolist()
-            new_lengths_list = new_lengths.tolist()
-            for row in range(bh):
-                nl = new_lengths_list[row]
-                kept_positions[row].append([j for j in range(nl) if keep_mask_np[row][j]])
+            evict_mask = _evict_lowest_chunk_batched(
+                scores, new_lengths, n_sink, chunk_size, over_budget
+            )
 
-        keys, values, scores, positions, n_removed = _compact_ragged_batched(
-            keys, values, scores, positions, evict_mask
-        )
-        lengths = new_lengths - n_removed
+            if record_kept_positions:
+                keep_mask_np = (~evict_mask).tolist()
+                new_lengths_list = new_lengths.tolist()
+                for row in range(bh):
+                    nl = new_lengths_list[row]
+                    kept_positions[row].append([j for j in range(nl) if keep_mask_np[row][j]])
+
+            keys, values, scores, positions, n_removed = _compact_ragged_batched(
+                keys, values, scores, positions, evict_mask
+            )
+            lengths = new_lengths - n_removed
+            # Rows shed different amounts (ragged tail chunk), so re-read the
+            # true bound: one host sync per eviction instead of per token.
+            max_len = int(mx.max(lengths).item())
 
         if (i + 1) % _EVAL_FLUSH_INTERVAL == 0:
             mx.eval(keys, values, scores, positions, lengths)
