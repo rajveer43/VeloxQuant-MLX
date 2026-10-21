@@ -76,6 +76,7 @@ from veloxquant_mlx.quantizers.a2ats import (
     a2ats_cholesky_factor,
     a2ats_h_weighted_assignment,
     a2ats_query_aware_assignment,
+    a2ats_query_aware_assignment_rows,
     a2ats_select_retrieval_set,
 )
 from veloxquant_mlx.quantizers.a2ats_rope import (
@@ -277,6 +278,36 @@ class A2ATSKVCache(_MLXKVCache):
 
         return dequantize_vq(indices, self._codebook).astype(out_dtype)  # [S, D], pre-RoPE
 
+    def _quantize_decode_batched(self, k_rows: mx.array, out_dtype: mx.Dtype) -> mx.array:
+        """Compress + reconstruct one new token per head, all heads at once.
+
+        ``k_rows`` is ``[N, D]`` (``N = B*H``), pre-RoPE. With a single token
+        the retrieval set is always that token (``max(1, ceil(f * 1)) == 1``)
+        and the bulk is empty, so :meth:`_quantize_head` reduces to the
+        retrieval-assignment branch with the key itself as proxy query. That is
+        row-independent, so every head goes through one call per sub-space
+        instead of a heap selection, a host sync and ~40 small ops per head
+        (#846).
+        """
+        N = int(k_rows.shape[0])
+        self._tokens_retrieved += N
+        idx_parts = []
+        for sub_i in range(self._n_sub):
+            start = sub_i * self._sub_dim
+            sub = k_rows[:, start : start + self._sub_dim]
+            if self._cholesky_factor is not None:
+                idx_parts.append(
+                    a2ats_h_weighted_assignment(sub, self._codebook, self._cholesky_factor)
+                )
+            else:
+                idx_parts.append(
+                    a2ats_query_aware_assignment_rows(
+                        sub, self._codebook, sub, beta=self._beta
+                    )
+                )
+        indices = mx.stack(idx_parts, axis=1)  # [N, n_sub]
+        return dequantize_vq(indices, self._codebook).astype(out_dtype)  # [N, D]
+
     # ------------------------------------------------------------------
     # mlx_lm protocol
     # ------------------------------------------------------------------
@@ -343,15 +374,20 @@ class A2ATSKVCache(_MLXKVCache):
             axis=0,
         )
 
-        out_heads_k = []
-        for b in range(B):
-            per_head = []
-            for h in range(H):
-                per_head.append(
-                    self._quantize_head(keys_pre_rope[b, h], positions, out_dtype=keys.dtype)
-                )
-            out_heads_k.append(mx.stack(per_head, axis=0))
-        k_out = mx.stack(out_heads_k, axis=0)  # [B, H, S, D]
+        if S == 1 and self._use_query_aware:
+            k_out = self._quantize_decode_batched(
+                keys_pre_rope.reshape(B * H, D), keys.dtype
+            ).reshape(B, H, 1, D)
+        else:
+            out_heads_k = []
+            for b in range(B):
+                per_head = []
+                for h in range(H):
+                    per_head.append(
+                        self._quantize_head(keys_pre_rope[b, h], positions, out_dtype=keys.dtype)
+                    )
+                out_heads_k.append(mx.stack(per_head, axis=0))
+            k_out = mx.stack(out_heads_k, axis=0)  # [B, H, S, D]
 
         # Values: plain nearest-centroid VQ, no RoPE (values are never
         # position-rotated), no retrieval-set preferential assignment —
