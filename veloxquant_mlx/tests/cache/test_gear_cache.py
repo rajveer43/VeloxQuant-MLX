@@ -253,7 +253,19 @@ def test_truncated_svd_batched_matches_per_row_loop_energy_threshold():
         assert ranks[i] == ref_rank
         recon_ref = ref_L @ ref_Vt
         recon_new = np.array(L[i, :, : ranks[i]]) @ np.array(R[i, : ranks[i], :])
-        np.testing.assert_allclose(recon_ref, recon_new, atol=1e-3)
+        if i == 0:
+            np.testing.assert_allclose(recon_ref, recon_new, atol=1e-3)
+        else:
+            # Row 1's singular values are exactly tied, so every rank-r subspace
+            # is equally optimal and the SVD and the Gram eigendecomposition
+            # (#873) may pick different ones: compare optimality, not the
+            # arbitrary choice inside the degenerate eigenspace.
+            target = np.array(E[i])
+            np.testing.assert_allclose(
+                np.linalg.norm(target - recon_ref),
+                np.linalg.norm(target - recon_new),
+                rtol=1e-4,
+            )
 
 
 def test_truncated_svd_batched_zero_matrix_matches_scalar_fallback():

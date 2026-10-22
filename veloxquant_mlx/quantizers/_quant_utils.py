@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import mlx.core as mx
+import numpy as np
 
 
 def _group_quant_codes(
@@ -305,8 +306,19 @@ def _truncated_svd_batched(
     """
     x32 = x.astype(mx.float32)
     bh, n, d = x32.shape
-    U, s_vals, Vt = mx.linalg.svd(x32, stream=mx.cpu)  # [BH,N,N], [BH,min(N,D)], [BH,min(N,D),D]
-    mx.eval(U, s_vals, Vt)
+    # Only the top right singular vectors and the singular values are needed
+    # (L = U_r s_r = X V_r), so eigendecompose the batched D x D Gram matrix
+    # instead of running a full SVD of the tall block, which builds an
+    # [N, N] U and made prefill superlinear in prompt length (#873). Formed
+    # and diagonalised in float64: squaring the conditioning is harmless
+    # there, whereas a float32 Gram blurs the weaker retained directions.
+    x_np = np.asarray(x32, dtype=np.float64)
+    evals, evecs = np.linalg.eigh(np.swapaxes(x_np, 1, 2) @ x_np)  # ascending
+    r_max_possible_n = min(n, d)  # an SVD of [N, D] has min(N, D) singular values
+    s_vals = mx.array(
+        np.sqrt(np.clip(evals[:, ::-1][:, :r_max_possible_n], 0.0, None)).astype(np.float32)
+    )  # [BH, min(N,D)] descending
+    v_desc = evecs[:, :, ::-1]  # [BH, D, D], columns by descending singular value
 
     r_max_possible = s_vals.shape[-1]
     if rank is not None:
@@ -343,9 +355,8 @@ def _truncated_svd_batched(
         ranks = [max(1, min(r, int(r_max_possible), d)) for r in raw_rank_list]
         max_rank = max(ranks)
 
-    U_trunc = U[:, :, :max_rank]  # [BH, N, max_rank]
-    s_trunc = s_vals[:, :max_rank]  # [BH, max_rank]
-    Vt_trunc = Vt[:, :max_rank, :]  # [BH, max_rank, D]
+    v_trunc = v_desc[:, :, :max_rank]  # [BH, D, max_rank] float64
+    Vt_trunc = mx.array(np.ascontiguousarray(np.swapaxes(v_trunc, 1, 2)).astype(np.float32))
 
     # Zero out each row's singular values beyond its own rank so the padded
     # columns are numerically inert for reconstruction (L @ R contributes 0
@@ -355,9 +366,10 @@ def _truncated_svd_batched(
     ranks_arr = mx.array(ranks, dtype=mx.int32)
     col_idx = mx.arange(max_rank)[None, :]  # [1, max_rank]
     rank_mask = col_idx < ranks_arr[:, None]  # [BH, max_rank]
-    s_masked = mx.where(rank_mask, s_trunc, mx.zeros_like(s_trunc))
 
-    L = U_trunc * s_masked[:, None, :]  # [BH, N, max_rank], singular values folded in
+    # X V_r == U_r * s_r. Computed from V directly (float64) rather than from U,
+    # which is no longer materialised; zero the columns beyond each row's rank.
+    L = mx.array((x_np @ v_trunc).astype(np.float32)) * rank_mask[:, None, :].astype(mx.float32)
     R = Vt_trunc  # [BH, max_rank, D]
     return L, R, ranks
 
