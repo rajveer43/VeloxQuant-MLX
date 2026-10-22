@@ -94,6 +94,7 @@ _TRUE_STEP_COUNT_OFFSET_METHODS = [
     "morphkv",
     "kvzip",
     "nestedkv",
+    "keyformer",  # #871
 ]
 _OFFSET_EQUALS_SHAPE_METHODS = [m for m in ALL_METHODS if m not in _TRUE_STEP_COUNT_OFFSET_METHODS]
 

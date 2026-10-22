@@ -16,12 +16,13 @@
 //   - one thread per (bh, output_row) pair, grid = (BH * n_kept, 1, 1).
 //   - source index = output_row if output_row < evict_idx[bh],
 //                     output_row + 1 otherwise (skips the evicted row).
-//   - position/RoPE handling: rows whose (source) position is <= evicted_pos
-//     are copied bit-identically; rows whose position is > evicted_pos shift
-//     down by exactly 1 and get re-rotated via the same delta-rotation
-//     formula as rope_remap_positions (a2ats_rope.py) — rotate by
-//     delta = new_position - old_position, NeoX-style (first/second-half
-//     split) RoPE, matching MLX's default `traditional=False` convention.
+//   - straight compaction only (#871): the cache reports `offset` as the true
+//     absolute step count, so mlx_lm rotates the next query at each
+//     survivor's true distance. Renumbering survivors and re-rotating their
+//     keys (the previous behavior of this kernel) changed that distance.
+//     Every surviving row keeps the exact position and rotation it arrived
+//     with; only the evicted row is dropped. `rope_base_arr` is unused now
+//     (kept as an input for ABI parity with the Python-side caller).
 
     uint gid = thread_position_in_grid.x;
 
@@ -38,50 +39,17 @@
     int evict_i = evict_idx[bh];
     uint src = (j < uint(evict_i)) ? j : (j + 1u);
 
-    int evicted_pos = positions_mid[bh * n_total + uint(evict_i)];
-    int src_pos     = positions_mid[bh * n_total + src];
-    bool needs_shift = src_pos > evicted_pos;
-    int new_pos = needs_shift ? (src_pos - 1) : src_pos;
-
-    // ---- values, scores, gumbel, positions: straight copy (never rotated) ----
+    // ---- values, scores, gumbel, positions, keys: straight copy, no rotation ----
     uint out_row_off = bh * n_kept + j;
     uint src_row_off = bh * n_total + src;
 
     scores_out[out_row_off]    = scores_mid[src_row_off];
     gumbel_out[out_row_off]    = gumbel_mid[src_row_off];
-    positions_out[out_row_off] = new_pos;
+    positions_out[out_row_off] = positions_mid[src_row_off];
 
     uint out_vd = out_row_off * D;
     uint src_vd = src_row_off * D;
     for (uint d = 0u; d < D; ++d) {
         values_out[out_vd + d] = values_mid[src_vd + d];
-    }
-
-    // ---- keys: bit-identical copy, or delta-rotate ----
-    if (!needs_shift) {
-        for (uint d = 0u; d < D; ++d) {
-            keys_out[out_vd + d] = keys_mid[src_vd + d];
-        }
-        return;
-    }
-
-    // Delta rotation: rotate_by(new_pos - src_pos) == rotate_by(-1).
-    // NeoX-style split: first half / second half pair (d, d + D/2).
-    uint half_d = D / 2u;
-    float base = rope_base_arr[0];
-    float delta = float(new_pos - src_pos);
-
-    for (uint d = 0u; d < half_d; ++d) {
-        // Matches a2ats_rope.py's _rope_cos_sin exactly:
-        // inv_freq[d] = 1 / base^(d / half_d).
-        float inv_freq = 1.0f / metal::pow(base, float(d) / float(half_d));
-        float angle = delta * inv_freq;
-        float c = metal::cos(angle);
-        float s = metal::sin(angle);
-
-        float x1 = float(keys_mid[src_vd + d]);
-        float x2 = float(keys_mid[src_vd + d + half_d]);
-
-        keys_out[out_vd + d]         = half(x1 * c - x2 * s);
-        keys_out[out_vd + d + half_d] = half(x1 * s + x2 * c);
+        keys_out[out_vd + d]   = keys_mid[src_vd + d];
     }
