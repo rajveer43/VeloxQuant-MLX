@@ -2,7 +2,7 @@
 
 Replaces the Python per-token loop in ``keyformer_update``'s over-budget
 branch (``veloxquant_mlx/quantizers/keyformer.py``) — append, sink/recent-
-protected Gumbel-regularized argmin, evict, RoPE-remap the shifted rows —
+protected Gumbel-regularized argmin, evict —
 with two GPU dispatches per incoming token, batched across all
 ``(batch, head)`` pairs at once. Structurally this is
 :mod:`veloxquant_mlx.metal._h2o_evict` with ONE addition threaded through
@@ -22,9 +22,9 @@ phase runs.
      argmin over ``n_total`` candidate rows per ``(batch, head)`` group, one
      threadgroup per group.
   2. :func:`_keyformer_evict_apply` — given ``evict_idx``, compacts the
-     surviving ``n_kept`` rows (including gumbel) and re-rotates (NeoX-style
-     RoPE) exactly the rows whose position shifted, matching
-     ``keyformer_update``'s per-token eviction branch (keys to within 1 fp16 ULP).
+     surviving ``n_kept`` rows (including gumbel) verbatim — no re-rotation
+     and no renumbering (#871) — matching ``keyformer_update``'s per-token
+     eviction branch exactly.
 
 Precondition (mirrors H2O's D3): callers MUST only invoke
 :func:`keyformer_fused_evict` when every ``(batch, head)`` group is already
@@ -67,7 +67,7 @@ _KEYFORMER_EVICT_REDUCE_SRC = _read_kernel_source("keyformer_evict_reduce.metal"
 
 
 # ===========================================================================
-# Metal source — dispatch 2: compact (incl. gumbel) + conditionally re-rotate
+# Metal source — dispatch 2: compact (incl. gumbel), no re-rotation (#871)
 # ===========================================================================
 # Grid:        (BH * n_kept, 1, 1) — one thread per output row.
 # Threadgroup: (min(n_kept, 256), 1, 1).
@@ -138,14 +138,13 @@ def keyformer_fused_evict(
     tuple[mx.array, mx.array, mx.array, mx.array, mx.array]
     | tuple[mx.array, mx.array, mx.array, mx.array, mx.array, mx.array]
 ):
-    """Fused Gumbel-regularized argmin + evict + RoPE-remap, batched over (batch*head).
+    """Fused Gumbel-regularized argmin + evict, batched over (batch*head).
 
     With ``return_indices=True``, append chronological indices into the
     supplied prior + new rows (or the supplied candidate rows for eviction).
 
-    Matches ``keyformer_update``'s per-token eviction branch: values, scores,
-    gumbel and positions exactly, keys to within 1 fp16 ULP (the kernel rotates
-    in fp32, the MLX twin in fp16; #652).
+    Matches ``keyformer_update``'s per-token eviction branch exactly: survivors
+    are copied verbatim (keys included), none is re-rotated or renumbered (#871).
     Caller must have already computed the "mid" state — the ``n_kept``
     currently-stored rows with the one new token conceptually appended
     (score 0, its own frozen Gumbel draw, its own position) — and must only
@@ -162,7 +161,8 @@ def keyformer_fused_evict(
                        row's position is ``next_pos``).
         n_sink:        Number of leading positions protected from eviction
                        (uniform across all BH groups).
-        rope_base:     RoPE frequency base — must match the model's own.
+        rope_base:     Unused (#871: survivors are no longer re-rotated).
+                       Kept as a parameter for call-site/ABI stability.
         tau:           Current annealed Gumbel temperature (see
                        ``quantizers/keyformer.py``'s ``_tau_at``) — the
                        caller computes the schedule; this kernel only applies

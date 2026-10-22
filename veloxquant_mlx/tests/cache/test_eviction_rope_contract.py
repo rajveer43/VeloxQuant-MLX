@@ -57,6 +57,8 @@ ARMS = [
     ("morphkv", {"method": "morphkv", "morphkv_budget": BUDGET, "morphkv_n_sink": 4}),
     ("kvzip", {"method": "kvzip", "kvzip_budget": BUDGET, "kvzip_n_sink": 4}),
     ("nestedkv", {"method": "nestedkv", "nestedkv_budget": BUDGET, "nestedkv_n_sink": 4}),
+    # #871: re-rotated survivors and reported offset == n_kept until fixed.
+    ("keyformer", {"method": "keyformer", "keyformer_budget": BUDGET, "keyformer_n_sink": 4}),
     # #389: these four reset ``offset`` to the retained row count every call.
     ("pyramidkv", {"method": "pyramidkv", "pyramid_budget": BUDGET, "pyramid_n_sink": 4}),
     ("squeeze", {"method": "squeeze", "squeeze_budget": BUDGET, "squeeze_n_sink": 4}),
@@ -156,7 +158,7 @@ def test_offset_is_independent_of_retained_row_count(name, cfg) -> None:
     assert small.offset == large.offset == S
 
 
-@pytest.mark.parametrize("method", ["morphkv", "kvzip", "nestedkv"])
+@pytest.mark.parametrize("method", ["morphkv", "kvzip", "nestedkv", "keyformer"])
 @pytest.mark.parametrize("batch,heads", [(1, 1), (2, 3)])
 @pytest.mark.parametrize(
     "chunks",

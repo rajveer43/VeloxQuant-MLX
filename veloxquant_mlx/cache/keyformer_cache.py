@@ -30,9 +30,15 @@ FIXED, CONFIRMED-BY-PAPER-COMPARISON GAP #2 — no RoPE position tracking. This
 cache never tracked which absolute position each kept key was rotated at, so
 an interior eviction silently desynced survivors' storage index from the
 rotation baked into their keys — the same bug class H2O-adapted had and fixed
-(see ``cache/h2o_cache.py``). Fixed the same way: positions are now tracked
-and re-rotated on eviction via ``rope_remap_positions``. See
-``keyformer_rope_base`` below.
+(see ``cache/h2o_cache.py``). Positions are now tracked per kept row.
+
+SUPERSEDED SUB-FIX, #871: this cache first re-rotated survivors to a gap-free
+layout on eviction and reported ``offset == n_kept``. That disagreed with how
+rows arrive (rotated at ``cache.offset`` but labelled with their true count),
+so the re-rotation used the wrong angle and corrupted keys, and ``offset``
+stalled at the budget. It now follows H2O/CurDKV (#609): eviction only drops
+a row, survivors keep their arrival rotation, and ``offset`` is the true
+absolute step count.
 
 THE HONESTY CRUX:
   1. Proxy query — the incoming KEY stands in for the unseen query (as H2O /
@@ -90,7 +96,7 @@ class KeyformerKVCache(_MLXKVCache):
             ``keyformer_anneal_steps`` (int, default 0)  — steps to ramp ``tau_init`` ->
                 ``tau_end`` over (Equation 10); 0 = constant temperature,
             ``keyformer_rope_base`` (float, default 10000.0) — RoPE base for
-                post-eviction position remap; must match the model's own,
+                unused since #871 (survivors are no longer re-rotated),
             ``keyformer_seed`` (int, default 0)          — base seed for the frozen noise.
 
     Notes:
@@ -262,12 +268,15 @@ class KeyformerKVCache(_MLXKVCache):
 
         self._keyformer_kept_bytes = B * H * n_kept * D * 2 * 2
 
-        # Preserve Keyformer's existing RoPE offset contract.
+        # Store exactly the n_kept retained rows. ``offset`` is the true
+        # absolute step count, not the row count: mlx_lm rotates the next
+        # query and key at ``offset``, and eviction does not re-rotate or
+        # renumber survivors, so every retained key stays at its true
+        # distance from the query (#871; same contract as H2O, #609).
         self.keys = K_out
         self.values = V_out
-        self.offset = n_kept
+        self.offset = self._next_pos
 
-        # Track chronology separately from the quantizer's shifted RoPE positions.
         self._kept_positions = mx.take_along_axis(positions, indices.reshape(B, H, n_kept), axis=2)
 
         if prev_keys_flat is None:

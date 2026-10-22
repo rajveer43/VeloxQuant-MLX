@@ -3,18 +3,14 @@
 The kernel must reproduce keyformer_update's per-token eviction branch
 (veloxquant_mlx/quantizers/keyformer.py) bit-for-bit: sink/recent-protected
 Gumbel-regularized argmin over the "mid" state (n_kept stored rows + 1
-appended row), evict the winner, and re-rotate exactly the rows whose
-position shifted. Structurally mirrors
+appended row), evict the winner, and copy every survivor verbatim (position
+and rotation untouched, #871). Structurally mirrors
 veloxquant_mlx/tests/metal/test_h2o_evict.py, with the Gumbel/tau dimension
-added and a tau=0 cross-check against h2o_fused_evict's EVICTION DECISION
-(the honest ablation, at the kernel level) — NOT its position/rotation
-handling, which legitimately differs by design (#609): Keyformer's cache
-reports ``offset == n_kept`` (see cache/keyformer_cache.py), so renumbering
-+ re-rotating survivors on eviction is correct there, while H2O's cache
-reports ``offset`` as the true absolute step count, where the same
-renumber-and-re-rotate was the #609 bug. See
+added and a tau=0 cross-check against h2o_fused_evict (the honest ablation,
+at the kernel level): both caches now follow the same true-position contract
+(#609 / #871), so every output must match exactly. See
 veloxquant_mlx/tests/cache/test_eviction_rope_contract.py for the shared
-contract both offset conventions must satisfy.
+contract.
 """
 
 from __future__ import annotations
@@ -96,19 +92,12 @@ def test_tau_zero_matches_h2o_kernel():
         recent=0,
     )
     # h2o_out: (keys, values, scores, positions); kf_out adds gumbel at index 3.
-    # H2O preserves survivors' TRUE positions (a real gap at the evicted
-    # index, #609); Keyformer renumbers to a gap-free range (still correct
-    # for its own offset==n_kept contract). So the raw position arrays
-    # differ by design — compare surviving SCORES (order-preserving, so
-    # this is really a proxy for "same set of rows survived") instead.
-    h2o_scores, h2o_positions = h2o_out[2], h2o_out[3]
-    kf_scores, kf_positions = kf_out[2], kf_out[4]
-    mx.eval(h2o_scores, h2o_positions, kf_scores, kf_positions)
-    assert float(mx.max(mx.abs(h2o_scores - kf_scores)).item()) == 0.0
-    # Position 3 (score 0.001, the true minimum) is the one evicted by both:
-    # H2O keeps the gap ([0,1,2,4,5]); Keyformer closes it ([0,1,2,3,4]).
-    assert h2o_positions.tolist() == [[0, 1, 2, 4, 5]]
-    assert kf_positions.tolist() == [[0, 1, 2, 3, 4]]
+    for a, b in zip(h2o_out, (kf_out[0], kf_out[1], kf_out[2], kf_out[4]), strict=True):
+        mx.eval(a, b)
+        assert float(mx.max(mx.abs(a.astype(mx.float32) - b.astype(mx.float32))).item()) == 0.0
+    # Position 3 (score 0.001, the true minimum) is evicted by both and the
+    # survivors keep their true positions: a gap, not a renumbering (#871).
+    assert kf_out[4].tolist() == [[0, 1, 2, 4, 5]]
 
 
 # ---------------------------------------------------------------------------
@@ -160,10 +149,12 @@ def test_interior_eviction_recovers_exact_original_keys():
     )
     mx.eval(ko, vo, so, go, po)
 
-    assert po.tolist() == [[0, 1, 2, 3]]
+    assert po.tolist() == [[0, 1, 3, 4]]  # true positions, gap at the evicted row (#871)
     kept_fp = np.array(vo.astype(mx.float32))[0, :, 0]
     assert 3.0 not in kept_fp
 
+    # Survivors are verbatim copies: de-rotating each at its own true
+    # position (still carried in ``po``) recovers the original key.
     recovered = rope_remap_positions(
         ko[0].astype(mx.float32), po[0], mx.zeros_like(po[0]), base=10000.0
     )
@@ -224,7 +215,7 @@ def test_sink_and_recent_protection():
         recent=1,
     )
     mx.eval(so, po)
-    assert po.tolist() == [[0, 1, 2, 3, 4]]
+    assert po.tolist() == [[0, 1, 3, 4, 5]]  # row 2 evicted; survivors keep true positions
     assert 0.5 not in so[0].tolist()
     assert so[0].tolist().count(pytest.approx(0.0001, abs=1e-6)) or True  # both sinks present
 
@@ -544,6 +535,8 @@ def test_keyformer_no_candidate_stays_in_group() -> None:
         _, _, _, _, po = keyformer_fused_evict(
             k, v, s, g, pos, n_sink=sink, rope_base=10000.0, recent=recent
         )
-        assert po[0].tolist()[0] == 0 and po[1].tolist()[0] == 10
+        # One row evicted per group, from inside that group (positions are no
+        # longer renumbered, #871, so the first position is not necessarily 0).
+        assert len(set(po[0].tolist())) == 5 and len(set(po[1].tolist())) == 5
         assert all(0 <= p <= 5 for p in po[0].tolist())
         assert all(10 <= p <= 15 for p in po[1].tolist())

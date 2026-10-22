@@ -54,14 +54,21 @@ rotation, corrupting every subsequent proxy-attention computation and the
 model's own downstream attention math. This is the exact bug class H2O-adapted
 had and fixed (see ``quantizers/h2o.py``'s module docstring, "RoPE position
 remapping"). Fixed the same way: every kept row's true original position is
-now tracked in ``KeyformerState.positions``, and ``keyformer_update``
-re-rotates the shifted survivors via
-:func:`veloxquant_mlx.quantizers.a2ats_rope.rope_remap_positions` whenever an
-eviction changes the kept set's positions.
+now tracked in ``KeyformerState.positions``.
+
+SUPERSEDED SUB-FIX, #871: that first fix also re-rotated the shifted survivors
+(``rope_remap_positions``) to a gap-free layout while the cache reported
+``offset == n_kept``. The two did not agree: arriving rows are labelled with
+their true token count but the model rotated them at ``cache.offset``, so the
+remap de-rotated by the wrong angle (error 3.3 on a 48-token repro from the
+second chunk on) and ``offset`` stalled at the budget. Same resolution as
+H2O/CurDKV (#609): eviction only drops the loser, survivors keep the position
+and rotation they arrived with, and the cache reports the true absolute
+offset. ``KeyformerState.positions`` can therefore be non-contiguous.
 
 FUSED METAL KERNEL for the over-budget branch (optional, mirrors H2O-adapted's
 kernel): the per-token eviction step — append, Gumbel-regularized argmin,
-evict, RoPE-remap — can optionally be replaced with two fused Metal
+evict — can optionally be replaced with two fused Metal
 dispatches via :func:`veloxquant_mlx.metal.keyformer_fused_evict`, structurally
 identical to :func:`veloxquant_mlx.metal.h2o_fused_evict` with one addition: a
 per-row frozen Gumbel value is threaded through both dispatches and folded
@@ -101,7 +108,7 @@ Public API (mirrors quantizers/h2o.py)
 ---------------------------------------
 KeyformerState        — immutable per-head state dataclass
 init_keyformer_state  — construct empty state (validates guards)
-keyformer_update      — absorb S new tokens, evict if over budget, remap RoPE
+keyformer_update      — absorb S new tokens, evict if over budget
 keyformer_get_kv      — extract current (keys, values) arrays
 keyformer_fp16_bytes  — bytes stored in current state
 full_keyformer_fp16_bytes — hypothetical cost without eviction
@@ -120,8 +127,6 @@ from veloxquant_mlx.quantizers._eviction_common import (
     full_fp16_kv_bytes,
     get_kv,
 )
-from veloxquant_mlx.quantizers.a2ats_rope import rope_remap_positions
-from veloxquant_mlx.quantizers.h2o import _rope_remap_positions_batched
 
 
 @dataclass
@@ -140,12 +145,11 @@ class KeyformerState:
                    Added (scaled by the current annealed temperature) to
                    ``scores`` only for the keep/evict decision — the stored
                    cumulative mass itself stays clean.
-        positions: [n_kept] int32 absolute positions each kept key is
-                   currently rotated at. Reassigned to a contiguous range
-                   whenever eviction changes which rows survive, and each key
-                   is re-rotated (via ``rope_remap_positions``) to match. Same
-                   fix as H2O-adapted's ``H2OState.positions`` — see module
-                   docstring gap #2.
+        positions: [n_kept] int32 true absolute position of each kept key,
+                   which is also the position it was rotated at. Never
+                   renumbered: eviction leaves gaps (#871; see module
+                   docstring gap #2, same as H2O-adapted's
+                   ``H2OState.positions``).
         pos:       Running count of token positions this head has ever
                    inserted; seeds the deterministic Gumbel draw AND drives
                    the temperature-annealing schedule, so both are
@@ -167,7 +171,7 @@ class KeyformerState:
                    ``tau`` ramps linearly from ``tau_init`` to ``tau_end``.
                    Steps beyond this hold at ``tau_end``. Ignored (no
                    annealing) when ``tau_init == tau_end``.
-        rope_base: RoPE frequency base used to de-rotate/re-rotate kept keys.
+        rope_base: Unused since #871 (survivors are no longer re-rotated); kept for API stability.
                    Must match the model's own attention module base.
         next_pos:  Absolute position the next incoming token will occupy —
                    tracks true sequence position across calls, independent of
@@ -242,9 +246,8 @@ def init_keyformer_state(
                       ``tau_init`` to ``tau_end``. ``0`` disables annealing
                       (temperature is constant at ``tau_init``) regardless of
                       ``tau_end``.
-        rope_base:    RoPE frequency base — must match the model's own
-                      attention module, or position remapping after eviction
-                      will not cancel out the original rotation correctly.
+        rope_base:    Unused since #871 (survivors are no longer re-rotated
+                      on eviction); kept for API stability.
         seed:         Base seed for the deterministic per-position Gumbel draw.
 
     Raises:
@@ -364,7 +367,7 @@ def _evict_via_mlx(
     rope_base: float,
 ) -> tuple[mx.array, mx.array, mx.array, mx.array, mx.array]:
     """Pure-MLX eviction: sink/recent-protected Gumbel-regularized argmin,
-    drop the loser, re-rotate the shifted survivors. Reference implementation
+    drop the loser (survivors are not re-rotated, #871). Reference implementation
     — see module docstring for why this exists (the fused Metal path in
     :func:`_evict_via_metal` must match this; keys to within 1 fp16 ULP).
     """
@@ -381,22 +384,18 @@ def _evict_via_mlx(
             protect[n_total - r_eff :] = float("inf")
     sel = sel + protect
 
+    del rope_base  # unused: survivors are no longer re-rotated (#871)
     evict_idx = int(mx.argmin(sel).item())
-    evicted_pos = int(positions_cat[evict_idx].item())
     keep = [j for j in range(n_total) if j != evict_idx]
-    keys_kept = keys_cat[keep]
-    values_kept = values_cat[keep]
-    scores_kept = scores_cat[keep]
-    gumbel_kept = gumbel_cat[keep]
-    old_positions_kept = positions_cat[keep]
-
-    # Same minimal-disturbance remap as H2O-adapted: rows before the evicted
-    # gap keep their exact rotation; rows after shift down by one position
-    # and are re-rotated to match.
-    shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
-    new_positions = old_positions_kept + shift
-    keys_kept = rope_remap_positions(keys_kept, old_positions_kept, new_positions, base=rope_base)
-    return keys_kept, values_kept, scores_kept, gumbel_kept, new_positions
+    # Eviction only drops the loser. Every survivor keeps the exact position
+    # and rotation it arrived with (the cache reports the true absolute offset).
+    return (
+        keys_cat[keep],
+        values_cat[keep],
+        scores_cat[keep],
+        gumbel_cat[keep],
+        positions_cat[keep],
+    )
 
 
 def _evict_via_metal(
@@ -450,9 +449,8 @@ def keyformer_update(
          ``score + tau * gumbel``, where ``tau`` is the current annealed
          temperature (Equation 10) — the Gumbel term is the Keyformer
          mechanism; at ``tau == 0`` this is exactly H2O-adapted's argmin on
-         the raw score. Survivors positioned after the evicted token's
-         position shift down by one and are re-rotated (RoPE remap), same as
-         H2O-adapted.
+         the raw score. Only the evicted row is dropped; survivors keep
+         their position and rotation (#871), same as H2O-adapted.
 
     Uses the fused Metal kernel (:func:`_evict_via_metal`) when available,
     falling back to the pure-MLX reference (:func:`_evict_via_mlx`)
@@ -580,7 +578,7 @@ def _evict_via_mlx_batched(
 ):
     """Batched-``[BH,·]`` equivalent of :func:`_evict_via_mlx`.
 
-    Each ``bh`` row's Gumbel-regularized argmin/evict/re-rotate is
+    Each ``bh`` row's Gumbel-regularized argmin/evict is
     independent of every other row — a like-for-like vectorization of
     :func:`_evict_via_mlx`'s per-head-loop math over a leading ``BH`` axis,
     not a new eviction policy. Same protected-region construction as H2O's
@@ -607,21 +605,15 @@ def _evict_via_mlx_batched(
     rows = mx.arange(n_total - 1)[None]  # [1, n_total-1]
     source = rows + (rows >= evict_idx)  # [BH, n_total-1]
 
+    del rope_base  # unused: survivors are no longer re-rotated (#871)
     keys_kept = mx.take_along_axis(keys_cat, source[..., None], axis=1)
     values_kept = mx.take_along_axis(values_cat, source[..., None], axis=1)
     scores_kept = mx.take_along_axis(scores_cat, source, axis=1)
     gumbel_kept = mx.take_along_axis(gumbel_cat, source, axis=1)
-    old_positions_kept = mx.take_along_axis(positions_cat, source, axis=1)
-    evicted_pos = mx.take_along_axis(positions_cat, evict_idx, axis=1)  # [BH, 1]
-
-    shift = mx.where(old_positions_kept > evicted_pos, -1, 0)
-    new_positions = old_positions_kept + shift
-    keys_kept = _rope_remap_positions_batched(
-        keys_kept, old_positions_kept, new_positions, base=rope_base
-    )
+    positions_kept = mx.take_along_axis(positions_cat, source, axis=1)
     if return_indices:
-        return keys_kept, values_kept, scores_kept, gumbel_kept, new_positions, source
-    return keys_kept, values_kept, scores_kept, gumbel_kept, new_positions
+        return keys_kept, values_kept, scores_kept, gumbel_kept, positions_kept, source
+    return keys_kept, values_kept, scores_kept, gumbel_kept, positions_kept
 
 
 def _evict_via_metal_batched(

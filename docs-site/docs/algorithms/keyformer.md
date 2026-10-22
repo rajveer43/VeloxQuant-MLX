@@ -106,8 +106,12 @@ three crux points above — see [Annealing and RoPE-remap testing](#annealing-an
    which absolute position each kept key was rotated at, so an interior
    eviction silently desynced survivors' storage index from the rotation baked
    into their keys — the exact bug class [H2O](../algorithms/h2o) had and
-   fixed. Fixed the same way: positions are now tracked and re-rotated on
-   eviction via `rope_remap_positions`.
+   fixed. Positions are now tracked per kept row. An earlier version also
+   re-rotated survivors to a gap-free layout (`rope_remap_positions`) with
+   `offset == n_kept`; that used the wrong rotation angle once the cache had
+   evicted and stalled `offset` at the budget (#871). Eviction now only drops
+   the evicted row, survivors keep the rotation they arrived with, and
+   `offset` is the true absolute step count, as in [H2O](../algorithms/h2o).
 
 ## Usage
 
@@ -126,7 +130,7 @@ config = KVCacheConfig(
     keyformer_tau_init=1.0,  # Gumbel temperature at pos=0 (paper default 1)
     keyformer_tau_end=2.0,  # Gumbel temperature once annealed (paper default 2)
     keyformer_anneal_steps=256,  # steps to ramp tau_init -> tau_end
-    keyformer_rope_base=10000.0,  # RoPE base for post-eviction position remap
+    keyformer_rope_base=10000.0,  # unused since #871 (survivors are not re-rotated)
     keyformer_seed=0,  # base seed for the frozen per-position noise
 )
 caches = KVCacheBuilder.for_model(model, config)
@@ -158,8 +162,9 @@ Per incoming token (prefill and decode alike):
    Equation 10). The Gumbel term is the whole mechanism; at `tau = 0` this is
    exactly H2O's argmin on the raw score. Sinks (first `keyformer_n_sink`) and
    the optional trailing `keyformer_recent` window are forced to survive.
-   Survivors positioned after the evicted token's position shift down by one
-   and are **re-rotated (RoPE remap)**, exactly like [H2O](../algorithms/h2o).
+   Only the evicted row is dropped: survivors keep their position and rotation
+   (the cache reports the true absolute offset), exactly like
+   [H2O](../algorithms/h2o).
 
 `keyformer_tau_init == keyformer_tau_end` (or `keyformer_anneal_steps = 0`,
 or the `keyformer_tau` alias) reproduces a constant temperature — no
@@ -169,7 +174,7 @@ The Gumbel noise perturbs only the **eviction decision** — the stored
 cumulative mass itself stays clean, so the noise never compounds across steps.
 
 When Metal is available, the per-token eviction step (append,
-Gumbel-regularized argmin, evict, RoPE-remap) runs as two fused kernel
+Gumbel-regularized argmin, evict) runs as two fused kernel
 dispatches instead of a Python loop — structurally identical to
 [H2O's kernel](../algorithms/h2o), with one addition: a per-row frozen Gumbel
 value is threaded through both dispatches and folded into the reduction as
@@ -218,10 +223,12 @@ All claims trace to passing tests in
 - **Temperature annealing**: `tau` ramps linearly from `tau_init` to `tau_end`
   over `anneal_steps` and holds at `tau_end` afterward; `anneal_steps=0` or
   `tau_init==tau_end` reproduces a constant temperature exactly.
-- **RoPE remap correctness**: an interior eviction's survivors, de-rotated at
-  their new position, recover their exact original pre-rotation value
-  (fingerprinted-token test, same construction as H2O's equivalent test); kept
-  positions stay sorted and unique under stress, and sinks never move.
+- **RoPE contract (#871)**: every retained key equals the original token
+  rotated at its true absolute position, `offset` equals the true step count
+  across prefill, chunked prefill and decode (shared cross-cache contract test),
+  and an interior eviction's survivors de-rotate at their true position to
+  their exact original value. Kept positions stay sorted and unique; sinks
+  never move.
 - **Metal kernel parity**: the fused kernel matches the pure-MLX reference
   bit-for-bit (interior eviction, sink+recent protection, tie-break behavior,
   large-`n_total` stress up to 2048 rows) and is ~2.8x faster than the Python
@@ -229,10 +236,8 @@ All claims trace to passing tests in
 - **Late-riser mechanism:** with a planted token that reads low early but
   aligns with a *later* burst, the token's survival rate across noise-seeds is
   **higher with the Gumbel term on than off** — a statistical mechanism claim,
-  not a per-seed guarantee. (Measured on **values**, not keys, since keys can
-  now be legitimately re-rotated by the RoPE-remap fix — see the test's
-  comments for why a raw key comparison stopped being valid once positions
-  were tracked correctly.)
+  not a per-seed guarantee. (Measured on **values**, not keys; see the test's
+  comments.)
 
 The offline harness in `benchmark_scripts/benchmark_keyformer.py` (results in
 `figures/keyformer/results.json`) sweeps sequence length
@@ -284,7 +289,8 @@ that were already documented:
    sink/recent protection is combined with *any* non-recency-based selection
    (which is the entire point of the Gumbel regularizer), interior eviction
    becomes routine, not rare. Fixed the same way H2O fixed it: track
-   positions, re-rotate shifted survivors via `rope_remap_positions`, verified
+   positions and leave survivors' rotation untouched (re-rotating them, which
+   this method did at first, was wrong once the cache evicted; #871), verified
    via the same fingerprinted-interior-eviction construction H2O's test uses.
 
 A byproduct worth flagging honestly: fixing RoPE tracking changes eviction
