@@ -544,6 +544,53 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.14 (2026-10-22)
+
+### Bug Fixes
+
+- **keyformer**: Survivors re-rotated by the wrong angle and offset stalled at the budget (#871)
+  ([#872](https://github.com/rajveer43/VeloxQuant-MLX/pull/872),
+  [`13b7e19`](https://github.com/rajveer43/VeloxQuant-MLX/commit/13b7e199f1fa2dc5495ef2d9b967b54da8a2c34a))
+
+### Chores
+
+- **deps**: Bump actions/checkout from 4.4.0 to 7.0.1
+  ([#868](https://github.com/rajveer43/VeloxQuant-MLX/pull/868),
+  [`c56016e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c56016e09efe9cb8fa0b648a456b48bb3e2433b3))
+
+- **deps**: Bump actions/download-artifact from 4.3.0 to 8.0.2
+  ([#867](https://github.com/rajveer43/VeloxQuant-MLX/pull/867),
+  [`9e4bdb8`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9e4bdb80a6fded0fd66b1db2ab4ef696479436cf))
+
+- **deps**: Bump actions/github-script from 7.1.0 to 9.0.0
+  ([#869](https://github.com/rajveer43/VeloxQuant-MLX/pull/869),
+  [`270eb0b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/270eb0b38bd9d5272f6aa81bd9456574a9a35a69))
+
+- **deps**: Bump actions/setup-python from 5.6.0 to 7.0.0
+  ([#866](https://github.com/rajveer43/VeloxQuant-MLX/pull/866),
+  [`fb60c94`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fb60c94131be886d935dfd8cf42e1e7185a47739))
+
+- **deps**: Bump actions/upload-artifact from 4.6.2 to 7.0.2
+  ([#870](https://github.com/rajveer43/VeloxQuant-MLX/pull/870),
+  [`0930e0e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/0930e0edffeb4e1afa4acac48ec4b9782bfee812))
+
+### Continuous Integration
+
+- Pin workflow actions to commit SHAs (#848)
+  ([#865](https://github.com/rajveer43/VeloxQuant-MLX/pull/865),
+  [`b35742a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b35742aa8ff2c168c1335ef0078ced7bc46c58f0))
+
+### Performance Improvements
+
+- **gear**: Prefill SVD'd the whole residual block and built a full N x N U (#873)
+  ([#874](https://github.com/rajveer43/VeloxQuant-MLX/pull/874),
+  [`d25bcee`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d25bcee60ab15a15c239115e88334272a4922dab))
+
+- **svdq**: Prefill fit SVD'd the whole key block and built a full S x S U (#875)
+  ([#876](https://github.com/rajveer43/VeloxQuant-MLX/pull/876),
+  [`f0589f2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f0589f21d2c200f86893b4dcd2c775343d7c41df))
+
+
 ## v0.94.13 (2026-10-21)
 
 ### Bug Fixes
