@@ -141,5 +141,15 @@ def test_real_cache_prefill_matches_reference_loop(H, seed):
         k[0].astype(mx.float32), V_list, K_mean_list, schedules, 32
     )[None]
 
-    kd = float(mx.max(mx.abs(k_out.astype(mx.float32) - ref_k.astype(mx.float32))).item())
-    assert kd < 1e-1, f"H={H} seed={seed}: prefill output diverged by {kd}"
+    # Compare reconstruction quality, not the elementwise output (#875): at
+    # full rank on near-degenerate random keys the exact SVD and the Gram
+    # eigendecomposition legitimately return different (equally valid) bases,
+    # which moves the per-group low-bit quantization noise around without
+    # changing how well the keys are reconstructed.
+    raw = k.astype(mx.float32)
+    denom = float(mx.linalg.norm(raw).item())
+    err_new = float(mx.linalg.norm(k_out.astype(mx.float32) - raw).item()) / denom
+    err_ref = float(mx.linalg.norm(ref_k.astype(mx.float32) - raw).item()) / denom
+    assert abs(err_new - err_ref) < 1e-2 * err_ref, (
+        f"H={H} seed={seed}: reconstruction error {err_new:.5f} vs reference {err_ref:.5f}"
+    )
