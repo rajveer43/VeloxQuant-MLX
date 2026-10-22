@@ -49,6 +49,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import mlx.core as mx
+import numpy as np
 
 from veloxquant_mlx.quantizers._quant_utils import (
     _group_quant_dequant,
@@ -154,10 +155,19 @@ def svd_compress_keys_batched(
     K_mean = mx.mean(x, axis=1)  # [H, D]
     x_centered = x - K_mean[:, None, :]  # [H, S, D]
 
-    U, S_vals, Vt = mx.linalg.svd(x_centered, stream=mx.cpu)  # [H,S,S],[H,min(S,D)],[H,min(S,D),D]
-    mx.eval(U, S_vals, Vt)
+    # Only V and the singular values are used, so eigendecompose the batched
+    # D x D Gram matrix instead of SVD-ing the tall block, which also builds
+    # an [S, S] U and made prefill superlinear in prompt length (#875). Formed
+    # and diagonalised in float64: squaring the conditioning is harmless
+    # there, whereas a float32 Gram blurs the weaker retained directions.
+    xc_np = np.asarray(x_centered, dtype=np.float64)
+    evals, evecs = np.linalg.eigh(np.swapaxes(xc_np, 1, 2) @ xc_np)  # ascending
+    r_max_possible = min(S, D)  # an SVD of [S, D] has min(S, D) singular values
+    S_vals = mx.array(
+        np.sqrt(np.clip(evals[:, ::-1][:, :r_max_possible], 0.0, None)).astype(np.float32)
+    )  # [H, min(S,D)] descending
+    v_desc = evecs[:, :, ::-1]  # [H, D, D], columns by descending singular value
 
-    r_max_possible = S_vals.shape[-1]
     if rank is not None:
         r = min(rank, r_max_possible, D)
         ranks = [r] * H
@@ -182,8 +192,7 @@ def svd_compress_keys_batched(
         ranks = [min(r, int(r_max_possible), D) for r in raw_rank_list]
         max_rank = max(ranks) if ranks else 0
 
-    Vt_trunc = Vt[:, :max_rank, :]  # [H, max_rank, D]
-    V_padded = mx.swapaxes(Vt_trunc, -1, -2)  # [H, D, max_rank]
+    V_padded = mx.array(v_desc[:, :, :max_rank].astype(np.float32))  # [H, D, max_rank]
     s_padded = S_vals[:, :max_rank]  # [H, max_rank]
     L_padded = x_centered @ V_padded  # [H, S, max_rank]
 
