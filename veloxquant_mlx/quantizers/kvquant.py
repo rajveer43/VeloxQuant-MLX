@@ -125,7 +125,6 @@ def fit_nuq_levels(x: mx.array, bits: int, n_iters: int = 8) -> mx.array:
         new_levels = sums / mx.maximum(counts, 1.0)  # [L, D]
         # Empty clusters (count 0) keep the old level.
         levels = mx.where(counts > 0, new_levels, levels)
-        mx.eval(levels)
 
     # Keep levels ascending per column for clean lookup semantics.
     return mx.sort(levels, axis=0)
@@ -228,23 +227,42 @@ def fit_nuq_levels_batched(x: mx.array, bits: int, n_iters: int = 8) -> mx.array
     bh, n, d = x32.shape
     L = 1 << bits
 
-    xs = mx.sort(x32, axis=1)  # [BH, N, D] ascending
+    # Each column is 1-D, so the nearest-level assignment is a split at the
+    # midpoints between adjacent (ascending) levels. Cumulative counts and
+    # sums at each midpoint come from L-1 masked reductions over [BH, N, D],
+    # with no ``[BH, N, L, D]`` tensor (#879). Centering keeps the fp32 sums
+    # well-conditioned.
+    center = mx.mean(x32, axis=1, keepdims=True)  # [BH, 1, D]
+    xc = x32 - center
+    xs = mx.sort(xc, axis=1)  # [BH, N, D] ascending, for quantile init only
     qpos = (mx.arange(L, dtype=mx.float32) + 0.5) / L  # [L]
     idx = mx.clip(mx.round(qpos * (n - 1)), 0, n - 1).astype(mx.int32)  # [L]
     levels = mx.take(xs, idx, axis=1)  # [BH, L, D]
+    total_sum = mx.sum(xc, axis=1, keepdims=True)  # [BH, 1, D]
+    zero = mx.zeros((bh, 1, d), dtype=mx.float32)
+    all_n = mx.full((bh, 1, d), float(n), dtype=mx.float32)
 
     for _ in range(max(1, n_iters)):
-        diff = mx.abs(x32[:, :, None, :] - levels[:, None, :, :])  # [BH, N, L, D]
-        assign = mx.argmin(diff, axis=2)  # [BH, N, D]
-
-        lr = mx.arange(L)[None, None, :, None]  # [1, 1, L, 1]
-        one_hot = (assign[:, :, None, :] == lr).astype(mx.float32)  # [BH, N, L, D]
-        counts = mx.sum(one_hot, axis=1)  # [BH, L, D]
-        sums = mx.sum(one_hot * x32[:, :, None, :], axis=1)  # [BH, L, D]
-        new_levels = sums / mx.maximum(counts, 1.0)  # [BH, L, D]
+        levels = mx.sort(levels, axis=1)
+        mids = 0.5 * (levels[:, 1:, :] + levels[:, :-1, :])  # [BH, L-1, D]
+        cum_c, cum_s = [zero], [zero]
+        for j in range(L - 1):
+            # x <= mid goes to the lower level, as argmin does on ties.
+            below = xc <= mids[:, j : j + 1, :]
+            cum_c.append(mx.sum(below.astype(mx.float32), axis=1, keepdims=True))
+            cum_s.append(mx.sum(mx.where(below, xc, 0.0), axis=1, keepdims=True))
+        cum_c.append(all_n)
+        cum_s.append(total_sum)
+        cc = mx.concatenate(cum_c, axis=1)  # [BH, L+1, D]
+        cs = mx.concatenate(cum_s, axis=1)
+        counts = cc[:, 1:, :] - cc[:, :-1, :]
+        sums = cs[:, 1:, :] - cs[:, :-1, :]
+        new_levels = sums / mx.maximum(counts, 1.0)
         levels = mx.where(counts > 0, new_levels, levels)
+        # Bound the lazy graph: real-model prefill hung the GPU without it.
+        mx.eval(levels)
 
-    return mx.sort(levels, axis=1)
+    return mx.sort(levels, axis=1) + center
 
 
 def quantize_nuq_batched(x: mx.array, levels: mx.array) -> mx.array:
@@ -258,8 +276,17 @@ def quantize_nuq_batched(x: mx.array, levels: mx.array) -> mx.array:
         ``[BH, N, D]`` int32 indices into ``levels`` (row- and column-wise).
     """
     x32 = x.astype(mx.float32)
-    diff = mx.abs(x32[:, :, None, :] - levels[:, None, :, :])  # [BH, N, L, D]
-    return mx.argmin(diff, axis=2).astype(mx.int32)  # [BH, N, D]
+    L = levels.shape[1]
+    if L < 2:
+        return mx.zeros(x32.shape, dtype=mx.int32)
+    # Index = number of midpoints strictly below x (ties go to the lower
+    # level, as argmin does). L-1 compare passes over [BH, N, D] instead of
+    # one [BH, N, L, D] distance tensor.
+    mids = 0.5 * (levels[:, 1:, :] + levels[:, :-1, :])  # [BH, L-1, D]
+    codes = mx.zeros(x32.shape, dtype=mx.int32)
+    for j in range(L - 1):
+        codes = codes + (x32 > mids[:, j : j + 1, :]).astype(mx.int32)
+    return codes
 
 
 def dequant_nuq_batched(codes: mx.array, levels: mx.array) -> mx.array:
