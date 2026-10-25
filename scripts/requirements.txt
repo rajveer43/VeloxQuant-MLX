@@ -18,7 +18,7 @@ dill==0.4.1
 docutils==0.22.4
 execnet==2.1.2
 fastapi==0.139.2
-filelock==3.29.0
+filelock==4.2.1
 fonttools==4.62.1
 frozenlist==1.8.0
 fsspec==2026.6.0
