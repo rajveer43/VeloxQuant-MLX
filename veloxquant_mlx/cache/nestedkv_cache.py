@@ -105,7 +105,8 @@ class NestedKVKVCache(DeferredEvictionMixin, _MLXKVCache):
 
     Notes:
         No ``.bits`` attribute — stores and returns fp16 K/V directly.
-        Eviction happens ONCE at prefill (S > 1), independently per head at
+        Eviction happens during prefill (S > 1 calls before the first
+        decode token), independently per head at
         a UNIFORM budget (see #21 — NOT the paper's cross-head budget
         competition, which produced ragged per-head lengths that could not
         be safely stacked into one tensor without either corrupting
@@ -145,6 +146,10 @@ class NestedKVKVCache(DeferredEvictionMixin, _MLXKVCache):
         self._B: int = 0
         self._H: int = 0
         self._compressed: bool = False
+        # Set by the first single-token call. Until then every multi-token
+        # call is prompt prefill and is evicted against the accumulated kept
+        # rows, so the budget does not depend on the prefill chunk size (#878).
+        self._decoding: bool = False
         self._bh_keys: mx.array | None = None
         self._bh_values: mx.array | None = None
 
@@ -282,7 +287,9 @@ class NestedKVKVCache(DeferredEvictionMixin, _MLXKVCache):
         self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
         self._tokens_seen_total += B * H * S
 
-        is_prefill = S > 1 and not self._compressed
+        if S == 1:
+            self._decoding = True
+        is_prefill = S > 1 and not self._decoding
         if is_prefill:
             K_out, V_out = self._process_prefill(full_k, full_v)
             self._positions = mx.take_along_axis(
