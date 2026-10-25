@@ -544,6 +544,27 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.15 (2026-10-25)
+
+### Bug Fixes
+
+- **nestedkv**: Retained rows depended on prefill chunk size (#878)
+  ([#880](https://github.com/rajveer43/VeloxQuant-MLX/pull/880),
+  [`ed8921d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/ed8921d2f248faf8fe9b2f370ef665ae14a563a1))
+
+### Chores
+
+- **landing**: Update Discord invite link on the landing page
+  ([#881](https://github.com/rajveer43/VeloxQuant-MLX/pull/881),
+  [`d5b020e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/d5b020e5bcdcbead043d88289db696235cab5ba4))
+
+### Performance Improvements
+
+- **kvquant**: Level fit built [BH,N,L,D] tensors, ~1 ms/token prefill (#879)
+  ([#882](https://github.com/rajveer43/VeloxQuant-MLX/pull/882),
+  [`97e8d52`](https://github.com/rajveer43/VeloxQuant-MLX/commit/97e8d522997e46b6c8df29f6a14a8bf12d8d4aec))
+
+
 ## v0.94.14 (2026-10-22)
 
 ### Bug Fixes
