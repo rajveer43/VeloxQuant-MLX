@@ -544,6 +544,49 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.16 (2026-10-27)
+
+### Bug Fixes
+
+- **svdq,palu**: Trim() to empty resets the fitted basis and accounting (#898, #899)
+  ([#908](https://github.com/rajveer43/VeloxQuant-MLX/pull/908),
+  [`21b0902`](https://github.com/rajveer43/VeloxQuant-MLX/commit/21b0902e11139c22652cb80ae0fe7b55a869eb37))
+
+- **xkv**: Trim() to empty resets the shared SVD basis and accounting (#897)
+  ([#907](https://github.com/rajveer43/VeloxQuant-MLX/pull/907),
+  [`8f4b45d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/8f4b45d0d830e96edaab28692cc352694848ba41))
+
+### Chores
+
+- **deps**: Bump actions/setup-python from 7.0.0 to 7.1.0
+  ([#896](https://github.com/rajveer43/VeloxQuant-MLX/pull/896),
+  [`681fe79`](https://github.com/rajveer43/VeloxQuant-MLX/commit/681fe79fac058c5d67f37de2548a4f4be692a845))
+
+- **deps**: Bump body-parser from 1.20.6 to 1.20.9 in /docs-site
+  ([#885](https://github.com/rajveer43/VeloxQuant-MLX/pull/885),
+  [`b0ab7b6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b0ab7b6454a76412e2c4851b4977b96c3c552ec9))
+
+- **deps**: Bump fast-uri from 3.1.8 to 3.1.9 in /docs-site
+  ([#884](https://github.com/rajveer43/VeloxQuant-MLX/pull/884),
+  [`184e0f9`](https://github.com/rajveer43/VeloxQuant-MLX/commit/184e0f9a8efb68eb92f939b3984a3db25a7734d9))
+
+- **deps**: Bump filelock from 3.29.0 to 4.2.1 in /scripts
+  ([#883](https://github.com/rajveer43/VeloxQuant-MLX/pull/883),
+  [`43d069d`](https://github.com/rajveer43/VeloxQuant-MLX/commit/43d069d54d6f176db90c5b21a72df6c361173b9c))
+
+- **deps**: Bump github/codeql-action/analyze from 4.39.0 to 4.39.1
+  ([#894](https://github.com/rajveer43/VeloxQuant-MLX/pull/894),
+  [`568e73e`](https://github.com/rajveer43/VeloxQuant-MLX/commit/568e73e0e1956d521e215a47d9700c97e455f200))
+
+- **deps**: Bump github/codeql-action/init from 4.39.0 to 4.39.1
+  ([#895](https://github.com/rajveer43/VeloxQuant-MLX/pull/895),
+  [`e82bd32`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e82bd32a9200ffd2e8f2baf378e5537778b04db6))
+
+- **deps-dev**: Bump undici from 7.30.0 to 7.30.1 in /docs-site
+  ([#886](https://github.com/rajveer43/VeloxQuant-MLX/pull/886),
+  [`6d702b3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/6d702b3d21702365c7b948cc98d15c76f191fc82))
+
+
 ## v0.94.15 (2026-10-25)
 
 ### Bug Fixes
