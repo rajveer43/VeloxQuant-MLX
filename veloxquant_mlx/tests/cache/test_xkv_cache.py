@@ -486,3 +486,77 @@ def test_merge_guard_short_circuits_mlx_lm_merge_caches():
 
     with pytest.raises(ValueError, match="does not yet support batching with history"):
         gen_mod._merge_caches([[cache]])
+
+
+# ---------------------------------------------------------------------------
+# trim (#897) — a cache trimmed to empty behaves like a new one
+# ---------------------------------------------------------------------------
+def _seq(seed, scale, S=96, D=32, H=4):
+    """Keys with a sequence-specific dominant subspace (a different text)."""
+    r = np.random.default_rng(seed)
+    b = r.standard_normal((D, D)).astype(np.float32)
+    k = (r.standard_normal((1, H, S, D)).astype(np.float32) * np.linspace(scale, 0.05, D)) @ b
+    v = r.standard_normal((1, H, S, D)).astype(np.float32)
+    return mx.array(k).astype(mx.float16), mx.array(v).astype(mx.float16)
+
+
+def test_trim_to_empty_matches_fresh_cache_standalone():
+    cfg = _cfg(xkv_rank=8)
+    ka, va = _seq(1, 3.0)
+    kb, vb = _seq(2, 0.5)
+    want, _ = XKVCache(cfg).update_and_fetch(kb, vb)
+
+    reused = XKVCache(cfg)
+    reused.update_and_fetch(ka, va)
+    assert reused.trim(reused.offset) == 96
+    got, _ = reused.update_and_fetch(kb, vb)
+    assert bool(mx.array_equal(got, want))
+
+
+def test_trim_to_empty_resets_state_and_accounting():
+    cache = XKVCache(_cfg(xkv_rank=8))
+    ka, va = _seq(1, 3.0)
+    cache.update_and_fetch(ka, va)
+    cache.trim(cache.offset)
+    assert cache._V_g is None and cache.rank == 0
+    assert cache.compressed_key_bytes == 0
+    assert cache.fp16_key_bytes == 0
+    assert cache.shared_basis_bytes == 0
+    assert cache.value_fp16_bytes == 0
+
+
+def test_trim_to_empty_matches_fresh_group():
+    """Every member of a cross-layer group, trimmed to empty, refits a basis
+    for the new text instead of adopting the coordinator's old one."""
+    ka, va = _seq(1, 3.0)
+    kb, vb = _seq(2, 0.5)
+    settle_k, settle_v = _rand(1, 4, 1, 32, seed=9001), _rand(1, 4, 1, 32, seed=9002)
+
+    fresh = _group(XKVCoordinator(), n_members=2)
+    _prefill_and_settle(fresh, kb, vb, settle_k, settle_v)
+
+    reused = _group(XKVCoordinator(), n_members=2)
+    _prefill_and_settle(reused, ka, va, settle_k, settle_v)
+    for m in reused:
+        m.trim(m.offset)
+    _prefill_and_settle(reused, kb, vb, settle_k, settle_v)
+
+    for f, r in zip(fresh, reused):
+        np.testing.assert_allclose(
+            np.array(r._V_g.tolist()), np.array(f._V_g.tolist()), atol=1e-6
+        )
+        assert r.rank == f.rank
+
+
+def test_partial_trim_keeps_basis_and_scales_bytes():
+    cache = XKVCache(_cfg(xkv_rank=8))
+    ka, va = _seq(1, 3.0)
+    cache.update_and_fetch(ka, va)
+    basis = cache._V_g
+    before = cache.compressed_key_bytes
+    assert cache.trim(48) == 48
+    assert cache._V_g is basis
+    assert cache.offset == 48
+    assert cache._token_offset == 48
+    assert cache.compressed_key_bytes == before // 2
+    assert cache.trim(0) == 0

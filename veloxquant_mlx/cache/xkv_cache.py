@@ -230,6 +230,49 @@ class XKVCache(_MLXKVCache):
         self._token_offset += S
         return super().update_and_fetch(k_out.astype(keys.dtype), values)
 
+    def trim(self, n: int) -> int:
+        """Drop the last ``n`` tokens and keep this cache's own state in step.
+
+        The inherited ``trim`` only moves ``offset``.  Left alone, a cache
+        trimmed to empty would project the next sequence through the previous
+        sequence's shared SVD basis (#897).
+
+        Trimming to empty resets the basis, the token counters, the byte
+        accounting and this group's coordinator state (a new sequence starts
+        from scratch).  A partial trim keeps the basis, which was fit on a
+        surviving prefix, and scales the byte accounting with the token count
+        (an estimate: per-group quantization parameters are not tracked per
+        token).
+        """
+        old_tokens = self._token_offset
+        trimmed = super().trim(n)
+        if not trimmed:
+            return trimmed
+        if self.offset <= 0:
+            self._V_g = None
+            self._K_mean_g = None
+            self._singular_values = None
+            self._r = 0
+            self._token_offset = 0
+            self._single_token_only = True
+            self._basis_token_start = None
+            self._compressed_key_bytes = 0
+            self._shared_basis_bytes = 0
+            self._fp16_key_bytes = 0
+            self._value_fp16_bytes = 0
+            self._tokens_seen = 0
+            if self._coord is not None:
+                self._coord.reset()
+            return trimmed
+        self._token_offset = self.offset
+        if old_tokens > 0:
+            keep = self._token_offset / old_tokens
+            self._compressed_key_bytes = int(self._compressed_key_bytes * keep)
+            self._fp16_key_bytes = int(self._fp16_key_bytes * keep)
+            self._value_fp16_bytes = int(self._value_fp16_bytes * keep)
+            self._tokens_seen = int(self._tokens_seen * keep)
+        return trimmed
+
     # ------------------------------------------------------------------
     # Byte accounting
     # ------------------------------------------------------------------
