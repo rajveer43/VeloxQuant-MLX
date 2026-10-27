@@ -105,6 +105,18 @@ class _TensorLowRank:
         # copy.deepcopy (same convention as SnapKVCache._storage_dtype_name).
         self._storage_dtype_name: str | None = None
 
+    def reset(self) -> None:
+        """Forget the fitted projections and the latent buffer (a new sequence refits)."""
+        self._bounds = []
+        self._V = []
+        self._mu = []
+        self._sv = []
+        self._head_group = []
+        self._r = 0
+        self._latents = None
+        self._fitted = False
+        self._storage_dtype_name = None
+
     @property
     def _storage_dtype(self) -> mx.Dtype:
         return mx.bfloat16 if self._storage_dtype_name == "bfloat16" else mx.float16
@@ -414,6 +426,17 @@ class PALUKVCache(_MLXKVCache):
         self._keys_lr.trim(n)
         self._vals_lr.trim(n)
         self._palu_offset -= n
+        if self._palu_offset <= 0:
+            # Trimmed to empty: the next sequence must fit its own projection
+            # instead of reusing the previous one (#899).
+            self._keys_lr.reset()
+            self._vals_lr.reset()
+            self._palu_offset = 0
+            self._last_state = None
+            self._compressed_key_bytes = self._compressed_value_bytes = 0
+            self._fp16_key_bytes = self._fp16_value_bytes = 0
+            self._projection_bytes = 0
+            return n
         # Latent bytes scale with the surviving token count; recompute so the
         # reported ratio doesn't keep charging for the trimmed tokens.
         self._account_bytes(self._H, 0, self._D)

@@ -260,6 +260,41 @@ class SVDqKVCache(_MLXKVCache):
         self._account_bytes(B, H, S, D)
         return super().update_and_fetch(k_out.astype(keys.dtype), values)
 
+    def trim(self, n: int) -> int:
+        """Drop the last ``n`` tokens and keep this cache's own state in step.
+
+        The inherited ``trim`` only moves ``offset``.  Left alone, a cache
+        trimmed to empty would quantize the next sequence through the previous
+        sequence's per-head SVD bases (#898).
+
+        Trimming to empty resets the bases, schedules and byte accounting.  A
+        partial trim keeps the bases (fit on a surviving prefix) and scales the
+        per-token byte counters with the token count (an estimate).
+        """
+        old_tokens = self.offset
+        trimmed = super().trim(n)
+        if not trimmed:
+            return trimmed
+        if self.offset <= 0:
+            self._V = []
+            self._K_mean = []
+            self._singular_values = []
+            self._r = []
+            self._effective_schedule = []
+            self._compressed_key_bytes = 0
+            self._fp16_key_bytes = 0
+            self._value_fp16_bytes = 0
+            self._tokens_seen = 0
+            self._projection_bytes_charged = False
+            return trimmed
+        if old_tokens > 0:
+            keep = self.offset / old_tokens
+            self._compressed_key_bytes = int(self._compressed_key_bytes * keep)
+            self._fp16_key_bytes = int(self._fp16_key_bytes * keep)
+            self._value_fp16_bytes = int(self._value_fp16_bytes * keep)
+            self._tokens_seen = int(self._tokens_seen * keep)
+        return trimmed
+
     def _account_bytes(self, B: int, H: int, S: int, D: int) -> None:
         # Latent storage: each group's channels at its own bit width, plus
         # group-quant overhead (scale + zero per group, fp16). A 0-bit group

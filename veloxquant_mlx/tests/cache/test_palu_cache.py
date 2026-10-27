@@ -340,3 +340,46 @@ def test_batch_greater_than_one_is_rejected_not_silently_truncated() -> None:
     k = mx.random.normal((2, 4, 16, 64)).astype(mx.float16)
     with pytest.raises(ValueError, match="batch size 1"):
         c.update_and_fetch(k, k)
+
+
+# ---------------------------------------------------------------------------
+# trim — a cache trimmed to empty behaves like a new one
+# ---------------------------------------------------------------------------
+def _seq_kv(seed, scale, S=96, D=32, H=4):
+    """Keys with a sequence-specific dominant subspace (a different text)."""
+    r = np.random.default_rng(seed)
+    b = r.standard_normal((D, D)).astype(np.float32)
+    k = (r.standard_normal((1, H, S, D)).astype(np.float32) * np.linspace(scale, 0.05, D)) @ b
+    v = r.standard_normal((1, H, S, D)).astype(np.float32)
+    return mx.array(k).astype(mx.float16), mx.array(v).astype(mx.float16)
+
+
+def _fresh_cache():
+    return KVCacheFactory.create(KVCacheConfig(method="palu", head_dim=32, seed=0))
+
+
+def test_trim_to_empty_matches_fresh_cache():
+    ka, va = _seq_kv(1, 3.0)
+    kb, vb = _seq_kv(2, 0.5)
+    want_k, want_v = _fresh_cache().update_and_fetch(kb, vb)
+
+    reused = _fresh_cache()
+    reused.update_and_fetch(ka, va)
+    assert reused.trim(reused.offset) == 96
+    assert reused.offset == 0
+    got_k, got_v = reused.update_and_fetch(kb, vb)
+    assert bool(mx.array_equal(got_k, want_k))
+    assert bool(mx.array_equal(got_v, want_v))
+
+
+def test_trim_to_empty_resets_byte_accounting():
+    cache = _fresh_cache()
+    ka, va = _seq_kv(1, 3.0)
+    cache.update_and_fetch(ka, va)
+    cache.trim(cache.offset)
+    assert cache.nbytes == 0 or cache.compressed_key_bytes == 0
+    kb, vb = _seq_kv(2, 0.5)
+    cache.update_and_fetch(kb, vb)
+    fresh = _fresh_cache()
+    fresh.update_and_fetch(kb, vb)
+    assert cache.nbytes == fresh.nbytes
