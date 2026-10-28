@@ -427,6 +427,7 @@ _FIELD_TO_OPTIONS_CLASS: dict[str, str] = {
     "a2ats_rope_scaling": "A2ATSOptions",
     "a2ats_query_h": "A2ATSOptions",
     "a2ats_codebook": "A2ATSOptions",
+    "a2ats_value_codebook": "A2ATSOptions",
     "anchorkv_theta": "AnchorKVOptions",
     "anchorkv_window": "AnchorKVOptions",
     "anchorkv_rho": "AnchorKVOptions",
@@ -787,6 +788,7 @@ class KVCacheConfig:
     # [sub_dim, sub_dim] query second-moment H (Eq. 10); enables the paper's Eq. 14 assignment
     a2ats_query_h: Any = None
     a2ats_codebook: Any = None  # mx.array | np.ndarray | None (random init if absent)
+    a2ats_value_codebook: Any = None  # separate value codebook; None = share a2ats_codebook
     # --- AnchorKV-adapted configuration (anchor-residual compression, no eviction; no verified venue) --
     anchorkv_theta: float = (
         0.05  # fraction of the uncompressed fp16 cache to retain (paper's single knob)

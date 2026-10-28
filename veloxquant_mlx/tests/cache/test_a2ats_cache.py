@@ -624,3 +624,34 @@ def test_for_model_default_a2ats_warns() -> None:
 
     with pytest.warns(UserWarning, match="no a2ats_codebook given"):
         KVCacheBuilder.for_model(_make_fake_model(), KVCacheConfig(method="a2ats", head_dim=32))
+
+
+# ---------------------------------------------------------------------------
+# Optional separate value codebook (#902)
+# ---------------------------------------------------------------------------
+
+
+def test_value_codebook_used_for_values_only() -> None:
+    import warnings
+
+    key_cb = mx.zeros((2**6, 8))
+    val_cb = mx.ones((2**6, 8)) * 5.0
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        cache = _make(a2ats_codebook=key_cb, a2ats_value_codebook=val_cb)
+    k, v = _rand_kv()
+    _, v_out = cache.update_and_fetch(k, v)
+    assert float(mx.abs(v_out - 5.0).max()) < 1e-2  # reconstructed from the value book
+    assert cache.codebook_bytes == 2 * (2**6) * 8 * 2
+
+
+def test_value_codebook_defaults_to_key_codebook() -> None:
+    cb = mx.array(np.random.default_rng(0).standard_normal((2**6, 8)).astype(np.float32))
+    cache = _make(a2ats_codebook=cb)
+    assert cache.codebook_bytes == (2**6) * 8 * 2
+
+
+def test_value_codebook_shape_mismatch_rejected() -> None:
+    cb = mx.zeros((2**6, 8))
+    with pytest.raises(Exception, match="a2ats_value_codebook"):
+        _make(a2ats_codebook=cb, a2ats_value_codebook=mx.zeros((2**5, 8)))
