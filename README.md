@@ -46,11 +46,11 @@
 
 ---
 
-VeloxQuant-MLX shrinks the KV cache of any `mlx_lm` model on Apple Silicon, up to 16× smaller with near-lossless quality, in three lines of code. If you run models locally and keep hitting a context-length or memory wall, you swap in a compressed cache and change nothing else about the model.
+A KV cache grows with every token. On a 16–24 GB Mac, a long context can use more unified memory than the model weights do, so the practical limit is memory, not compute.
 
-Inside are 43 compression methods, each adapted from a published paper, spanning zero-calibration 1-bit quantizers, token-eviction caches, and cross-layer merging. All of them share the same 3-line API, so switching means changing `method="..."`. The hot path runs on hand-written Metal kernels (up to 14.7× faster quantize), and it's validated on 12 production models (Llama, Mistral, Qwen, Phi, Gemma 3/4, Falcon) plus vision-language models via [mlx-vlm](https://github.com/Blaizzy/mlx-vlm).
+VeloxQuant-MLX replaces the KV cache of any `mlx_lm` model with a compressed one, in three lines of code. It has 43 methods adapted from published papers, all behind the same `KVCacheConfig` API, so switching means changing `method="..."`. The hot path runs on Metal kernels (up to 14.7× faster quantize), and it is validated on 12 production models (Llama, Mistral, Qwen, Phi, Gemma 3/4, Falcon) plus vision-language models via [mlx-vlm](https://github.com/Blaizzy/mlx-vlm).
 
-> **Compression ratios are bit-width accounting, not measured RSS.** Most methods still store fp16 internally on the default serving path, so Activity Monitor won't drop by the same factor; eviction/merging methods (marked 🔻RSS below) do reduce resident memory today. Details: [#27](https://github.com/rajveer43/VeloxQuant-MLX/issues/27).
+Which methods save memory in practice is a separate question, and one this project measured: most quantizers store dequantized fp16 internally, so their compression ratios are bit-width accounting, not resident memory. Eviction/merging methods (marked 🔻RSS below) do reduce resident memory today. What each method really saves is in [#27](https://github.com/rajveer43/VeloxQuant-MLX/issues/27) and in [Problems I hit and how I solved them](#problems-i-hit-and-how-i-solved-them).
 
 <div align="center">
 
@@ -62,14 +62,14 @@ Inside are 43 compression methods, each adapted from a published paper, spanning
 
 ## Numbers
 
-| Metric | Value | Notes |
-|---|---|---|
-| Max key cache compression | **16×** | VecInfer-1bit, head_dim=128 |
-| Metal kernel speedup | **13×** | `quantize_vq` at S=2048 (range 6.9–14.7×) |
-| Peak memory reduction | **98%** | 729 MB → 12 MB, Falcon3-7B shape |
-| RVQ-1bit compression | **7.5×** | Near-zero throughput cost |
-| FP16 throughput retained | **100%** | Qwen2.5-7B at 16× compression |
-| Production models validated | **12** | Llama, Mistral, Qwen, Phi, Gemma 3/4, Falcon |
+| Metric | Value | Problem it addresses | Caveat |
+|---|---|---|---|
+| Max key cache compression | **16×** | Key-cache size at long context | VecInfer-1bit, head_dim=128, key bytes only, needs user-trained codebooks. Throughput is 2.4 tok/s vs 20.3 fp16 on Qwen3-8B and 9.8 vs 23.6 on Mistral-7B |
+| Metal kernel speedup | **13×** | `quantize_vq` was the slowest step in VecInfer | At S=2048 (range 6.9–14.7×). ~50–200 µs launch overhead per call, so slower on tiny models |
+| Scratch memory in `quantize_vq` | **729 MB → 12 MB** | OOM on the Falcon3-7B shape | Transient scratch of one op (head_dim=256, 256 centroids, S=4096), **not** a KV-cache reduction |
+| RVQ-1bit compression | **7.5×** | Smaller keys without calibration | Key ratio; values stay fp16 |
+| Qwen2.5-7B VecInfer throughput | **21.5 vs 21.0 tok/s (fp16)** | Speed cost of 16× key compression | One model, 200-token prompt; other models lose heavily (see Benchmark results) |
+| Production models validated | **12** | – | Llama, Mistral, Qwen, Phi, Gemma 3/4, Falcon. The Benchmark results table below covers 10 |
 
 Full metric table, including RaBitQ / CommVQ / KIVI / SpectralQuant figures and
 methodology: [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md).
@@ -80,6 +80,7 @@ methodology: [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md).
 
 [Installation](#installation) ·
 [Quickstart](#quickstart) ·
+[Problems and fixes](#problems-i-hit-and-how-i-solved-them) ·
 [Method library](#method-library) ·
 [Metal kernels](#metal-kernels) ·
 [Benchmarks](#benchmark-results) ·
@@ -191,6 +192,18 @@ Next: the [5-minute quickstart](https://veloxquant.dev/docs/getting-started/quic
 
 ---
 
+## Problems I hit and how I solved them
+
+**Compression that did not compress.** The first version of `turboquant_rvq` encoded keys, immediately decoded them, and stored fp16, so the ratio was a counter, not memory. Auditing the methods showed the same pattern in most of them ([#27](https://github.com/rajveer43/VeloxQuant-MLX/issues/27)). `turboquant_rvq` now stores keys bit-packed: on Llama-3.2-1B, peak memory was 1402 MB against 1608 MB for fp16, and 2537 MB for mlx-lm's `QuantizedKVCache(bits=4)` on the same single-shot prefill. That is one prompt on one machine, not a general claim ([findings](docs/RVQ_PACKED_STORAGE_FINDINGS.md)). Values are still fp16, so the 7.5× figure is a key ratio.
+
+**A fused kernel that was slower.** Profiling showed the fused decode kernel using at most about 6% of memory bandwidth, even at 16k cached tokens, so it was bound by thread-group count, not bytes moved. GQA head-packing was 2.7–4.7× slower, cross-head sharing is impossible in Metal's SIMD model, and cross-layer batching cannot work for single-request decode because each layer depends on the previous layer's output. The one lever that helped was `nsg`, which had shipped at a fixed 4. Autotuning it gave 1.2–4.2× at kernel level and 1.07–1.85× end to end, depending on context length. A first version of that report compared against the wrong baseline and was corrected; against plain fp16 the fused KIVI path is still 0.48–0.85× ([roofline](docs/KV_KERNEL_ROOFLINE_FINDINGS.md), [nsg report](docs/NSG_AUTOTUNE_BENCHMARK_REPORT.md)).
+
+**Benchmarks that misled.** An audit of the benchmark scripts found two that produced misleading comparisons and one that did not run. The same habit of checking against a ground truth found that the 8-bit Lloyd-Max codebook error was 2.8× higher than it should have been (1.05e-6 → 3.71e-7). It made no measurable difference at the common 2- and 4-bit settings.
+
+**Hardware limits.** Development and benchmarks run on an M4 MacBook Air with 24 GB. Qwen2.5-32B-4bit leaves no headroom for any quantizer there, so results for larger models are not measured ([findings](docs/MEMORY_CONSTRAINT_FINDINGS.md)).
+
+---
+
 ## Method library
 
 Every method in the library drops in the same way: set `method="<id>"` in
@@ -221,11 +234,11 @@ Every other method carries a maturity label, shown by `veloxquant methods` and i
 port, knowing departure from the paper, or not servable yet). Methods like `vecinfer` need
 user-trained codebooks and fall in `beta` for that reason.
 
-The 43 methods fall into three families:
+The 43 methods fall into three families (as reported by `veloxquant methods`):
 
-- **Quantization** (22) — compress every token. Default `turboquant_rvq`; also VecInfer, SpectralQuant, RateQuant, RaBitQ, QJL, PolarQuant, CommVQ, KIVI, SVDq, KVQuant-NUQ, GEAR, and more.
-- **Low-rank & cross-layer** (6) — compress across dimensions or depth. PALU, XQuant, MiniCache, xKV, AdaKV, KVTC.
-- **Token eviction & merging** (15, 🔻RSS) — drop or merge low-value tokens; these reduce **resident** memory today. SnapKV, StreamingLLM, H2O, TOVA, PyramidKV, SqueezeAttention, ChunkKV, Keyformer, KVzip, and more.
+- **Quantization** (20) — compress every token. Default `turboquant_rvq`; also VecInfer, KIVI, KVQuant, SVDq, GEAR, PALU, XQuant, QJL, PolarQuant, SpectralQuant, KVTC, and more.
+- **Token eviction & merging** (16) — drop or merge low-value tokens, so the token-dropping methods reduce **resident** memory today (🔻RSS). SnapKV, StreamingLLM, H2O, TOVA, PyramidKV, ChunkKV, Keyformer, KVzip, xKV, and more.
+- **Hybrid** (7) — combine quantization with eviction or cross-layer merging. MiniCache, A2ATS, AnchorKV, KIVI-sink, RocketKV, SKVQ, ZipCache.
 
 Every method links to its own page, with mechanism, config, evidence, and limitations, on the
 [algorithm overview](https://veloxquant.dev/docs/algorithms/overview).
@@ -253,6 +266,8 @@ A second set of kernels forms a fully GPU-resident **RaBitQ** pipeline — 1-bit
 keys scored via XOR+popcount, 4-bit codebook values, fused into one dispatch
 (**1.78×** vs dequantize+SDPA at S_kv=8192).
 
+The fused decode-and-attend kernel is a different story: profiling showed it is bound by thread-group count, not bandwidth, and several obvious optimizations were measured and rejected. See [Problems I hit](#problems-i-hit-and-how-i-solved-them) and [the roofline findings](docs/KV_KERNEL_ROOFLINE_FINDINGS.md).
+
 > **Caveat:** kernels pay ~50–200 µs launch overhead per call. On tiny models
 > (SmolLM2-135M, ~60 launches/token) that can exceed the savings. Built for 7B+ at
 > realistic context lengths.
@@ -270,6 +285,8 @@ Usage and debugging: [docs — Metal GPU kernels](https://veloxquant.dev/docs/gu
 </div>
 
 <br/>
+
+Method: all tok/s numbers below are end-to-end `mlx_lm.generate`; speed varies between processes on the same machine, so cross-method speed claims should come from same-process interleaved runs. Quality is compared by paired NLL against fp16, not by perplexity alone.
 
 10-model study, VecInfer vs RVQ (v0.5.0) — compression and throughput, tok/s:
 
@@ -293,9 +310,7 @@ All 10 models, compression ratios, historical snapshots, and methodology:
 
 ## Architecture
 
-Every method runs the same three-step pipeline: rotate the K/V tensors into a friendlier basis, quantize them (optionally with a residual pass for extra precision), then pack the bits. That is why swapping `method="..."` just works. Every quantizer plugs into the same `KVCacheConfig` → `KVCacheBuilder` → `mlx_lm`-compatible cache path regardless of what it does internally.
-
-The wiring underneath is conventional object-oriented plumbing, plus some custom data structures for the bit-packing. Pipeline diagrams (TurboQuantRVQ, VecInfer) and the design-pattern breakdown are in [docs — Core concepts](https://veloxquant.dev/docs/getting-started/concepts).
+Every method runs the same three-step pipeline: rotate K/V into a friendlier basis, quantize (optionally with a residual pass), then pack the bits. Every quantizer plugs into the same `KVCacheConfig` → `KVCacheBuilder` → `mlx_lm`-compatible cache path. Pipeline diagrams and design patterns: [docs — Core concepts](https://veloxquant.dev/docs/getting-started/concepts).
 
 ---
 
