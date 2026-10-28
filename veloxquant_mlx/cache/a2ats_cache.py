@@ -65,6 +65,7 @@ Byte accounting:
 from __future__ import annotations
 
 import math
+import warnings
 from typing import Any
 
 import mlx.core as mx
@@ -171,7 +172,16 @@ class A2ATSKVCache(_MLXKVCache):
         codebook = getattr(config, "a2ats_codebook", None)
         if codebook is None:
             # Random init — wiring/shape tests only; real usage supplies a
-            # calibrated codebook (see module docstring).
+            # calibrated codebook (see module docstring). Warn like
+            # VecInferKVCache does (#750): on a real model this is garbage (#902).
+            warnings.warn(
+                "A2ATSKVCache: no a2ats_codebook given, so a random N(0,1) codebook "
+                "is used. It is only meant for shape/wiring tests and destroys real "
+                "models (perplexity 36,469 vs 11.3 for fp16 on Qwen3-4B). Pass a "
+                "calibrated codebook via KVCacheConfig(a2ats_codebook=...).",
+                UserWarning,
+                stacklevel=2,
+            )
             rng = mx.random.key(seed)
             codebook = mx.random.normal(shape=(n_cb, self._sub_dim), key=rng)
         elif not isinstance(codebook, mx.array):

@@ -595,3 +595,32 @@ def test_plain_rope_assumption_breaks_window_keys_on_llama3() -> None:
     k_out, _ = cache.update_and_fetch(post, post)
     # 4x above the tolerance the scaled path meets (5e-4) at this small head_dim.
     assert float(mx.max(mx.abs(k_out - post))) > 2e-3
+
+
+# ---------------------------------------------------------------------------
+# Random-codebook fallback must not be silent (#902)
+# ---------------------------------------------------------------------------
+
+
+def test_warns_without_codebook() -> None:
+    with pytest.warns(UserWarning, match="no a2ats_codebook given"):
+        _make()
+
+
+@pytest.mark.parametrize("as_numpy", [False, True])
+def test_no_warning_with_codebook(as_numpy: bool) -> None:
+    import warnings
+
+    cb = np.random.default_rng(0).standard_normal((2**6, 8)).astype(np.float32)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        cache = _make(a2ats_codebook=cb if as_numpy else mx.array(cb))
+    k, v = _rand_kv()
+    cache.update_and_fetch(k, v)
+
+
+def test_for_model_default_a2ats_warns() -> None:
+    from veloxquant_mlx.tests.cache.test_base_for_model import _make_fake_model
+
+    with pytest.warns(UserWarning, match="no a2ats_codebook given"):
+        KVCacheBuilder.for_model(_make_fake_model(), KVCacheConfig(method="a2ats", head_dim=32))
