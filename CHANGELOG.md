@@ -544,6 +544,21 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.17 (2026-10-28)
+
+### Bug Fixes
+
+- **config**: Warn when bit_width_inlier is named for a method that ignores it (#901)
+  ([#912](https://github.com/rajveer43/VeloxQuant-MLX/pull/912),
+  [`828d23f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/828d23f67d3e66975b57a7de7f93ffba21175b2f))
+
+### Chores
+
+- **deps**: Bump postcss-selector-parser in /docs-site
+  ([#909](https://github.com/rajveer43/VeloxQuant-MLX/pull/909),
+  [`42328d3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/42328d3c2ede56c4a7aff6244c05b78ee6ce332c))
+
+
 ## v0.94.16 (2026-10-27)
 
 ### Bug Fixes
