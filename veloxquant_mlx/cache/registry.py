@@ -846,7 +846,7 @@ def _run_probe(method: str) -> tuple[ServeTier, str | None]:
         # see that connection through the reflection, but the invariant holds.
         cache = KVCacheFactory.create(
             KVCacheConfig(
-                method=cast(MethodName, method), head_dim=128, bit_width_inlier=2, seed=42
+                method=cast(MethodName, method), head_dim=128, seed=42
             )
         )
     except Exception as exc:  # construction failure is itself disqualifying
@@ -930,7 +930,7 @@ def telemetry_coverage(method: str) -> TelemetryCoverage:
         # analogous comment in _run_probe.
         cache = KVCacheFactory.create(
             KVCacheConfig(
-                method=cast(MethodName, method), head_dim=128, bit_width_inlier=2, seed=42
+                method=cast(MethodName, method), head_dim=128, seed=42
             )
         )
         # Callers only reach here when tier.is_servable, which _run_probe

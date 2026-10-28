@@ -237,6 +237,12 @@ _CACHE_CLASS_BY_METHOD: dict[str, tuple[str, str]] = {
 }
 
 
+# Methods whose cache class reads KVCacheConfig.bit_width_inlier; every other
+# method ignores it (#901). Pinned by a synthetic test over all methods.
+_INLIER_BITS_METHODS: frozenset[str] = frozenset(
+    {"kivi", "kivi_sink", "turboquant_rvq", "turboquant_mse", "turboquant_prod", "polar", "spectral"}
+)
+
 # Generated from the flat-field groupings in this file's history; maps each
 # deprecated flat field name to the options dataclass (in veloxquant_mlx.cache
 # .options) that now owns it, for __post_init__ read-through and the
@@ -877,6 +883,7 @@ class KVCacheConfig:
                 if flat_name not in _FIELD_TO_OPTIONS_CLASS or flat_name in explicit:
                     continue
                 object.__setattr__(self, flat_name, getattr(self.options, opt_field.name))
+        _warn_inlier_bits_ignored(self, getattr(self, "_explicit_fields", frozenset()))
         object.__setattr__(self, "_post_init_done", True)
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -892,6 +899,33 @@ class KVCacheConfig:
                 stacklevel=2,
             )
         object.__setattr__(self, name, value)
+
+
+def _warn_inlier_bits_ignored(config: KVCacheConfig, explicit: frozenset[str]) -> None:
+    """Warn when the caller named ``bit_width_inlier`` for a method that ignores it (#901).
+
+    ``dataclasses.replace`` (used by ``KVCacheBuilder.for_model``) names every
+    init field, so an explicit set covering them all is an internal copy, not
+    the caller asking for a bit-width.
+    """
+    if "bit_width_inlier" not in explicit or config.method in _INLIER_BITS_METHODS:
+        return
+    init_names = {f.name for f in dataclasses_fields(config) if f.init}
+    if explicit >= init_names:
+        return
+    own = sorted(
+        f.name
+        for f in dataclasses_fields(config)
+        if f.init and "bit" in f.name and f.name.startswith(f"{config.method}_")
+    )
+    hint = f"; this method's own bit-width field is {', '.join(own)}" if own else ""
+    warnings.warn(
+        f"KVCacheConfig(method={config.method!r}) ignores bit_width_inlier="
+        f"{config.bit_width_inlier!r}: only {', '.join(sorted(_INLIER_BITS_METHODS))} "
+        f"read it{hint} (#901).",
+        UserWarning,
+        stacklevel=5,
+    )
 
 
 def _track_explicit_fields(cls: type) -> type:
