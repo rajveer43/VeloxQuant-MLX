@@ -289,6 +289,7 @@ _FIELD_TO_OPTIONS_CLASS: dict[str, str] = {
     "palu_hi_fraction": "PALUOptions",
     "palu_group_size": "PALUOptions",
     "palu_quantize_values": "PALUOptions",
+    "palu_min_fit_rows": "PALUOptions",
     "cachegen_bits": "CacheGenOptions",
     "cachegen_group_size": "CacheGenOptions",
     "cachegen_use_delta": "CacheGenOptions",
@@ -584,6 +585,7 @@ class KVCacheConfig:
     palu_hi_fraction: float = 0.25  # fraction of latent channels at hi_bit
     palu_group_size: int = 32  # token group size for latent quantization
     palu_quantize_values: bool = True  # low-rank + mixed-bit values too (False = LR-only)
+    palu_min_fit_rows: int = 0  # hold rows raw until this many arrive, then fit once (0 = fit on the first call)
     # --- CacheGen configuration (entropy-coded byte model over group quant) ----
     cachegen_bits: int = 4  # base group-quant bit-width (shallowest layer group)
     cachegen_group_size: int = 32  # token group size

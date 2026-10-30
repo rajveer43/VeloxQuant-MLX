@@ -286,6 +286,7 @@ class PALUKVCache(_MLXKVCache):
             raise QuantizerConfigError(f"palu: palu_hi_fraction must be in [0, 1], got {hi_frac}")
         gsize = int(getattr(config, "palu_group_size", 32))
         quant_values = bool(getattr(config, "palu_quantize_values", True))
+        self._min_fit_rows = max(0, int(getattr(config, "palu_min_fit_rows", 0)))
 
         self._keys_lr = _TensorLowRank(
             n_groups, rank, et, hi_bit, lo_bit, hi_frac, gsize, quantize=True
@@ -331,7 +332,12 @@ class PALUKVCache(_MLXKVCache):
             # and frozen for good (#840), so keep them lossless until a call
             # carries more than one row, then fit on everything held.
             held_k, held_v = self._last_state if self._last_state is not None else (None, None)
-            if S == 1:
+            # The latents are stored in the fitted basis, so unlike SVDq/KVTC the
+            # basis cannot be refit per chunk without invalidating them. Hold
+            # rows raw until ``palu_min_fit_rows`` have arrived so the one fit
+            # sees enough tokens (#891).
+            held_rows = self._palu_offset if held_k is not None else 0
+            if S == 1 or held_rows + S < self._min_fit_rows:
                 k_out = (
                     keys
                     if held_k is None
