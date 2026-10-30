@@ -544,6 +544,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.20 (2026-10-30)
+
+### Bug Fixes
+
+- **xkv**: Refit the shared basis on every prefill chunk, not only the first (#892)
+  ([#917](https://github.com/rajveer43/VeloxQuant-MLX/pull/917),
+  [`586a235`](https://github.com/rajveer43/VeloxQuant-MLX/commit/586a2357d68d12d969a153867225491ee2270f74))
+
+
 ## v0.94.19 (2026-10-30)
 
 ### Bug Fixes
