@@ -50,7 +50,13 @@ VecInfer-adapted/CommVQ-adapted/Palu-adapted/SVDq-adapted/AMC-adapted: using
 ``a2ats`` with the default random-init codebook (present only so
 wiring/shape tests don't require a calibration pass) degrades to
 near-random quantization. Supply a calibrated ``a2ats_codebook`` via config
-for real use.
+for real use. Calibration alone is not enough on a real model (#902,
+Qwen3-4B, 1 run each): one codebook shared by keys, values and all layers
+scored perplexity 95k-126k; per-layer key/value codebooks (``a2ats_value_codebook``)
+with the default window still scored 7k-13k, because far keys come back
+unrotated while mlx_lm rotates the query; only with every key inside the exact
+window (``a2ats_window`` above the context) did it reach 51 at 4 bits/dim
+(fp16: 11.3).
 
 **No CUDA kernel fusion reproduced** — same MLX/Metal disclaimer as every
 other VQ-family method in this repo: the benefit on Apple Silicon is memory
@@ -65,6 +71,7 @@ Byte accounting:
 from __future__ import annotations
 
 import math
+import warnings
 from typing import Any
 
 import mlx.core as mx
@@ -119,6 +126,9 @@ class A2ATSKVCache(_MLXKVCache):
                 ``a2ats_codebook`` (mx.array | np.ndarray | None) — pre-trained
                     codebook; random-init fallback if absent (wiring/tests only,
                     see module docstring's calibration warning).
+                ``a2ats_value_codebook`` (mx.array | np.ndarray | None) — optional
+                    separate codebook for values, same shape as ``a2ats_codebook``;
+                    values share the key codebook if absent.
 
     Notes:
         Never exposes ``.bits`` — keeps mlx_lm SDPA on the clean fp16 path,
@@ -171,12 +181,39 @@ class A2ATSKVCache(_MLXKVCache):
         codebook = getattr(config, "a2ats_codebook", None)
         if codebook is None:
             # Random init — wiring/shape tests only; real usage supplies a
-            # calibrated codebook (see module docstring).
+            # calibrated codebook (see module docstring). Warn like
+            # VecInferKVCache does (#750): on a real model this is garbage (#902).
+            warnings.warn(
+                "A2ATSKVCache: no a2ats_codebook given, so a random N(0,1) codebook "
+                "is used. It is only meant for shape/wiring tests and destroys real "
+                "models (perplexity 36,469 vs 11.3 for fp16 on Qwen3-4B). Pass a "
+                "calibrated codebook via KVCacheConfig(a2ats_codebook=...); note a "
+                "calibrated codebook alone is still far from fp16 quality (see the "
+                "module docstring, #902).",
+                UserWarning,
+                stacklevel=2,
+            )
             rng = mx.random.key(seed)
             codebook = mx.random.normal(shape=(n_cb, self._sub_dim), key=rng)
         elif not isinstance(codebook, mx.array):
             codebook = mx.array(codebook)
         self._codebook = codebook.astype(mx.float32)
+        # Keys and values have very different scales (Qwen3-4B layer 0: key std
+        # 14, value std 0.03), so a single shared codebook reconstructs values
+        # worse than zeros (#902). An optional second codebook serves values.
+        value_codebook = getattr(config, "a2ats_value_codebook", None)
+        if value_codebook is None:
+            self._value_codebook = self._codebook
+        else:
+            if not isinstance(value_codebook, mx.array):
+                value_codebook = mx.array(value_codebook)
+            self._value_codebook = value_codebook.astype(mx.float32)
+            if self._value_codebook.shape != self._codebook.shape:
+                raise QuantizerConfigError(
+                    "A2ATSKVCache: a2ats_value_codebook must have the same shape as "
+                    f"a2ats_codebook {tuple(self._codebook.shape)}, got "
+                    f"{tuple(self._value_codebook.shape)}."
+                )
 
         self._n_sub = self._head_dim // self._sub_dim
 
@@ -401,13 +438,13 @@ class A2ATSKVCache(_MLXKVCache):
         idx_parts = []
         for sub_i in range(self._n_sub):
             sub = v_reshaped[:, sub_i * self._sub_dim : (sub_i + 1) * self._sub_dim]
-            idx_parts.append(_nearest_centroid(sub, self._codebook))
+            idx_parts.append(_nearest_centroid(sub, self._value_codebook))
         v_indices = (
             mx.stack(idx_parts, axis=1)
             if v_reshaped.shape[0] > 0
             else mx.zeros((0, self._n_sub), dtype=mx.int32)
         )
-        v_hat = dequantize_vq(v_indices, self._codebook).astype(values.dtype)
+        v_hat = dequantize_vq(v_indices, self._value_codebook).astype(values.dtype)
         v_out = v_hat.reshape(v_flat_shape)
 
         self._account_bytes(B, H, S, D)
@@ -527,7 +564,8 @@ class A2ATSKVCache(_MLXKVCache):
     @property
     def codebook_bytes(self) -> int:
         """Static codebook overhead in bytes (fp16 storage), amortized across all tokens."""
-        return (2**self._bits) * self._sub_dim * 2  # fp16 storage
+        n_books = 1 if self._value_codebook is self._codebook else 2
+        return n_books * (2**self._bits) * self._sub_dim * 2  # fp16 storage
 
     @property
     def compression_ratio(self) -> float:
