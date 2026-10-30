@@ -544,6 +544,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.19 (2026-10-30)
+
+### Bug Fixes
+
+- **kvtc**: Refit the key/value basis on every prefill chunk, not only the first (#893)
+  ([#916](https://github.com/rajveer43/VeloxQuant-MLX/pull/916),
+  [`f23c526`](https://github.com/rajveer43/VeloxQuant-MLX/commit/f23c526e5d875a13ec009a2258a9163365fa6468))
+
+
 ## v0.94.18 (2026-10-30)
 
 ### Bug Fixes
