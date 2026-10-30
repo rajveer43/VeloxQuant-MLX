@@ -46,6 +46,7 @@ rationale):
 from __future__ import annotations
 
 import mlx.core as mx
+import numpy as np
 
 from veloxquant_mlx.quantizers._quant_utils import (
     _group_quant_dequant,
@@ -142,6 +143,56 @@ def joint_svd_compress(
     V_g = Vt[:rank, :].T  # [D, r]
     s_r = S_vals[:rank]  # [r]
     return V_g, K_mean_g, s_r
+
+
+class JointGramStats:
+    """Running uncentered Gram matrix, row sum and row count of every key row added.
+
+    The basis ``joint_svd_compress`` would fit on the stacked rows, from
+    these statistics, so a cache or coordinator can refit on every prefill
+    chunk without keeping the rows (#892). Memory is O(D^2), independent of
+    the number of rows.
+    """
+
+    def __init__(self) -> None:
+        self.gram: np.ndarray | None = None
+        self.row_sum: np.ndarray | None = None
+        self.n_rows = 0
+        self.version = 0  # bumped on every add, so holders can tell a basis is stale
+
+    def add(self, keys: mx.array) -> None:
+        """Add ``keys`` [S, D] to the statistics."""
+        x = np.asarray(keys.astype(mx.float32), dtype=np.float64)
+        if self.gram is None:
+            self.gram, self.row_sum = x.T @ x, x.sum(axis=0)
+        else:
+            self.gram += x.T @ x
+            self.row_sum += x.sum(axis=0)
+        self.n_rows += x.shape[0]
+        self.version += 1
+
+    def basis(
+        self, rank: int | None = None, energy_threshold: float = 0.95
+    ) -> tuple[mx.array, mx.array, mx.array]:
+        """``(V_g, K_mean_g, singular_values)``, the :func:`joint_svd_compress` outputs."""
+        if self.gram is None:
+            raise ValueError("JointGramStats.basis: no rows added yet.")
+        D, n = self.gram.shape[0], self.n_rows
+        mean = self.row_sum / n
+        centered = self.gram - n * np.outer(mean, mean)
+        evals, evecs = np.linalg.eigh(0.5 * (centered + centered.T))  # ascending
+        r_max = min(n, D)
+        s = np.sqrt(np.clip(evals[::-1][:r_max], 0.0, None))
+        if rank is None:
+            total = float(s.sum())
+            if total < 1e-12:
+                rank = 1
+            else:
+                reached = np.nonzero(np.cumsum(s) / total >= energy_threshold)[0]
+                rank = int(reached[0]) + 1 if reached.size else r_max
+        rank = min(rank, r_max, D)
+        V_g = mx.array(evecs[:, ::-1][:, :rank].astype(np.float32))
+        return V_g, mx.array(mean.astype(np.float32)), mx.array(s[:rank].astype(np.float32))
 
 
 def project_into_shared_basis(
@@ -247,6 +298,7 @@ def project_quantize_reconstruct_batched(
 __all__ = [
     "pair_layers_grouped",
     "joint_svd_compress",
+    "JointGramStats",
     "project_into_shared_basis",
     "reconstruct_from_shared_basis",
     "quantize_latents_uniform",
