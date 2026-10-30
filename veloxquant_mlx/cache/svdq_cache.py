@@ -47,16 +47,17 @@ import math
 from typing import Any
 
 import mlx.core as mx
+import numpy as np
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.svdq import (
     DEFAULT_BIT_SCHEDULE,
+    basis_from_gram_batched,
     equivalent_bit_width,
     latent_group_slices,
     min_safe_rank,
     project_quantize_reconstruct_batched,
-    svd_compress_keys_batched,
 )
 
 
@@ -112,6 +113,15 @@ class SVDqKVCache(_MLXKVCache):
         # rank case only; see _resolve_safe_schedule).
         self._effective_schedule: list[tuple[int, ...]] = []
 
+        # Running statistics of every raw key row seen on a prefill (S > 1)
+        # call, per head: row count, row sum [H, D] and uncentered Gram
+        # [H, D, D], all float64. The basis is refit from these on each such
+        # call, so it covers all keys so far plus the chunk being quantized
+        # instead of being frozen from the first chunk (#890).
+        self._n_rows: int = 0
+        self._row_sum: np.ndarray | None = None
+        self._gram: np.ndarray | None = None
+
         # Byte accounting
         self._compressed_key_bytes: int = 0
         self._fp16_key_bytes: int = 0
@@ -120,7 +130,7 @@ class SVDqKVCache(_MLXKVCache):
         # V/K_mean are stored once per layer (set only in _run_prefill_svd) and
         # amortized over every token seen after that -- charge their bytes into
         # _compressed_key_bytes exactly once, not on every update_and_fetch call.
-        self._projection_bytes_charged: bool = False
+        self._projection_bytes_charged: int = 0
 
     # ------------------------------------------------------------------
     # SVD helpers
@@ -141,9 +151,21 @@ class SVDqKVCache(_MLXKVCache):
         serves it unbatched.
         """
         B, H, S, D = keys.shape
-        keys_hsd = keys[0].astype(mx.float32)  # [H, S, D]
-        _, self._V, self._K_mean, self._singular_values = svd_compress_keys_batched(
-            keys_hsd, rank=self._rank, energy_threshold=self._energy_threshold
+        x = np.asarray(keys[0].astype(mx.float32), dtype=np.float64)  # [H, S, D]
+        gram = np.swapaxes(x, 1, 2) @ x
+        row_sum = x.sum(axis=1)
+        if self._gram is None:
+            self._gram, self._row_sum = gram, row_sum
+        else:
+            self._gram += gram
+            self._row_sum += row_sum
+        self._n_rows += S
+        self._V, self._K_mean, self._singular_values = basis_from_gram_batched(
+            self._gram,
+            self._row_sum,
+            self._n_rows,
+            rank=self._rank,
+            energy_threshold=self._energy_threshold,
         )
         self._r = [int(V.shape[1]) for V in self._V]
         mx.eval(self._V, self._K_mean, self._singular_values)
@@ -232,7 +254,7 @@ class SVDqKVCache(_MLXKVCache):
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
-        """Fit per-head SVD on prefill (or project into the existing basis on decode), mixed-bit quantize the latents; values pass through fp16 unchanged."""
+        """Refit the per-head SVD basis on every multi-row call (prefill chunk) or project into it on decode, mixed-bit quantize the latents; values pass through fp16 unchanged."""
         B, H, S, D = keys.shape
         if B != 1:
             # Bases and the latent buffers carry a single batch axis, so B>1
@@ -250,11 +272,14 @@ class SVDqKVCache(_MLXKVCache):
             self._tokens_seen += S
             return super().update_and_fetch(keys, values)
 
-        if not self._V:
-            # First multi-row call — run SVD on the incoming batch (prefill)
+        if S > 1 or not self._V:
+            # Every multi-row call refits each head's basis on all raw keys
+            # seen so far plus this chunk, then quantizes this chunk with it.
+            # A basis frozen from the first chunk made quality depend on the
+            # prefill chunk size (#890).
             k_out = self._run_prefill_svd(keys)
         else:
-            # Subsequent calls — project into each head's existing V
+            # Single-token decode — project into each head's existing V
             k_out = self._project_quantize_reconstruct(keys)
 
         self._account_bytes(B, H, S, D)
@@ -281,11 +306,14 @@ class SVDqKVCache(_MLXKVCache):
             self._singular_values = []
             self._r = []
             self._effective_schedule = []
+            self._n_rows = 0
+            self._row_sum = None
+            self._gram = None
             self._compressed_key_bytes = 0
             self._fp16_key_bytes = 0
             self._value_fp16_bytes = 0
             self._tokens_seen = 0
-            self._projection_bytes_charged = False
+            self._projection_bytes_charged = 0
             return trimmed
         if old_tokens > 0:
             keep = self.offset / old_tokens
@@ -333,10 +361,12 @@ class SVDqKVCache(_MLXKVCache):
         # ratio far below 1.0 (inflation, not compression) even though the
         # actual latent quantization was working correctly. Found verifying
         # VeloxQuant-Studio issue #30.
-        if not self._projection_bytes_charged and self._V:
+        if self._V:
+            # The basis is refit on each prefill chunk and its rank can grow,
+            # so charge only the growth over what was already counted.
             projection_bytes = sum((D * r_h + D) * 4 for r_h in self._r) * B  # fp32
-            self._compressed_key_bytes += projection_bytes
-            self._projection_bytes_charged = True
+            self._compressed_key_bytes += projection_bytes - self._projection_bytes_charged
+            self._projection_bytes_charged = projection_bytes
 
         self._fp16_key_bytes += B * H * S * D * 2
         self._value_fp16_bytes += B * H * S * D * 2
