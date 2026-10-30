@@ -341,6 +341,29 @@ def kvtc_local_pca_batched(
     return L_list, V_list, mean_list, variances_list
 
 
+def kvtc_pca_from_gram(
+    gram: np.ndarray,  # [D, D] float64, sum over rows of x x^T (uncentered)
+    row_sum: np.ndarray,  # [D] float64, sum over rows of x
+    n_rows: int,
+) -> tuple[mx.array, mx.array, np.ndarray]:
+    """Local PCA basis of ``n_rows`` rows from their accumulated Gram matrix and row sum.
+
+    Same ``(V, mean, variances)`` as :func:`kvtc_local_pca_batched` for one
+    row (``r = min(n_rows, D)``, variances ``s_i^2 / n_rows``), but from a
+    ``D x D`` eigendecomposition instead of an SVD of the whole ``[S, D]``
+    block, so a cache can refit on every prefill chunk in O(D^3) without
+    re-reading its rows (#893).
+    """
+    D = gram.shape[0]
+    mean = row_sum / n_rows
+    centered = gram - n_rows * np.outer(mean, mean)
+    evals, evecs = np.linalg.eigh(0.5 * (centered + centered.T))  # ascending
+    r = min(n_rows, D)
+    variances = np.clip(evals[::-1][:r], 0.0, None) / max(n_rows, 1)
+    V = mx.array(evecs[:, ::-1][:, :r].astype(np.float32))
+    return V, mx.array(mean.astype(np.float32)), variances
+
+
 def kvtc_compress_from_pca_fit(
     L: mx.array,
     V: mx.array,
@@ -473,6 +496,7 @@ __all__ = [
     "kvtc_compress",
     "kvtc_compress_from_pca_fit",
     "kvtc_local_pca_batched",
+    "kvtc_pca_from_gram",
     "kvtc_decompress",
     "kvtc_fp16_bytes",
     "kvtc_pre_entropy_bytes",

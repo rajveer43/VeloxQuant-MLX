@@ -17,21 +17,22 @@ rate-distortion model; order-0 Huffman coder vs the paper's possibly more
 sophisticated scheme; paper's headline numbers are the paper's, on trained
 models, never reproduced here).
 
-NOT PATH-DEPENDENT (contrast with the eviction family)
---------------------------------------------------------
+NOT PATH-DEPENDENT ON DECODE (contrast with the eviction family)
+-----------------------------------------------------------------
 Unlike H2O/TOVA/MorphKV/KVzip (eviction, path-dependent keep-sets), KVTC is
 in the Palu/SVDq/SpectralQuant family: the local PCA basis (``V``, ``mean``)
-and the DP-derived per-component bit allocation are fit **once**, at the
-first ``update_and_fetch`` call with ``S > 1`` (prefill), and reused
-**unchanged** for every subsequent token (prefill continuation or decode).
-Feeding the same sequence one token at a time after prefill vs. all at once
-produces the identical stored basis/allocation/codes/decompressed output —
-pinned by a determinism test in
+and the DP-derived per-component bit allocation are refit on every
+``update_and_fetch`` call with ``S > 1`` (each prefill chunk) over all rows
+seen so far plus the chunk, from running Gram statistics, so they are not
+frozen from a short first chunk (#893). Single-token decode calls reuse the
+fitted basis **unchanged**: feeding the same decode tokens one at a time
+after prefill produces the identical stored basis/allocation/codes/
+decompressed output -- pinned by a determinism test in
 ``tests/cache/test_kvtc_cache.py``.
 
 Design
 ------
-Prefill (first call, ``S > 1``):
+Prefill (every call with ``S > 1``, refit on all rows so far):
   1. For keys and values independently: run local PCA (via
      ``quantizers/kvtc.py::kvtc_compress``) on the prefill batch, at
      ``kvtc_bit_budget`` total bits per token. Store the resulting
@@ -77,15 +78,17 @@ import mlx.core as mx
 import numpy as np
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
-from veloxquant_mlx.allocators.kvtc_dp import DEFAULT_BETA, DEFAULT_BIT_CHOICES
+from veloxquant_mlx.allocators.kvtc_dp import (
+    DEFAULT_BETA,
+    DEFAULT_BIT_CHOICES,
+    dp_allocate_bits,
+)
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.kvtc import (
     KVTCArtifact,
     _encode_survived_codes,
-    kvtc_compress_from_pca_fit,
-    kvtc_decompress,
     kvtc_fp16_bytes,
-    kvtc_local_pca_batched,
+    kvtc_pca_from_gram,
     kvtc_pre_entropy_bytes,
     quantize_component,
 )
@@ -111,34 +114,52 @@ class _TensorKVTC:
         self._fitted = False
         self._L_np: np.ndarray | None = None  # [S_total, r] float64 latents of _raw_rows
         self._pending: tuple | None = None  # codes not yet entropy-encoded (#841)
+        # Running Gram matrix / row sum / row count of every raw row, for the
+        # per-chunk refit (#893).
+        self._gram: np.ndarray | None = None
+        self._row_sum: np.ndarray | None = None
+        self._n_rows = 0
 
-    def fit_prefill_from_pca(
-        self, x0: mx.array, L: mx.array, V: mx.array, mean: mx.array, variances: np.ndarray
-    ) -> mx.array:
-        """Like :meth:`fit_prefill`, but from an already-fitted local PCA
-        basis (``L``, ``V``, ``mean``, ``variances``) instead of running the
-        SVD itself here — the caller (``KVTCKVCache.update_and_fetch``)
-        fits the PCA basis for all ``B*H`` rows in one batched call via
-        :func:`~veloxquant_mlx.quantizers.kvtc.kvtc_local_pca_batched`
-        (VeloxQuant-MLX#569) and passes this row's slice of the result in.
-        DP allocation, quantization, and entropy coding still run per row
-        here, unchanged.
+    def fit_chunk(self, x_new: mx.array) -> mx.array:
+        """Refit the PCA basis and DP bit allocation on every row seen so far plus ``x_new`` [S, D].
+
+        Returns the reconstruction of all rows, [S_total, D] fp16. The basis
+        comes from running Gram statistics and the codes stay unencoded until
+        the byte accounting asks for them (as in :meth:`append`), so a refit
+        costs O(D^3) plus a pass over the rows, not an SVD or an entropy
+        encode of the whole sequence (#893).
         """
-        self._raw_rows = x0.astype(mx.float32)
-        self._artifact = kvtc_compress_from_pca_fit(
-            L,
-            V,
-            mean,
-            variances,
-            x0.shape[0],
-            self.bit_budget,
-            bit_choices=self.bit_choices,
-            beta=self.beta,
+        x32 = x_new.astype(mx.float32)
+        x64 = np.asarray(x32, dtype=np.float64)
+        if self._gram is None:
+            self._gram, self._row_sum = x64.T @ x64, x64.sum(axis=0)
+            self._raw_rows = x32
+        else:
+            self._gram += x64.T @ x64
+            self._row_sum += x64.sum(axis=0)
+            self._raw_rows = mx.concatenate([self._raw_rows, x32], axis=0)
+        self._n_rows += x64.shape[0]
+        V, mean, variances = kvtc_pca_from_gram(self._gram, self._row_sum, self._n_rows)
+        bit_alloc = dp_allocate_bits(
+            variances, self.bit_budget, bit_choices=self.bit_choices, beta=self.beta
+        )
+        survived_idx = np.where(bit_alloc > 0)[0]
+        self._artifact = KVTCArtifact(
+            V=V,
+            mean=mean,
+            bit_allocation=bit_alloc,
+            S=self._n_rows,
+            n_survived=int(survived_idx.shape[0]),
+            entropy_payload=b"",
+            entropy_table={},
+            quant_min=np.zeros(0),
+            quant_scale=np.zeros(0),
+            survived_idx=survived_idx,
+            is_entropy_coded=False,
         )
         self._fitted = True
         self._L_np = None
-        self._pending = None
-        return kvtc_decompress(self._artifact)
+        return self._requantize()
 
     def append(self, x: mx.array) -> mx.array:
         """Absorb new rows ``x`` [S, D] through the FIXED basis/allocation; return reconstructed [S_total, D] fp16.
@@ -171,6 +192,9 @@ class _TensorKVTC:
             self._artifact = None
             self._L_np = None
             self._pending = None
+            self._gram = None
+            self._row_sum = None
+            self._n_rows = 0
 
     def _project(self, x: mx.array) -> np.ndarray:
         """Project fp32 rows ``x`` [S, D] onto the frozen basis; float64 [S, r]."""
@@ -360,12 +384,15 @@ class KVTCKVCache(_MLXKVCache):
 
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
-        """Fit the local PCA basis + DP bit allocation on prefill, else append through the frozen basis; return reconstructed fp16 K/V."""
+        """Refit the local PCA basis + DP bit allocation on every multi-row call (prefill chunk), else append through the fitted basis on decode; return reconstructed fp16 K/V."""
         B, H, S, D = keys.shape
         self._ensure_states(B, H)
         n_new = S
 
-        is_prefill = not self._keys_states[0]._fitted
+        # A multi-row call always (re)fits the basis and bit allocation on all
+        # rows so far plus this chunk (#893); single-row decode calls append
+        # through the fitted basis.
+        is_prefill = S > 1 or not self._keys_states[0]._fitted
 
         if is_prefill:
             # Rows held so far (single-token calls before any fit) are raw and
@@ -389,19 +416,10 @@ class KVTCKVCache(_MLXKVCache):
                 self._full_seq_bytes += B * H * S * D * 2 * 2  # K + V, fp16
                 self._last_state = (k_out, v_out)
                 return k_out, v_out
-            if held_k is not None and self._kvtc_offset > 0:
+            if not self._keys_states[0]._fitted and held_k is not None and self._kvtc_offset > 0:
                 keys = mx.concatenate([held_k.astype(keys.dtype), keys], axis=2)
                 values = mx.concatenate([held_v.astype(values.dtype), values], axis=2)
                 S = keys.shape[2]
-            # Batch the local-PCA SVD fit across all B*H rows in one call
-            # (VeloxQuant-MLX#569) instead of a Python loop fitting each
-            # (b, h) row's SVD separately. DP allocation / quantization /
-            # entropy coding remain per-row below (unchanged) -- only the
-            # SVD fit itself is batched.
-            keys_bh = keys.reshape(B * H, S, D)
-            values_bh = values.reshape(B * H, S, D)
-            k_L, k_V, k_mean, k_var = kvtc_local_pca_batched(keys_bh)
-            v_L, v_V, v_mean, v_var = kvtc_local_pca_batched(values_bh)
 
         k_out_b, v_out_b = [], []
         for b in range(B):
@@ -415,12 +433,8 @@ class KVTCKVCache(_MLXKVCache):
                 v_bh = values[b, h]
 
                 if is_prefill:
-                    k_rec = ks.fit_prefill_from_pca(
-                        k_bh, k_L[idx], k_V[idx], k_mean[idx], k_var[idx]
-                    )
-                    v_rec = vs.fit_prefill_from_pca(
-                        v_bh, v_L[idx], v_V[idx], v_mean[idx], v_var[idx]
-                    )
+                    k_rec = ks.fit_chunk(k_bh)
+                    v_rec = vs.fit_chunk(v_bh)
                 else:
                     k_rec = ks.append(k_bh)
                     v_rec = vs.append(v_bh)
