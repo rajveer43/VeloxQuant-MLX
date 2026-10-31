@@ -60,6 +60,44 @@ def _validate_method(method: str) -> None:
         )
 
 
+class _PatchedModelTracker:
+    """Track already-patched models by ``id()`` with weak references.
+
+    MLX ``nn.Module`` defines ``__eq__`` without ``__hash__``, so its
+    instances are unhashable and cannot live in a ``WeakSet`` (and a
+    membership check or ``add`` therefore raises ``TypeError``). Keying by
+    ``id()`` with weak references keeps the two properties that make the set
+    safe: a model is not retained merely because the server once loaded it,
+    and a recycled ``id()`` from a freed model is never mistaken for a
+    still-live one because the weakref finalizer drops the entry at
+    collection time.
+    """
+
+    def __init__(self) -> None:
+        self._entries: dict[int, weakref.ReferenceType[Any]] = {}
+
+    def is_patched(self, model: Any) -> bool:
+        """Return whether this exact live object has been patched already."""
+        ref = self._entries.get(id(model))
+        return ref is not None and ref() is model
+
+    def mark_patched(self, model: Any) -> None:
+        """Record ``model`` as patched; the entry dies with the model."""
+        self._entries[id(model)] = weakref.ref(model, self._release)
+
+    def __len__(self) -> int:
+        """Number of live tracked models (diagnostic for tests and logs)."""
+        return len(self._entries)
+
+    def _release(self, _ref: weakref.ReferenceType[Any]) -> None:
+        # Drop the dead model's id. CPython runs the callback while the object
+        # is being finalized, before its memory (and id) can be recycled, so
+        # the entry being removed here still belongs to the dead model.
+        for oid, ref in list(self._entries.items()):
+            if ref is _ref:
+                self._entries.pop(oid, None)
+
+
 def _install_vlm_patch(config: KVCacheConfig, server_package: Any, app_module: Any) -> None:
     """Patch MLX-VLM's cached-model factory exactly once per model instance.
 
@@ -68,13 +106,11 @@ def _install_vlm_patch(config: KVCacheConfig, server_package: Any, app_module: A
     request time, so update both the app module and package re-export.
     """
     original = app_module.get_cached_model
-    # Keeping weak object references prevents both id() reuse and retaining a
-    # model solely because it was once loaded by the server.
-    patched_models: weakref.WeakSet[Any] = weakref.WeakSet()
+    tracker = _PatchedModelTracker()
 
     def get_cached_model(*args: Any, **kwargs: Any):
         model, processor, model_config = original(*args, **kwargs)
-        if model not in patched_models:
+        if not tracker.is_patched(model):
             # MLX-VLM returns a processor that owns the text tokenizer. Keep
             # the OpenAI message array intact; only install a compatibility
             # template when its tokenizer cannot render a leading system role.
@@ -83,7 +119,7 @@ def _install_vlm_patch(config: KVCacheConfig, server_package: Any, app_module: A
             if ensure_initial_system_prompt_support(tokenizer, model_name):
                 print("[veloxquant vlm-serve] installed Mistral system-message chat template")
             patch_vlm_kv_cache(model, config)
-            patched_models.add(model)
+            tracker.mark_patched(model)
         return model, processor, model_config
 
     app_module.get_cached_model = get_cached_model
