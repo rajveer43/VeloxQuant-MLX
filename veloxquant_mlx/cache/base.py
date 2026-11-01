@@ -689,8 +689,8 @@ class KVCacheConfig:
     knorm_recent: int = 0  # trailing protected window (0 = paper-faithful)
     knorm_keep: str = "low"  # "low" = paper finding; "high" = inverted ablation
     # --- SKVQ-adapted configuration (sliding-window reorder + clip quant) -
-    skvq_bits_key: int = 2  # key code bit-width (paper: 2)
-    skvq_bits_value: int = 2  # value code bit-width (paper: 1.5; we ship integer bits)
+    skvq_bits_key: int = 4  # key code bit-width (paper: 2; 2-bit per-token keys fail, see docs)
+    skvq_bits_value: int = 4  # value code bit-width (paper: 1.5; we ship integer bits)
     skvq_group_size: int = 32  # channels per quant group (per-token groups)
     skvq_window: int = 128  # fp16 sliding window == flush chunk size (paper: ~128)
     skvq_n_sink: int = 5  # leading tokens restored to fp16 (paper's filter: ~5)
