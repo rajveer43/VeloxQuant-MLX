@@ -43,9 +43,21 @@ def _make(**cfg):
         "skvq_window": 16,
         "skvq_n_sink": 4,
         "skvq_group_size": 16,
+        # Explicit 2-bit keeps these unit tests on the harshest setting; the
+        # shipped default is pinned by test_default_bits_are_four.
+        "skvq_bits_key": 2,
+        "skvq_bits_value": 2,
     }
     base.update(cfg)
     return KVCacheFactory.create(KVCacheConfig(**base))
+
+
+def test_default_bits_are_four() -> None:
+    """2-bit per-token keys are unusable on real models (#906: Qwen3-4B
+    perplexity 20-92 vs 6.9 fp16; Llama-3.2-1B 537 vs 13), so the shipped
+    default is 4-bit keys and values."""
+    cache = KVCacheFactory.create(KVCacheConfig(method="skvq", head_dim=64))
+    assert (cache._bits_k, cache._bits_v) == (4, 4)
 
 
 # ------------------------------------------------------------------
@@ -187,6 +199,61 @@ def test_reorder_beats_identity_on_heterogeneous_channels() -> None:
         return float(np.mean(diff**2))
 
     assert mse(True) < mse(False)
+
+
+@pytest.mark.parametrize("het", [True, False])
+@pytest.mark.parametrize("seed", range(6))
+def test_chosen_permutation_never_worse_than_identity_per_head(seed, het) -> None:
+    """A head keeps the range-sorted order only if it lowers that head's
+    round-trip error on the first chunk's non-sink rows (#906: an
+    unconditional sort raised Qwen3-4B 2-bit perplexity from 26 to 92)."""
+    cache = _make()
+    scales = _het_scales(64, seed=seed) if het else None
+    k, _ = _kv(1, 2, 16, 64, seed=seed, channel_scales=scales)
+    perm, inv = cache._per_head_perms(k, 2)
+    x = k[..., cache._n_sink :, :].astype(mx.float32)
+
+    def per_head_err(p, i):
+        rec = cache._round_trip(x, p, i, 2)
+        return np.array(mx.mean(mx.square(rec - x), axis=(0, 2, 3)))
+
+    assert np.all(per_head_err(perm, inv) <= per_head_err(None, None) + 1e-12)
+    assert np.array_equal(np.array(mx.argsort(perm, axis=-1)), np.array(inv))
+
+
+def test_unhelpful_permutation_falls_back_to_identity_per_head(monkeypatch) -> None:
+    """Selection is per head: head 0's sort makes it worse (identity wins),
+    head 1's sort makes it better (sorted order wins)."""
+    cache = _make()
+    k, _ = _kv(1, 2, 16, 64, seed=21, channel_scales=_het_scales(64))
+
+    def fake_round_trip(x, perm, inv, bits):
+        delta = np.full(x.shape, 0.1, dtype=np.float32)  # identity error
+        if perm is not None:
+            delta[:, 0], delta[:, 1] = 0.2, 0.05
+        return x + mx.array(delta)
+
+    monkeypatch.setattr(cache, "_round_trip", fake_round_trip)
+    perm, inv = cache._per_head_perms(k, 2)
+
+    x = np.array(k[:, :, cache._n_sink :, :], dtype=np.float32)[0]  # [H, r', D]
+    expected_sorted = np.argsort(x[1].max(axis=0) - x[1].min(axis=0))
+    assert np.array_equal(np.array(perm[0]), np.arange(64))
+    assert np.array_equal(np.array(perm[1]), expected_sorted)
+    assert np.array_equal(np.array(inv[0]), np.arange(64))
+    assert np.array_equal(np.array(mx.argsort(perm, axis=-1)), np.array(inv))
+
+
+def test_permutation_tie_keeps_identity(monkeypatch) -> None:
+    """Equal error is not an improvement: the cheaper identity order stays."""
+    cache = _make()
+    k, _ = _kv(1, 2, 16, 64, seed=22, channel_scales=_het_scales(64))
+    monkeypatch.setattr(
+        cache, "_round_trip", lambda x, perm, inv, bits: x + mx.array(np.full(x.shape, 0.1, "f4"))
+    )
+    perm, inv = cache._per_head_perms(k, 2)
+    assert np.array_equal(np.array(perm), np.broadcast_to(np.arange(64), (2, 64)))
+    assert np.array_equal(np.array(inv), np.array(perm))
 
 
 def test_clip_search_off_fixed_alpha_runs() -> None:

@@ -55,6 +55,29 @@ purely a visibility guard around the existing, unmodified eviction path.
 
 ### Fixed
 
+**`method="skvq"` channel reorder no longer wrecks real-model quality**
+([#906](https://github.com/rajveer43/VeloxQuant-MLX/issues/906)) —
+`SKVQKVCache` applied a range-sorted channel permutation, computed from the
+first 128 rows, to every head unconditionally. In a first check on
+`Qwen3-4B-4bit` (2,047 tokens of the repo docs) the permutation on **layer
+0's keys alone** took 2-bit perplexity from 26.1 (no reorder) to 84.6, and on
+all layers to 92.6 (fp16: 6.91); the permutation
+itself transfers fine to later chunks (rank correlation 0.78, the same as an
+oracle computed over the whole prefill), so it is the grouping, not drift,
+that hurts. `_per_head_perms` now keeps the sorted order on a head only when
+it strictly lowers that head's round-trip error on the chunk's non-sink rows
+(the sinks are stored exact, so they no longer steer the order either) and
+otherwise keeps the identity, so it can never be worse than identity on the
+observed chunk. Measured on an M4 (MLX 0.32.4, WikiText-2 test, 2,047-token
+prompt, paired NLL against fp16, one bit-identical run each, standard error
+over 128-token blocks): on Qwen3-4B the chooser beats the old always-sort at
+every key/value bit-width tried (2/2 +2.19 → +0.81, 4/4 +0.20 → +0.02; z from
+-5 to -18 at 2,047 and 4,095 tokens) and is never worse than no reorder. On
+Llama-3.2-1B the policies are statistically indistinguishable (4/4 +0.088
+→ +0.082), so the fix removes a real failure on one model and is neutral on
+the other. New regression tests pin the per-head guarantee, the identity
+fallback and the tie rule.
+
 **`SlidingWindowKVCache` now actually evicts**
 ([#274](https://github.com/rajveer43/VeloxQuant-MLX/issues/274)) —
 `SlidingWindowKVCache` (`veloxquant_mlx/cache/sliding_window_cache.py`)
@@ -117,6 +140,22 @@ stop stating "highly similar" as fact and to document measured, not
 assumed, effective bit-widths.
 
 ### Changed
+
+**`method="skvq"` now defaults to 4-bit keys and 4-bit values**
+([#906](https://github.com/rajveer43/VeloxQuant-MLX/issues/906)) —
+`skvq_bits_key` and `skvq_bits_value` were 2/2 (the paper's setting, which
+relies on offline KMeans calibration this adaptation does not have). Per-token
+2-bit keys do not work on the models measured: even with the reorder fix
+above, paired NLL against fp16 on WikiText-2 (2,047 tokens) is +0.81 on
+`Qwen3-4B-4bit` (KIVI-2: +0.07) and +3.35 on `Llama-3.2-1B-Instruct-4bit`
+(KIVI-2: +1.27). At 4/4 it is +0.020 and +0.082 (KIVI-4: +0.004 and +0.022),
+still behind KIVI-4 on both. The accounted full-KV ratio at 2,078 cached
+tokens drops from 4.95x to 3.08x (it varies with where the 128-token fp16
+window ends, 2.76x to 3.14x across 543 to 4,126 tokens); that is key and value
+byte *accounting*, not measured memory. Reproduce with
+`benchmark_scripts/benchmark_skvq_realmodel.py`; results in
+`figures/skvq/realmodel_wikitext_results.json`. Pass `skvq_bits_key=2, skvq_bits_value=2` to keep the old
+behaviour.
 
 **`enable_vectorized_attend` now defaults to `True`**
 ([#255](https://github.com/rajveer43/VeloxQuant-MLX/issues/255)) —

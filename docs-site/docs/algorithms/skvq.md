@@ -68,8 +68,8 @@ model, tokenizer = mlx_lm.load("mlx-community/Llama-3.2-3B-Instruct-4bit")
 config = KVCacheConfig(
     method="skvq",
     head_dim=128,
-    skvq_bits_key=2,  # paper setting
-    skvq_bits_value=2,  # paper uses 1.5; we ship integer bits
+    skvq_bits_key=4,  # default; the paper's 2 fails on real models (see below)
+    skvq_bits_value=4,  # paper uses 1.5; we ship integer bits
     skvq_group_size=32,  # channels per quant group
     skvq_window=128,  # fp16 sliding window (= flush chunk size)
     skvq_n_sink=5,  # attention-sink filter, kept fp16
@@ -125,8 +125,50 @@ int32 permutations.
 *heterogeneous*. That real transformer K/V have a few dominant channels is
 the paper's premise (shared with KIVI and KVQuant) — our benchmark
 constructs that regime synthetically and also runs a homogeneous control
-where reordering buys nothing (measured −0.3%). The premise itself is
-attributed to the papers, not validated here.
+where reordering buys nothing (measured −0.3%).
+
+**Measured on real models, the premise does not carry over cleanly**
+([#906](https://github.com/rajveer43/VeloxQuant-MLX/issues/906)). Sorting
+every head's channels by first-chunk range took `Qwen3-4B-4bit` from
+perplexity 26.1 (no reorder) to 92.6 at 2-bit on a small first check, almost
+entirely from layer 0's keys. The reorder is therefore applied per head only
+where it lowers that head's round-trip error on the first chunk. Per-token
+**2-bit keys do not work** on the models checked, which is why the default is
+4/4 bits.
+
+Paired NLL against fp16 on the WikiText-2 test split (2,047-token prompt,
+prefill chunk 2,048, Apple M4, MLX 0.32.4; each cell is one run, and repeated
+runs are bit-identical). The standard error is over 128-token blocks, since
+neighbouring tokens are correlated; lower ΔNLL is better, and top-1 is the
+share of tokens where the argmax matches fp16. The accounted ratio counts
+bytes (quantized region, fp16 window, sinks and permutations), is identical
+for both models because the overhead scales with head_dim, and is not measured
+memory. It also depends on where the 128-token flush window ends: the 4/4
+default is 2.76x with 543 cached tokens, 3.08x with 2,078 and 3.14x with 4,126,
+and 2.79x at exactly 2,047 (a 127-token fp16 tail). Reproduce with
+`benchmark_scripts/benchmark_skvq_realmodel.py`; results are in
+`figures/skvq/realmodel_wikitext_results.json`.
+
+| Config (key/value bits) | Qwen3-4B ΔNLL ± SE | top-1 | Llama-3.2-1B ΔNLL ± SE | top-1 | Accounted full-KV ratio (2,078 cached tokens) |
+|---|---|---|---|---|---|
+| KIVI-2 | +0.072 ± 0.023 | 83.2% | +1.266 ± 0.064 | 50.8% | n/a |
+| KIVI-4 | +0.004 ± 0.004 | 96.6% | +0.022 ± 0.006 | 93.6% | n/a |
+| SKVQ 2/2, sorted every head (old) | +2.188 ± 0.134 | 41.0% | +3.347 ± 0.160 | 22.0% | 4.95x |
+| SKVQ 2/2, per-head chooser | +0.809 ± 0.075 | 62.7% | +3.349 ± 0.142 | 22.1% | 4.95x |
+| SKVQ 3/2, per-head chooser | +0.127 ± 0.037 | 85.4% | +0.587 ± 0.037 | 67.4% | 4.29x |
+| SKVQ 4/2, per-head chooser | +0.094 ± 0.019 | 90.0% | +0.176 ± 0.014 | 83.1% | 3.79x |
+| **SKVQ 4/4, per-head chooser (default)** | **+0.020 ± 0.013** | **93.5%** | **+0.082 ± 0.008** | **88.9%** | **3.08x** |
+
+Direct paired differences (chooser minus the old always-sort, same tokens):
+on Qwen3-4B the chooser is better at every setting at 2,047 and 4,095 tokens
+(z from -5 to -18) and is never worse than turning the reorder off, beating
+it at 2/2, 4/2 and 4/4 (z from -2.6 to -11) and tying at 3/2. On
+Llama-3.2-1B the three policies are statistically indistinguishable except
+that the chooser beats no-reorder at 2/2 (z about -3). So the fix removes a
+real failure on one model and is neutral on the other. Even at the default,
+SKVQ stays behind KIVI-4 on both models (top-1 93.5% against 96.6% on Qwen3-4B),
+and at 2-bit it is far behind KIVI-2. Two models and one text: this is
+evidence for the fix, not a benchmark of SKVQ.
 
 ## Evidence
 
