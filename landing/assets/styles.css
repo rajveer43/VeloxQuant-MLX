@@ -5441,6 +5441,76 @@ span.anchor-alias {
   color: #8e8e99;
 }
 
+/* ── § USE CASES ──
+   Reuses .strategies-* / .strategy-card for layout; only the outcome line and
+   the method chip are new. */
+.section-usecases {
+  padding: clamp(4.5rem, 9vw, 8rem) 1.5rem;
+}
+
+.usecase-outcome {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #e4e4e7;
+  margin-bottom: 0.6rem;
+}
+
+.usecase-card .strategy-body {
+  margin-bottom: 1.4rem;
+}
+
+.usecase-chips {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.usecase-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.38rem 0.8rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #d4d4d8;
+  text-decoration: none;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+
+.usecase-chip:hover,
+.usecase-chip:focus-visible {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.usecase-chip:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+/* Tablet: the shared grid drops to one column at 768px; use cases stay at two
+   until the cards would get cramped. */
+@media (min-width: 641px) and (max-width: 768px) {
+  .section-usecases .strategies-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.usecase-note {
+  max-width: 720px;
+  margin: 2.25rem auto 0;
+  text-align: center;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: #71717a;
+}
+
 /* ── § INSTALLATION ── */
 .section-install {
   padding: clamp(4.5rem, 9vw, 8rem) 1.5rem;
@@ -6044,6 +6114,28 @@ details.faq-accordion-item[open] .faq-chevron {
   background: #ffffff;
   border-color: rgba(0, 0, 0, 0.08);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+}
+/* Use cases: light theme */
+:root[data-theme="light"] .usecase-outcome {
+  color: #18181b;
+}
+:root[data-theme="light"] .usecase-card .strategy-body,
+:root[data-theme="light"] .usecase-card .strategy-tag,
+:root[data-theme="light"] .usecase-card .strategy-icon {
+  color: #52525b;
+}
+:root[data-theme="light"] .usecase-chip {
+  color: #27272a;
+  border-color: rgba(0, 0, 0, 0.2);
+}
+:root[data-theme="light"] .usecase-chip:hover,
+:root[data-theme="light"] .usecase-chip:focus-visible {
+  color: #09090b;
+  border-color: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.05);
+}
+:root[data-theme="light"] .usecase-note {
+  color: #52525b;
 }
 :root[data-theme="light"] .metric-label {
   color: #18181b;
