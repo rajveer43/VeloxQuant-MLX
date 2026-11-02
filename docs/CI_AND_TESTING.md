@@ -9,7 +9,7 @@ The repo has two, separately-run test trees:
 
 | Directory | Suite | Runner | Run via |
 | --- | --- | --- | --- |
-| `veloxquant_mlx/tests/` | Main suite (MLX-dependent) | `macos-14` (Apple Silicon) | `pytest` (`testpaths` in `pyproject.toml`); on every push/PR to `master` via `.github/workflows/mlx-tests.yml`, and again as a release gate in `release.yml` |
+| `veloxquant_mlx/tests/` | Main suite (MLX-dependent) | `macos-15` (Apple Silicon) | `pytest` (`testpaths` in `pyproject.toml`); on every push/PR to `master` via `.github/workflows/mlx-tests.yml`, and again as a release gate in `release.yml` |
 | `tests/non_metal/` | Pure-Python, MLX-free tests | `ubuntu-latest` | `.github/workflows/non-metal-unit.yml` |
 
 This split is **intentional, not a stray duplicate** — do not merge the two
@@ -18,7 +18,7 @@ directories or delete `tests/non_metal/` as "cleanup."
 **Why `tests/non_metal/` has to live outside `veloxquant_mlx/`:** collecting
 any module under `veloxquant_mlx/` triggers `veloxquant_mlx/__init__.py`,
 which imports `mlx`. `mlx` only installs/runs on Apple Silicon, so any test
-file under `veloxquant_mlx/tests/` requires the expensive `macos-14` runner
+file under `veloxquant_mlx/tests/` requires the expensive `macos-15` runner
 just to be *collected*, even if the test itself never touches MLX. Modules
 that are genuinely pure Python (e.g. `veloxquant_mlx/tools/mac_recommender.py`,
 a RAM/method recommender with no MLX dependency) can still get fast, cheap
@@ -62,7 +62,7 @@ test's own content:**
 | Suite | Where | Notes |
 | --- | --- | --- |
 | Pure Python unit tests (no Metal) | Linux CI (`non-metal-unit.yml`) or macOS CI | Examples: `tests/non_metal/test_mac_recommender.py`, `tests/non_metal/test_block_pool.py`, many quantizer math tests under `veloxquant_mlx/tests/` |
-| Metal parity / kernel tests (correctness) | GitHub-hosted `macos-14`/`macos-15` (via `mlx-tests.yml`, every PR) or any real Apple Silicon | Validated in issue #395: hosted runners expose a genuine, correct — if paravirtualized — Metal device. Selectable via `pytest -m metal` / `-m "not metal"`. |
+| Metal parity / kernel tests (correctness) | GitHub-hosted `macos-15` (via `mlx-tests.yml`, every PR) or any real Apple Silicon | Validated in issue #395: hosted runners expose a genuine, correct — if paravirtualized — Metal device. Selectable via `pytest -m metal` / `-m "not metal"`. |
 | Metal kernel **performance**/timing numbers | Real Apple Silicon only, never hosted runners | The hosted runner's device reports as `"Apple Paravirtual device"` with a synthetic `memory_size`; its timing characteristics are unknown and not assumed representative. See `docs/BENCHMARK_INFRASTRUCTURE_FEASIBILITY.md` Lane B. |
 | End-to-end generation benches | Local macOS / dedicated bare-metal | Scripts under `benchmark_scripts/` and `scripts/validate_kv_memory.py` |
 

@@ -102,11 +102,11 @@ jobs:
         run: pipx run "ruff==0.16.7" check scripts benchmark_scripts veloxquant_mlx/tests
 
   mypy:
-    # macos-14, not ubuntu-latest: `pip install -e ".[dev]"` pulls in the
+    # macos-15, not ubuntu-latest: `pip install -e ".[dev]"` pulls in the
     # `mlx`/`mlx-lm` core dependencies, which ship no Linux wheels at all
     # (see docs/CI_AND_TESTING.md) -- the same reason mlx-tests.yml runs on
     # this same runner image.
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -129,9 +129,9 @@ jobs:
   # drifts from the config every local `mypy` run uses. Keep the module list
   # here in sync with the `module = [...]` list in that override.
   mypy-strict-modules:
-    # macos-14 for the same reason as the `mypy` job above: mlx/mlx-lm ship no
+    # macos-15 for the same reason as the `mypy` job above: mlx/mlx-lm ship no
     # Linux wheels, so `pip install -e ".[dev]"` cannot resolve on ubuntu.
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0

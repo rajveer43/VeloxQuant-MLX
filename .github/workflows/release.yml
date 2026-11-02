@@ -36,7 +36,7 @@ on:
 # no matching tag. A queued run is always safer than a half-finished release.
 #
 # The cost of queueing is that a burst of merges (Dependabot lands several PRs
-# in a row) queues one macos-14 release run each, all starting within seconds.
+# in a row) queues one macos-15 release run each, all starting within seconds.
 # On 2026-08-17 that burst hit a codeload.github.com 429 and two release runs
 # died downloading actions/checkout before any step ran, which is why 0.50.0
 # was tagged but never reached PyPI. `debounce` below collapses such a burst
@@ -46,7 +46,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Cheap ubuntu gate that runs before the macos-14 release job. Its only
+  # Cheap ubuntu gate that runs before the macos-15 release job. Its only
   # purpose is to let a burst of merges collapse into one release: it waits
   # briefly, then drops out if a newer commit has already landed on master,
   # so only the last push in the burst proceeds to actually release. Whatever
@@ -84,7 +84,7 @@ jobs:
   release:
     needs: debounce
     if: needs.debounce.outputs.proceed == 'true'
-    runs-on: macos-14
+    runs-on: macos-15
     permissions:
       contents: write
 

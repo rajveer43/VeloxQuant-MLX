@@ -154,7 +154,7 @@ omit = ["veloxquant_mlx/tests/*"]
 # for where the real gap is (benchmarks/ and cli/ are near 0% covered; closing
 # that is separate follow-up work, not something this floor requires).
 #
-# This is only measured on the MLX test lane (mlx-tests.yml, macos-14, one
+# This is only measured on the MLX test lane (mlx-tests.yml, macos-15, one
 # matrix leg -- see that workflow's coverage step). tests/non_metal/
 # (non-metal-unit.yml, ubuntu, no MLX installed) isn't covered by this floor:
 # it never imports veloxquant_mlx at all, so measuring it here would either
