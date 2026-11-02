@@ -583,6 +583,31 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.94.22 (2026-11-02)
+
+### Bug Fixes
+
+- **skvq**: Keep channel reorder only where it helps and default to 4-bit keys/values (#906)
+  ([#921](https://github.com/rajveer43/VeloxQuant-MLX/pull/921),
+  [`e604463`](https://github.com/rajveer43/VeloxQuant-MLX/commit/e6044630fac43cb4678b694c4e22f4860e5ebaf0))
+
+### Chores
+
+- **deps**: Bump joi from 17.13.8 to 17.13.9 in /docs-site
+  ([#925](https://github.com/rajveer43/VeloxQuant-MLX/pull/925),
+  [`b00d109`](https://github.com/rajveer43/VeloxQuant-MLX/commit/b00d1097532c6e447ef470a939bc65ba310a3df0))
+
+- **deps**: Bump qs from 6.15.2 to 6.15.4 in /docs-site
+  ([#914](https://github.com/rajveer43/VeloxQuant-MLX/pull/914),
+  [`337b66c`](https://github.com/rajveer43/VeloxQuant-MLX/commit/337b66ccf653092e6790f24f1b4a0e9b64ccfab5))
+
+### Continuous Integration
+
+- Move macOS runners from macos-14 to macos-15
+  ([#922](https://github.com/rajveer43/VeloxQuant-MLX/pull/922),
+  [`9da2a64`](https://github.com/rajveer43/VeloxQuant-MLX/commit/9da2a64efcd9d0fa472300133d661a81a3eaa1ec))
+
+
 ## v0.94.21 (2026-10-30)
 
 ### Bug Fixes
