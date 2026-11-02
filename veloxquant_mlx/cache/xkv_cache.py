@@ -7,14 +7,15 @@ grouping instead of CKA-validated grouping, no "Selective Reconstruction"
 decode-time optimization, keys only (values fp16 throughout).
 
 Per-layer roles (assigned at build time by ``pair_layers_grouped``):
-    Every layer in a group publishes its own raw prefill keys to a shared
-    ``XKVCoordinator``. Once every member of the group has published for the
-    same token range, the coordinator computes one joint SVD over the
-    *stacked* keys and returns a shared basis (V_g, K_mean_g). Every member —
-    including the one whose publish triggered the computation — fetches and
-    locally caches that identical basis, then projects its own keys into it
-    for the rest of the generation. No further coordinator calls are made
-    after the first successful fetch (decode-time projection is purely local).
+    Every layer in a group adds its own raw prefill keys to a shared
+    ``XKVCoordinator``, which pools them (as running Gram statistics) and
+    returns the joint basis (V_g, K_mean_g) fit on everything pooled so far.
+    Each multi-row call (prefill chunk) refits it, so the basis is not frozen
+    from a short first chunk (#892). A layer iterated before its peers has not
+    yet seen their keys for the current chunk, so its basis lags theirs by one
+    chunk; on single-token decode calls it adopts the latest pooled basis if
+    the group has moved on, and otherwise keeps projecting through the one it
+    holds.
 
 Byte accounting:
     ``compressed_key_bytes``  — this layer's own latent codes only.
@@ -40,7 +41,7 @@ from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.cache.xkv_coordinator import XKVCoordinator
 from veloxquant_mlx.quantizers.xkv import (
-    joint_svd_compress,
+    JointGramStats,
     project_quantize_reconstruct_batched,
 )
 
@@ -92,7 +93,11 @@ class XKVCache(_MLXKVCache):
         self._token_offset: int = 0
         # True until the first call carrying more than one row (#840).
         self._single_token_only: bool = True
-        self._basis_token_start: int | None = None
+        # Version of the pooled statistics the held basis was fit on; a later
+        # coordinator version means a peer has added keys since (#892).
+        self._basis_version: int = 0
+        # Standalone (no coordinator) layers pool only their own keys.
+        self._local_stats: JointGramStats | None = JointGramStats() if self._coord is None else None
 
         # Byte accounting
         self._compressed_key_bytes: int = 0
@@ -104,62 +109,32 @@ class XKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     # Basis acquisition
     # ------------------------------------------------------------------
-    def _standalone_basis(self, k0: mx.array) -> tuple[mx.array, mx.array, mx.array]:
-        V_g, K_mean_g, s_g = joint_svd_compress(
-            [k0], rank=self._rank, energy_threshold=self._energy_threshold
-        )
-        mx.eval(V_g, K_mean_g, s_g)
-        return V_g, K_mean_g, s_g
+    def _set_basis(self, basis: tuple[mx.array, mx.array, mx.array], D: int) -> None:
+        self._V_g, self._K_mean_g, self._singular_values = basis
+        self._r = int(self._V_g.shape[1])
+        self._account_basis_bytes(D, is_leader=(self._member_idx == 0))
 
-    def _try_acquire_shared_basis(self) -> bool:
-        """Poll the coordinator for this group's shared basis (already
-        published by a prior call). Returns True and caches it locally if
-        available. Never publishes — publishing only happens in
-        _acquire_basis on this layer's own prefill call."""
-        basis = self._coord.get_shared_basis(
-            self._group_id,
-            self._basis_token_start,
-            self._n_members,
-            rank=self._rank,
-            energy_threshold=self._energy_threshold,
-        )
-        if basis is None:
-            return False
-        V_g, K_mean_g, s_g = basis
-        self._V_g, self._K_mean_g, self._singular_values = V_g, K_mean_g, s_g
-        self._r = int(V_g.shape[1])
-        self._account_basis_bytes(int(V_g.shape[0]), is_leader=(self._member_idx == 0))
-        return True
-
-    def _acquire_basis(self, keys: mx.array) -> None:
-        """Obtain the shared (or standalone, if degenerate) basis for this
-        layer. Sets self._V_g / self._K_mean_g / self._singular_values.
-
-        The basis is anchored to this layer's *first* call's token range
-        (``self._basis_token_start``) — every group member must publish for
-        that same range before the joint SVD can run, so a member that
-        hasn't yet adopted the shared basis keeps re-publishing its first
-        keys at that fixed offset (not a moving one) on every subsequent
-        call, until it observes the completed basis. Once adopted,
-        ``self._V_g`` is set and this method is never called again.
-        """
-        B, H, S, D = keys.shape
-
+    def _refit_basis(self, keys: mx.array) -> None:
+        """Add this call's keys to the pooled statistics and adopt the basis fit on everything pooled so far."""
+        D = keys.shape[-1]
+        k0 = keys[0, 0].astype(mx.float32)
         if self._coord is None:
-            k0 = keys[0, 0].astype(mx.float32)
-            V_g, K_mean_g, s_g = self._standalone_basis(k0)
-            self._V_g, self._K_mean_g, self._singular_values = V_g, K_mean_g, s_g
-            self._r = int(V_g.shape[1])
-            self._account_basis_bytes(D, is_leader=True)
-            return
-
-        if self._basis_token_start is None:
-            self._basis_token_start = self._token_offset
-            k0 = keys[0, 0].astype(mx.float32)
-            self._coord.publish_member_keys(
-                self._group_id, self._member_idx, self._basis_token_start, S, k0
+            self._local_stats.add(k0)
+            basis = self._local_stats.basis(
+                rank=self._rank, energy_threshold=self._energy_threshold
             )
-        self._try_acquire_shared_basis()
+            mx.eval(*basis)
+            self._set_basis(basis, D)
+            return
+        self._coord.add_member_keys(self._group_id, self._member_idx, k0)
+        self._adopt_latest_basis(D)
+
+    def _adopt_latest_basis(self, D: int) -> None:
+        basis, version = self._coord.shared_basis(
+            self._group_id, rank=self._rank, energy_threshold=self._energy_threshold
+        )
+        self._set_basis(basis, D)
+        self._basis_version = version
 
     def _project_quantize_reconstruct(
         self, keys: mx.array, V_g: mx.array | None = None, K_mean_g: mx.array | None = None
@@ -178,7 +153,7 @@ class XKVCache(_MLXKVCache):
     # mlx_lm protocol
     # ------------------------------------------------------------------
     def update_and_fetch(self, keys: mx.array, values: mx.array):
-        """Acquire (or wait on) the group's shared SVD basis, then project + quantize keys into it; values pass through fp16 unchanged."""
+        """Refit the group's shared SVD basis on each multi-row call (prefill chunk), then project + quantize keys into it; values pass through fp16 unchanged."""
         B, H, S, D = keys.shape
 
         if self._V_g is None and S == 1 and self._single_token_only:
@@ -196,36 +171,14 @@ class XKVCache(_MLXKVCache):
             return super().update_and_fetch(keys, values)
         self._single_token_only = False
 
-        if self._V_g is None:
-            # Publish this call's own keys (needed both so a still-forming
-            # group's max_ctx guard sees every step, and so the joint SVD has
-            # this member's latest data) and poll for the shared basis. Once
-            # every member of the group has published for the *same*
-            # token_start, the basis is computed and adopted by whichever
-            # member observes completion first; every other member adopts it
-            # on its own next call.
-            self._acquire_basis(keys)
+        if S > 1 or self._V_g is None:
+            self._refit_basis(keys)
+        elif self._coord is not None and self._coord.version(self._group_id) != self._basis_version:
+            # Single-token decode: a peer has added keys since this layer's
+            # basis was fit, so take the group's current basis once.
+            self._adopt_latest_basis(D)
 
-        if self._V_g is not None:
-            k_out = self._project_quantize_reconstruct(keys)
-        else:
-            # Still no shared basis available — produce output from a private
-            # one-shot basis for this call only (not stored, not accounted
-            # against shared_basis_bytes since it is never adopted).
-            k0 = keys[0, 0].astype(mx.float32)
-            V_g, K_mean_g, s_g = self._standalone_basis(k0)
-            k_out = self._project_quantize_reconstruct(keys, V_g, K_mean_g)
-            r = int(V_g.shape[1])
-            code_bytes = math.ceil(S * r * self._latent_bits / 8)
-            n_groups = math.ceil(S / self._group_quant_size)
-            param_bytes = n_groups * r * 2 * 2
-            self._compressed_key_bytes += (code_bytes + param_bytes) * H * B
-            self._fp16_key_bytes += B * H * S * D * 2
-            self._value_fp16_bytes += B * H * S * D * 2
-            self._tokens_seen += S
-            self._token_offset += S
-            return super().update_and_fetch(k_out.astype(keys.dtype), values)
-
+        k_out = self._project_quantize_reconstruct(keys)
         self._account_key_bytes(B, H, S, D)
         self._token_offset += S
         return super().update_and_fetch(k_out.astype(keys.dtype), values)
@@ -255,7 +208,9 @@ class XKVCache(_MLXKVCache):
             self._r = 0
             self._token_offset = 0
             self._single_token_only = True
-            self._basis_token_start = None
+            self._basis_version = 0
+            if self._local_stats is not None:
+                self._local_stats = JointGramStats()
             self._compressed_key_bytes = 0
             self._shared_basis_bytes = 0
             self._fp16_key_bytes = 0
@@ -279,9 +234,11 @@ class XKVCache(_MLXKVCache):
     def _account_basis_bytes(self, D: int, is_leader: bool) -> None:
         if not is_leader or self._r == 0:
             return
-        # V_g [D, r] + K_mean_g [D], fp32, charged once (amortized across the
-        # group by convention: only the leader reports it).
-        self._shared_basis_bytes += (D * self._r + D) * 4
+        # V_g [D, r] + K_mean_g [D], fp32, for the basis currently held
+        # (amortized across the group by convention: only the leader reports
+        # it). Refit per chunk, so this tracks the current rank rather than
+        # accumulating.
+        self._shared_basis_bytes = (D * self._r + D) * 4
 
     def _account_key_bytes(self, B: int, H: int, S: int, D: int) -> None:
         r = self._r if self._r > 0 else D

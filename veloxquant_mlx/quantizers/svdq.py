@@ -111,6 +111,75 @@ def svd_compress_keys(
     return L, V, K_mean, s_r
 
 
+def _select_ranks(
+    S_vals: mx.array,  # [H, R] descending singular values
+    rank: int | None,
+    energy_threshold: float,
+    r_max_possible: int,
+    D: int,
+) -> tuple[list[int], int]:
+    """Per-head rank: the explicit ``rank`` or the smallest rank reaching ``energy_threshold``."""
+    H = S_vals.shape[0]
+    if rank is not None:
+        r = min(rank, r_max_possible, D)
+        ranks = [r] * H
+        max_rank = r
+    else:
+        total = mx.sum(S_vals, axis=-1, keepdims=True)  # [H, 1]
+        is_near_zero = (total < 1e-12).reshape(H)  # matches the scalar
+        # version's `if total_energy < 1e-12: rank = 1` short-circuit,
+        # evaluated BEFORE the cumulative-energy loop there — same special
+        # case as GEAR's _truncated_svd_batched (see its docstring for why
+        # this must be its own branch rather than falling through the
+        # division-safe cumsum/max(total,eps) path below).
+        cumsum = mx.cumsum(S_vals, axis=-1)  # [H, R]
+        frac = cumsum / mx.maximum(total, 1e-12)
+        meets = frac >= energy_threshold  # [H, R] bool
+        first_true = mx.argmax(meets.astype(mx.int32), axis=-1)  # [H]
+        any_true = mx.any(meets, axis=-1)
+        raw_rank = mx.where(any_true, first_true + 1, mx.full((H,), r_max_possible, dtype=mx.int32))
+        raw_rank = mx.where(is_near_zero, mx.ones_like(raw_rank), raw_rank)
+        mx.eval(raw_rank)
+        raw_rank_list: list[int] = raw_rank.tolist()  # type: ignore[assignment]
+        ranks = [min(r, int(r_max_possible), D) for r in raw_rank_list]
+        max_rank = max(ranks) if ranks else 0
+    return ranks, max_rank
+
+
+def basis_from_gram_batched(
+    gram: np.ndarray,  # [H, D, D] float64, sum over rows of x x^T (uncentered)
+    row_sum: np.ndarray,  # [H, D] float64, sum over rows of x
+    n_rows: int,
+    rank: int | None = None,
+    energy_threshold: float = 0.95,
+) -> tuple[list[mx.array], list[mx.array], list[mx.array]]:
+    """The basis :func:`svd_compress_keys_batched` would fit on ``n_rows`` rows,
+    from their accumulated uncentered Gram matrix and row sum.
+
+    Lets a cache refit on every prefill chunk without keeping the raw keys
+    (#890). Returns ``(V_list, K_mean_list, s_list)`` with the same per-head
+    rank truncation as :func:`svd_compress_keys_batched`.
+    """
+    H, D, _ = gram.shape
+    mean = row_sum / n_rows  # [H, D]
+    centered = gram - n_rows * mean[:, :, None] * mean[:, None, :]
+    evals, evecs = np.linalg.eigh(0.5 * (centered + np.swapaxes(centered, 1, 2)))  # ascending
+    r_max_possible = min(n_rows, D)
+    S_vals = mx.array(
+        np.sqrt(np.clip(evals[:, ::-1][:, :r_max_possible], 0.0, None)).astype(np.float32)
+    )
+    v_desc = evecs[:, :, ::-1]
+    ranks, max_rank = _select_ranks(S_vals, rank, energy_threshold, r_max_possible, D)
+    V_padded = mx.array(v_desc[:, :, :max_rank].astype(np.float32))
+    s_padded = S_vals[:, :max_rank]
+    K_mean = mx.array(mean.astype(np.float32))
+    return (
+        [V_padded[h, :, : ranks[h]] for h in range(H)],
+        [K_mean[h] for h in range(H)],
+        [s_padded[h, : ranks[h]] for h in range(H)],
+    )
+
+
 def svd_compress_keys_batched(
     keys: mx.array,  # [H, S, D] fp16/fp32
     rank: int | None = None,
@@ -168,29 +237,7 @@ def svd_compress_keys_batched(
     )  # [H, min(S,D)] descending
     v_desc = evecs[:, :, ::-1]  # [H, D, D], columns by descending singular value
 
-    if rank is not None:
-        r = min(rank, r_max_possible, D)
-        ranks = [r] * H
-        max_rank = r
-    else:
-        total = mx.sum(S_vals, axis=-1, keepdims=True)  # [H, 1]
-        is_near_zero = (total < 1e-12).reshape(H)  # matches the scalar
-        # version's `if total_energy < 1e-12: rank = 1` short-circuit,
-        # evaluated BEFORE the cumulative-energy loop there — same special
-        # case as GEAR's _truncated_svd_batched (see its docstring for why
-        # this must be its own branch rather than falling through the
-        # division-safe cumsum/max(total,eps) path below).
-        cumsum = mx.cumsum(S_vals, axis=-1)  # [H, R]
-        frac = cumsum / mx.maximum(total, 1e-12)
-        meets = frac >= energy_threshold  # [H, R] bool
-        first_true = mx.argmax(meets.astype(mx.int32), axis=-1)  # [H]
-        any_true = mx.any(meets, axis=-1)
-        raw_rank = mx.where(any_true, first_true + 1, mx.full((H,), r_max_possible, dtype=mx.int32))
-        raw_rank = mx.where(is_near_zero, mx.ones_like(raw_rank), raw_rank)
-        mx.eval(raw_rank)
-        raw_rank_list: list[int] = raw_rank.tolist()  # type: ignore[assignment]
-        ranks = [min(r, int(r_max_possible), D) for r in raw_rank_list]
-        max_rank = max(ranks) if ranks else 0
+    ranks, max_rank = _select_ranks(S_vals, rank, energy_threshold, r_max_possible, D)
 
     V_padded = mx.array(v_desc[:, :, :max_rank].astype(np.float32))  # [H, D, max_rank]
     s_padded = S_vals[:, :max_rank]  # [H, max_rank]
@@ -443,6 +490,7 @@ def equivalent_bit_width(r: int, bit_schedule: Sequence[int] = DEFAULT_BIT_SCHED
 __all__ = [
     "svd_compress_keys",
     "svd_compress_keys_batched",
+    "basis_from_gram_batched",
     "quantize_latents_mixed",
     "reconstruct_keys",
     "project_quantize_reconstruct_batched",

@@ -20,7 +20,10 @@ Three mechanisms compose:
   2. **Channel reordering** — per-head permutations for K and V computed
      from the **first flushed chunk** (the paper computes them offline from
      a calibration corpus and fuses them into projection weights — our
-     documented deviation), then frozen for the cache's lifetime.
+     documented deviation), then frozen for the cache's lifetime. A head
+     keeps its range-sorted permutation only if that lowers its round-trip
+     error on the chunk; otherwise it keeps the identity order (an
+     unconditional sort badly hurt real keys, see ``_per_head_perms``).
      ``skvq_reorder=False`` is the identity-permutation ablation.
   3. **Clipped dynamic quantization** — per-token, per-group asymmetric
      min/max quant whose window is shrunk by a per-group grid-searched
@@ -84,8 +87,8 @@ class SKVQKVCache(_MLXKVCache):
     def __init__(self, config: Any) -> None:
         super().__init__()
         self._D = int(config.head_dim)
-        self._bits_k = int(getattr(config, "skvq_bits_key", 2))
-        self._bits_v = int(getattr(config, "skvq_bits_value", 2))
+        self._bits_k = int(getattr(config, "skvq_bits_key", 4))
+        self._bits_v = int(getattr(config, "skvq_bits_value", 4))
         self._group_size = int(getattr(config, "skvq_group_size", 32))
         self._window = int(getattr(config, "skvq_window", 128))
         self._n_sink = int(getattr(config, "skvq_n_sink", 5))
@@ -146,21 +149,41 @@ class SKVQKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     # Permutations (per-head, frozen at first flush)
     # ------------------------------------------------------------------
-    @staticmethod
-    def _per_head_perms(chunk: mx.array) -> tuple:
-        """Sorted-by-dynamic-range channel permutation per head.
+    def _per_head_perms(self, chunk: mx.array, bits: int) -> tuple:
+        """Per-head channel permutation, kept only on heads where it helps.
+
+        The candidate sorts each head's channels by dynamic range over the
+        first chunk's non-sink rows (sinks are stored exact, so they should
+        not steer the grouping). A head keeps the candidate only when its
+        round-trip error at ``bits`` is strictly lower than the identity
+        order's on those same rows; otherwise it keeps the identity. Heads
+        quantize independently, so the result is never worse than identity
+        on the observed chunk -- the same guarantee the clip-search grid
+        gives by containing alpha = 1.0. A range-sorted order is not always
+        an improvement on real keys: on Qwen3-4B, applying it unconditionally
+        raised 2-bit perplexity from 26 to 92, almost all of it from layer 0.
 
         Args:
             chunk: ``[B, H, r, D]`` fp16/fp32 rows of the first chunk.
+            bits: Code bit-width this tensor will be quantized at.
 
         Returns:
             ``(perm, inv)`` int32 ``[H, D]``.
         """
         B, H, r, D = chunk.shape
-        x = chunk.astype(mx.float32).transpose(1, 0, 2, 3).reshape(H, B * r, D)
-        rng = mx.max(x, axis=1) - mx.min(x, axis=1)  # [H, D]
-        perm = mx.argsort(rng, axis=-1).astype(mx.int32)
-        inv = mx.argsort(perm, axis=-1).astype(mx.int32)
+        x = chunk[..., self._n_sink :, :].astype(mx.float32)  # [B, H, r', D]
+        xh = x.transpose(1, 0, 2, 3).reshape(H, -1, D)
+        rng = mx.max(xh, axis=1) - mx.min(xh, axis=1)  # [H, D]
+        cand = mx.argsort(rng, axis=-1).astype(mx.int32)
+        cand_inv = mx.argsort(cand, axis=-1).astype(mx.int32)
+
+        err_id = mx.mean(mx.square(self._round_trip(x, None, None, bits) - x), axis=(0, 2, 3))
+        err_cand = mx.mean(mx.square(self._round_trip(x, cand, cand_inv, bits) - x), axis=(0, 2, 3))
+        keep = (err_cand < err_id)[:, None]  # [H, 1]; ties keep the identity
+
+        identity = mx.broadcast_to(mx.arange(D, dtype=mx.int32)[None, :], (H, D))
+        perm = mx.where(keep, cand, identity)
+        inv = mx.where(keep, cand_inv, identity)
         return perm, inv
 
     @staticmethod
@@ -216,8 +239,8 @@ class SKVQKVCache(_MLXKVCache):
             v_chunk = self.values[..., s:e, :]
 
             if s == 0 and self._reorder:
-                self._perm_k, self._inv_k = self._per_head_perms(k_chunk)
-                self._perm_v, self._inv_v = self._per_head_perms(v_chunk)
+                self._perm_k, self._inv_k = self._per_head_perms(k_chunk, self._bits_k)
+                self._perm_v, self._inv_v = self._per_head_perms(v_chunk, self._bits_v)
 
             k_q = self._round_trip(k_chunk, self._perm_k, self._inv_k, self._bits_k)
             v_q = self._round_trip(v_chunk, self._perm_v, self._inv_v, self._bits_v)
