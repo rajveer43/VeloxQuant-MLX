@@ -77,6 +77,7 @@ Llama-3.2-1B the policies are statistically indistinguishable (4/4 +0.088
 → +0.082), so the fix removes a real failure on one model and is neutral on
 the other. New regression tests pin the per-head guarantee, the identity
 fallback and the tie rule.
+
 **`veloxquant vlm-serve` no longer crashes when tracking loaded models** —
 `_install_vlm_patch` (`veloxquant_mlx/cli/vlm_serve.py`) kept its list of
 already-patched models in a `weakref.WeakSet`, but MLX's `nn.Module` defines
@@ -87,10 +88,9 @@ could accept a single request (`mlx-community/Qwen3.5-9B-MLX-4bit` on
 `veloxquant vlm-serve --method turboquant_rvq`). The tracker is now
 `_PatchedModelTracker`, an `id()`-keyed dictionary of weak references with a
 finalizer callback that drops a model's entry when it is garbage-collected,
-preserving both of the
-properties the weak set was chosen for: models are not retained by the
-server's tracker, and a recycled `id()` from a freed model is never confused
-with a still-live one. Two new regression tests in
+preserving both properties the weak set was chosen for: models are not
+retained by the server's tracker, and a recycled `id()` from a freed model is
+never confused with a still-live one. Two new regression tests in
 `veloxquant_mlx/tests/cli/test_vlm_serve.py` cover unhashable models and
 `id()` reuse after collection.
 
