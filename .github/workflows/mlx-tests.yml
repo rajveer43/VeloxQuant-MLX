@@ -5,7 +5,7 @@ name: mlx-tests
 # to master -- meaning a PR could land with a broken Metal kernel and nobody
 # would know until the next release. See issue #395.
 #
-# Runs on macos-14 (the same runner release.yml already uses). Issue #395
+# Runs on macos-15 (the same runner release.yml already uses). Issue #395
 # confirmed empirically (2026-09-16, mlx 0.32.2) that hosted macOS runners
 # expose a working, CORRECT Metal device: mx.metal.is_available() is True,
 # it reports as "Apple Paravirtual device", and a real Metal-gated test
@@ -26,7 +26,7 @@ on:
 
 jobs:
   test:
-    runs-on: macos-14
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
