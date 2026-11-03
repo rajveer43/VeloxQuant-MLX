@@ -625,3 +625,116 @@ def test_partial_trim_rolls_back_token_count_and_keeps_levels():
     t = _laplace(1, 2, 1, 64, seed=9)
     out, _ = cache.update_and_fetch(t, t)
     assert out.shape[2] == 31
+
+
+# ---------------------------------------------------------------------------
+# Decode refit must fit on raw keys, not on the dequantized cache (#900)
+# ---------------------------------------------------------------------------
+def _rand(B=1, H=2, S=64, D=32, seed=0):
+    rng = np.random.default_rng(seed)
+    return mx.array(rng.standard_normal((B, H, S, D)).astype(np.float16))
+
+
+def _decode_rel_mse(interval, n_prefill=256, n_total=556, drift=1.0, seed=0):
+    H, D = 2, 32
+    rng = np.random.default_rng(seed)
+    raw = rng.standard_normal((1, H, n_total, D)).astype(np.float32)
+    raw[:, :, n_prefill:, :] *= drift
+    k = mx.array(raw).astype(mx.float16)
+    cache = KVQuantKVCache(_cfg(head_dim=D, kvquant_refit_interval=interval))
+    cache.update_and_fetch(k[:, :, :n_prefill], k[:, :, :n_prefill])
+    num = den = 0.0
+    for t in range(n_prefill, n_total):
+        out, _ = cache.update_and_fetch(k[:, :, t : t + 1], k[:, :, t : t + 1])
+        kt = k[:, :, t : t + 1].astype(mx.float32)
+        num += float(mx.sum((out[:, :, -1:].astype(mx.float32) - kt) ** 2).item())
+        den += float(mx.sum(kt**2).item())
+    return num / den
+
+
+def test_decode_refit_is_not_worse_than_frozen_levels():
+    frozen = _decode_rel_mse(0)
+    for interval in (64, 128):
+        # Fit on the dequantized cache this was 1.3-1.4x worse than frozen.
+        assert _decode_rel_mse(interval) <= frozen * 1.1
+
+
+def test_decode_refit_adapts_to_drift():
+    """After the key scale triples, a refit widens the level table; levels fit
+    on the dequantized cache stayed inside the old range."""
+
+    def final_levels(interval):
+        rng = np.random.default_rng(0)
+        raw = rng.standard_normal((1, 2, 556, 32)).astype(np.float32)
+        raw[:, :, 256:, :] *= 3.0
+        k = mx.array(raw).astype(mx.float16)
+        cache = KVQuantKVCache(_cfg(head_dim=32, kvquant_refit_interval=interval))
+        cache.update_and_fetch(k[:, :, :256], k[:, :, :256])
+        for t in range(256, 556):
+            cache.update_and_fetch(k[:, :, t : t + 1], k[:, :, t : t + 1])
+        return float(mx.max(mx.abs(cache._key_levels)).item())
+
+    assert final_levels(64) > 1.5 * final_levels(0)
+
+
+def test_refit_tail_is_a_bounded_raw_sample():
+    """The tail holds raw keys (not dequantized ones), strided so it spans about
+    the last interval, and never exceeds 16 * 2**bits rows."""
+    interval = 512
+    cache = KVQuantKVCache(_cfg(head_dim=32, kvquant_refit_interval=interval))
+    k = _rand(1, 2, 700, 32)
+    cache.update_and_fetch(k[:, :, :300], k[:, :, :300])
+    for t in range(300, 700):
+        cache.update_and_fetch(k[:, :, t : t + 1], k[:, :, t : t + 1])
+    tail, pos = cache._raw_key_tail, cache._raw_key_tail_pos
+    assert tail.shape[2] == len(pos) == 128  # 16 * 2**3, however large the interval
+    assert all(b - a == 4 for a, b in zip(pos, pos[1:]))  # stride = 512 // 128
+    assert pos[-1] >= 696 and pos[0] >= 700 - interval
+    np.testing.assert_array_equal(
+        np.array(tail.astype(mx.float32)), np.array(k[:, :, pos].astype(mx.float32))
+    )
+
+
+def test_refit_tail_bytes_are_charged():
+    cache = KVQuantKVCache(_cfg(head_dim=32, kvquant_refit_interval=64))
+    k = _rand(1, 2, 300, 32)
+    cache.update_and_fetch(k, k)
+    tail_bytes = 1 * 2 * cache._raw_key_tail.shape[2] * 32 * 2
+    assert tail_bytes > 0
+    assert cache.compressed_key_bytes == cache._compressed_key_bytes + tail_bytes
+    plain = KVQuantKVCache(_cfg(head_dim=32))
+    plain.update_and_fetch(k, k)
+    assert plain.compressed_key_bytes == plain._compressed_key_bytes
+
+
+def test_no_tail_when_refit_disabled():
+    cache = KVQuantKVCache(_cfg(head_dim=32))
+    k = _rand(1, 2, 40, 32)
+    cache.update_and_fetch(k, k)
+    assert cache._raw_key_tail is None
+
+
+def test_decode_refit_skipped_when_too_few_raw_keys():
+    """After a partial trim the tail may be short; the refit must keep the
+    current levels instead of fitting on a handful of keys."""
+    cache = KVQuantKVCache(_cfg(head_dim=32, kvquant_refit_interval=8))
+    k = _rand(1, 2, 80, 32)
+    cache.update_and_fetch(k[:, :, :64], k[:, :, :64])
+    levels = cache._key_levels
+    cache.trim(60)  # offset 4, tail empty
+    for t in range(64, 68):
+        cache.update_and_fetch(k[:, :, t : t + 1], k[:, :, t : t + 1])
+    assert cache.offset == 8  # n_tokens % 8 == 0 at the next call
+    cache.update_and_fetch(k[:, :, 68:69], k[:, :, 68:69])
+    assert bool(mx.array_equal(cache._key_levels, levels))
+
+
+def test_trim_drops_raw_tail_rows():
+    cache = KVQuantKVCache(_cfg(head_dim=32, kvquant_refit_interval=64))
+    k = _rand(1, 2, 100, 32)
+    cache.update_and_fetch(k, k)
+    cache.trim(10)
+    assert max(cache._raw_key_tail_pos) < 90
+    assert cache._raw_key_tail.shape[2] == len(cache._raw_key_tail_pos)
+    cache.trim(cache.offset)
+    assert cache._raw_key_tail is None and cache._raw_key_tail_pos == []

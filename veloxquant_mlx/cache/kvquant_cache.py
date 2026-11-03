@@ -129,6 +129,14 @@ class KVQuantKVCache(_MLXKVCache):
         self._key_levels: mx.array | None = None  # [H, L, D]
         self._value_levels: list | None = None  # list over heads of [L, D] (channel-as-sample)
         self._n_tokens: int = 0
+        # Raw (pre-quantization) strided sample of the most recent non-sink keys,
+        # kept only when ``kvquant_refit_interval > 0``: at most
+        # ``16 * 2**bits`` rows spanning about the last ``refit_interval`` tokens,
+        # with the token position of each row. A decode refit fits on this, not on
+        # ``self.keys``, which holds the dequantized cache: levels fit on data that
+        # already takes only the old levels cannot adapt (#900).
+        self._raw_key_tail: mx.array | None = None
+        self._raw_key_tail_pos: list[int] = []
         self._outlier_count: int = 0
         self._prev_outlier_count: int = 0
         # Set by _apply(): the key level table was (re)fit this call (charged to
@@ -265,16 +273,26 @@ class KVQuantKVCache(_MLXKVCache):
             # A normal prefill that already brings 2**bits is fit as-is.
             enough = n_levels if n_have >= n_levels else self._FIT_SAMPLES_PER_LEVEL * n_levels
             want = enough if is_prefill else max(self._refit_interval, enough)
-            if self.keys is not None and self.offset > 0 and n_have < want:
-                lo = max(self._sink_kept, self.offset - (want - n_have))
-                if lo < self.offset:
-                    fit_keys = mx.concatenate(
-                        [self.keys[..., lo : self.offset, :].astype(keys.dtype), fit_keys],
-                        axis=2,
-                    )
-            pending_fit = is_prefill and fit_keys.shape[2] < enough
-            if not pending_fit:
-                self._capture_key_thresholds(fit_keys)
+            if n_have < want:
+                hist = None
+                if is_prefill:
+                    # Nothing has been quantized yet, so the cache holds exact keys.
+                    if self.keys is not None and self.offset > 0:
+                        lo = max(self._sink_kept, self.offset - (want - n_have))
+                        if lo < self.offset:
+                            hist = self.keys[..., lo : self.offset, :]
+                elif self._raw_key_tail is not None:
+                    hist = self._raw_key_tail[:, :, -(want - n_have) :, :]
+                if hist is not None:
+                    fit_keys = mx.concatenate([hist.astype(keys.dtype), fit_keys], axis=2)
+            if not is_prefill and fit_keys.shape[2] < enough:
+                # Too few raw keys to refit from (for example right after a trim
+                # or a state restore): keep the current levels.
+                refit_keys = False
+            else:
+                pending_fit = is_prefill and fit_keys.shape[2] < enough
+                if not pending_fit:
+                    self._capture_key_thresholds(fit_keys)
 
         # Flatten (B, H) into one leading axis — every batched primitive
         # below operates on this axis instead of a Python for-b/for-h loop
@@ -353,9 +371,37 @@ class KVQuantKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         n_sink = min(self._n_sink, S) if self._n_tokens == 0 else 0
         k_out, v_out = self._apply(keys, values)
+        if self._refit_interval > 0:
+            self._append_raw_key_tail(keys[:, :, n_sink:, :], self._n_tokens + n_sink)
         self._n_tokens += S
         self._account_bytes(B, H, S, D, n_sink)
         return super().update_and_fetch(k_out, v_out)
+
+    def _append_raw_key_tail(self, keys: mx.array, first_pos: int) -> None:
+        """Sample ``keys`` (token positions ``first_pos`` onward) into the raw tail.
+
+        Every ``stride``-th token is kept, with ``stride = refit_interval // cap``
+        and ``cap = 16 * 2**bits``, so the tail is bounded by ``cap`` rows however
+        large the interval is and still spans about the last interval.
+        """
+        cap = self._FIT_SAMPLES_PER_LEVEL * (1 << self._bits)
+        stride = max(1, self._refit_interval // cap)
+        take = [i for i in range(keys.shape[2]) if (first_pos + i) % stride == 0]
+        if not take:
+            return
+        picked = keys[:, :, take[0] : take[-1] + 1 : stride, :]
+        if self._raw_key_tail is not None:
+            picked = mx.concatenate(
+                [self._raw_key_tail, picked.astype(self._raw_key_tail.dtype)], axis=2
+            )
+        self._raw_key_tail = picked[:, :, -cap:, :]
+        self._raw_key_tail_pos = (self._raw_key_tail_pos + [first_pos + i for i in take])[-cap:]
+
+    def _raw_key_tail_bytes(self) -> int:
+        """Bytes held by the raw sample (a real cost of ``kvquant_refit_interval > 0``)."""
+        if self._raw_key_tail is None:
+            return 0
+        return int(self._raw_key_tail.size) * self._raw_key_tail.dtype.size
 
     def _account_bytes(self, B: int, H: int, S: int, D: int, n_sink: int = 0) -> None:
         L = 1 << self._bits
@@ -412,6 +458,10 @@ class KVQuantKVCache(_MLXKVCache):
         trimmed = super().trim(n)
         if not trimmed:
             return trimmed
+        if self._raw_key_tail is not None:
+            keep_tail = sum(1 for pos in self._raw_key_tail_pos if pos < self.offset)
+            self._raw_key_tail_pos = self._raw_key_tail_pos[:keep_tail]
+            self._raw_key_tail = self._raw_key_tail[:, :, :keep_tail, :] if keep_tail > 0 else None
         if self.offset <= 0:
             self._key_outlier_thresh = None
             self._key_levels = None
@@ -514,8 +564,8 @@ class KVQuantKVCache(_MLXKVCache):
 
     @property
     def compressed_key_bytes(self) -> int:
-        """Realized stored bytes for the compressed key cache (NUQ codes + per-channel level table + fp16 outlier/sink side-channel, all heads/batches)."""
-        return self._compressed_key_bytes
+        """Realized stored bytes for the compressed key cache (NUQ codes + per-channel level table + fp16 outlier/sink side-channel + the raw refit sample when ``kvquant_refit_interval > 0``, all heads/batches)."""
+        return self._compressed_key_bytes + self._raw_key_tail_bytes()
 
     @property
     def compressed_value_bytes(self) -> int:
@@ -537,7 +587,7 @@ class KVQuantKVCache(_MLXKVCache):
         """Effective per-element key bits (codes + table + outliers vs fp16)."""
         if self._fp16_key_bytes == 0:
             return float(self._bits)
-        return 16.0 * self._compressed_key_bytes / self._fp16_key_bytes
+        return 16.0 * self.compressed_key_bytes / self._fp16_key_bytes
 
 
 __all__ = ["KVQuantKVCache"]
