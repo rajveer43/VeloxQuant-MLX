@@ -599,6 +599,36 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.95.0 (2026-11-03)
+
+### Bug Fixes
+
+- **vlm-serve**: Track patched models by weak id since MLX nn.Module is unhashable
+  ([#920](https://github.com/rajveer43/VeloxQuant-MLX/pull/920),
+  [`86313a6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/86313a6602f3f158706b68b4c19c61c4738769d5))
+
+### Chores
+
+- **deps**: Bump follow-redirects from 1.16.0 to 1.16.2 in /docs-site
+  ([#924](https://github.com/rajveer43/VeloxQuant-MLX/pull/924),
+  [`42d26e8`](https://github.com/rajveer43/VeloxQuant-MLX/commit/42d26e8bc112530dfb70471c14ea75a05de8a30b))
+
+- **landing**: Switch Plausible analytics to new site ID
+  ([`c8b3bbe`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c8b3bbe3b581889d49b3edf5b69504f1509c59fc))
+
+### Documentation
+
+- **changelog**: Separate the vlm-serve entry from the previous paragraph
+  ([#920](https://github.com/rajveer43/VeloxQuant-MLX/pull/920),
+  [`86313a6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/86313a6602f3f158706b68b4c19c61c4738769d5))
+
+### Features
+
+- **landing**: Add a "Use cases" section (#923)
+  ([#926](https://github.com/rajveer43/VeloxQuant-MLX/pull/926),
+  [`7e72591`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7e725912cfdebd5438685cb740180d732083b672))
+
+
 ## v0.94.22 (2026-11-02)
 
 ### Bug Fixes
