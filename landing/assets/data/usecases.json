@@ -1,0 +1,112 @@
+{
+  "_source": "Measured for issue #923 by audit/harness.py (untracked audit workspace) on master commit c8b3bbe. Raw per-run JSON: audit/results/uc923_*.json. Cache bytes are the cache's own array sizes (nbytes), not bit-width accounting.",
+  "_conditions": {
+    "chip": "Apple M4",
+    "unified_memory_gb": 24.0,
+    "macos": "26.6.2",
+    "mlx": "0.32.4",
+    "mlx_lm": "0.32.2",
+    "model": "mlx-community/Qwen3-4B-4bit",
+    "prompt_tokens": 4096,
+    "prefill_chunk": 2048,
+    "teacher_forced_decode_tokens": 32,
+    "runs_per_cell": 1,
+    "on_ac_power": false,
+    "caveats": [
+      "Single run per method; quality is deterministic, timings drift ~2x between processes, so no speed claim is made from these rows except 'several times slower' for RVQ.",
+      "Perplexity 'prefill' is measured on the prefill path, before eviction applies. Eviction quality is the decode-phase columns, over only 32 tokens (paired dNLL standard errors are wide).",
+      "turboquant_rvq compresses keys only; values stay fp16. Its key-only compression ratio is not a full-cache figure.",
+      "Peak memory is the process peak (weights + cache + prefill transients), so it moves much less than cache bytes, and rose for streaming_llm."
+    ]
+  },
+  "rows": [
+    {
+      "method": "fp16",
+      "bits": null,
+      "config": {},
+      "cache_bytes": 641728512,
+      "cache_vs_fp16": 1.0,
+      "peak_memory_gb": 4.99,
+      "perplexity_prefill": 13.57,
+      "perplexity_decode_32_tokens": 26.45,
+      "paired_dnll_decode": [
+        0.0,
+        0.0
+      ],
+      "top1_agree_decode": 1.0,
+      "decode_ms_median": 37.3
+    },
+    {
+      "method": "snapkv",
+      "bits": null,
+      "config": {},
+      "cache_bytes": 113246208,
+      "cache_vs_fp16": 0.176,
+      "peak_memory_gb": 4.78,
+      "perplexity_prefill": 13.85,
+      "perplexity_decode_32_tokens": 28.8,
+      "paired_dnll_decode": [
+        0.085,
+        0.114
+      ],
+      "top1_agree_decode": 0.84375,
+      "decode_ms_median": 26.7
+    },
+    {
+      "method": "streaming_llm",
+      "bits": null,
+      "config": {},
+      "cache_bytes": 113246208,
+      "cache_vs_fp16": 0.176,
+      "peak_memory_gb": 5.34,
+      "perplexity_prefill": 13.37,
+      "perplexity_decode_32_tokens": 33.0,
+      "paired_dnll_decode": [
+        0.221,
+        0.083
+      ],
+      "top1_agree_decode": 0.8125,
+      "decode_ms_median": 35.7
+    },
+    {
+      "method": "turboquant_rvq",
+      "bits": 3,
+      "config": {},
+      "cache_bytes": 430264512,
+      "cache_vs_fp16": 0.67,
+      "peak_memory_gb": 4.87,
+      "perplexity_prefill": 13.63,
+      "perplexity_decode_32_tokens": 26.25,
+      "paired_dnll_decode": [
+        -0.008,
+        0.032
+      ],
+      "top1_agree_decode": 0.96875,
+      "decode_ms_median": 206.1
+    }
+  ],
+  "synthetic_bounded_cache_check": {
+    "_source": "One layer, 8 KV heads x head_dim 128, random fp16 tensors, 1,024-token prefill then 1,024 single-token decode steps, master c8b3bbe. Cache keys+values nbytes read at prefill and each 25% of decode.",
+    "streaming_llm_bytes": [
+      3145728,
+      3145728,
+      3145728,
+      3145728,
+      3145728
+    ],
+    "h2o_bytes": [
+      2097152,
+      2097152,
+      2097152,
+      2097152,
+      2097152
+    ],
+    "snapkv_bytes": [
+      2097152,
+      3145728,
+      4194304,
+      5242880,
+      6291456
+    ]
+  }
+}

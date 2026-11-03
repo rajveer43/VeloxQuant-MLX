@@ -33,7 +33,7 @@
   <meta name="twitter:image:alt" content="VeloxQuant-MLX Metal kernel benchmark summary: compression ratio and speedup charts" />
 
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="assets/styles.css?v=20260912a" />
+  <link rel="stylesheet" href="assets/styles.css?v=20261102b" />
 
   <script type="application/ld+json">
   {
@@ -159,7 +159,7 @@
   </script>
 
   <!-- Privacy-friendly analytics by Plausible -->
-  <script async src="https://plausible.io/js/pa-tjXxOk0K6Hx785cdKiG7L.js"></script>
+  <script async src="https://plausible.io/js/pa-Mz-B8d0GyH1qiA38SU-3B.js"></script>
   <script>
     window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
     plausible.init()
@@ -186,6 +186,7 @@
       </a>
       <div class="pill-nav-links" id="nav-links">
         <a href="#methods">Methods</a>
+        <a href="#usecases">Use cases</a>
         <a href="#install">Install</a>
         <a href="#calculator">Calculator</a>
         <a href="#faq">FAQ</a>
@@ -768,6 +769,132 @@
           </p>
         </div>
       </div>
+    </div>
+  </section>
+
+  <!-- ── §3b USE CASES ── -->
+  <section id="usecases" class="section-usecases">
+    <div class="strategies-container">
+      <div class="strategies-header">
+        <div class="section-kicker">USE CASES</div>
+        <h2 class="section-headline">What you can run with it.</h2>
+        <p class="section-subheadline">
+          Same Mac, a smaller KV cache. Here is where that helps, and what it costs.
+        </p>
+      </div>
+
+      <div class="strategies-grid">
+        <div class="strategy-card usecase-card fade-in">
+          <div class="strategy-card-top">
+            <span class="strategy-num">01</span>
+            <span class="strategy-tag">
+              <svg class="strategy-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+              <span>LONG CONTEXT</span>
+            </span>
+          </div>
+          <h3 class="strategy-title">Long chats and document Q&amp;A</h3>
+          <p class="usecase-outcome">A third less cache memory, near-fp16 quality.</p>
+          <p class="strategy-body">
+            TurboQuant RVQ at 3 bits compresses the keys; values stay fp16. On Qwen3-4B at 4,096 tokens the whole cache measured 0.67× its fp16 size, with perplexity 13.63 vs 13.57. Decoding is several times slower.
+          </p>
+          <div class="usecase-chips">
+            <a class="usecase-chip" href="/docs/algorithms/rvq#when-to-use-turboquant-rvq"><span>TurboQuant RVQ</span><svg viewBox="0 0 20 20" width="12" height="12" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></a>
+          </div>
+        </div>
+        <div class="strategy-card usecase-card fade-in">
+          <div class="strategy-card-top">
+            <span class="strategy-num">02</span>
+            <span class="strategy-tag">
+              <svg class="strategy-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>LONG PROMPTS</span>
+            </span>
+          </div>
+          <h3 class="strategy-title">Coding assistants and big prompts</h3>
+          <p class="usecase-outcome">Cap how much of the prompt the cache keeps.</p>
+          <p class="strategy-body">
+            SnapKV keeps the prompt tokens it scores highest. At 4,096 tokens the cache measured 0.18× its fp16 size. Dropped tokens are gone, and exact recall on code is not benchmarked yet.
+          </p>
+          <div class="usecase-chips">
+            <a class="usecase-chip" href="/docs/algorithms/snapkv#when-to-use-it"><span>SnapKV</span><svg viewBox="0 0 20 20" width="12" height="12" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></a>
+          </div>
+        </div>
+        <div class="strategy-card usecase-card fade-in">
+          <div class="strategy-card-top">
+            <span class="strategy-num">03</span>
+            <span class="strategy-tag">
+              <svg class="strategy-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="12" y2="16"/></svg>
+              <span>SIZING</span>
+            </span>
+          </div>
+          <h3 class="strategy-title">Check the fit before you download</h3>
+          <p class="usecase-outcome">Know what the cache costs at your context length.</p>
+          <p class="strategy-body">
+            The calculator starts from the exact fp16 cache size for your model&rsquo;s layers, KV heads and head dimension, then compares it with the RAM left after weights. Its compressed rows are estimates, not measurements.
+          </p>
+          <div class="usecase-chips">
+            <a class="usecase-chip" href="#calculator"><span>Open the calculator</span><svg viewBox="0 0 20 20" width="12" height="12" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></a>
+          </div>
+        </div>
+        <div class="strategy-card usecase-card fade-in">
+          <div class="strategy-card-top">
+            <span class="strategy-num">04</span>
+            <span class="strategy-tag">
+              <svg class="strategy-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+              <span>ON-DEVICE</span>
+            </span>
+          </div>
+          <h3 class="strategy-title">Private RAG and summarization</h3>
+          <p class="usecase-outcome">Long documents never leave your Mac.</p>
+          <p class="strategy-body">
+            MLX runs the model on your GPU, and VeloxQuant&rsquo;s cache code makes no network calls. With RVQ the cache is a third smaller at near-fp16 quality (0.67×, Qwen3-4B, 4,096 tokens). It is the cache layer, not a RAG framework.
+          </p>
+          <div class="usecase-chips">
+            <a class="usecase-chip" href="/docs/algorithms/rvq#when-to-use-turboquant-rvq"><span>TurboQuant RVQ</span><svg viewBox="0 0 20 20" width="12" height="12" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></a>
+          </div>
+        </div>
+        <div class="strategy-card usecase-card fade-in">
+          <div class="strategy-card-top">
+            <span class="strategy-num">05</span>
+            <span class="strategy-tag">
+              <svg class="strategy-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+              <span>REASONING</span>
+            </span>
+          </div>
+          <h3 class="strategy-title">Long chain-of-thought generations</h3>
+          <p class="usecase-outcome">A cache that stops growing while the model thinks.</p>
+          <p class="strategy-body">
+            StreamingLLM keeps sink tokens plus a recent window, so cache size stayed flat over 1,024 decode steps in a synthetic check. Older reasoning is forgotten, reasoning accuracy is untested, and next-token quality dropped in our 4,096-token run.
+          </p>
+          <div class="usecase-chips">
+            <a class="usecase-chip" href="/docs/algorithms/streaming_llm#when-to-use-it"><span>StreamingLLM</span><svg viewBox="0 0 20 20" width="12" height="12" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></a>
+          </div>
+        </div>
+        <div class="strategy-card usecase-card fade-in">
+          <div class="strategy-card-top">
+            <span class="strategy-num">06</span>
+            <span class="strategy-tag">
+              <svg class="strategy-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              <span>RESEARCH</span>
+            </span>
+          </div>
+          <h3 class="strategy-title">KV-compression research</h3>
+          <p class="usecase-outcome">Compare 43 methods on your own model.</p>
+          <p class="strategy-body">
+            Every method sits behind the same <code>KVCacheConfig</code>, so switching is one string. The playground sizes a setup for your Mac, and the benchmarks page lists measured results with their caveats.
+          </p>
+          <div class="usecase-chips">
+            <a class="usecase-chip" href="benchmarks.html"><span>Benchmarks</span><svg viewBox="0 0 20 20" width="12" height="12" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></a>
+            <a class="usecase-chip" href="playground.html"><span>Playground</span><svg viewBox="0 0 20 20" width="12" height="12" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></a>
+          </div>
+        </div>
+      </div>
+
+      <p class="usecase-note">
+        Cache sizes are the cache&rsquo;s own array bytes, not bit-width estimates. Measured on an Apple M4 (24 GB) with
+        Qwen3-4B-4bit and a 4,096-token prompt, one run each, against an fp16 cache of 642 MB and a 4.99 GB peak. Peak
+        memory moves much less than cache size, and StreamingLLM&rsquo;s peak was higher (5.34 GB) because prefill runs
+        before eviction. <a href="assets/data/usecases.json">Raw numbers and caveats</a>.
+      </p>
     </div>
   </section>
 
