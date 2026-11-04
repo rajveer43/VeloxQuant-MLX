@@ -118,15 +118,14 @@ class KVQuantKVCache(_MLXKVCache):
         self._key_outlier_thresh: mx.array | None = None
         self._sink_kept: int = 0
 
-        # Frozen levels fit at prefill: keys per-channel [H, L, D],
-        # values per-token use levels [H, L, D] in transposed space.
-        # _key_levels is a stacked [H, L, D] array (not a Python list) since
-        # #504's batching rewrite — indexing/iterating it behaves the same
-        # as the old list-of-per-head-arrays for every existing caller
-        # (cache.key_levels[0], `for level in cache.key_levels`), but it can
-        # now be passed straight to mx.tile when sharing frozen levels
-        # across the batch axis.
-        self._key_levels: mx.array | None = None  # [H, L, D]
+        # Frozen levels fit at prefill: keys per-channel [B*H, L, D] (one table
+        # per (batch, head) row; [H, L, D] when B == 1), values per-token use
+        # levels [H, L, D] in transposed space.
+        # _key_levels is a stacked array (not a Python list) since #504's
+        # batching rewrite — indexing/iterating it behaves the same as the old
+        # list-of-per-head-arrays for every existing caller
+        # (cache.key_levels[0], `for level in cache.key_levels`).
+        self._key_levels: mx.array | None = None  # [B*H, L, D]
         self._value_levels: list | None = None  # list over heads of [L, D] (channel-as-sample)
         self._n_tokens: int = 0
         self._outlier_count: int = 0
@@ -286,28 +285,29 @@ class KVQuantKVCache(_MLXKVCache):
         if pending_fit:
             key_levels = None
         elif refit_keys:
-            # Matches prior behaviour exactly: key levels are fit ONLY from
-            # batch element 0's data (keys[0]), then shared across every
-            # batch element — never fit independently per b, even though
-            # each (b, h) pair is otherwise processed independently. This
-            # mirrors the old per-head loop, which fit `new_klev[h]` once
-            # at b==0 and reused it (unchanged) for b==1..B-1 (see #504
-            # investigation notes — verified against the pre-batching code).
-            keys_h0 = fit_keys[0]  # [H, n_fit, D], batch element 0 only
-            fit_inliers = split_dense_sparse_batched(keys_h0, self._outlier_fraction).inliers
-            key_levels_h = fit_nuq_levels_batched(
+            # One level table per (b, h) row. Fitting from batch element 0 and
+            # tiling it over B (the pre-#504 loop's behaviour) quantizes any
+            # element whose key distribution differs with the wrong levels
+            # (VeloxQuant-MLX#889). For B == 1 this is the same fit as before.
+            fit_bh = fit_keys.reshape(B * H, fit_keys.shape[2], D)
+            fit_inliers = split_dense_sparse_batched(fit_bh, self._outlier_fraction).inliers
+            key_levels = fit_nuq_levels_batched(
                 fit_inliers, self._bits, self._lloyd_iters
-            )  # [H, L, D]
-            key_levels = mx.tile(key_levels_h, (B, 1, 1))  # [B*H, L, D]
+            )  # [B*H, L, D]
         else:
-            # Frozen levels are stored per-head [H, L, D]; tile across B to
-            # match the flattened BH axis (shared across the batch, as
-            # before — frozen keys are fit once and reused for every batch
-            # element). `not refit_keys` implies `not is_prefill`, so
-            # self._key_levels is guaranteed set here (assert makes that
-            # explicit for readers and satisfies static typing).
+            # Frozen levels are stored per (b, h) row [B*H, L, D]. `not
+            # refit_keys` implies `not is_prefill`, so self._key_levels is
+            # guaranteed set here (assert makes that explicit for readers and
+            # satisfies static typing). A sequence's batch size cannot change
+            # mid-stream (the K/V concat would fail), so the row count matches.
             assert self._key_levels is not None
-            key_levels = mx.tile(self._key_levels, (B, 1, 1))
+            key_levels = self._key_levels
+            if key_levels.shape[0] != B * H:
+                raise ValueError(
+                    f"KVQuantKVCache: frozen key levels cover {key_levels.shape[0]} "
+                    f"(batch, head) rows but got B*H={B * H}; the batch size of a "
+                    "sequence cannot change after prefill"
+                )
 
         self._key_levels_fit_this_call = refit_keys and not pending_fit
         self._keys_exact_this_call = pending_fit
@@ -320,9 +320,8 @@ class KVQuantKVCache(_MLXKVCache):
         v_out_bh, vlev_used = self._quant_values_batched(values_bh, out_dtype=values.dtype)
 
         if refit_keys and not pending_fit:
-            # Store per-head levels (first B-tile is representative — frozen
-            # levels are shared across the batch by construction above).
-            self._key_levels = klev_used[:H]
+            # Store every (b, h) row's table so decode reuses each element's own.
+            self._key_levels = klev_used
         self._value_levels = [vlev_used[0]]  # most-recent per-token levels (introspection)
 
         k_out = k_out_bh.reshape(B, H, S, D)
