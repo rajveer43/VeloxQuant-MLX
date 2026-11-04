@@ -599,6 +599,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.95.1 (2026-11-04)
+
+### Bug Fixes
+
+- **kvquant**: Fit key levels per (batch, head) instead of from batch element 0 (#889)
+  ([#927](https://github.com/rajveer43/VeloxQuant-MLX/pull/927),
+  [`616e946`](https://github.com/rajveer43/VeloxQuant-MLX/commit/616e946c21533d531f32d2ab0dfa249df3169cd7))
+
+
 ## v0.95.0 (2026-11-03)
 
 ### Bug Fixes
