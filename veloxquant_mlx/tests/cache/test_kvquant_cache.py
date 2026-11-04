@@ -476,29 +476,21 @@ def test_quantize_and_dequant_nuq_batched_match_per_row_loop():
 
 
 def test_batched_cache_matches_per_head_reference_for_b_gt_1():
-    """The trickiest correctness detail in the #504 batching rewrite: the
-    ORIGINAL per-head loop fit key levels only from batch element 0's data
-    (`keys[0]`) and shared that single fit across every batch element,
-    rather than fitting independently per (b, h). The batched rewrite must
-    reproduce this exactly for B > 1 — fitting independently per BH row
-    would be a silent behavior change, not just a speed optimization. This
-    test pins that by comparing prefill+decode output at B=2 against a
-    literal reimplementation of the original per-(b,h) loop.
+    """The batched (#504) path must equal a literal per-(b, h) loop: key levels
+    are fit independently for every (batch, head) row. (The pre-#889 code fit
+    from batch element 0 and shared it across the batch, which quantized other
+    elements with the wrong levels.) Compares prefill output at B=2 against
+    that reference loop.
     """
     rng = np.random.default_rng(44)
     B, H, S, D, bits = 2, 3, 20, 16, 3
     keys = rng.laplace(0, 1, (B, H, S, D)).astype(np.float32)
 
-    # Literal old-style per-head loop: fit ONCE on b==0, reuse for b==1.
-    new_klev = [None] * H
     ref_recon = np.zeros_like(keys)
     for b in range(B):
         for h in range(H):
-            kl = new_klev[h] if b > 0 else None
-            if kl is None:
-                ds = split_dense_sparse(mx.array(keys[b, h]), 0.0)
-                kl = fit_nuq_levels(ds.inliers, bits, 4)
-                new_klev[h] = kl
+            ds = split_dense_sparse(mx.array(keys[b, h]), 0.0)
+            kl = fit_nuq_levels(ds.inliers, bits, 4)
             codes = quantize_nuq(mx.array(keys[b, h]), kl)
             ref_recon[b, h] = np.array(dequant_nuq(codes, kl))
 
@@ -625,3 +617,51 @@ def test_partial_trim_rolls_back_token_count_and_keeps_levels():
     t = _laplace(1, 2, 1, 64, seed=9)
     out, _ = cache.update_and_fetch(t, t)
     assert out.shape[2] == 31
+
+
+# ---------------------------------------------------------------------------
+# #889 — key levels are fit per (batch, head), not from batch element 0
+# ---------------------------------------------------------------------------
+def test_batched_key_levels_fit_per_batch_element():
+    k = np.array(_laplace(2, 2, 64, 64).tolist(), dtype=np.float32)
+    k[1] *= 10.0  # batch element 1 has a 10x key scale
+    keys = mx.array(k.astype(np.float16))
+
+    batched = KVQuantKVCache(_cfg())
+    out_b, _ = batched.update_and_fetch(keys, keys)
+    assert batched.key_levels.shape[0] == 2 * 2  # one table per (b, h) row
+
+    for b in range(2):
+        solo = KVQuantKVCache(_cfg())
+        solo_in = keys[b : b + 1]
+        out_s, _ = solo.update_and_fetch(solo_in, solo_in)
+        # The element quantizes exactly as it would alone, whatever else is in the batch.
+        np.testing.assert_allclose(
+            np.array(batched.key_levels[b * 2 : (b + 1) * 2].tolist()),
+            np.array(solo.key_levels.tolist()),
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        assert _mse(out_b[b : b + 1], out_s) < 1e-6
+        # ...and its error is the solo error, not inflated by element 0's levels.
+        rel = _mse(out_b[b : b + 1], solo_in) / _mse(solo_in, mx.zeros_like(solo_in))
+        assert rel < 0.1
+
+
+def test_batched_decode_reuses_each_elements_frozen_levels():
+    k = np.array(_laplace(2, 2, 64, 64).tolist(), dtype=np.float32)
+    k[1] *= 10.0
+    keys = mx.array(k.astype(np.float16))
+    cache = KVQuantKVCache(_cfg())
+    cache.update_and_fetch(keys, keys)
+    frozen = np.array(cache.key_levels.tolist())
+
+    t = np.array(_laplace(2, 2, 1, 64, seed=3).tolist(), dtype=np.float32)
+    t[1] *= 10.0
+    tok = mx.array(t.astype(np.float16))
+    out, _ = cache.update_and_fetch(tok, tok)
+    assert out.shape == (2, 2, 65, 64)
+    np.testing.assert_array_equal(frozen, np.array(cache.key_levels.tolist()))
+    # Element 1's decode key is quantized against its own (10x) levels.
+    err = _mse(out[1:, :, -1:], tok[1:])
+    assert err / _mse(tok[1:], mx.zeros_like(tok[1:])) < 0.3
