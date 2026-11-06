@@ -9,7 +9,9 @@ What is synced automatically:
   landing/index.html   — "New in <version>:" in the meta description,
                          the "<n>/<n> tests passing" spec-list claim,
                          the hero badge's "v<version>" prefix (#hero-badge
-                         data-text attribute and its textContent fallback)
+                         data-text attribute and its textContent fallback),
+                         the JSON-LD "softwareVersion" and the Studio mockup's
+                         "v<version> · Metal Linked" label
 
 What is NOT synced: the *prose* after "v<version> — " in the hero badge and
 after "New in <version>: " in the meta description. That copy describes what
@@ -172,6 +174,44 @@ def _sync_landing_pill(version: str) -> None:
         )
 
 
+def _sync_landing_versions(version: str) -> None:
+    """Sync the Python package version shown outside the hero badge.
+
+    Two places on landing/index.html carry the package version and used to
+    drift (#941: JSON-LD said 0.70.0 and the dashboard mockup said v0.67.0
+    while the package was 0.95.1):
+        "softwareVersion": "0.95.1"          -- JSON-LD SoftwareApplication
+        <div class="card-meta">v0.95.1 · Metal Linked</div>   -- Studio mockup
+
+    The SDK versions on the page (npm, crates.io, Go, Kotlin, Swift) are
+    separate packages with their own release cadence and are deliberately not
+    touched here.
+    """
+    if not LANDING_HTML.exists():
+        _warn(f"{LANDING_HTML.relative_to(ROOT)} not found, skipping")
+        return
+
+    text = LANDING_HTML.read_text()
+
+    text, n_ld = re.subn(
+        r'("softwareVersion"\s*:\s*")[\d.]+(")',
+        rf"\g<1>{version}\g<2>",
+        text,
+    )
+    if n_ld == 0:
+        _warn("JSON-LD softwareVersion not found in landing/index.html, skipping")
+
+    text, n_mock = re.subn(
+        r"v[\d.]+( · Metal Linked)",
+        rf"v{version}\g<1>",
+        text,
+    )
+    if n_mock == 0:
+        _warn("'v<version> · Metal Linked' mockup label not found in landing/index.html, skipping")
+
+    LANDING_HTML.write_text(text)
+
+
 def main() -> None:
     version = _current_version()
     test_count = _live_test_count()
@@ -179,6 +219,7 @@ def main() -> None:
     _sync_readme(version, test_count)
     _sync_landing_html(version, test_count)
     _sync_landing_pill(version)
+    _sync_landing_versions(version)
 
     print(f"Synced badges + landing: tests={test_count}, version={version}")
     if _warnings:

@@ -44,7 +44,7 @@
     "operatingSystem": "macOS (Apple Silicon M1 or later)",
     "description": "Shrinks the memory a local AI model uses on Apple Silicon Macs — up to 16× smaller, with near-identical output quality.",
     "url": "https://veloxquant-mlx.netlify.app/",
-    "softwareVersion": "0.70.0",
+    "softwareVersion": "0.95.1",
     "license": "https://opensource.org/licenses/MIT",
     "programmingLanguage": "Python",
     "keywords": "KV cache compression, KV cache quantization, LLM memory optimization, Apple Silicon, MLX framework, mlx_lm, local LLM inference, long context inference, Metal kernels, KIVI, GEAR, KVQuant, RaBitQ, VecInfer, Rust SDK, Go SDK, npm SDK, TypeScript SDK, veloxquant-rs, veloxquant-go, crates.io, cargo install",
@@ -481,7 +481,7 @@
                       <div class="card-icon">✓</div>
                       <div class="card-title">VeloxQuant-MLX</div>
                       <div class="card-val green-text">Ready</div>
-                      <div class="card-meta">v0.67.0 · Metal Linked</div>
+                      <div class="card-meta">v0.95.1 · Metal Linked</div>
                     </div>
                   </div>
 
@@ -1265,7 +1265,7 @@
                 <div class="eco-window-title">Terminal · zsh</div>
               </div>
               <div class="eco-window-body eco-body-cli">
-                <div class="eco-cli-line eco-cli-banner">&gt;_ @veloxquant/sdk (v0.74.0)</div>
+                <div class="eco-cli-line eco-cli-banner">&gt;_ @veloxquant/sdk (v0.7.1)</div>
                 <div class="eco-cli-row"><span class="eco-cli-lbl">model:</span> <span class="eco-cli-val">mlx-community/Llama-3.2-3B</span></div>
                 <div class="eco-cli-row"><span class="eco-cli-lbl">cache:</span> <span class="eco-cli-val">quantized (KIVI 2-bit)</span></div>
                 <div class="eco-cli-row"><span class="eco-cli-lbl">memory:</span> <span class="eco-cli-val">1.2 GB → 180 MB</span></div>
@@ -1299,7 +1299,7 @@
               <div class="eco-window-body eco-body-code">
                 <div class="eco-cli-line eco-cli-comment">// Cargo.toml</div>
                 <div class="eco-cli-row"><span class="eco-code-keyword">[dependencies]</span></div>
-                <div class="eco-cli-row"><span class="eco-code-pkg">veloxquant</span> = <span class="eco-code-str">"{ version = \"0.74\", features = [\"metal\"] }"</span></div>
+                <div class="eco-cli-row"><span class="eco-code-pkg">veloxquant</span> = <span class="eco-code-str">"{ version = \"0.3\", features = [\"metal\"] }"</span></div>
                 <div class="eco-code-divider"></div>
                 <div class="eco-cli-line eco-cli-comment">// main.rs</div>
                 <div class="eco-cli-row"><span class="eco-code-keyword">use</span> veloxquant::prelude::*;</div>
@@ -1330,7 +1330,7 @@
               <div class="eco-window-body eco-body-code">
                 <div class="eco-cli-line eco-cli-comment">// go.mod</div>
                 <div class="eco-cli-line"><span class="eco-code-keyword">module</span> myapp</div>
-                <div class="eco-cli-row"><span class="eco-code-keyword">require</span> github.com/rajveer43/veloxquant-go v0.74.0</div>
+                <div class="eco-cli-row"><span class="eco-code-keyword">require</span> github.com/rajveer43/veloxquant-go v0.5.0</div>
                 <div class="eco-code-divider"></div>
                 <div class="eco-cli-line eco-cli-comment">// inference.go</div>
                 <div class="eco-cli-row"><span class="eco-code-keyword">import</span> <span class="eco-code-str">"github.com/rajveer43/veloxquant-go/cache"</span></div>
@@ -1361,7 +1361,7 @@
               <div class="eco-window-body eco-body-code">
                 <div class="eco-cli-line eco-cli-comment">// build.gradle.kts (Multiplatform)</div>
                 <div class="eco-cli-row"><span class="eco-code-keyword">dependencies</span> {</div>
-                <div class="eco-cli-row">&nbsp;&nbsp;<span class="eco-code-fn">implementation</span>(<span class="eco-code-str">"com.veloxquant:mlx-kotlin:0.74.0"</span>)</div>
+                <div class="eco-cli-row">&nbsp;&nbsp;<span class="eco-code-fn">implementation</span>(<span class="eco-code-str">"com.github.rajveer43.veloxquant-kotlin:veloxquant-core:v0.1.0-alpha"</span>)</div>
                 <div class="eco-cli-row">}</div>
                 <div class="eco-code-divider"></div>
                 <div class="eco-cli-line eco-cli-comment">// Apple Silicon Metal Native</div>
