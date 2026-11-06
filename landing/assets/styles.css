@@ -10743,3 +10743,272 @@ details.faq-accordion-item[open] .faq-chevron {
 :root[data-theme="light"] .waitlist-done-btn:hover {
   background: #1e293b;
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MOBILE, TOUCH AND CONTRAST FIXES (#950)
+   Appended last so it wins the cascade without editing the rules above.
+   Verified by rendering index/playground/benchmarks at 390px and 1440px.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* 1. Horizontal overflow. At 390px the pages were 453-724px wide.
+   - .ecosystem-grid / .pg-studio-grid items kept their min-content width, so
+     the macOS card (606px) and the playground column (436px) pushed the page
+     sideways. `min-width: 0` lets them shrink to the track.
+   - .pg-studio-main / .pg-panel carry `max-width` plus auto margins, which
+     makes them shrink-to-fit on their widest child; an explicit width fixes it.
+   - Long unbreakable paths in benchmark footnotes need a break opportunity. */
+.ecosystem-grid > *,
+.pg-studio-grid > * { min-width: 0; }
+.pg-studio-main { width: 100%; min-width: 0; }
+.pg-panel,
+.pg-output,
+.pg-stepper { width: 100%; min-width: 0; box-sizing: border-box; }
+:not(pre) > code { overflow-wrap: anywhere; }
+
+/* 2. Prose links without a class fell back to the browser's #0000EE, which is
+   2.1:1 on the dark theme. */
+p a:not([class]),
+.usecase-note a,
+.gap-footnote a { color: var(--accent); }
+
+/* 3. Touch targets of at least 44x44 CSS px (WCAG 2.5.5 / Apple HIG).
+   Scoped to coarse pointers so the desktop layout is untouched. Small icon
+   controls keep their visual size and grow only their hit area. */
+@media (pointer: coarse) {
+  .pill-nav-logo,
+  .pill-nav-actions > a,
+  .pill-nav-actions > button,
+  .pg-tip,
+  .pg-row-copy { position: relative; }
+
+  .pill-nav-logo::before,
+  .pill-nav-actions > a::before,
+  .pill-nav-actions > button::before,
+  .pg-tip::before,
+  .pg-row-copy::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+
+  .announcement-banner-close {
+    width: 44px;
+    height: 44px;
+    right: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  :root[data-show-announcement="1"] .announcement-banner { padding-right: 2.9rem; }
+
+  .usecase-chip,
+  .studio-preset-pill,
+  .studio-telemetry-btn,
+  .code-copy-btn,
+  .pg-preset-chip,
+  .bench-nav-pill,
+  .filter-pill,
+  .pg-step,
+  .pg-cta,
+  .hero-waitlist-btn,
+  .pg-share-btn,
+  .matters-link,
+  .pg-install-link,
+  .install-bottom-link a,
+  .hero-algo-details summary,
+  .calc-reveal > summary,
+  .pg-disclaimer-summary {
+    min-height: 44px;
+  }
+  /* Footer icon buttons sit 8px apart, so an expanded hit area would overlap
+     its neighbours; make them genuinely 44px instead. */
+  .footer-social-btn { width: 44px; height: 44px; }
+  .usecase-chip,
+  .bench-nav-pill,
+  .filter-pill,
+  .code-copy-btn,
+  .matters-link,
+  .pg-install-link,
+  .install-bottom-link a,
+  .hero-algo-details summary,
+  .pg-disclaimer-summary {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* 16px stops iOS Safari from zooming the page when a field is focused; the
+     fields were 12.8px. */
+  select,
+  textarea,
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]) {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  input[type="range"] { min-height: 44px; }
+}
+
+/* The open mobile menu: the link text was 20px tall with a 19px gap between
+   rows. Give each row a 44px target and drop the gap it replaces. */
+@media (pointer: coarse) and (max-width: 880px) {
+  .pill-nav-links.open { gap: 0.25rem; padding: 1rem; }
+  .pill-nav-links.open a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+  }
+}
+
+/* Phones up to 400px wide (390px iPhones, 360px Android): the wordmark plus
+   four controls cannot fit in the pill with 44px targets that don't overlap,
+   and at 360px the page grew horizontally. Keep the logo mark, hide the
+   wordmark visually (not with display:none, so the link keeps its accessible
+   name), and spread the controls so their hit areas don't touch. */
+@media (max-width: 400px) {
+  .pill-nav-logo span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .pill-nav-actions { gap: 0.75rem; }
+  .pill-nav { gap: 1.5rem; }
+}
+
+
+/* 4. Text contrast (WCAG AA, 4.5:1 for body text).
+   Measured by rendering each page and compositing every text node over its
+   effective background. Two root causes:
+   - dark theme: hard-coded #71717a / #52525b on near-black is 2.4-4.2:1;
+   - light theme: dark-theme text colours (#fff, #f4f4f5, #a1a1aa ...) were
+     never overridden, so cards rendered white-on-white (1.0-2.6:1). */
+
+/* 4a. Always-dark surfaces (Studio mockup), in either theme. */
+.studio-user-role,
+.studio-subheading,
+.mini-lbl,
+.method-box-desc,
+.telemetry-title,
+.telemetry-bar-legend span,
+.eco-cli-comment,
+.eco-cli-tip { color: #8a8a94; }
+.eco-window-title { color: rgba(255, 255, 255, 0.62); }
+
+/* The window title is absolutely positioned across the whole header, so on a
+   narrow card it wrapped onto the traffic-light dots. One line, ellipsised,
+   clear of the dots. */
+.eco-window-title {
+  left: 56px;
+  right: 56px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 4b. Dark theme: lift the muted greys to #8a8a94 (>= 5:1 on the page and card
+   backgrounds). */
+:root:not([data-theme="light"]) .footer-brand-meta,
+:root:not([data-theme="light"]) .footer-bottom-bar,
+:root:not([data-theme="light"]) .footer-brand-tagline,
+:root:not([data-theme="light"]) .footer-col-title,
+:root:not([data-theme="light"]) .strategy-num,
+:root:not([data-theme="light"]) .metric-footnote,
+:root:not([data-theme="light"]) .install-req-desc,
+:root:not([data-theme="light"]) .matters-kicker,
+:root:not([data-theme="light"]) .section-kicker,
+:root:not([data-theme="light"]) .usecase-note,
+:root:not([data-theme="light"]) .model-scale-tag,
+:root:not([data-theme="light"]) .bench-stat-kicker,
+:root:not([data-theme="light"]) .metal-bar-lbl,
+:root:not([data-theme="light"]) .td-muted,
+:root:not([data-theme="light"]) .gap-footnote,
+:root:not([data-theme="light"]) .gap-footnote code,
+:root:not([data-theme="light"]) .gap-footnote em,
+:root:not([data-theme="light"]) .roofline-kernel-shape,
+:root:not([data-theme="light"]) .gap-note,
+:root:not([data-theme="light"]) .filter-label,
+:root:not([data-theme="light"]) .pg-step-txt em,
+:root:not([data-theme="light"]) .pg-adv-hint,
+:root:not([data-theme="light"]) .pg-adv-note,
+:root:not([data-theme="light"]) .pg-seq-unit,
+:root:not([data-theme="light"]) .pg-hero-badge-k,
+:root:not([data-theme="light"]) .pg-sidebar-title,
+:root:not([data-theme="light"]) .pg-sidebar-title span,
+:root:not([data-theme="light"]) .pg-disclaimer,
+:root:not([data-theme="light"]) .pg-disclaimer-summary { color: #8a8a94; }
+
+/* 4c. Light theme. */
+:root[data-theme="light"] {
+  --ring-good: #15803d;
+  --ring-info: #0369a1;
+  --ring-warn: #b45309;
+}
+:root[data-theme="light"] .bench-takeaway p,
+:root[data-theme="light"] .bench-takeaway strong,
+:root[data-theme="light"] .bench-takeaway code,
+:root[data-theme="light"] .bench-card-title,
+:root[data-theme="light"] .metal-seq,
+:root[data-theme="light"] .metal-bar-time,
+:root[data-theme="light"] .pg-share-btn span { color: var(--text); }
+
+:root[data-theme="light"] .model-metric-row > span,
+:root[data-theme="light"] .bench-section-subtitle,
+:root[data-theme="light"] .bench-section-subtitle code,
+:root[data-theme="light"] .bench-nav-pill:not(.active),
+:root[data-theme="light"] .bench-stat-sub,
+:root[data-theme="light"] .install-code-label span,
+:root[data-theme="light"] .code-copy-btn span,
+:root[data-theme="light"] .faq-body,
+:root[data-theme="light"] .strategy-tag span,
+:root[data-theme="light"] .strategy-body,
+:root[data-theme="light"] .ecosystem-sub,
+:root[data-theme="light"] .pg-step:not(.active) .pg-step-txt strong,
+:root[data-theme="light"] .pg-step-txt em,
+:root[data-theme="light"] .pg-field label,
+:root[data-theme="light"] .pg-header-metric-detail,
+:root[data-theme="light"] .footer-brand-tagline { color: var(--muted); }
+
+:root[data-theme="light"] .model-badge.good { color: #166534; }
+:root[data-theme="light"] .model-badge.caution { color: #92400e; }
+:root[data-theme="light"] .td-winner { color: #15803d; }
+:root[data-theme="light"] .metal-speedup-badge { color: #0369a1; }
+:root[data-theme="light"] .pill-nav-discord span { color: #4752c4; }
+
+/* The playground "How this works" popover has a hard-coded dark background;
+   the light theme recoloured its text only, leaving dark text on dark. */
+:root[data-theme="light"] .pg-primer-content {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.12);
+}
+:root[data-theme="light"] .pg-primer-content p { color: var(--muted); }
+:root[data-theme="light"] .pg-primer-content strong { color: var(--text); }
+
+/* 4d. Remaining contrast items found by the render audit. */
+/* Default text inside the always-dark mockup windows: in the light theme it
+   inherited the page's dark --text, so punctuation like ": [" and "(url:" was
+   dark on dark. */
+.eco-window-body { color: #d4d4d8; }
+.eco-diff-review,
+.eco-cli-lbl { color: rgba(255, 255, 255, 0.62); }
+:root[data-theme="light"] .install-req-badges span { color: var(--muted); }
+:root[data-theme="light"] .eco-chip-purple { color: #0369a1; }
+
+/* Correlation bars: the value label sits on the left of the fill, where the
+   gradient started at 40% accent (a pale wash), so --on-accent text over it
+   was ~1.1:1. Start the gradient stronger, and use the solid accent in the
+   light theme where the label is white. */
+.corr-bar-fill.win { background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.75), var(--accent)); }
+:root[data-theme="light"] .corr-bar-fill.win { background: var(--accent); }
+
+/* A 280px minimum column is wider than the content box on a 320px phone
+   (it overflowed by 8px); cap it at the container width. */
+.model-grid { grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); }
