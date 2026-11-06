@@ -116,3 +116,81 @@ def test_rewrites_to_arbitrary_versions(tmp_path, monkeypatch, version) -> None:
     text = landing_html.read_text()
     assert f'data-text="v{version} — ' in text
     assert f">v{version} — " in text
+
+
+_VERSION_HTML = """<!doctype html>
+<html>
+<head>
+  <script type="application/ld+json">
+  {
+    "@type": "SoftwareApplication",
+    "softwareVersion": "0.70.0",
+    "license": "https://opensource.org/licenses/MIT"
+  }
+  </script>
+</head>
+<body>
+  <div class="card-meta">v0.67.0 · Metal Linked</div>
+  <div class="eco-cli-line">&gt;_ @veloxquant/sdk (v0.7.1)</div>
+</body>
+</html>
+"""
+
+
+class TestSyncLandingVersions:
+    """#941: the JSON-LD softwareVersion and the Studio mockup label drifted
+    to 0.70.0 / v0.67.0 while the package was 0.95.1."""
+
+    def test_rewrites_json_ld_and_mockup_label(self, tmp_path, monkeypatch) -> None:
+        landing_html = tmp_path / "index.html"
+        landing_html.write_text(_VERSION_HTML)
+        monkeypatch.setattr(sync_release_badges, "LANDING_HTML", landing_html)
+
+        sync_release_badges._sync_landing_versions("0.96.0")
+
+        text = landing_html.read_text()
+        assert '"softwareVersion": "0.96.0"' in text
+        assert "v0.96.0 · Metal Linked" in text
+        assert "0.70.0" not in text
+        assert "v0.67.0" not in text
+
+    def test_leaves_separately_versioned_sdk_strings_alone(self, tmp_path, monkeypatch) -> None:
+        landing_html = tmp_path / "index.html"
+        landing_html.write_text(_VERSION_HTML)
+        monkeypatch.setattr(sync_release_badges, "LANDING_HTML", landing_html)
+
+        sync_release_badges._sync_landing_versions("0.96.0")
+
+        assert "@veloxquant/sdk (v0.7.1)" in landing_html.read_text()
+
+    def test_is_idempotent(self, tmp_path, monkeypatch) -> None:
+        landing_html = tmp_path / "index.html"
+        landing_html.write_text(_VERSION_HTML)
+        monkeypatch.setattr(sync_release_badges, "LANDING_HTML", landing_html)
+
+        sync_release_badges._sync_landing_versions("0.96.0")
+        once = landing_html.read_text()
+        sync_release_badges._sync_landing_versions("0.96.0")
+
+        assert landing_html.read_text() == once
+
+    def test_warns_for_each_missing_target(self, tmp_path, monkeypatch) -> None:
+        landing_html = tmp_path / "index.html"
+        landing_html.write_text("<html><body>nothing to sync</body></html>")
+        monkeypatch.setattr(sync_release_badges, "LANDING_HTML", landing_html)
+        monkeypatch.setattr(sync_release_badges, "_warnings", [])
+
+        sync_release_badges._sync_landing_versions("0.96.0")
+
+        assert any("softwareVersion not found" in w for w in sync_release_badges._warnings)
+        assert any("Metal Linked" in w for w in sync_release_badges._warnings)
+
+
+def test_real_landing_page_matches_package_version() -> None:
+    """Drift guard: the checked-in landing page must carry the package
+    version in the two places the release sync owns."""
+    version = sync_release_badges._current_version()
+    text = (_SCRIPT_PATH.parents[1] / "landing" / "index.html").read_text()
+
+    assert f'"softwareVersion": "{version}"' in text
+    assert f"v{version} · Metal Linked" in text
