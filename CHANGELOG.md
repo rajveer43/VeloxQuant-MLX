@@ -599,6 +599,15 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.95.2 (2026-11-06)
+
+### Bug Fixes
+
+- **landing**: Make version numbers consistent and sync them on release (#941)
+  ([#951](https://github.com/rajveer43/VeloxQuant-MLX/pull/951),
+  [`5e97c73`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5e97c73033582b3323e399de96258666d99c1ba3))
+
+
 ## v0.95.1 (2026-11-04)
 
 ### Bug Fixes
