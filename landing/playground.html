@@ -45,12 +45,17 @@
   <script>
     // Set the theme before first paint to avoid a flash of the wrong theme.
     (function () {
-      try {
-        var saved = localStorage.getItem('vq-theme');
-        if (saved === 'light' || saved === 'dark') {
-          document.documentElement.setAttribute('data-theme', saved);
-        }
-      } catch (e) { /* storage unavailable */ }
+      var saved = null;
+      try { saved = localStorage.getItem('vq-theme'); } catch (e) { /* storage unavailable */ }
+      // With no saved choice, follow the OS. Setting data-theme (rather than
+      // relying on the prefers-color-scheme token block alone) matters: the
+      // component-level light overrides are all keyed on [data-theme="light"],
+      // so a first-time light-OS visitor used to get light tokens with
+      // dark-theme component colours (e.g. a white heading on a white page).
+      if (saved !== 'light' && saved !== 'dark') {
+        saved = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : null;
+      }
+      if (saved) document.documentElement.setAttribute('data-theme', saved);
     })();
   </script>
 
