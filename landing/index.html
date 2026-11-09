@@ -913,7 +913,7 @@
         <div class="section-kicker">INSTALLATION</div>
         <h2 class="section-headline">Get started in seconds.</h2>
         <p class="section-subheadline">
-          The added lines are all you need. Your model-loading code stays exactly the same.
+          Three added lines wire it in: two imports and one call. The rest is the mlx_lm code you already have.
         </p>
       </div>
 
@@ -935,7 +935,7 @@
 
         <div class="install-pip-row">
           <span class="install-pip-prompt">$</span>
-          <code class="install-pip-cmd" id="install-pip-cmd">pip install VeloxQuant-MLX</code>
+          <code class="install-pip-cmd" id="install-pip-cmd">pip install veloxquant-mlx</code>
           <button class="code-copy-btn" data-target="install-pip-cmd" aria-label="Copy install command">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             <span>COPY</span>
@@ -955,10 +955,15 @@
           </div>
 
           <div class="install-code-content">
-            <pre id="code-install-python"><code><span class="kw">from</span> <span class="id">veloxquant_mlx</span> <span class="kw">import</span> <span class="fn">KVCacheBuilder</span>, <span class="fn">KVCacheConfig</span>
+            <pre id="code-install-python"><code><span class="kw">from</span> <span class="id">mlx_lm</span> <span class="kw">import</span> <span class="fn">load</span>, <span class="fn">generate</span>
+<span class="kw">from</span> <span class="id">veloxquant_mlx</span> <span class="kw">import</span> <span class="fn">KVCacheConfig</span>
+<span class="kw">from</span> <span class="id">veloxquant_mlx.integration</span> <span class="kw">import</span> <span class="fn">patch_model_kv_cache</span>
 
-<span class="id">config</span> = <span class="fn">KVCacheConfig</span>(<span class="at">method</span>=<span class="st">"kivi"</span>, <span class="at">bit_width_inlier</span>=<span class="nu">2</span>, <span class="at">seed</span>=<span class="nu">42</span>)
-<span class="id">caches</span> = <span class="fn">KVCacheBuilder</span>.<span class="fn">for_model</span>(<span class="id">model</span>, <span class="id">config</span>)</code></pre>
+<span class="cm"># The first run downloads the model (~0.7 GB).</span>
+<span class="id">model</span>, <span class="id">tokenizer</span> = <span class="fn">load</span>(<span class="st">"mlx-community/Llama-3.2-1B-Instruct-4bit"</span>)
+<span class="fn">patch_model_kv_cache</span>(<span class="id">model</span>, <span class="fn">KVCacheConfig</span>(<span class="at">method</span>=<span class="st">"turboquant_rvq"</span>))
+
+<span class="fn">generate</span>(<span class="id">model</span>, <span class="id">tokenizer</span>, <span class="st">"Explain relativity in one sentence."</span>, <span class="at">verbose</span>=<span class="kw">True</span>)</code></pre>
           </div>
         </div>
 

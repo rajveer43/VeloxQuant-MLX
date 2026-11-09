@@ -23,7 +23,7 @@ function initCopyButtons() {
   const heroInstall = document.getElementById('hero-install');
   if (heroInstall) {
     heroInstall.addEventListener('click', () => {
-      copyText('pip install VeloxQuant-MLX', document.getElementById('hero-copy-btn'));
+      copyText('pip install veloxquant-mlx', document.getElementById('hero-copy-btn'));
     });
   }
 
