@@ -5917,7 +5917,9 @@ details.faq-accordion-item[open] .faq-chevron {
   }
 }
 
-@media (max-width: 880px) {
+/* The nav now has four links instead of eight, so it fits inline down to
+   ~760px (it needed the hamburger below 880px with eight). */
+@media (max-width: 760px) {
   .pill-nav-links {
     display: none;
   }
@@ -10855,7 +10857,7 @@ p a:not([class]),
 
 /* The open mobile menu: the link text was 20px tall with a 19px gap between
    rows. Give each row a 44px target and drop the gap it replaces. */
-@media (pointer: coarse) and (max-width: 880px) {
+@media (pointer: coarse) and (max-width: 760px) {
   .pill-nav-links.open { gap: 0.25rem; padding: 1rem; }
   .pill-nav-links.open a {
     display: flex;
