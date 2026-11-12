@@ -599,6 +599,33 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.95.3 (2026-11-12)
+
+### Bug Fixes
+
+- **landing**: Fix mobile overflow, touch targets and contrast found by render audit (#950)
+  ([#952](https://github.com/rajveer43/VeloxQuant-MLX/pull/952),
+  [`26028c3`](https://github.com/rajveer43/VeloxQuant-MLX/commit/26028c377a33b256c96d2f9fe6b38601adc3d84b))
+
+- **landing**: Make the install snippet complete and runnable (#934)
+  ([#955](https://github.com/rajveer43/VeloxQuant-MLX/pull/955),
+  [`2b4f5e2`](https://github.com/rajveer43/VeloxQuant-MLX/commit/2b4f5e26ef7e67d2896057d3b2365a3b8a4bab8f))
+
+- **landing**: Trim nav and footer links, fix dead Discord invite (#945)
+  ([#956](https://github.com/rajveer43/VeloxQuant-MLX/pull/956),
+  [`1e30fc0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/1e30fc018f9f4e37b0548f27f048c8d95fa7c8a9))
+
+### Chores
+
+- **deps**: Bump github/codeql-action/analyze from 4.39.1 to 4.39.3
+  ([#954](https://github.com/rajveer43/VeloxQuant-MLX/pull/954),
+  [`bd6f29a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/bd6f29a6e4c0b78f3a2865e9f0371bda69f4de3d))
+
+- **deps**: Bump github/codeql-action/init from 4.39.1 to 4.39.3
+  ([#953](https://github.com/rajveer43/VeloxQuant-MLX/pull/953),
+  [`5ccc1f0`](https://github.com/rajveer43/VeloxQuant-MLX/commit/5ccc1f0d8eca7ec20e06832733952c2ab2e5eb82))
+
+
 ## v0.95.2 (2026-11-06)
 
 ### Bug Fixes
