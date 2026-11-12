@@ -459,6 +459,7 @@ class A2ATSOptions:
     # [sub_dim, sub_dim] query second-moment H (Eq. 10); enables the paper's Eq. 14 assignment
     a2ats_query_h: Any = None
     a2ats_codebook: Any = None  # mx.array | np.ndarray | None (random init if absent)
+    a2ats_value_codebook: Any = None  # separate value codebook; None = share a2ats_codebook
 
 
 @dataclass
