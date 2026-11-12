@@ -10,7 +10,7 @@
 
   <!-- One sentence. Search engines truncate around 160 characters; the old
        1,400-character method dump was never shown in full anywhere. -->
-  <meta name="description" content="Free, open-source tool that shrinks the memory a local AI model uses on your Mac, so you can run longer conversations or bigger models. Runs entirely on your machine — nothing is sent anywhere." />
+  <meta name="description" content="VeloxQuant-MLX is a free library that shrinks the memory your Mac's AI uses to hold conversations, so you can run longer chats or bigger models. Runs entirely on your machine — nothing is sent anywhere." />
   <meta name="keywords" content="VeloxQuant-MLX, KV cache compression, KV cache quantization, LLM memory optimization, Apple Silicon, MLX framework, mlx_lm, local LLM inference, on-device AI, long context inference, LLM quantization, key-value cache, GPU memory reduction, Metal kernels, macOS AI tools, token eviction, KIVI, GEAR, KVQuant, RaBitQ, VecInfer, TurboQuant RVQ, H2O, SnapKV, StreamingLLM, SpectralQuant, CommVQ, RateQuant, CacheRoute, low-bit quantization, 4-bit quantization, 2-bit quantization, Llama, Mistral, Qwen, Gemma, open source Python library, VeloxQuant Rust SDK, VeloxQuant Go SDK, VeloxQuant npm SDK, veloxquant-rs, veloxquant-go, veloxquant crates.io, cargo add veloxquant, go get veloxquant-go, npm install veloxquant, Node.js LLM memory SDK, TypeScript LLM SDK, run larger LLMs on Mac, run bigger models on Mac, reduce LLM memory usage Mac, fit bigger model in Mac RAM, LLM out of memory Mac, long context local LLM Mac, KV cache too big Mac, Mac unified memory LLM limit, run large language models on Apple Silicon, free up RAM for LLM Mac" />
   <link rel="canonical" href="https://veloxquant-mlx.netlify.app/" />
 
@@ -19,16 +19,16 @@
   <meta property="og:type" content="website" />
   <meta property="og:locale" content="en_US" />
   <meta property="og:site_name" content="VeloxQuant-MLX" />
-  <meta property="og:title" content="VeloxQuant-MLX — run longer AI conversations on your Mac" />
-  <meta property="og:description" content="Free, open-source tool that shrinks the memory a local AI model uses on your Mac — up to 16×, in three lines of code. Runs entirely on your machine." />
+  <meta property="og:title" content="VeloxQuant-MLX — Run longer chats without running out of memory" />
+  <meta property="og:description" content="VeloxQuant-MLX is a free Python library for mlx_lm that shrinks the memory your model uses to remember a conversation. In our tests (Qwen3-4B, M4, 4,096 tokens) that shrank by a third with near-identical quality — or by over 5× if you let it forget old tokens. The trade-off: slower generation." />
   <meta property="og:url" content="https://veloxquant-mlx.netlify.app/" />
   <meta property="og:image" content="https://veloxquant-mlx.netlify.app/assets/metal_summary.png" />
   <meta property="og:image:width" content="1937" />
   <meta property="og:image:height" content="835" />
   <meta property="og:image:alt" content="VeloxQuant-MLX Metal kernel benchmark summary: compression ratio and speedup charts" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="VeloxQuant-MLX — run longer AI conversations on your Mac" />
-  <meta name="twitter:description" content="Free, open-source tool that shrinks the memory a local AI model uses on your Mac — up to 16×, in three lines of code. Runs entirely on your machine." />
+  <meta name="twitter:title" content="VeloxQuant-MLX — Run longer chats without running out of memory" />
+  <meta name="twitter:description" content="VeloxQuant-MLX is a free Python library for mlx_lm that shrinks the memory your model uses to remember a conversation. In our tests (Qwen3-4B, M4, 4,096 tokens) that shrank by a third with near-identical quality — or by over 5× if you let it forget old tokens. The trade-off: slower generation." />
   <meta name="twitter:image" content="https://veloxquant-mlx.netlify.app/assets/metal_summary.png" />
   <meta name="twitter:image:alt" content="VeloxQuant-MLX Metal kernel benchmark summary: compression ratio and speedup charts" />
 
@@ -223,23 +223,24 @@
       <div class="hero-aurora-vignette"></div>
     </div>
     <div class="hero-container">
-      <h1 class="hero-headline">The memory<br>bottleneck for on-<br>device AI. Solved.</h1>
+      <h1 class="hero-headline">Run longer chats without running out of memory.</h1>
 
       <p class="hero-subheadline">
-        VeloxQuant-MLX compresses the KV cache your Mac builds during LLM inference — up to 98% less peak memory across 43 methods, accelerated with hand-written Metal kernels, integrated in three lines of code.
+        VeloxQuant-MLX is a free Python library for mlx_lm that shrinks the memory your model uses to remember a conversation. In our tests (Qwen3-4B, M4, 4,096 tokens) that shrank by a third with near-identical quality — or by over 5× if you let it forget old tokens. The trade-off: slower generation.
       </p>
 
       <div class="hero-cta-group">
-        <!-- The Studio .dmg is withheld pending beta validation. The primary
-             CTA is the library itself (which IS shipping); the app is a
-             "coming soon" chip below rather than a dead download button. -->
-        <a href="#install" class="btn-primary-white" id="hero-install-btn">
-          <span>Get started — pip install veloxquant-mlx</span>
+        <!-- The Studio .dmg is withheld pending beta validation; the app is a
+             "coming soon" chip below rather than a dead download button.
+             Primary CTA routes to the fit calculator; install stays one hop
+             away via the nav, the #install section and the PyPI link. -->
+        <a href="#calculator" class="btn-primary-white" id="hero-install-btn">
+          <span>See if your model fits</span>
           <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
         </a>
-        <a href="#why" class="btn-secondary-dark">
-          <span>SEE HOW IT WORKS</span>
-          <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        <a href="https://pypi.org/project/veloxquant-mlx/" class="btn-secondary-dark">
+          <span>Install from PyPI</span>
+          <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
         </a>
       </div>
 
