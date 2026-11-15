@@ -1,92 +1,86 @@
 name: release
 
-# Automatic version bump on merge to master, driven by Conventional Commits
-# (see CONTRIBUTING.md "Commit conventions"). python-semantic-release parses
-# commits since the last tag to decide whether a release is warranted and
-# at what semver level (feat -> minor, fix/perf -> patch, feat!/BREAKING
-# CHANGE -> major bump-of-minor while major_on_zero=false in pyproject.toml).
+# Weekly release, driven by Conventional Commits (see CONTRIBUTING.md
+# "Commit conventions" and "Releases"). Merging a PR does NOT publish
+# anything: once a week (Sunday 10:00 IST = 04:30 UTC) this workflow runs on
+# master HEAD,
+# and python-semantic-release reads every commit since the last tag and takes
+# the highest bump among them (feat -> minor, fix/perf -> patch,
+# feat!/BREAKING CHANGE -> major bump-of-minor while major_on_zero=false in
+# pyproject.toml). A week with three `fix:` and one `feat:` therefore yields a
+# single minor release with one CHANGELOG section and one GitHub Release.
+#
+# A week ends green with no tag and no upload when either
+#   * nothing under veloxquant_mlx/** or pyproject.toml changed since the last
+#     tag (so a `feat(landing): ...` typed commit cannot republish the
+#     package), or
+#   * python-semantic-release finds no releasable commit (docs/chore/test-only).
+#
+# Merge cutoff: Saturday 18:00 IST (12:30 UTC). PRs should be merged before
+# it; anything merged after it is flagged in the run summary (and as a
+# warning) so the maintainer can see exactly what slipped into the release.
+# The cutoff is a convention with visibility, not a hard freeze: the release
+# still ships master HEAD.
+#
+# Manual runs (workflow_dispatch, write access required):
+#   * dry_run=true  -> computes the next version and prints the release notes
+#                      in the run summary; never tags, pushes or publishes and
+#                      skips the (macOS-minutes-expensive) test suite.
+#   * dry_run=false -> cuts a release immediately. This is the hotfix path;
+#                      see CONTRIBUTING.md "Releases" for when it is
+#                      appropriate. Only runs from master.
+# Re-running is safe: the next version is derived from commits since the last
+# tag, so once a release has been tagged a re-run finds nothing new and does
+# not tag again. If a previous run tagged but failed before PyPI, a re-run
+# detects that the tag is missing from PyPI and publishes it from the tagged
+# source; PyPI rejects duplicate versions, so nothing is uploaded twice.
 #
 # Runs on macOS because `mlx` (this package's core dependency) only installs
 # on Apple Silicon -- a release gate that cannot import the package it is
 # releasing is not a real gate. This is more expensive per-minute than an
 # ubuntu runner; that cost is accepted deliberately here.
 #
+# A failed scheduled run shows up red in the Actions tab and GitHub emails the
+# user who last edited the `cron` line below.
+#
 # The bump commit is tagged `chore(release): ... [skip ci]` so it does not
-# retrigger this same workflow.
+# retrigger other push-based workflows.
 
 on:
-  push:
-    branches: [master]
-    # Belt-and-suspenders alongside the commit-type discipline in
-    # CONTRIBUTING.md ("Commit conventions"): PSR bumps purely on commit
-    # *type* (feat/fix/perf), not on which files changed, so a landing-only
-    # push typed as feat(landing)/fix(landing) still bumps the Python
-    # package version and republishes to PyPI with zero package changes.
-    # This only skips the run when EVERY changed file matches below -- a
-    # push that also touches veloxquant_mlx/** still runs normally and
-    # still syncs landing/index.html via scripts/sync_release_badges.py.
-    paths-ignore:
-      - 'landing/**'
-      - 'docs/**'
-      - '**.md'
+  schedule:
+    # Sunday 10:00 IST (04:30 UTC; India has no DST, so this never shifts).
+    # Scheduled runs can start late under GitHub load.
+    - cron: "30 4 * * 0"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Compute the next version and release notes, but do not tag or publish"
+        type: boolean
+        default: false
 
 # `cancel-in-progress: false` is deliberate and must stay that way: this job
 # pushes a tag, publishes a GitHub Release, and uploads to PyPI. Cancelling it
 # midway could leave a tag pushed with nothing published, or a PyPI upload with
 # no matching tag. A queued run is always safer than a half-finished release.
 #
-# The cost of queueing is that a burst of merges (Dependabot lands several PRs
-# in a row) queues one macos-15 release run each, all starting within seconds.
-# On 2026-08-17 that burst hit a codeload.github.com 429 and two release runs
-# died downloading actions/checkout before any step ran, which is why 0.50.0
-# was tagged but never reached PyPI. `debounce` below collapses such a burst
-# into a single release instead of widening this window.
+# History: when this ran on every push to master, a burst of Dependabot merges
+# on 2026-08-17 hit a codeload.github.com 429 and 0.50.0 was tagged but never
+# reached PyPI. A single weekly run cannot burst, so the old `debounce` job is
+# gone.
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  # Cheap ubuntu gate that runs before the macos-15 release job. Its only
-  # purpose is to let a burst of merges collapse into one release: it waits
-  # briefly, then drops out if a newer commit has already landed on master,
-  # so only the last push in the burst proceeds to actually release. Whatever
-  # that final run releases includes every commit in the burst -- semantic
-  # release reads all commits since the last tag, so nothing is skipped.
-  #
-  # This uses no actions at all (no checkout, no setup-python) precisely
-  # because the failure it mitigates was an action *download* being rate
-  # limited before any step could run.
-  debounce:
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      proceed: ${{ steps.check.outputs.proceed }}
-    steps:
-      - name: Wait out any in-flight burst of merges
-        run: sleep 60
-
-      - name: Release only if this is still the newest commit on master
-        id: check
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          head_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/master" --jq '.sha')
-          if [ "$head_sha" = "${GITHUB_SHA}" ]; then
-            echo "proceed=true" >> "$GITHUB_OUTPUT"
-            echo "This is master HEAD -- proceeding to release."
-          else
-            echo "proceed=false" >> "$GITHUB_OUTPUT"
-            echo "Superseded by ${head_sha} -- that run will release this commit too."
-          fi
-
   release:
-    needs: debounce
-    if: needs.debounce.outputs.proceed == 'true'
+    # Releases are cut from master only, even for a manual dispatch.
+    if: github.ref == 'refs/heads/master'
     runs-on: macos-15
     permissions:
       contents: write
+    env:
+      # 'true' only for a manual dispatch with dry_run ticked.
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -102,16 +96,96 @@ jobs:
         run: |
           pip install -e ".[test,release]"
 
-      - name: Run test suite (release gate)
-        run: python -m pytest veloxquant_mlx/tests -q
-
-      - name: Configure git identity for the release commit
+      - name: Check that the latest tag reached PyPI
+        id: recover
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # A run can fail after pushing the tag but before PyPI (this is how
+          # 0.50.0 was tagged and never published). Re-running cannot fix that
+          # on its own: the next version is derived from commits since the last
+          # tag, so a re-run finds nothing new. Detect it here and republish
+          # the tagged source. PyPI rejects duplicate versions, so this can
+          # never double-upload.
+          echo "needed=false" >> "$GITHUB_OUTPUT"
+          if ! LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null)"; then
+            exit 0
+          fi
+          echo "tag=${LAST_TAG}" >> "$GITHUB_OUTPUT"
+          CODE="$(curl -s -o /dev/null -w '%{http_code}' --retry 3 --retry-all-errors \
+            "https://pypi.org/pypi/VeloxQuant-MLX/${LAST_TAG#v}/json")"
+          case "${CODE}" in
+            200) echo "${LAST_TAG} is on PyPI." ;;
+            404)
+              echo "needed=true" >> "$GITHUB_OUTPUT"
+              echo "::warning::${LAST_TAG} is tagged but missing from PyPI."
+              echo "### ${LAST_TAG} is tagged but missing from PyPI" >> "$GITHUB_STEP_SUMMARY"
+              if [ "${DRY_RUN}" = "true" ]; then
+                echo "A non-dry run will rebuild it from the tag and publish it." >> "$GITHUB_STEP_SUMMARY"
+              fi
+              ;;
+            *)
+              echo "::error::Could not determine whether ${LAST_TAG} is on PyPI (HTTP ${CODE})."
+              exit 1
+              ;;
+          esac
 
-      - name: Determine next version (dry run)
+      - name: Rebuild the unpublished tag and publish its GitHub Release
+        if: steps.recover.outputs.needed == 'true' && env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Build from the tag itself, not master HEAD. The tag already passed
+          # the test gate when it was created, so the gate is not repeated.
+          TAG="${{ steps.recover.outputs.tag }}"
+          git worktree add "${RUNNER_TEMP}/recover-src" "${TAG}"
+          python -m pip install --upgrade build
+          python -m build --outdir "${GITHUB_WORKSPACE}/dist" "${RUNNER_TEMP}/recover-src"
+          ls -la dist/
+          if ! gh release view "${TAG}" >/dev/null 2>&1; then
+            scripts/extract_release_notes.sh "${TAG#v}" "${RUNNER_TEMP}/recover-src/CHANGELOG.md" > recover_notes.md
+            gh release create "${TAG}" --title "${TAG}" --notes-file recover_notes.md
+          fi
+
+      - name: Check whether the package changed since the last tag
+        id: changed
+        run: |
+          # PSR bumps on commit *type*, not on which files changed, so a
+          # `feat(landing): ...` commit would republish an unchanged package.
+          # Only release when the shipped package or its metadata changed.
+          # The release commit itself is the tagged commit, so it is not
+          # counted against the next release.
+          if LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null)"; then
+            if git diff --quiet "${LAST_TAG}..HEAD" -- veloxquant_mlx pyproject.toml; then
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "Nothing under veloxquant_mlx/ or pyproject.toml changed since ${LAST_TAG}."
+            else
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "No previous tag found -- treating the package as changed."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Flag commits merged after the Saturday 18:00 IST cutoff
+        if: github.event_name == 'schedule' || env.DRY_RUN == 'true'
+        run: |
+          # Most recent Saturday 12:30 UTC (= 18:00 IST) before this run.
+          CUTOFF="$(date -u -v-sat -v12H -v30M -v0S +%Y-%m-%dT%H:%M:%SZ)"
+          LATE="$(git log --since="${CUTOFF}" --format='- %h %s (%cI)' HEAD)"
+          if [ -n "${LATE}" ]; then
+            echo "::warning::Commits merged after the ${CUTOFF} cutoff are included in this release."
+            {
+              echo "### Merged after the merge cutoff (${CUTOFF})"
+              echo "${LATE}"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No commits after the ${CUTOFF} cutoff."
+          fi
+
+      - name: Determine next version
         id: version
+        if: steps.changed.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -147,7 +221,19 @@ jobs:
 
       - name: No release needed
         if: steps.version.outputs.next_version == ''
-        run: echo "No releasable commits since the last tag (docs/chore/test-only). Skipping."
+        run: |
+          echo "No release needed: either the package did not change since the last tag or no commit since then is releasable (docs/chore/test-only). No tag, no upload."
+          echo "### No release needed" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run test suite (release gate)
+        if: steps.version.outputs.next_version != '' && env.DRY_RUN != 'true'
+        run: python -m pytest veloxquant_mlx/tests -q
+
+      - name: Configure git identity for the release commit
+        if: steps.version.outputs.next_version != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Bump pyproject.toml/__init__.py and prepend CHANGELOG entry (no commit yet)
         if: steps.version.outputs.next_version != ''
@@ -159,8 +245,32 @@ jobs:
         if: steps.version.outputs.next_version != ''
         run: python scripts/sync_release_badges.py
 
-      - name: Commit, tag, and push the release
+      - name: Extract release notes from CHANGELOG
         if: steps.version.outputs.next_version != ''
+        run: |
+          # Pull this version's section out of CHANGELOG.md (the same content
+          # `semantic-release version` just prepended there). Used for the
+          # GitHub Release body and, on a dry run, for the run summary.
+          VERSION="${{ steps.version.outputs.next_version }}"
+          scripts/extract_release_notes.sh "${VERSION}" > release_notes.md
+
+          if [ ! -s release_notes.md ]; then
+            echo "::warning::No CHANGELOG.md section found for v${VERSION}; the release body will be empty."
+          fi
+
+          {
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "### Dry run: would release v${VERSION}"
+              echo "Nothing was tagged, pushed or published."
+            else
+              echo "### Releasing v${VERSION}"
+            fi
+            echo
+            cat release_notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit, tag, and push the release
+        if: steps.version.outputs.next_version != '' && env.DRY_RUN != 'true'
         run: |
           # landing/index.html is included because sync_release_badges.py rewrites
           # the hero badge version and the meta-description/test-count claims
@@ -181,7 +291,7 @@ jobs:
           git push origin "v${{ steps.version.outputs.next_version }}"
 
       - name: Publish GitHub Release
-        if: steps.version.outputs.next_version != ''
+        if: steps.version.outputs.next_version != '' && env.DRY_RUN != 'true'
         run: |
           # `semantic-release publish` does NOT create a GitHub Release --
           # it only uploads build artifacts to one that already exists. With
@@ -190,24 +300,8 @@ jobs:
           # the release itself, so `publish` logged "No release corresponds
           # to tag ..., can't upload dists" and exited 0 -- a silent no-op
           # that looked like success. Create the release directly instead,
-          # extracting this version's section from CHANGELOG.md for the
-          # release notes (the same content `semantic-release version` just
-          # prepended there).
-          # semantic-release's auto-generated heading is "## v<version> (<date>)"
-          # (no brackets) -- distinct from this file's older hand-written
-          # "## [<version>] — <date>" entries. Match either so a future
-          # switch back to hand-editing doesn't silently break this again.
+          # using the notes extracted above.
           VERSION="${{ steps.version.outputs.next_version }}"
-          awk -v v1="## v${VERSION} " -v v2="## [${VERSION}]" '
-            (index($0, v1) == 1 || index($0, v2) == 1) { found=1; print; next }
-            found && index($0, "## ") == 1 { exit }
-            found { print }
-          ' CHANGELOG.md > release_notes.md
-
-          if [ ! -s release_notes.md ]; then
-            echo "::warning::No CHANGELOG.md section found for v${VERSION}; publishing release with an empty body."
-          fi
-
           gh release create "v${VERSION}" \
             --title "v${VERSION}" \
             --notes-file release_notes.md
@@ -215,25 +309,31 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build sdist + wheel
-        if: steps.version.outputs.next_version != ''
+        if: steps.version.outputs.next_version != '' && env.DRY_RUN != 'true'
         run: |
           python -m pip install --upgrade build
           python -m build
           ls -la dist/
 
       - name: Upload dist/ for the publish jobs
-        if: steps.version.outputs.next_version != ''
+        if: (steps.version.outputs.next_version != '' || steps.recover.outputs.needed == 'true') && env.DRY_RUN != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-dist
           path: dist/
           retention-days: 7
 
+      - name: Tell the publish jobs there is something to publish
+        id: publish_flag
+        if: (steps.version.outputs.next_version != '' || steps.recover.outputs.needed == 'true') && env.DRY_RUN != 'true'
+        run: echo "publish=true" >> "$GITHUB_OUTPUT"
+
     outputs:
-      # Empty when the "release" job's own `if:` skips it entirely (a
-      # [skip ci] push) or when it ran but found no releasable commits --
-      # either way, both publish jobs below no-op via their own `if:`.
-      next_version: ${{ steps.version.outputs.next_version }}
+      # Empty on a no-release week, on a dry run, or when the package did not
+      # change -- every case in which both publish jobs below must no-op via
+      # their own `if:`. 'true' for a new release or a recovered unpublished
+      # tag (dist/ then holds the artifacts to upload).
+      publish: ${{ steps.publish_flag.outputs.publish }}
 
   # Trusted Publishing (OIDC): no PyPI/TestPyPI API token is stored anywhere
   # in this repo. Each job below authenticates via a short-lived OIDC token
@@ -244,7 +344,7 @@ jobs:
   # here must exactly match what was registered there.
   publish-testpypi:
     needs: release
-    if: needs.release.outputs.next_version != ''
+    if: needs.release.outputs.publish == 'true'
     runs-on: ubuntu-latest
     environment:
       name: testpypi
@@ -274,7 +374,7 @@ jobs:
   # different run) and should fail loudly, not silently no-op.
   publish-pypi:
     needs: [release, publish-testpypi]
-    if: needs.release.outputs.next_version != ''
+    if: needs.release.outputs.publish == 'true'
     runs-on: ubuntu-latest
     environment:
       name: pypi
