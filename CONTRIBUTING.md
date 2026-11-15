@@ -212,9 +212,10 @@ is the most current).
 ## Commit conventions
 
 This repo uses [Conventional Commits](https://www.conventionalcommits.org/)
-and version numbers are bumped automatically from commit messages on merge
-to `master` (see `.github/workflows/release.yml`) — so the prefix you use
-has a real effect, not just a style preference.
+and version numbers are bumped automatically from commit messages, once a
+week (see [Releases](#releases) and `.github/workflows/release.yml`) — so the
+prefix you use has a real effect, not just a style preference. Merging a PR
+does not publish a release by itself.
 
 Every commit (or, if a PR is squash-merged, the squash-merge title) must
 start with one of:
@@ -241,9 +242,31 @@ only at the `feat`/`fix`/`perf` prefix, not at which files changed, so
 version and republishes to PyPI even though nothing in `veloxquant_mlx/`
 changed. Use `chore(landing): ...` or `docs(landing): ...` for landing-page
 work instead — both are recognized types with no version effect. (The
-release workflow also skips entirely for pushes that touch only
-`landing/`, `docs/`, or `*.md` as a second line of defense, but the commit
-type should still be correct.)
+weekly release also skips when nothing under `veloxquant_mlx/` or
+`pyproject.toml` changed since the last tag, as a second line of defense, but
+the commit type should still be correct.)
+
+## Releases
+
+`VeloxQuant-MLX` is released **once a week, on Sunday at 10:00 IST (04:30
+UTC)**, from whatever has been merged to `master`. The **merge cutoff is
+Saturday 18:00 IST** (12:30 UTC): get PRs merged before it to make that
+week's release; later merges are flagged in the release run and normally wait
+for the next one. The release workflow reads every commit
+since the last tag, takes the highest bump among them (a week with three
+`fix:` and one `feat:` is one minor release), and publishes a single CHANGELOG
+section, GitHub Release, and TestPyPI → PyPI upload. A week with no releasable
+or no package-affecting commits ends green with no tag and no upload.
+
+- **Preview a release:** Actions → *release* → *Run workflow* with
+  `dry_run` ticked. It prints the next version and release notes in the run
+  summary and does not tag or publish.
+- **Failed run:** re-run the workflow. If the tag was pushed but the upload
+  to PyPI failed, the re-run publishes that tag; it never tags or uploads a
+  version twice.
+- **Hotfix:** a maintainer can run the same workflow with `dry_run` unticked
+  to release immediately. Use this for security fixes and regressions in the
+  latest release, not for routine `fix:` commits, which wait for Sunday.
 
 ## Code of conduct
 

@@ -374,7 +374,7 @@ from the README rather than only from the file tree.
 | **Code of conduct** | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) |
 | **Contributing** | [CONTRIBUTING.md](CONTRIBUTING.md) — open an issue before anything beyond a small bugfix |
 | **Citations & provenance** | [CITATIONS.md](CITATIONS.md) — every method traced to its paper, with deviations documented |
-| **Release process** | Automated via [python-semantic-release](https://github.com/python-semantic-release/python-semantic-release); every release is gated on the full test suite. See [CHANGELOG.md](CHANGELOG.md) |
+| **Release process** | Weekly (Sundays, 10:00 IST), automated via [python-semantic-release](https://github.com/python-semantic-release/python-semantic-release); every release is gated on the full test suite. See [CHANGELOG.md](CHANGELOG.md) |
 
 **Maintainership:** I maintain this project ([rajveer43](https://github.com/rajveer43))
 with one other active contributor — a key-person risk worth weighing if you're evaluating
