@@ -599,6 +599,68 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.95.4 (2026-11-16)
+
+### Bug Fixes
+
+- **landing**: Label calculator figures as estimates and stop applying key-only ratios to the whole
+  cache (#935) ([#965](https://github.com/rajveer43/VeloxQuant-MLX/pull/965),
+  [`3afae60`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3afae60cc5c98c88ef6889549c475917d4ec41d1))
+
+- **landing**: Remove 98% peak-memory claim from stat card and mockups (#930)
+  ([#963](https://github.com/rajveer43/VeloxQuant-MLX/pull/963),
+  [`200dd53`](https://github.com/rajveer43/VeloxQuant-MLX/commit/200dd539cb45b10381c30ec7abf012021c802bef))
+
+- **landing**: State requirements next to the install CTA (#933)
+  ([#964](https://github.com/rajveer43/VeloxQuant-MLX/pull/964),
+  [`3d1e014`](https://github.com/rajveer43/VeloxQuant-MLX/commit/3d1e014084965eff45c9bb47b316fbb75f12e3ad))
+
+- **vecinfer**: Carry the live length through memory-bound state (#967)
+  ([#974](https://github.com/rajveer43/VeloxQuant-MLX/pull/974),
+  [`04af376`](https://github.com/rajveer43/VeloxQuant-MLX/commit/04af376d2df565a3dd5945d2fe1ea3c7f0065beb))
+
+- **vecinfer**: Reconcile per-head smooth with H_kv so GQA keys and queries cancel (#969)
+  ([#972](https://github.com/rajveer43/VeloxQuant-MLX/pull/972),
+  [`24e6750`](https://github.com/rajveer43/VeloxQuant-MLX/commit/24e67501f3e8a1736ca18ee57e278d4daaf7d636))
+
+- **vecinfer**: Reject unusable smooth factors at construction (#970)
+  ([#973](https://github.com/rajveer43/VeloxQuant-MLX/pull/973),
+  [`00c6a67`](https://github.com/rajveer43/VeloxQuant-MLX/commit/00c6a6772177c32d058c8b9ab8a8e894f18cab67))
+
+- **vecinfer**: Save and restore fp16 K/V in stash-mode state (#968)
+  ([#971](https://github.com/rajveer43/VeloxQuant-MLX/pull/971),
+  [`c7dd635`](https://github.com/rajveer43/VeloxQuant-MLX/commit/c7dd635afdf5321fb47e7eed125b52768f482a91))
+
+### Chores
+
+- **landing**: Break hero subhead before test figures, fix PyPI icon viewBox
+  ([#959](https://github.com/rajveer43/VeloxQuant-MLX/pull/959),
+  [`7934d36`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7934d3627b813538ee3664b54a94629333d64c8a))
+
+- **landing**: Drop test figures from hero subhead
+  ([#959](https://github.com/rajveer43/VeloxQuant-MLX/pull/959),
+  [`7934d36`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7934d3627b813538ee3664b54a94629333d64c8a))
+
+- **landing**: Rewrite hero copy in plain language
+  ([#959](https://github.com/rajveer43/VeloxQuant-MLX/pull/959),
+  [`7934d36`](https://github.com/rajveer43/VeloxQuant-MLX/commit/7934d3627b813538ee3664b54a94629333d64c8a))
+
+### Continuous Integration
+
+- **release**: Switch from per-merge releases to a weekly Sunday release (#960)
+  ([#961](https://github.com/rajveer43/VeloxQuant-MLX/pull/961),
+  [`587f406`](https://github.com/rajveer43/VeloxQuant-MLX/commit/587f4063b375e4a5732021049be77ee52e4affd7))
+
+### Documentation
+
+- Clarify landing page quality claims ([#962](https://github.com/rajveer43/VeloxQuant-MLX/pull/962),
+  [`fefcf2a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/fefcf2af9ededd5e6e7e2c928a25b6d642566fb9))
+
+- **landing**: Add a plain-English takeaway under every benchmark chart and table (#947)
+  ([#966](https://github.com/rajveer43/VeloxQuant-MLX/pull/966),
+  [`53ba66f`](https://github.com/rajveer43/VeloxQuant-MLX/commit/53ba66f4c468f70ebe490c8d16ecada1602240a3))
+
+
 ## v0.95.3 (2026-11-12)
 
 ### Bug Fixes
