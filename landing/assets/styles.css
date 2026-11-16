@@ -3646,6 +3646,12 @@ code.inline.max { color: var(--max); }
   min-width: 5.5rem;
   color: var(--text);
 }
+.calc-row-meta {
+  grid-column: 1 / -1;
+  margin-top: -0.35rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
 .calc-row-fit { font-size: 0.78rem; min-width: 6.5rem; text-align: right; }
 .calc-row-fit.y { color: var(--good); }
 .calc-row-fit.n { color: var(--caution-text); }
