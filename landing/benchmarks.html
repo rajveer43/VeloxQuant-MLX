@@ -29,7 +29,7 @@
   <!-- Fonts are self-hosted in styles.css (assets/fonts/*.woff2) — no
        third-party hop, no render-blocking preconnect. -->
   <link rel="preload" href="assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="assets/styles.css?v=20260912a" />
+  <link rel="stylesheet" href="assets/styles.css?v=20261116" />
 
   <script type="application/ld+json">
   {
@@ -292,6 +292,7 @@
               </div>
             </div>
           </div>
+          <p class="bench-means"><strong>What this means for you:</strong> This times one compression step on its own (<code>quantize_vq</code>), not a whole reply. Compressing the cache on the GPU is much faster than plain MLX, but your chat will not feel 14&times; faster.</p>
         </div>
       </section>
 
@@ -337,6 +338,7 @@
             </table>
           </div>
           <p class="gap-footnote">Reproduce: <code>pytest veloxquant_mlx/tests/metal/test_h2o_evict.py veloxquant_mlx/tests/metal/test_keyformer_evict.py -k benchmark -s</code>. Both eviction paths replace a per-token Python score-and-compact loop with a single fused dispatch.</p>
+          <p class="bench-means"><strong>What this means for you:</strong> Deciding which old tokens to forget now takes about 0.3 ms instead of 0.6&ndash;0.9 ms, while generating a single token takes tens of milliseconds, so expect little change in chat speed.</p>
         </div>
 
         <div class="bench-card" style="margin-top: 1.5rem;">
@@ -364,6 +366,7 @@
             </table>
           </div>
           <p class="gap-footnote">Medians of interleaved samples over a rotating input pool. The win grows with block size — these kernels replace several full-size MLX intermediates with one pass, so they scale with bytes moved. Prefill (one large group-aligned flush) is where this matters; decode flushes only <code>group_size</code> tokens at a time. Reproduce: <code>pytest veloxquant_mlx/tests/metal/test_kivi_quant.py -k benchmark -s</code>.</p>
+          <p class="bench-means"><strong>What this means for you:</strong> Squeezing a large block of cache, such as a long prompt, is about 3&ndash;4&times; faster. During a chat only small chunks are squeezed at a time, so the gain shows up mostly when a long prompt is first loaded.</p>
         </div>
 
         <div class="bench-card" style="margin-top: 1.5rem;">
@@ -388,6 +391,7 @@
             </table>
           </div>
           <p class="gap-footnote">GB/s is nominal traffic (input read once + packed streams written), not a hardware counter; the MLX baseline additionally charges the two full-size uint8 index intermediates the fused kernel never materializes. Reproduce: <code>pytest veloxquant_mlx/tests/metal/test_rvq_quant_pack.py -k benchmark -s</code>.</p>
+          <p class="bench-means"><strong>What this means for you:</strong> Packing the cache into its compressed form is roughly 1.3&ndash;2.4&times; faster. That speeds up preparing the cache, not how fast the model writes its replies.</p>
         </div>
       </section>
 
@@ -426,6 +430,7 @@
             </table>
           </div>
           <p class="gap-footnote">Synchronized median timings from 20 measured repetitions after five warmups. This is a synthetic complete-cache update, not end-to-end generation throughput. Selection-only Metal medians were 0.246 / 0.249 / 0.783 ms versus MLX 0.390 / 0.410 / 1.140 ms at N=512 / 2,048 / 8,192. Raw data: <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/benchmarks/snapkv_selection_after_fused.json" target="_blank" rel="noopener">snapkv_selection_after_fused.json</a>.</p>
+          <p class="bench-means"><strong>What this means for you:</strong> Metal trims about 5&ndash;7% off the cache-update step, too small to notice in a chat, which is why MLX stays the automatic choice.</p>
         </div>
 
         <div class="bench-card" style="margin-top: 1.5rem;">
@@ -447,6 +452,7 @@
             </table>
           </div>
           <p class="gap-footnote">One warmup plus three measured trials per route in the post-BF16-fix follow-up. “Exact” means zero measured first-prefill logit error against the SnapKV reference and identical greedy tokens. Metal is mixed at model level and remains opt-in. Full methodology and raw runs: <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/SNAPKV_8B_9B_MODEL_RESULTS.md" target="_blank" rel="noopener">SNAPKV_8B_9B_MODEL_RESULTS.md</a>.</p>
+          <p class="bench-means"><strong>What this means for you:</strong> On real 8&ndash;9B models Metal is sometimes about 8% faster and sometimes about 8% slower, with identical output, so there is no clear win and no reason to change the default.</p>
         </div>
       </section>
 
@@ -476,6 +482,7 @@
             </table>
           </div>
           <p class="gap-footnote">Ranges span three run medians, each with 10 warmups and 100 alternating-order trials. Synchronized host-wall timing includes dispatch and evaluates all outputs. Resident random finite scores; exact output parity passed. Scoring, append, and model execution are excluded. These ranges are not confidence intervals.</p>
+          <p class="bench-means"><strong>What this means for you:</strong> Trimming a large cache is roughly 15&ndash;25% faster with Metal at big budgets, which is real but small next to the cost of generating each token.</p>
         </div>
         <div class="bench-card" style="margin-top: 1.5rem;">
           <div class="bench-card-head">
@@ -497,6 +504,7 @@
           </div>
           <p class="gap-footnote">One warmup and three measured trials per backend, fresh caches, alternating backend order, and 16 greedy decode steps. Timings include Python dispatch and decode token reads. All accelerated runs matched reference final-prefill logits exactly and generated identical tokens. Metal invocation counts confirmed execution. This single repeated-prompt workload establishes backend parity, not general model quality or long-context mask correctness. Qwen Metal prefill was about 1% slower; GLM Metal decode was about 1% slower.</p>
           <p class="gap-footnote">Reproduction, exact model revisions, validation, and limitations: <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/PYRAMIDKV_METAL_FINDINGS.md">PyramidKV findings</a>. Raw latest runs: <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/benchmarks/pyramid_qwen_warmed.json">Qwen JSON</a> · <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/benchmarks/pyramid_glm_warmed.json">GLM JSON</a>.</p>
+          <p class="bench-means"><strong>What this means for you:</strong> End to end, Metal and MLX land within a few percent of each other (Qwen3-8B decode about 86 vs 89 ms per token), and both are roughly 1.3&ndash;2.4&times; faster than the reference path, so either gives the same chat speed.</p>
         </div>
       </section>
 
@@ -567,6 +575,7 @@
             <span class="roofline-legend-item"><span class="roofline-legend-dot" style="background:#f59e0b;"></span>Occupancy-limited, trending toward memory-bound</span>
             <span class="roofline-legend-item"><span class="roofline-legend-dot" style="background:#ef4444;"></span>Occupancy/dispatch-bound — not a bandwidth problem</span>
           </div>
+          <p class="bench-means"><strong>What this means for you:</strong> Most of these steps already run about as fast as your Mac&rsquo;s memory allows. The one used to generate each token uses only 6% of it at normal chat sizes, so the chip is mostly idle there, not waiting on memory.</p>
         </div>
 
         <!-- Occupancy sweep: the direct evidence that threadgroup count, not bytes moved, is the limiter -->
@@ -604,6 +613,7 @@
             </table>
           </div>
           <p class="gap-footnote">Bandwidth utilization scales with threadgroup count, not with S_kv or bytes moved per threadgroup — direct evidence this kernel is occupancy/dispatch-bound, not memory- or compute-bound, at the shapes that matter for real single-token decode.</p>
+          <p class="bench-means"><strong>What this means for you:</strong> Giving the GPU more work at once, such as several requests together, raises its use from 6% to 37%. A single chat on its own does not get that boost.</p>
         </div>
 
         <!-- Real-model result: the headline number -->
@@ -633,6 +643,7 @@
           <p class="gap-footnote">
             Real forward passes on real hardware (Apple M4, prompt_len=256, 30 decode steps) — not an isolated kernel call. Both arms decode from the identical quantized KV state and were verified to produce bit-identical tokens before timing was trusted, so this measures the fused kernel's speedup over dequantize+MLX-SDPA on the <em>same</em> compressed state — not a general "KIVI is faster in production" claim. The test harness behind this table also has no fp16 residual window (unlike shipping KIVI), so its generation quality isn't production-representative; only the timing comparison is.
           </p>
+          <p class="bench-means"><strong>What this means for you:</strong> Serving many requests at once is up to 3.8&times; faster than the unfused compressed path, but that baseline unpacks the whole cache every step. Against plain fp16 with no compression, the same fused kernel measured slower (0.48&ndash;0.85&times;), so do not expect faster chat from it.</p>
         </div>
 
         <!-- What was tried and not shipped -->
@@ -672,6 +683,7 @@
             The head-packing numbers above were revised after this table's original measurement (before issue #317's occupancy fix changed the packed kernel's threadgroup-memory footprint) turned out to be superseded, not simply wrong — full re-measurement and methodology →
             <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/KV_KERNEL_ROOFLINE_FINDINGS.md#addendum-re-measured-after-nsg-autotune-issue-317--packing-verdict-is-now-situational" target="_blank" rel="noopener">re-measured after nsg autotune addendum</a>.
           </p>
+          <p class="bench-means"><strong>What this means for you:</strong> These ideas helped in some cases and hurt in others, so none became the default. Your chat speed is unchanged by them.</p>
         </div>
 
         <!-- Reproduce command terminal box -->
@@ -725,6 +737,7 @@
             </table>
           </div>
           <p class="gap-footnote">At this shape and ratio (<code>heads_per_kv=8</code>), packing alone already removes most of the redundant KV re-decode unpacked pays for at every S_kv tested.</p>
+          <p class="bench-means"><strong>What this means for you:</strong> When a long prompt is first processed, this attention step runs about 7&ndash;9&times; faster, which shortens the wait before the first word appears. It does not change reply speed afterwards.</p>
         </div>
 
         <div class="bench-card" style="margin-top: 1.5rem;">
@@ -748,6 +761,7 @@
           <p class="gap-footnote">
             The two-pass margin over unpacked widens monotonically with S_kv at this prefill shape — the reverse of the decode-shape crossover in the <a href="#kernel-roofline">Decode Occupancy</a> section, where two-pass's advantage shrinks and flips negative past a few thousand cached tokens for the same <code>heads_per_kv=8</code> ratio. The two kernels dispatch different threadgroup counts for the same S_kv (one query token vs. many), which is why the same code change lands on opposite sides of its occupancy crossover depending on whether it runs during prefill or decode. These figures characterize the prefill path only; do not read them as superseding the decode-step verdict in <a href="https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/KV_KERNEL_ROOFLINE_FINDINGS.md" target="_blank" rel="noopener">KV_KERNEL_ROOFLINE_FINDINGS.md</a>.
           </p>
+          <p class="bench-means"><strong>What this means for you:</strong> For the same long-prompt step, two-pass is 10&ndash;22&times; faster than unpacked and the gap grows with prompt length. This is a prompt-processing result only; for replies it is situational, as shown above.</p>
         </div>
       </section>
 
@@ -989,6 +1003,7 @@
             </table>
           </div>
         </details>
+              <p class="bench-means"><strong>What this means for you:</strong> 4-bit stays within about 1 perplexity point of fp16 on every model tested. 2-bit saves more but costs 0&ndash;3 points on 7&ndash;8B models and can badly hurt small ones (Llama-3.2-1B: 22.8 to 81.3), so use 4-bit unless the model is large. This measures answer quality, not speed.</p>
       </section>
 
       <!-- ── SECTION 4: ATTENTION SCORER (Q-FILTERS) ── -->
@@ -1057,6 +1072,7 @@
               </div>
             </div>
           </div>
+          <p class="bench-means"><strong>What this means for you:</strong> Q-Filters picks which old tokens to keep much more like the real model does (correlation about 0.8 vs about 0.4 for the simple baseline). It is the better choice when you must drop tokens, and says nothing about speed or memory.</p>
         </div>
       </section>
 
@@ -1109,6 +1125,7 @@
             </div>
           </div>
           <p class="gap-footnote">Measurements on Llama-3.2-1B (fp16 baseline 4.050 ppl). Llama-3.2-3B closes 55% / 42% at Budgets 256 / 128.</p>
+          <p class="bench-means"><strong>What this means for you:</strong> If you keep only 64 tokens (about 16&times; smaller), Q-Filters recovers just 20% of the lost quality (perplexity 25.9 vs 31.3 naive, against 4.05 uncompressed), and tighter budgets recover less. Dropping most of a chat has a real quality cost.</p>
         </div>
       </section>
 
@@ -1172,6 +1189,7 @@
                 </tr>
               </tbody>
             </table>
+        <p class="bench-means"><strong>What this means for you:</strong> RaBitQ shrinks Falcon3-7B&rsquo;s cache to about one-sixth at every length, so a 4,096-token chat&rsquo;s cache drops from about 470 MB to about 79 MB. The saving is a fixed fraction, so it matters most for long chats. Other methods differ; the <a href="index.html#calculator">calculator</a> shows which ones really free RAM.</p>
           </div>
         </div>
 

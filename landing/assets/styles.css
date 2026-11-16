@@ -8917,6 +8917,19 @@ details.faq-accordion-item[open] .faq-chevron {
   line-height: 1.6;
 }
 
+/* ── "What this means for you" caption under each chart/table ── */
+.bench-means {
+  margin: 1.1rem 0 0;
+  padding: 0.15rem 0 0.15rem 0.85rem;
+  border-left: 2px solid var(--accent);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text);
+  text-align: left;
+}
+.bench-means strong { color: var(--accent); font-weight: 600; }
+.bench-means a { color: var(--accent); }
+
 /* ── Takeaway Callout Box ── */
 .bench-takeaway {
   background: #0e0e14;
