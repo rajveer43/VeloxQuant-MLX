@@ -469,9 +469,19 @@ class VecInferKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def state(self):  # type: ignore[override]
-        """Standard mode: parent fp16 (keys, values). Fused mode: raw (key_indices, value_indices) ring buffers, since no fp16 K_hat/V_hat is materialized."""
+        """Standard mode: parent fp16 state. Stash mode (fused_sdpa without memory_bound): parent fp16 state followed by the (key_indices, value_indices) buffers. Memory-bound mode: raw (key_indices, value_indices) ring buffers only, since no fp16 K_hat/V_hat is materialized."""
         if not self._fused_enabled:
             return super().state
+        if not self._memory_bound:
+            # Stash mode keeps the parent's fp16 K_hat/V_hat as the source of
+            # truth for SDPA; the index buffers ride along so fused_sdpa()
+            # keeps working after a restore. Saving only the indices (the
+            # memory-bound layout) dropped the fp16 buffers and restored a
+            # cache whose prefix was all zeros (#968).
+            parent = tuple(super().state)
+            if self._stored_k_indices is None:
+                return parent
+            return (*parent, self._stored_k_indices, self._stored_v_indices)
         if self._stored_k_indices is None:
             empty_k = mx.zeros((1, 1, 0, self._n_sub_k), dtype=mx.uint32)
             empty_v = mx.zeros((1, 1, 0, self._n_sub_v), dtype=mx.uint32)
@@ -486,10 +496,25 @@ class VecInferKVCache(_MLXKVCache):
 
     @state.setter
     def state(self, v):  # type: ignore[override]
-        """Restore standard-mode fp16 state, or fused-mode (key_indices, value_indices) and resync offset/ring-buffer position."""
+        """Restore standard-mode fp16 state, stash-mode fp16 state plus index buffers, or memory-bound (key_indices, value_indices) and resync offset/ring-buffer position."""
         if not self._fused_enabled:
             # Reuse parent setter
             _MLXKVCache.state.fset(self, v)  # type: ignore[union-attr]
+            return
+        if not self._memory_bound:
+            v = tuple(v)
+            n_parent = len(_MLXKVCache.state.fget(self))  # type: ignore[union-attr]
+            _MLXKVCache.state.fset(self, v[:n_parent])  # type: ignore[union-attr]
+            if len(v) == n_parent + 2:
+                self._stored_k_indices, self._stored_v_indices = v[n_parent:]
+                self._stored_S_kv = int(self.offset)
+            else:
+                # fp16 state only (e.g. saved before any tokens, or by an
+                # older version): the index stash is gone, so fused_sdpa()
+                # must not read stale buffers.
+                self._stored_k_indices = None
+                self._stored_v_indices = None
+                self._stored_S_kv = 0
             return
         # In fused mode, restore from an (k_indices, v_indices) pair.
         k, val = v
@@ -499,8 +524,8 @@ class VecInferKVCache(_MLXKVCache):
         self.offset = self._stored_S_kv
 
     def empty(self) -> bool:  # type: ignore[override]
-        """Whether the cache holds no tokens yet (checks the index ring buffer in fused mode, the parent buffer otherwise)."""
-        if not self._fused_enabled:
+        """Whether the cache holds no tokens yet (checks the index ring buffer in memory-bound mode, the parent fp16 buffer otherwise)."""
+        if not self._fused_enabled or not self._memory_bound:
             return super().empty()
         return self._stored_k_indices is None or self._stored_S_kv == 0
 
