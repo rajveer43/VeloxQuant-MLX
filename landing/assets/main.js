@@ -776,16 +776,15 @@ function initStudioWindow() {
     'Balanced (RVQ-1bit)': {
       code: 'turboquant_rvq',
       tag: '2-bit Quantized',
-      desc: 'Residual vector quantization with bit-exact attention preservation.',
+      desc: 'Residual vector quantization compresses keys; attention scores are approximate.',
       memVal: 3.8,
       pctSaved: -86.6,
       fillWidth: 13.4,
       legendActive: '3.8 GB Active',
       legendReclaimed: '24.6 GB Headroom Reclaimed',
       speedup: '14.7×',
-      signAcc: '100%',
       throughput: 68.2,
-      perplexity: '< 0.8 pt'
+      perplexity: '< 0.8 pt vs fp16'
     },
     'KIVI-2bit': {
       code: 'kivi',
@@ -797,9 +796,8 @@ function initStudioWindow() {
       legendActive: '6.2 GB Active',
       legendReclaimed: '22.2 GB Headroom Reclaimed',
       speedup: '11.2×',
-      signAcc: '99.4%',
       throughput: 54.6,
-      perplexity: '< 0.4 pt'
+      perplexity: '< 0.4 pt vs fp16'
     },
     'Max (VecInfer)': {
       code: 'vecinfer',
@@ -811,9 +809,8 @@ function initStudioWindow() {
       legendActive: '1.9 GB Active',
       legendReclaimed: '26.5 GB Headroom Reclaimed',
       speedup: '18.5×',
-      signAcc: '97.8%',
       throughput: 82.4,
-      perplexity: '< 1.4 pt'
+      perplexity: '< 1.4 pt vs fp16'
     }
   };
 
@@ -850,11 +847,10 @@ function initStudioWindow() {
       legendEls[1].textContent = p.legendReclaimed;
     }
 
-    if (miniCards.length >= 4) {
+    if (miniCards.length >= 3) {
       miniCards[0].textContent = p.speedup;
-      miniCards[1].textContent = p.signAcc;
-      miniCards[2].textContent = p.throughput.toFixed(1) + ' tok/s';
-      miniCards[3].textContent = p.perplexity;
+      miniCards[1].textContent = p.throughput.toFixed(1) + ' tok/s';
+      miniCards[2].textContent = p.perplexity;
     }
   }
 

@@ -122,9 +122,9 @@
             <span class="bench-stat-sub">Peak speedup over pure MLX at S=8,192</span>
           </div>
           <div class="bench-stat-card">
-            <span class="bench-stat-kicker">Attention Prediction</span>
+            <span class="bench-stat-kicker">Attention-order match</span>
             <span class="bench-stat-num">100%</span>
-            <span class="bench-stat-sub">Sign accuracy across all models tested</span>
+            <span class="bench-stat-sub">Matched the full-attention reference across tested models</span>
           </div>
           <div class="bench-stat-card">
             <span class="bench-stat-kicker">KIVI 4-Bit Quant</span>
@@ -764,8 +764,8 @@
         <div class="bench-takeaway">
           <div class="bench-takeaway-badge">CRITICAL RULE</div>
           <p>
-            <strong>4-bit is safe across every model tested</strong> (perplexity within ~1 point of fp16). 
-            <strong>2-bit provides an 8× compression win on 7B–8B models</strong>, but causes significant degradation under ~3B (Llama-3.2-1B perplexity triples from 22.8 → 81.3). Choose bit-width based on parameter size!
+            <strong>KIVI 4-bit perplexity stayed within ~1 point of fp16 across every model tested.</strong>
+            <strong>KIVI 2-bit compresses by 8× on 7B–8B models</strong>, but on Llama-3.2-1B its perplexity rose from 22.77 with fp16 to 81.30 with KIVI 2-bit. Choose bit-width based on parameter size!
           </p>
         </div>
 
@@ -1004,7 +1004,7 @@
         <div class="bench-takeaway">
           <div class="bench-takeaway-badge">PERFECT PREDICTION</div>
           <p>
-            <strong>100% sign-accuracy across all models tested.</strong> Q-Filters achieves roughly <strong>2× the correlation</strong> of naive K-norm / L2Norm baselines (+0.863 vs +0.410 on Llama-3.2-3B).
+            Q-Filters matched the full-attention reference's ranking direction in every tested model comparison. It achieved roughly <strong>2× the Spearman correlation</strong> of the K-norm / L2Norm baseline (+0.863 vs +0.410 on Llama-3.2-3B).
           </p>
         </div>
 
@@ -1020,7 +1020,7 @@
               <div class="corr-bars">
                 <div class="corr-bar-track">
                   <div class="corr-bar-name">Q-Filters</div>
-                  <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 90%;"><span class="corr-bar-val">+0.783 (100% sign)</span></div></div>
+                  <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 90%;"><span class="corr-bar-val">+0.783</span></div></div>
                 </div>
                 <div class="corr-bar-track">
                   <div class="corr-bar-name">K-norm</div>
@@ -1034,7 +1034,7 @@
               <div class="corr-bars">
                 <div class="corr-bar-track">
                   <div class="corr-bar-name">Q-Filters</div>
-                  <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 99%;"><span class="corr-bar-val">+0.863 (100% sign)</span></div></div>
+                  <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 99%;"><span class="corr-bar-val">+0.863</span></div></div>
                 </div>
                 <div class="corr-bar-track">
                   <div class="corr-bar-name">K-norm</div>
@@ -1048,7 +1048,7 @@
               <div class="corr-bars">
                 <div class="corr-bar-track">
                   <div class="corr-bar-name">Q-Filters</div>
-                  <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 97%;"><span class="corr-bar-val">+0.850 (100% sign)</span></div></div>
+                  <div class="corr-bar-outer"><div class="corr-bar-fill win" style="width: 97%;"><span class="corr-bar-val">+0.850</span></div></div>
                 </div>
                 <div class="corr-bar-track">
                   <div class="corr-bar-name">K-norm</div>
@@ -1081,7 +1081,7 @@
                 <span class="gap-ring-num" style="color: var(--ring-good, #22c55e);">52%</span>
               </div>
               <div class="gap-budget">Budget 256 (~4×)</div>
-              <div class="gap-note">8.48 vs 13.36 ppl</div>
+              <div class="gap-note">Q-Filters: 8.48 ppl; naive eviction: 13.36 ppl</div>
             </div>
 
             <div class="gap-col">
@@ -1093,7 +1093,7 @@
                 <span class="gap-ring-num" style="color: var(--ring-info, #00d4ff);">37%</span>
               </div>
               <div class="gap-budget">Budget 128 (~8×)</div>
-              <div class="gap-note">16.31 vs 23.65 ppl</div>
+              <div class="gap-note">Q-Filters: 16.31 ppl; naive eviction: 23.65 ppl</div>
             </div>
 
             <div class="gap-col">
@@ -1105,7 +1105,7 @@
                 <span class="gap-ring-num" style="color: var(--ring-warn, #f59e0b);">20%</span>
               </div>
               <div class="gap-budget">Budget 64 (~16×)</div>
-              <div class="gap-note">25.93 vs 31.27 ppl</div>
+              <div class="gap-note">Q-Filters: 25.93 ppl; naive eviction: 31.27 ppl</div>
             </div>
           </div>
           <p class="gap-footnote">Measurements on Llama-3.2-1B (fp16 baseline 4.050 ppl). Llama-3.2-3B closes 55% / 42% at Budgets 256 / 128.</p>

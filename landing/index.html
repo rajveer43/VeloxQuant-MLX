@@ -42,7 +42,7 @@
     "name": "VeloxQuant-MLX",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "macOS (Apple Silicon M1 or later)",
-    "description": "Shrinks the memory a local AI model uses on Apple Silicon Macs — up to 16× smaller, with near-identical output quality.",
+    "description": "Shrinks the memory a local AI model uses on Apple Silicon Macs — up to 16× smaller, with output quality close to fp16 in measured runs.",
     "url": "https://veloxquant-mlx.netlify.app/",
     "softwareVersion": "0.95.3",
     "license": "https://opensource.org/licenses/MIT",
@@ -390,7 +390,7 @@
                           <span class="method-code-name">turboquant_rvq</span>
                           <span class="method-status-tag">2-bit Quantized</span>
                         </div>
-                        <p class="method-box-desc">Residual vector quantization with bit-exact attention preservation.</p>
+                        <p class="method-box-desc">Residual vector quantization compresses keys; attention scores are approximate.</p>
                       </div>
                     </div>
                   </div>
@@ -427,16 +427,12 @@
                           <span class="mini-val cyan-text">14.7×</span>
                         </div>
                         <div class="telemetry-mini-card">
-                          <span class="mini-lbl">Sign Accuracy</span>
-                          <span class="mini-val green-text">100%</span>
-                        </div>
-                        <div class="telemetry-mini-card">
                           <span class="mini-lbl">Throughput</span>
                           <span class="mini-val">68.2 tok/s</span>
                         </div>
                         <div class="telemetry-mini-card">
-                          <span class="mini-lbl">Perplexity Gap</span>
-                          <span class="mini-val purple-text">&lt; 0.8 pt</span>
+                          <span class="mini-lbl">Perplexity change</span>
+                          <span class="mini-val purple-text">&lt; 0.8 pt vs fp16</span>
                         </div>
                       </div>
 
@@ -538,7 +534,7 @@
                     <div class="rec-result-callout">
                       <div class="rec-callout-badge">RECOMMENDED FOR APPLE M4 (24GB)</div>
                       <div class="rec-callout-title">turboquant_rvq (2-bit)</div>
-                      <p class="rec-callout-text">Cuts memory consumption to approximately <b>1/8th</b> with near-zero perplexity deviation. Delivers <b>14.7× faster</b> attention evaluation via hand-written Metal GPU kernels.</p>
+                      <p class="rec-callout-text">Cuts memory consumption to approximately <b>1/8th</b> while keeping measured perplexity close to fp16. Delivers <b>14.7× faster</b> attention evaluation via hand-written Metal GPU kernels.</p>
                     </div>
                   </div>
                 </div>
@@ -797,7 +793,7 @@
           <h3 class="strategy-title">Long chats and document Q&amp;A</h3>
           <p class="usecase-outcome">A third less cache memory, near-fp16 quality.</p>
           <p class="strategy-body">
-            TurboQuant RVQ at 3 bits compresses the keys; values stay fp16. On Qwen3-4B at 4,096 tokens the whole cache measured 0.67× its fp16 size, with perplexity 13.63 vs 13.57. Decoding is several times slower.
+            TurboQuant RVQ at 3 bits compresses the keys; values stay fp16. On Qwen3-4B at 4,096 tokens, the whole cache measured 0.67× the size of the uncompressed fp16 cache. Perplexity was 13.63 with RVQ vs 13.57 with uncompressed fp16 K/V (lower is better). Decoding is several times slower.
           </p>
           <div class="usecase-chips">
             <a class="usecase-chip" href="/docs/algorithms/rvq#when-to-use-turboquant-rvq"><span>TurboQuant RVQ</span><svg viewBox="0 0 20 20" width="12" height="12" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></a>
@@ -1088,7 +1084,7 @@
             <svg class="faq-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
           </summary>
           <div class="faq-body">
-            <code>turboquant_rvq</code> — no calibration or setup step required. It's the default for a reason: it cuts memory use to roughly a third with near-zero effect on perplexity. If you need the smallest possible footprint, <code>vecinfer</code> reaches about 16× compression on keys with a one-time calibration pass.
+            <code>turboquant_rvq</code> — no calibration or setup step required. It's the default for a reason: it cuts memory use to roughly a third with little perplexity change vs fp16 in measured runs. If you need the smallest possible footprint, <code>vecinfer</code> reaches about 16× compression on keys with a one-time calibration pass.
           </div>
         </details>
       </div>
@@ -1142,7 +1138,7 @@
                   </div>
                   <div class="eco-stat-item">
                     <span class="eco-stat-lbl">Attention Quality</span>
-                    <span class="eco-stat-val">Bit-Exact</span>
+                    <span class="eco-stat-val">Approximate</span>
                   </div>
                 </div>
                 <div class="eco-input-pill">
@@ -1193,7 +1189,7 @@
               </div>
               <div class="eco-window-body eco-body-vscode">
                 <div class="eco-agent-bubble">
-                  Quantized key/value attention tensors to 2-bit with zero perplexity drift.
+                  Quantized key/value attention tensors to 2-bit; benchmark perplexity is compared with fp16.
                 </div>
                 <div class="eco-diff-box">
                   <div class="eco-diff-header">
