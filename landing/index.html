@@ -990,7 +990,7 @@
       <h2 class="section-headline">Will your model fit?</h2>
       <p class="section-subheadline" style="margin-bottom:2.5rem;">
         Pick your model, how long a conversation you want, and how much RAM your Mac has.
-        Calculations match what you get running on your Mac.
+        Compressed sizes are estimates, not measurements.
       </p>
     </div>
 
@@ -1014,8 +1014,9 @@
         <p>
           <strong class="t-strong">Example: Llama-3.1-8B with a 64k-token conversation</strong> needs
           8.00 GB of memory normally — more than the ~7.5 GB free on a 16 GB Mac. Our RVQ-1bit
-          setting brings that down to 1.07 GB; VecInfer-1bit to 512 MB. Enable JavaScript to size
-          your own model.
+          setting is estimated to bring that down to about 4.5 GB (keys compressed 7.5×, values
+          stay fp16; an accounting estimate, not measured RAM). Enable JavaScript to size your
+          own model.
         </p>
       </div>
       <div class="calc-out" id="calc-out" aria-live="polite"></div>
@@ -1440,8 +1441,8 @@
     </div>
   </footer>
 
-  <script src="assets/calc.js?v=20260905" defer></script>
-  <script src="assets/main.js?v=20260908" defer></script>
+  <script src="assets/calc.js?v=20261116" defer></script>
+  <script src="assets/main.js?v=20261116" defer></script>
 
   <!-- GoatCounter: privacy-friendly, cookieless page counts. Client-side, so
        it records browsers rather than crawlers — expect it to read lower than

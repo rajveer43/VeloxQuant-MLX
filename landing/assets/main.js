@@ -194,7 +194,8 @@ function initCalculator() {
         `~${VQCalc.formatTokens(rec.maxTokens)} tokens.`
       : `<span class="t-strong">${preset.name} needs ${VQCalc.formatMb(fp16.mb)}</span> — more than ` +
         `the ${res.budgetGb} GB you have free. <code class="inline plain t-accent">${rec.id}</code> ` +
-        `brings it down to <span class="t-strong">${VQCalc.formatMb(rec.mb)}</span>.`;
+        `is estimated to bring it down to <span class="t-strong">${VQCalc.formatMb(rec.mb)}</span> ` +
+        `${rec.scope === 'keys' ? '(keys compressed, values stay fp16)' : '(keys and values)'}.`;
 
     const rowsHtml = res.rows.map(r => {
       const isRec = r.id === rec.id;
@@ -202,6 +203,12 @@ function initCalculator() {
         ? '<span class="calc-row-fit y">✓ fits</span>'
         : '<span class="calc-row-fit n">✗ too big</span>';
       const label = r.id === 'fp16' ? r.name : `${r.name} · ${r.ratio}×`;
+      // Every compressed figure says whether it is an estimate, what the
+      // ratio covers (keys only vs keys + values), and whether RAM is freed.
+      const meta = r.id === 'fp16'
+        ? 'exact · keys + values'
+        : `estimate · ${r.ratio}× on ${r.scope === 'keys' ? 'keys only, values stay fp16' : 'keys + values'} · ` +
+          (r.resident ? 'frees RAM' : 'may not free RAM');
       return `
         <div class="calc-row${isRec ? ' rec' : ''}">
           <span class="calc-row-name">${label}</span>
@@ -211,6 +218,7 @@ function initCalculator() {
           </span>
           <span class="calc-row-size">${VQCalc.formatMb(r.mb)}</span>
           ${fit}
+          <span class="calc-row-meta">${meta}</span>
         </div>`;
     }).join('');
 
@@ -234,7 +242,7 @@ function initCalculator() {
           `<p class="calc-note">Estimated from your model's real shape ` +
           `(${preset.n_layers} layers · ${preset.n_kv_heads} KV heads · head_dim ${preset.head_dim}), ` +
           `assuming 4-bit weights (~${res.weightGb} GB) and a 4 GB OS reserve. ` +
-          `${residentNote} Heavier compression can affect answer quality — ` +
+          `Compressed sizes are whole-cache estimates, not measurements. ${residentNote} Heavier compression can affect answer quality — ` +
           `see the <a href="/docs/algorithms/overview" class="t-accent">algorithm reference</a>.</p>` +
         `</div>` +
       `</details>`;

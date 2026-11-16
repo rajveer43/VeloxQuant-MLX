@@ -66,12 +66,17 @@
                 (full-KV path) or key-accounting only. Only the full-KV
                 path frees resident RAM; the rest keep an fp16 parent
                 cache by default, so their number is an accounting bound.
+     scope    = what `ratio` was measured on. "keys" means the ratio covers
+                the key half only and values stay fp16, so the whole-cache
+                size is K/ratio + V (same as _estimate_compressed_mb in
+                mac_recommender.py). "kv" means keys and values.
      Mirrors resident_savings_likely in mac_recommender.py. */
   var CALC_METHODS = [
     {
       id: "turboquant_rvq",
       name: "RVQ-1bit",
       ratio: 7.5,
+      scope: "keys",
       resident: false,
       note: "zero calibration",
       config: 'KVCacheConfig(method="turboquant_rvq", bit_width_inlier=1, seed=42)'
@@ -80,6 +85,7 @@
       id: "vecinfer",
       name: "VecInfer-1bit",
       ratio: 16.0,
+      scope: "keys",
       resident: false,
       note: "needs calibration",
       config: 'KVCacheConfig(method="vecinfer", key_codebook_bits=8, key_sub_dim=8)'
@@ -88,6 +94,7 @@
       id: "rabitq",
       name: "RaBitQ",
       ratio: 6.0,
+      scope: "kv",
       resident: true,
       note: "full KV — real RAM savings",
       config: 'KVCacheConfig(method="rabitq")'
@@ -95,6 +102,16 @@
   ];
 
   /* ---------- formatting ---------- */
+
+  // Whole-cache size for a method. A key-only ratio shrinks the key half
+  // only, so applying it to the full cache would overstate the saving.
+  function compressedMb(fp16Mb, ratio, scope) {
+    if (scope === 'keys') {
+      var half = fp16Mb / 2;
+      return half / ratio + half;
+    }
+    return fp16Mb / ratio;
+  }
 
   function formatMb(mb) {
     if (mb >= 1024) return (mb / 1024).toFixed(mb / 1024 >= 10 ? 0 : 2) + ' GB';
@@ -129,6 +146,8 @@
       id: 'fp16',
       name: 'fp16 (no compression)',
       ratio: 1,
+      scope: 'kv',
+      kind: 'exact',
       resident: true,
       note: 'baseline',
       mb: round2(fp16Mb),
@@ -138,16 +157,18 @@
     }];
 
     CALC_METHODS.forEach(function (m) {
-      var mb = fp16Mb / m.ratio;
+      var mb = compressedMb(fp16Mb, m.ratio, m.scope);
       rows.push({
         id: m.id,
         name: m.name,
         ratio: m.ratio,
+        scope: m.scope,
+        kind: 'estimate',
         resident: m.resident,
         note: m.note,
         mb: round2(mb),
         fits: mb <= budgetMb,
-        maxTokens: Math.floor(budgetMb / (mbPerToken / m.ratio)),
+        maxTokens: Math.floor(budgetMb / (mb / seqLen)),
         config: m.config
       });
     });
@@ -181,7 +202,7 @@
 
     var compressed = rows.filter(function (r) { return r.id !== 'fp16'; });
     return compressed.reduce(function (best, r) {
-      return r.ratio > best.ratio ? r : best;
+      return r.mb < best.mb ? r : best;
     });
   }
 
@@ -195,6 +216,7 @@
     estimateKvFp16Mb: estimateKvFp16Mb,
     deriveKvBudgetGb: deriveKvBudgetGb,
     round2: round2,
+    compressedMb: compressedMb,
     formatMb: formatMb,
     formatTokens: formatTokens,
     computeRows: computeRows,
