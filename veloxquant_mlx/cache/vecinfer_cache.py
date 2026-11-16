@@ -221,6 +221,46 @@ class VecInferKVCache(_MLXKVCache):
         self._stored_k_indices: mx.array | None = None
         self._stored_v_indices: mx.array | None = None
         self._stored_S_kv: int = 0
+        # KV-head count the smooth factors were reconciled against (set on the
+        # first update_and_fetch, when H_kv becomes known).
+        self._smooth_kv_heads: int | None = None
+
+    def _resolve_smooth_heads(self, n_kv_heads: int) -> None:
+        """Make per-head smooth factors consistent between keys and queries (#969).
+
+        The dual transform only cancels (``q~ @ k~^T == q @ k^T``) when every
+        query head uses the same per-channel factor as the KV head it attends
+        to. ``apply_dual_transform_keys`` averages rows whenever the row count
+        differs from ``H_kv``, while ``apply_dual_transform_queries`` keeps them
+        per head when they match ``H_q`` (or repeats them when they divide
+        ``H_q``). A ``[H_q, D]`` smooth (e.g. calibrated on query heads under
+        GQA) therefore broke the identity silently.
+
+        Reconcile once, here, where ``H_kv`` is first known:
+
+        * 1-D smooth, a single row, or ``H_kv`` rows: used as is.
+        * ``H_q`` rows (a multiple of ``H_kv``): reduced to ``H_kv`` rows by
+          averaging each query group, which is a valid per-KV-head factor.
+        * anything else: rejected, since no consistent factor exists.
+        """
+        sm = self._smooth
+        if sm is None or sm.ndim != 2 or self._smooth_kv_heads == n_kv_heads:
+            return
+        rows = int(sm.shape[0])
+        if rows not in (1, n_kv_heads):
+            if rows > n_kv_heads and rows % n_kv_heads == 0:
+                n_rep = rows // n_kv_heads
+                sm = mx.mean(sm.reshape(n_kv_heads, n_rep, sm.shape[-1]), axis=1)
+                self._smooth = sm
+            else:
+                raise QuantizerConfigError(
+                    f"VecInferKVCache: smooth_factors has {rows} rows but the keys have "
+                    f"{n_kv_heads} KV heads. Provide a [1, D], [{n_kv_heads}, D] "
+                    f"(per KV head) or a multiple-of-{n_kv_heads}-row (per query head, "
+                    "GQA) smooth; any other row count cannot give matching key and "
+                    "query factors."
+                )
+        self._smooth_kv_heads = n_kv_heads
 
     # ------------------------------------------------------------------
     # Quantize/dequantize dispatch — Metal fast path or pure-MLX fallback
@@ -332,6 +372,7 @@ class VecInferKVCache(_MLXKVCache):
         #       this only when the live K_hat/V_hat fp16 buffer is the
         #       actual bottleneck (long-context, memory-constrained decode),
         #       not as a default speed optimization.
+        self._resolve_smooth_heads(int(keys.shape[1]))
         if self._fused_enabled:
             if self._memory_bound:
                 return self._update_and_fetch_fused(keys, values)
