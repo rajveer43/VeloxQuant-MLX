@@ -39,6 +39,10 @@ from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.metal import metal_available
 from veloxquant_mlx.metal.fused_sdpa import supports_shape as _fused_supports_shape
 
+# Smallest smooth factor the Metal key kernel will divide by (``s > 1e-8f`` in
+# vecinfer_encode_decode_full.metal); anything at or below it is rejected up front.
+_SMOOTH_FLOOR = 1e-8
+
 
 class VecInferKVCache(_MLXKVCache):
     """KV cache implementing VecInfer's dual-transform product VQ.
@@ -96,6 +100,7 @@ class VecInferKVCache(_MLXKVCache):
             self._smooth = sm
         else:
             self._smooth = mx.array(sm)
+        self._validate_smooth()
 
         # Hadamard matrix (constant)
         self._H = walsh_hadamard_matrix(self._head_dim, dtype=mx.float32)
@@ -224,6 +229,32 @@ class VecInferKVCache(_MLXKVCache):
         # KV-head count the smooth factors were reconciled against (set on the
         # first update_and_fetch, when H_kv becomes known).
         self._smooth_kv_heads: int | None = None
+
+    def _validate_smooth(self) -> None:
+        """Reject smooth factors that cannot be inverted (#970).
+
+        Keys are divided by the smooth factor on the way in and multiplied by it
+        on the way out. A factor at or below ``_SMOOTH_FLOOR`` is skipped by the
+        Metal kernel's divide but not its multiply, so that channel would come
+        back as exactly zero, while the pure-MLX path would produce inf/NaN.
+        ``calibrate_smooth_factors`` already floors its output well above this, so
+        only hand-supplied factors can trip the check.
+        """
+        sm = self._smooth
+        if sm is None:
+            return
+        sm32 = sm.astype(mx.float32)
+        # ``not (x > floor)`` also catches NaN, which compares false.
+        bad = mx.logical_not(mx.logical_and(mx.isfinite(sm32), sm32 > _SMOOTH_FLOOR))
+        n_bad = int(mx.sum(bad).item())
+        if n_bad:
+            raise QuantizerConfigError(
+                f"VecInferKVCache: smooth_factors must be finite and > {_SMOOTH_FLOOR:g}; "
+                f"{n_bad} of {sm.size} entries are zero, negative, non-finite or too "
+                "small, which would zero or corrupt those key channels. Use "
+                "veloxquant_mlx.allocators.vecinfer.calibrate_smooth_factors, which "
+                "floors its output, or clip your factors."
+            )
 
     def _resolve_smooth_heads(self, n_kv_heads: int) -> None:
         """Make per-head smooth factors consistent between keys and queries (#969).
