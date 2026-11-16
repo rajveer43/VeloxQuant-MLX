@@ -541,7 +541,7 @@ class VecInferKVCache(_MLXKVCache):
     # ------------------------------------------------------------------
     @property
     def state(self):  # type: ignore[override]
-        """Standard mode: parent fp16 state. Stash mode (fused_sdpa without memory_bound): parent fp16 state followed by the (key_indices, value_indices) buffers. Memory-bound mode: raw (key_indices, value_indices) ring buffers only, since no fp16 K_hat/V_hat is materialized."""
+        """Standard mode: parent fp16 state. Stash mode (fused_sdpa without memory_bound): parent fp16 state followed by the (key_indices, value_indices) buffers. Memory-bound mode: the live rows of (key_indices, value_indices) only, since no fp16 K_hat/V_hat is materialized."""
         if not self._fused_enabled:
             return super().state
         if not self._memory_bound:
@@ -558,17 +558,21 @@ class VecInferKVCache(_MLXKVCache):
             empty_k = mx.zeros((1, 1, 0, self._n_sub_k), dtype=mx.uint32)
             empty_v = mx.zeros((1, 1, 0, self._n_sub_v), dtype=mx.uint32)
             return empty_k, empty_v
-        # IMPORTANT: return the *whole* pre-allocated buffer, not a slice.
-        # mlx_lm calls `mx.eval([c.state for c in caches])` every token to
-        # force materialization.  A slice forces re-evaluation of the full
-        # buffer every time.  Returning the buffer directly lets MLX dedup
-        # against the prior evaluation.  Callers that need only the live
-        # portion should consult `cache.offset` separately.
-        return (self._stored_k_indices, self._stored_v_indices)
+        # Return only the live rows. mlx_lm's save_prompt_cache stores the state
+        # arrays alone (no meta_state), so the array length is the only place the
+        # live token count can travel. Returning the whole pre-allocated buffer
+        # made the setter read the capacity as the length (#967). The slice is a
+        # view (fused_sdpa slices the same way), so the per-token ``mx.eval`` of
+        # the state still evaluates the one underlying buffer.
+        n = self._stored_S_kv
+        return (
+            self._stored_k_indices[:, :, :n, :],
+            self._stored_v_indices[:, :, :n, :],
+        )
 
     @state.setter
     def state(self, v):  # type: ignore[override]
-        """Restore standard-mode fp16 state, stash-mode fp16 state plus index buffers, or memory-bound (key_indices, value_indices) and resync offset/ring-buffer position."""
+        """Restore standard-mode fp16 state, stash-mode fp16 state plus index buffers, or memory-bound (key_indices, value_indices) whose length is the live token count, and resync offset."""
         if not self._fused_enabled:
             # Reuse parent setter
             _MLXKVCache.state.fset(self, v)  # type: ignore[union-attr]
@@ -590,10 +594,19 @@ class VecInferKVCache(_MLXKVCache):
             return
         # In fused mode, restore from an (k_indices, v_indices) pair.
         k, val = v
-        self._stored_k_indices = k
-        self._stored_v_indices = val
-        self._stored_S_kv = int(k.shape[2])
-        self.offset = self._stored_S_kv
+        n = int(k.shape[2])
+        if n == 0:
+            # An empty cache saves placeholder (1, 1, 0, n_sub) arrays; keep
+            # none of them so the first update allocates with the real B and H.
+            self._stored_k_indices = None
+            self._stored_v_indices = None
+        else:
+            # ``state`` returns exactly the live rows, so the length is the
+            # token count. Capacity regrows geometrically on the next update.
+            self._stored_k_indices = k
+            self._stored_v_indices = val
+        self._stored_S_kv = n
+        self.offset = n
 
     def empty(self) -> bool:  # type: ignore[override]
         """Whether the cache holds no tokens yet (checks the index ring buffer in memory-bound mode, the parent fp16 buffer otherwise)."""
