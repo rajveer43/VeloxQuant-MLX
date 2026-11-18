@@ -50,6 +50,9 @@ per-layer prefill/decode state.
 from __future__ import annotations
 
 import math
+from fractions import Fraction
+from functools import lru_cache
+from numbers import Integral, Real
 from typing import NamedTuple
 
 import mlx.core as mx
@@ -57,14 +60,138 @@ import mlx.core as mx
 from veloxquant_mlx.quantizers._quant_utils import _truncated_svd
 from veloxquant_mlx.quantizers.cachegen import CodeStream, dequant_codes, quantize_to_codes
 
+# ---------------------------------------------------------------------------
+# Argument validation. Bad values used to be accepted silently (sparse_frac>1,
+# rank<0) or fail deep inside the SVD with an unrelated message. ``name`` lets
+# ``GEARKVCache`` report the config field the caller actually set.
+# ---------------------------------------------------------------------------
+_MAX_BITS = 8
+
+
+def _as_int(value: object) -> int | None:
+    """``value`` as an int if it is integral (``8`` or ``8.0``), else ``None``.
+
+    Configs routinely carry whole numbers as floats (JSON/YAML, ``8.0``), and
+    the old ``int(...)`` coercion accepted them, so they must keep working.
+    A fractional value (``8.5``) is rejected rather than truncated, and bools,
+    NaN and Inf are not integers.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, Integral):
+        return int(value)
+    if isinstance(value, Real):
+        f = float(value)
+        if math.isfinite(f) and f.is_integer():
+            return int(f)
+    return None
+
+
+def _validate_bits(bits: object, name: str = "bits") -> int:
+    n = _as_int(bits)
+    if n is None or not 1 <= n <= _MAX_BITS:
+        raise ValueError(f"{name}={bits!r} must be an integer in [1, {_MAX_BITS}].")
+    return n
+
+
+def _validate_group_size(group_size: object, name: str = "group_size") -> int:
+    n = _as_int(group_size)
+    if n is None or n < 1:
+        raise ValueError(f"{name}={group_size!r} must be an integer >= 1.")
+    return n
+
+
+def _validate_rank(rank: object, name: str = "rank") -> int | None:
+    """``None`` (energy-chosen) or an integer ``>= 0`` (0 = no low-rank term)."""
+    if rank is None:
+        return None
+    n = _as_int(rank)
+    if n is None or n < 0:
+        raise ValueError(f"{name}={rank!r} must be None or an integer >= 0.")
+    return n
+
+
+def _validate_sparse_frac(frac: object, name: str = "sparse_frac") -> float:
+    """A finite fraction in ``[0, 1]`` (0 = no sparse term)."""
+    try:
+        f = float(frac)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise ValueError(f"{name}={frac!r} must be a finite fraction in [0, 1].") from None
+    if not math.isfinite(f) or not 0.0 <= f <= 1.0:
+        raise ValueError(f"{name}={frac!r} must be a finite fraction in [0, 1].")
+    return f
+
+
+def _validate_energy_threshold(t: object, name: str = "energy_threshold") -> float:
+    """A finite fraction in ``(0, 1]``; only used when the rank is chosen by energy."""
+    try:
+        f = float(t)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise ValueError(f"{name}={t!r} must be a finite number in (0, 1].") from None
+    if not math.isfinite(f) or not 0.0 < f <= 1.0:
+        raise ValueError(f"{name}={t!r} must be a finite number in (0, 1].")
+    return f
+
+
+def _validate_matrix(x: mx.array, name: str = "x", *, check_finite: bool = True) -> None:
+    if x.ndim != 2:
+        raise ValueError(f"{name} must be a 2-D [N, D] matrix, got shape {tuple(x.shape)}.")
+    if x.shape[0] == 0 or x.shape[1] == 0:
+        raise ValueError(f"{name} must be non-empty, got shape {tuple(x.shape)}.")
+    if check_finite and not bool(mx.all(mx.isfinite(x)).item()):
+        raise ValueError(f"{name} must be finite (found NaN or Inf).")
+
+
+def validate_gear_config(config: object) -> tuple[int, int | None, float, float, int]:
+    """Validate the ``gear_*`` fields of a ``KVCacheConfig`` (or look-alike).
+
+    Returns ``(bits, rank, energy_threshold, sparse_fraction, group_size)``,
+    using the same defaults as :class:`GEARKVCache`. Shared by the cache
+    constructor and ``KVCacheConfig.__post_init__`` so both reject the same
+    values with the same messages.
+    """
+    return (
+        _validate_bits(getattr(config, "gear_bits", 2), "gear_bits"),
+        _validate_rank(getattr(config, "gear_rank", None), "gear_rank"),
+        _validate_energy_threshold(
+            getattr(config, "gear_energy_threshold", 0.90), "gear_energy_threshold"
+        ),
+        _validate_sparse_frac(
+            getattr(config, "gear_sparse_fraction", 0.01), "gear_sparse_fraction"
+        ),
+        _validate_group_size(getattr(config, "gear_group_size", 32), "gear_group_size"),
+    )
+
+
+def _validate_state(state: GEARState) -> None:
+    if state.d_cols <= 0:
+        raise ValueError(
+            f"GEARState.d_cols={state.d_cols} must be the original channel count D (> 0); "
+            "it is required to rebuild the token-axis view and to bill bytes."
+        )
+
+
+@lru_cache(maxsize=1024)
+def _nnz_for(total: int, frac: float) -> int:
+    """``floor(total * frac)`` in the decimal the caller wrote.
+
+    ``int(total * frac)`` truncates binary-float error: ``int(100 * 0.29)`` is
+    28 although 0.29 of 100 is 29. ``repr`` gives the shortest decimal that
+    round-trips, so the product is exact.
+    """
+    return int(Fraction(repr(float(frac))) * total)
+
 
 class GEARState(NamedTuple):
     """A GEAR-compressed tensor: base codes + low-rank residual + sparse outliers.
 
     Attributes:
-        codes:  [n_groups, group_size, D] fp32 integer base codes.
-        scale:  [n_groups, 1, D] fp32 per-group step.
-        zero:   [n_groups, 1, D] fp32 per-group min.
+        codes:  [n_groups, group_size, W] fp32 integer base codes.
+        scale:  [n_groups, 1, W] fp32 per-group step.
+        zero:   [n_groups, 1, W] fp32 per-group min.
+            ``W`` is the stream's own column count: ``D`` with ``n_groups``
+            token-groups for ``axis == "channel"``, but the token count ``N``
+            with ``n_groups`` channel-groups for ``axis == "token"``.
         L:      [N, r] fp32 low-rank residual left factor (or None if rank==0).
         R:      [r, D] fp32 low-rank residual right factor (or None if rank==0).
         sp_idx: [nnz] int32 flattened indices into the [N, D] residual (or None).
@@ -114,6 +241,8 @@ def quantize_base(x: mx.array, bits: int, group_size: int = 32, axis: str = "tok
     """
     if axis not in ("channel", "token"):
         raise ValueError(f"quantize_base: axis={axis!r} must be 'channel' or 'token'.")
+    bits = _validate_bits(bits)
+    group_size = _validate_group_size(group_size)
     if axis == "channel":
         # quantize_to_codes groups along axis 0 (rows) of whatever it is
         # given. For untransposed x [N, D], groups are runs of tokens, and
@@ -174,7 +303,10 @@ def lowrank_error(
     Returns:
         ``(L, R)`` fp32, or ``(None, None)`` if no low-rank term.
     """
-    if rank is not None and int(rank) == 0:
+    rank = _validate_rank(rank)
+    energy_threshold = _validate_energy_threshold(energy_threshold)
+    _validate_matrix(E, "E", check_finite=False)
+    if rank == 0:
         return None, None
     U_r, s_r, Vt_r = _truncated_svd(E, rank=rank, energy_threshold=energy_threshold)
     L = U_r * s_r[None, :]  # fold singular values into the left factor
@@ -198,11 +330,12 @@ def sparse_outliers(
     Returns:
         ``(flat_idx[int32], values[fp16])`` or ``(None, None)`` if no sparse term.
     """
+    frac = _validate_sparse_frac(frac)
     if frac <= 0.0:
         return None, None
     n, d = resid.shape
     total = n * d
-    nnz = int(total * frac)
+    nnz = _nnz_for(total, frac)
     if nnz <= 0:
         return None, None
     flat = resid.reshape(-1)
@@ -232,12 +365,27 @@ def gear_compress(
         base_axis: ``"channel"`` for keys, ``"token"`` for values, per the
             paper's KCVT backbone. See :func:`quantize_base`.
     """
+    # Finiteness is not checked up front: that costs a host sync on every call.
+    # The residual SVD raises on NaN/Inf, and only then do we confirm and re-raise
+    # a clear error, so valid input pays nothing. (rank=0 runs no SVD and so, as
+    # before, does not look at the values.)
+    _validate_matrix(x, "x", check_finite=False)
+    bits = _validate_bits(bits)
+    group_size = _validate_group_size(group_size)
+    rank = _validate_rank(rank)
+    energy_threshold = _validate_energy_threshold(energy_threshold)
+    sparse_frac = _validate_sparse_frac(sparse_frac)
     x32 = x.astype(mx.float32)
     n, d = int(x32.shape[0]), int(x32.shape[1])
     stream, base_recon = quantize_base(x32, bits, group_size, axis=base_axis)
     E = residual(x32, base_recon)  # [N, D]
 
-    L, R = lowrank_error(E, rank, energy_threshold)
+    try:
+        L, R = lowrank_error(E, rank, energy_threshold)
+    except RuntimeError:
+        if not bool(mx.all(mx.isfinite(x32)).item()):
+            raise ValueError("x must be finite (found NaN or Inf).") from None
+        raise
     if L is not None:
         E_after = E - (L @ R)
         r = int(L.shape[1])
@@ -284,11 +432,12 @@ def sparse_outliers_batched(
         ``(None, None)`` if no sparse term — matching :func:`sparse_outliers`'
         per-row contract, just with a leading ``BH`` axis.
     """
+    frac = _validate_sparse_frac(frac)
     if frac <= 0.0:
         return None, None
     bh, n, d = resid.shape
     total = n * d
-    nnz = int(total * frac)
+    nnz = _nnz_for(total, frac)
     if nnz <= 0:
         return None, None
     flat = resid.reshape(bh, total)
@@ -298,6 +447,23 @@ def sparse_outliers_batched(
     top = top.astype(mx.int32)
     vals = mx.take_along_axis(flat, top, axis=-1).astype(mx.float16)
     return top, vals
+
+
+def _scatter_add_rows(out: mx.array, sp_idx: mx.array, sp_val: mx.array) -> mx.array:
+    """Add each head's sparse outliers into ``out`` ``[BH, N, D]`` without flattening heads.
+
+    The previous ``out.reshape(-1)`` + ``flat.at[row_base + idx]`` form needs
+    one flat array of ``BH*N*D`` elements. MLX array dimensions are int32, so
+    once ``BH*N*D > 2**31 - 1`` that reshape raises ``OverflowError`` and the
+    reconstruction fails outright. Scattering with ``(row, col)`` index pairs
+    keeps every dimension (``BH`` and ``N*D``) within int32 and no cross-head
+    offset is ever formed, so it stays correct for any batch whose per-head
+    ``N*D`` fits (which ``sp_idx`` being int32 already requires).
+    """
+    bh, n, d = out.shape
+    rows = mx.broadcast_to(mx.arange(bh, dtype=mx.int32)[:, None], sp_idx.shape)
+    flat = out.reshape(bh, n * d).at[rows, sp_idx].add(sp_val.astype(out.dtype))
+    return flat.reshape(bh, n, d)
 
 
 def gear_reconstruct_batched(
@@ -342,12 +508,7 @@ def gear_reconstruct_batched(
     if L is not None and R is not None:
         out = out + (L @ R)
     if sp_idx is not None and sp_val is not None:
-        bh, n, d = out.shape
-        row_base = (mx.arange(bh, dtype=mx.int32) * (n * d))[:, None]  # [BH, 1]
-        combined_idx = (row_base + sp_idx).reshape(-1)  # [BH * nnz]
-        flat = out.reshape(-1)
-        flat = flat.at[combined_idx].add(sp_val.reshape(-1).astype(mx.float32))
-        out = flat.reshape(bh, n, d)
+        out = _scatter_add_rows(out, sp_idx, sp_val)
     return out.astype(out_dtype)
 
 
@@ -367,6 +528,7 @@ def gear_reconstruct(state: GEARState, base: mx.array | None = None) -> mx.array
             from ``state`` when omitted, preserving the original behavior for
             standalone callers (e.g. :func:`gear_quant_dequant`).
     """
+    _validate_state(state)
     if base is None:
         stream_rows = state.d_cols if state.axis == "token" else state.n_rows
         stream = _CodeStreamView(state.codes, state.scale, state.zero, stream_rows, state.bits)
@@ -404,6 +566,7 @@ def _base_code_and_param_bytes(state: GEARState) -> tuple[int, int]:
     so code size is axis-independent; only ``param_bytes`` (one scale/zero per
     group per stream-column) needs the stream's own width ``W``.
     """
+    _validate_state(state)
     n_groups, _gs, w = state.codes.shape
     total_elems = state.n_rows * state.d_cols
     code_bytes = math.ceil(total_elems * state.bits / 8)
@@ -462,4 +625,5 @@ __all__ = [
     "gear_bytes",
     "base_only_bytes",
     "gear_quant_dequant",
+    "validate_gear_config",
 ]
