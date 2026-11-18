@@ -114,6 +114,7 @@ from veloxquant_mlx.quantizers.gear import (
     gear_bytes,
     gear_reconstruct_batched,
     sparse_outliers_batched,
+    validate_gear_config,
 )
 
 
@@ -143,12 +144,16 @@ class GEARKVCache(_MLXKVCache):
 
     def __init__(self, config: Any) -> None:
         super().__init__()
-        self._bits = int(getattr(config, "gear_bits", 2))
-        rank = getattr(config, "gear_rank", None)
-        self._rank: int | None = None if rank is None else int(rank)
-        self._energy = float(getattr(config, "gear_energy_threshold", 0.90))
-        self._sparse_frac = float(getattr(config, "gear_sparse_fraction", 0.01))
-        self._gs = int(getattr(config, "gear_group_size", 32))
+        # Validate here so a bad config fails at construction, not on the first
+        # update_and_fetch deep inside the SVD (or, for sparse_fraction > 1,
+        # silently keeping the wrong number of outliers).
+        (
+            self._bits,
+            self._rank,
+            self._energy,
+            self._sparse_frac,
+            self._gs,
+        ) = validate_gear_config(config)
         self._quant_values = bool(getattr(config, "gear_quantize_values", True))
 
         self._compressed_key_bytes = 0
@@ -304,6 +309,17 @@ class GEARKVCache(_MLXKVCache):
             ranks = [0] * (B * H)
         else:
             E_batched = mx.stack(residuals, axis=0)  # [B*H, S, D]
+            # The SVD below already forces a host sync (CPU-stream eval), and
+            # E_batched has to be evaluated for it anyway, so checking it first
+            # costs ~nothing here. Without it NaN/Inf surfaces as an unrelated
+            # "SVD failed with error code -4". Only this path is checked: with
+            # rank 0 (or an unprofitable decode-sized correction) there is no SVD
+            # and no sync to hide the check in, so those paths are unchanged.
+            if not bool(mx.all(mx.isfinite(E_batched)).item()):
+                raise ValueError(
+                    f"GEARKVCache: non-finite (NaN/Inf) {'keys' if is_key else 'values'} "
+                    "reached the residual SVD; the model produced NaN/Inf KV states."
+                )
             L_batched, R_batched, ranks = _truncated_svd_batched(
                 E_batched, rank=self._rank, energy_threshold=self._energy
             )
