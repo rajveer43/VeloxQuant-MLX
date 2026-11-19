@@ -886,6 +886,13 @@ class KVCacheConfig:
                     continue
                 object.__setattr__(self, flat_name, getattr(self.options, opt_field.name))
         _warn_inlier_bits_ignored(self, getattr(self, "_explicit_fields", frozenset()))
+        if self.method == "palu":
+            # Reject bad palu_* values at config construction, not at
+            # KVCacheFactory.create(). Scoped to method="palu": every config
+            # carries the palu_* fields, and other methods never read them.
+            from veloxquant_mlx.quantizers.palu import validate_palu_config
+
+            validate_palu_config(self)
         if self.method == "gear":
             # Reject bad gear_* values here, at config construction, rather than
             # at KVCacheFactory.create(). Scoped to method="gear": every config
