@@ -893,6 +893,13 @@ class KVCacheConfig:
             from veloxquant_mlx.quantizers.palu import validate_palu_config
 
             validate_palu_config(self)
+        if self.method == "gear":
+            # Reject bad gear_* values here, at config construction, rather than
+            # at KVCacheFactory.create(). Scoped to method="gear": every config
+            # carries the gear_* fields, and other methods never read them.
+            from veloxquant_mlx.quantizers.gear import validate_gear_config
+
+            validate_gear_config(self)
         object.__setattr__(self, "_post_init_done", True)
 
     def __setattr__(self, name: str, value: Any) -> None:
