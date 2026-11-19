@@ -49,13 +49,14 @@ from typing import Any
 import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
-from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers.palu import (
     group_head_svd,
     head_group_bounds,
+    n_hi_channels,
     project_to_latent_batched,
     quantize_latent_batched,
     reconstruct_from_latent_batched,
+    validate_palu_config,
 )
 
 
@@ -224,7 +225,7 @@ class _TensorLowRank:
         if not self.quantize:
             # fp16 latents — still a (D/r) win over full fp16.
             return n_tokens * r * 2 * H
-        n_hi = max(1, int(r * self.hi_fraction))
+        n_hi = n_hi_channels(r, self.hi_fraction)
         n_lo = r - n_hi
         code_bytes = math.ceil(n_tokens * n_hi * self.hi_bit / 8) + math.ceil(
             n_tokens * n_lo * self.lo_bit / 8
@@ -247,7 +248,7 @@ class _TensorLowRank:
             return 16.0
         if not self.quantize:
             return 16.0 * self._r / D
-        n_hi = max(1, int(self._r * self.hi_fraction))
+        n_hi = n_hi_channels(self._r, self.hi_fraction)
         n_lo = self._r - n_hi
         weighted = (n_hi * self.hi_bit + n_lo * self.lo_bit) / self._r
         return weighted * self._r / D
@@ -276,17 +277,11 @@ class PALUKVCache(_MLXKVCache):
     def __init__(self, config: Any) -> None:
         super().__init__()
         self._D = int(config.head_dim)
-        rank = getattr(config, "palu_rank", None)
-        et = float(getattr(config, "palu_energy_threshold", 0.90))
-        n_groups = int(getattr(config, "palu_n_head_groups", 4))
-        hi_bit = int(getattr(config, "palu_hi_bit", 4))
-        lo_bit = int(getattr(config, "palu_lo_bit", 2))
-        hi_frac = float(getattr(config, "palu_hi_fraction", 0.25))
-        if not 0.0 <= hi_frac <= 1.0:
-            raise QuantizerConfigError(f"palu: palu_hi_fraction must be in [0, 1], got {hi_frac}")
-        gsize = int(getattr(config, "palu_group_size", 32))
-        quant_values = bool(getattr(config, "palu_quantize_values", True))
-        self._min_fit_rows = max(0, int(getattr(config, "palu_min_fit_rows", 0)))
+        cfg = validate_palu_config(config)
+        rank, et, n_groups = cfg["rank"], cfg["energy"], cfg["n_groups"]
+        hi_bit, lo_bit, hi_frac = cfg["hi_bit"], cfg["lo_bit"], cfg["hi_fraction"]
+        gsize, quant_values = cfg["group_size"], cfg["quantize_values"]
+        self._min_fit_rows = cfg["min_fit_rows"]
 
         self._keys_lr = _TensorLowRank(
             n_groups, rank, et, hi_bit, lo_bit, hi_frac, gsize, quantize=True
