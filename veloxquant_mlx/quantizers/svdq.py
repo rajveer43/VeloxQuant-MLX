@@ -340,6 +340,28 @@ def svd_compress_keys_batched(
     return L_list, V_list, K_mean_list, s_list
 
 
+def _compute_slices(r: int, n_groups: int) -> tuple[tuple[int, int], ...]:
+    n_groups = validate_int(n_groups, "n_groups", who=_WHO, lo=1)
+    if r <= 0:
+        return ()
+    n_groups = min(n_groups, r)
+    base = r // n_groups
+    remainder = r % n_groups
+    slices = []
+    start = 0
+    for i in range(n_groups):
+        size = base + (1 if i < remainder else 0)
+        slices.append((start, start + size))
+        start += size
+    return tuple(slices)
+
+
+# The cache asks for the same (rank, n_groups) once per head per layer on every decode
+# step, so compute (and validate) each distinct pair once. typed=True: otherwise a
+# cached valid ``1`` would also answer for ``True``.
+_slices_cached = lru_cache(maxsize=1024, typed=True)(_compute_slices)
+
+
 def latent_group_slices(r: int, n_groups: int = 8) -> list[tuple[int, int]]:
     """Split ``r`` latent channels (descending singular-value order) into
     ``n_groups`` contiguous, near-equal-size slices, matching the paper's
@@ -356,19 +378,10 @@ def latent_group_slices(r: int, n_groups: int = 8) -> list[tuple[int, int]]:
         ``min(n_groups, r)`` — fewer groups than requested when ``r`` is
         smaller than ``n_groups`` (each channel gets its own group).
     """
-    n_groups = validate_int(n_groups, "n_groups", who=_WHO, lo=1)
-    if r <= 0:
-        return []
-    n_groups = min(n_groups, r)
-    base = r // n_groups
-    remainder = r % n_groups
-    slices = []
-    start = 0
-    for i in range(n_groups):
-        size = base + (1 if i < remainder else 0)
-        slices.append((start, start + size))
-        start += size
-    return slices
+    try:
+        return list(_slices_cached(r, n_groups))
+    except TypeError:  # unhashable argument: the uncached path rejects or reports it
+        return list(_compute_slices(r, n_groups))
 
 
 #: Minimum channels a group must have before the schedule's 0-bit groups are

@@ -318,6 +318,19 @@ def test_latent_group_slices_valid_unchanged() -> None:
     assert latent_group_slices(16, 4.0) == [(0, 4), (4, 8), (8, 12), (12, 16)]
 
 
+def test_latent_group_slices_cache_is_typed_and_safe() -> None:
+    """Results are cached per (r, n_groups); a cached ``1`` must not answer for ``True``,
+    unhashable arguments are still rejected, and callers cannot corrupt the cache."""
+    assert latent_group_slices(16, 1) == [(0, 16)]  # caches the valid pair
+    with pytest.raises(ValueError, match="n_groups"):
+        latent_group_slices(16, True)
+    with pytest.raises(ValueError, match="n_groups"):
+        latent_group_slices(16, [8])  # unhashable
+    first = latent_group_slices(16, 8)
+    first.append((99, 99))
+    assert latent_group_slices(16, 8) == [(2 * i, 2 * i + 2) for i in range(8)]
+
+
 @pytest.mark.parametrize("g", BAD_GROUP_SIZES)
 def test_quantize_latents_rejects_bad_group_size(g) -> None:
     with pytest.raises(ValueError, match="group_size"):
