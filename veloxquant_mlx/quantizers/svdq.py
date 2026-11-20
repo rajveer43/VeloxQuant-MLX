@@ -47,19 +47,93 @@ a reproduction of the paper's numbers):
 from __future__ import annotations
 
 from collections.abc import Sequence
+from functools import lru_cache
+from typing import Any
 
 import mlx.core as mx
 import numpy as np
 
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers._quant_utils import (
     _group_quant_dequant,
     _group_quant_dequant_batched,
+)
+from veloxquant_mlx.quantizers._validation import (
+    check_finite_gram,
+    validate_bit_schedule,
+    validate_energy_threshold,
+    validate_int,
+    validate_rank,
 )
 
 #: Paper's worked example schedule (Section 4.2): 8 equal-size groups over the
 #: latent channels, ordered from largest to smallest singular value, with the
 #: last three groups truncated to 0 bits. Mean bit-width b̄ = 2.
 DEFAULT_BIT_SCHEDULE: tuple[int, ...] = (8, 4, 2, 1, 1, 0, 0, 0)
+
+_WHO = "svdq"
+
+
+def validate_svdq_config(config: Any) -> dict[str, Any]:
+    """Validate and coerce the ``svdq_*`` fields of a :class:`KVCacheConfig`.
+
+    Returns the coerced values keyed by field suffix (``rank``, ``energy``,
+    ``bit_schedule``, ``group_size``) using the same defaults as
+    :class:`~veloxquant_mlx.cache.svdq_cache.SVDqKVCache`. Whole-number floats
+    (``8.0``) are accepted and coerced to int; anything else invalid raises
+    :class:`~veloxquant_mlx.core.exceptions.QuantizerConfigError` (a ``ValueError``).
+    A bit schedule that truncates every group is rejected here, since the cache would
+    then store nothing and return only the mean key.
+    """
+
+    def get(name: str, default: Any) -> Any:
+        return getattr(config, f"svdq_{name}", default)
+
+    return {
+        "rank": validate_rank(get("rank", None), "svdq_rank", who=_WHO),
+        "energy": validate_energy_threshold(
+            get("energy_threshold", 0.95), "svdq_energy_threshold", who=_WHO
+        ),
+        "bit_schedule": validate_bit_schedule(
+            get("bit_schedule", DEFAULT_BIT_SCHEDULE),
+            "svdq_bit_schedule",
+            who=_WHO,
+            allow_all_zero=False,
+        ),
+        "group_size": validate_int(get("group_size", 32), "svdq_group_size", who=_WHO, lo=1),
+    }
+
+
+def _schedule_uncached(schedule: object) -> tuple[int, ...]:
+    return validate_bit_schedule(schedule, "bit_schedule", who=_WHO)
+
+
+@lru_cache(maxsize=256)
+def _schedule_cached(schedule: tuple[int, ...], types: tuple[type, ...]) -> tuple[int, ...]:
+    # ``types`` is part of the key because ``(True, 4)`` hashes and compares equal to
+    # ``(1, 4)``: without it a cached valid schedule would also admit the bool one.
+    return _schedule_uncached(schedule)
+
+
+def _checked_schedule(schedule: object) -> tuple[int, ...]:
+    """:func:`validate_bit_schedule` with a per-distinct-schedule cache (decode calls repeat it)."""
+    try:
+        sched: tuple[Any, ...] = tuple(schedule)  # type: ignore[arg-type]
+        return _schedule_cached(sched, tuple(map(type, sched)))
+    except TypeError:  # not iterable, or an unhashable entry: the validator rejects it
+        return _schedule_uncached(schedule)
+
+
+def _validate_keys(keys: mx.array, ndim: int, name: str = "keys") -> None:
+    if keys.ndim != ndim:
+        shape = "[S, D]" if ndim == 2 else "[H, S, D]"
+        raise QuantizerConfigError(
+            f"svdq: {name} must be a {ndim}-D {shape} array, got shape {tuple(keys.shape)}."
+        )
+    if 0 in keys.shape:
+        raise QuantizerConfigError(
+            f"svdq: {name} must be non-empty, got shape {tuple(keys.shape)}."
+        )
 
 
 def svd_compress_keys(
@@ -81,7 +155,14 @@ def svd_compress_keys(
           K_mean     — mean key [D] fp32
           singular_values — [r] fp32, descending
     """
+    _validate_keys(keys, 2)
+    rank = validate_rank(rank, "rank", who=_WHO)
+    energy_threshold = validate_energy_threshold(energy_threshold, "energy_threshold", who=_WHO)
     x = keys.astype(mx.float32)
+    # The SVD is a one-off, far costlier than this pass, and on NaN it only fails with
+    # "SVD failed with error code -4".
+    if not bool(mx.all(mx.isfinite(x)).item()):
+        raise QuantizerConfigError("svdq: keys must be finite (found NaN or Inf).")
     K_mean = mx.mean(x, axis=0)  # [D]
     x_centered = x - K_mean[None, :]  # [S, D]
 
@@ -160,6 +241,10 @@ def basis_from_gram_batched(
     (#890). Returns ``(V_list, K_mean_list, s_list)`` with the same per-head
     rank truncation as :func:`svd_compress_keys_batched`.
     """
+    rank = validate_rank(rank, "rank", who=_WHO)
+    energy_threshold = validate_energy_threshold(energy_threshold, "energy_threshold", who=_WHO)
+    n_rows = validate_int(n_rows, "n_rows", who=_WHO, lo=1)
+    check_finite_gram(gram, "the accumulated key Gram matrix", who=_WHO)
     H, D, _ = gram.shape
     mean = row_sum / n_rows  # [H, D]
     centered = gram - n_rows * mean[:, :, None] * mean[:, None, :]
@@ -219,6 +304,9 @@ def svd_compress_keys_batched(
         (each already truncated to that head's own rank — no shared padding
         in the returned lists).
     """
+    _validate_keys(keys, 3)
+    rank = validate_rank(rank, "rank", who=_WHO)
+    energy_threshold = validate_energy_threshold(energy_threshold, "energy_threshold", who=_WHO)
     x = keys.astype(mx.float32)
     H, S, D = x.shape
     K_mean = mx.mean(x, axis=1)  # [H, D]
@@ -230,7 +318,9 @@ def svd_compress_keys_batched(
     # and diagonalised in float64: squaring the conditioning is harmless
     # there, whereas a float32 Gram blurs the weaker retained directions.
     xc_np = np.asarray(x_centered, dtype=np.float64)
-    evals, evecs = np.linalg.eigh(np.swapaxes(xc_np, 1, 2) @ xc_np)  # ascending
+    gram = np.swapaxes(xc_np, 1, 2) @ xc_np
+    check_finite_gram(gram, "keys", who=_WHO)
+    evals, evecs = np.linalg.eigh(gram)  # ascending
     r_max_possible = min(S, D)  # an SVD of [S, D] has min(S, D) singular values
     S_vals = mx.array(
         np.sqrt(np.clip(evals[:, ::-1][:, :r_max_possible], 0.0, None)).astype(np.float32)
@@ -266,6 +356,7 @@ def latent_group_slices(r: int, n_groups: int = 8) -> list[tuple[int, int]]:
         ``min(n_groups, r)`` — fewer groups than requested when ``r`` is
         smaller than ``n_groups`` (each channel gets its own group).
     """
+    n_groups = validate_int(n_groups, "n_groups", who=_WHO, lo=1)
     if r <= 0:
         return []
     n_groups = min(n_groups, r)
@@ -334,6 +425,8 @@ def quantize_latents_mixed(
         Reconstructed latents [S, r] fp16.
     """
     del singular_values  # grouping is positional; L's columns are pre-sorted
+    bit_schedule = _checked_schedule(bit_schedule)
+    group_size = validate_int(group_size, "group_size", who=_WHO, lo=1)
     S, r = L.shape
     slices = latent_group_slices(r, n_groups=len(bit_schedule))
 
@@ -356,6 +449,8 @@ def project_quantize_reconstruct_batched(
     K_mean_list: list[mx.array],  # each [D] fp32
     schedules: list[Sequence[int]],  # per-head effective bit schedule
     group_size: int,
+    *,
+    validate: bool = True,
 ) -> mx.array:
     """Batched-over-heads equivalent of looping project -> quantize -> reconstruct
     once per head, each through its own already-fitted SVD basis.
@@ -391,11 +486,23 @@ def project_quantize_reconstruct_batched(
         K_mean_list: Per-head mean key, length ``H``, each ``[D]``.
         schedules: Per-head effective bit schedule, length ``H``.
         group_size: Token-axis group size for the latent quantizer.
+        validate: Check ``group_size``, the schedules and the per-head list lengths.
+            :class:`~veloxquant_mlx.cache.svdq_cache.SVDqKVCache` passes ``False`` on its
+            decode path: it validated them when it was built, and re-checking on every
+            token of every layer is pure overhead.
 
     Returns:
         ``[H, S, D]`` fp16 reconstructed keys.
     """
     H, S, D = keys.shape
+    if validate:
+        if not len(V_list) == len(K_mean_list) == len(schedules) == H:
+            raise QuantizerConfigError(
+                f"svdq: V_list, K_mean_list and schedules must each have one entry per head "
+                f"({H}), got {len(V_list)}, {len(K_mean_list)} and {len(schedules)}."
+            )
+        group_size = validate_int(group_size, "group_size", who=_WHO, lo=1)
+        schedules = [_checked_schedule(s) for s in schedules]
     ranks = [int(V.shape[1]) for V in V_list]
     r_max = max(ranks) if ranks else 0
 
@@ -483,6 +590,7 @@ def equivalent_bit_width(r: int, bit_schedule: Sequence[int] = DEFAULT_BIT_SCHED
     only approximates the *per-original-key-element* cost; the cache wrapper
     additionally scales by ``r/D`` since latent dim is smaller than ``D``.
     """
+    bit_schedule = _checked_schedule(bit_schedule)
     n_groups = min(len(bit_schedule), max(r, 1))
     return sum(bit_schedule[:n_groups]) / n_groups
 
@@ -496,6 +604,7 @@ __all__ = [
     "project_quantize_reconstruct_batched",
     "latent_group_slices",
     "equivalent_bit_width",
+    "validate_svdq_config",
     "min_safe_rank",
     "MIN_SAFE_CHANNELS_PER_GROUP",
     "DEFAULT_BIT_SCHEDULE",
