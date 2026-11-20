@@ -51,13 +51,14 @@ import numpy as np
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
+from veloxquant_mlx.quantizers._validation import check_finite_gram
 from veloxquant_mlx.quantizers.svdq import (
-    DEFAULT_BIT_SCHEDULE,
     basis_from_gram_batched,
     equivalent_bit_width,
     latent_group_slices,
     min_safe_rank,
     project_quantize_reconstruct_batched,
+    validate_svdq_config,
 )
 
 
@@ -85,16 +86,11 @@ class SVDqKVCache(_MLXKVCache):
     def __init__(self, config: Any) -> None:
         super().__init__()
         self._D = int(config.head_dim)
-        self._rank: int | None = getattr(config, "svdq_rank", None)
-        self._energy_threshold: float = float(getattr(config, "svdq_energy_threshold", 0.95))
-        self._bit_schedule: tuple[int, ...] = tuple(
-            getattr(config, "svdq_bit_schedule", DEFAULT_BIT_SCHEDULE)
-        )
-        if not self._bit_schedule or any(b < 0 for b in self._bit_schedule):
-            raise QuantizerConfigError(
-                f"svdq: svdq_bit_schedule entries must be >= 0, got {self._bit_schedule}"
-            )
-        self._group_size: int = int(getattr(config, "svdq_group_size", 32))
+        cfg = validate_svdq_config(config)
+        self._rank: int | None = cfg["rank"]
+        self._energy_threshold: float = cfg["energy"]
+        self._bit_schedule: tuple[int, ...] = cfg["bit_schedule"]
+        self._group_size: int = cfg["group_size"]
 
         # SVD state — set per (attention) head on first prefill call. Indexed
         # by head index; each head gets its own basis rather than sharing
@@ -153,6 +149,9 @@ class SVDqKVCache(_MLXKVCache):
         B, H, S, D = keys.shape
         x = np.asarray(keys[0].astype(mx.float32), dtype=np.float64)  # [H, S, D]
         gram = np.swapaxes(x, 1, 2) @ x
+        # Reject before the running statistics are touched: a NaN/Inf folded into them
+        # would corrupt that head's basis for every later chunk, clean or not.
+        check_finite_gram(gram, "prefill keys", who="svdq")
         row_sum = x.sum(axis=1)
         if self._gram is None:
             self._gram, self._row_sum = gram, row_sum
@@ -248,6 +247,7 @@ class SVDqKVCache(_MLXKVCache):
             self._K_mean,
             self._effective_schedule,
             self._group_size,
+            validate=False,  # validated at construction; this runs once per token per layer
         )[None]  # [1, H, S, D]
 
     # ------------------------------------------------------------------

@@ -900,6 +900,11 @@ class KVCacheConfig:
             from veloxquant_mlx.quantizers.gear import validate_gear_config
 
             validate_gear_config(self)
+        if self.method == "svdq":
+            # Same early rejection for svdq_* values, scoped to method="svdq".
+            from veloxquant_mlx.quantizers.svdq import validate_svdq_config
+
+            validate_svdq_config(self)
         object.__setattr__(self, "_post_init_done", True)
 
     def __setattr__(self, name: str, value: Any) -> None:
