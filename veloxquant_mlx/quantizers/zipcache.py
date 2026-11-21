@@ -44,11 +44,90 @@ The cache wrapper owns the per-layer prefill/decode state.
 from __future__ import annotations
 
 import math
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import mlx.core as mx
 
+from veloxquant_mlx.core.exceptions import QuantizerConfigError
 from veloxquant_mlx.quantizers._quant_utils import _group_dequant_codes, _group_quant_codes
+from veloxquant_mlx.quantizers._validation import (
+    MAX_BITS,
+    validate_flag,
+    validate_fraction,
+    validate_int,
+)
+
+_WHO = "zipcache"
+
+
+# ---------------------------------------------------------------------------
+# Argument validation
+# ---------------------------------------------------------------------------
+
+
+def _validate_bits(bits: object, name: str) -> int:
+    """An integer bit-width in ``[1, 8]`` (codes are stored as ``uint8``)."""
+    return validate_int(bits, name, who=_WHO, lo=1, hi=MAX_BITS)
+
+
+def _validate_group_size(group_size: object, name: str) -> int:
+    """An integer token-group size ``>= 1``."""
+    return validate_int(group_size, name, who=_WHO, lo=1)
+
+
+def _validate_bit_pair(hi_bits: int, lo_bits: int, hi_name: str, lo_name: str) -> None:
+    """Salient tokens must not get fewer bits than the rest (``lo_bits <= hi_bits``)."""
+    if lo_bits > hi_bits:
+        raise QuantizerConfigError(
+            f"{_WHO}: {lo_name}={lo_bits} must not exceed {hi_name}={hi_bits}; "
+            "salient tokens would get fewer bits than the rest."
+        )
+
+
+def validate_zipcache_config(config: object) -> dict[str, Any]:
+    """Validate the ``zipcache_*`` fields of a ``KVCacheConfig`` (or look-alike).
+
+    Returns ``hi_bits``, ``lo_bits``, ``hi_fraction``, ``group_size`` and
+    ``quantize_values`` using the same defaults as :class:`ZipCacheKVCache`. Shared by
+    the cache constructor and ``KVCacheConfig.__post_init__`` so both reject the same
+    values with the same messages.
+
+    Whole-number floats (``4.0``) are coerced to ``int``; fractions, ``bool``, strings,
+    NaN and Inf are rejected rather than truncated or coerced.
+    """
+    hi_bits = _validate_bits(getattr(config, "zipcache_hi_bits", 4), "zipcache_hi_bits")
+    lo_bits = _validate_bits(getattr(config, "zipcache_lo_bits", 2), "zipcache_lo_bits")
+    _validate_bit_pair(hi_bits, lo_bits, "zipcache_hi_bits", "zipcache_lo_bits")
+    return {
+        "hi_bits": hi_bits,
+        "lo_bits": lo_bits,
+        "hi_fraction": validate_fraction(
+            getattr(config, "zipcache_hi_fraction", 0.20), "zipcache_hi_fraction", who=_WHO
+        ),
+        "group_size": _validate_group_size(
+            getattr(config, "zipcache_group_size", 32), "zipcache_group_size"
+        ),
+        "quantize_values": validate_flag(
+            getattr(config, "zipcache_quantize_values", True), "zipcache_quantize_values", who=_WHO
+        ),
+    }
+
+
+def _validate_matrix(x: mx.array, name: str) -> None:
+    """``x`` must be a 2-D ``[N, D]`` matrix (``N == 0`` is allowed: an empty bucket)."""
+    if x.ndim != 2:
+        raise QuantizerConfigError(
+            f"{_WHO}: {name} must be a 2-D [N, D] matrix, got shape {tuple(x.shape)}."
+        )
+
+
+def _require_finite(ok: mx.array, what: str) -> None:
+    """Raise unless the 0-d bool ``ok`` (all values finite) is True. One host sync."""
+    if not bool(ok.item()):
+        raise QuantizerConfigError(
+            f"{_WHO}: {what} must be finite (found NaN or Inf); the model produced NaN/Inf "
+            "KV states."
+        )
 
 
 class ZipCacheState(NamedTuple):
@@ -92,6 +171,7 @@ class ZipCacheState(NamedTuple):
 
 def token_key_norms(keys: mx.array) -> mx.array:
     """L2 norm of each token's key vector, ``[S, D] → [S]`` fp32."""
+    _validate_matrix(keys, "keys")
     return mx.linalg.norm(keys.astype(mx.float32), axis=-1)
 
 
@@ -106,6 +186,12 @@ def saliency_mask(norms: mx.array, hi_fraction: float) -> mx.array:
     Returns:
         ``[S]`` bool array; True = salient token → hi_bits path.
     """
+    if norms.ndim != 1:
+        raise QuantizerConfigError(
+            f"{_WHO}: norms must be a 1-D [S] vector, got shape {tuple(norms.shape)}."
+        )
+    hi_fraction = validate_fraction(hi_fraction, "hi_fraction", who=_WHO)
+    _require_finite(mx.all(mx.isfinite(norms)), "key norms")
     S = int(norms.shape[0])
     n_hi = max(0, min(S, int(math.ceil(S * hi_fraction))))
     if n_hi == 0:
@@ -147,6 +233,9 @@ def channel_quant(
         ``(codes, scales, zeros)`` where codes is ``[N, D]`` uint8 and
         scales/zeros are ``[n_groups, D]`` fp32.
     """
+    _validate_matrix(x, "x")
+    bits = _validate_bits(bits, "bits")
+    group_size = _validate_group_size(group_size, "group_size")
     if x.shape[0] == 0:
         # Edge: empty tensor (all tokens went to the other path)
         D = x.shape[1]
@@ -154,6 +243,7 @@ def channel_quant(
         empty_params = mx.zeros((0, D), dtype=mx.float32)
         return empty_codes, empty_params, empty_params
 
+    _require_finite(mx.all(mx.isfinite(x)), "x")
     n, d = x.shape
     gs = group_size
     n_groups = (n + gs - 1) // gs
@@ -171,6 +261,7 @@ def channel_dequant(
     group_size: int = 32,
 ) -> mx.array:
     """Reconstruct ``[N, D]`` fp32 from codes + per-group (scales, zeros)."""
+    group_size = _validate_group_size(group_size, "group_size")
     if codes.shape[0] == 0:
         return mx.zeros((0, codes.shape[1]), dtype=mx.float32)
     n = int(codes.shape[0])
@@ -208,6 +299,12 @@ def zipcache_compress(
     Returns:
         :class:`ZipCacheState` carrying split codes and the saliency mask.
     """
+    hi_bits = _validate_bits(hi_bits, "hi_bits")
+    lo_bits = _validate_bits(lo_bits, "lo_bits")
+    _validate_bit_pair(hi_bits, lo_bits, "hi_bits", "lo_bits")
+    hi_fraction = validate_fraction(hi_fraction, "hi_fraction", who=_WHO)
+    group_size = _validate_group_size(group_size, "group_size")
+    _validate_matrix(x, "x")
     x32 = x.astype(mx.float32)
     S, D = x32.shape
     norms = token_key_norms(x32)
@@ -294,6 +391,7 @@ def zipcache_bytes(state: ZipCacheState, group_size: int | None = None) -> int:
     """
     if group_size is None:
         group_size = state.group_size
+    group_size = _validate_group_size(group_size, "group_size")
     S, D = state.seq_len, state.head_dim
     n_hi = int(state.hi_codes.shape[0])
     n_lo = int(state.lo_codes.shape[0])
@@ -313,6 +411,8 @@ def zipcache_bytes(state: ZipCacheState, group_size: int | None = None) -> int:
 
 def base_only_bytes(S: int, D: int, bits: int, group_size: int = 32) -> int:
     """Uniform baseline size: all S tokens at a single bit-width (fp16 params)."""
+    bits = _validate_bits(bits, "bits")
+    group_size = _validate_group_size(group_size, "group_size")
     code_bytes = math.ceil(S * D * bits / 8)
     n_groups = math.ceil(S / group_size)
     param_bytes = n_groups * D * 2 * 2  # scale + zero, fp16
@@ -332,6 +432,7 @@ def zipcache_quant_dequant(
 
 __all__ = [
     "ZipCacheState",
+    "validate_zipcache_config",
     "token_key_norms",
     "saliency_mask",
     "channel_quant",

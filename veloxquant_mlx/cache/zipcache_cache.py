@@ -37,7 +37,7 @@ import mlx.core as mx
 from mlx_lm.models.cache import KVCache as _MLXKVCache
 
 from veloxquant_mlx.core.exceptions import QuantizerConfigError
-from veloxquant_mlx.quantizers.zipcache import base_only_bytes
+from veloxquant_mlx.quantizers.zipcache import base_only_bytes, validate_zipcache_config
 
 
 class ZipCacheKVCache(_MLXKVCache):
@@ -57,26 +57,36 @@ class ZipCacheKVCache(_MLXKVCache):
         fields automatically via ``dataclasses.replace``.
         Values are quantized uniformly at ``hi_bits`` (saliency routing is
         key-driven; values follow the hi-bit path as the safer default).
+
+        The ``zipcache_*`` fields are validated at construction
+        (:func:`~veloxquant_mlx.quantizers.zipcache.validate_zipcache_config`): bits are
+        integers in ``[1, 8]`` with ``lo_bits <= hi_bits``, ``group_size >= 1``,
+        ``hi_fraction`` in ``[0, 1]``; bad values raise ``QuantizerConfigError``.
+        A prefill chunk holding NaN/Inf is reported by the next update (see
+        :meth:`update_and_fetch`). ``trim()`` takes the dropped tokens back out of the byte
+        counters.
     """
 
     def __init__(self, config: Any) -> None:
         super().__init__()
-        self._hi_bits = int(getattr(config, "zipcache_hi_bits", 4))
-        self._lo_bits = int(getattr(config, "zipcache_lo_bits", 2))
-        self._hi_fraction = float(getattr(config, "zipcache_hi_fraction", 0.20))
-        if not 0.0 <= self._hi_fraction <= 1.0:
-            raise QuantizerConfigError(
-                f"zipcache: zipcache_hi_fraction must be in [0, 1], got {self._hi_fraction}"
-            )
-        self._gs = int(getattr(config, "zipcache_group_size", 32))
-        self._quant_values = bool(getattr(config, "zipcache_quantize_values", True))
+        # Validated once here (and again in KVCacheConfig.__post_init__, so a config edited
+        # after construction is not trusted): nothing on the per-token path re-checks it.
+        cfg = validate_zipcache_config(config)
+        self._hi_bits = cfg["hi_bits"]
+        self._lo_bits = cfg["lo_bits"]
+        self._hi_fraction = cfg["hi_fraction"]
+        self._gs = cfg["group_size"]
+        self._quant_values = cfg["quantize_values"]
 
-        self._compressed_key_bytes = 0
-        self._compressed_value_bytes = 0
-        self._baseline_key_bytes = 0
-        self._baseline_value_bytes = 0
-        self._fp16_key_bytes = 0
-        self._fp16_value_bytes = 0
+        # Byte counters are read off a ledger of per-update charges, so trim() can take back
+        # what the dropped tokens cost. Entry: [tokens_per_update, count, charges] with
+        # charges = (comp_key, base_key, fp16_key, comp_value, base_value, fp16_value).
+        # Runs of identical decode steps share one entry, so the ledger stays short and the
+        # per-token path only compares one tuple and bumps a count.
+        self._ledger: list[list[Any]] = []
+        # Finite-check of the last multi-token chunk, resolved at the next update (see
+        # update_and_fetch): (all-finite flag, tokens, offset after the chunk) or None.
+        self._pending: tuple[mx.array, int, int] | None = None
 
     # ------------------------------------------------------------------
     # Batched compress + reconstruct across B*H (no per-head Python loop).
@@ -147,11 +157,22 @@ class ZipCacheKVCache(_MLXKVCache):
         recon = c * s + z
         return recon.reshape(BH, n_groups * gs, d)[:, :n]
 
-    def _compress_and_account(
+    def _compress(
         self, t: mx.array, is_key: bool, out_dtype: mx.Dtype = mx.float16
-    ) -> mx.array:
-        """Compress ``[B, H, S, D]`` batched over B*H, accumulate byte accounting, return in ``out_dtype``."""
-        B, H, S, D = t.shape
+    ) -> tuple[mx.array, mx.array, tuple[int, int, int]]:
+        """Compress ``[B, H, S, D]`` batched over B*H without touching any state.
+
+        Returns ``(out, norms, (stored, baseline, fp16))``: the reconstruction in
+        ``out_dtype``, the ``[B*H, S]`` fp32 row norms (used to reject non-finite input)
+        and the bytes this block costs. The caller commits the bytes, so a block that is
+        rejected afterwards leaves the counters exactly as they were.
+        """
+        try:
+            B, H, S, D = t.shape
+        except ValueError:  # not 4-D; checked by unpacking so the per-token path pays nothing
+            raise ValueError(
+                f"zipcache: expected a [B, H, S, D] tensor, got shape {tuple(t.shape)}."
+            ) from None
         hi_bits = self._hi_bits
         lo_bits = self._lo_bits if is_key else self._hi_bits
         hi_fraction = self._hi_fraction if is_key else 1.0
@@ -220,28 +241,110 @@ class ZipCacheKVCache(_MLXKVCache):
         comp_total = per_slab_comp * BH
         base_total = base_only_bytes(S, D, self._lo_bits, gs) * BH
 
-        fp16 = B * H * S * D * 2
-        if is_key:
-            self._compressed_key_bytes += comp_total
-            self._baseline_key_bytes += base_total
-            self._fp16_key_bytes += fp16
-        else:
-            self._compressed_value_bytes += comp_total
-            self._baseline_value_bytes += base_total
-            self._fp16_value_bytes += fp16
+        return out, norms, (comp_total, base_total, B * H * S * D * 2)
+
+    def _compress_and_account(
+        self, t: mx.array, is_key: bool, out_dtype: mx.Dtype = mx.float16
+    ) -> mx.array:
+        """Compress ``[B, H, S, D]``, charge its bytes, return the reconstruction in ``out_dtype``."""
+        out, _, (comp, base, fp16) = self._compress(t, is_key, out_dtype)
+        charges = (comp, base, fp16, 0, 0, 0) if is_key else (0, 0, 0, comp, base, fp16)
+        self._charge(int(t.shape[2]), charges)
         return out
 
-    # ------------------------------------------------------------------
-    def update_and_fetch(self, keys: mx.array, values: mx.array):
-        """Sort key tokens by L2-norm saliency, quantize the top hi_fraction at hi_bits and the rest at lo_bits (values uniformly at hi_bits); return reconstructed fp16 K/V."""
-        k_out = self._compress_and_account(keys, is_key=True, out_dtype=keys.dtype)
-        if self._quant_values:
-            v_out = self._compress_and_account(values, is_key=False, out_dtype=values.dtype)
+    def _charge(self, tokens: int, charges: tuple[int, ...]) -> None:
+        """Record one update's ``charges`` (see ``_ledger`` for the order) for ``tokens`` new tokens."""
+        led = self._ledger
+        if tokens == 1 and led and led[-1][0] == 1 and led[-1][2] == charges:
+            led[-1][1] += 1  # run of identical decode steps: one entry, not one per token
         else:
-            v_out = values
+            led.append([tokens, 1, charges])
+
+    def trim(self, n: int) -> int:
+        """Drop the last ``n`` tokens and take back what they cost in the byte counters.
+
+        Whole updates (and every decode step) are taken back exactly. When ``n`` cuts into
+        a multi-token update, that update's charge is pro-rated by the tokens it keeps (the
+        groups it was quantized in are not recoverable), so the counters are approximate
+        in that one case.
+        """
+        self._pending = None  # the cache is being edited: the pending chunk check no longer applies
+        n = super().trim(n)
+        left = n
+        led = self._ledger
+        while left > 0 and led:
+            tokens, count, charges = led[-1]
+            if left >= tokens * count:
+                led.pop()
+                left -= tokens * count
+            elif tokens == 1:
+                led[-1][1] -= left
+                left = 0
+            else:
+                keep = tokens - left
+                led[-1] = [keep, 1, tuple(round(c * keep / tokens) for c in charges)]
+                left = 0
+        return n
+
+    def _total(self, i: int) -> int:
+        """Sum of charge ``i`` over the ledger (see ``_ledger`` for the order)."""
+        return sum(count * charges[i] for _, count, charges in self._ledger)
+
+    # ------------------------------------------------------------------
+    def _resolve_pending(self, pending: tuple[mx.array, int, int]) -> None:
+        """Raise (after taking the chunk back out) if the previous chunk held NaN/Inf."""
+        self._pending = None
+        ok, tokens, end = pending
+        if bool(ok.item()):
+            return
+        if self.offset == end:  # still the last thing stored: take it back out of the cache
+            self.trim(tokens)
+        raise QuantizerConfigError(
+            "zipcache: the previous prefill chunk held NaN or Inf in its keys/values "
+            f"(its {tokens} tokens were removed from the cache); the model produced "
+            "NaN/Inf KV states."
+        )
+
+    def update_and_fetch(self, keys: mx.array, values: mx.array):
+        """Sort key tokens by L2-norm saliency, quantize the top hi_fraction at hi_bits and the rest at lo_bits (values uniformly at hi_bits); return reconstructed fp16 K/V.
+
+        A multi-token chunk (prefill) whose keys or values hold NaN/Inf is reported by the
+        *next* call on this cache: the chunk is removed again and a
+        :class:`QuantizerConfigError` is raised, before that call stores anything. The
+        check is deferred on purpose: it reads a flag the chunk's own forward pass has
+        already computed, so it costs no host sync mid-forward (an immediate check
+        measured +6% TTFT on Llama-3.2-1B-4bit, because it flushes the pipeline in every
+        layer). In mlx_lm's loop the next call is the next prefill chunk or the last prompt
+        token, so the error surfaces before any token is generated. A single-token step
+        (decode) is never checked.
+        """
+        pending = self._pending
+        if pending is not None:
+            self._resolve_pending(pending)
+        k_out, k_norms, (kc, kb, kf) = self._compress(keys, True, keys.dtype)
+        if self._quant_values:
+            v_out, v_norms, (vc, vb, vf) = self._compress(values, False, values.dtype)
+        else:
+            v_out, v_norms = values, None
             B, H, S, D = values.shape
-            self._fp16_value_bytes += B * H * S * D * 2
-        return super().update_and_fetch(k_out, v_out)
+            vc, vb, vf = 0, 0, B * H * S * D * 2
+        S = keys.shape[2]
+        charges = (kc, kb, kf, vc, vb, vf)
+        led = self._ledger
+        if S == 1 and led and led[-1][0] == 1 and led[-1][2] == charges:
+            led[-1][1] += 1  # run of identical decode steps: one entry, not one per token
+        else:
+            led.append([S, 1, charges])
+        out = super().update_and_fetch(k_out, v_out)
+        if S > 1:
+            # A row with NaN/Inf has a NaN/Inf norm (a finite fp16/bf16 row cannot overflow a
+            # float32 norm), so the norms the compression already computed are the check.
+            ok = mx.all(mx.isfinite(k_norms))
+            if v_norms is not None:
+                ok = ok & mx.all(mx.isfinite(v_norms))
+            mx.async_eval(ok)  # schedule it now (no wait): frees the norms' inputs once computed
+            self._pending = (ok, S, self.offset)
+        return out
 
     # ------------------------------------------------------------------
     # Reporting
@@ -249,46 +352,48 @@ class ZipCacheKVCache(_MLXKVCache):
     @property
     def compressed_key_bytes(self) -> int:
         """Realized stored bytes for the compressed key cache (mixed hi/lo-bit saliency-routed codes, all heads/batches)."""
-        return self._compressed_key_bytes
+        return self._total(0)
 
     @property
     def compressed_value_bytes(self) -> int:
         """Realized stored bytes for the compressed value cache (uniform hi_bits codes, all heads/batches)."""
-        return self._compressed_value_bytes
+        return self._total(3)
 
     @property
     def baseline_key_bytes(self) -> int:
         """Uniform lo-bit baseline for comparison (no saliency routing)."""
-        return self._baseline_key_bytes
+        return self._total(1)
 
     @property
     def baseline_value_bytes(self) -> int:
         """Uniform lo-bit baseline for comparison (no saliency routing)."""
-        return self._baseline_value_bytes
+        return self._total(4)
 
     @property
     def fp16_key_bytes(self) -> int:
         """Hypothetical fp16 key cost if nothing were compressed."""
-        return self._fp16_key_bytes
+        return self._total(2)
 
     @property
     def fp16_value_bytes(self) -> int:
         """Hypothetical fp16 value cost if nothing were compressed."""
-        return self._fp16_value_bytes
+        return self._total(5)
 
     @property
     def compression_ratio(self) -> float:
         """fp16 bytes / compressed bytes (key side). >1 means storage savings."""
-        if self._compressed_key_bytes == 0:
+        comp = self._total(0)
+        if comp == 0:
             return 1.0
-        return self._fp16_key_bytes / self._compressed_key_bytes
+        return self._total(2) / comp
 
     @property
     def effective_avg_bits(self) -> float:
         """Average key bits/element implied by the stored mixed-bit rate."""
-        if self._fp16_key_bytes == 0:
+        fp16 = self._total(2)
+        if fp16 == 0:
             return float(self._hi_bits)
-        return 16.0 * self._compressed_key_bytes / self._fp16_key_bytes
+        return 16.0 * self._total(0) / fp16
 
     # Without this, ZipCacheKVCache inherits the base mlx_lm KVCache.merge()
     # classmethod unchanged, so hasattr(cache, "merge") is True and mlx_lm

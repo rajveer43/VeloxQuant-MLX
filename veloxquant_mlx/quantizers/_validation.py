@@ -57,6 +57,26 @@ def validate_energy_threshold(t: object, name: str, *, who: str) -> float:
     return f
 
 
+def validate_fraction(value: object, name: str, *, who: str, allow_zero: bool = True) -> float:
+    """A finite fraction in ``[0, 1]`` (``allow_zero=False``: in ``(0, 1]``), as a ``float``.
+
+    ``bool`` and strings are rejected; ``float(True)`` is ``1.0`` and ``float("0.2")`` is
+    ``0.2``, and neither is a number a config meant.
+    """
+    f = float(value) if isinstance(value, Real) and not isinstance(value, bool) else math.nan  # type: ignore[arg-type]
+    if not (math.isfinite(f) and (f >= 0.0 if allow_zero else f > 0.0) and f <= 1.0):
+        lo = "[0" if allow_zero else "(0"
+        raise QuantizerConfigError(f"{who}: {name}={value!r} must be a number in {lo}, 1].")
+    return f
+
+
+def validate_flag(value: object, name: str, *, who: str) -> bool:
+    """A real ``bool`` (or ``numpy.bool_``); ``bool("false")`` is ``True``, so strings are rejected."""
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    raise QuantizerConfigError(f"{who}: {name}={value!r} must be True or False.")
+
+
 def validate_bit_schedule(
     schedule: object, name: str, *, who: str, allow_all_zero: bool = True
 ) -> tuple[int, ...]:
