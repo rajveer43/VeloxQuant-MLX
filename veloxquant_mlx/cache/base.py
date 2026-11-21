@@ -905,6 +905,11 @@ class KVCacheConfig:
             from veloxquant_mlx.quantizers.svdq import validate_svdq_config
 
             validate_svdq_config(self)
+        if self.method == "zipcache":
+            # Same early rejection for zipcache_* values, scoped to method="zipcache".
+            from veloxquant_mlx.quantizers.zipcache import validate_zipcache_config
+
+            validate_zipcache_config(self)
         object.__setattr__(self, "_post_init_done", True)
 
     def __setattr__(self, name: str, value: Any) -> None:
