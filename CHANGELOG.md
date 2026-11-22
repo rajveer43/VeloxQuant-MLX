@@ -599,6 +599,48 @@ window size via `adakv_obs_window` (default 32).
 
 <!-- version list -->
 
+## v0.96.0 (2026-11-22)
+
+### Bug Fixes
+
+- **gear**: Validate arguments and scatter outliers without flattening heads
+  ([#975](https://github.com/rajveer43/VeloxQuant-MLX/pull/975),
+  [`363143a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/363143a903e5b65ecfb1e651fccad5dc1f642542))
+
+- **palu**: Validate arguments, reject non-finite prefill KV, share the hi/lo split
+  ([#976](https://github.com/rajveer43/VeloxQuant-MLX/pull/976),
+  [`29ef465`](https://github.com/rajveer43/VeloxQuant-MLX/commit/29ef465aebbb19f9b2e3ab783df9eb2833a5cfdb))
+
+- **svdq**: Validate arguments, reject non-finite prefill KV before it reaches the running Gram
+  ([#977](https://github.com/rajveer43/VeloxQuant-MLX/pull/977),
+  [`385621a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/385621a823e5316b9379b5188190ed1cabbeb595))
+
+- **zipcache**: Validate arguments, report NaN/Inf prefill chunks, keep byte counters honest on trim
+  ([#979](https://github.com/rajveer43/VeloxQuant-MLX/pull/979),
+  [`a46fd83`](https://github.com/rajveer43/VeloxQuant-MLX/commit/a46fd831534b2165d1773e1f613fa4961b10e2bb))
+
+### Documentation
+
+- **landing**: Remove the Ollama / LM Studio audience note
+  ([`83310b8`](https://github.com/rajveer43/VeloxQuant-MLX/commit/83310b87706616139cdb1b2e09e4fcfcf7bb45af))
+
+- **readme**: Link the Learn AI wiki article
+  ([#1005](https://github.com/rajveer43/VeloxQuant-MLX/pull/1005),
+  [`856e32b`](https://github.com/rajveer43/VeloxQuant-MLX/commit/856e32bb9ecae1b02967d25078c87e337abb9c61))
+
+### Features
+
+- **landing**: Link the Learn AI wiki article from the footer (#978)
+  ([#980](https://github.com/rajveer43/VeloxQuant-MLX/pull/980),
+  [`53677e6`](https://github.com/rajveer43/VeloxQuant-MLX/commit/53677e6fdcc2834edd5cb7e23d943dd0ab5eb4d9))
+
+### Performance Improvements
+
+- **svdq**: Cache latent_group_slices so decode-path validation costs nothing
+  ([#977](https://github.com/rajveer43/VeloxQuant-MLX/pull/977),
+  [`385621a`](https://github.com/rajveer43/VeloxQuant-MLX/commit/385621a823e5316b9379b5188190ed1cabbeb595))
+
+
 ## v0.95.4 (2026-11-16)
 
 ### Bug Fixes
