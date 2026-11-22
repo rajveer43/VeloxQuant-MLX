@@ -39,6 +39,7 @@
   <a href="https://veloxquant.dev/docs/getting-started/quickstart">Quickstart</a> ·
   <a href="https://veloxquant.dev/docs/algorithms/overview">All 43 methods</a> ·
   <a href="https://veloxquant.dev/playground.html">Playground</a> ·
+  <a href="https://ai.miraheze.org/wiki/VeloxQuant-MLX">Wiki</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
@@ -374,6 +375,7 @@ from the README rather than only from the file tree.
 | **Code of conduct** | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) |
 | **Contributing** | [CONTRIBUTING.md](CONTRIBUTING.md) — open an issue before anything beyond a small bugfix |
 | **Citations & provenance** | [CITATIONS.md](CITATIONS.md) — every method traced to its paper, with deviations documented |
+| **Wiki article** | [Learn AI wiki (Miraheze)](https://ai.miraheze.org/wiki/VeloxQuant-MLX) — an independent, third-party encyclopedia-style article. It is community-editable, so the figures in this README and `CITATIONS.md` remain the source of truth |
 | **Release process** | Weekly (Sundays, 10:00 IST), automated via [python-semantic-release](https://github.com/python-semantic-release/python-semantic-release); every release is gated on the full test suite. See [CHANGELOG.md](CHANGELOG.md) |
 
 **Maintainership:** I maintain this project ([rajveer43](https://github.com/rajveer43))
