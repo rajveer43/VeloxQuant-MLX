@@ -193,6 +193,25 @@ for why the split exists and which one a new test belongs in.
    compression claim, the committed `results.json` it traces to. We do not
    merge numbers that are not reproducible from a script in the repository.
 
+## AI-assisted contributions
+
+AI coding assistants are fine to use. The rules are the same as for any other
+contribution:
+
+- **Disclose substantial assistance** in the PR description (for example "the
+  first draft of the tests was written with an AI assistant"). Spell-checking
+  or autocomplete does not need a note.
+- **You are accountable for what you submit.** Read and understand every line,
+  run the tests yourself, and be ready to explain and revise it in review. A
+  PR that the author cannot explain may be closed.
+- **You are responsible for licensing.** Only submit code you have the right to
+  contribute under this project's MIT license, including anything an assistant
+  generated.
+- **The number-claims rule applies equally.** Compression, speed and memory
+  figures need a reproducible script and a committed `results.json`, whether a
+  person or a tool wrote the text. Do not paste figures that an assistant
+  produced from memory.
+
 ## Adding a new quantization method
 
 A new method typically consists of:
