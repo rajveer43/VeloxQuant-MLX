@@ -33,23 +33,12 @@ no formal path to apply — the maintainer will reach out directly.
 
 ## Releases
 
-Releases are tagged on `master` by the release workflow
-(`.github/workflows/release.yml`). The changelog is maintained in
-[CHANGELOG.md](CHANGELOG.md).
-
-- **Cadence.** One release per week, on Sunday at 10:00 IST (04:30 UTC), from
-  whatever was merged to `master` that week. The merge cutoff is Saturday
-  18:00 IST: PRs merged after it are flagged in the release run, and should
-  normally wait for the following week so there is time to review the release
-  before it ships. Merging a PR does not publish anything. The
-  version is the highest bump implied by the Conventional Commits since the
-  last tag, with a single CHANGELOG section and GitHub Release.
-- **Quiet weeks.** If nothing under `veloxquant_mlx/` or `pyproject.toml`
-  changed, or no commit is releasable, the run ends green with no tag and no
-  upload.
-- **Hotfixes.** The maintainer can cut a release immediately by running the
-  workflow manually (`workflow_dispatch`). This is for security fixes and for
-  regressions in the latest release; ordinary `fix:` commits wait for Sunday.
+The maintainer owns releases. They are cut by the release workflow
+(`.github/workflows/release.yml`), once a week from `master`, and the
+maintainer can also trigger one manually for security fixes and regressions.
+The schedule, merge cutoff, quiet-week rule, dry runs and hotfix procedure are
+described once, in [CONTRIBUTING.md](CONTRIBUTING.md#releases). The changelog
+is [CHANGELOG.md](CHANGELOG.md).
 
 ## Authorship & Acknowledgement Policy
 
