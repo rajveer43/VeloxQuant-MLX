@@ -382,8 +382,10 @@ from the README rather than only from the file tree.
 with one other active contributor — a key-person risk worth weighing if you're evaluating
 it for production. [GOVERNANCE.md](GOVERNANCE.md) covers how co-maintainers are added.
 
-Lint and the non-Metal unit suite run on CI for every push; the full suite, including
-Metal parity tests that need Apple Silicon, gates each release.
+Lint, the non-Metal unit suite and the full MLX/Metal suite run on CI for every PR and
+push to `master`, and the release workflow runs the full suite again as its gate. The
+Metal tests run on a GitHub-hosted macOS runner with a paravirtual Metal device, which
+checks correctness, not timing; performance numbers come from real hardware.
 
 ---
 
