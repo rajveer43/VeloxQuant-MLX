@@ -3,7 +3,7 @@
 These are the **source files** for the VeloxQuant-MLX blog posts. Edit here first.
 
 The Docusaurus-formatted copies live in [`docs-site/blog/`](../docs-site/blog/) and are
-served at **https://veloxquant-mlx.netlify.app/docs/blog/**.
+served at **https://veloxquant.dev/docs/blog/**.
 
 When you edit a post here, mirror the change to the corresponding file in `docs-site/blog/`
 (the only difference is the YAML frontmatter block at the top of each `docs-site/blog/` file).

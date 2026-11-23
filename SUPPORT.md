@@ -3,7 +3,7 @@
 ## Documentation
 
 Start with the official docs at
-<https://veloxquant-mlx.netlify.app/docs/>. They cover installation, all
+<https://veloxquant.dev/docs/>. They cover installation, all
 supported quantization algorithms, API reference, and integration guides for
 `mlx_lm`.
 

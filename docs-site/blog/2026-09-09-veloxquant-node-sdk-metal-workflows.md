@@ -154,10 +154,10 @@ npx veloxquant serve --model mlx-community/Qwen3-4B-4bit
 
 ## Explore the documentation
 
-- [Install VeloxQuant-MLX](https://veloxquant-mlx.netlify.app/docs/getting-started/installation)
-- [VeloxQuant quickstart](https://veloxquant-mlx.netlify.app/docs/getting-started/quickstart)
-- [Architecture guide](https://veloxquant-mlx.netlify.app/docs/getting-started/architecture)
-- [Algorithm overview](https://veloxquant-mlx.netlify.app/docs/algorithms/overview)
+- [Install VeloxQuant-MLX](https://veloxquant.dev/docs/getting-started/installation)
+- [VeloxQuant quickstart](https://veloxquant.dev/docs/getting-started/quickstart)
+- [Architecture guide](https://veloxquant.dev/docs/getting-started/architecture)
+- [Algorithm overview](https://veloxquant.dev/docs/algorithms/overview)
 - [VeloxQuant SDK on npm](https://www.npmjs.com/package/@veloxquant/sdk)
 - [VeloxQuant SDK source code](https://github.com/rajveer43/veloxquant-sdk)
 

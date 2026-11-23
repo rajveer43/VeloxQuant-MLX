@@ -33,7 +33,7 @@ const config: Config = {
     v4: true,
   },
 
-  url: 'https://veloxquant-mlx.netlify.app',
+  url: 'https://veloxquant.dev',
   baseUrl: '/docs/',
 
   onBrokenLinks: 'throw',
