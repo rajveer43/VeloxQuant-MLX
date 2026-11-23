@@ -301,7 +301,10 @@ known-first-party = ["veloxquant_mlx"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
-version_variables = ["veloxquant_mlx/__init__.py:__version__"]
+version_variables = [
+    "veloxquant_mlx/__init__.py:__version__",
+    "CITATION.cff:version",
+]
 # This must be an empty string, not `false`. python-semantic-release 10+
 # expects a string here, and a boolean causes a validation error that
 # `semantic-release version --print` writes to stderr. The release workflow
