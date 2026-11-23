@@ -1,9 +1,10 @@
 # Citations
 
-Full bibliography for VeloxQuant-MLX. 39 of the 42 compression methods are
-adaptations of a published, peer-reviewed paper; three (NestedKV-adapted,
-AMC-adapted, and AnchorKV-adapted) are one-time, stated exceptions adapted
-from unpublished arXiv preprints — see their entries below and
+Full bibliography for VeloxQuant-MLX's 43 compression methods. Each is an
+adaptation of a published paper, with the venue stated per entry; entries
+marked "preprint" or "unreviewed" have no verified peer-reviewed venue.
+NestedKV-adapted, AMC-adapted, and AnchorKV-adapted are one-time, stated
+exceptions adapted from unpublished arXiv preprints — see their entries below and
 `paper/research/surveys/NEW_METHOD_SURVEY_V21.md` /
 `NEW_METHOD_SURVEY_V22.md` for the full rationale.
 Each method's page on the
@@ -19,7 +20,7 @@ reference list.
 - [SpectralQuant (2026, unreviewed; no arXiv ID yet)](https://github.com/Dynamis-Labs/spectralquant) — "3% Is All You Need: Breaking TurboQuant's Compression Limit via Spectral Structure" by the Dynamis Labs team ([write-up by Ashwin Gopinath](https://nanothoughts.substack.com/p/3-is-all-you-need-breaking-turboquants)) — eigenvector PCA rotation + signal/noise codebooks. The authors report 5.95× vs TurboQuant's 5.02× at higher quality; those figures are theirs, self-reported and not reproduced here. The authors describe the paper as a NeurIPS 2026 submission with arXiv pending, so this entry should be replaced with the arXiv link once it exists
 - [TurboQuant (ICLR 2026)](https://arxiv.org/abs/2504.19874) — Zandieh et al., "Online Vector Quantization with Near-optimal Distortion Rate"
 - [RateQuant (2025)](https://arxiv.org/abs/2605.06675) — "RateQuant: Mixed-Precision KV Cache Quantization via Rate-Distortion Theory"
-- [VecInfer (2024)](https://arxiv.org/abs/2510.06175) — Yao et al., "Efficient LLM Inference with Low-Bit KV Cache via Outlier-Suppressed Vector Quantization"
+- [VecInfer (ACL 2026)](https://arxiv.org/abs/2510.06175) — Yao et al., "Efficient LLM Inference with Low-Bit KV Cache via Outlier-Suppressed Vector Quantization"
 - [PolarQuant (AISTATS 2026)](https://arxiv.org/abs/2502.02617) — "PolarQuant: Quantizing KV Caches with Polar Transformation"
 - [QJL (2024)](https://arxiv.org/abs/2406.03482) — Zandieh et al., "QJL: 1-Bit Quantized JL Transform for KV Cache Quantization"
 - [PALU (ICLR 2025)](https://arxiv.org/abs/2407.21118) — Chang et al., "Palu: Compressing KV-Cache with Low-Rank Projection" — group-head low-rank projection of keys and values (true latent storage)
@@ -27,7 +28,7 @@ reference list.
 - [MiniCache (NeurIPS 2024)](https://arxiv.org/abs/2405.14366) — Liu et al., "MiniCache: KV Cache Compression in Depth Dimension for Large Language Models" — cross-layer SLERP merge of adjacent layers' KV directions
 - [GEAR (arXiv:2403.05527)](https://arxiv.org/abs/2403.05527) — Kang et al., "GEAR: An Efficient KV Cache Compression Recipe for Near-Lossless Generative Inference of LLM" — error feedback: low-rank residual + sparse outlier correction over a base quantizer
 - [ZipCache (NeurIPS 2024)](https://arxiv.org/abs/2405.14256) — He et al., "ZipCache: Accurate and Efficient KV Cache Quantization with Salient Token Identification" — per-token mixed bit-width via saliency-adaptive allocation (adapted: key-norm proxy for the attention-score saliency signal)
-- [SnapKV (ICLR 2025)](https://arxiv.org/abs/2404.14469) — Yuan et al., "SnapKV: LLM Knows What You are Looking for Before Generation" — token eviction via prefill observation-window attention scoring (adapted: key-as-query proxy for the prompt query vectors)
+- [SnapKV (NeurIPS 2024)](https://arxiv.org/abs/2404.14469) — Li et al., "SnapKV: LLM Knows What You are Looking for Before Generation" — token eviction via prefill observation-window attention scoring (adapted: key-as-query proxy for the prompt query vectors)
 - [StreamingLLM (ICLR 2024)](https://arxiv.org/abs/2309.17453) — Xiao et al., "Efficient Streaming Language Models with Attention Sinks" — structural positional eviction: first N sinks + rolling recency window; constant-memory streaming (adapted: no attention mask adjustment, no RoPE position-ID remapping)
 - [H2O (ICLR 2024)](https://arxiv.org/abs/2306.14048) — Zhang et al., "H2O: Heavy-Hitter Oracle for Efficient Generative Inference of Large Language Models" — cumulative attention-mass token eviction with sink protection; budget-bounded constant-memory cache (adapted: key-as-query proxy for attention weights, no RoPE remapping)
 - [TOVA (arXiv:2401.06104)](https://arxiv.org/abs/2401.06104) — Oren et al., "Transformers are Multi-State RNNs" — memoryless current-step attention-weight token eviction; budget-bounded constant-memory cache, reactive counterpart to H2O's inertial cumulative scoring (adapted: key-as-query proxy for attention weights, no RoPE remapping)
@@ -59,11 +60,11 @@ reference list.
 - [KVQuant (NeurIPS 2024)](https://arxiv.org/abs/2401.18079) — Hooper et al., "Towards 10 Million Context Length LLM Inference with KV Cache Quantization"
 - [Coupled Quantization (NeurIPS 2024)](https://arxiv.org/abs/2405.03917) — Zhang et al., "KV Cache is 1 Bit Per Channel"
 - [KVTuner (ICML 2025)](https://arxiv.org/abs/2502.04420) — Li et al., "Sensitivity-Aware Layer-Wise Mixed-Precision KV Cache Quantization"
-- [MixKVQ (2024)](https://arxiv.org/abs/2512.19206) — Zhang et al., "Query-Aware Mixed-Precision KV Cache Quantization"
+- [MixKVQ (2025)](https://arxiv.org/abs/2512.19206) — Zhang et al., "Query-Aware Mixed-Precision KV Cache Quantization for Long-Context Reasoning"
 - [FibQuant (2025)](https://arxiv.org/abs/2605.11478) — "Universal Vector Quantization for Random-Access KV-Cache Compression"
 
 **Token eviction & sparse attention:**
-- [SnapKV (2024)](https://arxiv.org/abs/2404.14469) — Li et al., "LLM Knows What You are Looking for Before Generation"
+- [SnapKV (NeurIPS 2024)](https://arxiv.org/abs/2404.14469) — Li et al., "LLM Knows What You are Looking for Before Generation"
 - [PyramidKV (2024)](https://arxiv.org/abs/2406.02069) — Cai et al., "Dynamic KV Cache Compression based on Pyramidal Information Funneling"
 - [SqueezeAttention (2024)](https://arxiv.org/abs/2404.04793) — Wang et al., "2D Management of KV-Cache in LLM Inference via Layer-wise Optimal Budget"
 - [RocketKV (ICML 2025)](https://arxiv.org/abs/2502.14051) — Behnam et al., "Accelerating Long-Context LLM Inference via Two-Stage KV Cache Compression"
