@@ -1,31 +1,27 @@
 VeloxQuant-MLX
-Copyright (c) 2025-2026 Rajveer Rathod (https://github.com/rajveer43)
+Copyright (c) 2026 Rajveer Rathod (https://github.com/rajveer43)
 
-This product includes software developed by Rajveer Rathod, distributed
-under the terms of the MIT License (see LICENSE file).
+VeloxQuant-MLX is distributed under the MIT License. The full license text is
+in the LICENSE file; that file, and nothing else, defines the terms of use,
+modification and redistribution. This NOTICE adds no conditions to it.
 
-Attribution
-───────────
-The MIT License REQUIRES that the copyright notice and this attribution
-be retained in all copies or substantial portions of the Software,
-INCLUDING but not limited to:
+MIT asks for one thing: keep the copyright notice and permission notice
+(LICENSE) in all copies or substantial portions of the Software. Credit
+beyond that is appreciated but not required.
 
-  - Source code redistributions (with or without modification)
-  - Binary distributions (PyPI wheels, Docker images, etc.)
-  - Repackaging under a different name or namespace
-  - Inclusion in larger works or derivative projects
+Third-party code
+────────────────
+No third-party source code is bundled in the VeloxQuant-MLX package (sdist or
+wheel). Runtime dependencies (mlx, mlx-lm, numpy, scipy) are installed
+separately and are governed by their own licenses.
 
-If you fork, redistribute, or build upon this work, you must:
-  1. Retain the LICENSE file
-  2. Retain this NOTICE file
-  3. Retain copyright headers within source files
-  4. Make a reasonable effort to credit the original author
+The compression methods are implementations of published research. They are
+credited in CITATIONS.md; citing a paper there is attribution to its authors,
+not a licensing statement.
 
-Unauthorized removal of attribution constitutes a violation of the MIT
-License terms and may be subject to DMCA takedown procedures.
+Links
+─────
+Repository: https://github.com/rajveer43/VeloxQuant-MLX
+PyPI:       https://pypi.org/project/VeloxQuant-MLX/
 
-Original repository: https://github.com/rajveer43/VeloxQuant-MLX
-PyPI package:        https://pypi.org/project/VeloxQuant-MLX/
-
-Contact for licensing questions or to report unauthorized use:
-  rathodrajveer1311@gmail.com
+Licensing questions: rathodrajveer1311@gmail.com
