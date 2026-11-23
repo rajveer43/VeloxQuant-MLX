@@ -1,7 +1,7 @@
 # Checks that documentation links actually resolve.
 #
 # Docusaurus' own `onBrokenLinks: 'throw'` only sees links *inside* the docs
-# site. Absolute https://veloxquant-mlx.netlify.app/... URLs written in README,
+# site. Absolute https://veloxquant.dev/... URLs written in README,
 # CHANGELOG or blog sources are invisible to it, and that is exactly where a
 # reader found two 404s: they pointed at /algorithms/... while the site serves
 # everything under /docs/ (baseUrl in docusaurus.config.ts, plus netlify.toml

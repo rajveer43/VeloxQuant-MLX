@@ -1,5 +1,5 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://veloxquant-mlx.netlify.app/sitemap.xml
-Sitemap: https://veloxquant-mlx.netlify.app/docs/sitemap.xml
+Sitemap: https://veloxquant.dev/sitemap.xml
+Sitemap: https://veloxquant.dev/docs/sitemap.xml

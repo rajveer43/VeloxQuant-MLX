@@ -48,7 +48,7 @@ __all__ = [
     "DEFAULT_SERVE_METHOD",
 ]
 
-DOCS_BASE = "https://veloxquant-mlx.netlify.app/docs/algorithms"
+DOCS_BASE = "https://veloxquant.dev/docs/algorithms"
 
 #: Registry method name -> published doc-site slug. The docs site (Docusaurus,
 #: migrated from the old static-HTML `/algorithms/<slug>` layout) has its own
@@ -56,7 +56,7 @@ DOCS_BASE = "https://veloxquant-mlx.netlify.app/docs/algorithms"
 #: (e.g. `turboquant_rvq` -> `rvq`, `polar` -> `polarquant`), and it does not
 #: yet have a page for most registry methods. A method absent from this map
 #: has no docs page; `docs_url` is `None` rather than a synthesized dead link.
-#: Sourced from https://veloxquant-mlx.netlify.app/sitemap.xml.
+#: Sourced from https://veloxquant.dev/sitemap.xml.
 _DOCS_SLUG: dict[str, str] = {
     "turboquant_rvq": "rvq",
     "polar": "polarquant",

@@ -20,7 +20,7 @@ const { algoliasearch } = require('algoliasearch');
 
 const BUILD_DIR = path.join(__dirname, '..', 'build');
 const INDEX_NAME = 'veloxquant-mlx';
-const SITE_URL = 'https://veloxquant-mlx.netlify.app';
+const SITE_URL = 'https://veloxquant.dev';
 
 const SKIP_PATH_SEGMENTS = ['assets', 'img', '404'];
 // Algolia caps records at 10KB; stay well under that since objectID/url/

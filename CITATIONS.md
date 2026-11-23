@@ -8,7 +8,7 @@ exceptions adapted from unpublished arXiv preprints — see their entries below 
 `paper/research/surveys/NEW_METHOD_SURVEY_V21.md` /
 `NEW_METHOD_SURVEY_V22.md` for the full rationale.
 Each method's page on the
-[documentation site](https://veloxquant-mlx.netlify.app/docs/algorithms/overview)
+[documentation site](https://veloxquant.dev/docs/algorithms/overview)
 states its specific adaptation and limitations. This file is the consolidated
 reference list.
 

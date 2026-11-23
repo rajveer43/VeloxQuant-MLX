@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that every veloxquant-mlx.netlify.app URL in the repo actually resolves.
+"""Check that every veloxquant.dev URL in the repo actually resolves.
 
 Exists because a reader hit a 404 before we did. Two links in README.md pointed
 at ``/algorithms/cross-model-transfer`` while the docs site serves everything
@@ -31,7 +31,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-SITE = "https://veloxquant-mlx.netlify.app"
+SITE = "https://veloxquant.dev"
 URL_RE = re.compile(rf"{re.escape(SITE)}[^\s)\"'<>\]]*")
 ANCHOR_RE = re.compile(r"\[[^\]]*\]\(#([^)]+)\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$", re.M)
