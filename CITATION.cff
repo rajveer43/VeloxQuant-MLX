@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use VeloxQuant-MLX in your work, please cite it as below. Per-method attributions are in CITATIONS.md."
+type: software
+title: "VeloxQuant-MLX: Fast KV-Cache Quantization for Apple Silicon"
+abstract: >-
+  KV-cache compression for LLM inference on Apple Silicon with MLX and Metal
+  kernels: 43 methods adapted from published papers behind one KVCacheConfig API.
+authors:
+  - family-names: Rathod
+    given-names: Rajveer
+    orcid: "https://orcid.org/0009-0009-7566-1843"
+    affiliation: "Independent researcher"
+# Concept DOI: always resolves to the latest Zenodo release.
+doi: "10.5281/zenodo.20647294"
+license: MIT
+repository-code: "https://github.com/rajveer43/VeloxQuant-MLX"
+url: "https://veloxquant.dev/"
+repository-artifact: "https://pypi.org/project/VeloxQuant-MLX/"
+keywords:
+  - kv-cache
+  - quantization
+  - llm
+  - mlx
+  - apple-silicon
+# Kept in sync with pyproject.toml by python-semantic-release
+# (version_variables in [tool.semantic_release]).
+version: "0.96.0"

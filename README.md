@@ -497,7 +497,7 @@ solo-maintained project like this has that it is useful to someone.
 ```bibtex
 @software{veloxquant_mlx,
   author  = {Rathod, Rajveer},
-  title   = {VeloxQuant-MLX: KV-Cache Compression for LLM Inference on Apple Silicon},
+  title   = {VeloxQuant-MLX: Fast KV-Cache Quantization for Apple Silicon},
   year    = {2026},
   publisher = {Zenodo},
   doi     = {10.5281/zenodo.20647294},

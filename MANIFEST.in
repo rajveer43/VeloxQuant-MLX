@@ -22,4 +22,4 @@ recursive-include veloxquant_mlx/metal/src *.metal
 recursive-include veloxquant_mlx/ui/static *
 include veloxquant_mlx/py.typed
 
-include LICENSE NOTICE README.md CHANGELOG.md CITATIONS.md
+include LICENSE NOTICE README.md CHANGELOG.md CITATIONS.md CITATION.cff
