@@ -248,6 +248,11 @@ the commit type should still be correct.)
 
 ## Releases
 
+This is the single authoritative description of the release process; other
+documents link here. Releases are tagged on `master` by
+`.github/workflows/release.yml`, and merging a PR does not publish anything on
+its own.
+
 `VeloxQuant-MLX` is released **once a week, on Sunday at 10:00 IST (04:30
 UTC)**, from whatever has been merged to `master`. The **merge cutoff is
 Saturday 18:00 IST** (12:30 UTC): get PRs merged before it to make that
