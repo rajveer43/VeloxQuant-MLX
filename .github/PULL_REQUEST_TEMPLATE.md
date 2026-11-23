@@ -11,6 +11,7 @@ Closes #
 - [ ] `python -m pytest veloxquant_mlx/tests -q` passes locally on Apple Silicon
 - [ ] New or updated unit tests cover the change
 - [ ] Docs updated if user-facing behavior changed
+- [ ] I read and understand every line of this PR, and disclosed any substantial AI assistance in the summary (see [CONTRIBUTING](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/CONTRIBUTING.md#ai-assisted-contributions))
 
 ## Number claims (if any)
 
