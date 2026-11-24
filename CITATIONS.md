@@ -5,7 +5,7 @@ adaptation of a published paper, with the venue stated per entry; entries
 marked "preprint" or "unreviewed" have no verified peer-reviewed venue.
 NestedKV-adapted, AMC-adapted, and AnchorKV-adapted are one-time, stated
 exceptions adapted from unpublished arXiv preprints — see their entries below and
-`paper/research/surveys/NEW_METHOD_SURVEY_V21.md` /
+`docs/research/surveys/NEW_METHOD_SURVEY_V21.md` /
 `NEW_METHOD_SURVEY_V22.md` for the full rationale.
 Each method's page on the
 [documentation site](https://veloxquant.dev/docs/algorithms/overview)

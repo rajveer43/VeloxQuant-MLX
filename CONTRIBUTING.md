@@ -224,9 +224,9 @@ A new method typically consists of:
 - tests, and
 - a benchmark script emitting `figures/<method>/<model>/results.json`.
 
-See `paper/research/surveys/` for examples of how a method is scoped and
-chosen before implementation (the highest-numbered `NEW_METHOD_SURVEY_V*.md`
-is the most current).
+See [`docs/research/surveys/`](docs/research/surveys/) for examples of how a
+method is scoped and chosen before implementation (the highest-numbered
+`NEW_METHOD_SURVEY_V*.md` there is the most current).
 
 ## Commit conventions
 

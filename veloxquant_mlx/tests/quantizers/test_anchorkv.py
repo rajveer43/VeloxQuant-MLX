@@ -2,7 +2,7 @@
 
 AnchorKV-adapted (arXiv:2608.02901v1, no verified peer-reviewed venue as of
 2026-08-20 — a one-time, user-directed exception; see
-paper/research/surveys/NEW_METHOD_SURVEY_V22.md) selects a small set of
+docs/research/surveys/NEW_METHOD_SURVEY_V22.md) selects a small set of
 anchor positions per head, assigns every other token to its nearest anchor
 (index + scalar coefficient), and spends a byte budget on quantized
 residuals for the tokens whose approximation error costs the most

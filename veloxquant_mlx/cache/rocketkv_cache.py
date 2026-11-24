@@ -5,7 +5,7 @@ KV Cache Compression" (Behnam, Fu, Zhao, Tsai, Yu, Tumanov; NVIDIA/Georgia
 Tech; ICML 2025, arXiv:2502.14051). Documented as "RocketKV-adapted
 (VeloxQuant-MLX implementation)" — not a faithful port. See
 ``veloxquant_mlx/quantizers/rocketkv.py`` for the full list of adaptation
-decisions and ``paper/research/surveys/NEW_METHOD_SURVEY_V23.md`` for the
+decisions and ``docs/research/surveys/NEW_METHOD_SURVEY_V23.md`` for the
 write-up.
 
 Design (paper §3.2-3.6):

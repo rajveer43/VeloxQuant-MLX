@@ -6,7 +6,7 @@ Documented as "NestedKV-adapted (VeloxQuant-MLX implementation)" — not a
 faithful port. **No verified peer-reviewed venue as of 2026-07-14** — this is
 a one-time, user-directed exception to this repo's standing rule that every
 shipped method trace to a verified peer-reviewed venue. See
-``paper/research/surveys/NEW_METHOD_SURVEY_V21.md`` for the full rationale.
+``docs/research/surveys/NEW_METHOD_SURVEY_V21.md`` for the full rationale.
 Every other method in this repo (38 of 39) has a verified venue; this is the
 only exception, and the next method survey reverts to requiring one.
 
