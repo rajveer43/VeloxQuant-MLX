@@ -79,6 +79,11 @@ class KittyKVCache(_MLXKVCache):
         self._compressed_key_bytes: int = 0
         self._fp16_key_bytes: int = 0
         self._value_fp16_bytes: int = 0
+        # Token count of every update_and_fetch call still held, oldest first.
+        # A single-token call is stored exactly and charged fp16 (see
+        # _account_bytes), so trim() needs to know which rolled-back rows were
+        # charged that way instead of at the mixed-precision rate.
+        self._call_tokens: list[int] = []
 
     # ------------------------------------------------------------------
     # Core quantization
@@ -151,6 +156,18 @@ class KittyKVCache(_MLXKVCache):
         return super().update_and_fetch(k_out.astype(keys.dtype), values)
 
     def _account_bytes(self, B: int, H: int, S: int, D: int) -> None:
+        self._call_tokens.append(S)
+        self._fp16_key_bytes += B * H * S * D * 2
+        self._value_fp16_bytes += B * H * S * D * 2
+        if S == 1:
+            # Channels are grouped along the token axis, so a one-token call
+            # puts one value in each group: min == max, scale 0, and the key
+            # is reconstructed exactly. Charge what is held (fp16), not
+            # mixed-precision codes plus a scale/zero pair per channel, which
+            # would bill more than fp16 for a row that was never quantized
+            # (same as GEAR, #770).
+            self._compressed_key_bytes += B * H * D * 2
+            return
         n_hi = max(1, int(D * self._hi_fraction))
         n_lo = D - n_hi
 
@@ -163,8 +180,6 @@ class KittyKVCache(_MLXKVCache):
         self._compressed_key_bytes += _channel_bytes(S, n_hi, self._hi_bit) + _channel_bytes(
             S, n_lo, self._lo_bit
         )
-        self._fp16_key_bytes += B * H * S * D * 2
-        self._value_fp16_bytes += B * H * S * D * 2
 
     def _key_bytes_for(self, n_tokens: int, B: int, H: int) -> int:
         n_hi = max(1, int(self._D * self._hi_fraction))
@@ -177,14 +192,40 @@ class KittyKVCache(_MLXKVCache):
 
         return _channel_bytes(n_hi, self._hi_bit) + _channel_bytes(n_lo, self._lo_bit)
 
+    def _rolled_back_key_bytes(self, n_tokens: int, B: int, H: int) -> int:
+        """Key bytes charged for the newest ``n_tokens`` rows; consumes ``_call_tokens``.
+
+        Single-token calls were charged fp16 (stored exactly), longer calls at
+        the mixed-precision rate, so walk the call log from the newest call
+        back instead of applying one formula to the whole range.
+        """
+        remaining, total = n_tokens, 0
+        while remaining > 0 and self._call_tokens:
+            span = self._call_tokens[-1]
+            take = min(span, remaining)
+            if span == 1:
+                total += B * H * self._D * 2
+            else:
+                total += self._key_bytes_for(take, B, H)
+            remaining -= take
+            if take == span:
+                self._call_tokens.pop()
+            else:
+                self._call_tokens[-1] = span - take
+        if remaining > 0:
+            # Rows with no logged call (cache populated outside update_and_fetch).
+            total += self._key_bytes_for(remaining, B, H)
+        return total
+
     def trim(self, n: int) -> int:
         """Drop the last ``n`` tokens and remove them from the running
         key statistics and byte accounting.
 
         The accumulators were fed the stored (quantized) keys, so the trimmed
         rows' contribution is recomputed from storage and subtracted. Byte
-        accounting is rolled back with the same per-call formula, so it can
-        differ from a fresh cache by group-rounding at the seams.
+        accounting is rolled back per call (single-token calls were charged
+        fp16, longer ones at the mixed-precision rate), so it can differ from
+        a fresh cache by group-rounding at the seams.
         """
         old_offset = self.offset
         trimmed = min(old_offset, max(int(n), 0))
@@ -201,7 +242,7 @@ class KittyKVCache(_MLXKVCache):
                 mx.eval(self._key_sum, self._key_sq_sum)
                 self._n_keys -= trimmed
             self._compressed_key_bytes = max(
-                0, self._compressed_key_bytes - self._key_bytes_for(trimmed, B, H)
+                0, self._compressed_key_bytes - self._rolled_back_key_bytes(trimmed, B, H)
             )
             self._fp16_key_bytes = max(0, self._fp16_key_bytes - B * H * trimmed * self._D * 2)
             self._value_fp16_bytes = max(0, self._value_fp16_bytes - B * H * trimmed * self._D * 2)

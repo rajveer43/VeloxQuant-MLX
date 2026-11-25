@@ -311,3 +311,73 @@ def test_hi_fraction_above_one_rejected() -> None:
 def test_hi_fraction_negative_rejected() -> None:
     with pytest.raises(ValueError, match="kitty_hi_fraction"):
         KittyKVCache(_make_cfg(kitty_hi_fraction=-0.2))
+
+
+# ---------------------------------------------------------------------------
+# Single-token decode is stored exactly, so it must be charged as fp16 (#770 class)
+# ---------------------------------------------------------------------------
+def test_single_token_decode_key_is_exact_and_charged_fp16():
+    """Groups run along the token axis, so a 1-token call has min == max and the
+    key is stored losslessly; the byte counter must not bill it as 2.5-bit codes
+    plus a scale/zero pair per channel (which exceeds fp16)."""
+    B, H, D = 1, 2, 64
+    cache = KittyKVCache(_make_cfg())
+    cache.update_and_fetch(_keys(B, H, 64, D), _values(B, H, 64, D))
+    before = cache.compressed_key_bytes
+
+    k_dec = _keys(B, H, 1, D, seed=500)
+    k_out, _ = cache.update_and_fetch(k_dec, _values(B, H, 1, D, seed=501))
+
+    # Exact (up to the fp16 cast): this is why it has to be charged as fp16.
+    np.testing.assert_array_equal(np.array(k_out[:, :, -1:]), np.array(k_dec))
+    assert cache.compressed_key_bytes - before == B * H * D * 2
+
+
+def test_decode_run_never_charges_more_than_fp16():
+    B, H, D = 1, 2, 64
+    cache = KittyKVCache(_make_cfg())
+    cache.update_and_fetch(_keys(B, H, 64, D), _values(B, H, 64, D))
+    pre_comp, pre_fp16 = cache.compressed_key_bytes, cache.fp16_key_bytes
+    for step in range(40):
+        cache.update_and_fetch(
+            _keys(B, H, 1, D, seed=600 + step), _values(B, H, 1, D, seed=700 + step)
+        )
+    # The decoded span is held exactly, so its accounted ratio is 1.0, not < 1.0.
+    assert cache.compressed_key_bytes - pre_comp == cache.fp16_key_bytes - pre_fp16
+
+
+def test_multi_token_call_still_charged_at_mixed_precision_rate():
+    cache = KittyKVCache(_make_cfg())
+    cache.update_and_fetch(_keys(1, 2, 32, 64), _values(1, 2, 32, 64))
+    assert cache.compressed_key_bytes < cache.fp16_key_bytes
+
+
+def test_trim_rolls_back_decode_and_chunk_charges_separately():
+    B, H, D = 1, 2, 64
+    cache = KittyKVCache(_make_cfg())
+    cache.update_and_fetch(_keys(B, H, 64, D), _values(B, H, 64, D))
+    base_comp, base_fp16 = cache.compressed_key_bytes, cache.fp16_key_bytes
+
+    for step in range(5):  # five single-token calls, charged fp16
+        cache.update_and_fetch(
+            _keys(B, H, 1, D, seed=800 + step), _values(B, H, 1, D, seed=900 + step)
+        )
+    cache.update_and_fetch(_keys(B, H, 32, D, seed=810), _values(B, H, 32, D, seed=910))
+    assert cache.trim(32 + 5) == 32 + 5
+
+    assert cache.compressed_key_bytes == base_comp
+    assert cache.fp16_key_bytes == base_fp16
+    assert cache._call_tokens == [64]
+
+
+def test_trim_decode_only_rows_returns_to_prefill_accounting():
+    B, H, D = 1, 2, 64
+    cache = KittyKVCache(_make_cfg())
+    cache.update_and_fetch(_keys(B, H, 64, D), _values(B, H, 64, D))
+    base = cache.compressed_key_bytes
+    for step in range(3):
+        cache.update_and_fetch(
+            _keys(B, H, 1, D, seed=1000 + step), _values(B, H, 1, D, seed=1100 + step)
+        )
+    cache.trim(3)
+    assert cache.compressed_key_bytes == base
