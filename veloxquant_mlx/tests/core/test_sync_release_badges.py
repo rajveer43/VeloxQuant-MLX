@@ -186,6 +186,58 @@ class TestSyncLandingVersions:
         assert any("Metal Linked" in w for w in sync_release_badges._warnings)
 
 
+_SITEMAP_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://veloxquant.dev/</loc>
+    <lastmod>2026-09-07</lastmod>
+  </url>
+  <url>
+    <loc>https://veloxquant.dev/benchmarks.html</loc>
+    <lastmod>2026-09-07</lastmod>
+  </url>
+</urlset>
+"""
+
+
+class TestSyncSitemapLastmod:
+    """The sitemap's home-page lastmod sat at 2026-09-07 for months; a release
+    rewrites index.html, so the release date is its true modified date."""
+
+    def test_updates_only_the_home_page(self, tmp_path, monkeypatch) -> None:
+        sitemap = tmp_path / "sitemap.xml"
+        sitemap.write_text(_SITEMAP_XML)
+        monkeypatch.setattr(sync_release_badges, "SITEMAP", sitemap)
+
+        sync_release_badges._sync_sitemap_lastmod("2026-12-01")
+
+        text = sitemap.read_text()
+        assert "<loc>https://veloxquant.dev/</loc>\n    <lastmod>2026-12-01</lastmod>" in text
+        assert text.count("2026-09-07") == 1  # benchmarks.html untouched
+
+    def test_is_idempotent(self, tmp_path, monkeypatch) -> None:
+        sitemap = tmp_path / "sitemap.xml"
+        sitemap.write_text(_SITEMAP_XML)
+        monkeypatch.setattr(sync_release_badges, "SITEMAP", sitemap)
+
+        sync_release_badges._sync_sitemap_lastmod("2026-12-01")
+        once = sitemap.read_text()
+        sync_release_badges._sync_sitemap_lastmod("2026-12-01")
+
+        assert sitemap.read_text() == once
+
+    def test_warns_when_home_entry_missing(self, tmp_path, monkeypatch) -> None:
+        sitemap = tmp_path / "sitemap.xml"
+        sitemap.write_text("<urlset></urlset>")
+        monkeypatch.setattr(sync_release_badges, "SITEMAP", sitemap)
+        monkeypatch.setattr(sync_release_badges, "_warnings", [])
+
+        sync_release_badges._sync_sitemap_lastmod("2026-12-01")
+
+        assert any("<lastmod> not found" in w for w in sync_release_badges._warnings)
+        assert sitemap.read_text() == "<urlset></urlset>"
+
+
 def test_real_landing_page_matches_package_version() -> None:
     """Drift guard: the checked-in landing page must carry the package
     version in the two places the release sync owns."""
