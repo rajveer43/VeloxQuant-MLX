@@ -25,6 +25,8 @@ keywords = [
     "long context inference", "attention cache quantization",
     "metal kernels", "on-device llm", "local llm inference",
     "context length extension", "mlx-lm", "token eviction",
+    "kv-cache-quantization", "llm-quantization", "kivi", "local-ai", "long-context",
+    "local llm", "metal", "model compression",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
