@@ -275,8 +275,10 @@ jobs:
           # landing/index.html is included because sync_release_badges.py rewrites
           # the hero badge version and the meta-description/test-count claims
           # there; omitting it would silently discard that sync every release.
+          # landing/sitemap.xml is included for the same reason: the sync bumps
+          # the home page's <lastmod>.
           git add pyproject.toml veloxquant_mlx/__init__.py CHANGELOG.md README.md \
-                  landing/index.html
+                  landing/index.html landing/sitemap.xml
           git commit -m "chore(release): ${{ steps.version.outputs.next_version }} [skip ci]"
           # Annotated (-a), not lightweight: `git push --follow-tags` pushes ONLY
           # annotated tags, so a lightweight tag here is created locally on the

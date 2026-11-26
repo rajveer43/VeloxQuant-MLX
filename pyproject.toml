@@ -91,7 +91,7 @@ docs = [
 ]
 
 [project.urls]
-Homepage           = "https://github.com/rajveer43/VeloxQuant-MLX"
+Homepage           = "https://veloxquant.dev/"
 Repository       = "https://github.com/rajveer43/VeloxQuant-MLX"
 "Bug Tracker" = "https://github.com/rajveer43/VeloxQuant-MLX/issues"
 Author        = "https://github.com/rajveer43"

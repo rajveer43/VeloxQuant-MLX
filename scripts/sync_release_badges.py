@@ -12,6 +12,9 @@ What is synced automatically:
                          data-text attribute and its textContent fallback),
                          the JSON-LD "softwareVersion" and the Studio mockup's
                          "v<version> · Metal Linked" label
+  landing/sitemap.xml  — the home page's <lastmod> (the release rewrites
+                         index.html, so the release date is its modified date;
+                         the other pages are left alone)
 
 What is NOT synced: the *prose* after "v<version> — " in the hero badge and
 after "New in <version>: " in the meta description. That copy describes what
@@ -25,6 +28,7 @@ Usage:
 
 from __future__ import annotations
 
+import datetime
 import re
 import subprocess
 import sys
@@ -34,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
 PYPROJECT = ROOT / "pyproject.toml"
 LANDING_HTML = ROOT / "landing" / "index.html"
+SITEMAP = ROOT / "landing" / "sitemap.xml"
 
 _warnings: list[str] = []
 
@@ -212,6 +217,33 @@ def _sync_landing_versions(version: str) -> None:
     LANDING_HTML.write_text(text)
 
 
+def _sync_sitemap_lastmod(today: str | None = None) -> None:
+    """Set the home page's ``<lastmod>`` in landing/sitemap.xml to the release date.
+
+    A stale ``lastmod`` (it sat at 2026-09-07 for months) tells crawlers the
+    page has not changed. Every release rewrites landing/index.html (version,
+    badge, test count), so the release date is a true modified date for that
+    URL. The other sitemap entries are separate files that a release does not
+    touch, so they are not rewritten here.
+    """
+    if not SITEMAP.exists():
+        _warn(f"{SITEMAP.relative_to(ROOT)} not found, skipping")
+        return
+
+    day = today or datetime.date.today().isoformat()
+    text = SITEMAP.read_text()
+    text, n = re.subn(
+        r"(<loc>https://veloxquant\.dev/</loc>\s*<lastmod>)[^<]*(</lastmod>)",
+        rf"\g<1>{day}\g<2>",
+        text,
+        count=1,
+    )
+    if n == 0:
+        _warn("home-page <lastmod> not found in landing/sitemap.xml, skipping")
+        return
+    SITEMAP.write_text(text)
+
+
 def main() -> None:
     version = _current_version()
     test_count = _live_test_count()
@@ -220,6 +252,7 @@ def main() -> None:
     _sync_landing_html(version, test_count)
     _sync_landing_pill(version)
     _sync_landing_versions(version)
+    _sync_sitemap_lastmod()
 
     print(f"Synced badges + landing: tests={test_count}, version={version}")
     if _warnings:
