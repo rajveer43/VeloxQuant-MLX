@@ -6,7 +6,7 @@
 </picture>
 
 <p>
-  Run longer contexts in less memory on Apple Silicon — KV-cache compression for MLX
+  Run longer contexts in less memory on Apple Silicon — KV-cache quantization and compression for MLX
 </p>
 
 <p>
