@@ -373,9 +373,10 @@ from the README rather than only from the file tree.
 | **Security policy** | [SECURITY.md](SECURITY.md) — private disclosure by email, acknowledgement within 72 hours, confirmed issues resolved within 14 days, reporters credited in release notes |
 | **Governance** | [GOVERNANCE.md](GOVERNANCE.md) — decision-making, contribution path, and how co-maintainers are added |
 | **Code of conduct** | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) |
-| **Contributing** | [CONTRIBUTING.md](CONTRIBUTING.md) — open an issue before anything beyond a small bugfix |
+| **Contributing** | [CONTRIBUTING.md](CONTRIBUTING.md) — open an issue before anything beyond a small bugfix. New here? Browse the [good first issues](https://www.goodfirstissue.org/rajveer43/VeloxQuant-MLX) |
 | **Citations & provenance** | [CITATIONS.md](CITATIONS.md) — every method traced to its paper, with deviations documented |
 | **Wiki article** | [Learn AI wiki (Miraheze)](https://ai.miraheze.org/wiki/VeloxQuant-MLX) — an independent, third-party encyclopedia-style article. It is community-editable, so the figures in this README and `CITATIONS.md` remain the source of truth |
+| **Startuply profile** | [VeloxQuant-MLX on Startuply](https://startuply.vc/startup/veloxquant-mlx-edq89q) — an independent, AI-generated directory profile. Its figures (for example the headline memory-reduction number) are not ours; this README, `CITATIONS.md` and the measured results remain the source of truth |
 | **Release process** | Weekly and automated via [python-semantic-release](https://github.com/python-semantic-release/python-semantic-release); every release is gated on the full test suite. Schedule and hotfix rules: [CONTRIBUTING.md#releases](CONTRIBUTING.md#releases). History: [CHANGELOG.md](CHANGELOG.md) |
 
 **Maintainership:** I maintain this project ([rajveer43](https://github.com/rajveer43))
