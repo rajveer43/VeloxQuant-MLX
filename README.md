@@ -389,6 +389,7 @@ Independent project listings:
 - [Learn AI wiki (Miraheze)](https://ai.miraheze.org/wiki/VeloxQuant-MLX) — a community-editable, third-party encyclopedia article. This README and [`CITATIONS.md`](CITATIONS.md) remain the sources of truth for project figures.
 - [Startuply profile](https://startuply.vc/startup/veloxquant-mlx-edq89q) — an independent, AI-generated directory profile. Its figures are not project-verified; use this README and the measured results as the source of truth.
 - [INITE Atlas listing](https://inite.ai/en/atlas/veloxquant.dev) — an independent, automatically generated directory card. Its "up to 98 percent" peak-memory tagline is not a project claim and is not supported by this project's measurements; use this README and the measured results as the source of truth.
+- [Hunted.Space launch dashboard](https://www.hunted.space/dashboard/veloxquant-mlx) — a third-party tracker for the project's Product Hunt launch. It reports launch activity (votes, comments, ranking), not project performance, and repeats the launch text as submitted.
 
 ## Documentation and research notes
 
