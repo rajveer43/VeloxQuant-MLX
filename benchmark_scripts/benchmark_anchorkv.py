@@ -1,7 +1,7 @@
 """Offline-synthetic benchmark for AnchorKV-adapted anchor-residual compression.
 
 AnchorKV (arXiv:2608.02901v1, no verified peer-reviewed venue as of
-2026-08-20 — see paper/research/surveys/NEW_METHOD_SURVEY_V22.md for the
+2026-08-20 — see docs/research/surveys/NEW_METHOD_SURVEY_V22.md for the
 one-time venue-exception rationale) never drops a token: every position
 stays in the softmax, represented as an anchor projection plus an optional
 quantized residual. Every eviction method already in this repo (H2O,

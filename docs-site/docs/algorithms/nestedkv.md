@@ -25,7 +25,7 @@ arXiv revision (submitted 2026-05-26) with no Comments/journal-ref field
 indicating acceptance anywhere. Every other method in this repo required a
 live-verified venue before implementation — this one ships as a **one-time,
 user-directed exception** to that standing rule. See
-[`NEW_METHOD_SURVEY_V21.md`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/paper/research/surveys/NEW_METHOD_SURVEY_V21.md)
+[`NEW_METHOD_SURVEY_V21.md`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/research/surveys/NEW_METHOD_SURVEY_V21.md)
 for the full rationale. The next method survey reverts to requiring a
 verified venue — this is not a new precedent.
 :::

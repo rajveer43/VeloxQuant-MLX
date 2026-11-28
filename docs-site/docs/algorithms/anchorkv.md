@@ -27,7 +27,7 @@ page) with no Comments/journal-ref field indicating acceptance anywhere.
 This ships as a **second, one-time, user-directed exception** to the
 standing venue-verification rule, following the exact precedent set for
 NestedKV. See
-[`NEW_METHOD_SURVEY_V22.md`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/paper/research/surveys/NEW_METHOD_SURVEY_V22.md)
+[`NEW_METHOD_SURVEY_V22.md`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/research/surveys/NEW_METHOD_SURVEY_V22.md)
 for the full rationale. The rule itself is unchanged for every method after
 this one.
 :::

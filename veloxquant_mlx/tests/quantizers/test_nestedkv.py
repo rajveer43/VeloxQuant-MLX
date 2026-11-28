@@ -3,7 +3,7 @@ prefill eviction.
 
 NestedKV-adapted (arXiv:2605.26678, no verified peer-reviewed venue as of
 2026-07-14 — a one-time, user-directed exception; see
-paper/research/surveys/NEW_METHOD_SURVEY_V21.md) scores every prefill token
+docs/research/surveys/NEW_METHOD_SURVEY_V21.md) scores every prefill token
 against THREE parallel key-only continuum-memory statistics (stable/global,
 episodic/block-local, current/recent-window), combines the three rankings via
 a head-adaptive blend and a per-token surprise gate, and allocates the total

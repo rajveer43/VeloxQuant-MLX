@@ -124,7 +124,7 @@ the prior 38 methods required a live-verified venue before implementation;
 NestedKV (arXiv:2605.26678) is still a bare single-revision preprint
 (submitted 2026-05-26, no Comments/journal-ref field) as of 2026-07-14. It
 shipped anyway as a **one-time, user-directed exception**. See
-[`NEW_METHOD_SURVEY_V21.md`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/paper/research/surveys/NEW_METHOD_SURVEY_V21.md).
+[`NEW_METHOD_SURVEY_V21.md`](https://github.com/rajveer43/VeloxQuant-MLX/blob/master/docs/research/surveys/NEW_METHOD_SURVEY_V21.md).
 
 ### New
 - **NestedKV-adapted** (`method="nestedkv"`) — multi-scale ensembled prefill eviction. Every eviction method already in the repo (H2O, SnapKV, CurDKV, PyramidKV, Keyformer, MorphKV, KVzip, ...) scores a token from **one** importance signal; NestedKV keeps **three** parallel key-only continuum-memory statistics (stable/global, episodic/block-local, current/recent-window), scores each token's anomaly against all three independently, and combines the rankings via a training-free **head-adaptive blend** (which scale is most discriminative on this head) and a per-token **surprise-gated route** (fall back to the single strongest scale when the three disagree). Inspired by "NestedKV: Nested Memory Routing for Long-Context KV Cache Compression" (Chen, Liu, Gao, Fan, Wang, Chu, Lin, Hu; arXiv:2605.26678) — documented as "NestedKV-adapted (VeloxQuant-MLX implementation)," not a faithful port.

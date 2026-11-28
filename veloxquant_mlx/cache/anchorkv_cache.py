@@ -6,7 +6,7 @@ Shamshoum, Hodos, Sieradzki, Schuster; Technion; arXiv:2608.02901v1,
 implementation)" — not a faithful port. **No verified peer-reviewed venue
 as of 2026-08-20** — a one-time, user-directed exception to this repo's
 venue-verification rule (the same exception previously granted to
-NestedKV). See ``paper/research/surveys/NEW_METHOD_SURVEY_V22.md`` and
+NestedKV). See ``docs/research/surveys/NEW_METHOD_SURVEY_V22.md`` and
 ``quantizers/anchorkv.py`` for the full list of adaptation decisions.
 
 Unlike every eviction method in this repo (H2O, SnapKV, PyramidKV, AdaKV,

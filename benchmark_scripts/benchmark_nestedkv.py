@@ -2,7 +2,7 @@
 prefill eviction.
 
 NestedKV (arXiv:2605.26678, no verified peer-reviewed venue as of
-2026-07-14 — see paper/research/surveys/NEW_METHOD_SURVEY_V21.md for the
+2026-07-14 — see docs/research/surveys/NEW_METHOD_SURVEY_V21.md for the
 one-time venue-exception rationale) scores each prefill token against THREE
 parallel key-only continuum-memory anchors — stable/global, episodic/
 block-local, current/recent-window — and combines them via a head-adaptive

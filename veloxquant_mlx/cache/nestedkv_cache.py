@@ -5,7 +5,7 @@ Compression" (Chen, Liu, Gao, Fan, Wang, Chu, Lin, Hu; arXiv:2605.26678).
 Documented as "NestedKV-adapted (VeloxQuant-MLX implementation)" — not a
 faithful port. **No verified peer-reviewed venue as of 2026-07-14** — a
 one-time, user-directed exception to this repo's venue-verification rule.
-See ``paper/research/surveys/NEW_METHOD_SURVEY_V21.md``.
+See ``docs/research/surveys/NEW_METHOD_SURVEY_V21.md``.
 
 Multi-scale ensembled eviction: at the end of prefill, each head's tokens are
 scored by three parallel continuum-memory anomaly signals (stable/global,

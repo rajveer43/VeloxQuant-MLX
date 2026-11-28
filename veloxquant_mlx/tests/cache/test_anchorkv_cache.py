@@ -2,7 +2,7 @@
 
 AnchorKV-adapted (arXiv:2608.02901v1, no verified peer-reviewed venue as of
 2026-08-20 — a one-time, user-directed exception; see
-paper/research/surveys/NEW_METHOD_SURVEY_V22.md) compresses the KV cache
+docs/research/surveys/NEW_METHOD_SURVEY_V22.md) compresses the KV cache
 ONCE at the end of prefill: each head selects anchor positions, projects
 every other token onto its nearest anchor, and spends a byte budget on
 quantized residuals for the highest-utility tokens. UNLIKE every eviction
