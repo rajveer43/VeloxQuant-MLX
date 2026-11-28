@@ -1,0 +1,4 @@
+# Default owner for everything. Requests a review from the maintainer on every PR.
+# See GOVERNANCE.md. Add path-specific lines below (last match wins) when more
+# maintainers join.
+* @rajveer43
